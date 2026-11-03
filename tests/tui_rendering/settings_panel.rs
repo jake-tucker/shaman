@@ -1166,10 +1166,13 @@ fn answer_listing(
 /// Whether the list editor's focused row is an entry ending in the directory
 /// `name`, which a long path shows the end of.
 fn focuses_entry_ending(screen: &str, name: &str) -> bool {
-    let entry = format!("{MAIN_SEPARATOR}{name}│");
+    // A path too long for the list is cut to fit it and a short one is
+    // padded, so the entry is read up to the border either way.
+    let ending = format!("{MAIN_SEPARATOR}{name}");
     screen
         .lines()
-        .any(|line| line.contains("│› ") && line.contains(&entry))
+        .flat_map(|line| line.split('│'))
+        .any(|cell| cell.starts_with("› ") && cell.trim_end().ends_with(&ending))
 }
 
 /// Tab in the Workspace Roots' editor browses the Server's directories, the
