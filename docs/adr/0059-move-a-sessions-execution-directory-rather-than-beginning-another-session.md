@@ -1,0 +1,22 @@
+# Move a Session's Execution Directory rather than beginning another Session
+
+ADR-0023 fixed a Session's Execution Directory from its first Turn: a user who wanted the same work to continue elsewhere — in another Worktree of the Repository, in a Worktree made for it, in another Workspace — began another Session and lost the conversation. We decided that a Session may **Move**: its Execution Directory changes and everything else about it stays — identity, Title, Icon, Transcript, and the Provider conversation, which resumes in the new directory at its next Turn the way ADR-0058 already resumes it after an idle stop. All three Providers resume a conversation in a directory other than the one it began in (Codex and Copilot take the directory on resume; the Claude CLI was tested to resume under the same ID from another directory), so no Provider needs a copy made for it.
+
+The Session's Execution Directory is still fixed while a Turn runs, because the Provider's process is bound to it. A Move asked of a Working Session is therefore **pending** and takes effect when the Session settles; a Monitoring Session Moves at once. A newer pending Move replaces an older one, choosing the current location cancels it, and a Managed Worktree a pending Move asked for is created when it is asked for, not when it applies, so a Tool call learns of a failed preparation in its answer.
+
+## Considered Options
+
+- **Begin a new Session in the destination and carry context across.** Rejected: the conversation is the thing the user wants to keep, and no Provider lets one be copied into another cwd more faithfully than resuming it there.
+- **Refuse a Move while Working, and have the user interrupt first.** Rejected once Agents could Move their own Session through the Broker: an Agent is Working whenever it calls a Tool, so refusing would make the Tool useless for exactly the case it exists for. One deferred rule serves the TUI and the Broker alike.
+- **Apply a Move mid-Turn at a step boundary, as OpenCode does.** Rejected: OpenCode runs the model loop in-process and can close its transport between steps; Suru's Turns run inside external Provider processes with no boundary Suru controls.
+- **Let any Agent Move any Session.** Rejected: ADR-0042 keeps acting across Suru to Sidekicks. An ordinary Agent Moves only its own Session and its brokered Subagents' Sessions, and only within its Workspace — beneath a Worktree of its Repository, including a new Managed Worktree, or beneath a directory-based Workspace's directory. A Sidekick Moves any Session anywhere. A native Subagent's Session is never Moved, since it runs inside its parent's process; a Sidekick's own Session is never Moved, since its Workspace is its identity.
+
+## Consequences
+
+- The glossary's Execution Directory is "set as the Session begins and changed only by a Move"; the first paragraph of ADR-0023 no longer holds where it says each Session retains its exact Execution Directory.
+- A Move regroups the Session under the destination's Workspace in every Client viewing it, the Client's current Workspace follows, and a destination no Workspace knows gains a Workspace Registry entry as a Session beginning there would.
+- A Move is an Activity of its own in the Transcript, Active while pending and settled when applied or failed, so a pending Move needs no state beyond the destination the Sidebar labels.
+- The Agent is told of the Move at its next Turn, as Provider input preceding whatever that Turn's input is, including that Subagents spawned before the Move still work where they were. Nothing moves a child with its parent.
+- A Managed Worktree a Move creates is first named from the Session's Title and started from the commit its previous Worktree stood at; an Errand derives the branch alone and leaves the Title standing. One a Move leaves without a Session is Reclaimed eagerly, as one the last Session was deleted from is. Uncommitted changes are not carried.
+- A draft Prompt's bound Skills are resolved by name in the new directory under the Worktree spec's rule, and the Skill Catalog is read from it.
+- An Agent's Move needs no Approval; the boundary already holds it inside the Repository, and a Managed Worktree it creates is Reclaimable.
