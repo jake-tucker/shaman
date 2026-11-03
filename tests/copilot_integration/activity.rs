@@ -29,12 +29,29 @@ const WORKING_TURN: &str = r#"      event e1 assistant.reasoning_delta '{"reason
       event e2 assistant.reasoning_delta '{"reasoningId":"r1","deltaContent":" what is there."}'
       event e3 assistant.reasoning '{"reasoningId":"r1","content":"**Reading the workspace**\n\nListing what is there."}'
       event e4 tool.execution_start '{"toolCallId":"t1","toolName":"bash","arguments":{"command":"cd /workspace && ls -1","description":"List the Workspace"},"shellToolInfo":{"displayCommand":"ls -1","hasWriteFileRedirection":false,"possiblePaths":[]}}'
-      event e5 tool.execution_partial_result '{"toolCallId":"t1","partialOutput":"Cargo.toml\n"}'
+      event e5 tool.shell_output '{"toolCallId":"t1","text":"Cargo.toml\n","sequence":0}'
       event e6 tool.execution_complete '{"toolCallId":"t1","success":true,"result":{"content":"Cargo.toml\nsrc\n"}}'
       event e7 tool.execution_start '{"toolCallId":"t2","toolName":"view","arguments":{"path":"Cargo.toml"}}'
       event e8 tool.execution_complete '{"toolCallId":"t2","success":false,"error":{"message":"Cargo.toml is not readable"}}'
       event e9 assistant.message '{"messageId":"m1","content":"Two entries."}'
       event e10 session.idle '{}'
+"#;
+
+/// A synchronous shell printing a line every two seconds, as Copilot CLI 1.0.105 streams it: each
+/// line once as a `tool.shell_output` chunk, and beside each the `tool.execution_partial_result`
+/// snapshot of everything printed so far — repeated once more as the shell exits
+/// (docs/validation/copilot-tool-output-streaming.md).
+const SNAPSHOTTING_SHELL_TURN: &str = r#"      event e1 tool.execution_start '{"toolCallId":"t1","toolName":"bash","arguments":{"command":"printf one; printf two >&2; printf three","mode":"sync"}}'
+      event e2 tool.shell_output '{"toolCallId":"t1","stream":"stdout","text":"one\n","sequence":0}'
+      event e3 tool.execution_partial_result '{"toolCallId":"t1","partialOutput":"one\n"}'
+      event e4 tool.shell_output '{"toolCallId":"t1","stream":"stderr","text":"two\n","sequence":1}'
+      event e5 tool.execution_partial_result '{"toolCallId":"t1","partialOutput":"one\ntwo\n"}'
+      event e6 tool.shell_output '{"toolCallId":"t1","stream":"stdout","text":"three\n","sequence":2}'
+      event e7 tool.execution_partial_result '{"toolCallId":"t1","partialOutput":"one\ntwo\nthree\n"}'
+      event e8 tool.execution_partial_result '{"toolCallId":"t1","partialOutput":"one\ntwo\nthree\n"}'
+      event e9 tool.execution_complete '{"toolCallId":"t1","success":true,"result":{"content":"one\ntwo\nthree\n<shellId: 0 completed with exit code 0>","contents":[{"type":"shell_exit","shellId":"0","exitCode":0,"outputPreview":"one\ntwo\nthree\n"}]}}'
+      event e10 assistant.message '{"messageId":"m1","content":"Done."}'
+      event e11 session.idle '{}'
 "#;
 
 /// A Turn Copilot abandons part-way through reasoning and running, leaving both open.
@@ -50,7 +67,7 @@ const ABANDONED_WORK: &str = r#"      event e1 assistant.reasoning_delta '{"reas
 /// with, and a built-in Tool that fails.
 const TOOL_CALLS_TURN: &str = r#"      event e1 tool.execution_start '{"toolCallId":"t-issue","toolName":"github-create_issue","mcpServerName":"github","mcpToolName":"create_issue","arguments":{"title":"Fix the seam","labels":["bug"]}}'
       event e2 tool.execution_progress '{"toolCallId":"t-issue","progressMessage":"Contacting GitHub"}'
-      event e3 tool.execution_partial_result '{"toolCallId":"t-issue","partialOutput":"Creating the issue\n"}'
+      event e3 tool.shell_output '{"toolCallId":"t-issue","text":"Creating the issue\n","sequence":0}'
       event e4 tool.execution_complete '{"toolCallId":"t-issue","success":true,"result":{"content":"Creating the issue\nCreated issue #7\n","contents":[{"type":"text","text":"Creating the issue\nCreated issue #7\n"}]}}'
       event e5 tool.execution_start '{"toolCallId":"t-shot","toolName":"browser-screenshot","mcpServerName":"browser","mcpToolName":"screenshot","arguments":{}}'
       event e6 tool.execution_complete '{"toolCallId":"t-shot","success":true,"result":{"content":"Captured the page","contents":[{"type":"text","text":"Captured the page"},{"type":"image","data":"iVBORw0KGgo=","mimeType":"image/png"},{"type":"resource_link","uri":"file:///shot.png","name":"shot.png"}]}}'
@@ -59,7 +76,7 @@ const TOOL_CALLS_TURN: &str = r#"      event e1 tool.execution_start '{"toolCall
       event e9 tool.execution_start '{"toolCallId":"t-read","toolName":"read_agent","arguments":{"agent_id":"scout","wait":true}}'
       event e10 tool.execution_complete '{"toolCallId":"t-read","success":true,"result":{"content":"Scout reported."}}'
       event e11 tool.execution_start '{"toolCallId":"t-fetch","toolName":"web_fetch","arguments":{"url":"https://example.com/missing"}}'
-      event e12 tool.execution_partial_result '{"toolCallId":"t-fetch","partialOutput":"Fetching"}'
+      event e12 tool.shell_output '{"toolCallId":"t-fetch","text":"Fetching","sequence":0}'
       event e13 tool.execution_complete '{"toolCallId":"t-fetch","success":false,"error":{"message":"Request failed with status code 404"}}'
       event e14 assistant.message '{"messageId":"m1","content":"Filed it."}'
       event e15 session.idle '{}'
@@ -95,7 +112,7 @@ const ABSORBED_AND_PLUMBING_TURN: &str = r#"      event e1 tool.execution_start 
 const FAILED_WITH_A_RESULT_TURN: &str = r#"      event e1 tool.execution_start '{"toolCallId":"t-denied","toolName":"web_fetch","arguments":{"url":"https://example.com/private"}}'
       event e2 tool.execution_complete '{"toolCallId":"t-denied","success":false,"result":{"content":""},"error":{"message":"Denied"}}'
       event e3 tool.execution_start '{"toolCallId":"t-slow","toolName":"web_fetch","arguments":{"url":"https://example.com/slow"}}'
-      event e4 tool.execution_partial_result '{"toolCallId":"t-slow","partialOutput":"Fetching"}'
+      event e4 tool.shell_output '{"toolCallId":"t-slow","text":"Fetching","sequence":0}'
       event e5 tool.execution_complete '{"toolCallId":"t-slow","success":false,"result":{"content":"Fetching"},"error":{"message":"Timed out"}}'
       event e6 tool.execution_start '{"toolCallId":"t-refused","toolName":"web_fetch","arguments":{"url":"https://example.com/refused"}}'
       event e7 tool.execution_complete '{"toolCallId":"t-refused","success":false,"result":{"content":"Refused by policy"},"error":{"message":"Refused by policy"}}'
@@ -105,7 +122,7 @@ const FAILED_WITH_A_RESULT_TURN: &str = r#"      event e1 tool.execution_start '
 
 /// A Turn Copilot abandons while a Tool Call still runs.
 const ABANDONED_TOOL_CALL: &str = r#"      event e1 tool.execution_start '{"toolCallId":"t1","toolName":"web_search","arguments":{"query":"suru"}}'
-      event e2 tool.execution_partial_result '{"toolCallId":"t1","partialOutput":"Searching"}'
+      event e2 tool.shell_output '{"toolCallId":"t1","text":"Searching","sequence":0}'
       event e3 session.error '{"errorType":"quota","message":"Out of premium requests."}'
       event e4 session.idle '{}'
 "#;
@@ -113,7 +130,7 @@ const ABANDONED_TOOL_CALL: &str = r#"      event e1 tool.execution_start '{"tool
 /// A Turn whose one Tool Call streams part of its output and holds, still running, until the test
 /// releases it.
 const HELD_TOOL_CALL_TURN: &str = r#"      event e1 tool.execution_start '{"toolCallId":"t1","toolName":"glob","arguments":{"pattern":"**/*.rs"}}'
-      event e2 tool.execution_partial_result '{"toolCallId":"t1","partialOutput":"src/lib.rs\n"}'
+      event e2 tool.shell_output '{"toolCallId":"t1","text":"src/lib.rs\n","sequence":0}'
       wait_for "$COPILOT_FIXTURE_RELEASE"
       event e3 tool.execution_complete '{"toolCallId":"t1","success":true,"result":{"content":"src/lib.rs\nsrc/main.rs\n"}}'
       event e4 assistant.message '{"messageId":"m1","content":"Two files."}'
@@ -126,8 +143,8 @@ fn oversized_tool_call_turn() -> String {
     let output = "x".repeat(35_000);
     format!(
         r#"      event e1 tool.execution_start '{{"toolCallId":"t1","toolName":"notes-save","mcpServerName":"notes","mcpToolName":"save","arguments":{{"content":"{input}"}}}}'
-      event e2 tool.execution_partial_result '{{"toolCallId":"t1","partialOutput":"{output}"}}'
-      event e3 tool.execution_partial_result '{{"toolCallId":"t1","partialOutput":"{output}"}}'
+      event e2 tool.shell_output '{{"toolCallId":"t1","text":"{output}","sequence":0}}'
+      event e3 tool.shell_output '{{"toolCallId":"t1","text":"{output}","sequence":0}}'
       event e4 tool.execution_complete '{{"toolCallId":"t1","success":true,"result":{{"content":"Saved."}}}}'
       event e5 assistant.message '{{"messageId":"m1","content":"Saved."}}'
       event e6 session.idle '{{}}'
@@ -308,6 +325,39 @@ async fn copilots_shell_executions_are_commands_and_its_other_tools_tool_calls()
     );
 }
 
+/// Copilot repeats a running shell's whole output so far beside each chunk it streams; the Command
+/// takes each chunk once, so its output is what the shell printed, not every snapshot of it.
+#[tokio::test]
+async fn a_shell_streams_each_chunk_once_whatever_snapshots_copilot_repeats_beside_them() {
+    let settled = worked_session(
+        "copilot-snapshotting-shell",
+        SNAPSHOTTING_SHELL_TURN,
+        "Print three lines",
+    )
+    .await;
+
+    let [
+        Activity::Command {
+            status,
+            output,
+            exit_status,
+            ..
+        },
+    ] = settled.activities.as_slice()
+    else {
+        panic!(
+            "the shell is the Turn's one Activity, got {:?}",
+            settled.activities
+        );
+    };
+    assert_eq!(*status, ActivityStatus::Completed);
+    assert_eq!(*exit_status, Some(0));
+    assert_eq!(
+        output, "one\ntwo\nthree\n<shellId: 0 completed with exit code 0>",
+        "the output is what Copilot reported the shell producing, streamed once"
+    );
+}
+
 #[tokio::test]
 async fn a_turn_that_stops_mid_work_leaves_nothing_running_in_the_transcript() {
     let settled = worked_session("copilot-abandoned-work", ABANDONED_WORK, "Spend the quota").await;
@@ -379,7 +429,7 @@ async fn tool_executions_no_other_activity_records_reach_the_transcript_as_tool_
     assert!(!input_truncated);
     assert_eq!(
         output, "Creating the issue\nCreated issue #7\n",
-        "the partial result streamed in, and the completion carried the rest of it — never the \
+        "the streamed output came in, and the completion carried the rest of it — never the \
          progress message"
     );
     assert!(!output_truncated);

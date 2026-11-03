@@ -44,7 +44,7 @@ const FAN_OUT_TURN: &str = r#"      event e1 assistant.message_start '{"messageI
       agent_event e7 agent-1 assistant.reasoning_delta '{"reasoningId":"sub-r1","deltaContent":"**Scouting plan**\n\nLook for TODO markers."}'
       agent_event e8 agent-1 assistant.reasoning '{"reasoningId":"sub-r1","content":"**Scouting plan**\n\nLook for TODO markers."}'
       agent_event e9 agent-1 tool.execution_start '{"toolCallId":"t-sub","toolName":"bash","arguments":{"command":"rg -l TODO"}}'
-      agent_event e10 agent-1 tool.execution_partial_result '{"toolCallId":"t-sub","partialOutput":"src/main.rs\n"}'
+      agent_event e10 agent-1 tool.shell_output '{"toolCallId":"t-sub","text":"src/main.rs\n","sequence":0}'
       agent_event e11 agent-1 tool.execution_complete '{"toolCallId":"t-sub","success":true,"result":{"content":"src/main.rs\n"}}'
       agent_event e12 agent-1 subagent.completed '{"toolCallId":"t-spawn","agentName":"researcher","agentDisplayName":"Researcher","durationMs":1200}'
       event e13 assistant.message_delta '{"messageId":"m1","deltaContent":" One TODO file."}'

@@ -247,7 +247,7 @@ const ATTACHED_SHELL_ROSTER: &str = r#"[{"type":"shell","id":"0","description":"
 /// Once released, the attached shell completing and the loop its notification wakes, which
 /// reads the shell's output and answers before the deferred `session.idle` finally arrives.
 const ATTACHED_SHELL_COMPLETES: &str = r#"      wait_for "$COPILOT_FIXTURE_RELEASE"
-      event e6 tool.execution_partial_result '{"toolCallId":"t-sleep","partialOutput":"BG-DONE\n"}'
+      event e6 tool.shell_output '{"toolCallId":"t-sleep","text":"BG-DONE\n","sequence":0}'
       event e7 session.background_tasks_changed '{}'
       event e8 system.notification '{"content":"<system_notification>\nShell command \"Run sleep in background\" (shellId: 0) has completed successfully.\n</system_notification>","kind":{"type":"shell_completed","shellId":"0","exitCode":0,"description":"Run sleep in background"}}'
       event e9 assistant.message '{"messageId":"m2","content":"","toolRequests":[{"toolCallId":"t-read","name":"read_bash","arguments":{"shellId":"0","delay":0}}]}'

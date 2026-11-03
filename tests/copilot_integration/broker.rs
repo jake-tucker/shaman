@@ -544,7 +544,7 @@ async fn the_brokers_reading_calls_are_tool_calls_and_its_subagent_calls_make_no
     // call to another MCP server.
     let timeline = r#"      event e1 tool.execution_start '{"toolCallId":"call-list","toolName":"suru-list_providers","mcpServerName":"suru","mcpToolName":"list_providers","arguments":{}}'
       event e2 tool.execution_progress '{"toolCallId":"call-list","progressMessage":"30.0/150.0 (20%): 30s of 150s"}'
-      event e3 tool.execution_partial_result '{"toolCallId":"call-list","partialOutput":"claude"}'
+      event e3 tool.shell_output '{"toolCallId":"call-list","text":"claude","sequence":0}'
       event e4 tool.execution_complete '{"toolCallId":"call-list","success":true,"result":{"content":"claude, codex, copilot"}}'
       event e5 tool.execution_start '{"toolCallId":"call-spawn","toolName":"suru-spawn_subagent","mcpServerName":"suru","mcpToolName":"spawn_subagent","arguments":{"provider":"codex","model":"gpt-5.5","name":"Scout","description":"Map the crates","prompt":"Map the crates."}}'
       event e6 tool.execution_complete '{"toolCallId":"call-spawn","success":true,"result":{"content":"spawned"}}'

@@ -46,7 +46,7 @@
 //! Which Activity records a tool execution is decided once, as it starts ([`ToolDisposition`]):
 //! a shell execution is a Command, an edit a File Change naming the files it touches, an execution
 //! another Activity records or that is Copilot's plumbing is nothing, and every other execution is
-//! a Tool Call — named, given its arguments as input, streamed its partial results, and settled by
+//! a Tool Call — named, given its arguments as input, streamed its output, and settled by
 //! its completion. A File Change is settled by its completion too, but streams nothing: it records
 //! which files changed and how, never what the Tool reported of it.
 //!
@@ -131,14 +131,10 @@ use github_copilot_sdk::{
         AssistantUsageData, SessionCompactionCompleteData, SessionErrorData, SessionEventType,
         SessionIdleData, SubagentCompletedData, SubagentFailedData, SubagentStartedData,
         SystemNotificationData, ToolExecutionCompleteContent, ToolExecutionCompleteData,
-        ToolExecutionStartData, UserMessageData, UserMessageDelivery,
+        ToolExecutionStartData, ToolShellOutputData, UserMessageData, UserMessageDelivery,
     },
     subscription::RecvErrorKind,
 };
-// Copilot deprecated `tool.execution_partial_result` for the append-only `tool.shell_output`, but
-// the CLI still streams tool output through it, and Suru still projects it until it moves over.
-#[allow(deprecated)]
-use github_copilot_sdk::session_events::ToolExecutionPartialResultData;
 use tokio::{
     sync::{Notify, mpsc},
     time::{Duration, timeout},
@@ -1564,7 +1560,6 @@ fn attributed(subagent: Option<&str>, event: ProviderEvent) -> AttributedProvide
     }
 }
 
-#[allow(deprecated)]
 fn project_session_event(
     correlation: &mut CopilotCorrelation,
     event: SessionEvent,
@@ -1734,7 +1729,7 @@ fn project_session_event(
         // settled stretch started — a background shell streams its output as it exits, after
         // the Turn that ran it — so it opens no stretch: a woken loop's own executions start
         // in the stretch they open.
-        SessionEventType::ToolExecutionPartialResult | SessionEventType::ToolExecutionComplete
+        SessionEventType::ToolShellOutput | SessionEventType::ToolExecutionComplete
             if correlation.turn.is_none() =>
         {
             Ok(Vec::new())
@@ -1893,7 +1888,6 @@ fn compaction_usage(
 }
 
 /// Whether an event carries conversation content this projection presents.
-#[allow(deprecated)]
 fn is_conversation_content(event_type: &SessionEventType) -> bool {
     matches!(
         event_type,
@@ -1901,7 +1895,7 @@ fn is_conversation_content(event_type: &SessionEventType) -> bool {
             | SessionEventType::AssistantMessageDelta
             | SessionEventType::AssistantMessage
             | SessionEventType::ToolExecutionStart
-            | SessionEventType::ToolExecutionPartialResult
+            | SessionEventType::ToolShellOutput
             | SessionEventType::ToolExecutionComplete
             | SessionEventType::AssistantReasoningDelta
             | SessionEventType::AssistantReasoning
@@ -1913,7 +1907,6 @@ fn is_conversation_content(event_type: &SessionEventType) -> bool {
 /// of spawning tool calls whose Subagent row already answers for them, which is what tells a
 /// withheld spawn's settle apart from a delegation that never happened; `execution_directory` is
 /// where the Session works, which every conversation in it shares.
-#[allow(deprecated)]
 fn project_conversation_event(
     streams: &mut ConversationStreams,
     delegations: &mut HashSet<String>,
@@ -1943,10 +1936,14 @@ fn project_conversation_event(
                 project_tool_started(streams, &started, execution_directory)
             },
         )),
-        SessionEventType::ToolExecutionPartialResult => Ok(reported(event).map_or_else(
+        // A running shell streams its output as `tool.shell_output` chunks, each appending to what
+        // came before. The `tool.execution_partial_result` Copilot still sends beside them is the
+        // output so far, repeated whole each time, so it carries nothing the chunks have not
+        // (docs/validation/copilot-tool-output-streaming.md).
+        SessionEventType::ToolShellOutput => Ok(reported(event).map_or_else(
             Vec::new,
-            |output: ToolExecutionPartialResultData| {
-                project_tool_output(streams, &output.tool_call_id, output.partial_output)
+            |output: ToolShellOutputData| {
+                project_tool_output(streams, &output.tool_call_id, output.text)
             },
         )),
         SessionEventType::ToolExecutionComplete => Ok(reported(event).map_or_else(
@@ -3990,8 +3987,8 @@ mod tests {
         assert_eq!(
             project(
                 &mut correlation,
-                "tool.execution_partial_result",
-                json!({ "toolCallId": "t1", "partialOutput": "running tests\n" }),
+                "tool.shell_output",
+                json!({ "toolCallId": "t1", "text": "running tests\n", "sequence": 0 }),
             ),
             [ProviderEvent::CommandOutputDelta {
                 activity_id: command.clone(),
@@ -4057,8 +4054,8 @@ mod tests {
         assert_eq!(
             project(
                 &mut correlation,
-                "tool.execution_partial_result",
-                json!({ "toolCallId": "t1", "partialOutput": "Captured " }),
+                "tool.shell_output",
+                json!({ "toolCallId": "t1", "text": "Captured ", "sequence": 0 }),
             ),
             [ProviderEvent::ToolCallOutputDelta {
                 activity_id: tool_call.clone(),
@@ -4106,8 +4103,8 @@ mod tests {
                     json!({ "toolCallId": tool, "toolName": tool, "arguments": {} }),
                 ),
                 (
-                    "tool.execution_partial_result",
-                    json!({ "toolCallId": tool, "partialOutput": "noted" }),
+                    "tool.shell_output",
+                    json!({ "toolCallId": tool, "text": "noted", "sequence": 0 }),
                 ),
                 (
                     "tool.execution_complete",
@@ -4251,8 +4248,8 @@ mod tests {
         );
         project(
             &mut correlation,
-            "tool.execution_partial_result",
-            json!({ "toolCallId": "t1", "partialOutput": "running tests" }),
+            "tool.shell_output",
+            json!({ "toolCallId": "t1", "text": "running tests", "sequence": 0 }),
         );
 
         let projected = project(
@@ -4297,8 +4294,8 @@ mod tests {
             if !streamed.is_empty() {
                 project(
                     correlation,
-                    "tool.execution_partial_result",
-                    json!({ "toolCallId": tool_call_id, "partialOutput": streamed }),
+                    "tool.shell_output",
+                    json!({ "toolCallId": tool_call_id, "text": streamed, "sequence": 0 }),
                 );
             }
             project(correlation, "tool.execution_complete", completed)
@@ -5645,8 +5642,8 @@ mod tests {
         for (event_type, data) in [
             ("tool.execution_start", broker_call("t-broker")),
             (
-                "tool.execution_partial_result",
-                json!({ "toolCallId": "t-broker", "partialOutput": "Spawning" }),
+                "tool.shell_output",
+                json!({ "toolCallId": "t-broker", "text": "Spawning", "sequence": 0 }),
             ),
             (
                 "tool.execution_complete",
@@ -5727,8 +5724,8 @@ mod tests {
         assert!(
             project(
                 &mut correlation,
-                "tool.execution_partial_result",
-                json!({ "toolCallId": "t-write", "partialOutput": "Message delivered" }),
+                "tool.shell_output",
+                json!({ "toolCallId": "t-write", "text": "Message delivered", "sequence": 0 }),
             )
             .is_empty()
         );
