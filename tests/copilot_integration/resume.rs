@@ -493,6 +493,36 @@ async fn a_moved_sessions_next_turn_resumes_its_copilot_session_in_the_new_direc
         session_parameter(&requests, "session.resume"),
         "the resume names the Copilot Session the Suru Session began under"
     );
+    let note = suru::provider::MoveNote {
+        from: suru::protocol::ExecutionDirectory {
+            path: suru::paths::canonical(origin.path()).unwrap(),
+        },
+        to: suru::protocol::ExecutionDirectory {
+            path: destination_path.clone(),
+        },
+    };
+    let sent = requests
+        .iter()
+        .rfind(|request| request["method"] == "session.send")
+        .expect("the next Turn sends to the resumed Copilot Session");
+    assert_eq!(
+        sent["params"]["prompt"],
+        format!("{note}\n\nCarry on where the work is now"),
+        "Copilot is told of the Move ahead of the Prompt"
+    );
+    assert_eq!(
+        settled
+            .messages
+            .iter()
+            .filter(|message| message.role == suru::protocol::MessageRole::User)
+            .map(|message| message.content.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "Begin where the work first was",
+            "Carry on where the work is now"
+        ],
+        "while the Transcript shows the user's words alone"
+    );
     drop(feed);
     drop(client);
     server.shutdown().await.expect("shut down server");

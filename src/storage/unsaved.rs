@@ -36,6 +36,9 @@ pub(crate) struct SessionRows<'a> {
     pub(crate) subagent_identity: Option<&'a StoredSubagentIdentity>,
     /// Whether the Session is a brokered Subagent's (ADR 0035).
     pub(crate) brokered: bool,
+    /// Where the Session's Agent last worked, while it is owed the note of a
+    /// Move (ADR 0059).
+    pub(crate) moved_from: Option<&'a crate::protocol::ExecutionDirectory>,
 }
 
 /// What one Session owes storage: whether it owes a save at all, which of its

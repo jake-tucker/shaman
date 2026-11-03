@@ -43,7 +43,7 @@ pub(crate) use orchestration::{
     ProviderOrchestrator, ProviderUpdateGate,
 };
 pub use report::{
-    FinalMessage, Report, SettledMessage, SidekickIntervention, SidekickOriginLoss,
+    FinalMessage, MoveNote, Report, SettledMessage, SidekickIntervention, SidekickOriginLoss,
     SidekickOriginLost, SidekickReport, SidekickReportOccasion, SidekickReportSubject,
     SidekickTurnOutcome, SubagentReport, SubagentReportOutcome,
 };

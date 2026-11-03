@@ -105,7 +105,8 @@ pub(crate) trait ActivityRowSink: Send + 'static {
 #[derive(Queryable)]
 struct SelectedFields {
     session_id: String,
-    turn_id: String,
+    /// Absent for a Move, which no tally reads.
+    turn_id: Option<String>,
     kind: String,
     status: Option<String>,
     name: Option<String>,
@@ -234,7 +235,8 @@ fn stream_activity_rows<S: ActivityRowSink>(
             let fields = fields.map_err(|error| StorageError::Read(error.to_string()))?;
             let named = turns
                 .get(&fields.session_id)
-                .is_some_and(|turns| turns.contains(&fields.turn_id));
+                .zip(fields.turn_id.as_ref())
+                .is_some_and(|(turns, turn_id)| turns.contains(turn_id));
             if let Some(row) = fields.into_row().filter(|_| named) {
                 sink.add(row);
             }

@@ -2957,7 +2957,9 @@ async fn a_delegation_reported_after_its_resume_stands_behind_the_watch_outcome_
             TranscriptItem::Activity { activity_id } => child
                 .activities
                 .iter()
-                .find(|activity| activity.id() == *activity_id && activity.turn_id() == resumed)
+                .find(|activity| {
+                    activity.id() == *activity_id && activity.turn_id() == Some(resumed)
+                })
                 .map(|activity| match activity {
                     Activity::WatchOutcome { .. } => "Watch Outcome",
                     _ => "Activity",

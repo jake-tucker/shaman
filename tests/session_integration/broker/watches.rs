@@ -209,7 +209,7 @@ async fn a_watch_that_wakes_a_settled_brokered_subagent_records_its_outcome_in_t
     assert_eq!(outcomes.len(), 1, "{outcomes:?}");
     assert_eq!(
         outcomes[0].turn_id(),
-        continuation.id,
+        Some(continuation.id),
         "the Watch Outcome stands in the Continuation its settling woke the Subagent into"
     );
     assert_eq!(

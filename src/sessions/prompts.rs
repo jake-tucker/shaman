@@ -394,6 +394,7 @@ impl SessionStore {
         self.storage.location_changed(
             save,
             record.snapshot.session.clone(),
+            record.moved_from.clone(),
             record.snapshot.revision,
         )?;
         Ok(())
@@ -612,6 +613,7 @@ impl SessionStore {
                 work_interrupted_at: None,
                 stopped_by_ancestor: None,
                 held_reports: Default::default(),
+                moved_from: None,
                 // Storage has never held it, so its first save writes it
                 // whole.
                 unsaved: crate::storage::Unsaved::created(Vec::new()),

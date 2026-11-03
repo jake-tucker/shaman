@@ -803,19 +803,20 @@ impl SessionStore {
     }
 
     /// Changes where the Session `id` stands, under the store's lock: to
-    /// `workspace` and `checkout`, and — for a Move — to work in
-    /// `execution_directory`. Storage takes the new location before the
-    /// Session does, so one it refuses leaves the Session where it was; once
-    /// it stands, every reader of the Session, its listings and the
-    /// Sidekick tree naming it hears of it. A Worktree the Session already
-    /// knew keeps what it knew of it. Answers the summary the change left
-    /// standing, or `None` where the Session is not held or already stands
-    /// there. The caller enters and dresses `workspace`.
+    /// `workspace` and `checkout`, and — for a Move — to work where `moved`
+    /// says. Storage takes the new location before the Session does, so one
+    /// it refuses leaves the Session where it was; once it stands, every
+    /// reader of the Session, its listings and the Sidekick tree naming it
+    /// hears of it. A Worktree the Session already knew keeps what it knew
+    /// of it. A Move is recorded in the same revision by its Activity, and
+    /// leaves the Session's Agent owed the note of it. Answers the summary
+    /// the change left standing, or `None` where the Session is not held or
+    /// already stands there. The caller enters and dresses `workspace`.
     pub(super) fn relocate(
         &self,
         state: &mut SessionStoreState,
         id: SessionId,
-        execution_directory: Option<crate::protocol::ExecutionDirectory>,
+        moved: Option<super::session_moves::MoveTarget<'_>>,
         workspace: Workspace,
         mut checkout: Option<crate::protocol::CheckoutAssociation>,
     ) -> anyhow::Result<Option<SessionSummary>> {
@@ -836,28 +837,39 @@ impl SessionStore {
         let session = &record.snapshot.session;
         if session.workspace == workspace
             && session.checkout == checkout
-            && execution_directory
+            && moved
                 .as_ref()
-                .is_none_or(|directory| *directory == session.execution_directory)
+                .is_none_or(|moved| moved.execution_directory == session.execution_directory)
         {
             return Ok(None);
         }
         let mut next = session.clone();
         next.workspace.clone_from(&workspace);
         next.checkout.clone_from(&checkout);
-        let change = match execution_directory {
-            Some(execution_directory) => {
-                next.execution_directory.clone_from(&execution_directory);
-                SessionChange::Moved {
-                    execution_directory,
-                    workspace,
-                    checkout,
-                }
+        let mut moved_from = record.moved_from.clone();
+        let recorded = moved.is_some();
+        let changes = match moved {
+            Some(moved) => {
+                let activity = moved.activity(session, checkout.as_ref());
+                // The Agent is told once, at its next Turn, from where it
+                // last worked; a Move back there leaves it nothing to tell.
+                let last_worked = moved_from.unwrap_or_else(|| session.execution_directory.clone());
+                moved_from = (last_worked != moved.execution_directory).then_some(last_worked);
+                next.execution_directory
+                    .clone_from(&moved.execution_directory);
+                vec![
+                    SessionChange::Moved {
+                        execution_directory: moved.execution_directory,
+                        workspace,
+                        checkout,
+                    },
+                    SessionChange::ActivityAdded { activity },
+                ]
             }
-            None => SessionChange::WorkspaceChanged {
+            None => vec![SessionChange::WorkspaceChanged {
                 workspace,
                 checkout,
-            },
+            }],
         };
         let update = crate::protocol::SessionUpdate {
             session_id: id,
@@ -869,13 +881,26 @@ impl SessionStore {
                     .checked_add(1)
                     .ok_or_else(|| anyhow::anyhow!("Session revision exhausted"))?,
             ),
-            changes: vec![change],
+            changes,
         };
-        // Storage takes the location before the Session does, so one it
-        // refuses leaves the Session where it was.
-        self.storage
-            .location_changed(record.take_save()?, next, update.revision)?;
-        crate::session_projection::apply_update(&mut record.snapshot, &update)?;
+        // Storage takes the location, and the note the Agent is owed, before
+        // the Session does, so one it refuses leaves the Session where it
+        // was. The Move's Activity lands with the Session's next save.
+        let validated =
+            crate::session_projection::validate_changes(&record.snapshot, &update.changes)?;
+        self.storage.location_changed(
+            record.take_save()?,
+            next,
+            moved_from.clone(),
+            update.revision,
+        )?;
+        let landed = validated.apply(&mut record.snapshot, &update.changes);
+        crate::session_projection::close_revision(&mut record.snapshot, update.revision);
+        if recorded {
+            // The Move's record is a row storage lacks.
+            record.unsaved.note(&update.changes, &landed);
+        }
+        record.moved_from = moved_from;
         record.summary.session = record.snapshot.session.clone();
         let summary = record.summary.clone();
         let _ = record.updates.send(update);

@@ -1,10 +1,11 @@
 //! Reports: the accounts Suru gives an Agent unasked, as that Agent's own
 //! input — at the head of a Turn's input beside a Prompt, alone to wake a
 //! Continuation, or as a steer of a Turn still working — through the start
-//! and steer every Provider already takes (ADR 0035). There are two: the
+//! and steer every Provider already takes (ADR 0035). There are three: the
 //! Subagent Report a delegating Agent is given when a brokered Subagent's Turn
-//! settles, and the Sidekick Report a Sidekick is given of a Session it set to
-//! work (see [`SidekickReport`]).
+//! settles, the Sidekick Report a Sidekick is given of a Session it set to
+//! work (see [`SidekickReport`]), and the note an Agent is given at the head
+//! of its first Turn after its Session Moved (see [`MoveNote`]).
 //!
 //! The Session store builds a Report where what it tells of happens; it is
 //! rendered here, once, into the words every harness sends, so an Agent reads
@@ -13,7 +14,7 @@
 
 use std::fmt;
 
-use crate::protocol::SessionId;
+use crate::protocol::{ExecutionDirectory, SessionId};
 
 mod sidekick;
 
@@ -32,6 +33,9 @@ pub enum Report {
     Subagent(SubagentReport),
     /// Of a Session a Sidekick set to work, to that Sidekick.
     Sidekick(SidekickReport),
+    /// Of the Session's own Move, to its Agent, ahead of everything else its
+    /// first Turn after the Move carries.
+    Move(MoveNote),
 }
 
 impl From<SubagentReport> for Report {
@@ -46,12 +50,46 @@ impl From<SidekickReport> for Report {
     }
 }
 
+impl From<MoveNote> for Report {
+    fn from(note: MoveNote) -> Self {
+        Self::Move(note)
+    }
+}
+
 impl fmt::Display for Report {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Subagent(report) => report.fmt(formatter),
             Self::Sidekick(report) => report.fmt(formatter),
+            Self::Move(note) => note.fmt(formatter),
         }
+    }
+}
+
+/// What an Agent is told of its Session's Move (ADR 0059): that its Execution
+/// Directory changed from where it last worked to where the Session stands
+/// now, however many Moves came between. Nothing the Agent began before the
+/// Move followed it: its Subagents still work where they were, and whatever
+/// it left running in the background ended with the Provider process the
+/// Move stopped.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MoveNote {
+    pub from: ExecutionDirectory,
+    pub to: ExecutionDirectory,
+}
+
+/// The one text the note is delivered as, whichever harness carries it.
+impl fmt::Display for MoveNote {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let from = self.from.path.display();
+        let to = self.to.path.display();
+        write!(
+            formatter,
+            "Note from Suru: this Session Moved, and its Execution Directory changed from {from} to \
+             {to}. Work in {to} from now on, not in {from}. Subagents spawned before the Move still \
+             work where they were, so spawn new ones for work here rather than continuing those. \
+             Anything you left running in the background before the Move ended with it."
+        )
     }
 }
 
@@ -211,6 +249,37 @@ fn duration(duration_ms: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_move_note_names_both_directories_and_the_subagents_left_where_they_were() {
+        let root = std::env::temp_dir();
+        let note = MoveNote {
+            from: ExecutionDirectory {
+                path: root.join("before"),
+            },
+            to: ExecutionDirectory {
+                path: root.join("after"),
+            },
+        };
+        let text = note.to_string();
+
+        let from = root.join("before").display().to_string();
+        let to = root.join("after").display().to_string();
+        assert!(
+            text.contains(&format!("changed from {from} to {to}")),
+            "{text}"
+        );
+        assert!(
+            text.contains("Subagents spawned before the Move still work where they were"),
+            "{text}"
+        );
+        assert!(text.contains("spawn new ones"), "{text}");
+        assert_eq!(
+            Report::from(note).to_string(),
+            text,
+            "a Report carries the note in its own words"
+        );
+    }
 
     fn report(outcome: SubagentReportOutcome, final_message: Option<&str>) -> SubagentReport {
         SubagentReport::new(

@@ -773,10 +773,10 @@ fn holds_only_rows(snapshot: &SessionSnapshot, turn: &Turn) -> bool {
             .iter()
             .any(|message| message.turn_id == turn.id)
         && snapshot.activities.iter().all(|activity| {
-            activity.turn_id() != turn.id || matches!(activity, Activity::Subagent { .. })
+            activity.turn_id() != Some(turn.id) || matches!(activity, Activity::Subagent { .. })
         })
         && snapshot.activities.iter().any(|activity| {
-            activity.turn_id() == turn.id && matches!(activity, Activity::Subagent { .. })
+            activity.turn_id() == Some(turn.id) && matches!(activity, Activity::Subagent { .. })
         })
 }
 
@@ -1040,7 +1040,7 @@ impl SessionStoreState {
                     .activities
                     .iter()
                     .find(|activity| activity.id() == activity_id)
-                    .map(Activity::turn_id)
+                    .and_then(Activity::turn_id)
             });
             if let Some(turn_id) = turn_id {
                 answer_delivered(self, session_id, sidekick, turn_id);

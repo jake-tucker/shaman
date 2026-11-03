@@ -12,10 +12,10 @@ use anyhow::anyhow;
 use tokio::sync::{broadcast, mpsc, watch};
 
 use crate::protocol::{
-    AgentSelection, AgentSelectionOperationId, PromptId, PromptOrder, ProviderId, Session,
-    SessionCatalogChange, SessionCatalogSnapshot, SessionCatalogUpdate, SessionId, SessionListItem,
-    SessionSnapshot, SessionSummary, SessionTimestamp, SessionUpdate, SettingsSnapshot, TurnId,
-    ViewSessionOperationId, Workspace, WorkspaceId,
+    AgentSelection, AgentSelectionOperationId, ExecutionDirectory, PromptId, PromptOrder,
+    ProviderId, Session, SessionCatalogChange, SessionCatalogSnapshot, SessionCatalogUpdate,
+    SessionId, SessionListItem, SessionSnapshot, SessionSummary, SessionTimestamp, SessionUpdate,
+    SettingsSnapshot, TurnId, ViewSessionOperationId, Workspace, WorkspaceId,
 };
 use crate::provider::{ProviderResumeState, ProviderWatchId, Report};
 use crate::storage::{
@@ -288,6 +288,13 @@ struct SessionRecord {
     /// Never stored: a restart loses what was held, and only the repair of a
     /// brokered Subagent's stretch the stop left open is reported afresh.
     held_reports: VecDeque<Report>,
+    /// Where this Session's Agent last worked, while the Session has Moved
+    /// since and its Agent is still owed the note saying so: the head of its
+    /// next Turn's input carries it (see [`SessionStore::take_turn_head`]).
+    /// Stored with the Session, so a restart before that Turn still owes it.
+    /// Two Moves before that Turn owe one note, from here to where the
+    /// Session stands then; a Move back here owes none.
+    moved_from: Option<ExecutionDirectory>,
     /// What this Session owes storage: which of its rows moved since its
     /// last save, and the acts of Sidekicks on it that land in the same
     /// transaction as the changes they follow. A save is encoded from this

@@ -51,7 +51,7 @@ use rows::{
 };
 
 const DATABASE_FILE: &str = "suru.db";
-const CURRENT_SCHEMA_VERSION: &str = "20261029000000";
+const CURRENT_SCHEMA_VERSION: &str = "20261104000000";
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
 diesel::table! {
@@ -210,7 +210,7 @@ diesel::table! {
     activities (id) {
         id -> Text,
         session_id -> Text,
-        turn_id -> Text,
+        turn_id -> Nullable<Text>,
         row_order -> BigInt,
         transcript_order -> BigInt,
         payload -> Text,
@@ -257,6 +257,9 @@ pub(crate) struct PersistedSession {
     /// with the Session, so the next process routes its Provider work the way
     /// this one did.
     pub(crate) brokered: bool,
+    /// Where the Session's Agent last worked, while the Session has Moved
+    /// since and its Agent has yet to be told (ADR 0059).
+    pub(crate) moved_from: Option<crate::protocol::ExecutionDirectory>,
 }
 
 impl PersistedSession {
@@ -271,6 +274,7 @@ impl PersistedSession {
             resume_states: HashMap::new(),
             subagent_identity: None,
             brokered: false,
+            moved_from: None,
         }
     }
 }
@@ -1039,6 +1043,7 @@ impl StorageRepository {
     fn save_location(
         &self,
         session: &crate::protocol::Session,
+        moved_from: Option<&crate::protocol::ExecutionDirectory>,
         revision: crate::protocol::SessionRevision,
     ) -> Result<(), StorageError> {
         let mut connection = connect(&self.database_path)?;
@@ -1048,7 +1053,7 @@ impl StorageRepository {
         })?;
         diesel::update(sessions::table.filter(sessions::id.eq(session.id.to_string())))
             .set((
-                sessions::workspace.eq(SessionRow::session_metadata_payload(session)?),
+                sessions::workspace.eq(SessionRow::session_metadata_payload(session, moved_from)?),
                 sessions::revision.eq(revision),
             ))
             .execute(&mut connection)
@@ -1174,6 +1179,7 @@ fn load_sessions(repository: StorageRepository) -> Result<RestoredSessions, Stor
         deferred.parents.insert(unreadable.summary.id, parent);
         let turns = by_session.remove(&row.id).unwrap_or_default();
         let brokered = row.brokered();
+        let moved_from = row.moved_from();
         let result = (|| {
             let (mut summary, revision) = row.into_summary_and_revision()?;
             let turns = turns
@@ -1210,6 +1216,7 @@ fn load_sessions(repository: StorageRepository) -> Result<RestoredSessions, Stor
                 resume_states: HashMap::new(),
                 subagent_identity: None,
                 brokered,
+                moved_from,
             })
         })();
         match result {
@@ -1240,6 +1247,7 @@ fn load_session(
 ) -> Result<PersistedSession, StorageError> {
     let stored_session_id = row.id.clone();
     let brokered = row.brokered();
+    let moved_from = row.moved_from();
     let (mut summary, revision) = row.into_summary_and_revision()?;
     let prompt_rows = prompts::table
         .filter(prompts::session_id.eq(&stored_session_id))
@@ -1381,6 +1389,7 @@ fn load_session(
         resume_states,
         subagent_identity: subagent_identity_row.map(ProviderSubagentIdentityRow::into_identity),
         brokered,
+        moved_from,
     })
 }
 

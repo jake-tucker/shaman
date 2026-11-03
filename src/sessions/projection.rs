@@ -691,7 +691,7 @@ fn stamp_output_evidence(
             SessionChange::ActivityAdded { activity }
                 if !matches!(activity, crate::protocol::Activity::Error { .. }) =>
             {
-                Some(activity.turn_id())
+                activity.turn_id()
             }
             SessionChange::CommandOutputAppended {
                 activity_id,
@@ -764,6 +764,7 @@ fn activity_turn_id(
                 .find(|activity| activity.id() == activity_id)
                 .map(crate::protocol::Activity::turn_id)
         })
+        .flatten()
 }
 
 /// The Sessions one derivation climbs, from where a commit landed up to the
@@ -888,6 +889,7 @@ impl SessionRecord {
             snapshot: &self.snapshot,
             subagent_identity: self.subagent_identity.as_ref(),
             brokered: self.brokered,
+            moved_from: self.moved_from.as_ref(),
         })
     }
 

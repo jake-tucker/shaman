@@ -2253,9 +2253,10 @@ enum TranscriptEntry<'a> {
 
 impl TranscriptEntry<'_> {
     /// What a Turn Fold reads off the entry: whose Turn it belongs to, and
-    /// which of the roles a fold keeps outside it the entry plays.
-    fn in_turn(self) -> TurnEntry {
-        match self {
+    /// which of the roles a fold keeps outside it the entry plays. A Move
+    /// belongs to no Turn, so no fold covers it.
+    fn in_turn(self) -> Option<TurnEntry> {
+        Some(match self {
             Self::Message(message) => TurnEntry {
                 turn_id: message.turn_id,
                 role: match message.role {
@@ -2265,7 +2266,7 @@ impl TranscriptEntry<'_> {
                 },
             },
             Self::Activity(activity) => TurnEntry {
-                turn_id: activity.turn_id(),
+                turn_id: activity.turn_id()?,
                 role: match activity {
                     Activity::Error { .. } => TurnEntryRole::Error,
                     Activity::Compaction { .. } => TurnEntryRole::Compaction,
@@ -2273,7 +2274,7 @@ impl TranscriptEntry<'_> {
                     _ => TurnEntryRole::Work,
                 },
             },
-        }
+        })
     }
 }
 
@@ -2328,7 +2329,7 @@ impl TurnFolding {
             // An entry the Transcript shows nothing for is not one of the
             // entries a fold decides about: a fold covering only those would
             // disclose nothing, so no marker stands for it.
-            let entry = content.entry(item).map(TranscriptEntry::in_turn);
+            let entry = content.entry(item).and_then(TranscriptEntry::in_turn);
             if let Some(entry) = entry
                 && settled.contains_key(&entry.turn_id)
             {
@@ -3349,6 +3350,18 @@ fn activity_fingerprint(activity: &Activity, step: FoldStep) -> u64 {
             prompt.hash(&mut hasher);
             origin.hash(&mut hasher);
         }
+        Activity::Move {
+            status,
+            from,
+            to,
+            error,
+            ..
+        } => {
+            (*status as u8).hash(&mut hasher);
+            from.hash(&mut hasher);
+            to.hash(&mut hasher);
+            error.hash(&mut hasher);
+        }
     }
     hasher.finish()
 }
@@ -3898,6 +3911,16 @@ fn render_activity(
             origin.as_deref(),
             theme,
         )),
+        Activity::Move {
+            status,
+            from,
+            to,
+            error,
+            ..
+        } => {
+            push_move_activity(projection.lines, *status, from, to, error.as_deref(), theme);
+            None
+        }
     }
 }
 
@@ -5327,6 +5350,44 @@ fn push_subsession_activity(
     // The row hides nothing — it is the way into the Subsession, so the
     // anchor exists to make its whole extent a press target.
     UnitAnchor::binary(lines.len() - start, false)
+}
+
+/// Projects a Move: where the Session worked before it and where it works
+/// from then on, each directory with the branch of the Worktree it lies in
+/// where it has one, so a reader knows where the Tool Calls on either side
+/// touched files. Its Marker is the one a Subagent wears for the same
+/// status — a Spinner while the Move waits for its Session to settle, its
+/// outcome glyph once it applies or fails — and a failed Move says why.
+/// Like a Status it is the whole of what it says, so there is nothing to
+/// fold.
+fn push_move_activity(
+    lines: &mut Vec<StyledLine>,
+    status: crate::protocol::ActivityStatus,
+    from: &crate::protocol::MoveLocation,
+    to: &crate::protocol::MoveLocation,
+    error: Option<&str>,
+    theme: &Theme,
+) {
+    use crate::protocol::ActivityStatus;
+
+    let location = |location: &crate::protocol::MoveLocation| {
+        let directory = location.execution_directory.path.display();
+        match &location.branch {
+            Some(branch) => format!("{directory} ({branch})"),
+            None => directory.to_string(),
+        }
+    };
+    let (from, to) = (location(from), location(to));
+    let (marker, style) = subagent_marker(status, theme);
+    let text = match status {
+        ActivityStatus::Active => format!("Moving from {from} to {to} once the Session settles"),
+        ActivityStatus::Completed => format!("Moved from {from} to {to}"),
+        ActivityStatus::Failed | ActivityStatus::Interrupted => match error {
+            Some(error) => format!("Move from {from} to {to} failed: {error}"),
+            None => format!("Move from {from} to {to} failed"),
+        },
+    };
+    push_prefixed_lines_with_indent(lines, &format!("  {marker}"), "    ", &text, style);
 }
 
 /// Projects a Watch Outcome: why the Agent started working again, told in the
@@ -7515,6 +7576,7 @@ mod tests {
             | Activity::WatchOutcome { turn_id: id, .. }
             | Activity::Compaction { turn_id: id, .. }
             | Activity::Subsession { turn_id: id, .. } => *id = turn_id,
+            Activity::Move { .. } => {}
         }
     }
 

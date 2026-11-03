@@ -12,15 +12,22 @@
 //! takes has its Agent working again, so a Session the user had set aside is
 //! brought back once one is delivered — never while one only waits.
 //!
-//! Nothing here reaches a Transcript: a Report stands in none.
+//! The note of a Move is owed here too, though it waits otherwise: it is
+//! stored with the Session rather than held, so a restart before the next
+//! Turn still owes it; it heads only the input that begins a Turn, never a
+//! steer, ahead of any Report beside it; and it wakes nothing, since the
+//! Move stopped whatever Provider process could have taken it.
+//!
+//! Nothing here reaches a Transcript: a Report stands in none, and a Move
+//! is recorded by its own Activity.
 
 use anyhow::anyhow;
 use tokio::sync::mpsc;
 
 use crate::protocol::{AgentIdentity, SessionChange, SessionId, Turn, TurnId};
-use crate::provider::Report;
+use crate::provider::{MoveNote, Report};
 
-use super::{SessionStore, SessionStoreState, projection::active_turn_id};
+use super::{SessionRecord, SessionStore, SessionStoreState, projection::active_turn_id};
 
 impl SessionStore {
     /// Asks to hear, by the Session it is for, of every Report that
@@ -47,10 +54,25 @@ impl SessionStore {
             .unwrap_or_default()
     }
 
+    /// Takes what the head of `session_id`'s next Turn carries ahead of its
+    /// own input: the note of a Move its Agent is owed, first, so the Agent
+    /// learns where it works before it acts on anything, then every Report
+    /// waiting for it, oldest first.
+    pub(crate) fn take_turn_head(&self, session_id: SessionId) -> Vec<Report> {
+        self.state
+            .lock()
+            .expect("Session store lock is not poisoned")
+            .sessions
+            .get_mut(&session_id)
+            .map(SessionRecord::take_turn_head)
+            .unwrap_or_default()
+    }
+
     /// Puts `reports` — taken for input its Provider never took — back where
     /// they waited for `session_id`, ahead of any that came to wait since, so
     /// the next input that reaches the Agent carries them in the order they
-    /// arrived.
+    /// arrived. A Move's note among them is owed again, from where it said
+    /// the Agent last worked.
     pub(crate) fn hold_reports_again(&self, session_id: SessionId, reports: Vec<Report>) {
         let mut state = self
             .state
@@ -60,7 +82,10 @@ impl SessionStore {
             return;
         };
         for report in reports.into_iter().rev() {
-            record.held_reports.push_front(report);
+            match report {
+                Report::Move(note) => record.owe_move_note(note.from),
+                report => record.held_reports.push_front(report),
+            }
         }
     }
 
@@ -87,10 +112,11 @@ impl SessionStore {
 
     /// Begins the Continuation the Reports waiting for `session_id` wake its
     /// idle Agent into — run by `agent`, begun by neither a Prompt nor a
-    /// Delegation — and takes those Reports as the whole of its input, in the
-    /// one lock, so no Report can slip between the Turn and its input. `None`
-    /// when no Report waits, or when a Turn is already open in the Session: a
-    /// Delegation's, opened ahead of its delivery, whose input takes them.
+    /// Delegation — and takes those Reports as the whole of its input, headed
+    /// by any Move's note the Agent is owed, in the one lock, so no Report
+    /// can slip between the Turn and its input. `None` when no Report waits,
+    /// or when a Turn is already open in the Session: a Delegation's, opened
+    /// ahead of its delivery, whose input takes them.
     pub(crate) fn begin_report_continuation(
         &self,
         session_id: SessionId,
@@ -117,9 +143,36 @@ impl SessionStore {
         let reports = state
             .sessions
             .get_mut(&session_id)
-            .map(|record| record.held_reports.drain(..).collect())
+            .map(SessionRecord::take_turn_head)
             .unwrap_or_default();
         Ok(Some((turn_id, reports)))
+    }
+}
+
+impl SessionRecord {
+    /// Takes the head of this Session's next Turn: the note of a Move its
+    /// Agent is owed, from where it last worked to where the Session stands
+    /// now — owed no longer from here, in storage too with the Session's next
+    /// save — and then every Report waiting for it.
+    fn take_turn_head(&mut self) -> Vec<Report> {
+        let note = self.moved_from.take().map(|from| {
+            self.unsaved.note_summary([]);
+            Report::from(MoveNote {
+                from,
+                to: self.snapshot.session.execution_directory.clone(),
+            })
+        });
+        note.into_iter()
+            .chain(self.held_reports.drain(..))
+            .collect()
+    }
+
+    /// Owes this Session's Agent the note of a Move from `from`, where it
+    /// last worked — unless it stands there again — and storage too, with
+    /// the Session's next save.
+    fn owe_move_note(&mut self, from: crate::protocol::ExecutionDirectory) {
+        self.moved_from = (from != self.snapshot.session.execution_directory).then_some(from);
+        self.unsaved.note_summary([]);
     }
 }
 

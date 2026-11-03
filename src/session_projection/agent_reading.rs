@@ -59,9 +59,9 @@ use time::{OffsetDateTime, macros::format_description};
 use crate::protocol::{
     Activity, ActivityStatus, Answer, Approval, ApprovalOutcome, ApprovalSubject, Author,
     CompactionTrigger, Decision, ExcerptQuestionnaire, FileChange, Message, MessageRole,
-    MessageStatus, Question, QuestionAnswer, Questionnaire, QuestionnaireOutcome, ReadingSpan,
-    ServerReference, SessionSnapshot, SessionTimestamp, TranscriptItem, Turn, TurnId, TurnStatus,
-    WatchOutcomeStatus,
+    MessageStatus, MoveLocation, Question, QuestionAnswer, Questionnaire, QuestionnaireOutcome,
+    ReadingSpan, ServerReference, SessionSnapshot, SessionTimestamp, TranscriptItem, Turn, TurnId,
+    TurnStatus, WatchOutcomeStatus,
 };
 pub(crate) use crate::protocol::{
     DEFAULT_MAX_CHARS, DEFAULT_TURNS, Detail, EntryNumber, Position, ReadRefusal, ReadRequest,
@@ -456,18 +456,26 @@ impl<'a> Transcript<'a> {
             .enumerate()
             .map(|(index, turn)| (turn.id, index))
             .collect::<HashMap<_, _>>();
+        // A Move belongs to no Turn, so it is read with the Turn the
+        // Transcript reached before it: the last one its Agent worked in
+        // where the Session stood before.
+        let mut reached = None;
         for item in &session.transcript {
             let (turn_id, entry) = match item {
                 TranscriptItem::Message { message_id } => match messages.get(message_id) {
-                    Some(message) => (message.turn_id, Entry::Message(message)),
+                    Some(message) => (Some(message.turn_id), Entry::Message(message)),
                     None => continue,
                 },
                 TranscriptItem::Activity { activity_id } => match activities.get(activity_id) {
                     Some(Activity::Reasoning { .. }) | None => continue,
-                    Some(activity) => (activity.turn_id(), Entry::Activity(activity)),
+                    Some(activity) => (activity.turn_id().or(reached), Entry::Activity(activity)),
                 },
             };
-            if let Some(turn) = turn_of.get(&turn_id).map(|index| &mut turns[*index]) {
+            reached = turn_id.or(reached);
+            if let Some(turn) = turn_id
+                .and_then(|turn_id| turn_of.get(&turn_id))
+                .map(|index| &mut turns[*index])
+            {
                 if matches!(entry, Entry::Message(message)
                     if message.role == MessageRole::Agent && !message.content.is_empty())
                 {
@@ -879,6 +887,9 @@ impl<'a> Transcript<'a> {
             Activity::Subsession { title, prompt, .. } => {
                 format!("\"{title}\", first asked: {prompt}")
             }
+            Activity::Move { from, to, .. } => {
+                format!("from {} to {}", move_location(from), move_location(to))
+            }
         }
     }
 
@@ -1078,6 +1089,16 @@ impl<'a> Transcript<'a> {
                     origin_fingerprint: origin_fingerprint.clone(),
                 });
             }
+            Activity::Move {
+                from, to, error, ..
+            } => {
+                whole.pop();
+                whole.push_str(&format!("\nfrom: {}", move_location(from)));
+                whole.push_str(&format!("\nto: {}", move_location(to)));
+                if let Some(error) = error {
+                    whole.push_str(&format!("\nerror: {error}"));
+                }
+            }
             Activity::Reasoning { .. } => {}
         }
         Ok(whole)
@@ -1263,6 +1284,7 @@ fn activity_label(activity: &Activity) -> Spans {
             CompactionTrigger::Automatic => format!("compaction [{}, automatic]", stood(*status)),
         },
         Activity::Reasoning { .. } => "reasoning".to_owned(),
+        Activity::Move { status, .. } => format!("move [{}]", stood(*status)),
         Activity::Subsession {
             session_id,
             origin,
@@ -1279,6 +1301,16 @@ fn activity_label(activity: &Activity) -> Spans {
         }
     };
     Spans::text(label)
+}
+
+/// One end of a Move as a line says it: the directory, and the branch of
+/// the Worktree it lies in where it has one.
+fn move_location(location: &MoveLocation) -> String {
+    let directory = location.execution_directory.path.display();
+    match &location.branch {
+        Some(branch) => format!("{directory} (branch {branch})"),
+        None => directory.to_string(),
+    }
 }
 
 /// How a Compaction changed the context's size, where either side is known.

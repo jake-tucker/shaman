@@ -373,7 +373,7 @@ pub(super) fn stretches_of_work(snapshot: &SessionSnapshot) -> Vec<&Turn> {
         .activities
         .iter()
         .filter(|activity| matches!(activity, Activity::Subagent { .. }))
-        .map(Activity::turn_id)
+        .filter_map(Activity::turn_id)
         .collect::<HashSet<_>>();
     if holding.is_empty() {
         return snapshot.turns.iter().collect();
@@ -387,7 +387,7 @@ pub(super) fn stretches_of_work(snapshot: &SessionSnapshot) -> Vec<&Turn> {
                 .activities
                 .iter()
                 .filter(|activity| !matches!(activity, Activity::Subagent { .. }))
-                .map(Activity::turn_id),
+                .filter_map(Activity::turn_id),
         )
         .collect::<HashSet<_>>();
     snapshot
@@ -583,6 +583,7 @@ impl SessionStoreState {
                 work_interrupted_at: None,
                 stopped_by_ancestor: None,
                 held_reports: Default::default(),
+                moved_from: None,
                 // Storage has never held it, so its first save writes it
                 // whole, with what its spawn fixed about it.
                 unsaved: crate::storage::Unsaved::created(Vec::new()),

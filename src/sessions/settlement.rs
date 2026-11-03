@@ -572,7 +572,7 @@ pub(super) fn settle_in_flight_changes(
             }),
     );
     for activity in &snapshot.activities {
-        if activity.turn_id() != turn_id {
+        if activity.turn_id() != Some(turn_id) {
             continue;
         }
         match activity {

@@ -119,6 +119,7 @@ enum WriterCommand {
     LocationChanged {
         save: Option<SessionSave>,
         session: Box<crate::protocol::Session>,
+        moved_from: Option<crate::protocol::ExecutionDirectory>,
         revision: crate::protocol::SessionRevision,
         durability: std_mpsc::SyncSender<Result<(), String>>,
     },
@@ -343,15 +344,16 @@ impl Writer {
             WriterCommand::LocationChanged {
                 save,
                 session,
+                moved_from,
                 revision,
                 durability,
             } => {
                 // A location storage refuses is handed back to its caller,
                 // which keeps the Session where it was.
                 self.hand_over(save);
-                let result = self
-                    .land()
-                    .and_then(|()| repository.save_location(&session, revision));
+                let result = self.land().and_then(|()| {
+                    repository.save_location(&session, moved_from.as_ref(), revision)
+                });
                 let _ = durability.send(result.map_err(|error| error.to_string()));
             }
             WriterCommand::Delete {
@@ -806,18 +808,21 @@ impl StorageSink {
                 snapshot: &persisted.snapshot,
                 subagent_identity: persisted.subagent_identity.as_ref(),
                 brokered: persisted.brokered,
+                moved_from: persisted.moved_from.as_ref(),
             })
             .expect("a fixture encodes");
         self.save(save.into_iter().collect())
             .expect("the writer is running");
     }
 
-    /// Persists where a Session works now, after `save`, what the Session
-    /// owed storage before it moved.
+    /// Persists where a Session works now, and where its Agent last worked
+    /// while it is owed the note of a Move (`moved_from`), after `save`, what
+    /// the Session owed storage before it moved.
     pub(crate) fn location_changed(
         &self,
         save: Option<SessionSave>,
         session: crate::protocol::Session,
+        moved_from: Option<crate::protocol::ExecutionDirectory>,
         revision: crate::protocol::SessionRevision,
     ) -> Result<(), StorageError> {
         let (durability, receipt) = std_mpsc::sync_channel(0);
@@ -825,6 +830,7 @@ impl StorageSink {
             .send(WriterCommand::LocationChanged {
                 save,
                 session: Box::new(session),
+                moved_from,
                 revision,
                 durability,
             })
@@ -1128,6 +1134,7 @@ mod tests {
                 snapshot: &persisted.snapshot,
                 subagent_identity: persisted.subagent_identity.as_ref(),
                 brokered: persisted.brokered,
+                moved_from: persisted.moved_from.as_ref(),
             })
             .unwrap()
     }

@@ -95,7 +95,7 @@ fn heading_activity(snapshot: &SessionSnapshot, turn_index: usize) -> &Activity 
         TranscriptItem::Activity { activity_id } => snapshot
             .activities
             .iter()
-            .find(|activity| activity.id() == *activity_id && activity.turn_id() == turn_id)
+            .find(|activity| activity.id() == *activity_id && activity.turn_id() == Some(turn_id))
             .map(Some),
     });
     heading

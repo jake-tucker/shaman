@@ -17,10 +17,10 @@ use std::{
 use suru::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
-        EffectiveSettings, ExecutionDirectory, MoveDestination, MoveOutcome, MoveSessionRequest,
-        Outlook, SessionChange, SessionId, SessionListItem, SessionReference, SessionRevision,
-        SessionSnapshot, SessionUpdate, SidebarScope, SidebarSettings, SidebarVisibility,
-        Workspace, WorkspacePaths,
+        Activity, ActivityId, ActivityStatus, EffectiveSettings, ExecutionDirectory,
+        MoveDestination, MoveLocation, MoveOutcome, MoveSessionRequest, Outlook, SessionChange,
+        SessionId, SessionListItem, SessionReference, SessionRevision, SessionSnapshot,
+        SessionUpdate, SidebarScope, SidebarSettings, SidebarVisibility, Workspace, WorkspacePaths,
     },
     tui::{Application, ApplicationEvent, ApplicationTransition, WorkspaceResolutionSurface},
 };
@@ -440,4 +440,131 @@ fn the_answer_to_a_move_waits_on_the_sessions_stream() {
         application.take_move_follow(),
         ApplicationTransition::Continue
     );
+}
+
+/// The Session's own stream saying it Moved from where it worked to
+/// `destination`, recording the Move as the Server does in the same
+/// revision: `from` and `to` name the branch of a Worktree on either side.
+fn hear_recorded_move(
+    application: &mut Application,
+    snapshot: &SessionSnapshot,
+    destination: &Path,
+    status: ActivityStatus,
+    (from, to): (Option<&str>, Option<&str>),
+    error: Option<&str>,
+) {
+    let location = |path: &Path, branch: Option<&str>| MoveLocation {
+        execution_directory: ExecutionDirectory {
+            path: path.to_owned(),
+        },
+        branch: branch.map(str::to_owned),
+    };
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id: snapshot.session.id,
+                revision: SessionRevision(snapshot.revision.0 + 1),
+                changes: vec![
+                    SessionChange::Moved {
+                        execution_directory: ExecutionDirectory {
+                            path: destination.to_owned(),
+                        },
+                        workspace: Workspace::directory(destination.to_owned()),
+                        checkout: None,
+                    },
+                    SessionChange::ActivityAdded {
+                        activity: Activity::Move {
+                            id: ActivityId::new(),
+                            status,
+                            from: location(&snapshot.session.execution_directory.path, from),
+                            to: location(destination, to),
+                            error: error.map(str::to_owned),
+                        },
+                    },
+                ],
+            },
+        )))
+        .expect("hear the Session Move");
+}
+
+/// A Move stands in the Transcript as its own row, after the Turn before
+/// it: where the Session worked and where it works now, each with its
+/// Worktree's branch where it has one, behind the Marker a settled Activity
+/// wears.
+#[test]
+fn a_move_is_drawn_as_its_own_row_naming_both_directories_and_their_branches() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (_, snapshot) = enter_session(&mut application, &directories.alpha);
+    let alpha = snapshot.session.execution_directory.path.clone();
+
+    hear_recorded_move(
+        &mut application,
+        &snapshot,
+        &directories.beta,
+        ActivityStatus::Completed,
+        (Some("main"), Some("feature")),
+        None,
+    );
+
+    let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
+    let row = format!(
+        "✓ Moved from {} (main) to {} (feature)",
+        alpha.display(),
+        directories.beta.display()
+    );
+    assert!(
+        unwrapped(&rows).contains(&unwrapped(std::slice::from_ref(&row))),
+        "the Move reads {row:?}, however its directories wrap:\n{}",
+        rows.join("\n")
+    );
+    let prompt = rows
+        .iter()
+        .position(|rendered| rendered.contains("Initial Prompt"))
+        .expect("the Turn before the Move is drawn");
+    let moved = rows
+        .iter()
+        .position(|rendered| rendered.contains("Moved from"))
+        .expect("the Move is drawn");
+    assert!(prompt < moved, "the Move follows the Turn before it");
+}
+
+/// A Move that could not apply says so, and why, beneath the Marker a
+/// failure wears.
+#[test]
+fn a_failed_move_says_why_it_could_not_apply() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (_, snapshot) = enter_session(&mut application, &directories.alpha);
+    let alpha = snapshot.session.execution_directory.path.clone();
+
+    hear_recorded_move(
+        &mut application,
+        &snapshot,
+        &directories.beta,
+        ActivityStatus::Failed,
+        (None, None),
+        Some("the destination no longer exists"),
+    );
+
+    let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
+    let row = format!(
+        "× Move from {} to {} failed: the destination no longer exists",
+        alpha.display(),
+        directories.beta.display()
+    );
+    assert!(
+        unwrapped(&rows).contains(&unwrapped(std::slice::from_ref(&row))),
+        "the failed Move reads {row:?}, however its directories wrap:\n{}",
+        rows.join("\n")
+    );
+}
+
+/// `rows` as one text with every space and line break taken out, so a row
+/// a long directory wraps reads as the one line it says.
+fn unwrapped(rows: &[String]) -> String {
+    rows.iter()
+        .flat_map(|row| row.chars())
+        .filter(|character| !character.is_whitespace())
+        .collect()
 }

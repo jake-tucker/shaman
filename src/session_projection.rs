@@ -1339,16 +1339,22 @@ impl<'a> Validation<'a> {
     /// holds, that it is new, and that it arrives in the initial state of its
     /// kind.
     fn validate_added_activity(&self, activity: &Activity) -> Result<()> {
-        let Some(turn) = self
-            .turns
-            .position(|turn| turn.id == activity.turn_id())
-            .map(|index| self.turns.entity(index))
-        else {
-            bail!("Session update referenced an unknown Turn");
+        // A Move belongs to no Turn; every other Activity to one the
+        // Session holds.
+        let turn = match activity.turn_id() {
+            None => None,
+            Some(turn_id) => match self
+                .turns
+                .position(|turn| turn.id == turn_id)
+                .map(|index| self.turns.entity(index))
+            {
+                Some(turn) => Some(turn),
+                None => bail!("Session update referenced an unknown Turn"),
+            },
         };
         // Whether a Compaction was manual is read from the Turn that
         // holds it (ADR 0041), so the two never disagree.
-        if let Activity::Compaction { trigger, .. } = activity
+        if let (Activity::Compaction { trigger, .. }, Some(turn)) = (activity, turn)
             && (*trigger == CompactionTrigger::Manual) != turn.compaction_requested
         {
             bail!("Session update added a Compaction its Turn says the other kind of");
@@ -1682,9 +1688,10 @@ impl From<&Activity> for ActivityStanding {
                 after_measured: after_tokens.is_some(),
             },
             Activity::Subsession { .. } => Self::Subsession,
-            Activity::Status { .. } | Activity::Error { .. } | Activity::WatchOutcome { .. } => {
-                Self::Other
-            }
+            Activity::Status { .. }
+            | Activity::Error { .. }
+            | Activity::WatchOutcome { .. }
+            | Activity::Move { .. } => Self::Other,
         }
     }
 }

@@ -95,7 +95,7 @@ fn head_of_turn(snapshot: &SessionSnapshot, turn_id: TurnId) -> Option<Transcrip
         TranscriptItem::Activity { activity_id } => snapshot
             .activities
             .iter()
-            .any(|activity| activity.id() == *activity_id && activity.turn_id() == turn_id),
+            .any(|activity| activity.id() == *activity_id && activity.turn_id() == Some(turn_id)),
     })
 }
 
@@ -105,7 +105,7 @@ fn first_activity_of_turn(snapshot: &SessionSnapshot, turn_id: TurnId) -> Option
         TranscriptItem::Activity { activity_id } => snapshot
             .activities
             .iter()
-            .find(|activity| activity.id() == *activity_id && activity.turn_id() == turn_id),
+            .find(|activity| activity.id() == *activity_id && activity.turn_id() == Some(turn_id)),
         TranscriptItem::Message { .. } => None,
     })
 }
@@ -227,7 +227,7 @@ async fn a_watch_waking_an_idle_session_heads_the_continuation_it_begins() {
     assert!(
         !watch_outcomes(&woken)
             .iter()
-            .any(|activity| activity.turn_id() == woken.turns[0].id),
+            .any(|activity| activity.turn_id() == Some(woken.turns[0].id)),
         "the settled Turn accepts no Watch Outcome (ADR 0015)"
     );
     fixture.server.shutdown().await.expect("shut down server");
@@ -496,7 +496,7 @@ async fn a_watch_owned_by_a_working_subagent_records_its_outcome_in_the_subagent
     assert_eq!(outcomes.len(), 1, "{outcomes:?}");
     assert_eq!(
         outcomes[0].turn_id(),
-        child.turns[0].id,
+        Some(child.turns[0].id),
         "the outcome lands in the Turn the Subagent is working in"
     );
     fixture.server.shutdown().await.expect("shut down server");

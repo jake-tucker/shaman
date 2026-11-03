@@ -151,9 +151,30 @@ impl SessionOperations {
         if resolved.execution_directory.is_none() {
             return Err(MoveRefusal::BareRepository);
         }
+        // The Move's record names the branch of the Worktree the Session
+        // leaves, which the destination's reading holds where both lie in
+        // one Repository; another Repository's is read where it stands.
+        let session = self
+            .sessions
+            .session(session_id)
+            .ok_or(MoveRefusal::SessionNotFound)?;
+        let left = match &session.checkout {
+            Some(checkout)
+                if !resolved
+                    .checkouts
+                    .iter()
+                    .any(|reading| reading.association.id == checkout.id) =>
+            {
+                self.source_control
+                    .resolve(&session.execution_directory.path, Some(&session.workspace))
+                    .await
+                    .checkouts
+            }
+            _ => Vec::new(),
+        };
         let applied = self
             .sessions
-            .move_to(session_id, resolved)
+            .move_to(session_id, resolved, left)
             .map_err(|error| {
                 if let MoveSessionError::Storage(error) = &error {
                     tracing::warn!(%session_id, "a Move was not stored: {error:#}");

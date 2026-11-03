@@ -150,7 +150,9 @@ fn session_with_foldable_command(
 ) -> Application {
     let (mut application, mut snapshot) = session_with_width(workspace, content_width);
     let activity_id = snapshot.activities[0].id();
-    let turn_id = snapshot.activities[0].turn_id();
+    let turn_id = snapshot.activities[0]
+        .turn_id()
+        .expect("the fixture's Activity belongs to a Turn");
     snapshot.session.status = SessionStatus::Active;
     snapshot.turns[0].status = TurnStatus::Active;
     snapshot.turns[0].settled_at = None;

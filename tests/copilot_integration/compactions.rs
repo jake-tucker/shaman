@@ -3076,7 +3076,7 @@ async fn an_answered_compaction_whose_reports_never_come_settles_once_overdue_an
     assert!(
         compactions(&refused)
             .iter()
-            .all(|compaction| compaction.turn_id() != refused.turns[2].id),
+            .all(|compaction| compaction.turn_id() != Some(refused.turns[2].id)),
         "{:?}",
         refused.activities
     );

@@ -1378,7 +1378,7 @@ async fn a_requested_compaction_is_recorded_and_priced_under_the_model_codex_com
         compacted
             .activities
             .iter()
-            .filter(|activity| activity.turn_id() == turn.id)
+            .filter(|activity| activity.turn_id() == Some(turn.id))
             .all(|activity| matches!(activity, Activity::Compaction { .. })),
         "the Compaction is the Turn's only content: {:?}",
         compacted.activities

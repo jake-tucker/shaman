@@ -256,7 +256,9 @@ fn agent_output_turn_id(
             .find(|message| message.id == *message_id && message.role == MessageRole::Agent)
             .map(|message| message.turn_id)
             .ok_or_else(|| anyhow!("Agent output referenced an unknown Agent Message")),
-        SessionChange::ActivityAdded { activity } => Ok(activity.turn_id()),
+        SessionChange::ActivityAdded { activity } => activity
+            .turn_id()
+            .ok_or_else(|| anyhow!("Agent output added an Activity of no Turn")),
         SessionChange::DecisionAccepted { activity_id }
         | SessionChange::ApprovalSettled { activity_id, .. }
         | SessionChange::ApprovalFollowUpFailed { activity_id, .. }
@@ -279,7 +281,7 @@ fn agent_output_turn_id(
             .activities
             .iter()
             .find(|activity| activity.id() == *activity_id)
-            .map(Activity::turn_id)
+            .and_then(Activity::turn_id)
             .ok_or_else(|| anyhow!("Agent output referenced an unknown Activity")),
         _ => Err(anyhow!("Session change is not Agent output")),
     }

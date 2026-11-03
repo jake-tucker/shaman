@@ -3586,9 +3586,10 @@ async fn run_provider_session(
                 _ = shutdown.wait() => break 'actor,
                 loaded = attachments.deliverable(session_id, &delivered.prompt.attachments) => loaded,
             };
-            // The Reports that waited for this Session's next Turn
-            // stand at the head of its input, ahead of the Prompt.
-            let reports = sessions.take_held_reports(session_id);
+            // The note of a Move its Agent is owed, and the Reports that
+            // waited for this Session's next Turn, stand at the head of its
+            // input, ahead of the Prompt.
+            let reports = sessions.take_turn_head(session_id);
             let (turn_id, input) =
                 provider_turn_start(delivered, delivered_attachments, posture, reports.clone());
             let started = tokio::select! {
@@ -4911,9 +4912,10 @@ async fn begin_delegated_turn(
             .filter(|update| update.value == posture)
     });
     let provider_session = connected.session.clone();
-    // The Reports that waited for this Session's next Turn stand at
-    // the head of its input, ahead of the Delegation.
-    let reports = sessions.take_held_reports(session_id);
+    // The note of a Move its Agent is owed, and the Reports that waited
+    // for this Session's next Turn, stand at the head of its input, ahead
+    // of the Delegation.
+    let reports = sessions.take_turn_head(session_id);
     let started = tokio::select! {
         biased;
         _ = shutdown.wait() => return DelegatedTurnStart::Stopping,
@@ -7552,7 +7554,7 @@ running 1 test",
                 && woken
                     .activities
                     .iter()
-                    .all(|activity| activity.turn_id() != continuation.id),
+                    .all(|activity| activity.turn_id() != Some(continuation.id)),
             "the Report stands nowhere in its Transcript"
         );
         assert_eq!(

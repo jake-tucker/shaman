@@ -212,7 +212,7 @@ User-visible content in a session attributed to the user or agent — or, for a 
 _Avoid_: Event, item
 
 **Activity**:
-User-visible progress, operational detail, or failure associated with a turn but not authored by the user or agent.
+User-visible progress, operational detail, or failure associated with a turn but not authored by the user or agent. A Move's Activity is the one that belongs to no Turn, since a Move happens between them.
 _Avoid_: Message, notification
 
 **Tool**:

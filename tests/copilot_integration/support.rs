@@ -1035,7 +1035,10 @@ pub fn transcript_outline(snapshot: &SessionSnapshot, parent: Option<SessionId>)
                     Activity::Reasoning { .. } => "reasoning".to_owned(),
                     other => format!("{other:?}"),
                 };
-                format!("turn {}: {what}", turn(activity.turn_id()))
+                format!(
+                    "turn {}: {what}",
+                    turn(activity.turn_id().expect("the Activity belongs to a Turn"))
+                )
             }
         })
         .collect()

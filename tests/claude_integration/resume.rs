@@ -304,6 +304,13 @@ async fn a_moved_sessions_next_turn_resumes_the_conversation_in_its_new_director
     let destination = session._workspace.path().join("moved here");
     std::fs::create_dir(&destination).unwrap();
     let destination = suru::paths::canonical(destination).unwrap();
+    let origin = session
+        .client
+        .read_session(session.session_id)
+        .await
+        .expect("read the Session")
+        .session
+        .execution_directory;
 
     session
         .client
@@ -335,8 +342,40 @@ async fn a_moved_sessions_next_turn_resumes_the_conversation_in_its_new_director
         destination,
         "the resumed child works where the Session Moved to"
     );
+    let note = suru::provider::MoveNote {
+        from: origin,
+        to: suru::protocol::ExecutionDirectory { path: destination },
+    };
+    assert_eq!(
+        user_texts_sent(&claude).last().map(String::as_str),
+        Some(format!("{note}\n\nCarry on where the work is now").as_str()),
+        "the CLI is told of the Move ahead of the Prompt, in the one user message it begins with"
+    );
+    assert_eq!(
+        settled.messages[2].content, "Carry on where the work is now",
+        "while the Transcript shows the user's words alone"
+    );
 
     session.shutdown().await;
+}
+
+/// The text of every user message the runtime wrote to the CLI's stdin, in the order it arrived.
+fn user_texts_sent(claude: &ScriptedClaude) -> Vec<String> {
+    claude
+        .requests()
+        .into_iter()
+        .filter(|request| request["type"] == "user")
+        .map(|request| match &request["message"]["content"] {
+            serde_json::Value::String(text) => text.clone(),
+            content => content
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|block| block["text"].as_str())
+                .collect::<Vec<_>>()
+                .join(""),
+        })
+        .collect()
 }
 
 #[tokio::test]

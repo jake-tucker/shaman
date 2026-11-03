@@ -182,7 +182,7 @@ async fn a_claude_agent_spawns_a_codex_subagent_through_the_broker_and_answers_i
     );
     assert_eq!(
         the_subagent_row(&answered).turn_id(),
-        prompt_turn.id,
+        Some(prompt_turn.id),
         "the row stays in the Turn that spawned the Subagent"
     );
     assert_eq!(
@@ -987,7 +987,7 @@ fn describe(snapshot: &SessionSnapshot) -> String {
         for activity in snapshot
             .activities
             .iter()
-            .filter(|activity| activity.turn_id() == turn.id)
+            .filter(|activity| activity.turn_id() == Some(turn.id))
         {
             lines.push(format!("    {}", brief(&format!("{activity:?}"))));
         }

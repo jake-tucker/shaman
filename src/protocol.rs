@@ -799,7 +799,7 @@ pub struct WorkspaceDescription {
 /// The exact directory an Agent executes in, interpreted only by its owning Server.
 /// It is independent of Workspace grouping, set as the Session begins, and
 /// changed only by a Move.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionDirectory {
     pub path: PathBuf,
@@ -2922,6 +2922,35 @@ pub enum Activity {
         /// What the Sidekick first asked of it: its first Prompt's text.
         prompt: String,
     },
+    /// One Move of the Session: its Execution Directory changing from one
+    /// directory to another (ADR 0059), recorded so a reader later knows
+    /// where the Tool Calls before it touched files. It belongs to no Turn,
+    /// since a Move happens between them. It settles `Completed` once the
+    /// Move applies, and `Failed`, with why, where it cannot; a Move pending
+    /// until a Working Session settles stands `Active` until then.
+    Move {
+        id: ActivityId,
+        status: ActivityStatus,
+        /// Where the Session worked before the Move.
+        from: MoveLocation,
+        /// Where the Move takes it.
+        to: MoveLocation,
+        /// Why a failed Move could not apply, in Suru's words. Only a failed
+        /// Move carries one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+}
+
+/// One end of a Move: an Execution Directory, and the branch checked out in
+/// the Worktree it lies in, where it lies in one on a branch when the Move
+/// is recorded.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoveLocation {
+    pub execution_directory: ExecutionDirectory,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
 }
 
 impl Activity {
@@ -2938,11 +2967,14 @@ impl Activity {
             | Self::Subagent { id, .. }
             | Self::WatchOutcome { id, .. }
             | Self::Compaction { id, .. }
-            | Self::Subsession { id, .. } => *id,
+            | Self::Subsession { id, .. }
+            | Self::Move { id, .. } => *id,
         }
     }
 
-    pub const fn turn_id(&self) -> TurnId {
+    /// The Turn this Activity was recorded in, or `None` for a
+    /// [`Self::Move`], which happens between Turns.
+    pub const fn turn_id(&self) -> Option<TurnId> {
         match self {
             Self::Approval { turn_id, .. }
             | Self::Questionnaire { turn_id, .. }
@@ -2955,7 +2987,8 @@ impl Activity {
             | Self::Subagent { turn_id, .. }
             | Self::WatchOutcome { turn_id, .. }
             | Self::Compaction { turn_id, .. }
-            | Self::Subsession { turn_id, .. } => *turn_id,
+            | Self::Subsession { turn_id, .. } => Some(*turn_id),
+            Self::Move { .. } => None,
         }
     }
 
@@ -2999,7 +3032,8 @@ impl Activity {
             | Self::ToolCall { status, .. }
             | Self::Reasoning { status, .. }
             | Self::Subagent { status, .. }
-            | Self::Compaction { status, .. } => Some(*status),
+            | Self::Compaction { status, .. }
+            | Self::Move { status, .. } => Some(*status),
             Self::WatchOutcome { status, .. } => Some(match status {
                 WatchOutcomeStatus::Completed => ActivityStatus::Completed,
                 WatchOutcomeStatus::Failed => ActivityStatus::Failed,
@@ -4752,7 +4786,7 @@ impl SessionSnapshot {
             .iter()
             .any(|turn| turn.id == turn_id && turn.status == TurnStatus::Active);
         let own_work = self.activities.iter().any(|activity| {
-            activity.turn_id() == turn_id
+            activity.turn_id() == Some(turn_id)
                 && !matches!(activity, Activity::Subagent { .. })
                 && !activity.is_wait_on_subagents()
                 && activity.status() == Some(ActivityStatus::Active)

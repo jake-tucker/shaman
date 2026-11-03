@@ -365,7 +365,8 @@ pub(super) struct MessageRow {
 pub(super) struct ActivityRow {
     id: String,
     session_id: String,
-    turn_id: String,
+    /// Absent for a Move, which belongs to no Turn.
+    turn_id: Option<String>,
     row_order: i64,
     transcript_order: i64,
     payload: String,
@@ -506,12 +507,13 @@ impl StoredRows {
             snapshot,
             subagent_identity,
             brokered,
+            moved_from,
         } = *session;
         let whole = unsaved.is_whole();
         let stored = unsaved.stored_counts();
         let session_id = snapshot.session.id;
         let id = session_id.to_string();
-        let session = SessionRow::from_parts(summary, snapshot.revision, brokered)?;
+        let session = SessionRow::from_parts(summary, snapshot.revision, brokered, moved_from)?;
         let new_prompts = unstored(&snapshot.prompts, stored.prompts);
         let new_turns = unstored(&snapshot.turns, stored.turns);
         let new_messages = unstored(&snapshot.messages, stored.messages);
@@ -682,6 +684,7 @@ impl SessionRow {
         summary: &SessionSummary,
         revision: SessionRevision,
         brokered: bool,
+        moved_from: Option<&crate::protocol::ExecutionDirectory>,
     ) -> Result<Self, StorageError> {
         let session_id = summary.session.id;
         Ok(Self {
@@ -699,7 +702,7 @@ impl SessionRow {
                 .transpose()?,
             created_at: u64_to_i64(session_id, "created_at", summary.created_at.0)?,
             updated_at: u64_to_i64(session_id, "updated_at", summary.updated_at.0)?,
-            workspace: Self::session_metadata_payload(&summary.session)?,
+            workspace: Self::session_metadata_payload(&summary.session, moved_from)?,
             agent_selection: summary
                 .session
                 .agent_selection
@@ -734,7 +737,10 @@ impl SessionRow {
         })
     }
 
-    pub(super) fn session_metadata_payload(session: &Session) -> Result<String, StorageError> {
+    pub(super) fn session_metadata_payload(
+        session: &Session,
+        moved_from: Option<&crate::protocol::ExecutionDirectory>,
+    ) -> Result<String, StorageError> {
         encode(
             session.id,
             "Session metadata",
@@ -743,8 +749,18 @@ impl SessionRow {
                 execution_directory: session.execution_directory.clone(),
                 checkout: session.checkout.clone(),
                 approval_posture: session.approval_posture,
+                moved_from: moved_from.cloned(),
             },
         )
+    }
+
+    /// Where the row's Session's Agent last worked, while it is owed the
+    /// note of a Move; `None` for one owed none, or whose metadata cannot be
+    /// read, which the Session's own reading reports.
+    pub(super) fn moved_from(&self) -> Option<crate::protocol::ExecutionDirectory> {
+        serde_json::from_str::<StoredSessionMetadata>(&self.workspace)
+            .ok()
+            .and_then(|metadata| metadata.moved_from)
     }
 
     pub(super) fn into_summary_and_revision(
@@ -1066,7 +1082,7 @@ impl ActivityRow {
         Ok(Self {
             id: activity.id().to_string(),
             session_id: position.row.stored_session_id.to_owned(),
-            turn_id: activity.turn_id().to_string(),
+            turn_id: activity.turn_id().map(|turn_id| turn_id.to_string()),
             row_order: usize_to_i64(
                 position.row.session_id,
                 "Activity row order",
@@ -1097,10 +1113,21 @@ impl ActivityRow {
     pub(super) fn into_activity(self) -> Result<(Activity, i64), StorageError> {
         let session_id = self.session_id;
         let id = parse_id(&self.id, "Activity ID", ActivityId::from_uuid)?;
-        let turn_id = parse_id(&self.turn_id, "Activity Turn ID", TurnId::from_uuid)?;
+        let turn_id = self
+            .turn_id
+            .as_deref()
+            .map(|turn_id| parse_id(turn_id, "Activity Turn ID", TurnId::from_uuid))
+            .transpose()?;
         let payload: StoredActivityPayload =
             decode(&session_id, "Activity payload", &self.payload)?;
-        Ok((payload.into_activity(id, turn_id), self.transcript_order))
+        let activity = payload.into_activity(id, turn_id).ok_or_else(|| {
+            invalid_session(
+                &session_id,
+                "Activity Turn ID",
+                "an Activity of its kind belongs to a Turn",
+            )
+        })?;
+        Ok((activity, self.transcript_order))
     }
 }
 
@@ -1125,6 +1152,10 @@ struct StoredSessionMetadata {
     checkout: Option<crate::protocol::CheckoutAssociation>,
     execution_directory: crate::protocol::ExecutionDirectory,
     approval_posture: Option<crate::protocol::SessionApprovalPosture>,
+    /// Where the Session's Agent last worked, while the Session has Moved
+    /// since and its Agent has yet to be told (ADR 0059).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    moved_from: Option<crate::protocol::ExecutionDirectory>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -1495,11 +1526,36 @@ enum StoredActivityPayload<'a> {
         title: Cow<'a, str>,
         prompt: Cow<'a, str>,
     },
+    Move {
+        status: ActivityStatus,
+        from: Cow<'a, crate::protocol::MoveLocation>,
+        to: Cow<'a, crate::protocol::MoveLocation>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<Cow<'a, str>>,
+    },
 }
 
 impl StoredActivityPayload<'_> {
-    fn into_activity(self, id: ActivityId, turn_id: TurnId) -> Activity {
-        match self {
+    /// The Activity this payload stores, in `turn_id` — `None` for one of
+    /// a kind that belongs to a Turn but was stored with none.
+    fn into_activity(self, id: ActivityId, turn_id: Option<TurnId>) -> Option<Activity> {
+        if let Self::Move {
+            status,
+            from,
+            to,
+            error,
+        } = self
+        {
+            return Some(Activity::Move {
+                id,
+                status,
+                from: from.into_owned(),
+                to: to.into_owned(),
+                error: owned(error),
+            });
+        }
+        let turn_id = turn_id?;
+        Some(match self {
             Self::Approval {
                 approval,
                 tool_activity_id,
@@ -1673,7 +1729,8 @@ impl StoredActivityPayload<'_> {
                 title: title.into_owned(),
                 prompt: prompt.into_owned(),
             },
-        }
+            Self::Move { .. } => unreachable!("a Move is read before any Turn is asked for"),
+        })
     }
 }
 
@@ -1839,6 +1896,18 @@ impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
                 origin_fingerprint: borrowed(origin_fingerprint),
                 title: Cow::Borrowed(title),
                 prompt: Cow::Borrowed(prompt),
+            },
+            Activity::Move {
+                status,
+                from,
+                to,
+                error,
+                ..
+            } => Self::Move {
+                status: *status,
+                from: Cow::Borrowed(from),
+                to: Cow::Borrowed(to),
+                error: borrowed(error),
             },
         }
     }

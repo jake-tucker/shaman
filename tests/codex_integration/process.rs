@@ -701,6 +701,40 @@ async fn a_moved_sessions_next_turn_resumes_its_thread_in_the_new_directory() {
         destination_path.to_str(),
         "in the directory the Session Moved to"
     );
+    let note = suru::provider::MoveNote {
+        from: suru::protocol::ExecutionDirectory {
+            path: suru::paths::canonical(origin.path()).unwrap(),
+        },
+        to: suru::protocol::ExecutionDirectory {
+            path: destination_path.clone(),
+        },
+    };
+    let started = codex
+        .requests()
+        .into_iter()
+        .rfind(|request| request["method"] == "turn/start")
+        .expect("the next Turn starts on the resumed Thread");
+    assert_eq!(
+        started["params"]["input"],
+        serde_json::json!([
+            {"type": "text", "text": note.to_string()},
+            {"type": "text", "text": "Carry on where the work is now"},
+        ]),
+        "the Thread is told of the Move ahead of the Prompt"
+    );
+    assert_eq!(
+        settled
+            .messages
+            .iter()
+            .filter(|message| message.role == MessageRole::User)
+            .map(|message| message.content.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "Begin where the work first was",
+            "Carry on where the work is now"
+        ],
+        "while the Transcript shows the user's words alone"
+    );
     drop(client);
     server.shutdown().await.unwrap();
 }

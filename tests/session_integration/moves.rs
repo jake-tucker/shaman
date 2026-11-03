@@ -16,14 +16,17 @@ use serde_json::json;
 use suru::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
-        AdmitPromptRequest, AgentId, AgentIdentity, CheckoutKind, CreateSessionRequest,
-        ExecutionDirectory, InitialPrompt, MoveDestination, MoveOutcome, MoveSessionRequest,
-        PromptDelivery, PromptId, ProviderId, SessionCatalogChange, SessionChange, SessionError,
-        SessionErrorCode, SessionId, SessionSnapshot, SessionSummary, SkillCatalog,
-        SkillCatalogCapabilities, SkillCatalogStatus, SkillDescriptor, SkillId, SkillInvocation,
-        SkillPromptDelivery, TextSpan,
+        Activity, ActivityStatus, AdmitPromptRequest, AgentId, AgentIdentity, CheckoutKind,
+        CreateSessionRequest, ExecutionDirectory, InitialPrompt, MessageRole, MoveDestination,
+        MoveLocation, MoveOutcome, MoveSessionRequest, PromptDelivery, PromptId, ProviderId,
+        SessionCatalogChange, SessionChange, SessionError, SessionErrorCode, SessionId,
+        SessionSnapshot, SessionSummary, SkillCatalog, SkillCatalogCapabilities,
+        SkillCatalogStatus, SkillDescriptor, SkillId, SkillInvocation, SkillPromptDelivery,
+        TextSpan, TranscriptItem,
     },
-    provider::{ProviderEvent, ProviderResumeState, ProviderSubagentId, ProviderWatchId},
+    provider::{
+        MoveNote, ProviderEvent, ProviderResumeState, ProviderSubagentId, ProviderWatchId, Report,
+    },
     server::{self, RunningServer, ServerConfig, ServerTimings},
 };
 use tokio::time::timeout;
@@ -211,6 +214,124 @@ impl IdleSession {
         drop(self.client);
         self.server.shutdown().await.expect("shut down server");
     }
+
+    /// The same Session after its Server stops and starts again on the same
+    /// state, read by a Client of the new Server.
+    async fn restarted(self) -> Self {
+        let Self {
+            state_dir,
+            home,
+            channel,
+            runtime,
+            server,
+            client,
+            provider,
+            provider_session,
+            session_id,
+            origin,
+        } = self;
+        drop(client);
+        server.shutdown().await.expect("shut down server");
+        let server = spawn(state_dir.path(), home.path(), channel, &runtime).await;
+        let client = connected_client(state_dir.path(), channel).await;
+        Self {
+            state_dir,
+            home,
+            channel,
+            runtime,
+            server,
+            client,
+            provider,
+            provider_session,
+            session_id,
+            origin,
+        }
+    }
+
+    /// The Turn the next Prompt begins, `text`, as the Provider started
+    /// afresh for it is handed it.
+    async fn next_turn_begun_by(&mut self, text: &str) -> crate::support::provider::TurnStart {
+        self.admit(text).await;
+        let start = timeout(PROGRESS_DEADLINE, self.provider.next_start())
+            .await
+            .expect("the next Turn starts the Provider again");
+        self.provider_session = start.succeed(identity());
+        timeout(PROGRESS_DEADLINE, self.provider_session.next_turn())
+            .await
+            .expect("the Turn reaches the Provider")
+    }
+
+    /// Settles the Turn the Provider is running, and waits until the
+    /// Session reads as idle.
+    async fn settle(&self) -> SessionSnapshot {
+        self.provider_session
+            .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+            .await;
+        self.session_where("the Turn settles", |snapshot| {
+            snapshot.session.working_since.is_none()
+        })
+        .await
+    }
+}
+
+/// One end of a Move, as its record names it.
+fn location(directory: &Path, branch: Option<&str>) -> MoveLocation {
+    MoveLocation {
+        execution_directory: ExecutionDirectory {
+            path: directory.to_owned(),
+        },
+        branch: branch.map(str::to_owned),
+    }
+}
+
+/// The record of an applied Move between `from` and `to`: settled, in no
+/// Turn, with nothing to say of a failure.
+fn applied(from: MoveLocation, to: MoveLocation) -> (ActivityStatus, MoveLocation, MoveLocation) {
+    (ActivityStatus::Completed, from, to)
+}
+
+/// Every Move the Session's Transcript records, in its order, read as
+/// [`applied`] states one — after checking each belongs to no Turn and
+/// says nothing of a failure.
+fn moves_recorded(snapshot: &SessionSnapshot) -> Vec<(ActivityStatus, MoveLocation, MoveLocation)> {
+    snapshot
+        .transcript
+        .iter()
+        .filter_map(|item| match item {
+            TranscriptItem::Activity { activity_id } => snapshot
+                .activities
+                .iter()
+                .find(|activity| activity.id() == *activity_id),
+            TranscriptItem::Message { .. } => None,
+        })
+        .filter_map(|activity| match activity {
+            Activity::Move {
+                status,
+                from,
+                to,
+                error,
+                ..
+            } => {
+                assert_eq!(activity.turn_id(), None, "a Move belongs to no Turn");
+                assert_eq!(error, &None, "an applied Move says nothing of a failure");
+                Some((*status, from.clone(), to.clone()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The note the Agent is told of a Move from `from` to `to`.
+fn note(from: &Path, to: &Path) -> Report {
+    MoveNote {
+        from: ExecutionDirectory {
+            path: from.to_owned(),
+        },
+        to: ExecutionDirectory {
+            path: to.to_owned(),
+        },
+    }
+    .into()
 }
 
 /// A second Client following `session_id`, its stream past the snapshot
@@ -305,7 +426,7 @@ async fn an_idle_session_moves_for_every_client_and_its_next_turn_resumes_there(
             &after.prompts,
             &after.turns,
             &after.messages,
-            &after.activities,
+            &after.activities[..before.activities.len()],
             &after.session.agent_selection,
             &after.session.approval_posture,
         ),
@@ -316,11 +437,11 @@ async fn an_idle_session_moves_for_every_client_and_its_next_turn_resumes_there(
             &before.prompts,
             &before.turns,
             &before.messages,
-            &before.activities,
+            &before.activities[..],
             &before.session.agent_selection,
             &before.session.approval_posture,
         ),
-        "a Move changes where the Session works and nothing else"
+        "a Move changes where the Session works, records itself, and changes nothing else"
     );
     let heard = next_move_heard(&mut stream).await;
     assert_eq!(
@@ -594,11 +715,21 @@ async fn a_move_to_where_the_session_works_changes_nothing() {
         .expect("a Move to where the Session works is taken");
 
     assert_eq!(summary.session.execution_directory.path, fixture.origin);
-    assert_eq!(fixture.read().await.revision, before.revision);
+    assert_eq!(
+        fixture.read().await.revision,
+        before.revision,
+        "nor records a Move"
+    );
     assert!(
         !fixture.provider_session.was_shut_down(),
         "nothing stops the Provider of a Session that went nowhere"
     );
+    fixture.admit("Carry on where the work was").await;
+    let turn = timeout(PROGRESS_DEADLINE, fixture.provider_session.next_turn())
+        .await
+        .expect("the next Turn reaches the Provider still running");
+    assert_eq!(turn.reports(), [], "and its Agent is told of no Move");
+    assert_eq!(turn.prompt(), "Carry on where the work was");
     fixture.shutdown().await;
 }
 
@@ -842,5 +973,245 @@ async fn a_sidekicks_session_never_moves_nor_does_any_session_move_into_its_work
     let refused = refusal(&error);
     assert_eq!(refused.code, SessionErrorCode::SidekickWorkspaceSession);
     assert!(refused.message.contains("Sidekick"), "{}", refused.message);
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_move_is_recorded_in_the_transcript_by_an_activity_of_no_turn() {
+    let fixture = IdleSession::begin("move-record-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let (_observer, mut stream) = following(&fixture).await;
+
+    fixture
+        .move_to(&destination)
+        .await
+        .expect("Move the idle Session");
+
+    let snapshot = fixture.read().await;
+    assert_eq!(
+        moves_recorded(&snapshot),
+        [applied(
+            location(&fixture.origin, None),
+            location(&destination, None)
+        )],
+        "the Move stands in the Transcript, from where the Session worked to where it works now"
+    );
+    assert!(
+        matches!(snapshot.transcript.last(), Some(TranscriptItem::Activity { activity_id })
+            if matches!(snapshot.activities.last(), Some(Activity::Move { id, .. }) if id == activity_id)),
+        "as the latest entry, after the Turn before it"
+    );
+    let heard = timeout(PROGRESS_DEADLINE, async {
+        loop {
+            let event = stream.next().await.expect("the stream stays open");
+            if let Ok(SessionEvent::Updated(update)) = event
+                && update
+                    .changes
+                    .iter()
+                    .any(|change| matches!(change, SessionChange::Moved { .. }))
+            {
+                return update;
+            }
+        }
+    })
+    .await
+    .expect("a second Client hears the Move");
+    assert!(
+        heard.changes.iter().any(|change| matches!(
+            change,
+            SessionChange::ActivityAdded {
+                activity: Activity::Move { .. }
+            }
+        )),
+        "a second Client hears the record in the revision that Moves the Session: {:?}",
+        heard.changes
+    );
+
+    let fixture = fixture.restarted().await;
+    assert_eq!(
+        moves_recorded(&fixture.read().await),
+        [applied(
+            location(&fixture.origin, None),
+            location(&destination, None)
+        )],
+        "the record outlives a restart"
+    );
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_moves_record_names_the_branch_of_each_worktree_it_leaves_and_enters() {
+    let fixture = IdleSession::begin("move-record-branches-test", "origin").await;
+    let repository = fixture.directory("repository");
+    git(&repository, &["init", "-b", "main"]);
+    git(
+        &repository,
+        &[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "initial",
+        ],
+    );
+    let linked = fixture.home.path().join("linked");
+    git(
+        &repository,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "feature",
+            linked.to_str().expect("a Unicode path"),
+        ],
+    );
+    let linked = canonical(&linked);
+    let elsewhere = fixture.directory("elsewhere");
+
+    fixture
+        .move_to(&repository)
+        .await
+        .expect("Move into the main Worktree");
+    fixture
+        .move_to(&linked)
+        .await
+        .expect("Move into another Worktree of the Repository");
+    fixture
+        .move_to(&elsewhere)
+        .await
+        .expect("Move out of source control");
+
+    assert_eq!(
+        moves_recorded(&fixture.read().await),
+        [
+            applied(
+                location(&fixture.origin, None),
+                location(&repository, Some("main"))
+            ),
+            applied(
+                location(&repository, Some("main")),
+                location(&linked, Some("feature"))
+            ),
+            applied(
+                location(&linked, Some("feature")),
+                location(&elsewhere, None)
+            ),
+        ],
+        "each Worktree is named by its branch, and a directory outside one by itself alone"
+    );
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn the_next_turn_tells_the_agent_of_the_move_ahead_of_its_prompt_and_never_as_the_users_words()
+ {
+    let mut fixture = IdleSession::begin("move-note-test", "origin").await;
+    let destination = fixture.directory("destination");
+    fixture
+        .move_to(&destination)
+        .await
+        .expect("Move the idle Session");
+    timeout(PROGRESS_DEADLINE, fixture.provider_session.next_shutdown())
+        .await
+        .expect("the Provider process the Session left stops");
+
+    let turn = fixture
+        .next_turn_begun_by("Carry on where the work is now")
+        .await;
+
+    assert_eq!(
+        turn.reports(),
+        [note(&fixture.origin, &destination)],
+        "the note of the Move heads the Turn's input"
+    );
+    assert_eq!(
+        turn.prompt(),
+        "Carry on where the work is now",
+        "ahead of the Prompt, which is the user's words alone"
+    );
+    turn.succeed();
+    let settled = fixture.settle().await;
+    assert_eq!(
+        settled
+            .prompts
+            .iter()
+            .map(|prompt| prompt.text.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "Begin where the work first was",
+            "Carry on where the work is now"
+        ],
+        "no Prompt records the note"
+    );
+    assert_eq!(
+        settled
+            .messages
+            .iter()
+            .filter(|message| message.role == MessageRole::User)
+            .map(|message| message.content.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "Begin where the work first was",
+            "Carry on where the work is now"
+        ],
+        "nor does any Message the Transcript shows as the user's"
+    );
+
+    fixture.admit("And once more").await;
+    let turn = timeout(PROGRESS_DEADLINE, fixture.provider_session.next_turn())
+        .await
+        .expect("the Turn after reaches the Provider");
+    assert_eq!(turn.reports(), [], "the Agent is told of the Move once");
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn two_moves_before_the_next_turn_owe_one_note_that_outlives_a_restart() {
+    let fixture = IdleSession::begin("move-note-restart-test", "origin").await;
+    let first = fixture.directory("first");
+    let second = fixture.directory("second");
+    fixture.move_to(&first).await.expect("Move once");
+    fixture.move_to(&second).await.expect("Move again");
+
+    let mut fixture = fixture.restarted().await;
+    let turn = fixture
+        .next_turn_begun_by("Carry on where the work is now")
+        .await;
+
+    assert_eq!(
+        turn.reports(),
+        [note(&fixture.origin, &second)],
+        "one note, from where the Agent last worked to where the Session stands"
+    );
+    assert_eq!(
+        moves_recorded(&fixture.read().await),
+        [
+            applied(location(&fixture.origin, None), location(&first, None)),
+            applied(location(&first, None), location(&second, None)),
+        ],
+        "while the Transcript records each Move"
+    );
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_move_back_to_where_the_agent_last_worked_owes_it_no_note() {
+    let mut fixture = IdleSession::begin("move-note-back-test", "origin").await;
+    let away = fixture.directory("away");
+    let origin = fixture.origin.clone();
+    fixture.move_to(&away).await.expect("Move away");
+    fixture.move_to(&origin).await.expect("Move back");
+
+    let turn = fixture
+        .next_turn_begun_by("Carry on where the work was")
+        .await;
+
+    assert_eq!(
+        turn.reports(),
+        [],
+        "the Agent works where it last worked, so nothing is news to it"
+    );
+    assert_eq!(moves_recorded(&fixture.read().await).len(), 2);
     fixture.shutdown().await;
 }

@@ -906,6 +906,7 @@ pub(super) fn persisted(workspace: &Path, parent: Option<SessionId>) -> Persiste
         resume_states: HashMap::new(),
         subagent_identity: None,
         brokered: false,
+        moved_from: None,
     }
 }
 

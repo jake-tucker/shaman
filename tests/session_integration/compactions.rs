@@ -1115,7 +1115,7 @@ async fn a_compaction_request_begins_a_turn_of_its_own_that_settles_as_its_manua
             .filter(|item| match item {
                 TranscriptItem::Activity { activity_id } =>
                     settled.activities.iter().any(|activity| {
-                        activity.id() == *activity_id && activity.turn_id() == compaction_turn
+                        activity.id() == *activity_id && activity.turn_id() == Some(compaction_turn)
                     }),
                 TranscriptItem::Message { message_id } => settled
                     .messages
@@ -2547,7 +2547,7 @@ async fn a_requested_compaction_is_recorded_under_the_selection_its_provider_com
         settled
             .activities
             .iter()
-            .filter(|activity| activity.turn_id() == turn_id)
+            .filter(|activity| activity.turn_id() == Some(turn_id))
             .all(|activity| matches!(activity, Activity::Compaction { .. })),
         "nothing stands beside the Compaction to say so: {:?}",
         settled.activities

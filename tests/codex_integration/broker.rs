@@ -1627,7 +1627,7 @@ async fn a_report_to_a_settled_native_subagent_leaves_as_a_turn_start_on_its_thr
         woken
             .activities
             .iter()
-            .all(|activity| activity.turn_id() != woken.turns[1].id),
+            .all(|activity| activity.turn_id() != Some(woken.turns[1].id)),
         "no row stands for the Report"
     );
     let parent = native

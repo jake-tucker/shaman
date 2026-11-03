@@ -3968,7 +3968,8 @@ impl TuiState {
             .activities
             .iter()
             .filter(|activity| {
-                activity.turn_id() == turn_id && activity.status() == Some(ActivityStatus::Active)
+                activity.turn_id() == Some(turn_id)
+                    && activity.status() == Some(ActivityStatus::Active)
             })
             .map(|activity| (activity.id(), streams_live_output(activity)))
             .collect::<Vec<_>>();

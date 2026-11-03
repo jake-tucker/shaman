@@ -17,8 +17,14 @@
 //! What runs the Session's conversation follows on its own: a Provider
 //! connection opened in another directory than the Session's own is let go
 //! of before its next Turn begins (see `ProviderOrchestrator::session_moved`).
+//! The Move is recorded in the Transcript by an Activity of its own, in the
+//! revision that moves the Session, and its Agent is owed a note of it at
+//! the head of its next Turn (see [`SessionStore::take_turn_head`]).
 
-use crate::protocol::{ResolvedWorkspace, SessionId, SessionSummary};
+use crate::protocol::{
+    Activity, ActivityId, ActivityStatus, CheckoutAssociation, CheckoutRevision, CheckoutSummary,
+    ExecutionDirectory, MoveLocation, ResolvedWorkspace, Session, SessionId, SessionSummary,
+};
 use crate::storage::WorkspaceProvenance;
 
 use super::{SessionRecord, SessionStore};
@@ -38,6 +44,54 @@ pub(crate) enum MoveSessionError {
     /// Storage refused the new location, which leaves the Session where it
     /// was.
     Storage(anyhow::Error),
+}
+
+/// Where a Move takes a Session, and what was read of the Worktrees on
+/// either side of it — the destination's Repository, and the Repository the
+/// Session leaves where that is another — which the Move's record names
+/// their branches from.
+pub(super) struct MoveTarget<'a> {
+    pub(super) execution_directory: ExecutionDirectory,
+    pub(super) readings: &'a [CheckoutSummary],
+}
+
+impl MoveTarget<'_> {
+    /// The record of `session` Moving here, into the Worktree `checkout`
+    /// names where it lies in one, settled as applied: its Activity, which
+    /// belongs to no Turn.
+    pub(super) fn activity(
+        &self,
+        session: &Session,
+        checkout: Option<&CheckoutAssociation>,
+    ) -> Activity {
+        Activity::Move {
+            id: ActivityId::new(),
+            status: ActivityStatus::Completed,
+            from: MoveLocation {
+                execution_directory: session.execution_directory.clone(),
+                branch: self.branch(session.checkout.as_ref()),
+            },
+            to: MoveLocation {
+                execution_directory: self.execution_directory.clone(),
+                branch: self.branch(checkout),
+            },
+            error: None,
+        }
+    }
+
+    /// The branch checked out in the Worktree `checkout` names, as the
+    /// readings found it; `None` outside a Worktree, for one on no branch,
+    /// and for one nothing read.
+    fn branch(&self, checkout: Option<&CheckoutAssociation>) -> Option<String> {
+        let checkout = checkout?;
+        self.readings
+            .iter()
+            .find(|reading| reading.association.id == checkout.id)
+            .and_then(|reading| match &reading.revision {
+                Some(CheckoutRevision::Branch { name, .. }) => Some(name.clone()),
+                _ => None,
+            })
+    }
 }
 
 /// What a Move the store took came to.
@@ -62,24 +116,31 @@ impl SessionStore {
     }
 
     /// Moves a Session to work where `destination` was resolved from now on,
-    /// answering whether it Moved and the summary it left standing.
+    /// answering whether it Moved and the summary it left standing. The
+    /// Move's record names the branch of each Worktree it leaves or enters
+    /// as the destination's reading of its Repository, or `left`, a reading
+    /// of the Repository the Session leaves, found it.
     ///
     /// Refused for a native Subagent's Session, and while the Session is
     /// Working; a Monitoring Session is not Working and Moves at once. A
-    /// Move to where the Session already works changes nothing. A Move
-    /// storage refuses changes nothing either: the destination's Workspace
-    /// is entered in the Registry only once the Session stands there.
+    /// Move to where the Session already works changes nothing, and records
+    /// nothing. A Move storage refuses changes nothing either: the
+    /// destination's Workspace is entered in the Registry only once the
+    /// Session stands there.
     pub(crate) fn move_to(
         &self,
         session_id: SessionId,
         destination: ResolvedWorkspace,
+        left: Vec<CheckoutSummary>,
     ) -> Result<MoveApplied, MoveSessionError> {
         let ResolvedWorkspace {
             mut workspace,
             execution_directory,
             checkout,
+            mut checkouts,
             ..
         } = destination;
+        checkouts.extend(left);
         let execution_directory =
             execution_directory.ok_or(MoveSessionError::NoExecutionDirectory)?;
         let mut state = self
@@ -102,7 +163,10 @@ impl SessionStore {
             .relocate(
                 &mut state,
                 session_id,
-                Some(execution_directory.clone()),
+                Some(MoveTarget {
+                    execution_directory: execution_directory.clone(),
+                    readings: &checkouts,
+                }),
                 workspace.clone(),
                 checkout,
             )

@@ -9,7 +9,8 @@
 //! Each test reads what the parent's double was handed, which is what its
 //! Agent would read.
 
-use suru::provider::{Report, SubagentReport, SubagentReportOutcome};
+use suru::protocol::{ExecutionDirectory, MoveDestination, MoveSessionRequest};
+use suru::provider::{MoveNote, Report, SubagentReport, SubagentReportOutcome};
 
 use super::*;
 
@@ -148,7 +149,7 @@ pub(super) fn held_in(snapshot: &SessionSnapshot, turn_id: suru::protocol::TurnI
         + snapshot
             .activities
             .iter()
-            .filter(|activity| activity.turn_id() == turn_id)
+            .filter(|activity| activity.turn_id() == Some(turn_id))
             .count()
 }
 
@@ -427,6 +428,98 @@ async fn a_report_whose_parent_has_no_provider_process_waits_for_the_head_of_the
         1,
         "which holds the user's Message and nothing for the Report"
     );
+
+    hosted.server.shutdown().await.expect("shut down server");
+}
+
+#[tokio::test]
+async fn a_moved_parent_is_told_of_its_move_ahead_of_the_report_waiting_for_its_next_turn() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut delegating = delegating(state_dir.path(), "broker-report-moved", None).await;
+    let descriptor = delegating.descriptor.clone();
+    let child_id = delegating
+        .client
+        .spawn_subagent(researcher("codex", "gpt-5.5", json!({})))
+        .await;
+    let (child_provider, _) =
+        run_child(&mut delegating.hosted.codex, codex_selection("high")).await;
+    settle_callers_turn(
+        &delegating,
+        "the caller's Turn settles while its Subagent works",
+    )
+    .await;
+    let Delegating {
+        mut hosted,
+        caller,
+        caller_provider,
+        handoff,
+        ..
+    } = delegating;
+    drop(caller_provider);
+    timeout(PROGRESS_DEADLINE, async {
+        while McpClient::handed(&handoff).initialize_status().await != StatusCode::UNAUTHORIZED {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the parent's Provider connection is gone");
+    say(&descriptor, child_id, &child_provider, ANSWER).await;
+    child_provider
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    let settled = row_settles(&descriptor, caller, child_id).await;
+    let expected = report_of(
+        &settled,
+        child_id,
+        SubagentReportOutcome::Completed,
+        Some(ANSWER),
+    );
+    let origin = settled.session.execution_directory.clone();
+    let destination = hosted.workspace.path().join("moved here");
+    std::fs::create_dir(&destination).expect("create the destination");
+    let destination = ExecutionDirectory {
+        path: suru::paths::canonical(&destination).expect("canonicalize the destination"),
+    };
+
+    // With its Report waiting, the parent Moves.
+    crate::support::loopback_client()
+        .post(format!("{}/v1/sessions/{caller}/move", descriptor.base_url))
+        .bearer_auth(&descriptor.token)
+        .json(&MoveSessionRequest {
+            destination: MoveDestination::Directory {
+                path: destination.path.clone(),
+            },
+        })
+        .send()
+        .await
+        .expect("ask for the Move")
+        .error_for_status()
+        .expect("the idle parent Moves");
+    admit_prompt(&descriptor, caller, "What did the Researcher find?").await;
+    let relaunch = next_start(&mut hosted.claude).await;
+    let mut relaunched = relaunch.succeed(AgentIdentity {
+        agent: AgentId::new("claude-agent"),
+        selection: default_selection(&claude_models()),
+    });
+    let turn = next_turn(
+        &mut relaunched,
+        "the Prompt's Turn reaches the Provider it relaunched",
+    )
+    .await;
+
+    assert_eq!(
+        turn.reports(),
+        [
+            MoveNote {
+                from: origin,
+                to: destination,
+            }
+            .into(),
+            expected
+        ],
+        "the note of the Move heads the Turn's input, ahead of the Report that waited for it"
+    );
+    assert_eq!(turn.prompt(), "What did the Researcher find?");
 
     hosted.server.shutdown().await.expect("shut down server");
 }

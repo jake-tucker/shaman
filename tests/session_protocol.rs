@@ -1588,7 +1588,7 @@ fn a_subsession_names_the_sidekick_that_began_it_and_its_row_names_the_subsessio
     );
     let remotes = Activity::Subsession {
         id: row.id(),
-        turn_id: row.turn_id(),
+        turn_id: row.turn_id().expect("the row belongs to a Turn"),
         session_id: subsession,
         origin: Some("workstation".to_owned()),
         origin_fingerprint: Some("ab12cd34ef56".to_owned()),

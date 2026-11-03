@@ -49,10 +49,11 @@ fn turn_entries(snapshot: &SessionSnapshot, turn_id: TurnId) -> Vec<TranscriptIt
                 .messages
                 .iter()
                 .any(|message| message.id == *message_id && message.turn_id == turn_id),
-            TranscriptItem::Activity { activity_id } => snapshot
-                .activities
-                .iter()
-                .any(|activity| activity.id() == *activity_id && activity.turn_id() == turn_id),
+            TranscriptItem::Activity { activity_id } => {
+                snapshot.activities.iter().any(|activity| {
+                    activity.id() == *activity_id && activity.turn_id() == Some(turn_id)
+                })
+            }
         })
         .collect()
 }
