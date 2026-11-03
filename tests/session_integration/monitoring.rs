@@ -28,7 +28,7 @@ async fn working_turn(state_dir: &std::path::Path, channel: &str) -> WorkingTurn
 
 /// The Session's row in the server's listing.
 async fn listed(descriptor: &RuntimeDescriptor, session_id: SessionId) -> SessionSummary {
-    let listing = reqwest::Client::new()
+    let listing = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

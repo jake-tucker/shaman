@@ -78,7 +78,7 @@ async fn managed_clients_can_reconnect_to_a_session_that_outlives_its_first_clie
         .await
         .expect("create Session through managed client");
     let settled = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         created.session.id,
         SessionRevision(2),
@@ -160,7 +160,7 @@ async fn managed_client_can_discover_read_and_attach_to_a_known_session() {
         .await
         .expect("create Session");
     let settled = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         created.session.id,
         SessionRevision(2),
@@ -246,7 +246,7 @@ async fn managed_clients_observe_durable_session_deletion() {
         .expect("create Session");
     let session_id = created.session.id;
     let settled = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         session_id,
         SessionRevision(2),
@@ -406,7 +406,7 @@ async fn managed_client_switching_away_does_not_interrupt_an_active_turn() {
         .await
         .expect("create first Session");
     let first = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         first.session.id,
         SessionRevision(2),
@@ -430,7 +430,7 @@ async fn managed_client_switching_away_does_not_interrupt_an_active_turn() {
         .await
         .expect("create second Session");
     let second = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         second.session.id,
         SessionRevision(2),
@@ -596,14 +596,14 @@ async fn two_clients_converge_on_one_session_without_observing_another_session()
         .await
         .expect("create isolated Session");
     let shared_settled = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         shared.session.id,
         SessionRevision(2),
     )
     .await;
     let isolated_settled = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         isolated.session.id,
         SessionRevision(2),

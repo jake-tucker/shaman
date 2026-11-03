@@ -39,7 +39,7 @@ async fn remote_entry(
 /// Deletes `session_id` as a Client of the Server `descriptor` describes
 /// does.
 async fn delete(descriptor: &RuntimeDescriptor, session_id: SessionId) {
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .delete(format!("{}/v1/sessions/{session_id}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -209,7 +209,7 @@ async fn listed_summary(
     descriptor: &RuntimeDescriptor,
     session_id: SessionId,
 ) -> suru::protocol::SessionSummary {
-    let listed: Vec<suru::protocol::SessionListItem> = reqwest::Client::new()
+    let listed: Vec<suru::protocol::SessionListItem> = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -363,7 +363,7 @@ async fn a_session_begun_on_a_remote_stands_as_a_row_naming_its_remote_that_foll
             ASKED.to_owned(),
         )]
     };
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let snapshot = read_session_until(
         &client,
         &own.descriptor(),
@@ -862,7 +862,7 @@ async fn a_remote_unpaired_while_watched_takes_its_sessions_out_of_the_tree() {
     let target = acted_on.target;
     remote_entry(&mut updates, &mut revision, target, |_| true).await;
 
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .delete(format!(
             "{}/v1/pairing/remotes/{REMOTE}",
             acted_on.own.descriptor().base_url
@@ -910,7 +910,7 @@ async fn a_remote_unpaired_while_its_listing_is_read_again_is_let_go_of_at_once(
     acted_on.remote.route.stall().await;
     let (_again, _again_updates) =
         open_tree(&acted_on.own.descriptor(), acted_on.sidekick_id).await;
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .delete(format!(
             "{}/v1/pairing/remotes/{REMOTE}",
             acted_on.own.descriptor().base_url
@@ -1037,7 +1037,7 @@ async fn an_act_on_a_remotes_subagent_stands_by_the_session_heading_it_and_stays
         )
         .await;
     let snapshot = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &remote,
         spawner,
         "the Subagent's row stands",

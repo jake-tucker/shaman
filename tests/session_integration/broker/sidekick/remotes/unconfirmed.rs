@@ -275,7 +275,7 @@ async fn a_beginning_whose_answer_was_lost_is_asked_again_as_the_same_beginning(
         (&json!(session_id), &json!(REMOTE)),
         "asked again, it answers with the Session the Remote began: {begun}"
     );
-    let held = reqwest::Client::new()
+    let held = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", remote.descriptor().base_url))
         .bearer_auth(&remote.descriptor().token)
         .send()

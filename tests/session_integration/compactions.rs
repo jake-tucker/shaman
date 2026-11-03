@@ -92,7 +92,7 @@ fn measured(snapshot: &SessionSnapshot) -> Vec<(ActivityStatus, Option<u64>, Opt
 }
 
 async fn admit_prompt(descriptor: &RuntimeDescriptor, session_id: SessionId, text: &str) {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/prompts",
             descriptor.base_url
@@ -829,7 +829,7 @@ async fn a_compaction_still_awaiting_its_after_takes_the_first_reading_after_a_r
         .emit_and_wait_until_observed(reading(1, 35_000))
         .await;
     let measured_after = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         restarted.descriptor(),
         session_id,
         "the Compaction is measured after the restart",
@@ -1862,7 +1862,7 @@ async fn a_compaction_request_is_refused_while_a_prompt_waits_for_its_turn() {
     assert_eq!(
         refusal(
             compact(
-                &reqwest::Client::new(),
+                &crate::support::loopback_client(),
                 server.descriptor(),
                 created.session.id,
                 None

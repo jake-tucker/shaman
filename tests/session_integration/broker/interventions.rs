@@ -47,7 +47,7 @@ fn questionnaire() -> Questionnaire {
 /// The facts `session_id`'s Sidebar row derives its Standing from, as the
 /// Server's listing gives them.
 async fn standing(descriptor: &RuntimeDescriptor, session_id: SessionId) -> SessionStandingInputs {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -100,7 +100,7 @@ async fn submit_decision(
     approval: ApprovalId,
     decision: Decision,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/approvals/{approval}/decision",
             descriptor.base_url
@@ -120,7 +120,7 @@ async fn submit_questionnaire(
     questionnaire: QuestionnaireId,
     submission: &QuestionnaireSubmission,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/questionnaires/{questionnaire}",
             descriptor.base_url

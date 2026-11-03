@@ -741,7 +741,7 @@ async fn abrupt_restart_keeps_completed_turns_and_idle_coalesced_tail() {
         spawn_server_process(&servers, data_root.path(), channel, idle_codex.executable());
     let idle_descriptor =
         wait_for_descriptor(&descriptor_path, Some(boundary_descriptor.instance_id)).await;
-    let reopened_boundary = reqwest::Client::new()
+    let reopened_boundary = crate::support::loopback_client()
         .get(format!(
             "{}/v1/sessions/{}",
             idle_descriptor.base_url, boundary_created.session.id
@@ -814,7 +814,7 @@ async fn abrupt_restart_keeps_completed_turns_and_idle_coalesced_tail() {
     );
     let final_descriptor =
         wait_for_descriptor(&descriptor_path, Some(idle_descriptor.instance_id)).await;
-    let final_client = reqwest::Client::new();
+    let final_client = crate::support::loopback_client();
     let final_boundary = final_client
         .get(format!(
             "{}/v1/sessions/{}",

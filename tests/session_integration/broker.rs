@@ -438,7 +438,7 @@ async fn next_start(provider: &mut ControlledProvider) -> StartRequest {
 }
 
 async fn admit_prompt(descriptor: &RuntimeDescriptor, session_id: SessionId, text: &str) {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/prompts",
             descriptor.base_url
@@ -461,7 +461,7 @@ async fn admit_prompt(descriptor: &RuntimeDescriptor, session_id: SessionId, tex
 }
 
 async fn mutate_setting(descriptor: &RuntimeDescriptor, mutation: SettingMutation) {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/settings", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&mutation)
@@ -843,7 +843,7 @@ async fn a_sessions_token_is_retired_when_its_provider_closes_and_reminted_at_re
     .await;
     provider_session.emit(ProviderEvent::TurnCompleted);
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         session_id,
         "the first Turn completes",
@@ -1207,7 +1207,7 @@ async fn read_until(
     predicate: impl Fn(&SessionSnapshot) -> bool,
 ) -> SessionSnapshot {
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         descriptor,
         session_id,
         described,

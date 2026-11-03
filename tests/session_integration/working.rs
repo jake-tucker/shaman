@@ -17,7 +17,7 @@ use suru::{
 use tokio::time::timeout;
 
 async fn list_sessions(descriptor: &RuntimeDescriptor) -> Vec<SessionListItem> {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -75,7 +75,7 @@ async fn a_restart_cancels_the_prompt_no_one_is_left_to_deliver() {
     let server = server::spawn_with_provider(config.clone(), runtime)
         .await
         .expect("spawn server");
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = crate::session_integration::support::create_session(
         server.descriptor(),
         &creation(workspace.path(), PromptId::new(), "Map the provider seams"),
@@ -199,7 +199,7 @@ async fn creation_begins_working_before_the_provider_is_reached() {
         .expect("Provider startup begins");
     drop(start);
     let _: SessionSnapshot = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         created.session.id,
         "the abandoned startup fails the Turn",
@@ -221,7 +221,7 @@ async fn interrupting_a_session_owed_a_turn_withdraws_the_prompt() {
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let prompt_id = PromptId::new();
     let created = crate::session_integration::support::create_session(
         &descriptor,
@@ -337,7 +337,7 @@ async fn a_follow_up_prompt_on_an_idle_session_is_working_and_withdrawable() {
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = crate::session_integration::support::create_session(
         &descriptor,
         &creation(workspace.path(), PromptId::new(), "Map the provider seams"),

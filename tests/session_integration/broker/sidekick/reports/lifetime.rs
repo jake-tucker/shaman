@@ -28,7 +28,7 @@ async fn user_interrupts(
     provider: &mut ControlledProviderSession,
 ) {
     let (stopped, ()) = tokio::join!(
-        reqwest::Client::new()
+        crate::support::loopback_client()
             .post(format!(
                 "{}/v1/sessions/{session_id}/interrupt",
                 descriptor.base_url
@@ -197,7 +197,7 @@ async fn a_prompt_withdrawn_before_delivery_tells_nothing_of_the_users_turn_it_w
         .id;
 
     // The user withdraws it before any Turn takes it.
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{users}/prompts/{prompt}/cancel",
             descriptor.base_url

@@ -167,7 +167,7 @@ async fn settings_and_memories_stay_with_their_own_server_across_a_pairing() {
     // Nor does a Peer reach them through the Pairing: the Remote's Broker
     // answers no Peer, and its Settings are its own user's to change.
     let through_the_pairing = |path: &str| {
-        reqwest::Client::new()
+        crate::support::loopback_client()
             .post(format!("{}/v1/remotes/{REMOTE}{path}", own.base_url))
             .bearer_auth(&own.token)
     };

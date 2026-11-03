@@ -41,7 +41,7 @@ impl McpClient {
 
     pub fn presenting(endpoint: &str, authorization: Option<String>) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: crate::support::loopback_client(),
             endpoint: endpoint.to_owned(),
             authorization,
             call_meta: None,

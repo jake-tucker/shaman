@@ -605,7 +605,7 @@ async fn a_report_says_a_turn_failed_or_was_interrupted_and_where_to_read_a_mess
         .expect("the Sidekick's Prompt begins a Turn")
         .succeed();
     let (stopped, ()) = tokio::join!(
-        reqwest::Client::new()
+        crate::support::loopback_client()
             .post(format!(
                 "{}/v1/sessions/{prompted}/interrupt",
                 descriptor.base_url
@@ -1158,7 +1158,7 @@ async fn a_sidekick_whose_session_is_deleted_is_told_nothing_more_and_nothing_st
     let (begun, mut begun_provider) = sidekick.begin().await;
     sidekick.idles().await;
 
-    let deleted = reqwest::Client::new()
+    let deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             descriptor.base_url, sidekick.id

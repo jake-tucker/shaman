@@ -473,7 +473,7 @@ impl SourceControl for HeldGit {
 /// Redeems an Invite to `remote` at the Server `own` describes, naming the
 /// Remote `name`, and answers how the Server answered.
 async fn redeem(own: &RuntimeDescriptor, remote: &Serving, name: &str) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/pairing/remotes", own.base_url))
         .bearer_auth(&own.token)
         .json(&RedeemInviteRequest {
@@ -676,7 +676,7 @@ async fn posted<T: serde::de::DeserializeOwned>(
     path: &str,
     body: &impl serde::Serialize,
 ) -> T {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}{path}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(body)
@@ -762,7 +762,7 @@ impl TestRelay {
     /// Adds the Relay to the Server `server` describes and logs it in there
     /// as the one identity every Server of the test is logged in as.
     async fn log_in(&self, server: &RuntimeDescriptor) {
-        let http = reqwest::Client::new();
+        let http = crate::support::loopback_client();
         let _: suru::protocol::Relay = posted(
             server,
             "/v1/relays",
@@ -815,7 +815,7 @@ impl TestRelay {
 
     /// Has the Server `server` describes Serve through the Relay.
     async fn serve_through(&self, server: &RuntimeDescriptor) {
-        reqwest::Client::new()
+        crate::support::loopback_client()
             .put(self.route_of(server, &["serve-through"]))
             .bearer_auth(&server.token)
             .json(&suru::protocol::RelayServeThroughRequest {
@@ -1482,7 +1482,7 @@ async fn a_remotes_session_reads_through_the_pairing_as_the_same_read_reads_on_t
         })
         .await;
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &remote,
         asking,
         "the Questionnaire waits on an Answer",
@@ -1531,7 +1531,7 @@ async fn as_the_remote_holds_it(
     remote: &RuntimeDescriptor,
     session_id: SessionId,
 ) -> (Value, Value) {
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let snapshot = http
         .get(format!("{}/v1/sessions/{session_id}", remote.base_url))
         .bearer_auth(&remote.token)
@@ -1592,7 +1592,7 @@ async fn reading_a_remotes_session_names_its_approval_and_changes_nothing_there(
         })
         .await;
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &remote,
         approving,
         "the Approval waits on the user's Decision",
@@ -2021,7 +2021,7 @@ async fn the_broker_a_sidekick_reaches_remotes_through_stays_on_its_own_machines
             "clientInfo": { "name": "elsewhere", "version": "0" },
         },
     });
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let addressed_elsewhere = http
         .post(endpoint.as_str())
         .header(AUTHORIZATION, handoff.token().bearer())

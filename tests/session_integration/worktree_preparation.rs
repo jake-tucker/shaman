@@ -38,7 +38,7 @@ async fn prepare_response(
     descriptor: &RuntimeDescriptor,
     request: &PrepareCheckoutRequest,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/checkouts/prepare", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(request)
@@ -60,7 +60,7 @@ async fn create_response(
     descriptor: &RuntimeDescriptor,
     request: &CreateSessionRequest,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(request)
@@ -208,7 +208,7 @@ async fn managed_preparation_captures_local_commit_once_and_reuses_checkout_and_
     assert_eq!(created.session.id, duplicate.session.id);
     assert!(provider.try_next_start().is_none());
     let failed = support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         created.session.id,
         "post-admission Provider failure",
@@ -260,7 +260,7 @@ async fn admission_deletes_the_intent_and_restart_withdraws_its_undelivered_prom
     assert_eq!(restored.prompts[0].status, PromptStatus::Cancelled);
     assert_eq!(restored.session.status, SessionStatus::Idle);
     assert!(provider.try_next_start().is_none());
-    let repeated_preparation = reqwest::Client::new()
+    let repeated_preparation = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -584,7 +584,7 @@ async fn the_tui_prepares_a_worktree_named_from_its_prompt_and_starts_its_sessio
     .await
     .unwrap();
     let descriptor = server.descriptor();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let post = |path: &str| {
         client
             .post(format!("{}{path}", descriptor.base_url))
@@ -999,7 +999,7 @@ async fn preparation_is_durable_and_unborn_creation_returns_reason_without_mutat
     let unborn = root.join("unborn");
     std::fs::create_dir(&unborn).unwrap();
     git(&unborn, &["init", "-b", "main"]);
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -1121,7 +1121,7 @@ async fn branch_collision_does_not_reset_or_duplicate_intention_and_unknown_main
         &separate,
         &["worktree", "add", "--detach", linked.to_str().unwrap()],
     );
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url

@@ -30,7 +30,7 @@ use crate::session_integration::broker::sidekick_acts::{
 /// The one Peer the Remote `remote` describes is paired with: the
 /// Sidekick's own Server, as the Remote knows it.
 pub(super) async fn the_peer(remote: &RuntimeDescriptor) -> Peer {
-    let peers: Vec<Peer> = reqwest::Client::new()
+    let peers: Vec<Peer> = crate::support::loopback_client()
         .get(format!("{}/v1/pairing/peers", remote.base_url))
         .bearer_auth(&remote.token)
         .send()
@@ -115,7 +115,7 @@ async fn admits_naming(
     text: &str,
     author: &Author,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{url}/v1/sessions/{session_id}/prompts"))
         .bearer_auth(token)
         .header(
@@ -298,7 +298,7 @@ async fn two_peers_giving_one_name_are_told_apart_in_what_their_sidekicks_send()
     .await;
     pair(second.descriptor(), &servers.remote, REMOTE).await;
     let remote = servers.remote.descriptor();
-    let peers: Vec<Peer> = reqwest::Client::new()
+    let peers: Vec<Peer> = crate::support::loopback_client()
         .get(format!("{}/v1/pairing/peers", remote.base_url))
         .bearer_auth(&remote.token)
         .send()
@@ -465,7 +465,7 @@ async fn each_act_on_a_remotes_session_is_done_there_as_a_clients_is() {
         })
     );
     let snapshot = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &remote,
         asking,
         "the Questionnaire is answered",
@@ -765,7 +765,7 @@ async fn settled(descriptor: &RuntimeDescriptor, session_id: SessionId) -> bool 
 
 /// Every top-level Session the Server `descriptor` describes lists.
 async fn list_sessions_at(descriptor: &RuntimeDescriptor) -> Vec<SessionListItem> {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -855,7 +855,7 @@ async fn a_session_begun_on_a_remote_is_a_sidekicks_on_this_peer_heading_its_own
 /// `descriptor` describes spawned first, once its row stands.
 async fn first_subagent(descriptor: &RuntimeDescriptor, session_id: SessionId) -> SessionId {
     let snapshot = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         descriptor,
         session_id,
         "the Subagent's row stands",
@@ -1159,7 +1159,7 @@ async fn an_act_whose_answer_is_lost_once_the_remote_took_it_is_neither_denied_n
         },
     )
     .await;
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/pairing/remotes", own.descriptor().base_url))
         .bearer_auth(&own.descriptor().token)
         .json(&RedeemInviteRequest {
@@ -1519,7 +1519,7 @@ async fn an_act_the_remote_took_is_not_denied_for_a_pairing_removed_before_its_a
         .expect("the interrupt reaches the Remote's Agent");
     // The Remote is removed here while its answer is awaited, and the
     // answer is lost on the way back.
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .delete(format!("{}/v1/pairing/remotes/{REMOTE}", own.base_url))
         .bearer_auth(&own.token)
         .send()

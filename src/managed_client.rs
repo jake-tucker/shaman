@@ -472,7 +472,7 @@ impl ManagedClient {
         ));
         Self {
             events,
-            http: reqwest::Client::new(),
+            http: crate::runtime::loopback_http_client(),
             descriptor,
             initial_recovery_backoff: Duration::from_millis(1),
             max_recovery_backoff: Duration::from_millis(1),
@@ -2511,7 +2511,7 @@ mod tests {
                 },
             ));
             let client = SessionCommandClient {
-                http: reqwest::Client::new(),
+                http: crate::runtime::loopback_http_client(),
                 descriptor,
                 outlook: Outlook::Local,
                 initial_recovery_backoff: Duration::from_millis(1),

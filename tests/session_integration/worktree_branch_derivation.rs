@@ -1102,7 +1102,7 @@ fn recovery_branch(snapshot: &SessionSnapshot) -> Option<&str> {
 /// observation stood down only the rename's own recording can bring about.
 async fn recovers_on(fixture: &Fixture, session_id: SessionId, branch: &str) -> SessionSnapshot {
     crate::session_integration::support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         fixture.server.descriptor(),
         session_id,
         &format!("recovery facts name {branch}"),

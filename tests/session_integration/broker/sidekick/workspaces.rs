@@ -188,7 +188,7 @@ async fn description_changes_until_the_icon_lands(
 
 /// Deletes `session_id`, as a Client does.
 async fn delete_session(descriptor: &RuntimeDescriptor, session_id: SessionId) {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .delete(format!("{}/v1/sessions/{session_id}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

@@ -462,7 +462,7 @@ async fn checkout_observation_is_shared_and_stops_when_catalog_interest_ends() {
     .await
     .unwrap();
     for _ in 0..2 {
-        let snapshot = reqwest::Client::new()
+        let snapshot = crate::support::loopback_client()
             .post(format!("{}/v1/sessions", server.descriptor().base_url))
             .bearer_auth(&server.descriptor().token)
             .json(&CreateSessionRequest {
@@ -496,7 +496,7 @@ async fn checkout_observation_is_shared_and_stops_when_catalog_interest_ends() {
             .fail("Observation fixture has no native work");
         timeout(PROGRESS_DEADLINE, async {
             loop {
-                let current = reqwest::Client::new()
+                let current = crate::support::loopback_client()
                     .get(format!(
                         "{}/v1/sessions/{}",
                         server.descriptor().base_url,
@@ -630,7 +630,7 @@ async fn discovery_persists_branch_and_detached_recovery_before_any_catalog_inte
     let server = server::spawn_with_timings(config.clone(), timings.clone())
         .await
         .unwrap();
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let mut remembered = Vec::new();
     for path in [&branched, &detached] {
         // No ManagedClient exists: this request opens no catalog interest, so

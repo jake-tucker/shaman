@@ -43,7 +43,7 @@ pub async fn create_session(
     descriptor: &RuntimeDescriptor,
     request: &CreateSessionRequest,
 ) -> SessionSnapshot {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(request)
@@ -61,7 +61,7 @@ pub async fn read_session(
     descriptor: &RuntimeDescriptor,
     session_id: SessionId,
 ) -> SessionSnapshot {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions/{session_id}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -75,7 +75,7 @@ pub async fn read_session(
 }
 
 pub async fn list_catalog(descriptor: &RuntimeDescriptor) -> ModelCatalog {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/models", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -89,7 +89,7 @@ pub async fn list_catalog(descriptor: &RuntimeDescriptor) -> ModelCatalog {
 }
 
 pub async fn refresh_catalog(descriptor: &RuntimeDescriptor) -> ModelCatalog {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/models/refresh", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -201,7 +201,7 @@ pub async fn working_turn_with_timings(
     )
     .await
     .expect("spawn server");
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let descriptor = server.descriptor().clone();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
@@ -502,7 +502,7 @@ impl Reader {
         session_id: SessionId,
         request: &suru::protocol::AdmitPromptRequest,
     ) -> reqwest::StatusCode {
-        let status = reqwest::Client::new()
+        let status = crate::support::loopback_client()
             .post(format!(
                 "{}/v1/sessions/{session_id}/prompts",
                 descriptor.base_url

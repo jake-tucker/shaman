@@ -11,7 +11,7 @@ use super::*;
 /// Asks the Server to delete `session_id`, as a client does, answering with
 /// the raw response.
 async fn delete(descriptor: &RuntimeDescriptor, session_id: SessionId) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .delete(format!("{}/v1/sessions/{session_id}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -21,7 +21,7 @@ async fn delete(descriptor: &RuntimeDescriptor, session_id: SessionId) -> reqwes
 
 /// What the Server answers a read of `session_id` with.
 async fn read_status(descriptor: &RuntimeDescriptor, session_id: SessionId) -> StatusCode {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions/{session_id}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -32,7 +32,7 @@ async fn read_status(descriptor: &RuntimeDescriptor, session_id: SessionId) -> S
 
 /// Every Session the Server's listing names.
 async fn listed(descriptor: &RuntimeDescriptor) -> Vec<SessionId> {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

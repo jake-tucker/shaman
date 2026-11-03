@@ -56,7 +56,7 @@ async fn open_events_at(
     path: &str,
 ) -> impl futures_util::Stream<Item = Result<Event, eventsource_stream::EventStreamError<reqwest::Error>>>
 {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}{path}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -71,7 +71,7 @@ async fn open_events_at(
 /// What a TUI sends as it connects: the ask that starts discovery for every
 /// Provider this server process has not yet heard from.
 async fn warm(descriptor: &RuntimeDescriptor) {
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!("{}/v1/models/warm", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

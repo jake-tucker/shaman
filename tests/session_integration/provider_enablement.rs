@@ -76,7 +76,7 @@ async fn mutate_setting(
     descriptor: &RuntimeDescriptor,
     mutation: SettingMutation,
 ) -> SettingsSnapshot {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/settings", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&mutation)
@@ -112,7 +112,7 @@ fn session_request(
 }
 
 async fn admit_prompt(descriptor: &RuntimeDescriptor, session_id: SessionId, text: &str) {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/prompts",
             descriptor.base_url
@@ -336,7 +336,7 @@ async fn a_persisted_landing_selection_naming_a_disabled_provider_yields_to_the_
     .await
     .expect("spawn original server");
     let original_descriptor = original.descriptor().clone();
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .put(format!(
             "{}/v1/landing-agent-selection",
             original_descriptor.base_url

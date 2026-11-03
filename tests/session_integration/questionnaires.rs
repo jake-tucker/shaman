@@ -1246,7 +1246,7 @@ async fn restart_requires_a_genuinely_reissued_live_request_and_does_not_revive_
         });
     }
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         original.descriptor(),
         session_id,
         "both requests live",
@@ -1269,7 +1269,7 @@ async fn restart_requires_a_genuinely_reissued_live_request_and_does_not_revive_
     native.emit(ProviderEvent::QuestionnaireRequested {
         questionnaire: uncertain.clone(),
     });
-    read_session_until(&reqwest::Client::new(), original.descriptor(), session_id, "third request live", |s| s.activities.iter().any(|a| matches!(a, Activity::Questionnaire { questionnaire, .. } if questionnaire.id == uncertain.id))).await;
+    read_session_until(&crate::support::loopback_client(), original.descriptor(), session_id, "third request live", |s| s.activities.iter().any(|a| matches!(a, Activity::Questionnaire { questionnaire, .. } if questionnaire.id == uncertain.id))).await;
     let submitter = client.clone();
     let uncertain_id = uncertain.id;
     let submission = tokio::spawn(async move {
@@ -1356,7 +1356,7 @@ async fn restart_requires_a_genuinely_reissued_live_request_and_does_not_revive_
         });
     }
     let restored = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         restarted.descriptor(),
         session_id,
         "Provider reissued live request",

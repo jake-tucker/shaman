@@ -49,7 +49,7 @@ pub(crate) async fn open_tree(
     descriptor: &RuntimeDescriptor,
     session_id: SessionId,
 ) -> (SubagentTreeSnapshot, TreeUpdates) {
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .get(tree_url(descriptor, session_id))
         .bearer_auth(&descriptor.token)
         .send()
@@ -555,7 +555,7 @@ async fn a_tree_is_not_found_through_a_session_the_server_does_not_hold() {
     let fixture = working_turn(state_dir.path(), "subagent-tree-missing-test").await;
     let descriptor = fixture.server.descriptor();
 
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .get(tree_url(descriptor, SessionId::new()))
         .bearer_auth(&descriptor.token)
         .send()
@@ -588,7 +588,7 @@ async fn the_tree_stream_keeps_alive_at_the_servers_interval() {
     )
     .await;
     let descriptor = fixture.server.descriptor();
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .get(tree_url(descriptor, fixture.session_id))
         .bearer_auth(&descriptor.token)
         .send()
@@ -831,7 +831,7 @@ async fn deleting_the_top_level_session_invalidates_its_tree() {
             .is_none(),
         "rather than reconnecting to a tree that is no longer there"
     );
-    let reopened = reqwest::Client::new()
+    let reopened = crate::support::loopback_client()
         .get(tree_url(descriptor, deepest))
         .bearer_auth(&descriptor.token)
         .send()

@@ -29,7 +29,7 @@ async fn resolve(
     descriptor: &RuntimeDescriptor,
     request: &ResolveWorkspaceRequest,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/workspaces/resolve", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(request)

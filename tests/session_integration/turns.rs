@@ -134,7 +134,7 @@ async fn provider_session_receives_safe_skill_invocations_and_history_keeps_them
     turn.succeed();
     provider_session.emit(ProviderEvent::TurnCompleted);
     let settled = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         created.session.id,
         SessionRevision(4),
@@ -560,7 +560,7 @@ async fn provider_streams_store_only_printable_text_newlines_sgr_and_osc_8() {
     )
     .await
     .expect("spawn server");
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let descriptor = server.descriptor().clone();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
@@ -1187,7 +1187,7 @@ async fn a_restart_settles_the_turn_it_cut_off_and_the_command_it_left_in_flight
         .await
         .expect("spawn original server");
     let original_descriptor = original.descriptor().clone();
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
 
     let created = http
         .post(format!("{}/v1/sessions", original_descriptor.base_url))
@@ -2214,7 +2214,7 @@ async fn events_attributed_to_an_unknown_subagent_leave_the_session_untouched() 
     )
     .await
     .expect("spawn server");
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let descriptor = server.descriptor().clone();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))

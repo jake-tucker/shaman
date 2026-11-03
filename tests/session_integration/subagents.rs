@@ -743,7 +743,7 @@ async fn a_stop_settles_the_subagents_no_process_will_finish() {
     let restarted = server::spawn_with_provider(config, replacement_runtime)
         .await
         .expect("respawn server");
-    let listed = reqwest::Client::new()
+    let listed = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", restarted.descriptor().base_url))
         .bearer_auth(&restarted.descriptor().token)
         .send()
@@ -867,7 +867,7 @@ async fn a_restart_settles_the_turns_the_last_process_left_open() {
     let restarted = server::spawn_with_provider(config.clone(), runtime)
         .await
         .expect("respawn server");
-    let listed = reqwest::Client::new()
+    let listed = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", restarted.descriptor().base_url))
         .bearer_auth(&restarted.descriptor().token)
         .send()
@@ -3113,7 +3113,7 @@ async fn a_subagents_identity_is_stored_with_its_session_and_deleted_along_with_
     let restarted = server::spawn_with_provider(config.clone(), runtime)
         .await
         .expect("respawn server");
-    let deleted = reqwest::Client::new()
+    let deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             restarted.descriptor().base_url,

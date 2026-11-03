@@ -186,7 +186,7 @@ async fn set_description_response(
     path: Option<&std::path::Path>,
     description: &str,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/workspaces/description", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&SetWorkspaceDescriptionRequest {

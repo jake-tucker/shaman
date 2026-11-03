@@ -437,7 +437,7 @@ async fn the_sidekick_workspace_goes_by_sidekick_for_clients_and_by_its_director
         .expect("ask for the Sidekick Workspace")
         .workspace
         .path;
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let descriptor = server.descriptor();
     let health = http
         .get(format!("{}/health", descriptor.base_url))

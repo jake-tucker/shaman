@@ -153,7 +153,7 @@ async fn spawn(layout: &ReclaimLayout, channel: &str) -> server::RunningServer {
 }
 
 async fn remember_repository(server: &server::RunningServer, root: &Path) -> ResolvedWorkspace {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/workspaces/resolve",
             server.descriptor().base_url
@@ -181,7 +181,7 @@ async fn fail_preparation(
     main: &Path,
     text: &str,
 ) -> PreparedCheckout {
-    let result = reqwest::Client::new()
+    let result = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -321,7 +321,7 @@ fn corrupt_session_location(config: &ServerConfig, session_id: SessionId) {
 }
 
 async fn listed_session(descriptor: &RuntimeDescriptor, session_id: SessionId) -> SessionListItem {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -338,7 +338,7 @@ async fn listed_session(descriptor: &RuntimeDescriptor, session_id: SessionId) -
 }
 
 async fn delete_session(server: &server::RunningServer, session_id: SessionId) {
-    let deleted = reqwest::Client::new()
+    let deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{session_id}",
             server.descriptor().base_url
@@ -352,7 +352,7 @@ async fn delete_session(server: &server::RunningServer, session_id: SessionId) {
 
 /// Where each Workspace the Server's Workspace Registry lists is presented.
 async fn registered_paths(descriptor: &RuntimeDescriptor) -> Vec<PathBuf> {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/workspaces", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -669,7 +669,7 @@ async fn an_unsettled_session_idle_past_the_threshold_is_reclaimed() {
         "suru/idle-unsettled"
     );
     let history = support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         recovered.descriptor(),
         session.session.id,
         "recovered Turn completes",
@@ -713,7 +713,7 @@ async fn latest_session_activity_and_a_live_numeric_threshold_govern_shared_idle
         layout.managed.is_dir(),
         "the latest sibling is inside the two-day threshold"
     );
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/settings", restarted.descriptor().base_url))
         .bearer_auth(&restarted.descriptor().token)
         .json(&SettingMutation::WorktreeAutoReclaim {
@@ -745,7 +745,7 @@ async fn a_recent_session_that_becomes_unreadable_before_the_startup_pass_is_not
     let restarted = server::spawn_with_provider_and_timings(config, runtime, timings())
         .await
         .unwrap();
-    let unreadable = reqwest::Client::new()
+    let unreadable = crate::support::loopback_client()
         .get(format!(
             "{}/v1/sessions/{}",
             restarted.descriptor().base_url,
@@ -768,7 +768,7 @@ async fn a_recent_session_that_becomes_unreadable_before_the_startup_pass_is_not
         "an unreadable Session still protects the Managed Worktree it references"
     );
 
-    let deleted = reqwest::Client::new()
+    let deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             restarted.descriptor().base_url,
@@ -802,7 +802,7 @@ async fn a_recent_unreadable_sibling_keeps_an_old_session_from_idle_reclaim() {
     let restarted = server::spawn_with_provider_and_timings(config, runtime, timings())
         .await
         .unwrap();
-    let unreadable = reqwest::Client::new()
+    let unreadable = crate::support::loopback_client()
         .get(format!(
             "{}/v1/sessions/{}",
             restarted.descriptor().base_url,
@@ -821,7 +821,7 @@ async fn a_recent_unreadable_sibling_keeps_an_old_session_from_idle_reclaim() {
         "the unreadable sibling's recent activity still protects the shared checkout"
     );
 
-    let deleted = reqwest::Client::new()
+    let deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             restarted.descriptor().base_url,
@@ -865,7 +865,7 @@ async fn an_unreadable_session_without_location_facts_protects_reclaim_until_del
         "missing location facts conservatively protect every possible checkout reference"
     );
 
-    let deleted = reqwest::Client::new()
+    let deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             restarted.descriptor().base_url,
@@ -968,7 +968,7 @@ async fn an_observation_started_during_idle_reclaim_cannot_replace_detached_reco
         merged_commit
     );
     let history = support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         running.descriptor(),
         session.session.id,
         "detached recovery Turn completes",
@@ -1232,7 +1232,7 @@ async fn candidate_admission_leaving_a_surviving_subagent_is_rechecked_before_re
         .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
         .await;
     support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         running.descriptor(),
         session.session.id,
         "parent Turn settles while its Subagent survives",
@@ -1290,7 +1290,7 @@ async fn a_monitoring_session_idle_past_the_threshold_keeps_its_worktree_until_t
         })
         .await;
     support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         session.session.id,
         "the Watch left running keeps the Session Monitoring",
@@ -1302,7 +1302,7 @@ async fn a_monitoring_session_idle_past_the_threshold_keeps_its_worktree_until_t
     // Past the threshold before Reclaim is turned on, so the first pass
     // already finds the Session left alone as long as the rule asks.
     tokio::time::sleep(DAY * 2).await;
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/settings", server.descriptor().base_url))
         .bearer_auth(&server.descriptor().token)
         .json(&SettingMutation::WorktreeAutoReclaim {
@@ -1361,7 +1361,7 @@ async fn deleting_the_last_session_starts_reclaim_without_delaying_the_response(
 
     let deleted = timeout(
         PROGRESS_DEADLINE,
-        reqwest::Client::new()
+        crate::support::loopback_client()
             .delete(format!(
                 "{}/v1/sessions/{}",
                 server.descriptor().base_url,
@@ -1420,7 +1420,7 @@ async fn deleting_one_of_two_sessions_does_not_reclaim_their_worktree() {
     let (first, _first_connection) = open(&server, &mut provider, &layout.managed).await;
     let (second, _second_connection) = open(&server, &mut provider, &layout.managed).await;
 
-    let first_deleted = reqwest::Client::new()
+    let first_deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             server.descriptor().base_url,
@@ -1437,7 +1437,7 @@ async fn deleting_one_of_two_sessions_does_not_reclaim_their_worktree() {
         "the surviving Session still references the Worktree"
     );
 
-    let second_deleted = reqwest::Client::new()
+    let second_deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             server.descriptor().base_url,
@@ -1466,7 +1466,7 @@ async fn off_disables_eager_reclaim_after_the_last_session_is_deleted() {
     .unwrap();
     let (session, _connection) = open(&server, &mut provider, &layout.managed).await;
 
-    let deleted = reqwest::Client::new()
+    let deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             server.descriptor().base_url,
@@ -1512,7 +1512,7 @@ async fn an_eager_exclusion_is_retried_by_a_later_sweep() {
     let (_main, _main_connection) = open(&server, &mut provider, &layout.main).await;
     let (managed, _managed_connection) = open(&server, &mut provider, &layout.managed).await;
 
-    let deleted = reqwest::Client::new()
+    let deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             server.descriptor().base_url,
@@ -1600,7 +1600,7 @@ async fn a_working_subagent_refuses_delete_before_eager_reclaim_or_provider_shut
         .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
         .await;
     support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         session.session.id,
         "the child keeps its parent Working",
@@ -1608,7 +1608,7 @@ async fn a_working_subagent_refuses_delete_before_eager_reclaim_or_provider_shut
     )
     .await;
 
-    let refused = reqwest::Client::new()
+    let refused = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             server.descriptor().base_url,
@@ -1635,14 +1635,14 @@ async fn a_working_subagent_refuses_delete_before_eager_reclaim_or_provider_shut
         })
         .await;
     support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         session.session.id,
         "the child finishes",
         |snapshot| snapshot.working_since().is_none(),
     )
     .await;
-    let deleted = reqwest::Client::new()
+    let deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             server.descriptor().base_url,
@@ -1670,7 +1670,7 @@ async fn startup_discovers_and_reclaims_a_prepared_worktree_after_its_last_sessi
     // This surviving Session is the only durable fact needed for startup
     // discovery to remember the Repository after restart.
     let (_main, _main_connection) = open(&server, &mut provider, &layout.main).await;
-    let prepared = reqwest::Client::new()
+    let prepared = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -1724,7 +1724,7 @@ async fn startup_discovers_and_reclaims_a_prepared_worktree_after_its_last_sessi
         .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
         .await;
 
-    let deleted = reqwest::Client::new()
+    let deleted = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             server.descriptor().base_url,
@@ -1786,7 +1786,7 @@ async fn restart_reclaims_an_orphan_whose_repository_only_its_registry_entry_nam
         server::spawn_with_provider_and_timings(config, runtime, first_sweep_only_timings())
             .await
             .unwrap();
-    let sessions = reqwest::Client::new()
+    let sessions = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", restarted.descriptor().base_url))
         .bearer_auth(&restarted.descriptor().token)
         .send()
@@ -2065,7 +2065,7 @@ async fn off_disables_startup_and_interval_reclaim_then_a_live_threshold_enables
     tokio::time::sleep(STARTUP_DELAY + RECLAIM_INTERVAL * 2).await;
     assert!(layout.managed.is_dir(), "off disables every pass");
 
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/settings", server.descriptor().base_url))
         .bearer_auth(&server.descriptor().token)
         .json(&SettingMutation::WorktreeAutoReclaim {
@@ -2084,7 +2084,7 @@ async fn off_disables_startup_and_interval_reclaim_then_a_live_threshold_enables
 async fn turning_reclaim_off_live_stops_the_pending_startup_and_interval_passes() {
     let layout = ReclaimLayout::new("live-off");
     let server = spawn(&layout, "reclaim-live-off").await;
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/settings", server.descriptor().base_url))
         .bearer_auth(&server.descriptor().token)
         .json(&SettingMutation::WorktreeAutoReclaim {
@@ -2298,7 +2298,7 @@ async fn an_unmerged_recorded_branch_is_retained() {
     );
 
     // The retained branch still holds its name once its location is gone.
-    let result = reqwest::Client::new()
+    let result = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -2549,7 +2549,7 @@ async fn failed_post_removal_metadata_retirement_retries_from_the_persisted_inte
     )
     .await
     .unwrap();
-    let prepared = reqwest::Client::new()
+    let prepared = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             preparing.descriptor().base_url
@@ -2578,7 +2578,7 @@ async fn failed_post_removal_metadata_retirement_retries_from_the_persisted_inte
         .unwrap();
     assert_eq!(prepared.error, None);
     let withheld = prompt("Retry this withheld Prompt");
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!("{}/v1/sessions", preparing.descriptor().base_url))
         .bearer_auth(&preparing.descriptor().token)
         .json(&CreateSessionRequest {
@@ -2674,7 +2674,7 @@ async fn an_unfinished_preparation_is_not_an_immediate_orphan() {
         },
         provider: ProviderId::new("controlled"),
     };
-    let prepared = reqwest::Client::new()
+    let prepared = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -2711,7 +2711,7 @@ async fn an_unfinished_preparation_is_not_an_immediate_orphan() {
     restarted.workspace_discovery_settled().await;
     tokio::time::sleep(STARTUP_DELAY + RECLAIM_INTERVAL * 2).await;
     assert!(unfinished.is_dir());
-    let retried = reqwest::Client::new()
+    let retried = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             restarted.descriptor().base_url
@@ -2748,7 +2748,7 @@ async fn restart_reclaims_an_old_failed_preparation_without_a_catalogued_reposit
     )
     .await
     .unwrap();
-    let prepared = reqwest::Client::new()
+    let prepared = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -2938,7 +2938,7 @@ async fn reclaim_preserves_an_interrupted_session_shell_and_cancels_and_logs_its
         },
         provider: ProviderId::new("controlled"),
     };
-    let prepared = reqwest::Client::new()
+    let prepared = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -2955,7 +2955,7 @@ async fn reclaim_preserves_an_interrupted_session_shell_and_cancels_and_logs_its
         .unwrap();
     assert_eq!(prepared.error, None);
     let withheld = prompt("Keep this exact first line\nDo not quote this second line");
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!("{}/v1/sessions", server.descriptor().base_url))
         .bearer_auth(&server.descriptor().token)
         .json(&CreateSessionRequest {

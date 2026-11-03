@@ -468,7 +468,7 @@ mod tests {
         );
         let server = tokio::spawn(async move { axum::serve(listener, app).await });
 
-        let mut response = reqwest::Client::new()
+        let mut response = crate::runtime::loopback_http_client()
             .post(format!("http://{address}{BROKER_PATH}"))
             .header(CONTENT_TYPE, "application/json")
             .header(ACCEPT, "application/json, text/event-stream")

@@ -75,7 +75,7 @@ pub(super) const SIDEKICK_TOOLS: [&str; 26] = [
 
 /// Asks the Server for its Sidekick Workspace, as `/sidekick` does.
 async fn sidekick_workspace(descriptor: &RuntimeDescriptor) -> ResolvedWorkspace {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/workspaces/sidekick", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -188,7 +188,7 @@ pub(super) async fn latest_turn_settles(
     status: TurnStatus,
 ) {
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         descriptor,
         session_id,
         "the latest Turn settles",
@@ -511,7 +511,7 @@ async fn a_restored_session_of_the_sidekick_workspace_is_a_sidekicks_still() {
     let (session_id, _sidekick, provider) = start_sidekick(&descriptor, &mut claude).await;
     provider.emit(ProviderEvent::TurnCompleted);
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         session_id,
         "the Sidekick's first Turn completes",
@@ -693,7 +693,7 @@ async fn list_sessions_narrows_by_workspace_title_liveness_standing_and_last_act
     .await;
     finished_provider.emit(ProviderEvent::TurnCompleted);
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         finished,
         "the atlas Turn completes",
@@ -707,7 +707,7 @@ async fn list_sessions_narrows_by_workspace_title_liveness_standing_and_last_act
     .await;
     let shelved = working_session(&descriptor, ledger.path(), "Shelved ledger work").await;
     working_session(&descriptor, ledger.path(), "Reconcile the LEDGER").await;
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{shelved}/settlement",
             descriptor.base_url
@@ -827,7 +827,7 @@ async fn list_sessions_settles_a_session_left_alone_as_the_sidebar_does() {
     .await;
     idle_provider.emit(ProviderEvent::TurnCompleted);
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         idle,
         "the idle Session's Turn completes",
@@ -1016,7 +1016,7 @@ async fn beneath_a_repository_the_sidekick_workspace_keeps_a_directory_workspace
     assert_eq!(resolved.workspace.id, WorkspaceId::directory(&directory));
     assert_eq!(resolved.workspace.path, directory);
 
-    let named = reqwest::Client::new()
+    let named = crate::support::loopback_client()
         .post(format!("{}/v1/workspaces/resolve", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&ResolveWorkspaceRequest {
@@ -1116,7 +1116,7 @@ async fn list_sessions_narrows_to_each_standing_and_counts_only_what_matched_as_
         })
         .await;
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         asking,
         "the Approval waits on the user",
@@ -1142,7 +1142,7 @@ async fn list_sessions_narrows_to_each_standing_and_counts_only_what_matched_as_
     });
     watching_provider.emit(ProviderEvent::TurnCompleted);
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         watching,
         "the watching Session reads Monitoring",

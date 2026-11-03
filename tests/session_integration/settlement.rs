@@ -44,7 +44,7 @@ async fn settle(
     session_id: SessionId,
     settled: bool,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/settlement",
             descriptor.base_url
@@ -72,7 +72,7 @@ async fn settled_summary(
 
 /// The one Session in a listing, whichever readability it came back with.
 async fn listed(descriptor: &RuntimeDescriptor, session_id: SessionId) -> SessionListItem {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -255,7 +255,7 @@ async fn admitting_a_prompt_to_a_settled_session_makes_it_active_again() {
     .id;
     settled_summary(&descriptor, created, true).await;
 
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{created}/prompts",
             descriptor.base_url

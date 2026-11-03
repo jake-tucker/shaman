@@ -103,7 +103,7 @@ async fn acted_on(
 
 /// Deletes `session_id` as a Client does.
 async fn delete(descriptor: &RuntimeDescriptor, session_id: SessionId) {
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .delete(format!("{}/v1/sessions/{session_id}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -671,7 +671,7 @@ async fn a_listed_session_is_drawn_from_what_was_stored_of_it_without_reading_it
         (before.sessions.clone(), before.subagents.clone()),
         "the Session it acted on stands as it did, with its Subagent beneath it"
     );
-    let listing = reqwest::Client::new()
+    let listing = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

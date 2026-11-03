@@ -195,7 +195,7 @@ async fn a_manual_stop_that_cannot_be_recorded_is_reported_as_failed() {
         .await
         .expect("the server stops all the same");
     assert!(
-        reqwest::Client::new()
+        crate::support::loopback_client()
             .get(format!("{}/health", descriptor.base_url))
             .bearer_auth(&descriptor.token)
             .timeout(Duration::from_millis(500))

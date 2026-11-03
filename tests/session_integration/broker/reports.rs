@@ -73,7 +73,7 @@ async fn take_interrupt(provider: &mut ControlledProviderSession, whose: &str) {
 
 /// Asks the Server to interrupt `session_id`, as a client does.
 async fn interrupt(descriptor: &RuntimeDescriptor, session_id: SessionId) {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/interrupt",
             descriptor.base_url
@@ -89,7 +89,7 @@ async fn interrupt(descriptor: &RuntimeDescriptor, session_id: SessionId) {
 /// Sets `session_id` aside as done for now, or brings it back, as a client
 /// does.
 async fn settle_session(descriptor: &RuntimeDescriptor, session_id: SessionId, settled: bool) {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/settlement",
             descriptor.base_url
@@ -108,7 +108,7 @@ async fn settled_at(
     descriptor: &RuntimeDescriptor,
     session_id: SessionId,
 ) -> Option<suru::protocol::SessionTimestamp> {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

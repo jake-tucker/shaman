@@ -373,7 +373,7 @@ async fn a_remote_answers_the_outline_of_a_tree_read_in_one_moment_and_nothing_w
     ask(&remote, child, &child_provider, &where_to_run()).await;
     writes(&provider, FIXED).await;
 
-    let outline: suru::protocol::SessionTreeOutline = reqwest::Client::new()
+    let outline: suru::protocol::SessionTreeOutline = crate::support::loopback_client()
         .get(format!(
             "{}/v1/remotes/{REMOTE}/v1/sessions/{child}/outline",
             owed.own.base_url
@@ -898,7 +898,7 @@ async fn a_remote_whose_pairing_ends_while_a_report_is_owed_is_reported_once() {
     let mut owed = owed("sidekick-remote-report-unpaired", timings()).await;
     let (begun, _begun_provider) = owed.begin().await;
 
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .delete(format!("{}/v1/pairing/remotes/{REMOTE}", owed.own.base_url))
         .bearer_auth(&owed.own.token)
         .send()
@@ -927,7 +927,7 @@ async fn a_remote_paired_again_at_once_owes_what_is_set_going_through_the_new_pa
     let remote = owed.remote();
     let (before, before_provider) = owed.begin().await;
 
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .delete(format!("{}/v1/pairing/remotes/{REMOTE}", owed.own.base_url))
         .bearer_auth(&owed.own.token)
         .send()

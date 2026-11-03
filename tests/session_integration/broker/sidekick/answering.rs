@@ -89,7 +89,7 @@ pub(in crate::session_integration::broker) async fn ask(
         })
         .await;
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         descriptor,
         session_id,
         "the Questionnaire waits on an Answer",
@@ -130,7 +130,7 @@ async fn client_answers(
     id: QuestionnaireId,
     submission: &Value,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/questionnaires/{id}",
             descriptor.base_url
@@ -820,7 +820,7 @@ async fn no_tool_a_sidekick_is_offered_decides_an_approval() {
         })
         .await;
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         approving,
         "the Approval waits on the user's Decision",

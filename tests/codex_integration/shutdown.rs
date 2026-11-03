@@ -249,7 +249,7 @@ async fn server_shutdown_interrupts_active_codex_and_allows_cooperative_exit() {
     assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
     fixture.wait_for_exit().await;
 
-    let after_shutdown = reqwest::Client::new()
+    let after_shutdown = crate::support::loopback_client()
         .get(format!(
             "{}/v1/sessions/{}",
             descriptor.base_url, created.session.id
@@ -976,7 +976,7 @@ async fn held_server_process_is_ended_at_its_cutoff(channel: &str, by: StopBy) {
             None
         }
         StopBy::Client => Some(tokio::spawn(
-            reqwest::Client::new()
+            crate::support::loopback_client()
                 .post(format!("{}/v1/server/stop", descriptor.base_url))
                 .bearer_auth(&descriptor.token)
                 .json(&suru::protocol::ServerShutdown {
@@ -1280,7 +1280,7 @@ async fn serve_working_codex<'a>(
     // than through a managed client, which would launch a Server of its own —
     // with none of the environment above, so with real Providers, and beyond
     // this test's cleanup — should this one go away first.
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&CreateSessionRequest {

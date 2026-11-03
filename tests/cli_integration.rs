@@ -423,7 +423,7 @@ async fn mismatched_build_in_another_channel_is_not_replaced() {
 
     assert_eq!(current.build_identity, suru_binary_build_identity());
     assert!(old.shutdown_request().is_none());
-    let old_health = reqwest::Client::new()
+    let old_health = crate::support::loopback_client()
         .get(format!("{}/health", old.descriptor().base_url))
         .bearer_auth(&old.descriptor().token)
         .send()

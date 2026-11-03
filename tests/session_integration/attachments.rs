@@ -47,7 +47,7 @@ async fn upload(
     declared_type: &str,
     bytes: Vec<u8>,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/attachments", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .header(CONTENT_TYPE, declared_type)
@@ -58,7 +58,7 @@ async fn upload(
 }
 
 async fn fetch(descriptor: &RuntimeDescriptor, id: &AttachmentId) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/attachments/{id}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -67,7 +67,7 @@ async fn fetch(descriptor: &RuntimeDescriptor, id: &AttachmentId) -> reqwest::Re
 }
 
 async fn head(descriptor: &RuntimeDescriptor, id: &AttachmentId) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .head(format!("{}/v1/attachments/{id}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -128,7 +128,7 @@ async fn admit(
     attachments: Vec<AttachmentBinding>,
     delivery: PromptDelivery,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/prompts",
             descriptor.base_url
@@ -177,7 +177,7 @@ pub(crate) async fn watch_session(
     descriptor: &RuntimeDescriptor,
     session_id: SessionId,
 ) -> (SessionSnapshot, impl Stream<Item = SessionUpdate> + Unpin) {
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .get(format!(
             "{}/v1/sessions/{session_id}/events",
             descriptor.base_url
@@ -365,7 +365,7 @@ async fn an_attachment_is_fetched_by_id_with_its_sniffed_type_and_an_unknown_id_
     let (status, error) = refusal(fetch(&descriptor, &content_hash(b"never uploaded")).await).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(error.code, SessionErrorCode::AttachmentNotFound);
-    let unauthenticated = reqwest::Client::new()
+    let unauthenticated = crate::support::loopback_client()
         .get(format!(
             "{}/v1/attachments/{}",
             descriptor.base_url, attachment.id
@@ -436,7 +436,7 @@ async fn a_head_of_an_attachment_answers_whether_it_is_stored_without_its_bytes(
         fetch(&descriptor, &unknown).await.headers()[SESSION_ERROR_CODE_HEADER],
         "attachment_not_found"
     );
-    let unauthenticated = reqwest::Client::new()
+    let unauthenticated = crate::support::loopback_client()
         .head(format!(
             "{}/v1/attachments/{}",
             descriptor.base_url, attachment.id
@@ -490,7 +490,7 @@ async fn turn_beginning_and_steer_prompts_carry_their_bindings_to_every_client()
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let screenshot = uploaded(&descriptor, png(640, 480)).await;
     let diagram = uploaded(&descriptor, gif(320, 200)).await;
 
@@ -752,7 +752,7 @@ async fn a_prompt_resent_with_the_same_bindings_hands_the_provider_its_attachmen
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let bytes = png(640, 480);
     let screenshot = uploaded(&descriptor, bytes.clone()).await;
     let text = "See [Image 1]";
@@ -827,7 +827,7 @@ async fn prompts_whose_attachment_bindings_cannot_stand_are_refused() {
     .await;
     let session_id = created.session.id;
     read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         session_id,
         SessionRevision(2),
@@ -895,7 +895,7 @@ async fn prompts_whose_attachment_bindings_cannot_stand_are_refused() {
         assert!(!error.message.is_empty());
     }
     let (status, error) = refusal(
-        reqwest::Client::new()
+        crate::support::loopback_client()
             .post(format!("{}/v1/sessions", descriptor.base_url))
             .bearer_auth(&descriptor.token)
             .json(&creation(workspace.path(), text, vec![unknown]))
@@ -927,7 +927,7 @@ async fn prompts_whose_attachment_bindings_cannot_stand_are_refused() {
 
     // A retry is the same Prompt only with the same bindings.
     let retry = |attachments: Vec<AttachmentBinding>| {
-        reqwest::Client::new()
+        crate::support::loopback_client()
             .post(format!(
                 "{}/v1/sessions/{session_id}/prompts",
                 descriptor.base_url
@@ -987,7 +987,7 @@ async fn bindings_and_bytes_survive_a_server_restart() {
     )
     .await;
     let before_restart = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         original.descriptor(),
         created.session.id,
         SessionRevision(2),
@@ -1067,7 +1067,7 @@ async fn every_client_describes_the_attachments_a_session_binds_even_after_a_res
     let (watched, mut updates) = watch_session(&descriptor, session_id).await;
     assert_eq!(watched.attachments, both);
     let settled = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         session_id,
         "settled",
@@ -1123,7 +1123,7 @@ async fn every_client_describes_the_attachments_a_session_binds_even_after_a_res
     );
     let all = by_id(vec![screenshot.clone(), diagram.clone(), photo.clone()]);
     let before_restart = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         session_id,
         "the queued Prompt's user Message",
@@ -1220,7 +1220,7 @@ async fn settled_session(
         .session
         .id;
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         descriptor,
         session_id,
         "settled",
@@ -1231,7 +1231,7 @@ async fn settled_session(
 }
 
 async fn delete_session(descriptor: &RuntimeDescriptor, session_id: SessionId) {
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .delete(format!("{}/v1/sessions/{session_id}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -1393,7 +1393,7 @@ async fn admitting_a_prompt_restarts_the_grace_period_of_the_attachments_it_bind
     let (server, clock) =
         spawn_with_manual_clock(state_dir.path(), "attachment-admission-grace-test").await;
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let admitted_again = uploaded(&descriptor, png(10, 10)).await;
     let created_again = uploaded(&descriptor, jpeg(30, 30)).await;
     let once = uploaded(&descriptor, gif(20, 20)).await;

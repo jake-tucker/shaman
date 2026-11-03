@@ -98,7 +98,7 @@ async fn set_icon_response(
     session_id: SessionId,
     icon: &str,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/icon",
             descriptor.base_url

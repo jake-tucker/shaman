@@ -7,7 +7,7 @@ use crate::support::PROGRESS_DEADLINE;
 use suru::protocol::{ONBOARDED_EVENT, RuntimeDescriptor};
 
 async fn health(descriptor: &RuntimeDescriptor) -> Health {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/health", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -112,7 +112,7 @@ async fn a_client_whose_health_was_read_before_another_marked_the_server_hears_i
 
     crate::support::mark_onboarded(&descriptor).await;
 
-    let stream = reqwest::Client::new()
+    let stream = crate::support::loopback_client()
         .get(format!("{}/v1/events", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

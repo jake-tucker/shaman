@@ -51,7 +51,7 @@ async fn create_response(
     descriptor: &RuntimeDescriptor,
     request: &CreateSessionRequest,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(request)
@@ -96,7 +96,7 @@ async fn restart_reconciles_each_git_preparation_window_and_duplicate_edited_ret
         let captured = failed.preparation.clone();
         assert!(provider.try_next_start().is_none());
         if matches!(point, Point::CheckoutCreated | Point::RegistrationCreated) {
-            let listed = reqwest::Client::new()
+            let listed = crate::support::loopback_client()
                 .post(format!(
                     "{}/v1/workspaces/resolve",
                     server.descriptor().base_url
@@ -345,7 +345,7 @@ async fn persisted_initial_session_shell_resumes_original_prompt_once_after_rest
             .unwrap(),
     );
     support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         unrelated.session.id,
         "unrelated Turn settles",
@@ -432,7 +432,7 @@ async fn persisted_initial_session_shell_resumes_original_prompt_once_after_rest
         Some(prepared.preparation.intended_session)
     );
     let rejoined = support::create_session(server.descriptor(), &original).await;
-    let listed = reqwest::Client::new()
+    let listed = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", server.descriptor().base_url))
         .bearer_auth(&server.descriptor().token)
         .send()
@@ -458,7 +458,7 @@ async fn persisted_initial_session_shell_resumes_original_prompt_once_after_rest
     );
     drop(start);
     let settled = support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         rejoined.session.id,
         "original delivery settles",
@@ -584,7 +584,7 @@ async fn matching_branch_commit_and_destination_do_not_prove_external_checkout_o
     committed(&another);
     let mut conflict = request.clone();
     conflict.source.path = another;
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -729,7 +729,7 @@ async fn lost_admission_response_rejoins_delivered_work_without_another_provider
     assert_eq!(turn.prompt(), initial.prompt.text);
     turn.fail("fixture settled");
     let settled = support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         ready.preparation.intended_session,
         "settled initial Turn",

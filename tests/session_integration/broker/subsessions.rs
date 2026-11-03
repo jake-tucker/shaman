@@ -104,7 +104,7 @@ fn canonical(path: &Path) -> PathBuf {
 
 /// The Server's listing, as every Client is sent it.
 async fn listing(descriptor: &RuntimeDescriptor) -> Vec<SessionListItem> {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -139,7 +139,7 @@ fn subsession_rows(snapshot: &SessionSnapshot) -> Vec<(SessionId, String, String
 /// Makes the Landing begin its next Session with `selection`, as a Client's
 /// Landing does when the user picks an Agent there.
 async fn choose_landing_agent(descriptor: &RuntimeDescriptor, selection: &AgentSelection) {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .put(format!(
             "{}/v1/landing-agent-selection",
             descriptor.base_url
@@ -189,7 +189,7 @@ pub(super) fn committed(root: &Path) {
 
 /// The Workspace `path` resolves to, as the Landing asks the Server for it.
 pub(super) async fn resolve(descriptor: &RuntimeDescriptor, path: &Path) -> ResolvedWorkspace {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/workspaces/resolve", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&ResolveWorkspaceRequest {
@@ -337,7 +337,7 @@ async fn a_sidekick_begins_a_subsession_as_the_landing_would_and_its_transcript_
     );
 
     let snapshot = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         subsession,
         "the first Prompt stands as the Subsession's first Message",
@@ -447,7 +447,7 @@ async fn a_sidekick_begins_a_subsession_as_the_landing_would_and_its_transcript_
     .expect("the Subsession's Title is derived through an Errand");
     errand.succeed(json!({ "title": "Fix the flaky login test", "icon": "md-bug" }));
     let sidekick_snapshot = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         sidekick_id,
         "the Sidekick's row takes the Subsession's derived Title",
@@ -628,7 +628,7 @@ async fn a_subsession_works_apart_from_the_sidekick_that_began_it() {
         .expect("the Sidekick works again")
         .succeed();
     let (interrupted, ()) = tokio::join!(
-        reqwest::Client::new()
+        crate::support::loopback_client()
             .post(format!(
                 "{}/v1/sessions/{sidekick_id}/interrupt",
                 descriptor.base_url
@@ -664,7 +664,7 @@ async fn a_subsession_works_apart_from_the_sidekick_that_began_it() {
     admit_prompt(&descriptor, subsession, "Also cover the logout test.").await;
 
     // Deleting the Sidekick's Session leaves the Subsession, still working.
-    let deleted = reqwest::Client::new()
+    let deleted = crate::support::loopback_client()
         .delete(format!("{}/v1/sessions/{sidekick_id}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -911,7 +911,7 @@ async fn a_subsession_and_the_row_leading_into_it_survive_a_restart() {
     let (subsession_provider, _) =
         run_first_turn(&mut claude, default_selection(&claude_models())).await;
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         subsession,
         "the first Message stands",
@@ -1076,7 +1076,7 @@ async fn a_provider_that_fails_at_launch_still_begins_the_subsession_as_the_land
         .await
         .fail_unavailable(ProviderUnavailability::NotSignedIn, UNAVAILABLE);
     let snapshot = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         subsession,
         "the Subsession's first Turn fails",
@@ -1225,7 +1225,7 @@ async fn a_lost_or_stale_row_is_put_right_when_the_sidekicks_session_is_read_aga
     .expect("the Subsession's Title is derived through an Errand");
     errand.succeed(json!({ "title": "Flaky login test", "icon": "md-bug" }));
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         lost,
         "the Subsession takes its derived Title",

@@ -18,7 +18,7 @@ async fn preview(
     server: &server::RunningServer,
     target: &CheckoutRemovalTarget,
 ) -> CheckoutRemovalPreview {
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/removal-preview",
             server.descriptor().base_url
@@ -38,7 +38,7 @@ async fn remove(
     preview: CheckoutRemovalPreview,
     force: bool,
 ) -> RemoveCheckoutResult {
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/remove",
             server.descriptor().base_url
@@ -107,7 +107,7 @@ async fn removal_previews_all_content_conditions_force_retains_branch_and_main_i
         assert!(!layout.linked.exists());
         assert!(!read_git(&layout.main, &["rev-parse", "refs/heads/topic"]).is_empty());
         let main_target = self::target(&layout.main).await;
-        let response = reqwest::Client::new()
+        let response = crate::support::loopback_client()
             .post(format!(
                 "{}/v1/checkouts/removal-preview",
                 server.descriptor().base_url
@@ -130,7 +130,7 @@ async fn merged_managed_branch_is_previewed_deleted_and_recovers_its_session_det
     let server = server::spawn_with_provider(layout.config("merged-managed"), runtime)
         .await
         .unwrap();
-    let prepared = reqwest::Client::new()
+    let prepared = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -295,7 +295,7 @@ async fn removal_reconfirms_new_ignored_contents_and_retains_fresh_revision_hist
         "new-recovery"
     );
     let snapshot = support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         original.session.id,
         "recovered history",
@@ -365,7 +365,7 @@ async fn removal_waits_for_native_startup_and_force_cannot_remove_surviving_suba
         .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
         .await;
     support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         snapshot.session.id,
         "parent settled with surviving child",
@@ -384,7 +384,7 @@ async fn removal_waits_for_native_startup_and_force_cannot_remove_surviving_suba
         })
         .await;
     support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         snapshot.session.id,
         "all work completed",
@@ -424,7 +424,7 @@ async fn removal_initialized_submodules_require_force_and_session_settlement_del
         .await
         .unwrap();
     let (session, _connection) = open(&server, &mut provider, &layout.linked).await;
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{}/settlement",
             server.descriptor().base_url,
@@ -437,7 +437,7 @@ async fn removal_initialized_submodules_require_force_and_session_settlement_del
         .unwrap();
     assert!(response.status().is_success());
     assert!(layout.linked.join("module/tracked").exists());
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .delete(format!(
             "{}/v1/sessions/{}",
             server.descriptor().base_url,
@@ -600,7 +600,7 @@ async fn removal_of_failed_preparation_needs_no_session_and_force_refuses_replac
     )
     .await
     .unwrap();
-    let prepared = reqwest::Client::new()
+    let prepared = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -669,7 +669,7 @@ async fn removal_of_failed_preparation_needs_no_session_and_force_refuses_replac
         "never recursively delete me",
     )
     .unwrap();
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/remove",
             server.descriptor().base_url
@@ -709,7 +709,7 @@ async fn removal_retires_an_interrupted_admission_and_restart_keeps_its_prompt_c
     )
     .await
     .unwrap();
-    let prepared = reqwest::Client::new()
+    let prepared = crate::support::loopback_client()
         .post(format!(
             "{}/v1/checkouts/prepare",
             server.descriptor().base_url
@@ -738,7 +738,7 @@ async fn removal_retires_an_interrupted_admission_and_restart_keeps_its_prompt_c
         .unwrap();
     assert_eq!(prepared.error, None);
     let initial_prompt = prompt("Withdraw before removing its Worktree");
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!("{}/v1/sessions", server.descriptor().base_url))
         .bearer_auth(&server.descriptor().token)
         .json(&CreateSessionRequest {

@@ -111,7 +111,7 @@ fn first_activity_of_turn(snapshot: &SessionSnapshot, turn_id: TurnId) -> Option
 }
 
 async fn admit_prompt(descriptor: &RuntimeDescriptor, session_id: SessionId, text: &str) {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/prompts",
             descriptor.base_url

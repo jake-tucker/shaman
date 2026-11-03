@@ -415,7 +415,7 @@ async fn errand_is_read_over_the_api(
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)

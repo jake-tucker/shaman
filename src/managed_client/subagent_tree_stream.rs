@@ -492,7 +492,7 @@ mod tests {
 
     fn subscribe(server: &TreeServer) -> SubagentTreeSubscription {
         SubagentTreeSubscription::open(
-            reqwest::Client::new(),
+            crate::runtime::loopback_http_client(),
             server.descriptor.clone(),
             Outlook::Local,
             SessionId::new(),

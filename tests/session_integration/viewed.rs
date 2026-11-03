@@ -71,7 +71,7 @@ async fn view_with_operation(
     session_id: SessionId,
     operation_id: ViewSessionOperationId,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/viewed",
             descriptor.base_url
@@ -166,7 +166,7 @@ async fn listed_summary(
     descriptor: &suru::protocol::RuntimeDescriptor,
     session_id: SessionId,
 ) -> SessionSummary {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

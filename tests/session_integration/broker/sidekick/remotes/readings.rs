@@ -10,7 +10,7 @@ use super::*;
 /// What the Server `descriptor` describes answers a `GET` of `path_and_query`
 /// on its own Session API with: its status, and its body as JSON.
 async fn asked(descriptor: &RuntimeDescriptor, path_and_query: &str) -> (StatusCode, Value) {
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .get(format!("{}{path_and_query}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -130,7 +130,7 @@ async fn a_server_answers_a_reading_of_its_session_with_only_the_slice_asked_for
         (status, &answer["code"]),
         (StatusCode::NOT_FOUND, &json!("session_not_found"))
     );
-    let unauthenticated = reqwest::Client::new()
+    let unauthenticated = crate::support::loopback_client()
         .get(format!("{}{}", descriptor.base_url, reading("item=1.1")))
         .send()
         .await

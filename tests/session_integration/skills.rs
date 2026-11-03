@@ -868,7 +868,7 @@ async fn cached_catalog_invalidation_is_failure_isolated_and_pushed_to_every_cli
     assert_eq!(replaced.skills, vec![replacement]);
     assert!(matches!(replaced.status, SkillCatalogStatus::Fresh { .. }));
 
-    let rejected = reqwest::Client::new()
+    let rejected = crate::support::loopback_client()
         .post(format!("{}/v1/sessions", server.descriptor().base_url))
         .bearer_auth(&server.descriptor().token)
         .json(&CreateSessionRequest {
@@ -1066,7 +1066,7 @@ async fn catalog_cache_is_scoped_by_provider_and_canonical_workspace() {
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let alpha_first = SkillCatalogRequest {
         provider: ProviderId::new("alpha"),
         execution_directory: suru::protocol::ExecutionDirectory {
@@ -1149,7 +1149,7 @@ async fn server_lists_and_admits_only_the_current_workspace_skill() {
     .await
     .expect("spawn server");
     let server_descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
 
     let catalog_response = client
         .post(format!("{}/v1/skills", server_descriptor.base_url))
@@ -1292,7 +1292,7 @@ async fn disabled_providers_are_not_discovered_and_native_discovery_errors_are_r
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     client
         .post(format!("{}/v1/settings", descriptor.base_url))
         .bearer_auth(&descriptor.token)

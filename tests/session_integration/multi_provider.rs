@@ -68,7 +68,7 @@ async fn model_catalog_lists_every_hosted_provider_and_refreshes_each_independen
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
 
-    let catalog = reqwest::Client::new()
+    let catalog = crate::support::loopback_client()
         .get(format!("{}/v1/models", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -179,7 +179,7 @@ async fn sessions_on_different_providers_coexist_and_each_keeps_its_provider() {
 
     // A Session keeps the Provider it was selected with even though the other
     // Provider is hosted right here (ADR-0005).
-    let rejection = reqwest::Client::new()
+    let rejection = crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{}/agent-selection",
             descriptor.base_url, alpha_session.session.id
@@ -223,7 +223,7 @@ async fn agent_selections_naming_an_unhosted_provider_are_rejected() {
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
 
-    let creation = reqwest::Client::new()
+    let creation = crate::support::loopback_client()
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&create_session_request(
@@ -244,7 +244,7 @@ async fn agent_selections_naming_an_unhosted_provider_are_rejected() {
         SessionErrorCode::AgentSelectionProviderConflict
     );
 
-    let landing = reqwest::Client::new()
+    let landing = crate::support::loopback_client()
         .put(format!(
             "{}/v1/landing-agent-selection",
             descriptor.base_url
@@ -287,7 +287,7 @@ async fn a_fresh_landing_defaults_to_the_first_provider_in_the_built_in_order() 
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
 
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/models/refresh", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -377,7 +377,7 @@ async fn a_stored_session_on_an_unhosted_provider_fails_its_next_prompt_legibly(
         .await
         .expect("spawn replacement server");
     let replacement_descriptor = replacement.descriptor().clone();
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{}/prompts",
             replacement_descriptor.base_url, session.session.id
@@ -449,7 +449,7 @@ async fn a_stale_landing_selection_on_an_unhosted_provider_yields_to_the_built_i
         .await
         .expect("spawn original server");
     let original_descriptor = original.descriptor().clone();
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .put(format!(
             "{}/v1/landing-agent-selection",
             original_descriptor.base_url
@@ -471,7 +471,7 @@ async fn a_stale_landing_selection_on_an_unhosted_provider_yields_to_the_built_i
         .await
         .expect("spawn replacement server");
     let replacement_descriptor = replacement.descriptor().clone();
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/models/refresh",
             replacement_descriptor.base_url
@@ -529,7 +529,7 @@ async fn the_landing_default_falls_to_the_next_provider_when_the_first_has_no_ca
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
 
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/models/refresh", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

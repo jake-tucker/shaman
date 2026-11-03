@@ -64,7 +64,7 @@ async fn a_remote_that_ended_the_pairing_on_its_side_is_named_as_refusing_this_s
         ["Bind the ledger"]
     );
 
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let peers: Vec<Peer> = http
         .get(format!("{}/v1/pairing/peers", remote.base_url))
         .bearer_auth(&remote.token)
@@ -183,7 +183,7 @@ async fn a_remote_unpaired_while_everywhere_is_asked_takes_what_it_answered_with
 
 /// Removes the Remote `name` at the Server `own` describes.
 async fn unpair(own: &RuntimeDescriptor, name: &str) {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .delete(format!("{}/v1/pairing/remotes/{name}", own.base_url))
         .bearer_auth(&own.token)
         .send()

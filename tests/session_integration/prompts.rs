@@ -37,7 +37,7 @@ async fn authenticated_creation_returns_pending_before_async_provider_failure() 
     let descriptor = server.descriptor().clone();
     let prompt_id = PromptId::new();
 
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let response = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -122,7 +122,7 @@ async fn client_generated_prompt_ids_make_session_creation_retries_idempotent() 
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let prompt_id = PromptId::new();
     let request = CreateSessionRequest {
         session_id: None,
@@ -246,7 +246,7 @@ async fn admitted_steers_stream_once_and_exact_retries_do_not_duplicate_them() {
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -511,7 +511,7 @@ async fn active_turn_admission_preserves_order_and_safe_steer_delivery() {
         .expect("create Session");
     let session_id = created.session.id;
     let _settled = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         session_id,
         SessionRevision(2),
@@ -1078,7 +1078,7 @@ async fn consecutive_prompt_admissions_and_failures_do_not_collapse_revisions() 
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -1195,7 +1195,7 @@ async fn invalid_workspace_and_blank_prompt_are_rejected_before_session_creation
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
 
     let unauthenticated = client
         .post(format!("{}/v1/sessions", descriptor.base_url))

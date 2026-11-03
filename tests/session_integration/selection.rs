@@ -148,7 +148,7 @@ async fn session_creation_makes_the_landing_agent_selection_authoritative() {
         options: Vec::new(),
     };
 
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&serde_json::json!({
@@ -188,7 +188,7 @@ async fn confirmed_landing_agent_selection_defaults_new_sessions_after_a_restart
         .await
         .expect("spawn original server");
     let original_descriptor = original.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
 
     let initial = client
         .post(format!("{}/v1/sessions", original_descriptor.base_url))

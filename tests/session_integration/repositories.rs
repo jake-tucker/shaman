@@ -55,7 +55,7 @@ fn request(
     method: reqwest::Method,
     path: &str,
 ) -> reqwest::RequestBuilder {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .request(method, format!("{}{path}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
 }
@@ -101,7 +101,7 @@ async fn create(descriptor: &RuntimeDescriptor, path: &Path) -> SessionSnapshot 
     )
     .await;
     support::read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         descriptor,
         created.session.id,
         SessionRevision(2),

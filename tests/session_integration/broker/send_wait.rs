@@ -802,7 +802,7 @@ async fn sending_to_a_subagent_working_in_a_continuation_settles_it_and_resumes_
 
 /// Asks the Server to interrupt `session_id`, as a client stopping it does.
 async fn interrupt(descriptor: &RuntimeDescriptor, session_id: SessionId) {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/interrupt",
             descriptor.base_url
@@ -1553,7 +1553,7 @@ async fn the_caller_reads_as_waiting_on_its_subagents_only_while_a_wait_waits() 
     let mut delegating = delegating(state_dir.path(), "broker-wait-reading", None).await;
     let descriptor = delegating.descriptor.clone();
     let (child_id, child_provider) = spawn_working_child(&mut delegating).await;
-    let reader = reqwest::Client::new();
+    let reader = crate::support::loopback_client();
     let before = read_session(&descriptor, delegating.caller).await;
     assert_eq!(before.waiting_on_subagents, None, "spawning is no waiting");
     let working_since = before.working_since();
@@ -1627,7 +1627,7 @@ async fn a_wait_timing_out_or_refused_leaves_the_caller_waiting_on_nothing() {
     .await;
     let descriptor = delegating.descriptor.clone();
     let (child_id, _child_provider) = spawn_working_child(&mut delegating).await;
-    let reader = reqwest::Client::new();
+    let reader = crate::support::loopback_client();
 
     assert_eq!(
         delegating
@@ -1677,7 +1677,7 @@ async fn a_wait_whose_client_has_gone_leaves_the_caller_waiting_on_nothing() {
     let mut delegating = delegating(state_dir.path(), "broker-wait-reading-gone", None).await;
     let descriptor = delegating.descriptor.clone();
     let (child_id, _child_provider) = spawn_working_child(&mut delegating).await;
-    let reader = reqwest::Client::new();
+    let reader = crate::support::loopback_client();
 
     // A harness that gives up on a wait closes its connection; the wait learns
     // so at the next progress it writes, and stops waiting with it.

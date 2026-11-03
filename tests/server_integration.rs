@@ -686,7 +686,7 @@ async fn serving_starts_and_stops_a_second_mtls_listener_without_disturbing_loca
         Ok(read) => panic!("disabled Serving connection produced {read} unexpected bytes"),
     }
 
-    let health = reqwest::Client::new()
+    let health = crate::support::loopback_client()
         .get(format!("{}/health", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -1286,7 +1286,7 @@ async fn remote_proxy_creates_prompts_and_streams_a_session_on_the_serving_serve
 
     let workspace = tempfile::tempdir().expect("create Serving Workspace");
     let descriptor = pair.connecting.descriptor();
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let remote_api = format!("{}/v1/remotes/workstation", descriptor.base_url);
     let remote_health = http
         .get(format!("{remote_api}/health"))
@@ -1448,7 +1448,7 @@ async fn remote_proxy_uploads_fetches_and_binds_attachments_on_the_serving_serve
     let workspace = tempfile::tempdir().expect("create Serving Workspace");
     let descriptor = pair.connecting.descriptor();
     let serving = pair.serving.descriptor();
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let remote_api = format!("{}/v1/remotes/workstation", descriptor.base_url);
 
     // Far past the ordinary command cap, which only the upload route exceeds.
@@ -1614,7 +1614,7 @@ async fn disabling_serving_ends_a_live_peer_stream_without_disturbing_local_clie
         .expect("create a Session on the Serving Server");
     let descriptor = pair.connecting.descriptor();
     let remote_api = format!("{}/v1/remotes/workstation", descriptor.base_url);
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let response = http
         .get(format!(
             "{remote_api}/v1/sessions/{}/events",
@@ -1850,7 +1850,7 @@ async fn outlook_client_runs_session_commands_and_streams_against_its_remote() {
         panic!("Remote catalog starts with a snapshot");
     };
     let serving_descriptor = pair.serving.descriptor();
-    let health = reqwest::Client::new()
+    let health = crate::support::loopback_client()
         .get(format!("{}/health", serving_descriptor.base_url))
         .bearer_auth(&serving_descriptor.token)
         .send()
@@ -2872,7 +2872,7 @@ async fn refuses_server_administration_to_peers(
     instance_id: uuid::Uuid,
     peer_id: &str,
 ) {
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let settings = http
         .post(format!("{remote_api}/v1/settings"))
         .bearer_auth(token)
@@ -2989,7 +2989,7 @@ async fn refuses_server_administration_to_peers(
 #[tokio::test]
 async fn remote_proxy_does_not_carry_the_broker_to_peers() {
     let pair = paired_servers("remote-broker").await;
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let initialize = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -3134,7 +3134,7 @@ async fn a_paired_server_protocol_mismatch_is_status_and_refuses_remote_api_use(
     .expect("restart Serving Server with a newer Pairing protocol");
 
     let descriptor = connecting.descriptor();
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let refused = http
         .get(format!(
             "{}/v1/remotes/workstation/v1/sessions",
@@ -4258,7 +4258,7 @@ async fn an_attachment_check_through_the_proxy_keeps_the_reason_for_a_not_found(
 
     let descriptor = pair.connecting.descriptor();
     let head = |remote: &str, id: &suru::protocol::AttachmentId| {
-        reqwest::Client::new()
+        crate::support::loopback_client()
             .head(format!(
                 "{}/v1/remotes/{remote}/v1/attachments/{id}",
                 descriptor.base_url
@@ -5252,7 +5252,7 @@ async fn an_unreadable_landing_agent_selection_falls_back_without_blocking_start
         .await
         .expect("unreadable preference must not block startup");
     let descriptor = replacement.descriptor().clone();
-    let health = reqwest::Client::new()
+    let health = crate::support::loopback_client()
         .get(format!("{}/health", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -5280,7 +5280,7 @@ async fn authenticated_health_describes_the_ready_server() {
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
 
     assert!(descriptor.base_url.starts_with("http://127.0.0.1:"));
     assert_ne!(descriptor.base_url, "http://127.0.0.1:0");
@@ -5488,7 +5488,7 @@ async fn stop_refuses_a_mismatched_instance_without_affecting_the_server() {
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
 
     let response = client
         .post(format!("{}/v1/server/stop", descriptor.base_url))
@@ -5532,7 +5532,7 @@ async fn authenticated_manual_stop_notifies_clients_and_removes_its_registration
     .await
     .expect("connect managed client");
     receive_initial_state(&mut managed).await;
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
 
     let response = client
         .post(format!("{}/v1/server/stop", descriptor.base_url))
@@ -5607,7 +5607,7 @@ async fn stop_waits_for_its_target_when_the_registration_is_replaced() {
         .with_health_check_timeout(Duration::from_millis(50))
         .with_stop_timeout(Duration::from_millis(500));
     let stopping = tokio::spawn(async move { stop_server(&stop_config).await });
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
 
     timeout(PROGRESS_DEADLINE, async {
         loop {
@@ -6041,7 +6041,7 @@ async fn sse_keepalive_comments_are_periodic_and_event_neutral() {
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .get(format!("{}/v1/events", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -6133,7 +6133,7 @@ async fn authenticated_replacement_stop_emits_replacement_intent() {
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let response = http
         .get(format!("{}/v1/events", descriptor.base_url))
         .bearer_auth(&descriptor.token)

@@ -1799,10 +1799,7 @@ async fn a_client_following_a_pending_login_holds_up_no_shutdown() {
     url.path_segments_mut()
         .unwrap()
         .extend(["v1", "relays", &address, "login"]);
-    let mut following = reqwest::Client::builder()
-        .no_proxy()
-        .build()
-        .unwrap()
+    let mut following = crate::support::loopback_client()
         .get(url)
         .bearer_auth(&descriptor.token)
         .send()

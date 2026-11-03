@@ -89,7 +89,7 @@ async fn client_admits(
     session_id: SessionId,
     text: &str,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/prompts",
             descriptor.base_url
@@ -114,7 +114,7 @@ async fn client_interrupts(
     descriptor: &RuntimeDescriptor,
     session_id: SessionId,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/interrupt",
             descriptor.base_url
@@ -131,7 +131,7 @@ async fn client_settles(
     session_id: SessionId,
     settled: bool,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/settlement",
             descriptor.base_url
@@ -317,7 +317,7 @@ async fn send_prompt_steers_a_working_turn_unless_asked_to_queue() {
     assert_eq!(steer.prompt(), STEERED);
     steer.succeed();
     let snapshot = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         target,
         "the steer stands in the working Turn",
@@ -766,7 +766,7 @@ async fn a_sidekicks_prompt_and_its_message_keep_their_author_across_a_restart()
 /// Turn as a Client's queue does it.
 async fn client_promotes(descriptor: &RuntimeDescriptor, session_id: SessionId, text: &str) {
     let prompt_id = prompt_saying(&read_session(descriptor, session_id).await, text).id;
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/prompts/{prompt_id}/promote",
             descriptor.base_url
@@ -825,7 +825,7 @@ async fn a_queued_sidekick_prompt_promoted_or_delivered_becomes_a_message_naming
     assert_eq!(next.prompt(), QUEUED);
     next.succeed();
     let snapshot = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         target,
         "both Prompts stand as Messages",
@@ -1060,7 +1060,7 @@ async fn a_client_cannot_name_an_author_through_the_session_api() {
         json!({ "prompt": prompt(Some(&author)), "delivery": "queue" }),
         json!({ "prompt": prompt(None), "delivery": "queue", "author": author }),
     ] {
-        let response = reqwest::Client::new()
+        let response = crate::support::loopback_client()
             .post(format!(
                 "{}/v1/sessions/{target}/prompts",
                 descriptor.base_url
@@ -1080,7 +1080,7 @@ async fn a_client_cannot_name_an_author_through_the_session_api() {
             suru::protocol::SessionErrorCode::InvalidCommand
         );
     }
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&json!({
@@ -1109,7 +1109,7 @@ async fn a_client_cannot_name_an_author_through_the_session_api() {
 /// The Error the `turns`th Turn of `target` failed with, once it has.
 async fn failed_with(descriptor: &RuntimeDescriptor, target: SessionId, turns: usize) -> String {
     let snapshot = read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         descriptor,
         target,
         "the Turn fails",

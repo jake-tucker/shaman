@@ -28,7 +28,7 @@ async fn authenticated_session_stream_starts_with_a_complete_revisioned_snapshot
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -152,7 +152,7 @@ async fn real_session_stream_appends_and_completes_one_stable_agent_message() {
         .expect("create Session");
     let session_id = created.session.id;
     let settled = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         session_id,
         SessionRevision(2),
@@ -322,7 +322,7 @@ async fn active_session_stream_does_not_delay_graceful_server_shutdown() {
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)

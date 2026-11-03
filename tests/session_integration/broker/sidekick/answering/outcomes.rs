@@ -40,7 +40,7 @@ async fn stands(
     outcome: QuestionnaireOutcome,
 ) {
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         descriptor,
         session_id,
         "the Questionnaire stands as expected",

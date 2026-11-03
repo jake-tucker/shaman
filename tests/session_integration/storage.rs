@@ -56,7 +56,7 @@ async fn safe_skill_invocations_are_readable_after_a_server_restart() {
     let original = spawn_with_failing_provider(config.clone())
         .await
         .expect("spawn original server");
-    let created = reqwest::Client::new()
+    let created = crate::support::loopback_client()
         .post(format!("{}/v1/sessions", original.descriptor().base_url))
         .bearer_auth(&original.descriptor().token)
         .json(&CreateSessionRequest {
@@ -82,7 +82,7 @@ async fn safe_skill_invocations_are_readable_after_a_server_restart() {
         .await
         .expect("decode created Session");
     let before_restart = read_session_at_least_revision(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         original.descriptor(),
         created.session.id,
         SessionRevision(2),
@@ -93,7 +93,7 @@ async fn safe_skill_invocations_are_readable_after_a_server_restart() {
     let replacement = spawn_with_failing_provider(config)
         .await
         .expect("spawn replacement server");
-    let restored = reqwest::Client::new()
+    let restored = crate::support::loopback_client()
         .get(format!(
             "{}/v1/sessions/{}",
             replacement.descriptor().base_url,
@@ -161,7 +161,7 @@ async fn authenticated_clients_can_read_a_session_by_id() {
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -251,7 +251,7 @@ async fn session_discovery_lists_newest_first_and_filters_by_canonical_workspace
     .await
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
 
     let create = |path: &std::path::Path, text: &str| CreateSessionRequest {
         session_id: None,
@@ -366,7 +366,7 @@ async fn session_metadata_remains_listed_after_a_server_restart() {
         .await
         .expect("spawn original server");
     let original_descriptor = original.descriptor().clone();
-    let session = reqwest::Client::new()
+    let session = crate::support::loopback_client()
         .post(format!("{}/v1/sessions", original_descriptor.base_url))
         .bearer_auth(&original_descriptor.token)
         .json(&CreateSessionRequest {
@@ -391,7 +391,7 @@ async fn session_metadata_remains_listed_after_a_server_restart() {
         .json::<SessionSnapshot>()
         .await
         .expect("decode created Session");
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{}/agent-selection",
             original_descriptor.base_url, session.session.id
@@ -406,7 +406,7 @@ async fn session_metadata_remains_listed_after_a_server_restart() {
         .expect("update Agent Selection before restart")
         .error_for_status()
         .expect("Agent Selection update succeeds before restart");
-    let before_restart = reqwest::Client::new()
+    let before_restart = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", original_descriptor.base_url))
         .bearer_auth(&original_descriptor.token)
         .send()
@@ -437,7 +437,7 @@ async fn session_metadata_remains_listed_after_a_server_restart() {
         .await
         .expect("spawn replacement server");
     let replacement_descriptor = replacement.descriptor().clone();
-    let after_restart = reqwest::Client::new()
+    let after_restart = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", replacement_descriptor.base_url))
         .bearer_auth(&replacement_descriptor.token)
         .send()
@@ -487,7 +487,7 @@ async fn completed_transcript_is_readable_after_a_server_restart() {
         .await
         .expect("spawn original server");
     let descriptor = original.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -629,7 +629,7 @@ async fn completed_transcript_is_readable_after_a_server_restart() {
     let replacement = server::spawn_with_provider(config, replacement_runtime)
         .await
         .expect("spawn replacement server");
-    let reopened = reqwest::Client::new()
+    let reopened = crate::support::loopback_client()
         .get(format!(
             "{}/v1/sessions/{}",
             replacement.descriptor().base_url,
@@ -708,7 +708,7 @@ async fn tool_calls_are_readable_after_a_server_restart() {
         .await
         .expect("spawn original server");
     let descriptor = original.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -919,7 +919,7 @@ async fn tool_calls_are_readable_after_a_server_restart() {
     let replacement = server::spawn_with_provider(config, replacement_runtime)
         .await
         .expect("spawn replacement server");
-    let reopened = reqwest::Client::new()
+    let reopened = crate::support::loopback_client()
         .get(format!(
             "{}/v1/sessions/{}",
             replacement.descriptor().base_url,
@@ -1013,7 +1013,7 @@ async fn resume_after_summary_mutation(resume_state: Option<serde_json::Value>, 
         .await
         .expect("spawn original server");
     let original_descriptor = original.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = client
         .post(format!("{}/v1/sessions", original_descriptor.base_url))
         .bearer_auth(&original_descriptor.token)
@@ -1207,7 +1207,7 @@ async fn unopened_history_is_not_decoded_or_rewritten_and_failed_hydration_inval
     let original = spawn_with_failing_provider(config.clone())
         .await
         .expect("spawn original server");
-    let created = reqwest::Client::new()
+    let created = crate::support::loopback_client()
         .post(format!("{}/v1/sessions", original.descriptor().base_url))
         .bearer_auth(&original.descriptor().token)
         .json(&CreateSessionRequest {
@@ -1249,7 +1249,7 @@ async fn unopened_history_is_not_decoded_or_rewritten_and_failed_hydration_inval
     let replacement = spawn_with_failing_provider(config)
         .await
         .expect("an unreadable Session must not block startup");
-    let initial = reqwest::Client::new()
+    let initial = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", replacement.descriptor().base_url))
         .bearer_auth(&replacement.descriptor().token)
         .send()
@@ -1272,7 +1272,7 @@ async fn unopened_history_is_not_decoded_or_rewritten_and_failed_hydration_inval
         replacement.descriptor(),
     )
     .await;
-    let failed = reqwest::Client::new()
+    let failed = crate::support::loopback_client()
         .get(format!(
             "{}/v1/sessions/{}",
             replacement.descriptor().base_url,
@@ -1294,7 +1294,7 @@ async fn unopened_history_is_not_decoded_or_rewritten_and_failed_hydration_inval
         }
     );
     drop(events);
-    let listed = reqwest::Client::new()
+    let listed = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", replacement.descriptor().base_url))
         .bearer_auth(&replacement.descriptor().token)
         .send()
@@ -1370,7 +1370,7 @@ async fn turn_timing_survives_a_restart_and_a_session_stored_before_it_stays_rea
         .await
         .expect("spawn original server");
     let descriptor = original.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -1509,7 +1509,7 @@ async fn turn_usage_survives_a_restart() {
         .await
         .expect("spawn original server");
     let descriptor = original.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -1621,7 +1621,7 @@ async fn a_restored_summary_reads_the_turn_it_cut_off_as_settled() {
         .await
         .expect("spawn original server");
     let descriptor = original.descriptor().clone();
-    let client = reqwest::Client::new();
+    let client = crate::support::loopback_client();
     let created = client
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -1678,7 +1678,7 @@ async fn a_restored_summary_reads_the_turn_it_cut_off_as_settled() {
         .await
         .expect("spawn restarted server");
     let summaries = readable_session_summaries(
-        reqwest::Client::new()
+        crate::support::loopback_client()
             .get(format!("{}/v1/sessions", restarted.descriptor().base_url))
             .bearer_auth(&restarted.descriptor().token)
             .send()
@@ -1711,7 +1711,7 @@ async fn read_persisted_session(
     descriptor: &suru::protocol::RuntimeDescriptor,
     session_id: SessionId,
 ) -> SessionSnapshot {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .get(format!("{}/v1/sessions/{session_id}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

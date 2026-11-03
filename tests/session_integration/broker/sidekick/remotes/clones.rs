@@ -198,7 +198,7 @@ async fn a_clone_on_a_remote_has_its_icon_and_description_derived_there() {
     let origin = bare_repository(&elsewhere, "atlas");
     name_roots(&remote, &[&there]).await;
     let landing: AgentSelection = default_selection(&claude_models());
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .put(format!("{}/v1/landing-agent-selection", remote.base_url))
         .bearer_auth(&remote.token)
         .json(&landing)
@@ -341,7 +341,7 @@ async fn a_remote_refuses_a_clone_by_its_own_roots_and_rules_in_its_own_words() 
     );
 
     name_roots(&remote, &[&there]).await;
-    let by_a_client = reqwest::Client::new()
+    let by_a_client = crate::support::loopback_client()
         .post(format!("{}/v1/workspaces/clone", remote.base_url))
         .bearer_auth(&remote.token)
         .json(&CloneWorkspaceRequest {

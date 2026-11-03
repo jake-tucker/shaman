@@ -141,7 +141,7 @@ async fn set_workspace_icon_response(
     workspace_id: &WorkspaceId,
     icon: &str,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/workspaces/icon", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&SetWorkspaceIconRequest {

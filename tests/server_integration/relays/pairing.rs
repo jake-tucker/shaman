@@ -1085,7 +1085,7 @@ async fn a_session_is_created_prompted_and_streamed_through_a_relay_as_directly(
     let mut paired = PairedThrough::start("relay-pairing-session").await;
     let workspace = tempfile::tempdir().expect("create a Workspace on the workstation");
     let descriptor = paired.laptop.server.as_ref().unwrap().descriptor().clone();
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let remote_api = format!("{}/v1/remotes/{REMOTE}", descriptor.base_url);
 
     let health = http
@@ -1230,7 +1230,7 @@ async fn a_session_is_created_prompted_and_streamed_through_a_relay_as_directly(
 async fn an_attachment_is_uploaded_and_fetched_through_a_relay_as_directly() {
     let paired = PairedThrough::start("relay-pairing-attachment").await;
     let descriptor = paired.laptop.server.as_ref().unwrap().descriptor().clone();
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let remote_api = format!("{}/v1/remotes/{REMOTE}", descriptor.base_url);
 
     // Far past what one frame a Relay carries holds.
@@ -1278,7 +1278,7 @@ async fn an_attachment_whose_reader_pauses_past_the_heartbeat_is_fetched_whole()
     )
     .await;
     let descriptor = paired.laptop.server.as_ref().unwrap().descriptor().clone();
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let remote_api = format!("{}/v1/remotes/{REMOTE}", descriptor.base_url);
     let image = crate::server_integration::padded_png(5 * 1024 * 1024);
     let attachment = http
@@ -2337,7 +2337,7 @@ impl RemoteApi {
     pub(super) fn of(laptop: &TestServer) -> Self {
         let descriptor = laptop.server.as_ref().unwrap().descriptor().clone();
         Self {
-            http: reqwest::Client::new(),
+            http: crate::support::loopback_client(),
             remote: format!("{}/v1/remotes/{REMOTE}", descriptor.base_url),
             token: descriptor.token,
         }
@@ -3358,7 +3358,7 @@ async fn a_request_past_as_many_as_await_a_remotes_answer_at_once_is_refused_at_
 async fn a_probe_past_as_many_as_await_a_remotes_answer_at_once_is_refused_at_once() {
     let paired = awaiting_a_held_join("relay-pairing-awaiting-probes").await;
     let descriptor = paired.laptop.server.as_ref().unwrap().descriptor().clone();
-    let http = reqwest::Client::new();
+    let http = crate::support::loopback_client();
     let probing = || {
         http.post(format!(
             "{}/v1/pairing/remotes/{REMOTE}/health",

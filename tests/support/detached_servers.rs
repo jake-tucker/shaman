@@ -349,7 +349,7 @@ fn request_stop(servers: &[RuntimeDescriptor]) {
                 return;
             };
             runtime.block_on(async {
-                let client = reqwest::Client::new();
+                let client = crate::support::loopback_client();
                 let requests = servers.iter().map(|descriptor| {
                     client
                         .post(format!("{}/v1/server/stop", descriptor.base_url))

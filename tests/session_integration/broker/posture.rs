@@ -84,7 +84,7 @@ async fn set_posture(
     session_id: SessionId,
     posture: Option<ApprovalPosture>,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/approval-posture",
             descriptor.base_url

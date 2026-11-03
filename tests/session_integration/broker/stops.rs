@@ -63,7 +63,7 @@ pub(super) async fn interrupt(
     descriptor: &RuntimeDescriptor,
     session_id: SessionId,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/interrupt",
             descriptor.base_url

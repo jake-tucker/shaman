@@ -287,7 +287,7 @@ async fn read_session_reads_the_latest_turns_ask_and_answer_by_default_and_reads
         "reading a Session is no Viewed report, so its Standing reads as it did"
     );
 
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/settlement",
             descriptor.base_url
@@ -360,7 +360,7 @@ async fn read_session_gives_an_open_questionnaire_whole_and_a_pending_approval_a
         })
         .await;
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         asking,
         "the Questionnaire waits on an Answer",
@@ -427,7 +427,7 @@ async fn read_session_gives_an_open_questionnaire_whole_and_a_pending_approval_a
         })
         .await;
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         approving,
         "the Approval waits on the user's Decision",
@@ -480,7 +480,7 @@ async fn a_sidekick_reads_a_subagents_session_and_another_sidekicks() {
         .succeed();
     write_agent_message(&subagent_provider, "Nothing amiss.").await;
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         subagent_id,
         "the Subagent's Message is recorded",
@@ -733,7 +733,7 @@ async fn a_prompt_a_sidekick_sent_reads_as_the_sidekicks_words_rather_than_the_u
         .expect("the Sidekick's Prompt begins a Turn")
         .succeed();
     read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         &descriptor,
         target,
         "the Sidekick's Message is recorded",

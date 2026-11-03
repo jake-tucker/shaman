@@ -27,6 +27,16 @@ use suru::{
 };
 use tokio::time::timeout;
 
+/// An HTTP client for a Server under test, which listens on loopback. It never
+/// asks the system for an HTTP proxy: on macOS that lookup costs most of a
+/// second in each test process, and a proxy has no business with loopback.
+pub fn loopback_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .expect("a loopback HTTP client needs nothing that can fail")
+}
+
 pub fn write_runtime_descriptor(path: impl AsRef<std::path::Path>, descriptor: &RuntimeDescriptor) {
     let path = path.as_ref();
     serde_json::to_writer(
@@ -50,7 +60,7 @@ pub fn read_runtime_descriptor(path: impl AsRef<std::path::Path>) -> RuntimeDesc
 /// reader takes Onboarding. A test attaching a TUI to a fresh Server seeds
 /// this so the TUI opens on the Landing rather than on the flow.
 pub async fn mark_onboarded(descriptor: &RuntimeDescriptor) {
-    reqwest::Client::new()
+    loopback_client()
         .put(format!("{}/v1/onboarded", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -325,7 +335,7 @@ pub async fn request_server_shutdown(
     descriptor: &RuntimeDescriptor,
     reason: ShutdownReason,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    loopback_client()
         .post(format!("{}/v1/server/stop", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&ServerShutdown {
@@ -342,7 +352,7 @@ pub async fn request_server_shutdown(
 pub async fn open_raw_catalog_stream(
     descriptor: &RuntimeDescriptor,
 ) -> impl futures_util::Stream<Item = eventsource_stream::Event> + Unpin + use<> {
-    let response = reqwest::Client::new()
+    let response = loopback_client()
         .get(format!("{}/v1/session-events", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

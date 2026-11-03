@@ -53,7 +53,7 @@ async fn spawn(roots: &Roots, channel: &str) -> RunningServer {
 
 /// The Server's health, or `None` once nothing answers at its address.
 async fn health(descriptor: &RuntimeDescriptor) -> Option<Health> {
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .get(format!("{}/health", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .timeout(PROGRESS_DEADLINE)
@@ -104,7 +104,7 @@ async fn a_server_whose_state_directory_is_removed_stops_and_shuts_its_providers
         .await
         .expect("spawn server");
     let descriptor = server.descriptor().clone();
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&CreateSessionRequest {
@@ -398,7 +398,7 @@ async fn a_server_sharing_one_root_makes_nothing_there_before_it_notices_the_roo
     assert_eq!(config.state_dir(), config.data_dir());
 
     std::fs::remove_dir_all(config.state_dir()).expect("remove the shared directory");
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!("{}/v1/workspaces/sidekick", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()

@@ -2957,7 +2957,7 @@ async fn an_unauthenticated_mutation_never_reaches_the_config_document() {
     .expect("spawn server");
     let descriptor = server.descriptor().clone();
 
-    let refused = reqwest::Client::new()
+    let refused = crate::support::loopback_client()
         .post(format!("{}/v1/settings", descriptor.base_url))
         .json(&SettingMutation::TranscriptDefaultFoldPosture {
             value: Some(FoldPosture::Expanded),

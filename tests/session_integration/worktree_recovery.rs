@@ -119,7 +119,7 @@ async fn open(
         .succeed();
     connected.emit(ProviderEvent::TurnCompleted);
     support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         snapshot.session.id,
         "initial Turn completed",
@@ -137,7 +137,7 @@ async fn admit(
     id: SessionId,
     prompt: InitialPrompt,
 ) -> reqwest::Response {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/sessions/{id}/prompts", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .json(&AdmitPromptRequest {
@@ -514,7 +514,7 @@ async fn prompt_gate_persists_external_branch_switch_without_catalog_interest_be
         .succeed();
     connection.emit(ProviderEvent::TurnCompleted);
     support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         original.session.id,
         "new branch Turn settles",
@@ -669,7 +669,7 @@ async fn shared_recovery_does_not_interrupt_working_session_and_refuses_stale_na
     );
     old_a.emit(ProviderEvent::TurnCompleted);
     support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         a.session.id,
         "original native work settles normally",
@@ -703,7 +703,7 @@ async fn already_admitted_queued_prompt_recovers_at_native_start_and_revalidates
         .unwrap()
         .succeed();
     let queued = prompt("Queued work must not use stale process");
-    let response = reqwest::Client::new()
+    let response = crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{}/prompts",
             server.descriptor().base_url,
@@ -722,7 +722,7 @@ async fn already_admitted_queued_prompt_recovers_at_native_start_and_revalidates
     runtime.fail_skill_discovery("catalog unavailable after checkout recreation");
     connection.emit(ProviderEvent::TurnCompleted);
     let failed = support::read_session_until(
-        &reqwest::Client::new(),
+        &crate::support::loopback_client(),
         server.descriptor(),
         original.session.id,
         "queued recovery skill failure",

@@ -43,7 +43,7 @@ pub fn webp(width: u32, height: u32) -> Vec<u8> {
 /// Uploads `bytes` to the Server `descriptor` names, answering with the
 /// Attachment it stored them as.
 pub async fn uploaded(descriptor: &RuntimeDescriptor, bytes: Vec<u8>) -> AttachmentDescriptor {
-    reqwest::Client::new()
+    crate::support::loopback_client()
         .post(format!("{}/v1/attachments", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .header(CONTENT_TYPE, "application/octet-stream")
