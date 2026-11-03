@@ -19,6 +19,7 @@ use crate::protocol::{
 
 use super::{
     commands::SemanticCommandId,
+    destination::DestinationPurpose,
     list_window::{ListWindow, WindowEntry, furthest_opening},
     state::ScrollDirection,
 };
@@ -37,16 +38,18 @@ pub(super) struct DirectoryListingAsk {
     pub(super) request: ListDirectoryRequest,
 }
 
-/// Where the browser was opened from, which is where Esc takes the reader.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+/// Where the browser was opened from, which is where Esc takes the reader,
+/// and so what a choice is for.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum DirectoryBrowserProvenance {
-    /// Opened by `/browse` or its chord, so Esc closes it outright.
-    #[default]
-    Standalone,
+    /// Opened by `/browse` or its chord, so Esc closes it outright and a
+    /// choice concludes as the purpose says.
+    Standalone(DestinationPurpose),
     /// Opened from the Workspace Picker, by its Browse row or its key, so Esc
     /// goes back to the picker as the reader left it, and a choice closes
-    /// the picker as well as the browser.
-    FromWorkspacePicker,
+    /// the picker as well as the browser and concludes as the purpose the
+    /// picker was opened for says.
+    FromWorkspacePicker(DestinationPurpose),
     /// Opened from the settings panel's editor of a list of directories, so
     /// it stands over the panel, Esc goes back to the editor, and a choice is
     /// an entry of the list rather than where the next Session works.
@@ -55,6 +58,14 @@ pub(super) enum DirectoryBrowserProvenance {
     /// flow, Esc goes back to the step, and a choice is an entry of the
     /// step's draft.
     FromOnboarding,
+}
+
+/// A browser not yet opened stands as one `/browse` would open, which is
+/// all a closed browser is asked of where it came from.
+impl Default for DirectoryBrowserProvenance {
+    fn default() -> Self {
+        Self::Standalone(DestinationPurpose::default())
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -193,13 +204,11 @@ impl RowKey {
     }
 }
 
-/// A directory the reader chose in the browser, and where the browser was
-/// opened from, which says what the choice is for.
+/// A directory the reader chose in the browser.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ChosenDirectory {
     /// The directory chosen, by the Server's own path.
     pub(super) path: PathBuf,
-    pub(super) provenance: DirectoryBrowserProvenance,
     /// The Landing's Execution Directory as the browser opened, which the
     /// listings it asked for were read from.
     base: PathBuf,
@@ -531,18 +540,15 @@ impl DirectoryBrowser {
     /// with where the browser was opened from, which the choice is done with
     /// too. The drive list is no directory, so focus standing on it chooses
     /// nothing and leaves the browser open.
-    pub(super) fn choose_focused(&mut self) -> Option<ChosenDirectory> {
+    pub(super) fn choose_focused(
+        &mut self,
+    ) -> Option<(DirectoryBrowserProvenance, ChosenDirectory)> {
         let path = self.focused.directory().to_owned();
         if is_drive_list(&path) {
             return None;
         }
         let base = self.base.clone();
-        let provenance = self.close();
-        Some(ChosenDirectory {
-            path,
-            provenance,
-            base,
-        })
+        Some((self.close(), ChosenDirectory { path, base }))
     }
 
     /// Whether the browser is open, opened from the settings panel's list
@@ -1232,4 +1238,38 @@ fn is_drive_list(path: &Path) -> bool {
 /// `path` as the field spells it.
 fn spelling(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{DirectoryBrowser, DirectoryBrowserProvenance};
+    use crate::{protocol::Outlook, tui::destination::DestinationPurpose};
+
+    /// Windows reads `/work` as a relative path, so the root is spelled for
+    /// the platform the test runs on.
+    fn root() -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(r"C:\work")
+        } else {
+            PathBuf::from("/work")
+        }
+    }
+
+    #[test]
+    fn a_choice_answers_where_the_browser_was_opened_from_and_so_its_purpose() {
+        for provenance in [
+            DirectoryBrowserProvenance::Standalone(DestinationPurpose::Landing),
+            DirectoryBrowserProvenance::FromWorkspacePicker(DestinationPurpose::Landing),
+            DirectoryBrowserProvenance::FromListEditor,
+        ] {
+            let mut browser = DirectoryBrowser::default();
+            browser.open(Outlook::Local, root(), provenance.clone());
+            let (answered, chosen) = browser.choose_focused().expect("the root is a directory");
+            assert_eq!(answered, provenance);
+            assert_eq!(chosen.path, root());
+            assert!(!browser.is_open(), "a choice is done with the browser");
+        }
+    }
 }

@@ -53,6 +53,7 @@ use super::{
     composer::{ComposerKey, ComposerMemory, SelectionMotion},
     connect_overlay::{ConnectOverlay, ConnectRequest, LoginStep},
     context_overlay::{ContextBreakdownRefusal, ContextOverlay},
+    destination::{Destination, DestinationPurpose},
     directory_browser::{
         DirectoryBrowser, DirectoryBrowserProvenance, DirectoryListingAsk, DirectoryListingId,
     },
@@ -108,6 +109,7 @@ use super::{
         TranscriptTurnFolds, TranscriptView, UnitKey, UnitStart, streams_live_output,
     },
     workspace_picker::{WorkspacePicker, WorkspacePickerChoice},
+    worktree_picker::WorktreeChoice,
 };
 
 #[cfg(test)]
@@ -8217,9 +8219,9 @@ impl Application {
         Ok(transition)
     }
 
-    /// Worktree choices affect the next Session's execution context only.
+    /// The Worktree Selector's commands. Choosing a row concludes as the
+    /// purpose the selector was opened for says.
     fn handle_worktree_command(&mut self, command: SemanticCommandId) -> ApplicationTransition {
-        use super::worktree_picker::WorktreeChoice;
         match command {
             SemanticCommandId::WorktreeRemove | SemanticCommandId::WorktreeForceRemove => {
                 if self.state.worktree_picker.loading {
@@ -8289,7 +8291,7 @@ impl Application {
                 if self.state.resolving_workspace().is_some() {
                     return ApplicationTransition::Continue;
                 }
-                self.state.worktree_picker.open();
+                self.state.worktree_picker.open(DestinationPurpose::Landing);
                 self.state.command_mode = CommandMode::Composer;
                 let request = self.current_workspace_request();
                 return self.resolve_worktree(WorkspaceResolutionSurface::WorktreeList, request);
@@ -8326,85 +8328,9 @@ impl Application {
                 if self.state.worktree_picker.removal.is_some() {
                     return self.handle_worktree_command(SemanticCommandId::WorktreeRemove);
                 }
-                match self.state.worktree_picker.choice() {
-                    Some(WorktreeChoice::New) => {
-                        let capability = self
-                            .state
-                            .worktree_picker
-                            .context
-                            .as_ref()
-                            .and_then(|c| c.workspace.repository.as_ref())
-                            .map(|r| &r.capabilities.create_checkout);
-                        if let Some(crate::protocol::SourceControlCapability::Unsupported {
-                            reason,
-                        }) = capability
-                        {
-                            self.state.worktree_picker.fail(reason.clone());
-                            return ApplicationTransition::Continue;
-                        }
-                        if capability.is_none() {
-                            self.state
-                                .worktree_picker
-                                .fail("A Repository is required".to_owned());
-                            return ApplicationTransition::Continue;
-                        }
-                        let Some(selection) = &self.state.landing_agent_selection else {
-                            self.state
-                                .worktree_picker
-                                .fail("Choose an Agent first".to_owned());
-                            return ApplicationTransition::Continue;
-                        };
-                        if self.state.new_worktree.is_none() {
-                            self.state.new_worktree =
-                                Some(crate::protocol::PrepareCheckoutRequest {
-                                    intended_session: None,
-                                    id: Default::default(),
-                                    source: crate::protocol::ExecutionDirectory {
-                                        path: self
-                                            .state
-                                            .execution_directory
-                                            .clone()
-                                            .unwrap_or_else(|| self.state.workspace.path.clone()),
-                                    },
-                                    prompt: Default::default(),
-                                    provider: selection.provider.clone(),
-                                });
-                        }
-                        self.state.worktree_picker.close();
-                    }
-                    Some(WorktreeChoice::Checkout(checkout)) => {
-                        // Choosing the Worktree the next Session already
-                        // stands in is saying to stay put: there is nothing to
-                        // resolve, and a pending intention to make another one
-                        // is what the reader has just taken back.
-                        if self.state.worktree_picker.current_checkout()
-                            == Some(&checkout.association.id)
-                        {
-                            self.state.landing_return = None;
-                            self.state.cancel_worktree_intent();
-                            self.state.worktree_picker.close();
-                            return ApplicationTransition::Continue;
-                        }
-                        if let crate::protocol::SourceControlAvailability::Unavailable { reason } =
-                            &checkout.availability
-                        {
-                            self.state.worktree_picker.fail(reason.clone());
-                            return ApplicationTransition::Continue;
-                        }
-                        let request = ResolveWorkspaceRequest {
-                            checkout_id: Some(checkout.association.id),
-                            remembered_execution_directory: None,
-                            workspace_id: Some(self.state.workspace.id.clone()),
-                            base: None,
-                            path: self.state.workspace.path.clone(),
-                        };
-                        self.state.worktree_picker.loading = true;
-                        return self.resolve_worktree(
-                            WorkspaceResolutionSurface::WorktreeSelection,
-                            request,
-                        );
-                    }
-                    None => {}
+                if let Some(choice) = self.state.worktree_picker.choice() {
+                    let purpose = self.state.worktree_picker.purpose().clone();
+                    return self.conclude(purpose, Destination::Worktree(choice));
                 }
             }
             _ => {}
@@ -8464,13 +8390,12 @@ impl Application {
             CommandId::PagePreviousWorkspaces => self.state.workspace_picker.page_previous(),
             CommandId::PageNextWorkspaces => self.state.workspace_picker.page_next(),
             CommandId::CloseWorkspacePicker => self.state.workspace_picker.close(),
-            // Choosing a Workspace lands the reader in it at once, and adopts
-            // it in full once its Server has resolved it, which can take that
-            // Server seconds the reader need not spend watching the picker.
-            // Before the listing arrives no row is the reader's, so there is
-            // nothing to choose and the picker stands on its loading line.
-            // Choosing the Browse row opens the Directory Browser in the
-            // picker's place, as the picker's own key does.
+            // Choosing a Workspace is done with the picker, and concludes as
+            // the purpose it was opened for says. Before the listing arrives
+            // no row is the reader's, so there is nothing to choose and the
+            // picker stands on its loading line. Choosing the Browse row opens
+            // the Directory Browser in the picker's place, as the picker's own
+            // key does.
             CommandId::SelectWorkspace => match self.state.workspace_picker.offer_selected() {
                 Some(WorkspacePickerChoice::Browse) => {
                     return self.invoke_semantic(SemanticCommandId::WorkspaceBrowse);
@@ -8481,26 +8406,123 @@ impl Application {
                     self.state.workspace_picker.refuse(refusal);
                 }
                 Some(WorkspacePickerChoice::Workspace(workspace)) => {
+                    let purpose = self.state.workspace_picker.purpose().clone();
                     self.state.workspace_picker.close();
-                    let request = ResolveWorkspaceRequest {
-                        checkout_id: None,
-                        remembered_execution_directory: self
-                            .state
-                            .remembered_execution_directories
-                            .get(&(self.state.outlook.clone(), workspace.id.clone()))
-                            .and_then(|remembered| remembered.directory.clone())
-                            .map(|path| crate::protocol::ExecutionDirectory { path }),
-                        workspace_id: Some(workspace.id.clone()),
-                        base: None,
-                        path: workspace.path.clone(),
-                    };
-                    return Ok(self.land_in_chosen_workspace(workspace, request));
+                    return Ok(self.conclude(purpose, Destination::Workspace(workspace)));
                 }
                 None => {}
             },
             _ => {}
         }
         Ok(ApplicationTransition::Continue)
+    }
+
+    /// Concludes a destination picker: acts on where the reader chose there
+    /// as the purpose the picker was opened for says. The Workspace Picker and
+    /// the Directory Browser have put themselves away by now; the Worktree
+    /// Selector is the purpose's to close, since it may stand while the
+    /// purpose waits on its Server.
+    fn conclude(
+        &mut self,
+        purpose: DestinationPurpose,
+        destination: Destination,
+    ) -> ApplicationTransition {
+        match purpose {
+            DestinationPurpose::Landing => self.land_at(destination),
+        }
+    }
+
+    /// Opens the Landing where the reader chose, for the next Session to begin
+    /// there. A Workspace or a directory is landed in at once and adopted in
+    /// full once its Server has resolved it, which can take that Server
+    /// seconds the reader need not spend watching a picker; a Worktree is
+    /// resolved first, its selector standing until the answer lands.
+    fn land_at(&mut self, destination: Destination) -> ApplicationTransition {
+        match destination {
+            Destination::Worktree(choice) => self.land_in_worktree(choice),
+            Destination::Workspace(workspace) => {
+                let request = ResolveWorkspaceRequest {
+                    checkout_id: None,
+                    remembered_execution_directory: self
+                        .state
+                        .remembered_execution_directories
+                        .get(&(self.state.outlook.clone(), workspace.id.clone()))
+                        .and_then(|remembered| remembered.directory.clone())
+                        .map(|path| crate::protocol::ExecutionDirectory { path }),
+                    workspace_id: Some(workspace.id.clone()),
+                    base: None,
+                    path: workspace.path.clone(),
+                };
+                self.land_in_chosen_workspace(workspace, request)
+            }
+            // Until the Server answers, all the client knows of where the
+            // reader chose is the directory itself, so that is what the
+            // Landing names while it waits.
+            Destination::Directory(chosen) => {
+                let directory = Workspace::directory(chosen.path.clone());
+                self.land_in_chosen_workspace(directory, chosen.into_workspace_resolution())
+            }
+        }
+    }
+
+    /// Moves the Landing to a Worktree chosen in the Worktree Selector, which
+    /// affects the next Session's execution context only: a new Worktree is
+    /// an intent made on first Prompt submission, and an existing one is
+    /// resolved before the selector closes.
+    fn land_in_worktree(&mut self, choice: WorktreeChoice) -> ApplicationTransition {
+        // Choosing the Worktree the next Session already stands in is saying
+        // to stay put: there is nothing to resolve, and a pending intention to
+        // make another one is what the reader has just taken back.
+        if let WorktreeChoice::Checkout(checkout) = &choice
+            && self.state.worktree_picker.current_checkout() == Some(&checkout.association.id)
+        {
+            self.state.landing_return = None;
+            self.state.cancel_worktree_intent();
+            self.state.worktree_picker.close();
+            return ApplicationTransition::Continue;
+        }
+        if let Some(reason) = self.state.worktree_picker.refusal(&choice) {
+            self.state.worktree_picker.fail(reason);
+            return ApplicationTransition::Continue;
+        }
+        match choice {
+            WorktreeChoice::New => {
+                let Some(selection) = &self.state.landing_agent_selection else {
+                    self.state
+                        .worktree_picker
+                        .fail("Choose an Agent first".to_owned());
+                    return ApplicationTransition::Continue;
+                };
+                if self.state.new_worktree.is_none() {
+                    self.state.new_worktree = Some(crate::protocol::PrepareCheckoutRequest {
+                        intended_session: None,
+                        id: Default::default(),
+                        source: crate::protocol::ExecutionDirectory {
+                            path: self
+                                .state
+                                .execution_directory
+                                .clone()
+                                .unwrap_or_else(|| self.state.workspace.path.clone()),
+                        },
+                        prompt: Default::default(),
+                        provider: selection.provider.clone(),
+                    });
+                }
+                self.state.worktree_picker.close();
+                ApplicationTransition::Continue
+            }
+            WorktreeChoice::Checkout(checkout) => {
+                let request = ResolveWorkspaceRequest {
+                    checkout_id: Some(checkout.association.id),
+                    remembered_execution_directory: None,
+                    workspace_id: Some(self.state.workspace.id.clone()),
+                    base: None,
+                    path: self.state.workspace.path.clone(),
+                };
+                self.state.worktree_picker.loading = true;
+                self.resolve_worktree(WorkspaceResolutionSurface::WorktreeSelection, request)
+            }
+        }
     }
 
     /// Opens the Landing in `workspace` at once, letting go of whatever the
@@ -8557,19 +8579,19 @@ impl Application {
             },
             SemanticCommandId::DirectoryBrowserPathDeleteBackward => browser.delete_from_field(),
             SemanticCommandId::DirectoryBrowserPathComplete => browser.complete_field(),
-            // Until the Server answers, all the client knows of where the
-            // reader chose is the directory itself, so that is what the
-            // Landing names while it waits.
+            // A directory chosen to go to concludes as the purpose the browser
+            // was opened for says.
             SemanticCommandId::DirectoryBrowserChoose => {
-                let Some(chosen) = browser.choose_focused() else {
+                let Some((provenance, chosen)) = browser.choose_focused() else {
                     return ApplicationTransition::Continue;
                 };
-                match chosen.provenance {
-                    DirectoryBrowserProvenance::Standalone => {}
+                let purpose = match provenance {
+                    DirectoryBrowserProvenance::Standalone(purpose) => purpose,
                     // A choice is done with the picker the browser was
                     // opened from as well, so nothing is left to dismiss.
-                    DirectoryBrowserProvenance::FromWorkspacePicker => {
+                    DirectoryBrowserProvenance::FromWorkspacePicker(purpose) => {
                         self.state.workspace_picker.close();
+                        purpose
                     }
                     // A directory chosen for a list is an entry of its
                     // draft, which lands nowhere until the list is saved.
@@ -8585,17 +8607,15 @@ impl Application {
                         ));
                         return ApplicationTransition::Continue;
                     }
-                }
-                let directory = Workspace::directory(chosen.path.clone());
-                return self
-                    .land_in_chosen_workspace(directory, chosen.into_workspace_resolution());
+                };
+                return self.conclude(purpose, Destination::Directory(chosen));
             }
             SemanticCommandId::DirectoryBrowserClose => {
                 match browser.close() {
                     // A browser opened standalone has nowhere to go back to,
                     // so Esc closes it outright.
-                    DirectoryBrowserProvenance::Standalone => {}
-                    DirectoryBrowserProvenance::FromWorkspacePicker => {
+                    DirectoryBrowserProvenance::Standalone(_) => {}
+                    DirectoryBrowserProvenance::FromWorkspacePicker(_) => {
                         self.state.workspace_picker.step_back();
                     }
                     // The list editor, or Onboarding's step, stood beneath
@@ -11537,7 +11557,10 @@ impl Application {
             | SemanticCommandId::WorktreeSelect
             | SemanticCommandId::WorktreeClose => Ok(self.handle_worktree_command(command)),
             SemanticCommandId::WorkspaceList => {
-                let request = self.state.workspace_picker.open();
+                let request = self
+                    .state
+                    .workspace_picker
+                    .open(DestinationPurpose::Landing);
                 self.state.command_mode = CommandMode::Composer;
                 Ok(ApplicationTransition::ListWorkspaces(request))
             }
@@ -11550,9 +11573,11 @@ impl Application {
                 let execution_directory = self.state.browse_root(&outlook);
                 let provenance = if self.state.workspace_picker.is_open() {
                     self.state.workspace_picker.step_aside();
-                    DirectoryBrowserProvenance::FromWorkspacePicker
+                    DirectoryBrowserProvenance::FromWorkspacePicker(
+                        self.state.workspace_picker.purpose().clone(),
+                    )
                 } else {
-                    DirectoryBrowserProvenance::Standalone
+                    DirectoryBrowserProvenance::Standalone(DestinationPurpose::Landing)
                 };
                 let ask =
                     self.state

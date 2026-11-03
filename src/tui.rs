@@ -13,6 +13,7 @@ mod completion;
 mod composer;
 mod connect_overlay;
 mod context_overlay;
+mod destination;
 mod directory_browser;
 mod drawn_pane;
 mod event_loop;

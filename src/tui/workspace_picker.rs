@@ -20,6 +20,7 @@ use crate::protocol::{
 use super::{
     WorkspaceListRequest,
     commands::{SemanticCommandId, SemanticInvocation},
+    destination::DestinationPurpose,
     fuzzy::fuzzy_matches,
     list_window::ListWindow,
 };
@@ -28,6 +29,9 @@ use super::{
 pub(super) struct WorkspacePicker {
     paths: Option<WorkspacePaths>,
     open: bool,
+    /// What choosing a Workspace here is for, which a Directory Browser
+    /// opened from it concludes by too.
+    purpose: DestinationPurpose,
     /// The Workspaces the Outlook's Server lists, and the conversation with
     /// it that keeps them true.
     listing: RegistryListing,
@@ -454,6 +458,7 @@ impl WorkspacePicker {
         Self {
             paths: None,
             open: false,
+            purpose: DestinationPurpose::default(),
             listing: RegistryListing::new(current_workspace.into()),
             query: String::new(),
             selected: None,
@@ -472,8 +477,9 @@ impl WorkspacePicker {
     /// Server, the reader on the Workspace they are in, and asks that Server
     /// for them afresh. Where nothing was heard from it yet it loads, and no
     /// row is the reader's until a listing lands.
-    pub(super) fn open(&mut self) -> WorkspaceListRequest {
+    pub(super) fn open(&mut self, purpose: DestinationPurpose) -> WorkspaceListRequest {
         self.open = true;
+        self.purpose = purpose;
         self.stepped_aside = false;
         self.refusal = None;
         self.query.clear();
@@ -491,6 +497,7 @@ impl WorkspacePicker {
 
     pub(super) fn close(&mut self) {
         self.open = false;
+        self.purpose = DestinationPurpose::default();
         self.stepped_aside = false;
         self.refusal = None;
         self.query.clear();
@@ -526,6 +533,10 @@ impl WorkspacePicker {
 
     pub(super) const fn is_open(&self) -> bool {
         self.open
+    }
+
+    pub(super) fn purpose(&self) -> &DestinationPurpose {
+        &self.purpose
     }
 
     pub(super) fn is_loading(&self) -> bool {
