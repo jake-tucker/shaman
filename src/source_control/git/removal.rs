@@ -269,22 +269,7 @@ impl GitSourceControl {
                 }
             }
         }
-        let output = self
-            .command_with_timeout(
-                &checkout.root,
-                &["submodule", "status", "--recursive"],
-                self.mutation_timeout,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-        if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).into_owned());
-        }
-        let initialized_submodules = String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter(|line| !line.starts_with('-'))
-            .map(str::to_owned)
-            .collect();
+        let initialized_submodules = self.initialized_submodules(&checkout.root).await?;
         Ok(CheckoutRemovalInspection {
             checkout: reading,
             tracked,
@@ -293,5 +278,46 @@ impl GitSourceControl {
             lock,
             initialized_submodules,
         })
+    }
+
+    /// The submodules initialized beneath `root`, at any depth, as `git
+    /// submodule status --recursive` lists them.
+    ///
+    /// That command is a shell script that runs a tenth of a second on macOS,
+    /// and longer under Windows' bundled shell, while it can only ever list a
+    /// submodule the index records as a gitlink. So the index is read first,
+    /// and a Worktree recording none, as nearly every one does, has none
+    /// initialized without asking.
+    async fn initialized_submodules(&self, root: &Path) -> Result<Vec<String>, String> {
+        let index = self
+            .command_with_timeout(root, &["ls-files", "--stage", "-z"], self.mutation_timeout)
+            .await
+            .map_err(|e| e.to_string())?;
+        if !index.status.success() {
+            return Err(String::from_utf8_lossy(&index.stderr).into_owned());
+        }
+        if !index
+            .stdout
+            .split(|b| *b == 0)
+            .any(|entry| entry.starts_with(b"160000 "))
+        {
+            return Ok(Vec::new());
+        }
+        let output = self
+            .command_with_timeout(
+                root,
+                &["submodule", "status", "--recursive"],
+                self.mutation_timeout,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).into_owned());
+        }
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|line| !line.starts_with('-'))
+            .map(str::to_owned)
+            .collect())
     }
 }
