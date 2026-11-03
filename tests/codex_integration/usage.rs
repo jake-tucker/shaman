@@ -330,6 +330,7 @@ pub(super) async fn priced_lookup() -> (Arc<PricingSource>, tempfile::TempDir) {
     });
     let cache_dir = tempfile::tempdir().expect("create pricing cache directory");
     let pricing = PricingSource::new(cache_dir.path())
+        .with_http_client(crate::support::loopback_client())
         .with_source_endpoint(endpoint)
         .with_refresh_interval(Duration::from_secs(60))
         .with_fetch_timeout(Duration::from_secs(5));
@@ -1011,6 +1012,7 @@ async fn stalled_pricing_does_not_delay_turn(initially_warm: bool) {
     let cache = tempfile::tempdir().unwrap();
     let pricing = Arc::new(
         PricingSource::new(cache.path())
+            .with_http_client(crate::support::loopback_client())
             .with_source_endpoint(endpoint)
             .with_refresh_interval(Duration::from_millis(20))
             .with_fetch_timeout(Duration::from_millis(1500)),
@@ -1084,6 +1086,7 @@ async fn pricing_recovers_during_turn(refresh: bool) {
     let cache = tempfile::tempdir().unwrap();
     let pricing = Arc::new(
         PricingSource::new(cache.path())
+            .with_http_client(crate::support::loopback_client())
             .with_source_endpoint(endpoint)
             .with_refresh_interval(Duration::from_millis(800))
             .with_fetch_timeout(Duration::from_millis(1500)),

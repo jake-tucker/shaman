@@ -773,6 +773,7 @@ async fn rates_that_stall_after(served: usize) -> (Arc<PricingSource>, tempfile:
     });
     let cache = tempfile::tempdir().expect("create pricing cache directory");
     let pricing = PricingSource::new(cache.path())
+        .with_http_client(crate::support::loopback_client())
         .with_source_endpoint(endpoint)
         .with_refresh_interval(Duration::from_millis(20))
         .with_fetch_timeout(Duration::from_secs(60));

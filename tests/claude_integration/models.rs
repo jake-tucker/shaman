@@ -426,7 +426,9 @@ async fn anthropic_rates() -> (Arc<suru::pricing::PricingSource>, tempfile::Temp
         let _ = axum::serve(listener, app).await;
     });
     let cache = tempfile::tempdir().expect("create pricing cache directory");
-    let pricing = suru::pricing::PricingSource::new(cache.path()).with_source_endpoint(endpoint);
+    let pricing = suru::pricing::PricingSource::new(cache.path())
+        .with_http_client(crate::support::loopback_client())
+        .with_source_endpoint(endpoint);
     (Arc::new(pricing), cache)
 }
 

@@ -7,7 +7,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OnceCell};
 
 use crate::protocol::{Cost, CostBasis, ModelId, ProviderId, Usage};
 use crate::runtime::protect_current_user_file;
@@ -111,7 +111,11 @@ pub struct PricingSource {
     source_endpoint: String,
     refresh_interval: Duration,
     fetch_timeout: Duration,
-    http: reqwest::Client,
+    /// Built on the first fetch rather than with the source: a client that
+    /// honours the system's HTTP proxy asks the system for it as it is
+    /// built, which on macOS blocks for most of a second, and a Server builds
+    /// its source as it starts.
+    http: OnceCell<reqwest::Client>,
     state: Mutex<PricingState>,
 }
 
@@ -164,7 +168,7 @@ impl PricingSource {
             source_endpoint: DEFAULT_SOURCE_ENDPOINT.to_owned(),
             refresh_interval: DEFAULT_REFRESH_INTERVAL,
             fetch_timeout: DEFAULT_FETCH_TIMEOUT,
-            http: reqwest::Client::new(),
+            http: OnceCell::new(),
             state: Mutex::new(PricingState::default()),
         }
     }
@@ -173,6 +177,14 @@ impl PricingSource {
     /// deployments that mirror the catalog.
     pub fn with_source_endpoint(mut self, source_endpoint: impl Into<String>) -> Self {
         self.source_endpoint = source_endpoint.into();
+        self
+    }
+
+    /// Fetches with `http` instead of a client of the source's own, which
+    /// honours the system's HTTP proxy. Intended for fixture-backed tests,
+    /// whose loopback fixtures no proxy stands in front of.
+    pub fn with_http_client(mut self, http: reqwest::Client) -> Self {
+        self.http = OnceCell::new_with(Some(http));
         self
     }
 
@@ -315,18 +327,38 @@ impl PricingSource {
             .map(|document| document.catalog.clone())
     }
 
+    /// The client the source fetches with, built off the runtime the first
+    /// time one is needed; absent, with a warning, where it cannot be built.
+    async fn http(&self) -> Option<&reqwest::Client> {
+        self.http
+            .get_or_try_init(|| async {
+                match tokio::task::spawn_blocking(|| reqwest::Client::builder().build()).await {
+                    Ok(built) => built.map_err(|error| error.to_string()),
+                    Err(error) => Err(error.to_string()),
+                }
+            })
+            .await
+            .inspect_err(
+                |error| tracing::warn!(%error, "failed to build the models.dev pricing client"),
+            )
+            .ok()
+    }
+
     async fn fetch_source(&self) -> Option<Value> {
         let fetch = async {
-            self.http
-                .get(&self.source_endpoint)
+            let Some(http) = self.http().await else {
+                return Ok(None);
+            };
+            http.get(&self.source_endpoint)
                 .send()
                 .await?
                 .error_for_status()?
                 .json::<Value>()
                 .await
+                .map(Some)
         };
         match tokio::time::timeout(self.fetch_timeout, fetch).await {
-            Ok(Ok(source)) => Some(source),
+            Ok(Ok(source)) => source,
             Ok(Err(error)) => {
                 tracing::warn!(%error, "failed to fetch models.dev pricing");
                 None
@@ -553,6 +585,7 @@ mod tests {
         let data_dir = tempfile::tempdir().unwrap();
         let pricing = std::sync::Arc::new(
             PricingSource::new(data_dir.path())
+                .with_http_client(crate::runtime::loopback_http_client())
                 .with_source_endpoint(endpoint)
                 .with_fetch_timeout(Duration::from_millis(500)),
         );
@@ -678,7 +711,9 @@ mod tests {
         );
         let (endpoint, server) = serve_fixture(app).await;
         let data_dir = tempfile::tempdir().expect("create data directory");
-        let pricing = PricingSource::new(data_dir.path()).with_source_endpoint(endpoint);
+        let pricing = PricingSource::new(data_dir.path())
+            .with_http_client(crate::runtime::loopback_http_client())
+            .with_source_endpoint(endpoint);
         let rates = |cache_read, cache_write| {
             Some(CacheRates {
                 input: 2.0,
@@ -745,7 +780,9 @@ mod tests {
         );
         let (endpoint, server) = serve_fixture(app).await;
         let data_dir = tempfile::tempdir().expect("create data directory");
-        let pricing = PricingSource::new(data_dir.path()).with_source_endpoint(endpoint);
+        let pricing = PricingSource::new(data_dir.path())
+            .with_http_client(crate::runtime::loopback_http_client())
+            .with_source_endpoint(endpoint);
         let ordinary_usage = Usage {
             fresh_input_tokens: Some(100),
             ..Usage::default()
@@ -812,7 +849,9 @@ mod tests {
             fresh_input_tokens: Some(500_000),
             ..Usage::default()
         };
-        let first = PricingSource::new(data_dir.path()).with_source_endpoint(endpoint.clone());
+        let first = PricingSource::new(data_dir.path())
+            .with_http_client(crate::runtime::loopback_http_client())
+            .with_source_endpoint(endpoint.clone());
         assert_eq!(
             first
                 .estimate(&openai_model("cached-model"), &usage)
@@ -823,7 +862,9 @@ mod tests {
         server.abort();
         let _ = server.await;
 
-        let restarted = PricingSource::new(data_dir.path()).with_source_endpoint(endpoint);
+        let restarted = PricingSource::new(data_dir.path())
+            .with_http_client(crate::runtime::loopback_http_client())
+            .with_source_endpoint(endpoint);
         assert_eq!(
             restarted
                 .estimate(&openai_model("cached-model"), &usage)
@@ -865,6 +906,7 @@ mod tests {
         let (endpoint, server) = serve_fixture(app).await;
         let data_dir = tempfile::tempdir().expect("create data directory");
         let pricing = PricingSource::new(data_dir.path())
+            .with_http_client(crate::runtime::loopback_http_client())
             .with_source_endpoint(endpoint)
             .with_refresh_interval(TEST_REFRESH_INTERVAL);
         let model = openai_model("changing-model");
@@ -949,6 +991,7 @@ mod tests {
         let (endpoint, server) = serve_fixture(app).await;
         let data_dir = tempfile::tempdir().expect("create data directory");
         let pricing = PricingSource::new(data_dir.path())
+            .with_http_client(crate::runtime::loopback_http_client())
             .with_source_endpoint(endpoint.clone())
             .with_refresh_interval(TEST_REFRESH_INTERVAL);
         let model = openai_model("stale-model");
@@ -983,6 +1026,7 @@ mod tests {
         assert_eq!(requests.load(Ordering::SeqCst), 2);
 
         let restarted = PricingSource::new(data_dir.path())
+            .with_http_client(crate::runtime::loopback_http_client())
             .with_source_endpoint(endpoint)
             .with_refresh_interval(TEST_REFRESH_INTERVAL);
         assert_eq!(
@@ -1013,6 +1057,7 @@ mod tests {
         let (endpoint, server) = serve_fixture(app).await;
         let data_dir = tempfile::tempdir().expect("create data directory");
         let pricing = PricingSource::new(data_dir.path())
+            .with_http_client(crate::runtime::loopback_http_client())
             .with_source_endpoint(endpoint)
             .with_fetch_timeout(Duration::from_millis(20));
         let usage = Usage {
@@ -1065,6 +1110,7 @@ mod tests {
         let (endpoint, server) = serve_fixture(app).await;
         let data_dir = tempfile::tempdir().expect("create data directory");
         let pricing = PricingSource::new(data_dir.path())
+            .with_http_client(crate::runtime::loopback_http_client())
             .with_source_endpoint(endpoint)
             .with_refresh_interval(TEST_REFRESH_INTERVAL);
         let model = openai_model("preserved-model");
