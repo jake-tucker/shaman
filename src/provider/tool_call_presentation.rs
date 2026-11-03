@@ -109,8 +109,8 @@ mod tests {
         });
         assert_eq!(
             ToolCallInput::of(Some("suru"), "answer_questionnaire", &arguments).as_str(),
-            "answers=1 Answer withheld questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
-             session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f"
+            "session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
+             answers=1 Answer withheld"
         );
         for server in [Some("elsewhere"), None] {
             assert_eq!(

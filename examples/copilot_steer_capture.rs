@@ -18,10 +18,12 @@
 //! `SURU_COPILOT_PATH` names the CLI (default `copilot`), `CAPTURE_MODEL` the Model (default
 //! `gpt-5-mini`). Scrub account details from the output before committing it. What the captures
 //! showed is recorded in `docs/validation/0397-copilot-subagent-steer.md`.
-use std::{path::PathBuf, sync::Arc, time::Duration};
+#[path = "support/copilot_cli.rs"]
+mod copilot_cli;
+
+use std::{sync::Arc, time::Duration};
 
 use github_copilot_sdk::{
-    CliProgram, Client, ClientOptions,
     handler::ApproveAllHandler,
     rpc::TasksSendMessageRequest,
     types::{MessageOptions, SessionConfig},
@@ -68,11 +70,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         other => return Err(format!("unknown mode {other}").into()),
     };
-    let program = std::env::var_os("SURU_COPILOT_PATH").unwrap_or_else(|| "copilot".into());
     let model = std::env::var("CAPTURE_MODEL").unwrap_or_else(|_| "gpt-5-mini".to_owned());
-    let client =
-        Client::start(ClientOptions::new().with_program(CliProgram::Path(PathBuf::from(program))))
-            .await?;
+    let client = copilot_cli::start().await?;
     let session = client
         .create_session(
             SessionConfig::default()

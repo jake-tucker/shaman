@@ -1163,7 +1163,7 @@ async fn an_approval_of_an_edit_naming_no_file_links_to_the_tool_call_it_is() {
     assert_eq!(*status, ActivityStatus::Active);
     assert_eq!(name, "Edit");
     assert_eq!(
-        input, "new_string=the old_string=teh",
+        input, "old_string=teh new_string=the",
         "the Approval's input, the first whole one seen, fills the row in as it opens"
     );
     let row = *row;
@@ -1191,7 +1191,7 @@ async fn an_approval_of_an_edit_naming_no_file_links_to_the_tool_call_it_is() {
     assert!(
         matches!(rows[..], [
             Activity::ToolCall { status: ActivityStatus::Failed, name, input, output, .. },
-        ] if name == "Edit" && input == "new_string=the old_string=teh" && output == missing_path),
+        ] if name == "Edit" && input == "old_string=teh new_string=the" && output == missing_path),
         "the edit is one failed Tool Call showing its input and error, and no File Change: \
          {rows:#?}"
     );
@@ -1300,8 +1300,8 @@ async fn the_first_whole_input_seen_of_an_edit_decides_its_row_whatever_copy_fol
             Activity::ToolCall { status: ActivityStatus::Active, name: three_tool, input: three, .. },
             Activity::FileChange { status: ActivityStatus::Active, changes: four, .. },
         ] if one == &update("one.rs")
-            && two_tool == "Edit" && two == "new_string=b old_string=two"
-            && three_tool == "Edit" && three == "new_string=b old_string=three"
+            && two_tool == "Edit" && two == "old_string=two new_string=b"
+            && three_tool == "Edit" && three == "old_string=three new_string=b"
             && four == &update("four.rs")),
         "each edit is the row its first whole input decided, filled in from that input, and its \
          Approval links to it: {rows:#?}"
@@ -1342,8 +1342,8 @@ async fn the_first_whole_input_seen_of_an_edit_decides_its_row_whatever_copy_fol
             Activity::ToolCall { status: ActivityStatus::Completed, input: three, output: three_output, .. },
             Activity::FileChange { status: ActivityStatus::Completed, changes: four, .. },
         ] if one == &update("one.rs")
-            && two == "new_string=b old_string=two" && two_output == "Edited two."
-            && three == "new_string=b old_string=three" && three_output == "Edited three."
+            && two == "old_string=two new_string=b" && two_output == "Edited two."
+            && three == "old_string=three new_string=b" && three_output == "Edited three."
             && four == &update("four.rs")),
         "each row settles from its result, neither refilled nor reclassified by the copy that \
          followed: {rows:#?}"
@@ -1566,7 +1566,7 @@ async fn a_use_declined_before_its_block_closes_settles_failed_showing_what_it_w
         unreachable!("the wait found a Tool Call");
     };
     assert_eq!(
-        input, "prompt=summarize url=https://example.test/data",
+        input, "url=https://example.test/data prompt=summarize",
         "the refused use still says what it would have done, though its block never closed"
     );
     assert_eq!(output, "User declined the tool request");
@@ -1633,7 +1633,7 @@ async fn a_use_declined_before_its_block_closes_settles_failed_showing_what_it_w
         matches!(rows[..], [
             Activity::ToolCall { status: ActivityStatus::Failed, input, output, .. },
             Activity::FileChange { status: ActivityStatus::Failed, changes, .. },
-        ] if input == "prompt=summarize url=https://example.test/data"
+        ] if input == "url=https://example.test/data prompt=summarize"
             && output == "User declined the tool request"
             && changes == &[FileChange::Add { path: PathBuf::from("notes.txt") }]),
         "each refused use is one failed row, unchanged by the close and the echo that follow: {rows:#?}"

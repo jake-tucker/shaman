@@ -413,6 +413,7 @@ fn safe_scope(source: SkillSource) -> &'static str {
         SkillSource::Custom => "Custom",
         SkillSource::Builtin => "Built-in",
         SkillSource::Sdk => "SDK",
+        SkillSource::Mcp => "MCP",
         SkillSource::Unknown => "Other",
     }
 }

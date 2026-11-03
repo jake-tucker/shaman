@@ -131,11 +131,14 @@ use github_copilot_sdk::{
         AssistantUsageData, SessionCompactionCompleteData, SessionErrorData, SessionEventType,
         SessionIdleData, SubagentCompletedData, SubagentFailedData, SubagentStartedData,
         SystemNotificationData, ToolExecutionCompleteContent, ToolExecutionCompleteData,
-        ToolExecutionPartialResultData, ToolExecutionStartData, UserMessageData,
-        UserMessageDelivery,
+        ToolExecutionStartData, UserMessageData, UserMessageDelivery,
     },
     subscription::RecvErrorKind,
 };
+// Copilot deprecated `tool.execution_partial_result` for the append-only `tool.shell_output`, but
+// the CLI still streams tool output through it, and Suru still projects it until it moves over.
+#[allow(deprecated)]
+use github_copilot_sdk::session_events::ToolExecutionPartialResultData;
 use tokio::{
     sync::{Notify, mpsc},
     time::{Duration, timeout},
@@ -1125,64 +1128,97 @@ async fn drain_session_timeline(
     drain: EventDrainCheckpoint,
     correlation: Arc<StdMutex<CopilotCorrelation>>,
 ) {
-    let mut session_idle_echoes = false;
+    let mut timeline = TimelineForwarding {
+        events,
+        drain,
+        correlation,
+        session_idle_echoes: false,
+    };
     loop {
         match subscription.recv().await {
             Ok(event) => {
-                let event_id = event.id.clone();
-                let main_idle = match (event.parsed_type(), event.agent_id.is_none()) {
-                    (SessionEventType::AssistantIdle, true) => {
-                        session_idle_echoes = true;
-                        true
-                    }
-                    (SessionEventType::SessionIdle, true) => {
-                        if std::mem::take(&mut session_idle_echoes) {
-                            drain.delivered(event_id);
-                            continue;
-                        }
-                        true
-                    }
-                    _ => false,
-                };
-                let compaction_end = is_background_compaction_end(&event);
-                log_context_contents(&event);
-                // Ephemeral context reports use the same lossless drain as durable
-                // events, and keep their originating Turn while waiting for projection.
-                let context = correlation
-                    .lock()
-                    .expect("Copilot correlation lock is not poisoned")
-                    .context_report(&event);
-                let event = match context {
-                    Some(context) => TimelineEvent::Context(context),
-                    None => TimelineEvent::Native(event),
-                };
-                if events.send(Ok(event)).is_err() {
+                if !timeline.forward(event) {
                     return;
                 }
-                if main_idle {
-                    correlation
-                        .lock()
-                        .expect("Copilot correlation lock is not poisoned")
-                        .idle_carried();
-                }
-                if compaction_end {
-                    correlation
-                        .lock()
-                        .expect("Copilot correlation lock is not poisoned")
-                        .compaction_end_carried();
-                }
-                drain.delivered(event_id);
             }
             Err(error) => {
                 if let RecvErrorKind::Lagged(lagged) = error.kind() {
-                    let _ = events.send(Err(copilot_error(format!(
+                    let _ = timeline.events.send(Err(copilot_error(format!(
                         "Copilot produced events faster than Suru could record them: {} were lost",
                         lagged.skipped()
                     ))));
+                    return;
+                }
+                // The SDK closes the timeline with the connection, dropping the events it had
+                // read but not yet delivered; those are the process's last words before it went.
+                for event in timeline.drain.dropped() {
+                    if !timeline.forward(event) {
+                        return;
+                    }
                 }
                 return;
             }
         }
+    }
+}
+
+/// What carries one Session's timeline into Suru's projection queue, event by event.
+struct TimelineForwarding {
+    events: mpsc::UnboundedSender<Result<TimelineEvent, ProviderError>>,
+    drain: EventDrainCheckpoint,
+    correlation: Arc<StdMutex<CopilotCorrelation>>,
+    /// Whether the next main `session.idle` echoes an `assistant.idle` already carried.
+    session_idle_echoes: bool,
+}
+
+impl TimelineForwarding {
+    /// Queues `event` for projection, answering whether the projection is still there to take it.
+    fn forward(&mut self, event: SessionEvent) -> bool {
+        let event_id = event.id.clone();
+        let main_idle = match (event.parsed_type(), event.agent_id.is_none()) {
+            (SessionEventType::AssistantIdle, true) => {
+                self.session_idle_echoes = true;
+                true
+            }
+            (SessionEventType::SessionIdle, true) => {
+                if std::mem::take(&mut self.session_idle_echoes) {
+                    self.drain.delivered(event_id);
+                    return true;
+                }
+                true
+            }
+            _ => false,
+        };
+        let compaction_end = is_background_compaction_end(&event);
+        log_context_contents(&event);
+        // Ephemeral context reports use the same lossless drain as durable
+        // events, and keep their originating Turn while waiting for projection.
+        let context = self
+            .correlation
+            .lock()
+            .expect("Copilot correlation lock is not poisoned")
+            .context_report(&event);
+        let event = match context {
+            Some(context) => TimelineEvent::Context(context),
+            None => TimelineEvent::Native(event),
+        };
+        if self.events.send(Ok(event)).is_err() {
+            return false;
+        }
+        if main_idle {
+            self.correlation
+                .lock()
+                .expect("Copilot correlation lock is not poisoned")
+                .idle_carried();
+        }
+        if compaction_end {
+            self.correlation
+                .lock()
+                .expect("Copilot correlation lock is not poisoned")
+                .compaction_end_carried();
+        }
+        self.drain.delivered(event_id);
+        true
     }
 }
 
@@ -1278,26 +1314,19 @@ async fn next_provider_event(
         let received = tokio::select! {
             biased;
             crashed = harness.crashed() => {
-                events.drain.wait_until_drained().await;
-                while let Ok(received) = events.events.try_recv() {
-                    match received {
-                        Ok(event) => queue_projected(&mut events, event),
-                        Err(error) => events.pending.push_back(Err(error)),
-                    }
-                }
-                let lost = events
-                    .correlation
-                    .lock()
-                    .expect("Copilot correlation lock is not poisoned")
-                    .project_watches_lost();
-                events.pending.extend(lost.into_iter().map(Ok));
-                events.pending.push_back(Err(crashed));
-                events.ended = true;
+                end_with_crash(&mut events, crashed).await;
                 continue;
             }
             received = events.events.recv() => received,
         };
         match received {
+            // The SDK closes a Session's timeline with the connection, which can beat the
+            // supervisor's account of the exit here; a process that went unasked is the crash
+            // that account is about to report, not a timeline that simply ended.
+            None if harness.connection().lost_unasked() => {
+                let crashed = harness.crashed().await;
+                end_with_crash(&mut events, crashed).await;
+            }
             None => {
                 events.ended = true;
                 return None;
@@ -1330,6 +1359,43 @@ async fn next_provider_event(
             }
         }
     }
+}
+
+/// Ends the timeline on the harness crash `crashed`, once every event the process wrote before it
+/// died has been projected, settling the Watches the crash took with it.
+///
+/// The SDK stops delivering a Session's events the moment its connection closes, dropping any it
+/// had read but not yet routed, so the drain is over either when the last event on the wire has
+/// arrived or when the timeline closes without it.
+async fn end_with_crash(events: &mut CopilotEvents, crashed: ProviderError) {
+    let drained = events.drain.clone();
+    let drained = drained.wait_until_drained();
+    tokio::pin!(drained);
+    loop {
+        tokio::select! {
+            biased;
+            () = &mut drained => break,
+            received = events.events.recv() => match received {
+                Some(Ok(event)) => queue_projected(events, event),
+                Some(Err(error)) => events.pending.push_back(Err(error)),
+                None => break,
+            },
+        }
+    }
+    while let Ok(received) = events.events.try_recv() {
+        match received {
+            Ok(event) => queue_projected(events, event),
+            Err(error) => events.pending.push_back(Err(error)),
+        }
+    }
+    let lost = events
+        .correlation
+        .lock()
+        .expect("Copilot correlation lock is not poisoned")
+        .project_watches_lost();
+    events.pending.extend(lost.into_iter().map(Ok));
+    events.pending.push_back(Err(crashed));
+    events.ended = true;
 }
 
 /// Reads the Session's background tasks the moment the timeline says they changed, and starts a
@@ -1498,6 +1564,7 @@ fn attributed(subagent: Option<&str>, event: ProviderEvent) -> AttributedProvide
     }
 }
 
+#[allow(deprecated)]
 fn project_session_event(
     correlation: &mut CopilotCorrelation,
     event: SessionEvent,
@@ -1826,6 +1893,7 @@ fn compaction_usage(
 }
 
 /// Whether an event carries conversation content this projection presents.
+#[allow(deprecated)]
 fn is_conversation_content(event_type: &SessionEventType) -> bool {
     matches!(
         event_type,
@@ -1845,6 +1913,7 @@ fn is_conversation_content(event_type: &SessionEventType) -> bool {
 /// of spawning tool calls whose Subagent row already answers for them, which is what tells a
 /// withheld spawn's settle apart from a delegation that never happened; `execution_directory` is
 /// where the Session works, which every conversation in it shares.
+#[allow(deprecated)]
 fn project_conversation_event(
     streams: &mut ConversationStreams,
     delegations: &mut HashSet<String>,

@@ -282,6 +282,7 @@ impl PermissionHandler for CopilotApprovals {
                 response_capability: None,
                 source: PermissionDecisionSource::AssistedApproval,
                 surface: PermissionDecisionSurface::Sdk,
+                user_feedback: None,
             });
         }
         let event = {

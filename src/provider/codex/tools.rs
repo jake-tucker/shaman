@@ -458,7 +458,7 @@ mod tests {
             ))
             .as_ref()
             .map(ToolCallInput::as_str),
-            Some("pattern=spawn url=https://docs.rs")
+            Some("url=https://docs.rs pattern=spawn")
         );
         assert_eq!(
             input(web_search(

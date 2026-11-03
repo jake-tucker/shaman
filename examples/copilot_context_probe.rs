@@ -13,18 +13,17 @@
 //!
 //! `SURU_COPILOT_PATH` names the CLI (default `copilot`). What the probe showed is recorded in
 //! `docs/validation/0299-copilot-context-fill.md`.
-use std::path::PathBuf;
+#[path = "support/copilot_cli.rs"]
+mod copilot_cli;
+
 use std::time::Duration;
 
-use github_copilot_sdk::{CliProgram, Client, ClientOptions, MessageOptions, types::SessionConfig};
+use github_copilot_sdk::{MessageOptions, types::SessionConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let models: Vec<String> = std::env::args().skip(1).collect();
-    let program = std::env::var_os("SURU_COPILOT_PATH").unwrap_or_else(|| "copilot".into());
-    let client =
-        Client::start(ClientOptions::new().with_program(CliProgram::Path(PathBuf::from(program))))
-            .await?;
+    let client = copilot_cli::start().await?;
     let catalog = client.rpc().models().list().await?.models;
     if models.is_empty() {
         for listed in &catalog {

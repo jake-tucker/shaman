@@ -7,7 +7,7 @@ use crate::{
     provider::{AttributedProviderEvent, ProviderError, ProviderEvent},
 };
 use github_copilot_sdk::{
-    SessionId,
+    RequestId, SessionId,
     handler::{UserInputHandler, UserInputResponse},
 };
 use std::{collections::HashMap, sync::Mutex};
@@ -80,6 +80,7 @@ impl UserInputHandler for CopilotQuestionnaires {
     async fn handle(
         &self,
         _session_id: SessionId,
+        _request_id: Option<RequestId>,
         question: String,
         choices: Option<Vec<String>>,
         allow_freeform: Option<bool>,

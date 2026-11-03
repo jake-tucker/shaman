@@ -1034,7 +1034,7 @@ async fn an_edit_naming_no_file_is_a_tool_call_showing_its_input_and_error() {
             (
                 "Edit",
                 None,
-                "new_string=the old_string=teh",
+                "old_string=teh new_string=the",
                 missing_path,
                 ActivityStatus::Failed,
             ),
@@ -1216,7 +1216,7 @@ async fn tool_uses_no_other_activity_records_reach_the_transcript_as_tool_calls(
     assert_eq!(*status, ActivityStatus::Completed);
     assert_eq!(name, "Grep");
     assert_eq!(
-        input, "path=src pattern=TODO",
+        input, "pattern=TODO path=src",
         "input carried whole on the block start is shown as one line"
     );
     assert_eq!(output, "src/main.rs:3: // TODO\n");
@@ -1256,7 +1256,7 @@ async fn an_mcp_tool_is_named_by_its_server_and_a_failed_or_partial_result_is_ma
         (Some("github"), "create_issue"),
         "an MCP Tool is named by its server and its own name"
     );
-    assert_eq!(input, r#"labels=["bug"] title=Fix the seam"#);
+    assert_eq!(input, r#"title=Fix the seam labels=["bug"]"#);
     assert_eq!(output, "Created issue #7");
     assert_eq!(*omitted_parts, 0);
 

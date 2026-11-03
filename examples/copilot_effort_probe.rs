@@ -16,22 +16,17 @@
 //!
 //! `SURU_COPILOT_PATH` names the CLI (default `copilot`). What the probes showed is recorded in
 //! `docs/validation/copilot-cold-switch-effort.md`.
-use std::path::PathBuf;
+#[path = "support/copilot_cli.rs"]
+mod copilot_cli;
 
-use github_copilot_sdk::{
-    CliProgram, Client, ClientOptions,
-    types::{SessionConfig, SetModelOptions},
-};
+use github_copilot_sdk::types::{SessionConfig, SetModelOptions};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "gpt-6-luna".to_owned());
-    let program = std::env::var_os("SURU_COPILOT_PATH").unwrap_or_else(|| "copilot".into());
-    let client =
-        Client::start(ClientOptions::new().with_program(CliProgram::Path(PathBuf::from(program))))
-            .await?;
+    let client = copilot_cli::start().await?;
 
     let flat = client.rpc().models().list().await?.models;
     let listed = flat

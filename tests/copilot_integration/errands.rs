@@ -193,11 +193,11 @@ async fn errand_creation(copilot: &ScriptedCopilot) -> serde_json::Value {
     .await
 }
 
-/// The `session.send` the Errand made, once it has: the one carrying the Errand's own Prompt rather
-/// than the Prompt the user wrote.
+/// The `session.sendAndWait` the Errand made, once it has: the one carrying the Errand's own Prompt
+/// rather than the Prompt the user wrote.
 async fn errand_send(copilot: &ScriptedCopilot) -> serde_json::Value {
     request_where(copilot, "the Errand delivers its one Prompt", |request| {
-        request["method"] == "session.send"
+        request["method"] == "session.sendAndWait"
             && request["params"]["prompt"]
                 .as_str()
                 .is_some_and(|prompt| prompt.contains(ERRAND_MARKER))

@@ -855,14 +855,14 @@ async fn a_calls_answers_stand_nowhere_in_the_tool_call_it_is_recorded_as() {
             (
                 Some("suru"),
                 "answer_questionnaire",
-                "answers=2 Answers withheld questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
-                 session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f",
+                "session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
+                 answers=2 Answers withheld",
             ),
             (
                 Some("suru"),
                 "answer_questionnaire",
-                "answers=1 Answer withheld questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
-                 session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f",
+                "session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
+                 answers=1 Answer withheld",
             ),
         ]
     );

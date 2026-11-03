@@ -280,6 +280,12 @@ impl CopilotConnection {
         }
     }
 
+    /// Whether the process went without being asked to: its stdout ended while the supervisor had
+    /// not closed the connection. The supervisor's account of the exit follows as a crash.
+    pub(super) fn lost_unasked(&self) -> bool {
+        self.event_drain.stdout_ended() && !matches!(self.end(), Some(ConnectionEnd::Closed))
+    }
+
     fn end(&self) -> Option<ConnectionEnd> {
         self.ending
             .lock()

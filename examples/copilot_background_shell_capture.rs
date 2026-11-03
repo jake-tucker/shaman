@@ -19,10 +19,12 @@
 //! stops a Watch; `abort` aborts a loop waiting on a synchronous shell. `SURU_COPILOT_PATH` names
 //! the CLI (default `copilot`), `CAPTURE_MODEL` the Model (default `gpt-5-mini`). On 1.0.91 these
 //! showed what ADR 0030 records of Copilot's attached background shells (#379).
-use std::{path::PathBuf, sync::Arc, time::Duration};
+#[path = "support/copilot_cli.rs"]
+mod copilot_cli;
+
+use std::{sync::Arc, time::Duration};
 
 use github_copilot_sdk::{
-    CliProgram, Client, ClientOptions,
     handler::ApproveAllHandler,
     rpc::TasksCancelRequest,
     types::{MessageOptions, SessionConfig},
@@ -63,11 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         other => return Err(format!("unknown mode {other}").into()),
     };
-    let program = std::env::var_os("SURU_COPILOT_PATH").unwrap_or_else(|| "copilot".into());
     let model = std::env::var("CAPTURE_MODEL").unwrap_or_else(|_| "gpt-5-mini".to_owned());
-    let client =
-        Client::start(ClientOptions::new().with_program(CliProgram::Path(PathBuf::from(program))))
-            .await?;
+    let client = copilot_cli::start().await?;
     let session = client
         .create_session(
             SessionConfig::default()

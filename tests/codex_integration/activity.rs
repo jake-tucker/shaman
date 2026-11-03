@@ -103,7 +103,7 @@ async fn an_mcp_tool_call_is_named_by_its_server_and_its_result_text_is_its_outp
             (
                 Some("github"),
                 "create_issue",
-                r#"labels=["bug"] title=Fix the seam"#,
+                r#"title=Fix the seam labels=["bug"]"#,
                 "Created issue #7",
                 ActivityStatus::Completed,
                 0,
@@ -212,7 +212,7 @@ async fn a_web_search_reads_its_query_or_the_page_and_pattern_it_looked_in() {
             (
                 None,
                 "web_search",
-                "pattern=spawn url=https://docs.rs/tokio",
+                "url=https://docs.rs/tokio pattern=spawn",
                 "",
                 ActivityStatus::Completed,
                 0,

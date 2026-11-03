@@ -375,7 +375,7 @@ async fn tool_executions_no_other_activity_records_reach_the_transcript_as_tool_
         (Some("github"), "create_issue"),
         "an MCP Tool is named by its server and its own name"
     );
-    assert_eq!(input, r#"labels=["bug"] title=Fix the seam"#);
+    assert_eq!(input, r#"title=Fix the seam labels=["bug"]"#);
     assert!(!input_truncated);
     assert_eq!(
         output, "Creating the issue\nCreated issue #7\n",
@@ -1006,7 +1006,7 @@ async fn a_patch_suru_cannot_read_and_an_edit_naming_no_file_are_tool_calls_keep
                 "apply_patch",
                 presented_patch.as_str()
             ),
-            (ActivityStatus::Failed, "edit", "new_str=b old_str=a"),
+            (ActivityStatus::Failed, "edit", "old_str=a new_str=b"),
         ],
         "nothing Copilot said about either is lost"
     );

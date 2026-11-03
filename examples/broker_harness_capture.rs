@@ -42,6 +42,9 @@
 //! so a capture run from inside a Claude Code session starts a clean CLI. Scrub account details
 //! from the output before committing any of it. What the captures showed is recorded in
 //! `docs/validation/0408-*.md`.
+#[path = "support/copilot_cli.rs"]
+mod copilot_cli;
+
 use std::{
     collections::BTreeMap,
     convert::Infallible,
@@ -64,7 +67,7 @@ use axum::{
     routing::post,
 };
 use github_copilot_sdk::{
-    CliProgram, Client, ClientOptions, IndexMap, PermissionRequestData, RequestId, SessionId,
+    Client, IndexMap, PermissionRequestData, RequestId, SessionId,
     handler::{PermissionHandler, PermissionResult},
     session::Session,
     types::{
@@ -1189,8 +1192,7 @@ fn copilot_servers(
 }
 
 async fn copilot_client() -> anyhow::Result<Client> {
-    let program = program("SURU_COPILOT_PATH", "copilot");
-    Ok(Client::start(ClientOptions::new().with_program(CliProgram::Path(program))).await?)
+    Ok(copilot_cli::start().await?)
 }
 
 async fn copilot_session(

@@ -55,9 +55,23 @@ reply() {
 }
 
 # One entry on the Session's timeline: `event <id> <type> <data-object>`. The Session it belongs to
-# is the one the create arm recorded, so the SDK routes it to the Session Suru is driving.
+# is the one the create arm recorded, so the SDK routes it to the Session Suru is driving. The
+# entries a `session.sendAndWait` completes on are remembered for its answer: the last assistant
+# message, and the idle or error that ends the request.
 event() {
-  reply '{"jsonrpc":"2.0","method":"session.event","params":{"sessionId":"'"$sid"'","event":{"id":"'"$1"'","timestamp":"2026-01-01T00:00:00Z","type":"'"$2"'","data":'"$3"'}}}'
+  fixture_event='{"id":"'"$1"'","timestamp":"2026-01-01T00:00:00Z","type":"'"$2"'","data":'"$3"'}'
+  reply '{"jsonrpc":"2.0","method":"session.event","params":{"sessionId":"'"$sid"'","event":'"$fixture_event"'}}'
+  case "$2" in
+    assistant.message) fixture_response=$fixture_event ;;
+    session.idle)
+      fixture_completion=$1
+      case "$3" in *'"aborted":true'*) fixture_aborted=true ;; esac
+      ;;
+    session.error)
+      fixture_completion=$1
+      fixture_error=$(printf '%s' "$3" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+      ;;
+  esac
 }
 
 # The same entry stamped with a sub-agent's envelope attribution: `agent_event <id> <agentId>
@@ -312,8 +326,13 @@ pub fn switch_model_arm() -> String {
     .to_owned()
 }
 
-/// A `session.send` arm that accepts the Prompt and then plays `timeline` — `event` lines, and
-/// whatever else the test wants the CLI to do while the Turn runs.
+/// The `session.send` and `session.sendAndWait` arms that accept the Prompt and then play
+/// `timeline` — `event` lines, and whatever else the test wants the CLI to do while the Turn runs.
+///
+/// Like the CLI, each opens the timeline with the `user.message` the Prompt became, carrying the ID
+/// the request is answered with. `session.send` answers before the timeline plays;
+/// `session.sendAndWait` answers once the timeline's idle or error ends the request, naming that
+/// entry and the last assistant message, and never if the timeline holds neither.
 ///
 /// The Session the timeline plays against is the one the Prompt was addressed to rather than the
 /// one created most recently, because a server running an Errand alongside a Turn holds two Copilot
@@ -323,7 +342,19 @@ pub fn send_arm(timeline: &str) -> String {
         r#"    *'"method":"session.send"'*)
       sid=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
       reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"messageId":"fixture-message"}}}}'
+      event fixture-user-message user.message '{{"content":"","messageId":"fixture-message","delivery":"idle"}}'
 {timeline}      ;;
+    *'"method":"session.sendAndWait"'*)
+      sid=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
+      waited=$id
+      fixture_response= fixture_completion= fixture_aborted=false fixture_error=
+      event fixture-user-message user.message '{{"content":"","messageId":"fixture-message","delivery":"idle"}}'
+{timeline}      if [ -n "$fixture_error" ]; then
+        reply '{{"jsonrpc":"2.0","id":'"$waited"',"error":{{"code":-32603,"message":"'"$fixture_error"'","data":{{"completionEventId":"'"$fixture_completion"'"}}}}}}'
+      elif [ -n "$fixture_completion" ]; then
+        reply '{{"jsonrpc":"2.0","id":'"$waited"',"result":{{"messageId":"fixture-message","aborted":'"$fixture_aborted"',"completionEventId":"'"$fixture_completion"'"'"${{fixture_response:+,\"response\":$fixture_response}}"'}}}}'
+      fi
+      ;;
 "#
     )
 }

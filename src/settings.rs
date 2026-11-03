@@ -2566,6 +2566,8 @@ fn load(config_dir: Option<&Path>) -> SettingsSnapshot {
     for document in discover_documents(config_dir, &mut snapshot.diagnostics) {
         apply_document(&document, &mut snapshot);
     }
+    // A set of keys, so it reads the same however the documents happen to order their properties.
+    snapshot.pinned.sort();
     snapshot
 }
 

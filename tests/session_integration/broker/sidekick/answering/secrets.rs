@@ -276,7 +276,7 @@ async fn a_secret_answer_stands_nowhere_in_the_sidekicks_own_transcript() {
 
     let snapshot = read_session(&descriptor, sidekick_id).await;
     let withheld = format!(
-        "answers=2 Answers withheld questionnaire_id={} session_id={asking}",
+        "session_id={asking} questionnaire_id={} answers=2 Answers withheld",
         questionnaire.id
     );
     assert_eq!(

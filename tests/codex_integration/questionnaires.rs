@@ -614,7 +614,7 @@ async fn codex_secret_never_reaches_a_tool_calls_input_however_its_arguments_spe
     assert_eq!(
         inputs,
         [(
-            r#"[redacted]=as a key code=[redacted] nested={"[redacted]":[redacted]} note=pin [redacted]"#,
+            r#"code=[redacted] [redacted]=as a key nested={"[redacted]":[redacted]} note=pin [redacted]"#,
             "Unlocked.",
         )],
         "every spelling of the secret in the rendered input is redacted"
@@ -692,8 +692,8 @@ async fn codex_a_broker_call_is_known_by_its_own_name_whatever_secret_spells_tha
     assert_eq!(
         inputs,
         [
-            "answers=1 Answer withheld questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
-          session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f"
+            "session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
+          answers=1 Answer withheld"
         ],
         "the call is the Broker's, and its Answers are withheld"
     );
