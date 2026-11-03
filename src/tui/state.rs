@@ -384,6 +384,9 @@ pub enum WorkspaceResolutionSurface {
     /// `/sidekick`, which opens the Landing in the Sidekick Workspace once
     /// the Outlook's Server has answered with it.
     Sidekick,
+    /// Where the open Session now works after it Moved, which the Client's
+    /// current Workspace follows once the Session's Server has resolved it.
+    Move,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -613,6 +616,10 @@ pub struct TuiState {
     /// last chosen in the Directory Browser, with the resolution it was
     /// chosen as; see [`Self::resolving_workspace`].
     chosen_workspace: Option<(u64, Workspace)>,
+    /// Where the open Session works since it Moved, for the Client's current
+    /// Workspace to follow once its Server resolves it; taken by
+    /// [`Application::take_move_follow`].
+    move_follow: Option<ResolveWorkspaceRequest>,
     pub(super) identity: Option<ServerIdentity>,
     /// What each Origin's connection is presently recovering from, keyed by
     /// the Origin whose Server stopped answering. `Outlook::Local` is this
@@ -1058,6 +1065,7 @@ impl TuiState {
             workspace_resolution_sequence: 0,
             pending_workspace_resolutions: HashMap::new(),
             chosen_workspace: None,
+            move_follow: None,
             identity: None,
             recovering: HashMap::new(),
             manually_stopped: false,
@@ -1236,7 +1244,13 @@ impl TuiState {
         {
             self.cancel_worktree_intent();
         }
+        self.stand_in(context);
+    }
 
+    /// Takes `context` as where the Client works, as [`Self::adopt_context`]
+    /// does, leaving any new-Worktree intent standing: following a Session
+    /// that Moved is not the reader choosing anywhere to work.
+    fn stand_in(&mut self, context: crate::protocol::ResolvedWorkspace) {
         self.execution_status = context.execution_status.clone();
         self.outlook_execution_checkouts
             .insert(self.outlook.clone(), ResolvedCheckout::of(&context));
@@ -1523,6 +1537,15 @@ impl TuiState {
 
     fn begin_workspace_resolution(&mut self, surface: WorkspaceResolutionSurface) -> u64 {
         self.workspace_resolution_sequence = self.workspace_resolution_sequence.wrapping_add(1);
+        // Following a Move is the Client's own doing, so it displaces nothing
+        // the reader asked for, and anything they ask for displaces it.
+        if surface == WorkspaceResolutionSurface::Move {
+            let id = self.workspace_resolution_sequence;
+            self.pending_workspace_resolutions.insert(surface, id);
+            return id;
+        }
+        self.pending_workspace_resolutions
+            .remove(&WorkspaceResolutionSurface::Move);
         if !matches!(
             surface,
             WorkspaceResolutionSurface::Outlook | WorkspaceResolutionSurface::WorktreeList
@@ -3019,7 +3042,24 @@ impl TuiState {
             ),
         };
         match event {
-            SessionEvent::Snapshot(snapshot) => self.hydrate_session(*snapshot),
+            // A snapshot of the Session already open, standing somewhere else
+            // than it did, Moved while its stream was down.
+            SessionEvent::Snapshot(snapshot) => {
+                let left = self
+                    .session
+                    .as_ref()
+                    .map(|projection| &projection.snapshot().session)
+                    .filter(|open| {
+                        open.id == snapshot.session.id
+                            && (open.workspace.id != snapshot.session.workspace.id
+                                || open.execution_directory != snapshot.session.execution_directory)
+                    })
+                    .map(|open| open.workspace.id.clone());
+                self.hydrate_session(*snapshot);
+                if let Some(left) = left {
+                    self.follow_move(&left);
+                }
+            }
             SessionEvent::Updated(update) => {
                 let Some(session) = self.session.as_mut() else {
                     return Err(anyhow!("Session update arrived before its snapshot"));
@@ -3029,7 +3069,7 @@ impl TuiState {
                     .changes
                     .iter()
                     .any(|change| matches!(change, SessionChange::Moved { .. }))
-                    .then(|| session.snapshot().session.workspace.clone());
+                    .then(|| session.snapshot().session.workspace.id.clone());
                 if !session.apply(update)? {
                     return Ok(false);
                 }
@@ -3062,23 +3102,65 @@ impl TuiState {
     /// narrowed to the Workspace it left is narrowed to its new one. A
     /// Subagent's Session is grouped under its parent's, so its Move takes
     /// nothing with it.
-    fn follow_move(&mut self, left: &Workspace) {
+    ///
+    /// The Workspace and the reading of its Worktrees are the Server's to
+    /// give, so the Client asks it to resolve the destination as the
+    /// Workspace Picker would, remembering the directory the Session works
+    /// in, and stands there once it answers.
+    fn follow_move(&mut self, left: &crate::protocol::WorkspaceId) {
+        if self.open_subagent_parent().is_some() {
+            return;
+        }
         let Some(session) = self
             .session
             .as_ref()
-            .map(|projection| projection.snapshot().session.clone())
-            .filter(|session| session.parent.is_none())
+            .map(|projection| &projection.snapshot().session)
         else {
             return;
         };
-        self.sidebar.follow_move(left, session.workspace.clone());
-        self.adopt_context(crate::protocol::ResolvedWorkspace {
-            execution_status: crate::protocol::ExecutionDirectoryStatus::Available,
-            workspace: session.workspace,
-            execution_directory: Some(session.execution_directory),
-            checkout: session.checkout,
-            checkouts: Vec::new(),
+        let workspace = session.workspace.clone();
+        let execution_directory = session.execution_directory.clone();
+        self.move_follow = Some(ResolveWorkspaceRequest {
+            checkout_id: None,
+            remembered_execution_directory: Some(execution_directory),
+            workspace_id: Some(workspace.id.clone()),
+            base: None,
+            path: workspace.path.clone(),
         });
+        self.sidebar.follow_move(left, workspace);
+    }
+
+    /// Whether the open Session is a Sidekick's, standing in its Server's
+    /// Sidekick Workspace.
+    fn open_session_is_sidekicks(&self) -> bool {
+        let (Some(reference), Some(projection)) = (&self.session_reference, &self.session) else {
+            return false;
+        };
+        self.paths_for(&reference.origin).is_some_and(|paths| {
+            paths.is_sidekick_workspace(&projection.snapshot().session.workspace.path)
+        })
+    }
+
+    /// Says why a command asked of the open Session was refused, asking
+    /// nothing of its Server.
+    fn refuse(&mut self, reason: &str) -> ApplicationTransition {
+        self.submission_error = Some(reason.to_owned());
+        ApplicationTransition::Continue
+    }
+
+    /// The open Session a command acts on, or `None` with the command
+    /// refused: `not_started` while the Session is still Provisional,
+    /// `none_open` on the Landing.
+    fn open_session_for(&mut self, not_started: &str, none_open: &str) -> Option<SessionReference> {
+        let session = self.session_reference.clone();
+        if session.is_none() {
+            self.refuse(if self.provisional.is_some() {
+                not_started
+            } else {
+                none_open
+            });
+        }
+        session
     }
 
     /// The root Session to report Viewed when this event Settles one of its
@@ -5210,6 +5292,12 @@ pub enum ApplicationEvent {
     },
     SessionCreated(SessionSnapshot),
     SessionOperationFailed(String),
+    /// What a Session's Server made of a Move this Client asked of it. The
+    /// Move itself reaches every Client viewing the Session on its stream.
+    SessionMoved {
+        session: SessionReference,
+        outcome: crate::protocol::MoveOutcome,
+    },
     /// Whether a Session's Origin would derive a Title proposal for the
     /// rename dialog opening named.
     TitleProposalOffered {
@@ -6579,6 +6667,11 @@ impl Application {
                 self.state.submission_error = Some(error);
                 Ok(ApplicationTransition::Continue)
             }
+            // A Move that stands reaches this Client on the Session's own
+            // stream, as it reaches every other, so its answer adds nothing.
+            ApplicationEvent::SessionMoved { outcome, .. } => match outcome {
+                crate::protocol::MoveOutcome::Moved { .. } => Ok(ApplicationTransition::Continue),
+            },
             ApplicationEvent::TitleProposalOffered { opening, offered } => {
                 self.state.rename_dialog.offer_answered(opening, offered);
                 Ok(ApplicationTransition::Continue)
@@ -6936,6 +7029,12 @@ impl Application {
                         // since adopting it lets go of the claim. An Outlook's
                         // answer belongs to a turn that already let go of any
                         // claim before it, so it settles nothing here.
+                        // Following a Move is not the reader choosing where to
+                        // work, so it lets go of no claim nor intent of theirs.
+                        if surface == WorkspaceResolutionSurface::Move {
+                            self.state.stand_in(workspace);
+                            return Ok(ApplicationTransition::Continue);
+                        }
                         match surface {
                             WorkspaceResolutionSurface::WorktreeSelection => {
                                 self.state.landing_return = None;
@@ -6945,8 +7044,9 @@ impl Application {
                         }
                         self.state.adopt_context(workspace.clone());
                         match surface {
-                            WorkspaceResolutionSurface::WorktreeList => {
-                                unreachable!("reading handled above")
+                            WorkspaceResolutionSurface::WorktreeList
+                            | WorkspaceResolutionSurface::Move => {
+                                unreachable!("handled above")
                             }
                             WorkspaceResolutionSurface::WorktreeSelection => {
                                 self.state.worktree_picker.close();
@@ -6975,6 +7075,10 @@ impl Application {
                             WorkspaceResolutionSurface::Outlook => {
                                 self.state.submission_error = Some(error);
                             }
+                            // The Session Moved whatever the answer, so the
+                            // Client goes on working where it stood; the
+                            // Session's own view already names where it is.
+                            WorkspaceResolutionSurface::Move => {}
                             // The reader stays where they were, told why the
                             // Sidekick could not be reached.
                             WorkspaceResolutionSurface::Sidekick => {
@@ -9620,23 +9724,16 @@ impl Application {
     /// Everything else, the Session being idle above all, is the server's to
     /// judge, and its typed refusal is explained when it answers.
     fn compact_open_session(&mut self, instructions: Option<String>) -> ApplicationTransition {
-        let refusal = |state: &mut TuiState, reason: &str| {
-            state.submission_error = Some(reason.to_owned());
-            ApplicationTransition::Continue
-        };
-        let Some(session) = self.state.session_reference.clone() else {
-            let reason = if self.state.provisional.is_some() {
-                "This Session has not started yet, so there is nothing to compact"
-            } else {
-                "Open a Session to compact its context"
-            };
-            return refusal(&mut self.state, reason);
+        let Some(session) = self.state.open_session_for(
+            "This Session has not started yet, so there is nothing to compact",
+            "Open a Session to compact its context",
+        ) else {
+            return ApplicationTransition::Continue;
         };
         if self.state.open_subagent_parent().is_some() {
-            return refusal(
-                &mut self.state,
-                "A Subagent's context is compacted only when its Provider chooses to",
-            );
+            return self
+                .state
+                .refuse("A Subagent's context is compacted only when its Provider chooses to");
         }
         let provider = self
             .state
@@ -9651,10 +9748,10 @@ impl Application {
         if let Some(provider) = provider
             && let Some(refused) = provider.manual_compaction.refusal(instructions.is_some())
         {
-            return refusal(
-                &mut self.state,
-                &compaction_refusal_text(refused, Some(&provider.display_name)),
-            );
+            return self.state.refuse(&compaction_refusal_text(
+                refused,
+                Some(&provider.display_name),
+            ));
         }
         self.state.submission_error = None;
         ApplicationTransition::CompactSession {
@@ -9668,34 +9765,21 @@ impl Application {
     /// reaches every Client viewing the Session on its own stream, this one
     /// included, so only a refusal comes back here.
     fn move_open_session(&mut self, path: Option<String>) -> ApplicationTransition {
-        let refusal = |state: &mut TuiState, reason: &str| {
-            state.submission_error = Some(reason.to_owned());
-            ApplicationTransition::Continue
+        let Some(session) = self.state.open_session_for(
+            "This Session has not started yet, so it has nowhere to Move from",
+            "Open a Session to Move it",
+        ) else {
+            return ApplicationTransition::Continue;
         };
-        let Some(session) = self.state.session_reference.clone() else {
-            let reason = if self.state.provisional.is_some() {
-                "This Session has not started yet, so it has nowhere to Move from"
-            } else {
-                "Open a Session to Move it"
-            };
-            return refusal(&mut self.state, reason);
-        };
-        let in_sidekick_workspace = self.state.session.as_ref().is_some_and(|projection| {
-            self.state.paths_for(&session.origin).is_some_and(|paths| {
-                paths.is_sidekick_workspace(&projection.snapshot().session.workspace.path)
-            })
-        });
-        if in_sidekick_workspace {
-            return refusal(
-                &mut self.state,
+        if self.state.open_session_is_sidekicks() {
+            return self.state.refuse(
                 "A Sidekick's Session never Moves: the Sidekick Workspace is what makes it one",
             );
         }
         let Some(path) = path else {
-            return refusal(
-                &mut self.state,
-                "Name a directory to Move this Session to: /move <path>",
-            );
+            return self
+                .state
+                .refuse("Name a directory to Move this Session to: /move <path>");
         };
         self.state.submission_error = None;
         ApplicationTransition::MoveSession {
@@ -9711,15 +9795,10 @@ impl Application {
     /// Opens the Context overlay on the open Session and asks its Provider
     /// what fills that Session's context.
     fn read_open_session_context(&mut self) -> ApplicationTransition {
-        let Some(session) = self.state.session_reference.clone() else {
-            self.state.submission_error = Some(
-                if self.state.provisional.is_some() {
-                    "This Session has not started yet, so nothing fills its context"
-                } else {
-                    "Open a Session to see what fills its context"
-                }
-                .to_owned(),
-            );
+        let Some(session) = self.state.open_session_for(
+            "This Session has not started yet, so nothing fills its context",
+            "Open a Session to see what fills its context",
+        ) else {
             return ApplicationTransition::Continue;
         };
         self.state.submission_error = None;
@@ -12985,6 +13064,23 @@ impl Application {
             })
             .chain(resumed)
             .collect()
+    }
+
+    /// The resolution the Client's current Workspace follows the open
+    /// Session's Move by, where a Move has been heard since last asked.
+    pub fn take_move_follow(&mut self) -> ApplicationTransition {
+        let Some(request) = self.state.move_follow.take() else {
+            return ApplicationTransition::Continue;
+        };
+        let request_id = self
+            .state
+            .begin_workspace_resolution(WorkspaceResolutionSurface::Move);
+        ApplicationTransition::ResolveWorkspace {
+            outlook: self.state.outlook.clone(),
+            surface: WorkspaceResolutionSurface::Move,
+            request_id,
+            request,
+        }
     }
 
     /// The read the open Usage Metrics view needs once the Outlook has

@@ -2016,12 +2016,16 @@ impl Sidebar {
     /// Workspace the Session being viewed has Moved out of, so that Session
     /// stays in view. A column scoped any other way is the reader's own
     /// choice and is left as it stands.
+    ///
+    /// Only the scope moves here: the row itself is regrouped under `to` by
+    /// the listing the Server's `SessionCatalogInvalidated` for the Move has
+    /// the column catch up with.
     pub(super) fn follow_move(
         &mut self,
-        left: &crate::protocol::Workspace,
+        left: &crate::protocol::WorkspaceId,
         to: crate::protocol::Workspace,
     ) {
-        if self.scope == SidebarListingScope::Workspace(left.clone()) {
+        if matches!(&self.scope, SidebarListingScope::Workspace(narrowed) if narrowed.id == *left) {
             self.choose_scope(SidebarListingScope::Workspace(to));
         }
     }

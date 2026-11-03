@@ -4,10 +4,10 @@
 //! where it now works, and the Client's current Workspace goes with it.
 
 use crate::tui_rendering::support::{
-    application_looking_at_studio, connected_application, deliver_settings, drawn_in_sidebar,
-    enter_active_session, enter_session, fixture_instance_id, listed_session, ready_health,
-    rendered_application_rows, rendered_application_rows_at, selector_label,
-    studio_stops_answering, type_terminal_text, workspace_dir,
+    answer_workspace_resolution, application_looking_at_studio, connected_application,
+    deliver_settings, drawn_in_sidebar, enter_active_session, enter_session, fixture_instance_id,
+    listed_session, ready_health, rendered_application_rows, rendered_application_rows_at,
+    selector_label, studio_stops_answering, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use std::{
@@ -17,11 +17,12 @@ use std::{
 use suru::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
-        EffectiveSettings, ExecutionDirectory, MoveDestination, MoveSessionRequest, Outlook,
-        SessionChange, SessionId, SessionReference, SessionRevision, SessionSnapshot,
-        SessionUpdate, SidebarScope, SidebarSettings, SidebarVisibility, Workspace, WorkspacePaths,
+        EffectiveSettings, ExecutionDirectory, MoveDestination, MoveOutcome, MoveSessionRequest,
+        Outlook, SessionChange, SessionId, SessionListItem, SessionReference, SessionRevision,
+        SessionSnapshot, SessionUpdate, SidebarScope, SidebarSettings, SidebarVisibility,
+        Workspace, WorkspacePaths,
     },
-    tui::{Application, ApplicationEvent, ApplicationTransition},
+    tui::{Application, ApplicationEvent, ApplicationTransition, WorkspaceResolutionSurface},
 };
 
 const WIDE: u16 = 140;
@@ -70,7 +71,7 @@ fn move_to(session_id: SessionId, path: &str) -> ApplicationTransition {
 }
 
 /// The Session's own stream saying it Moved to `destination`, as every
-/// Client viewing it hears — the one that asked and any other.
+/// Client viewing it hears it, the one that asked and any other alike.
 fn hear_moved(application: &mut Application, snapshot: &SessionSnapshot, destination: &Path) {
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
@@ -87,6 +88,33 @@ fn hear_moved(application: &mut Application, snapshot: &SessionSnapshot, destina
             },
         )))
         .expect("hear the Session Move");
+}
+
+/// The Client asking the Session's Server to resolve where it now works, as
+/// the Workspace Picker asks of a Workspace, and taking the answer.
+fn follow(application: &mut Application, destination: &Path) {
+    let transition = application.take_move_follow();
+    let ApplicationTransition::ResolveWorkspace {
+        surface, request, ..
+    } = &transition
+    else {
+        panic!("a Move is followed by resolving its destination, not {transition:?}");
+    };
+    assert_eq!(*surface, WorkspaceResolutionSurface::Move);
+    assert_eq!(
+        request.workspace_id,
+        Some(Workspace::directory(destination.to_owned()).id),
+        "the destination's Workspace is resolved"
+    );
+    assert_eq!(
+        request
+            .remembered_execution_directory
+            .as_ref()
+            .map(|directory| directory.path.as_path()),
+        Some(destination),
+        "standing where the Session works"
+    );
+    answer_workspace_resolution(application, transition);
 }
 
 #[test]
@@ -151,9 +179,11 @@ fn slash_move_with_no_session_open_is_refused_on_the_landing() {
     );
 }
 
-/// Every refusal the Server words — a destination that is no directory, a
-/// Session still Working, a Sidekick's — is said where the reader is, and the
-/// Session stays where it was.
+/// Every refusal the Server words (a destination that is no directory, a
+/// Session still Working, a Sidekick's) is said where the reader is, and the
+/// Session stays where it was. The refusal is delivered as the
+/// `SessionOperationFailed` the event loop raises for it, the path every
+/// refused Session operation shares.
 #[test]
 fn a_refused_move_says_why_and_leaves_the_session_where_it_was() {
     for refusal in [
@@ -253,6 +283,7 @@ fn a_moved_session_is_shown_where_it_now_works_and_the_current_workspace_follows
         "the Session is shown in its new Workspace: {screen}"
     );
 
+    follow(&mut application, &directories.beta);
     type_terminal_text(&mut application, "/new");
     press_enter(&mut application);
     let landing = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
@@ -301,6 +332,7 @@ fn the_sidebar_groups_a_moved_session_under_its_new_workspace() {
     assert!(selector_label(&rows).contains("alpha-work"), "{rows:#?}");
 
     hear_moved(&mut application, &snapshot, &directories.beta);
+    follow(&mut application, &directories.beta);
     let transition = application
         .handle_event(ApplicationEvent::Managed(
             ManagedEvent::SessionCatalogInvalidated { session_id },
@@ -330,5 +362,82 @@ fn the_sidebar_groups_a_moved_session_under_its_new_workspace() {
     assert!(
         selector_label(&rows).contains("beta-work"),
         "under its new Workspace: {rows:#?}"
+    );
+}
+
+/// A Client whose stream lapsed while the Session Moved hears of it in the
+/// snapshot it resubscribes to, and follows it as if it had heard the Move.
+#[test]
+fn a_session_found_moved_on_resubscribing_takes_the_current_workspace_with_it() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (_, mut snapshot) = enter_session(&mut application, &directories.alpha);
+
+    snapshot.revision = SessionRevision(snapshot.revision.0 + 1);
+    snapshot.session.execution_directory = ExecutionDirectory {
+        path: directories.beta.clone(),
+    };
+    snapshot.session.workspace = Workspace::directory(directories.beta.clone());
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
+        .expect("resubscribe to the Session");
+    follow(&mut application, &directories.beta);
+
+    type_terminal_text(&mut application, "/new");
+    press_enter(&mut application);
+    let landing = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(
+        landing.contains("beta-work") && !landing.contains("alpha-work"),
+        "the Client's current Workspace followed the Session: {landing}"
+    );
+}
+
+/// A snapshot of the open Session standing where it stood asks nothing.
+#[test]
+fn a_session_resubscribed_where_it_stood_follows_nowhere() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (_, snapshot) = enter_session(&mut application, &directories.alpha);
+
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
+        .expect("resubscribe to the Session");
+    assert_eq!(
+        application.take_move_follow(),
+        ApplicationTransition::Continue
+    );
+}
+
+/// The Server's answer to the Client that asked moves nothing the Session's
+/// stream does not: the Session is shown where it works until the stream
+/// says it Moved.
+#[test]
+fn the_answer_to_a_move_waits_on_the_sessions_stream() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (session_id, _) = enter_session(&mut application, &directories.alpha);
+    let SessionListItem::Readable(summary) =
+        listed_session(session_id, "Moving work", &directories.beta, 1, 2)
+    else {
+        unreachable!("the fixture builds a readable Session");
+    };
+
+    assert_eq!(
+        application
+            .handle_event(ApplicationEvent::SessionMoved {
+                session: SessionReference::new(Outlook::Local, session_id),
+                outcome: MoveOutcome::Moved { session: *summary },
+            })
+            .expect("hear the Move answered"),
+        ApplicationTransition::Continue
+    );
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(
+        screen.contains("alpha-work") && !screen.contains("beta-work"),
+        "the Session stands where its stream last placed it: {screen}"
+    );
+    assert_eq!(
+        application.take_move_follow(),
+        ApplicationTransition::Continue
     );
 }

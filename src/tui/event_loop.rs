@@ -2128,6 +2128,9 @@ impl RunLoop {
                         "an open Session event only continues or reports Viewed: {other:?}"
                     ),
                 }
+                // A Move the event carried takes the current Workspace along.
+                let follow = self.application.take_move_follow();
+                let _ = self.dispatch_transition(follow);
             }
             Some(Err(error)) => {
                 if let Some(event) =
@@ -2334,6 +2337,13 @@ impl RunLoop {
                 }
                 self.application
                     .handle_event(ApplicationEvent::SessionOperationFailed(error))?;
+            }
+            SubmissionResult::SessionMoved { session, outcome } => {
+                if self.application.outlook() != &session.origin {
+                    return Ok(ControlFlow::Continue(()));
+                }
+                self.application
+                    .handle_event(ApplicationEvent::SessionMoved { session, outcome })?;
             }
             SubmissionResult::SessionDeletionFailed { session, error } => {
                 if self.application.outlook() != &session.origin {
@@ -2606,7 +2616,11 @@ impl RunLoop {
                     self.tasks.adopt(subscription);
                     self.tasks.abort_subscribing();
                 }
-                return Ok(self.dispatch_transition(transition));
+                let flow = self.dispatch_transition(transition);
+                // The Session open again may have Moved while it was not.
+                let follow = self.application.take_move_follow();
+                let _ = self.dispatch_transition(follow);
+                return Ok(flow);
             }
             SessionPickerResult::AttachFailed {
                 reference, error, ..
@@ -3687,6 +3701,11 @@ enum SubmissionResult {
         session: SessionReference,
         error: String,
     },
+    /// What the Session's Server made of a Move this Client asked of it.
+    SessionMoved {
+        session: SessionReference,
+        outcome: crate::protocol::MoveOutcome,
+    },
     LandingAgentSelectionConfirmed {
         outlook: Outlook,
         selection: AgentSelection,
@@ -4235,19 +4254,17 @@ impl SessionOperation {
                     error: compaction_refusal(&error),
                 },
             },
-            // The Session's stream carries the Move to every Client viewing
-            // it, so the outcome itself is not needed here; a refusal is
-            // said in the Server's own words.
+            // A refusal is said in the Server's own words.
             Self::MoveSession {
                 session_id,
                 request,
-            } => operation_result(
-                session,
-                commands
-                    .move_session(session_id, &request)
-                    .await
-                    .map(|_| ()),
-            ),
+            } => match commands.move_session(session_id, &request).await {
+                Ok(outcome) => SubmissionResult::SessionMoved { session, outcome },
+                Err(error) => SubmissionResult::OperationFailed {
+                    session,
+                    error: error.to_string(),
+                },
+            },
         }
     }
 }

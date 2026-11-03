@@ -3781,8 +3781,10 @@ pub(super) fn command_matches(query: &str) -> Vec<SemanticCommandId> {
     // Onboarding is taken once, and again only on purpose, so it waits past
     // that window rather than pushing Pairing out of it, and so does the
     // Usage Metrics view, looked in on now and then rather than worked in,
-    // and a Move, asked of a Session now and then with a path in hand.
-    // Each command moves to just after the one it follows, in this order.
+    // and `/move`, asked of a Session now and then with a path in hand.
+    // Each command moves to just after the one it follows, in this order, so
+    // `/options` is followed by `/connect`, `/pair`, `/onboarding`,
+    // `/metrics` and `/move`, the first two inside the window.
     if query.is_empty() {
         for (id, follows) in [
             (
