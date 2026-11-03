@@ -13,7 +13,9 @@ mod directory_listing;
 mod git;
 pub mod naming;
 mod preparation;
-pub(crate) use directory_listing::{is_directory, is_hidden, list_directory, readable_directory};
+pub(crate) use directory_listing::{
+    is_directory, is_hidden, list_directory, readable_directory, written_path,
+};
 pub use git::GitSourceControl;
 pub(crate) use preparation::PreparationStore;
 

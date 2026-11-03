@@ -149,11 +149,11 @@ impl ProviderOrchestrator {
                         &runtime.provider_id(),
                     )));
                 }
-                self.sessions.execution_directory(subagent).ok_or_else(|| {
-                    BrokeredSendRefusal::Refused(
+                if !self.sessions.holds(subagent) {
+                    return Err(BrokeredSendRefusal::Refused(
                         "The Subagent's Session no longer exists on this Suru server.".to_owned(),
-                    )
-                })?;
+                    ));
+                }
                 self.get_or_spawn_actor_commands(subagent, runtime)
                     .map_err(|error| {
                         BrokeredSendRefusal::Refused(format!(

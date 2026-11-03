@@ -58,7 +58,7 @@ mod restoration_tests;
 mod saves;
 mod selection;
 mod session_moves;
-pub(crate) use session_moves::MoveSessionError;
+pub(crate) use session_moves::{MoveApplied, MoveSessionError};
 mod settled;
 mod settlement;
 mod sidekick_acts;
@@ -619,6 +619,15 @@ impl SessionStore {
             .expect("Session store lock is not poisoned")
             .prompts
             .contains_key(&prompt_id)
+    }
+
+    /// Whether this store holds the Session.
+    pub(crate) fn holds(&self, session_id: SessionId) -> bool {
+        self.state
+            .lock()
+            .expect("Session store lock is not poisoned")
+            .sessions
+            .contains_key(&session_id)
     }
 
     pub(crate) fn execution_directory(&self, session_id: SessionId) -> Option<PathBuf> {

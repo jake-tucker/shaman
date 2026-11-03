@@ -5,9 +5,11 @@
 //! be admitted between finding the Session idle and its new directory
 //! standing: the Session's directory, the Workspace holding it and the
 //! Worktree it lies in change together, storage takes them before the Session
-//! does, and every reader of the Session and its listings hears of it. The
-//! Workspace the destination belongs to is entered in the Workspace Registry
-//! as a Session beginning there would enter it. Nothing else changes: the
+//! does, and every reader of the Session and its listings hears of it. Once
+//! storage has taken the Move — and not before, so a refused Move changes
+//! nothing — the Workspace the destination belongs to is entered in the
+//! Workspace Registry as a Session beginning there would enter it. Nothing
+//! else changes: the
 //! Session's identity, Title, Icon, Transcript, Agent Selection, Resume State
 //! and Approval Posture are left as they stand, and so is every Subagent's
 //! Session beneath it.
@@ -16,9 +18,7 @@
 //! connection opened in another directory than the Session's own is let go
 //! of before its next Turn begins (see `ProviderOrchestrator::session_moved`).
 
-use crate::protocol::{
-    ResolvedWorkspace, SessionChange, SessionId, SessionRevision, SessionSummary, SessionUpdate,
-};
+use crate::protocol::{ResolvedWorkspace, SessionId, SessionSummary};
 use crate::storage::WorkspaceProvenance;
 
 use super::{SessionRecord, SessionStore};
@@ -40,6 +40,16 @@ pub(crate) enum MoveSessionError {
     Storage(anyhow::Error),
 }
 
+/// What a Move the store took came to.
+#[derive(Debug)]
+pub(crate) enum MoveApplied {
+    /// The Session works in its destination from now on, as the summary
+    /// says.
+    Moved(SessionSummary),
+    /// The Session already worked there, and nothing changed.
+    AlreadyThere(SessionSummary),
+}
+
 impl SessionStore {
     /// Whether the Session could Move now, as [`Self::move_to`] judges it
     /// before it reads anything of the destination.
@@ -52,21 +62,22 @@ impl SessionStore {
     }
 
     /// Moves a Session to work where `destination` was resolved from now on,
-    /// answering the summary the Move left standing.
+    /// answering whether it Moved and the summary it left standing.
     ///
     /// Refused for a native Subagent's Session, and while the Session is
     /// Working; a Monitoring Session is not Working and Moves at once. A
-    /// Move to where the Session already works changes nothing and answers as
-    /// the Session stands.
+    /// Move to where the Session already works changes nothing. A Move
+    /// storage refuses changes nothing either: the destination's Workspace
+    /// is entered in the Registry only once the Session stands there.
     pub(crate) fn move_to(
         &self,
         session_id: SessionId,
         destination: ResolvedWorkspace,
-    ) -> Result<SessionSummary, MoveSessionError> {
+    ) -> Result<MoveApplied, MoveSessionError> {
         let ResolvedWorkspace {
             mut workspace,
             execution_directory,
-            mut checkout,
+            checkout,
             ..
         } = destination;
         let execution_directory =
@@ -79,8 +90,24 @@ impl SessionStore {
         may_move(record)?;
         let record = record.expect("a Session that may Move is held");
         if record.snapshot.session.execution_directory == execution_directory {
-            return Ok(record.summary.clone());
+            // Where a pending Move is kept, a Move to where the Session
+            // already works is what clears it.
+            return Ok(MoveApplied::AlreadyThere(record.summary.clone()));
         }
+        // Dressed in what the Registry already holds for the Workspace,
+        // without entering it: an entry the Move makes is made only once
+        // storage has taken the Move.
+        state.dress_workspace(&mut workspace);
+        let summary = self
+            .relocate(
+                &mut state,
+                session_id,
+                Some(execution_directory.clone()),
+                workspace.clone(),
+                checkout,
+            )
+            .map_err(MoveSessionError::Storage)?
+            .expect("a Session held elsewhere than its destination is relocated");
         // The destination's Workspace is known from now on, as one a Session
         // began in would be, and whatever another identity was entered for
         // the destination, or for where its Workspace is presented, is
@@ -97,66 +124,13 @@ impl SessionStore {
             Some(execution_directory.path.as_path()),
             Some(session_id),
         );
-        state.dress_workspace(&mut workspace);
-        let record = state
-            .sessions
-            .get_mut(&session_id)
-            .expect("the Session was found above, under the same lock");
-        // A Move back into a Worktree the Session already knew keeps what it
-        // knew of it, as regrouping does.
-        if let Some(checkout) = &mut checkout
-            && let Some(previous) = &record.snapshot.session.checkout
-            && previous.id == checkout.id
-        {
-            if checkout.recovery_revision.is_none() {
-                checkout.recovery_revision = previous.recovery_revision.clone();
-            }
-            if checkout.reclaim.is_none() {
-                checkout.reclaim = previous.reclaim.clone();
-            }
-        }
-        let mut next = record.snapshot.session.clone();
-        next.execution_directory.clone_from(&execution_directory);
-        next.workspace.clone_from(&workspace);
-        next.checkout.clone_from(&checkout);
-        let update = SessionUpdate {
-            session_id,
-            revision: SessionRevision(record.snapshot.revision.0.checked_add(1).ok_or_else(
-                || MoveSessionError::Storage(anyhow::anyhow!("Session revision exhausted")),
-            )?),
-            changes: vec![SessionChange::Moved {
-                execution_directory,
-                workspace,
-                checkout,
-            }],
-        };
-        // Storage takes the location before the Session does, so one it
-        // refuses leaves the Session where it was.
-        let save = record
-            .take_save()
-            .map_err(|error| MoveSessionError::Storage(error.into()))?;
-        self.storage
-            .location_changed(save, next, update.revision)
-            .map_err(|error| MoveSessionError::Storage(error.into()))?;
-        crate::session_projection::apply_update(&mut record.snapshot, &update)
-            .map_err(MoveSessionError::Storage)?;
-        record.summary.session = record.snapshot.session.clone();
-        let summary = record.summary.clone();
-        let _ = record.updates.send(update);
-        if summary.session.parent.is_none() {
-            state.publish_catalog_change(crate::protocol::SessionCatalogChange::Invalidated {
-                session_id,
-            });
-        }
-        // A Sidekick's tree names the Workspace of each Session beneath it.
-        state.announce_subagent_tree(session_id);
         drop(state);
         if inherited {
             // What a superseded entry carried now dresses the Workspace, so
-            // every Session already grouped there wears it too.
-            self.regroup_workspace(&summary.session.workspace.id);
+            // every Session grouped there — this one included — wears it.
+            self.regroup_workspace(&workspace.id);
         }
-        Ok(summary)
+        Ok(MoveApplied::Moved(summary))
     }
 }
 

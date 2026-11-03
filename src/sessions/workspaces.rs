@@ -7,8 +7,8 @@ use super::{SessionStore, SessionStoreState};
 use crate::{
     protocol::{
         Repository, RepositoryId, RepositoryLocation, SessionCatalogChange, SessionChange,
-        SessionId, SourceControlAvailability, SourceControlCapabilities, SourceControlCapability,
-        Workspace, WorkspaceId, WorkspaceUnavailability,
+        SessionId, SessionSummary, SourceControlAvailability, SourceControlCapabilities,
+        SourceControlCapability, Workspace, WorkspaceId, WorkspaceUnavailability,
     },
     source_control::SourceControlService,
     storage::{StoredWorkspace, WorkspacePresentation, WorkspaceProvenance},
@@ -766,7 +766,7 @@ impl SessionStore {
         &self,
         id: SessionId,
         mut workspace: Workspace,
-        mut checkout: Option<crate::protocol::CheckoutAssociation>,
+        checkout: Option<crate::protocol::CheckoutAssociation>,
         regrouping: Regrouping,
     ) -> anyhow::Result<bool> {
         let mut state = self.state.lock().unwrap();
@@ -798,8 +798,29 @@ impl SessionStore {
         // sharing a Workspace through this same path, as a Description's
         // landing does).
         state.dress_workspace(&mut workspace);
+        self.relocate(&mut state, id, None, workspace, checkout)?;
+        Ok(inherited)
+    }
+
+    /// Changes where the Session `id` stands, under the store's lock: to
+    /// `workspace` and `checkout`, and — for a Move — to work in
+    /// `execution_directory`. Storage takes the new location before the
+    /// Session does, so one it refuses leaves the Session where it was; once
+    /// it stands, every reader of the Session, its listings and the
+    /// Sidekick tree naming it hears of it. A Worktree the Session already
+    /// knew keeps what it knew of it. Answers the summary the change left
+    /// standing, or `None` where the Session is not held or already stands
+    /// there. The caller enters and dresses `workspace`.
+    pub(super) fn relocate(
+        &self,
+        state: &mut SessionStoreState,
+        id: SessionId,
+        execution_directory: Option<crate::protocol::ExecutionDirectory>,
+        workspace: Workspace,
+        mut checkout: Option<crate::protocol::CheckoutAssociation>,
+    ) -> anyhow::Result<Option<SessionSummary>> {
         let Some(record) = state.sessions.get_mut(&id) else {
-            return Ok(inherited);
+            return Ok(None);
         };
         if let Some(checkout) = &mut checkout
             && let Some(previous) = &record.snapshot.session.checkout
@@ -812,14 +833,32 @@ impl SessionStore {
                 checkout.reclaim = previous.reclaim.clone();
             }
         }
-        if record.snapshot.session.workspace == workspace
-            && record.snapshot.session.checkout == checkout
+        let session = &record.snapshot.session;
+        if session.workspace == workspace
+            && session.checkout == checkout
+            && execution_directory
+                .as_ref()
+                .is_none_or(|directory| *directory == session.execution_directory)
         {
-            return Ok(inherited);
+            return Ok(None);
         }
-        let mut next = record.snapshot.session.clone();
+        let mut next = session.clone();
         next.workspace.clone_from(&workspace);
         next.checkout.clone_from(&checkout);
+        let change = match execution_directory {
+            Some(execution_directory) => {
+                next.execution_directory.clone_from(&execution_directory);
+                SessionChange::Moved {
+                    execution_directory,
+                    workspace,
+                    checkout,
+                }
+            }
+            None => SessionChange::WorkspaceChanged {
+                workspace,
+                checkout,
+            },
+        };
         let update = crate::protocol::SessionUpdate {
             session_id: id,
             revision: crate::protocol::SessionRevision(
@@ -830,10 +869,7 @@ impl SessionStore {
                     .checked_add(1)
                     .ok_or_else(|| anyhow::anyhow!("Session revision exhausted"))?,
             ),
-            changes: vec![SessionChange::WorkspaceChanged {
-                workspace,
-                checkout,
-            }],
+            changes: vec![change],
         };
         // Storage takes the location before the Session does, so one it
         // refuses leaves the Session where it was.
@@ -841,15 +877,16 @@ impl SessionStore {
             .location_changed(record.take_save()?, next, update.revision)?;
         crate::session_projection::apply_update(&mut record.snapshot, &update)?;
         record.summary.session = record.snapshot.session.clone();
+        let summary = record.summary.clone();
         let _ = record.updates.send(update);
-        if record.snapshot.session.parent.is_none() {
+        if summary.session.parent.is_none() {
             state.publish_catalog_change(crate::protocol::SessionCatalogChange::Invalidated {
                 session_id: id,
             });
         }
         // A Sidekick's tree names the Workspace of each Session beneath it.
         state.announce_subagent_tree(id);
-        Ok(inherited)
+        Ok(Some(summary))
     }
 
     /// Every Repository the Workspace Registry holds an entry for, by its

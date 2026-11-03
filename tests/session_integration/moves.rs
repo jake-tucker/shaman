@@ -213,6 +213,42 @@ impl IdleSession {
     }
 }
 
+/// A second Client following `session_id`, its stream past the snapshot
+/// it opens with.
+async fn following(
+    fixture: &IdleSession,
+) -> (ManagedClient, suru::managed_client::SessionSubscription) {
+    let observer = connected_client(fixture.state_dir.path(), fixture.channel).await;
+    let mut stream = observer
+        .subscribe_session(fixture.session_id)
+        .await
+        .expect("a second Client follows the Session");
+    assert!(matches!(
+        timeout(PROGRESS_DEADLINE, stream.next()).await,
+        Ok(Some(Ok(SessionEvent::Snapshot(_))))
+    ));
+    (observer, stream)
+}
+
+/// The next Move a Session stream carries, past whatever else it carries.
+async fn next_move_heard(stream: &mut suru::managed_client::SessionSubscription) -> SessionChange {
+    timeout(PROGRESS_DEADLINE, async {
+        loop {
+            let event = stream.next().await.expect("the stream stays open");
+            if let Ok(SessionEvent::Updated(update)) = event
+                && let Some(change) = update
+                    .changes
+                    .into_iter()
+                    .find(|change| matches!(change, SessionChange::Moved { .. }))
+            {
+                return change;
+            }
+        }
+    })
+    .await
+    .expect("the second Client hears the Move")
+}
+
 /// Where every Workspace the Server knows is presented.
 async fn listed_workspaces(client: &ManagedClient) -> Vec<PathBuf> {
     client
@@ -247,15 +283,7 @@ async fn an_idle_session_moves_for_every_client_and_its_next_turn_resumes_there(
     let mut fixture = IdleSession::begin("move-idle-test", "origin").await;
     let destination = fixture.directory("destination");
     let before = fixture.read().await;
-    let observer = connected_client(fixture.state_dir.path(), fixture.channel).await;
-    let mut stream = observer
-        .subscribe_session(fixture.session_id)
-        .await
-        .expect("a second Client follows the Session");
-    assert!(matches!(
-        timeout(PROGRESS_DEADLINE, stream.next()).await,
-        Ok(Some(Ok(SessionEvent::Snapshot(_))))
-    ));
+    let (observer, mut stream) = following(&fixture).await;
     let mut catalog = open_catalog_stream(fixture.server.descriptor()).await;
 
     let summary = fixture
@@ -294,21 +322,7 @@ async fn an_idle_session_moves_for_every_client_and_its_next_turn_resumes_there(
         ),
         "a Move changes where the Session works and nothing else"
     );
-    let heard = timeout(PROGRESS_DEADLINE, async {
-        loop {
-            let event = stream.next().await.expect("the stream stays open");
-            if let Ok(SessionEvent::Updated(update)) = event
-                && let Some(change) = update
-                    .changes
-                    .into_iter()
-                    .find(|change| matches!(change, SessionChange::Moved { .. }))
-            {
-                return change;
-            }
-        }
-    })
-    .await
-    .expect("the second Client hears the Move");
+    let heard = next_move_heard(&mut stream).await;
     assert_eq!(
         heard,
         SessionChange::Moved {
@@ -534,6 +548,7 @@ async fn a_move_into_a_worktree_associates_the_session_with_it_and_its_repositor
     );
     let nested = canonical(&linked).join("nested");
     std::fs::create_dir(&nested).expect("create a directory within the Worktree");
+    let (_observer, mut stream) = following(&fixture).await;
 
     let summary = fixture
         .move_to("~/linked/nested")
@@ -551,6 +566,39 @@ async fn a_move_into_a_worktree_associates_the_session_with_it_and_its_repositor
         .expect("associated with a Worktree");
     assert_eq!(checkout.kind, CheckoutKind::Linked);
     assert_eq!(checkout.root, canonical(&linked));
+    let SessionChange::Moved {
+        execution_directory,
+        workspace,
+        checkout: heard,
+    } = next_move_heard(&mut stream).await
+    else {
+        unreachable!()
+    };
+    assert_eq!(execution_directory.path, nested);
+    assert_eq!(
+        workspace.path, repository,
+        "a second Client sees the Repository's Workspace"
+    );
+    assert_eq!(heard, Some(checkout), "and the Worktree it works in");
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_move_to_where_the_session_works_changes_nothing() {
+    let mut fixture = IdleSession::begin("move-in-place-test", "origin").await;
+    let before = fixture.read().await;
+
+    let summary = fixture
+        .move_to(".")
+        .await
+        .expect("a Move to where the Session works is taken");
+
+    assert_eq!(summary.session.execution_directory.path, fixture.origin);
+    assert_eq!(fixture.read().await.revision, before.revision);
+    assert!(
+        !fixture.provider_session.was_shut_down(),
+        "nothing stops the Provider of a Session that went nowhere"
+    );
     fixture.shutdown().await;
 }
 

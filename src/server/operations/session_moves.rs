@@ -15,7 +15,7 @@ use std::{fmt, path::PathBuf};
 
 use super::SessionOperations;
 use crate::protocol::{Author, MoveDestination, MoveOutcome, SessionId};
-use crate::sessions::MoveSessionError;
+use crate::sessions::{MoveApplied, MoveSessionError};
 
 /// Why a Move was refused. Each leaves the Session where it was.
 #[derive(Debug)]
@@ -100,29 +100,50 @@ impl SessionOperations {
             return Err(MoveRefusal::SidekickSession);
         }
         self.sessions.may_move(session_id).map_err(store_refusal)?;
-        let directory = match destination {
-            MoveDestination::Directory { path } => {
-                self.destination_directory(path, session.execution_directory.path)
-                    .await?
-            }
+        // The path is read against where the Session works and this
+        // Server's home as it is asked for; whether a directory stands there
+        // is read when the Move is applied.
+        let destination = match destination {
+            MoveDestination::Directory { path } => crate::source_control::written_path(
+                &path,
+                &session.execution_directory.path,
+                self.home.as_deref(),
+            )
+            .map_err(MoveRefusal::Destination)?,
         };
-        let outcome = self.apply_move(session_id, directory).await?;
-        self.record_act(session_id, author);
-        Ok(outcome)
+        let outcome = match self.apply_move(session_id, destination).await? {
+            MoveApplied::Moved(session) => {
+                self.record_act(session_id, author);
+                session
+            }
+            // Nothing changed, so nothing is stopped and no act recorded.
+            MoveApplied::AlreadyThere(session) => session,
+        };
+        Ok(MoveOutcome::Moved { session: outcome })
     }
 
-    /// Applies a Move of `session_id` into `directory`, an existing directory
-    /// of this Server read canonically: resolves where it lies, refuses a
-    /// bare Repository and the Sidekick Workspace, has the store take the
-    /// new location while the Session is still idle, and tells the
-    /// Session's Provider actor it Moved. Every Move — asked of an idle
-    /// Session now, or in time one pending until a Turn settles — is applied
-    /// here.
+    /// Applies a Move of `session_id` to the directory at `destination`, a
+    /// path already read against the Session's Execution Directory and this
+    /// Server's home: refuses one where no directory this Server can read
+    /// stands now, resolves where it lies, refuses a bare Repository and the
+    /// Sidekick Workspace, has the store take the new location while the
+    /// Session is still idle, and tells the Session's Provider actor it
+    /// Moved. Every Move — asked of an idle Session now, or in time one
+    /// pending until a Turn settles, whose destination may be gone by then
+    /// — is applied, and its destination read, here.
     async fn apply_move(
         &self,
         session_id: SessionId,
-        directory: PathBuf,
-    ) -> Result<MoveOutcome, MoveRefusal> {
+        destination: PathBuf,
+    ) -> Result<MoveApplied, MoveRefusal> {
+        let directory = tokio::task::spawn_blocking(move || {
+            crate::source_control::readable_directory(&destination)
+        })
+        .await
+        .map_err(|_| {
+            MoveRefusal::Destination("Suru could not finish reading the destination".to_owned())
+        })?
+        .map_err(MoveRefusal::Destination)?;
         let resolved = self.source_control.resolve(&directory, None).await;
         if self.sidekick_workspace.holds(&resolved.workspace) {
             return Err(MoveRefusal::SidekickDestination);
@@ -130,7 +151,7 @@ impl SessionOperations {
         if resolved.execution_directory.is_none() {
             return Err(MoveRefusal::BareRepository);
         }
-        let session = self
+        let applied = self
             .sessions
             .move_to(session_id, resolved)
             .map_err(|error| {
@@ -139,26 +160,10 @@ impl SessionOperations {
                 }
                 store_refusal(error)
             })?;
-        self.providers.session_moved(session_id);
-        Ok(MoveOutcome::Moved { session })
-    }
-
-    /// The existing directory `path` names as the Directory Browser's path
-    /// field reads it — relative to `base`, the Session's current Execution
-    /// Directory, and beginning with `~` beneath this Server's home — where
-    /// this Server can read it.
-    async fn destination_directory(
-        &self,
-        path: PathBuf,
-        base: PathBuf,
-    ) -> Result<PathBuf, MoveRefusal> {
-        let home = self.home.clone();
-        tokio::task::spawn_blocking(move || {
-            crate::source_control::readable_directory(&path, &base, home.as_deref())
-        })
-        .await
-        .map_err(|_| MoveRefusal::Storage)?
-        .map_err(MoveRefusal::Destination)
+        if matches!(applied, MoveApplied::Moved(_)) {
+            self.providers.session_moved(session_id);
+        }
+        Ok(applied)
     }
 }
 

@@ -97,6 +97,10 @@ const MAX_STORED_REASONING_CHARS: usize = 64 * 1024;
 const SUBAGENT_CONNECTION_LOST_MESSAGE: &str =
     "Provider execution failed: the Provider Session ended before the Subagent's work completed.";
 
+/// The failure a native Subagent's child Turn settles with when its parent's
+/// Session Moved and the Provider process both ran in was stopped with it.
+const SUBAGENT_PARENT_MOVED_MESSAGE: &str = "Provider execution ended: the parent Session Moved to      another directory, and its Provider process stopped before the Subagent's work completed.";
+
 /// The failure a Subagent's child Turn settles with when the Provider reported
 /// the Subagent itself failing. The Provider's settle carries no prose, so the
 /// child's Transcript states the fact in Suru's own words.
@@ -1714,9 +1718,10 @@ impl ProviderOrchestrator {
         let input = delegated_prompt(&spawned.delegator, &delivered);
         let started = self
             .sessions
-            .execution_directory(spawned.session_id)
+            .holds(spawned.session_id)
+            .then_some(())
             .ok_or_else(|| anyhow::anyhow!("the Subagent's Session is gone"))
-            .and_then(|_| self.get_or_spawn_actor_commands(spawned.session_id, runtime))
+            .and_then(|()| self.get_or_spawn_actor_commands(spawned.session_id, runtime))
             .and_then(|commands| {
                 commands
                     .send(ProviderCommand::StartDelegation {
@@ -1908,7 +1913,7 @@ impl ProviderOrchestrator {
     }
 
     pub(crate) fn schedule_prompt(&self, session_id: SessionId, prompt_id: PromptId) -> Result<()> {
-        if self.sessions.execution_directory(session_id).is_none() {
+        if !self.sessions.holds(session_id) {
             self.checkout_guards
                 .lock()
                 .unwrap()
@@ -2002,7 +2007,7 @@ impl ProviderOrchestrator {
         if let Some(commands) = self.actor_commands(session_id) {
             return Some(commands);
         }
-        if self.sessions.execution_directory(session_id).is_none() {
+        if !self.sessions.holds(session_id) {
             self.fail_requested_compaction(
                 session_id,
                 turn_id,
@@ -3364,12 +3369,13 @@ async fn run_provider_session(
                             .is_some_and(|moved_to| *moved_to != connected.execution_directory)
                     }) {
                         connected_incarnations.lock().unwrap().remove(&session_id);
-                        lose_provider_connection(
+                        end_provider_connection(
                             &mut provider,
                             &mut subagents,
                             &sessions,
                             &updates,
                             session_id,
+                            SUBAGENT_PARENT_MOVED_MESSAGE,
                         );
                         let _ = timeout(stop_timeout, left.session.shutdown()).await;
                         tracing::info!(
@@ -4574,8 +4580,9 @@ impl ProviderConnector<'_> {
         }) {
             if !subagents.routes.is_empty() || !subagents.working.is_empty() {
                 return Err(ConnectionFailure::Failed(
-                    "The Worktree was recreated while Subagents still use the previous working \
-                     copy; wait for their work to finish before retrying"
+                    "The Session's working copy changed — its Worktree was recreated, or the \
+                     Session Moved — while Subagents still work in the previous one; wait for \
+                     their work to finish before retrying"
                         .to_owned(),
                 ));
             }
@@ -5335,13 +5342,28 @@ fn lose_provider_connection(
     updates: &ProviderUpdateGate,
     session_id: SessionId,
 ) {
-    *provider = None;
-    subagents.fail_all(
+    end_provider_connection(
+        provider,
+        subagents,
         sessions,
         updates,
+        session_id,
         SUBAGENT_CONNECTION_LOST_MESSAGE,
-        OpenInterventions::TurnEnded,
     );
+}
+
+/// [`lose_provider_connection`], with every Turn routed over the connection
+/// failed in `message`'s words.
+fn end_provider_connection(
+    provider: &mut Option<ConnectedProviderSession>,
+    subagents: &mut SubagentRoutes,
+    sessions: &SessionStore,
+    updates: &ProviderUpdateGate,
+    session_id: SessionId,
+    message: &str,
+) {
+    *provider = None;
+    subagents.fail_all(sessions, updates, message, OpenInterventions::TurnEnded);
     // Every Watch ran in the Provider process the connection spoke to, so
     // none outlives it; each is lost, which wakes nothing.
     let _ = updates.apply(|| sessions.lose_watches(session_id));

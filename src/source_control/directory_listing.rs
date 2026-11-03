@@ -36,7 +36,7 @@ pub(crate) fn list_directory(
     if path.as_os_str() == DRIVE_LIST {
         return list_drives();
     }
-    let root = named_directory(path, base, home)?;
+    let root = existing_directory(&written_path(path, base, home)?)?;
     let mut children = std::fs::read_dir(&root)
         .map_err(|error| unreadable(&error))?
         .flatten()
@@ -61,23 +61,29 @@ pub(crate) fn list_directory(
     })
 }
 
-/// The directory `path` names as the Directory Browser's path field reads
-/// it: from `base` when relative and from `home` when it begins with `~`,
-/// resolved to where it leads. A path naming nothing, a file, or a directory
-/// whose path is not Unicode is refused with the reason a reader is told;
-/// one this Server cannot read is refused by whoever goes on to read it.
-pub(crate) fn named_directory(
+/// The path `path` names as the Directory Browser's path field reads it:
+/// from `base` when relative and from `home` when it begins with `~`. Refused
+/// only where it begins with `~` and the home is unknown; whether anything
+/// stands there is for [`existing_directory`] to read.
+pub(crate) fn written_path(
     path: &Path,
     base: &Path,
     home: Option<&Path>,
 ) -> Result<PathBuf, String> {
-    let named = match path.strip_prefix("~") {
+    Ok(match path.strip_prefix("~") {
         Ok(beneath_home) => home
             .ok_or("The Server's home is unknown")?
             .join(beneath_home),
         Err(_) => base.join(path),
-    };
-    let root = crate::paths::canonical(&named).map_err(|error| match error.kind() {
+    })
+}
+
+/// The directory at `written`, resolved to where it leads. A path naming
+/// nothing, a file, or a directory whose path is not Unicode is refused with
+/// the reason a reader is told; one this Server cannot read is refused by
+/// whoever goes on to read it.
+fn existing_directory(written: &Path) -> Result<PathBuf, String> {
+    let root = crate::paths::canonical(written).map_err(|error| match error.kind() {
         io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => "No directory there".to_owned(),
         _ => unreadable(&error),
     })?;
@@ -90,15 +96,11 @@ pub(crate) fn named_directory(
     Ok(root)
 }
 
-/// The directory `path` names, read as [`named_directory`] reads it, where
-/// this Server can also read what it holds: a directory an Agent could work
-/// in, as a Move's destination must be.
-pub(crate) fn readable_directory(
-    path: &Path,
-    base: &Path,
-    home: Option<&Path>,
-) -> Result<PathBuf, String> {
-    let directory = named_directory(path, base, home)?;
+/// The directory at `written`, read as [`existing_directory`] reads it,
+/// where this Server can also read what it holds: a directory an Agent could
+/// work in, as a Move's destination must be.
+pub(crate) fn readable_directory(written: &Path) -> Result<PathBuf, String> {
+    let directory = existing_directory(written)?;
     std::fs::read_dir(&directory).map_err(|error| unreadable(&error))?;
     Ok(directory)
 }
