@@ -99,7 +99,8 @@ const SUBAGENT_CONNECTION_LOST_MESSAGE: &str =
 
 /// The failure a native Subagent's child Turn settles with when its parent's
 /// Session Moved and the Provider process both ran in was stopped with it.
-const SUBAGENT_PARENT_MOVED_MESSAGE: &str = "Provider execution ended: the parent Session Moved to      another directory, and its Provider process stopped before the Subagent's work completed.";
+const SUBAGENT_PARENT_MOVED_MESSAGE: &str = "Provider execution ended: the parent Session Moved to another \
+     directory, and its Provider process stopped before the Subagent's work completed.";
 
 /// The failure a Subagent's child Turn settles with when the Provider reported
 /// the Subagent itself failing. The Provider's settle carries no prose, so the
