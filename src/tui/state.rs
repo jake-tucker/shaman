@@ -2992,9 +2992,12 @@ impl TuiState {
         self.sync_composer_completion();
     }
 
-    fn apply_session(&mut self, event: SessionEvent) -> Result<()> {
+    /// Lands `event` on the open Session, answering whether it moved
+    /// anything: an update the Session already holds, or any event while
+    /// Session events are blocked, is passed over with all it would set off.
+    fn apply_session(&mut self, event: SessionEvent) -> Result<bool> {
         if self.session_events_blocked {
-            return Ok(());
+            return Ok(false);
         }
         // What the event means for the view, read before the event is consumed.
         // A Snapshot replaces the Session wholesale, so it always resettles the
@@ -3019,7 +3022,9 @@ impl TuiState {
                 let Some(session) = self.session.as_mut() else {
                     return Err(anyhow!("Session update arrived before its snapshot"));
                 };
-                session.apply(update)?;
+                if !session.apply(update)? {
+                    return Ok(false);
+                }
             }
         }
         self.reconcile_live_output_starts();
@@ -3037,7 +3042,7 @@ impl TuiState {
         self.reconcile_withdrawn_prompts();
         self.reconcile_command_mode();
         self.reconcile_subagent_picker();
-        Ok(())
+        Ok(true)
     }
 
     /// The root Session to report Viewed when this event Settles one of its
@@ -3100,6 +3105,7 @@ impl TuiState {
         }
         self.session_events_blocked = false;
         self.apply_session(SessionEvent::snapshot(snapshot))
+            .map(drop)
     }
 
     fn hydrate_session(&mut self, snapshot: SessionSnapshot) {
@@ -6372,8 +6378,8 @@ impl Application {
                     }
                 }
                 let viewed = self.state.open_root_viewed_by(&event);
-                self.state.apply_session(event)?;
-                Ok(viewed.map_or(
+                let landed = self.state.apply_session(event)?;
+                Ok(viewed.filter(|_| landed).map_or(
                     ApplicationTransition::Continue,
                     ApplicationTransition::ViewSession,
                 ))

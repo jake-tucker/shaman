@@ -6,8 +6,10 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use suru::{
     managed_client::SessionEvent,
     protocol::{
-        Activity, ActivityId, Answer, Question, QuestionAnswer, QuestionChoice, Questionnaire,
-        QuestionnaireId, QuestionnaireOutcome, QuestionnaireSubmission, TranscriptItem,
+        Activity, ActivityId, Answer, Outlook, Question, QuestionAnswer, QuestionChoice,
+        Questionnaire, QuestionnaireId, QuestionnaireOutcome, QuestionnaireSubmission,
+        SessionChange, SessionReference, SessionSnapshot, SessionTimestamp, SessionUpdate,
+        TranscriptItem, TurnStatus,
     },
     tui::{ApplicationEvent, ApplicationTransition, CommandId, SemanticCommandId},
 };
@@ -651,6 +653,99 @@ fn concurrent_questionnaires_keep_individual_drafts_across_navigation_and_sessio
             .join("\n")
             .contains("Other composer")
     );
+}
+
+#[test]
+fn stream_updates_a_reconciled_snapshot_already_covers_are_passed_over() {
+    let workspace = workspace_dir();
+    let mut app = connected_application(workspace.path());
+    let (_, mut snapshot, turn_id) = enter_active_session(&mut app, workspace.path());
+    let id = add_request(&mut snapshot, turn_id, "Which environment?");
+    app.handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
+        snapshot.clone(),
+    )))
+    .unwrap();
+    invoke(&mut app, SemanticCommandId::QuestionnaireOpen);
+    type_terminal_text(&mut app, "Staging");
+    invoke(&mut app, SemanticCommandId::QuestionnaireReview);
+    assert!(matches!(
+        invoke(&mut app, SemanticCommandId::QuestionnaireSubmit),
+        ApplicationTransition::SubmitQuestionnaire { .. }
+    ));
+    // The Session moves on twice while the submission is read back, so the
+    // reconciled snapshot lands ahead of what the stream has delivered: the
+    // Answer is recorded, then the Turn it resumed Settles.
+    let session_id = snapshot.session.id;
+    let mut in_flight = Vec::new();
+    snapshot.revision.0 += 1;
+    snapshot.title = "Answer delivered".into();
+    in_flight.push(title_update(&snapshot, "Answer delivered"));
+    snapshot.revision.0 += 1;
+    snapshot
+        .turns
+        .iter_mut()
+        .find(|turn| turn.id == turn_id)
+        .unwrap()
+        .status = TurnStatus::Completed;
+    in_flight.push(SessionUpdate {
+        session_id,
+        revision: snapshot.revision,
+        changes: vec![SessionChange::TurnStatusChanged {
+            turn_id,
+            status: TurnStatus::Completed,
+            settled_at: Some(SessionTimestamp::now()),
+        }],
+    });
+    if let Activity::Questionnaire { outcome, .. } = snapshot.activities.last_mut().unwrap() {
+        *outcome = QuestionnaireOutcome::Answered;
+    }
+    app.handle_event(ApplicationEvent::QuestionnaireSubmissionReconciled {
+        id,
+        session: SessionReference::new(Outlook::Local, session_id),
+        snapshot: Some(snapshot.clone()),
+        error: None,
+    })
+    .unwrap();
+    // The snapshot already holds what was in flight, so it sets nothing off:
+    // the Settled Turn is not reported Viewed a second time.
+    for update in in_flight {
+        assert!(matches!(
+            app.handle_event(ApplicationEvent::Session(SessionEvent::Updated(update)))
+                .unwrap(),
+            ApplicationTransition::Continue
+        ));
+    }
+    snapshot.revision.0 += 1;
+    app.handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+        title_update(&snapshot, "Stream caught up"),
+    )))
+    .unwrap();
+    let screen = rendered_application_rows(&app).join("\n");
+    assert!(
+        screen.contains("Stream caught up")
+            && screen.contains("Worked")
+            && !screen.contains("Questionnaire"),
+        "{screen}"
+    );
+    // A revision the stream skipped is still refused.
+    snapshot.revision.0 += 2;
+    let error = app
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            title_update(&snapshot, "Skipped a revision"),
+        )))
+        .unwrap_err();
+    assert!(error.to_string().contains("not monotonic"), "{error}");
+}
+
+fn title_update(snapshot: &SessionSnapshot, title: &str) -> SessionUpdate {
+    SessionUpdate {
+        session_id: snapshot.session.id,
+        revision: snapshot.revision,
+        changes: vec![SessionChange::TitleChanged {
+            title: title.into(),
+            icon: None,
+        }],
+    }
 }
 
 #[test]
