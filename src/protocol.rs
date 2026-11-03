@@ -797,7 +797,8 @@ pub struct WorkspaceDescription {
 }
 
 /// The exact directory an Agent executes in, interpreted only by its owning Server.
-/// It is independent of Workspace grouping and is fixed when the first Turn begins.
+/// It is independent of Workspace grouping, set as the Session begins, and
+/// changed only by a Move.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionDirectory {
@@ -4795,6 +4796,14 @@ pub enum SessionChange {
         workspace: Workspace,
         checkout: Option<CheckoutAssociation>,
     },
+    /// The Session Moved: it works in `execution_directory` from now on,
+    /// grouped under the Workspace holding it and associated with the
+    /// Worktree it lies in, if any.
+    Moved {
+        execution_directory: ExecutionDirectory,
+        workspace: Workspace,
+        checkout: Option<CheckoutAssociation>,
+    },
     TitleChanged {
         title: String,
         icon: Option<String>,
@@ -5130,6 +5139,35 @@ pub struct SetSessionTitleRequest {
     pub title: String,
 }
 
+/// Where a Session is asked to Move (CONTEXT.md: Move). It names the
+/// destination alone: the Session it Moves is the one the request is sent to.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoveSessionRequest {
+    pub destination: MoveDestination,
+}
+
+/// Where a Move takes a Session.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MoveDestination {
+    /// A directory that exists on the Session's Server, named as the
+    /// Directory Browser's path field names one: relative to the Session's
+    /// current Execution Directory, or beginning with `~` for the Server's
+    /// home. One that does not exist, is not a directory or cannot be read
+    /// is refused before anything changes.
+    Directory { path: PathBuf },
+}
+
+/// What came of a Move the Session's Server took.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "outcome", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MoveOutcome {
+    /// The Session works in its destination from now on, as its summary
+    /// says; its Provider follows at its next Turn.
+    Moved { session: SessionSummary },
+}
+
 /// Whether the Session's Origin would derive a Title proposal for it if
 /// asked: as the derivation Setting in force there decides, and only where
 /// that Setting has a Provider to derive with.
@@ -5329,9 +5367,12 @@ pub enum SessionErrorCode {
     /// usable.
     TitleProposalFailed,
     SessionNotFound,
+    /// The request named a Subagent's Session, which takes no Prompt of its
+    /// own, or a native Subagent's, which no Move reaches since it runs in
+    /// its parent's Provider process.
     SubagentSession,
-    /// The request needs the Session idle — deleting it, or compacting its
-    /// context — and it or a Subagent below it is still Working: running a
+    /// The request needs the Session idle — deleting it, compacting its
+    /// context, or Moving it — and it or a Subagent below it is still Working: running a
     /// Turn, owing one to a Prompt it admitted, or waiting on Subagents.
     WorkingSession,
     /// A Compaction was requested of a Session that owes its reader an
@@ -5372,7 +5413,8 @@ pub enum SessionErrorCode {
     /// A per-Subagent stop named a Subagent whose Provider offers none.
     SubagentStopUnsupported,
     /// An act a Sidekick sent named a Session of the Sidekick Workspace, on
-    /// which no Sidekick acts.
+    /// which no Sidekick acts; or a Move named one, or a destination there,
+    /// since that Workspace is a Sidekick's identity.
     SidekickWorkspaceSession,
     /// A Clone of a Repository URL was refused, as its message says: no
     /// Workspace Root took it, something stood where it would go, or Git

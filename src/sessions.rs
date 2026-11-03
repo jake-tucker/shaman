@@ -57,6 +57,8 @@ mod restoration;
 mod restoration_tests;
 mod saves;
 mod selection;
+mod session_moves;
+pub(crate) use session_moves::MoveSessionError;
 mod settled;
 mod settlement;
 mod sidekick_acts;

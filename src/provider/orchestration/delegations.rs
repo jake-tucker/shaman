@@ -149,14 +149,12 @@ impl ProviderOrchestrator {
                         &runtime.provider_id(),
                     )));
                 }
-                let execution_directory =
-                    self.sessions.execution_directory(subagent).ok_or_else(|| {
-                        BrokeredSendRefusal::Refused(
-                            "The Subagent's Session no longer exists on this Suru server."
-                                .to_owned(),
-                        )
-                    })?;
-                self.get_or_spawn_actor_commands(subagent, execution_directory, runtime)
+                self.sessions.execution_directory(subagent).ok_or_else(|| {
+                    BrokeredSendRefusal::Refused(
+                        "The Subagent's Session no longer exists on this Suru server.".to_owned(),
+                    )
+                })?;
+                self.get_or_spawn_actor_commands(subagent, runtime)
                     .map_err(|error| {
                         BrokeredSendRefusal::Refused(format!(
                             "Suru could not reach the Subagent's Provider: {error}."

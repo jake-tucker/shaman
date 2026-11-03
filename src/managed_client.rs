@@ -18,20 +18,20 @@ use crate::{
     protocol::{
         AddRelayRequest, AdmitPromptRequest, AgentSelection, AttachmentDescriptor, AttachmentId,
         CheckoutStateChanged, CreateSessionRequest, Health, InterruptOutcome, InvitePreview,
-        IssueInviteRequest, IssuedInvite, LifecycleState, ModelCatalog, Outlook, Peer,
-        PreviewInviteRequest, Prompt, PromptId, RedeemInviteRequest, Relay, RelayListing,
-        RelayLogin, RelayRemoval, RelayServeThroughRequest, Remote, RemoteHealth, RemoteRemoval,
-        ResolveWorkspaceRequest, RuntimeDescriptor, SESSION_ERROR_CODE_HEADER, ServerShutdown,
-        SessionApprovalPosture, SessionCatalogSnapshot, SessionCreated, SessionDeleted,
-        SessionError, SessionErrorCode, SessionId, SessionListItem, SessionMonitoringChanged,
-        SessionRemoteSubsessionsChanged, SessionSettlementChanged, SessionSnapshot,
-        SessionStandingInputsChanged, SessionSummary, SessionTitleChanged, SessionTitleProposal,
-        SessionTitleProposalOffer, SessionUsageChanged, SessionWorkingChanged,
-        SetSessionIconRequest, SetSessionTitleRequest, SetWorkspaceDescriptionRequest,
-        SetWorkspaceIconRequest, SettingMutation, SettingsSnapshot, SettleSessionRequest,
-        ShutdownReason, SkillCatalog, SkillCatalogRequest, UpdateAgentSelectionRequest,
-        UpdateApprovalPostureRequest, ViewSessionRequest, WorkspaceDescriptionChanged,
-        WorkspaceIconChanged, WorkspaceId, WorkspaceListing,
+        IssueInviteRequest, IssuedInvite, LifecycleState, ModelCatalog, MoveOutcome,
+        MoveSessionRequest, Outlook, Peer, PreviewInviteRequest, Prompt, PromptId,
+        RedeemInviteRequest, Relay, RelayListing, RelayLogin, RelayRemoval,
+        RelayServeThroughRequest, Remote, RemoteHealth, RemoteRemoval, ResolveWorkspaceRequest,
+        RuntimeDescriptor, SESSION_ERROR_CODE_HEADER, ServerShutdown, SessionApprovalPosture,
+        SessionCatalogSnapshot, SessionCreated, SessionDeleted, SessionError, SessionErrorCode,
+        SessionId, SessionListItem, SessionMonitoringChanged, SessionRemoteSubsessionsChanged,
+        SessionSettlementChanged, SessionSnapshot, SessionStandingInputsChanged, SessionSummary,
+        SessionTitleChanged, SessionTitleProposal, SessionTitleProposalOffer, SessionUsageChanged,
+        SessionWorkingChanged, SetSessionIconRequest, SetSessionTitleRequest,
+        SetWorkspaceDescriptionRequest, SetWorkspaceIconRequest, SettingMutation, SettingsSnapshot,
+        SettleSessionRequest, ShutdownReason, SkillCatalog, SkillCatalogRequest,
+        UpdateAgentSelectionRequest, UpdateApprovalPostureRequest, ViewSessionRequest,
+        WorkspaceDescriptionChanged, WorkspaceIconChanged, WorkspaceId, WorkspaceListing,
     },
 };
 
@@ -808,6 +808,19 @@ impl ManagedClient {
             .await
     }
 
+    /// Moves a Session to another directory of its Server, refused — the
+    /// Session left where it was — where the destination names no directory
+    /// an Agent can work in, or the Session cannot Move now.
+    pub async fn move_session(
+        &self,
+        session_id: SessionId,
+        request: &MoveSessionRequest,
+    ) -> Result<MoveOutcome> {
+        self.session_commands()
+            .move_session(session_id, request)
+            .await
+    }
+
     /// Whether the Session's Origin would derive a Title proposal for it.
     pub async fn session_title_proposal_offered(&self, session_id: SessionId) -> Result<bool> {
         self.session_commands()
@@ -1147,6 +1160,17 @@ impl OutlookClient {
         title: &str,
     ) -> Result<SessionSummary> {
         self.commands.set_session_title(session_id, title).await
+    }
+
+    /// Moves a Session to another directory of its Server, refused — the
+    /// Session left where it was — where the destination names no directory
+    /// an Agent can work in, or the Session cannot Move now.
+    pub async fn move_session(
+        &self,
+        session_id: SessionId,
+        request: &MoveSessionRequest,
+    ) -> Result<MoveOutcome> {
+        self.commands.move_session(session_id, request).await
     }
 
     /// Whether the Session's Origin would derive a Title proposal for it.
@@ -2122,6 +2146,22 @@ impl SessionCommandClient {
                 title: title.to_owned(),
             },
             "Session Title",
+        )
+        .await
+    }
+
+    /// Moves a Session to another directory of its Server. Routed like every
+    /// other Session command, to the Session's Origin, which reads the
+    /// destination against its own directories.
+    pub(crate) async fn move_session(
+        &self,
+        session_id: SessionId,
+        request: &MoveSessionRequest,
+    ) -> Result<MoveOutcome> {
+        self.post_session_command(
+            &format!("/v1/sessions/{session_id}/move"),
+            request,
+            "Session Move",
         )
         .await
     }

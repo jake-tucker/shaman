@@ -19,8 +19,9 @@ use suru::{
         Activity, ActivityStatus, AdmitPromptRequest, AgentSelection, AgentSelectionOperationId,
         ApprovalPosture, ApprovalPostureApplication, ClaudePermissionMode, CreateSessionRequest,
         InitialPrompt, ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection,
-        ModelOptionValue, PromptDelivery, PromptId, ProviderId, SessionId, SessionSnapshot,
-        SettingMutation, TurnId, TurnStatus, UpdateAgentSelectionRequest,
+        ModelOptionValue, MoveDestination, MoveSessionRequest, PromptDelivery, PromptId,
+        ProviderId, SessionId, SessionSnapshot, SettingMutation, TurnId, TurnStatus,
+        UpdateAgentSelectionRequest,
     },
     server::{RunningServer, ServerTimings},
 };
@@ -291,6 +292,51 @@ async fn an_idle_sessions_child_is_stopped_and_its_next_turn_resumes_the_convers
     assert_second_child_resumed_the_first(&claude, "the idle stop");
 
     idle.shutdown().await;
+}
+
+/// A Session Moved to another directory has the child it ran in the directory it left stopped, and
+/// the child its next Turn spawns resumes the conversation by its identifier from the directory it
+/// Moved to (ADR 0059).
+#[tokio::test]
+async fn a_moved_sessions_next_turn_resumes_the_conversation_in_its_new_directory() {
+    let claude = conversation_fixture(STREAMED_MESSAGE);
+    let session = DurableSession::start(&claude, "claude-moved-resume").await;
+    let destination = session._workspace.path().join("moved here");
+    std::fs::create_dir(&destination).unwrap();
+    let destination = suru::paths::canonical(destination).unwrap();
+
+    session
+        .client
+        .move_session(
+            session.session_id,
+            &MoveSessionRequest {
+                destination: MoveDestination::Directory {
+                    path: destination.clone(),
+                },
+            },
+        )
+        .await
+        .expect("Move the idle Session");
+    claude.wait_for_exits(claude.launches()).await;
+    let settled = session
+        .continue_with("Carry on where the work is now", 1)
+        .await;
+
+    assert_eq!(
+        settled.turns[1].status,
+        TurnStatus::Completed,
+        "the Turn after the Move runs on the resumed conversation: {:?}",
+        settled.activities
+    );
+    assert_eq!(agent_messages(&settled).len(), 2);
+    assert_second_child_resumed_the_first(&claude, "the Move");
+    assert_eq!(
+        claude.launch_carrying("--resume").working_directory,
+        destination,
+        "the resumed child works where the Session Moved to"
+    );
+
+    session.shutdown().await;
 }
 
 #[tokio::test]

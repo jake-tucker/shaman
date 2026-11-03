@@ -3227,8 +3227,8 @@ enum PeerRouteClass {
 /// Whether the Session API's route `method` `path` is an act a Sidekick may
 /// perform on the user's behalf, whose operation judges its author: beginning
 /// a Session, preparing a Worktree for one, admitting a Prompt, interrupting,
-/// settling or unsettling, answering a Questionnaire, setting a Workspace's
-/// Description, or Cloning a Repository URL into a Workspace Root.
+/// settling or unsettling, Moving, answering a Questionnaire, setting a
+/// Workspace's Description, or Cloning a Repository URL into a Workspace Root.
 fn takes_an_author(method: &Method, path: &str) -> bool {
     if *method != Method::POST {
         return false;
@@ -3239,7 +3239,12 @@ fn takes_an_author(method: &Method, path: &str) -> bool {
         ["v1", "sessions"]
             | ["v1", "checkouts", "prepare"]
             | ["v1", "workspaces", "description" | "clone"]
-            | ["v1", "sessions", _, "prompts" | "interrupt" | "settlement"]
+            | [
+                "v1",
+                "sessions",
+                _,
+                "prompts" | "interrupt" | "settlement" | "move"
+            ]
             | ["v1", "sessions", _, "questionnaires", _]
     )
 }
@@ -6883,6 +6888,7 @@ mod tests {
             (Method::POST, "/v1/sessions/0198b27e/prompts"),
             (Method::POST, "/v1/sessions/0198b27e/interrupt"),
             (Method::POST, "/v1/sessions/0198b27e/settlement"),
+            (Method::POST, "/v1/sessions/0198b27e/move"),
             (
                 Method::POST,
                 "/v1/sessions/0198b27e/questionnaires/0198b27f",

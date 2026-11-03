@@ -16,6 +16,7 @@ mod icons;
 mod managed_client;
 mod model_catalog;
 mod monitoring;
+mod moves;
 mod multi_provider;
 mod prompts;
 mod provider_enablement;

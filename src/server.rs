@@ -39,20 +39,20 @@ use crate::protocol::{
     ClonedWorkspace, CompactSessionRequest, CreateSessionRequest, InsightsQuery, InterruptOutcome,
     IssueInviteRequest, LifecycleState, ListDirectoryRequest, ListenerState,
     MAX_USAGE_METRICS_BUCKETS, MAX_USAGE_METRICS_TOP_SESSIONS, MODEL_CATALOG_EVENT, Message,
-    MessageId, MessageRole, MessageStatus, ModelCatalog, ONBOARDED_EVENT, PROMPT_ADMISSION_HEADER,
-    PROTOCOL_VERSION, Peer, ProviderId, RELAYS_EVENT, RedeemInviteRequest, RelayListing, Remote,
-    ResolveWorkspaceRequest, RuntimeDescriptor, SERVER_SHUTDOWN_EVENT, SERVING_LISTENER_EVENT,
-    SESSION_CATALOG_SNAPSHOT_EVENT, SESSION_CATALOG_UPDATED_EVENT, SESSION_ERROR_CODE_HEADER,
-    SESSION_READING_PATH, SESSION_SNAPSHOT_EVENT, SESSION_UPDATED_EVENT, SETTINGS_SNAPSHOT_EVENT,
-    SKILL_CATALOG_UPDATED_EVENT, SUBAGENT_TREE_SNAPSHOT_EVENT, SUBAGENT_TREE_UPDATED_EVENT,
-    ServerIdentity, ServerShutdown, SessionCatalogRevision, SessionChange, SessionError,
-    SessionErrorCode, SessionId, SessionReadingQuery, SessionRevision, SessionTitleProposal,
-    SessionTitleProposalOffer, SessionUpdate, SetSessionIconRequest, SetSessionTitleRequest,
-    SetWorkspaceDescriptionRequest, SetWorkspaceIconRequest, SettingMutation, SettingsSnapshot,
-    SettleSessionRequest, ShutdownReason, SkillCatalog, SkillCatalogRequest, SubagentTreeRevision,
-    SubagentTreeUpdate, TurnId, UpdateAgentSelectionRequest, UpdateApprovalPostureRequest,
-    UsageMetricsQuery, ViewSessionRequest, WORKSPACE_LISTING_EVENT, WorkspaceListing,
-    WorkspaceListingRevision,
+    MessageId, MessageRole, MessageStatus, ModelCatalog, MoveSessionRequest, ONBOARDED_EVENT,
+    PROMPT_ADMISSION_HEADER, PROTOCOL_VERSION, Peer, ProviderId, RELAYS_EVENT, RedeemInviteRequest,
+    RelayListing, Remote, ResolveWorkspaceRequest, RuntimeDescriptor, SERVER_SHUTDOWN_EVENT,
+    SERVING_LISTENER_EVENT, SESSION_CATALOG_SNAPSHOT_EVENT, SESSION_CATALOG_UPDATED_EVENT,
+    SESSION_ERROR_CODE_HEADER, SESSION_READING_PATH, SESSION_SNAPSHOT_EVENT, SESSION_UPDATED_EVENT,
+    SETTINGS_SNAPSHOT_EVENT, SKILL_CATALOG_UPDATED_EVENT, SUBAGENT_TREE_SNAPSHOT_EVENT,
+    SUBAGENT_TREE_UPDATED_EVENT, ServerIdentity, ServerShutdown, SessionCatalogRevision,
+    SessionChange, SessionError, SessionErrorCode, SessionId, SessionReadingQuery, SessionRevision,
+    SessionTitleProposal, SessionTitleProposalOffer, SessionUpdate, SetSessionIconRequest,
+    SetSessionTitleRequest, SetWorkspaceDescriptionRequest, SetWorkspaceIconRequest,
+    SettingMutation, SettingsSnapshot, SettleSessionRequest, ShutdownReason, SkillCatalog,
+    SkillCatalogRequest, SubagentTreeRevision, SubagentTreeUpdate, TurnId,
+    UpdateAgentSelectionRequest, UpdateApprovalPostureRequest, UsageMetricsQuery,
+    ViewSessionRequest, WORKSPACE_LISTING_EVENT, WorkspaceListing, WorkspaceListingRevision,
 };
 use crate::provider::{
     ContextBreakdownError, ProviderOrchestrator, ProviderRuntime, ProviderUpdateGate,
@@ -85,7 +85,7 @@ mod signals;
 
 use operations::{
     AgentSelectionRefusal, AnswerRefusal, CloneRefusal, DescriptionRefusal, InterruptRefusal,
-    PromptRefusal, SessionOperations, SettingChanged, SettleRefusal,
+    MoveRefusal, PromptRefusal, SessionOperations, SettingChanged, SettleRefusal,
 };
 
 pub use crate::clock::{ManualClock, ServerClock};
@@ -1859,6 +1859,7 @@ async fn start(
             detached_clones.clone(),
         ),
         sidekick_workspace.clone(),
+        config.home_dir(),
         operations::RemoteReach::new(
             serving.clone(),
             timings.remote_reach_timeout,
@@ -2015,6 +2016,7 @@ async fn start(
                 .route("/v1/sessions/{session_id}/settlement", post(settle_session))
                 .route("/v1/sessions/{session_id}/icon", post(set_session_icon))
                 .route("/v1/sessions/{session_id}/title", post(set_session_title))
+                .route("/v1/sessions/{session_id}/move", post(move_session))
                 .route(
                     "/v1/sessions/{session_id}/title/proposal",
                     get(title_proposal_offer).post(propose_session_title),
@@ -4385,6 +4387,52 @@ async fn set_session_title(
         ),
         Err(SetTitleError::Storage) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+/// Moves a Session to another directory of this Server, for the act's
+/// author where a Sidekick performs it (ADR 0059). Answers what came of the
+/// Move; a refusal leaves the Session where it was.
+async fn move_session(
+    State(state): State<AppState>,
+    AxumPath(session_id): AxumPath<SessionId>,
+    request: Request,
+) -> Response {
+    let author = match act_author(&state, request.headers()) {
+        Ok(author) => author,
+        Err(response) => return response,
+    };
+    let request =
+        match decode_session_command::<MoveSessionRequest>(&state, request, "Session Move").await {
+            Ok(request) => request,
+            Err(response) => return response,
+        };
+    match state
+        .operations
+        .move_session(session_id, request.destination, author.as_ref())
+        .await
+    {
+        Ok(outcome) => Json(outcome).into_response(),
+        Err(refusal) => move_refusal(&refusal),
+    }
+}
+
+/// The answer a Move is refused with.
+fn move_refusal(refusal: &MoveRefusal) -> Response {
+    let (status, code) = match refusal {
+        MoveRefusal::SessionNotFound => (StatusCode::NOT_FOUND, SessionErrorCode::SessionNotFound),
+        MoveRefusal::NativeSubagent => (StatusCode::CONFLICT, SessionErrorCode::SubagentSession),
+        MoveRefusal::Working => (StatusCode::CONFLICT, SessionErrorCode::WorkingSession),
+        MoveRefusal::SidekickSession | MoveRefusal::SidekickDestination => (
+            StatusCode::CONFLICT,
+            SessionErrorCode::SidekickWorkspaceSession,
+        ),
+        MoveRefusal::Destination(_) | MoveRefusal::BareRepository => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            SessionErrorCode::InvalidWorkspace,
+        ),
+        MoveRefusal::Storage => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    session_error_response(status, code, refusal.to_string())
 }
 
 /// Answers whether this Server would derive a Title proposal for a Session if

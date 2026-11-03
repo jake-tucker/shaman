@@ -556,6 +556,17 @@ impl ValidatedChanges {
                     next.session.workspace.clone_from(workspace);
                     next.session.checkout.clone_from(checkout);
                 }
+                SessionChange::Moved {
+                    execution_directory,
+                    workspace,
+                    checkout,
+                } => {
+                    next.session
+                        .execution_directory
+                        .clone_from(execution_directory);
+                    next.session.workspace.clone_from(workspace);
+                    next.session.checkout.clone_from(checkout);
+                }
                 SessionChange::SessionStatusChanged { status } => next.session.status = *status,
             }
         }
@@ -648,6 +659,7 @@ impl<'a> Validation<'a> {
             | SessionChange::SessionWatchesChanged { .. }
             | SessionChange::SessionWaitingOnSubagentsChanged { .. }
             | SessionChange::WorkspaceChanged { .. }
+            | SessionChange::Moved { .. }
             | SessionChange::SessionStatusChanged { .. } => None,
             SessionChange::PromptAdded { prompt } => {
                 if self.prompts.position(|held| held.id == prompt.id).is_some() {

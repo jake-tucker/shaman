@@ -7,8 +7,8 @@ use suru::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionSubscription},
     protocol::{
         Activity, AdmitPromptRequest, AgentId, CreateSessionRequest, InitialPrompt, MessageRole,
-        MessageStatus, PromptDelivery, PromptId, ProviderId, SessionId, SessionSnapshot,
-        SessionStatus, TurnStatus,
+        MessageStatus, MoveDestination, MoveSessionRequest, PromptDelivery, PromptId, ProviderId,
+        SessionId, SessionSnapshot, SessionStatus, TurnStatus,
     },
     provider::CodexRuntime,
     server::{self, RunningServer, ServerConfig},
@@ -592,5 +592,115 @@ async fn managed_worktree_native_codex_starts_at_prepared_root() {
         prepared.destination.path.to_str()
     );
     assert_eq!(resumed["params"]["threadId"], "prepared");
+    server.shutdown().await.unwrap();
+}
+
+/// A Session Moved to another directory has the app-server it ran in the directory it left
+/// stopped, and its next Turn starts another that resumes the same Thread with the new directory as
+/// its cwd (ADR 0059).
+#[tokio::test]
+async fn a_moved_sessions_next_turn_resumes_its_thread_in_the_new_directory() {
+    let codex = ScriptedCodex::new_multiprocess(
+        r#"
+    *'"method":"initialize"'*) printf '%s\n' '{"id":1,"result":{}}' ;;
+    *'"method":"config/read"'*) printf '%s\n' '{"id":2,"result":{"config":{},"origins":{}}}' ;;
+    *'"method":"thread/start"'*|*'"method":"thread/resume"'*) printf '%s\n' '{"id":3,"result":{"thread":{"id":"moving-thread"},"model":"gpt-fixture"}}' ;;
+    *'"method":"turn/start"'*)
+      printf '%s\n' '{"id":4,"result":{"turn":{"id":"moving-turn"}}}'
+      printf '%s\n' '{"method":"turn/completed","params":{"threadId":"moving-thread","turn":{"id":"moving-turn","status":"completed","items":[]}}}'
+      ;;
+    "#,
+    );
+    let state = tempfile::tempdir().unwrap();
+    let origin = tempfile::tempdir().unwrap();
+    let destination = tempfile::tempdir().unwrap();
+    let destination_path = suru::paths::canonical(destination.path()).unwrap();
+    let server = server::spawn_with_provider(
+        ServerConfig::new(state.path(), "moved-codex").unwrap(),
+        Arc::new(CodexRuntime::new(codex.executable())),
+    )
+    .await
+    .unwrap();
+    let client =
+        ManagedClient::connect(ManagedClientConfig::new(state.path(), "moved-codex").unwrap())
+            .await
+            .unwrap();
+    let created = client
+        .create_session(CreateSessionRequest {
+            session_id: None,
+            preparation_id: None,
+            agent_selection: None,
+            execution_directory: suru::protocol::ExecutionDirectory {
+                path: origin.path().to_owned(),
+            },
+            prompt: InitialPrompt {
+                id: PromptId::new(),
+                text: "Begin where the work first was".to_owned(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+        })
+        .await
+        .unwrap();
+    let session_id = created.session.id;
+    crate::codex_integration::support::settled_session(&client, session_id, 0).await;
+
+    client
+        .move_session(
+            session_id,
+            &MoveSessionRequest {
+                destination: MoveDestination::Directory {
+                    path: destination_path.clone(),
+                },
+            },
+        )
+        .await
+        .expect("Move the idle Session");
+    client
+        .admit_prompt(
+            session_id,
+            AdmitPromptRequest {
+                prompt: InitialPrompt {
+                    id: PromptId::new(),
+                    text: "Carry on where the work is now".to_owned(),
+                    skill_invocations: Vec::new(),
+                    attachments: Vec::new(),
+                },
+                delivery: PromptDelivery::Queue,
+            },
+        )
+        .await
+        .unwrap();
+    let settled = crate::codex_integration::support::settled_session(&client, session_id, 1).await;
+
+    assert_eq!(settled.turns[1].status, TurnStatus::Completed);
+    assert_eq!(
+        codex.methods(),
+        [
+            "initialize",
+            "initialized",
+            "config/read",
+            "thread/start",
+            "turn/start",
+            "initialize",
+            "initialized",
+            "config/read",
+            "thread/resume",
+            "turn/start"
+        ],
+        "the next Turn starts another app-server, which resumes rather than starting a Thread"
+    );
+    let resumed = codex
+        .requests()
+        .into_iter()
+        .find(|request| request["method"] == "thread/resume")
+        .expect("the next Turn resumes the Thread");
+    assert_eq!(resumed["params"]["threadId"], "moving-thread");
+    assert_eq!(
+        resumed["params"]["cwd"].as_str(),
+        destination_path.to_str(),
+        "in the directory the Session Moved to"
+    );
+    drop(client);
     server.shutdown().await.unwrap();
 }

@@ -36,22 +36,7 @@ pub(crate) fn list_directory(
     if path.as_os_str() == DRIVE_LIST {
         return list_drives();
     }
-    let named = match path.strip_prefix("~") {
-        Ok(beneath_home) => home
-            .ok_or("The Server's home is unknown")?
-            .join(beneath_home),
-        Err(_) => base.join(path),
-    };
-    let root = crate::paths::canonical(&named).map_err(|error| match error.kind() {
-        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => "No directory there".to_owned(),
-        _ => unreadable(&error),
-    })?;
-    if !root.is_dir() {
-        return Err("Not a directory".to_owned());
-    }
-    if root.to_str().is_none() {
-        return Err("This directory's path is not Unicode".to_owned());
-    }
+    let root = named_directory(path, base, home)?;
     let mut children = std::fs::read_dir(&root)
         .map_err(|error| unreadable(&error))?
         .flatten()
@@ -74,6 +59,48 @@ pub(crate) fn list_directory(
         root,
         children,
     })
+}
+
+/// The directory `path` names as the Directory Browser's path field reads
+/// it: from `base` when relative and from `home` when it begins with `~`,
+/// resolved to where it leads. A path naming nothing, a file, or a directory
+/// whose path is not Unicode is refused with the reason a reader is told;
+/// one this Server cannot read is refused by whoever goes on to read it.
+pub(crate) fn named_directory(
+    path: &Path,
+    base: &Path,
+    home: Option<&Path>,
+) -> Result<PathBuf, String> {
+    let named = match path.strip_prefix("~") {
+        Ok(beneath_home) => home
+            .ok_or("The Server's home is unknown")?
+            .join(beneath_home),
+        Err(_) => base.join(path),
+    };
+    let root = crate::paths::canonical(&named).map_err(|error| match error.kind() {
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => "No directory there".to_owned(),
+        _ => unreadable(&error),
+    })?;
+    if !root.is_dir() {
+        return Err("Not a directory".to_owned());
+    }
+    if root.to_str().is_none() {
+        return Err("This directory's path is not Unicode".to_owned());
+    }
+    Ok(root)
+}
+
+/// The directory `path` names, read as [`named_directory`] reads it, where
+/// this Server can also read what it holds: a directory an Agent could work
+/// in, as a Move's destination must be.
+pub(crate) fn readable_directory(
+    path: &Path,
+    base: &Path,
+    home: Option<&Path>,
+) -> Result<PathBuf, String> {
+    let directory = named_directory(path, base, home)?;
+    std::fs::read_dir(&directory).map_err(|error| unreadable(&error))?;
+    Ok(directory)
 }
 
 /// The directory above `root`, which above a drive on Windows is the drive

@@ -1,6 +1,6 @@
 //! The acts on Sessions: preparing a Worktree for a Session about to begin,
 //! beginning a Session, admitting a Prompt to one, interrupting it, settling
-//! and unsettling it, and answering its Questionnaire.
+//! and unsettling it, Moving it, and answering its Questionnaire.
 //!
 //! Each act is one operation, decided here rather than in the route that
 //! receives it, so anything that performs an act — a Client through the
@@ -26,8 +26,9 @@
 //! stands beneath it in its tree. An act that changes what the Session stores
 //! — beginning it, admitting a Prompt, setting it aside or bringing it back,
 //! the Answer to a Questionnaire its Provider took — is recorded by that
-//! change, so both land together; one that does not, an interrupt, is
-//! recorded here once it is taken (see [`SessionOperations::record_act`]).
+//! change, so both land together; one whose record does not ride a change —
+//! an interrupt, a Move — is recorded here once it is taken (see
+//! [`SessionOperations::record_act`]).
 //! Nothing that only reads records anything, since nothing that only reads
 //! passes through here.
 //!
@@ -41,7 +42,11 @@
 //! nothing. Neither waits on the other, and neither's refusal or failure
 //! leaves the other undone.
 
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use tokio::sync::watch;
 
@@ -77,6 +82,7 @@ mod clones;
 mod memories;
 mod origins;
 mod remote_entries;
+mod session_moves;
 mod settings;
 mod workspace_listings;
 mod workspaces;
@@ -89,6 +95,7 @@ pub(crate) use origins::{
     SilentRemote, WorkspaceListingMoves,
 };
 pub(crate) use remote_entries::RemoteWatches;
+pub(crate) use session_moves::MoveRefusal;
 #[cfg(test)]
 pub(crate) use settings::ServingNotAdopted;
 pub(crate) use settings::{SettingChanged, SettingsAdoption};
@@ -440,6 +447,9 @@ pub(crate) struct SessionOperations {
     cloning: WorkspaceCloning,
     /// Whose Sessions no Sidekick acts on.
     sidekick_workspace: SidekickWorkspace,
+    /// This Server's home, which a Move's destination beginning with `~`
+    /// is read beneath; none where the platform knows none.
+    home: Option<PathBuf>,
     /// How what a Sidekick reads of a Remote is fetched through the Pairing.
     remotes: RemoteReach,
     /// Where a change of a Setting is written, and everything that adopts it.
@@ -476,6 +486,7 @@ impl SessionOperations {
         checkout_skill_timeout: Duration,
         cloning: WorkspaceCloning,
         sidekick_workspace: SidekickWorkspace,
+        home: Option<PathBuf>,
         remotes: RemoteReach,
         settings_adoption: SettingsAdoption,
         root_discovery: RootDiscovery,
@@ -498,6 +509,7 @@ impl SessionOperations {
             checkout_skill_timeout,
             cloning,
             sidekick_workspace,
+            home,
             remotes,
             settings_adoption,
             root_discovery,
@@ -767,11 +779,8 @@ impl SessionOperations {
             self.providers
                 .hold_checkout_guard(snapshot.session.id, snapshot.prompts[0].id, guard);
         }
-        self.providers.open_session(
-            snapshot.session.id,
-            snapshot.session.execution_directory.path.clone(),
-            snapshot.prompts[0].id,
-        );
+        self.providers
+            .open_session(snapshot.session.id, snapshot.prompts[0].id);
         if let Some(plan) = &preparation {
             self.source_control
                 .checkpoint(crate::source_control::PreparationCheckpoint::Admitted, plan)
@@ -1416,11 +1425,7 @@ impl SessionOperations {
                 .map_err(|e| e.to_string())?;
             self.providers
                 .hold_checkout_guard(snapshot.session.id, prompt.id, guard);
-            self.providers.open_session(
-                snapshot.session.id,
-                plan.destination.path.clone(),
-                prompt.id,
-            );
+            self.providers.open_session(snapshot.session.id, prompt.id);
         }
         plan.admitted_session = Some(snapshot.session.id);
         self.preparations.delete_after_admission(plan)?;

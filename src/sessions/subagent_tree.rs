@@ -832,6 +832,7 @@ pub(super) fn moves_subagent_tree(change: &SessionChange) -> bool {
             // What a Sidekick's tree says of a Session beneath it.
             | SessionChange::AgentSelectionChanged { .. }
             | SessionChange::WorkspaceChanged { .. }
+            | SessionChange::Moved { .. }
     )
 }
 

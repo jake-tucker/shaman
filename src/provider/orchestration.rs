@@ -437,6 +437,14 @@ enum ProviderCommand {
     ContextBreakdown {
         response: oneshot::Sender<Result<ContextBreakdown, ContextBreakdownError>>,
     },
+    /// The Session this actor owns Moved (ADR 0059): a Provider connection
+    /// opened in the directory it left is let go of now, where no Turn is
+    /// at work over it, as an idle stop lets go of one (ADR 0058), so the
+    /// next Turn opens one in the directory it Moved to and resumes the
+    /// conversation there. Every Watch running in the process it left is
+    /// lost with it. A Turn at work keeps its connection: the next Turn
+    /// lets go of it before it begins.
+    FollowMove,
 }
 
 /// Why a Session's Provider gave no Context Breakdown.
@@ -457,6 +465,10 @@ pub(crate) enum ContextBreakdownError {
 
 struct ConnectedProviderSession {
     incarnation: u64,
+    /// The Execution Directory the connection was opened in, which a Move
+    /// leaves behind: a connection opened anywhere but the Session's own
+    /// directory is let go of before another Turn begins over it.
+    execution_directory: PathBuf,
     identity: AgentIdentity,
     session: Arc<dyn ProviderSession>,
     events: ProviderEventStream,
@@ -483,7 +495,6 @@ struct ProviderSessionContext {
     /// Subagent spawned over this connection — reaches its Provider through
     /// it (see [`SessionStore::actor_owner`]).
     session_id: SessionId,
-    execution_directory: PathBuf,
     updates: ProviderUpdateGate,
     settings: watch::Receiver<SettingsSnapshot>,
     broker: BrokerAccess,
@@ -1613,14 +1624,19 @@ impl ProviderOrchestrator {
         self.actors.lock().unwrap().entries.contains_key(&id)
     }
 
-    pub(crate) fn open_session(
-        &self,
-        session_id: SessionId,
-        execution_directory: PathBuf,
-        prompt_id: PromptId,
-    ) {
-        if let Ok(commands_tx) =
-            self.actor_commands_or_fail_prompt(session_id, execution_directory, prompt_id)
+    /// Tells the Provider actor `session_id` owns, if one runs, that the
+    /// Session Moved, so the Provider process it ran in the directory it
+    /// left stops now rather than when its idle wait elapses; see
+    /// [`ProviderCommand::FollowMove`]. With no actor running there is
+    /// nothing to stop: the next Turn starts one in the Session's directory.
+    pub(crate) fn session_moved(&self, session_id: SessionId) {
+        if let Some(actor) = self.actor_commands(session_id) {
+            let _ = actor.send(ProviderCommand::FollowMove);
+        }
+    }
+
+    pub(crate) fn open_session(&self, session_id: SessionId, prompt_id: PromptId) {
+        if let Ok(commands_tx) = self.actor_commands_or_fail_prompt(session_id, prompt_id)
             && commands_tx
                 .send(ProviderCommand::StartPrompt { prompt_id })
                 .is_err()
@@ -1700,9 +1716,7 @@ impl ProviderOrchestrator {
             .sessions
             .execution_directory(spawned.session_id)
             .ok_or_else(|| anyhow::anyhow!("the Subagent's Session is gone"))
-            .and_then(|execution_directory| {
-                self.get_or_spawn_actor_commands(spawned.session_id, execution_directory, runtime)
-            })
+            .and_then(|_| self.get_or_spawn_actor_commands(spawned.session_id, runtime))
             .and_then(|commands| {
                 commands
                     .send(ProviderCommand::StartDelegation {
@@ -1812,7 +1826,6 @@ impl ProviderOrchestrator {
     fn actor_commands_or_fail_prompt(
         &self,
         session_id: SessionId,
-        execution_directory: PathBuf,
         prompt_id: PromptId,
     ) -> Result<mpsc::UnboundedSender<ProviderCommand>> {
         if let Some(message) = self.disabled_provider_failure(session_id) {
@@ -1825,7 +1838,7 @@ impl ProviderOrchestrator {
             Ok(runtime) => runtime,
             Err(message) => return Err(self.fail_prompt(session_id, prompt_id, message)),
         };
-        self.get_or_spawn_actor_commands(session_id, execution_directory, runtime)
+        self.get_or_spawn_actor_commands(session_id, runtime)
             .map_err(|error| self.fail_prompt(session_id, prompt_id, error.to_string()))
     }
 
@@ -1836,7 +1849,6 @@ impl ProviderOrchestrator {
     fn get_or_spawn_actor_commands(
         &self,
         session_id: SessionId,
-        execution_directory: PathBuf,
         runtime: Arc<dyn ProviderRuntime>,
     ) -> Result<mpsc::UnboundedSender<ProviderCommand>> {
         let (commands_tx, commands_rx) = mpsc::unbounded_channel();
@@ -1870,7 +1882,6 @@ impl ProviderOrchestrator {
                 sessions,
                 skill_catalog: self.skill_catalog.clone(),
                 session_id,
-                execution_directory,
                 updates: self.updates.clone(),
                 settings: self.settings.clone(),
                 broker: self.broker.clone(),
@@ -1897,19 +1908,16 @@ impl ProviderOrchestrator {
     }
 
     pub(crate) fn schedule_prompt(&self, session_id: SessionId, prompt_id: PromptId) -> Result<()> {
-        let execution_directory =
-            self.sessions
-                .execution_directory(session_id)
-                .ok_or_else(|| {
-                    self.checkout_guards
-                        .lock()
-                        .unwrap()
-                        .remove(&(session_id, prompt_id));
-                    anyhow::anyhow!("Session does not exist on this server instance")
-                })?;
-        let Ok(commands) =
-            self.actor_commands_or_fail_prompt(session_id, execution_directory, prompt_id)
-        else {
+        if self.sessions.execution_directory(session_id).is_none() {
+            self.checkout_guards
+                .lock()
+                .unwrap()
+                .remove(&(session_id, prompt_id));
+            return Err(anyhow::anyhow!(
+                "Session does not exist on this server instance"
+            ));
+        }
+        let Ok(commands) = self.actor_commands_or_fail_prompt(session_id, prompt_id) else {
             // The Prompt's Turn was already settled as failed; scheduling has
             // nothing left to deliver.
             return Ok(());
@@ -1994,7 +2002,7 @@ impl ProviderOrchestrator {
         if let Some(commands) = self.actor_commands(session_id) {
             return Some(commands);
         }
-        let Some(execution_directory) = self.sessions.execution_directory(session_id) else {
+        if self.sessions.execution_directory(session_id).is_none() {
             self.fail_requested_compaction(
                 session_id,
                 turn_id,
@@ -2009,7 +2017,7 @@ impl ProviderOrchestrator {
                 return None;
             }
         };
-        self.get_or_spawn_actor_commands(session_id, execution_directory, runtime)
+        self.get_or_spawn_actor_commands(session_id, runtime)
             .map_err(|error| self.fail_requested_compaction(session_id, turn_id, error.to_string()))
             .ok()
     }
@@ -2685,7 +2693,6 @@ async fn run_provider_session(
         sessions,
         skill_catalog,
         session_id,
-        execution_directory,
         updates,
         settings,
         broker,
@@ -2736,7 +2743,6 @@ async fn run_provider_session(
         broker: &broker,
         connected_incarnations: &connected_incarnations,
         session_id,
-        execution_directory: &execution_directory,
         provider_id: &provider_id,
         stop_timeout,
     };
@@ -3350,6 +3356,29 @@ async fn run_provider_session(
                     continue;
                 }
                 ProviderCommand::SteerPrompt => continue,
+                ProviderCommand::FollowMove => {
+                    let moved_to = sessions.execution_directory(session_id);
+                    if let Some(left) = provider.take_if(|connected| {
+                        moved_to
+                            .as_ref()
+                            .is_some_and(|moved_to| *moved_to != connected.execution_directory)
+                    }) {
+                        connected_incarnations.lock().unwrap().remove(&session_id);
+                        lose_provider_connection(
+                            &mut provider,
+                            &mut subagents,
+                            &sessions,
+                            &updates,
+                            session_id,
+                        );
+                        let _ = timeout(stop_timeout, left.session.shutdown()).await;
+                        tracing::info!(
+                            %session_id,
+                            "Stopped a moved Session's Provider process; its next Turn resumes it"
+                        );
+                    }
+                    continue;
+                }
             };
             let Some(snapshot) = sessions.snapshot(session_id) else {
                 break;
@@ -3430,7 +3459,7 @@ async fn run_provider_session(
                     attachments: pending.attachments.clone(),
                 };
                 let error = if error.is_none() {
-                    skill_catalog.validate_prompt(provider_id.clone(), &execution_directory, &initial, skill_prompt_delivery(pending)).await.err().map(|e| format!("Destination Skills must be revalidated before native execution: {e:?}"))
+                    skill_catalog.validate_prompt(provider_id.clone(), &snapshot.session.execution_directory.path, &initial, skill_prompt_delivery(pending)).await.err().map(|e| format!("Destination Skills must be revalidated before native execution: {e:?}"))
                 } else {
                     error
                 };
@@ -3492,7 +3521,7 @@ async fn run_provider_session(
                 &sessions,
                 session_id,
                 &provider_id,
-                &execution_directory,
+                &snapshot.session.execution_directory.path,
                 &prompt,
                 delivery,
             )
@@ -3826,6 +3855,9 @@ async fn run_provider_session(
             ActorInput::Command(Some(ProviderCommand::ContextBreakdown { response })) => {
                 answer_context_breakdown(Some(provider_session.clone()), response);
             }
+            // The Turn at work keeps the connection it began over; the next
+            // Turn lets go of it, opened in the directory a Move left.
+            ActorInput::Command(Some(ProviderCommand::FollowMove)) => {}
 
             // A Delegation sent after the spawn reaches the Turn at work here
             // as a steer when a Delegation began it (ADR 0032); one its
@@ -4043,7 +4075,7 @@ async fn run_provider_session(
                     &sessions,
                     session_id,
                     &provider_id,
-                    &execution_directory,
+                    &snapshot.session.execution_directory.path,
                     &prompt,
                     SkillPromptDelivery::Steer,
                 )
@@ -4496,7 +4528,6 @@ struct ProviderConnector<'a> {
     broker: &'a BrokerAccess,
     connected_incarnations: &'a Arc<Mutex<HashMap<SessionId, u64>>>,
     session_id: SessionId,
-    execution_directory: &'a PathBuf,
     provider_id: &'a ProviderId,
     /// How long a Provider Session being let go of is waited on to stop.
     stop_timeout: Duration,
@@ -4507,9 +4538,9 @@ impl ProviderConnector<'_> {
     /// about to begin there — holding `inherited`, the guard its admission
     /// already took, where it took one — and records what the lease read of
     /// the checkout. Where the Worktree was recreated since `provider` was
-    /// opened over it, the connection is dropped so the next one opens in the
-    /// new copy, unless Subagents still work in the old one, which refuses
-    /// the Turn instead.
+    /// opened over it, or the Session Moved since, the connection is dropped
+    /// so the next one opens in the new copy or the new directory, unless
+    /// Subagents still work in the old one, which refuses the Turn instead.
     async fn lease_worktree(
         &self,
         session: &crate::protocol::Session,
@@ -4537,10 +4568,10 @@ impl ProviderConnector<'_> {
                     "Worktree unavailable; restore the checkout or retry recovery: {message}"
                 ))
             })?;
-        if provider
-            .as_ref()
-            .is_some_and(|connected| connected.incarnation != lease.incarnation)
-        {
+        if provider.as_ref().is_some_and(|connected| {
+            connected.incarnation != lease.incarnation
+                || connected.execution_directory != session.execution_directory.path
+        }) {
             if !subagents.routes.is_empty() || !subagents.working.is_empty() {
                 return Err(ConnectionFailure::Failed(
                     "The Worktree was recreated while Subagents still use the previous working \
@@ -4581,11 +4612,11 @@ impl ProviderConnector<'_> {
             broker,
             connected_incarnations,
             session_id,
-            execution_directory,
             provider_id,
             stop_timeout,
             ..
         } = self;
+        let execution_directory = snapshot.session.execution_directory.path.clone();
         let session_id = *session_id;
         let session_posture = effective_approval_posture(snapshot, &settings.borrow(), provider_id);
         // Every start — the first and each relaunch — is handed a token of
@@ -4599,7 +4630,7 @@ impl ProviderConnector<'_> {
             biased;
             _ = shutdown.wait() => return Err(ConnectionFailure::Stopping),
             connection = runtime.start_session(ProviderSessionRequest {
-                execution_directory: (*execution_directory).clone(),
+                execution_directory: execution_directory.clone(),
                 resume_state: sessions.resume_state(session_id, provider_id),
                 approval_posture: session_posture,
                 broker: broker_grant.as_ref().map(|grant| grant.handoff().clone()),
@@ -4658,6 +4689,7 @@ impl ProviderConnector<'_> {
         subagents.restore(sessions.stored_subagents(session_id, provider_id));
         Ok(ConnectedProviderSession {
             incarnation,
+            execution_directory,
             identity,
             session,
             events,

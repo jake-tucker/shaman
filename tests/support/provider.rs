@@ -66,6 +66,9 @@ pub struct ControlledProviderRuntime {
     skill_discoveries: Arc<AtomicUsize>,
     skill_refreshes: Arc<AtomicUsize>,
     skill_catalog: Arc<Mutex<Option<SkillCatalog>>>,
+    /// Catalogs offered for one directory alone, read before
+    /// [`Self::skill_catalog`] for that directory.
+    skill_catalogs_in: Arc<Mutex<HashMap<std::path::PathBuf, SkillCatalog>>>,
     skill_catalog_error: Arc<Mutex<Option<String>>>,
     skill_discovery_gate: Arc<Mutex<Option<oneshot::Receiver<()>>>>,
     model_discovery_gate: Arc<Mutex<Option<oneshot::Receiver<()>>>>,
@@ -322,6 +325,7 @@ impl ControlledProvider {
                 skill_discoveries: Arc::new(AtomicUsize::new(0)),
                 skill_refreshes: Arc::new(AtomicUsize::new(0)),
                 skill_catalog: Arc::new(Mutex::new(None)),
+                skill_catalogs_in: Arc::new(Mutex::new(HashMap::new())),
                 skill_catalog_error: Arc::new(Mutex::new(None)),
                 skill_discovery_gate: Arc::new(Mutex::new(None)),
                 model_discovery_gate: Arc::new(Mutex::new(None)),
@@ -420,6 +424,15 @@ impl ControlledProviderRuntime {
             .skill_catalog
             .lock()
             .expect("controlled Provider Skill Catalog lock is not poisoned") = Some(catalog);
+    }
+
+    /// Offers `catalog` as the Skill Catalog of its own Execution Directory
+    /// alone, so a test can tell one directory's Skills from another's.
+    pub fn offer_skills_in(&self, catalog: SkillCatalog) {
+        self.skill_catalogs_in
+            .lock()
+            .expect("controlled Provider Skill Catalog lock is not poisoned")
+            .insert(catalog.execution_directory.path.clone(), catalog);
     }
 
     pub fn fail_skill_discovery(&self, message: impl Into<String>) {
@@ -1220,10 +1233,17 @@ impl ProviderRuntime for ControlledProviderRuntime {
     fn skill_catalog(&self, workspace: &std::path::Path) -> ProviderFuture<'_, SkillCatalog> {
         self.skill_discoveries.fetch_add(1, Ordering::SeqCst);
         let catalog = self
-            .skill_catalog
+            .skill_catalogs_in
             .lock()
             .expect("controlled Provider Skill Catalog lock is not poisoned")
-            .clone();
+            .get(workspace)
+            .cloned()
+            .or_else(|| {
+                self.skill_catalog
+                    .lock()
+                    .expect("controlled Provider Skill Catalog lock is not poisoned")
+                    .clone()
+            });
         let error = self
             .skill_catalog_error
             .lock()

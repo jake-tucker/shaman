@@ -1952,6 +1952,116 @@ async fn outlook_client_runs_session_commands_and_streams_against_its_remote() {
     pair.shutdown().await;
 }
 
+/// A Remote's Session is Moved by the Remote itself: the destination is read against the
+/// Remote's own home and directories, and the Session works there from the Remote's own account.
+#[tokio::test]
+async fn a_remote_session_is_moved_by_its_owning_server() {
+    let (runtime, mut provider) = provider_support::ControlledProvider::with_provider(
+        ProviderId::new("codex"),
+        vec![ModelDescriptor {
+            provider: ProviderId::new("codex"),
+            id: ModelId::new("gpt-test"),
+            display_name: "Codex fixture".into(),
+            description: String::new(),
+            is_default: true,
+            availability: ModelAvailability::Available,
+            options: Vec::new(),
+            details: Default::default(),
+        }],
+    );
+    let home = tempfile::tempdir().expect("create the Serving Server's home");
+    let origin = home.path().join("origin");
+    std::fs::create_dir(&origin).expect("create the origin");
+    std::fs::create_dir(home.path().join("destination")).expect("create the destination");
+    let destination = suru::paths::canonical(home.path().join("destination")).unwrap();
+    let pair = paired_servers_with(
+        "remote-session-move",
+        PairOptions {
+            runtime: Some(runtime),
+            serving_home: Some(home.path()),
+            ..PairOptions::default()
+        },
+    )
+    .await;
+    let remote = pair
+        .connecting_client
+        .outlook(Outlook::Remote("workstation".to_owned()));
+    let created = remote
+        .create_session(CreateSessionRequest {
+            session_id: None,
+            preparation_id: None,
+            agent_selection: None,
+            execution_directory: suru::protocol::ExecutionDirectory { path: origin },
+            prompt: InitialPrompt {
+                id: PromptId::new(),
+                text: "Begin on the Remote".to_owned(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+        })
+        .await
+        .expect("create a Session on the Remote");
+    let start = timeout(PROGRESS_DEADLINE, provider.next_start())
+        .await
+        .expect("the Remote's Provider starts");
+    let mut native = start.succeed(AgentIdentity {
+        agent: AgentId::new("codex"),
+        selection: suru::protocol::AgentSelection {
+            provider: ProviderId::new("codex"),
+            model: ModelId::new("gpt-test"),
+            options: Vec::new(),
+        },
+    });
+    native.next_turn().await.succeed();
+    native
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    timeout(PROGRESS_DEADLINE, async {
+        while remote
+            .read_session(created.session.id)
+            .await
+            .expect("read the Remote's Session")
+            .session
+            .working_since
+            .is_some()
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the Remote's Session settles its first Turn");
+
+    let suru::protocol::MoveOutcome::Moved { session } = remote
+        .move_session(
+            created.session.id,
+            &suru::protocol::MoveSessionRequest {
+                destination: suru::protocol::MoveDestination::Directory {
+                    path: "~/destination".into(),
+                },
+            },
+        )
+        .await
+        .expect("Move the Remote's Session through the Pairing");
+
+    assert_eq!(
+        session.session.execution_directory.path, destination,
+        "`~` is the Remote's own home"
+    );
+    assert_eq!(
+        pair.serving_client
+            .read_session(created.session.id)
+            .await
+            .expect("read the Session on its own Server")
+            .session
+            .execution_directory
+            .path,
+        destination,
+        "the Remote holds the Session where it Moved"
+    );
+    drop(native);
+    pair.shutdown().await;
+}
+
 #[tokio::test]
 async fn successive_remote_requests_reuse_transport_while_an_outlook_holds_interest() {
     let mut pair = paired_servers("remote-transport-reuse").await;

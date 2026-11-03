@@ -12,8 +12,9 @@ use serde_json::Value;
 use suru::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionSubscription},
     protocol::{
-        AdmitPromptRequest, Cost, CostBasis, CreateSessionRequest, InitialPrompt, NativeMeter,
-        PromptDelivery, PromptId, SessionId, SessionSnapshot, TurnStatus, Usage,
+        AdmitPromptRequest, Cost, CostBasis, CreateSessionRequest, InitialPrompt, MoveDestination,
+        MoveSessionRequest, NativeMeter, PromptDelivery, PromptId, SessionId, SessionSnapshot,
+        TurnStatus, Usage,
     },
     provider::CopilotRuntime,
     server::{self, RunningServer, ServerConfig},
@@ -389,4 +390,110 @@ async fn resumed_copilot_sessions_register_and_answer_native_questionnaires() {
             .any(|r| r["id"] == 9001 && r["result"]["noResponse"] == true)
     );
     live.shutdown().await;
+}
+
+/// A Session Moved to another directory keeps the shared Copilot process but lets go of its own
+/// connection, and its next Turn resumes the same Copilot Session with the new directory as its
+/// working directory (ADR 0059).
+#[tokio::test]
+async fn a_moved_sessions_next_turn_resumes_its_copilot_session_in_the_new_directory() {
+    let copilot = ScriptedCopilot::new(&format!(
+        "{}{}{}{}{}",
+        conversation_arms(),
+        crate::copilot_integration::support::resume_session_arm(),
+        crate::copilot_integration::support::skills_reload_arm(),
+        crate::copilot_integration::support::detach_session_arm(),
+        send_arm(STREAMED_MESSAGE),
+    ));
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let origin = tempfile::tempdir().expect("create the origin");
+    let destination = tempfile::tempdir().expect("create the destination");
+    let destination_path = suru::paths::canonical(destination.path()).unwrap();
+    let server = spawn(
+        ServerConfig::new(state_dir.path(), "copilot-moved-resume").expect("configure server"),
+        &copilot,
+    )
+    .await;
+    let client = connect_in(
+        ManagedClientConfig::new(state_dir.path(), "copilot-moved-resume")
+            .expect("configure client"),
+    )
+    .await;
+    let created = client
+        .create_session(CreateSessionRequest {
+            session_id: None,
+            preparation_id: None,
+            agent_selection: None,
+            execution_directory: suru::protocol::ExecutionDirectory {
+                path: origin.path().to_owned(),
+            },
+            prompt: InitialPrompt {
+                id: PromptId::new(),
+                text: "Begin where the work first was".to_owned(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+        })
+        .await
+        .expect("create Session");
+    let session_id = created.session.id;
+    let mut feed = client
+        .subscribe_session(session_id)
+        .await
+        .expect("subscribe to the Session");
+    settled_session_on(&client, &mut feed, session_id, 0).await;
+
+    client
+        .move_session(
+            session_id,
+            &MoveSessionRequest {
+                destination: MoveDestination::Directory {
+                    path: destination_path.clone(),
+                },
+            },
+        )
+        .await
+        .expect("Move the idle Session");
+    client
+        .admit_prompt(
+            session_id,
+            AdmitPromptRequest {
+                prompt: InitialPrompt {
+                    id: PromptId::new(),
+                    text: "Carry on where the work is now".to_owned(),
+                    skill_invocations: Vec::new(),
+                    attachments: Vec::new(),
+                },
+                delivery: PromptDelivery::Queue,
+            },
+        )
+        .await
+        .expect("admit a Prompt");
+    let settled = settled_session_on(&client, &mut feed, session_id, 1).await;
+
+    assert_eq!(
+        settled.turns[1].status,
+        TurnStatus::Completed,
+        "{:?}",
+        settled.activities
+    );
+    assert_eq!(copilot.launches(), 1, "the shared Copilot process stays");
+    let requests = copilot.requests();
+    let resumed = requests
+        .iter()
+        .find(|request| request["method"] == "session.resume")
+        .expect("the next Turn resumes the Copilot Session");
+    assert_eq!(
+        resumed["params"]["workingDirectory"],
+        destination_path.to_string_lossy().as_ref(),
+        "in the directory the Session Moved to"
+    );
+    assert_eq!(
+        session_parameter(&requests, "session.create"),
+        session_parameter(&requests, "session.resume"),
+        "the resume names the Copilot Session the Suru Session began under"
+    );
+    drop(feed);
+    drop(client);
+    server.shutdown().await.expect("shut down server");
 }

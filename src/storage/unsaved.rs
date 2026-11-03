@@ -384,6 +384,7 @@ fn moved_row(change: &SessionChange) -> Option<Table> {
         | SessionChange::MessageAdded { .. }
         | SessionChange::ActivityAdded { .. }
         | SessionChange::WorkspaceChanged { .. }
+        | SessionChange::Moved { .. }
         | SessionChange::TitleChanged { .. }
         | SessionChange::ContextFillChanged { .. }
         | SessionChange::AgentSelectionChanged { .. }
