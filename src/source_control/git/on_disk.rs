@@ -1788,7 +1788,7 @@ mod tests {
         .unwrap();
         let (confirmed, commands) = counting_git(fixture.adapter.discover(&main)).await;
         assert_eq!(readings(&confirmed), read);
-        assert_eq!(commands, alone + 1 + 2 * read.len());
+        assert_eq!(commands, alone + 1 + read.len());
         // A Worktree whose own configuration Git refuses is unavailable,
         // though discovery from another Worktree never reads it.
         std::fs::write(&config, &contents).unwrap();

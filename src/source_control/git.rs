@@ -175,11 +175,11 @@ impl GitSourceControl {
         // Fingerprint before Git confirms the identity: a root replaced in
         // between then mismatches its own marker and is validated again.
         let marker = git_marker(&checkout.root);
-        let Some(common) = self.common(&checkout.root).await? else {
+        let Some((root, common)) = self.root_layout(&checkout.root).await? else {
             return Ok(None);
         };
-        if RepositoryId::from_metadata("git", &common) != checkout.repository
-            || !self.is_root(&checkout.root, &common).await?
+        if root != checkout.root
+            || RepositoryId::from_metadata("git", &common) != checkout.repository
         {
             return Ok(None);
         }
@@ -521,17 +521,60 @@ impl GitSourceControl {
     /// metadata is `common`; nothing where Git says it is not, and an error
     /// where Git could not be run to say.
     async fn valid_root(&self, path: &Path, common: &Path) -> Result<Option<PathBuf>, String> {
-        let Some(root) = self.text(path, &["rev-parse", "--show-toplevel"]).await? else {
-            return Ok(None);
-        };
-        let (Ok(root), Ok(path)) = (crate::paths::canonical(root), crate::paths::canonical(path))
-        else {
-            return Ok(None);
-        };
-        if root != path || self.common(&root).await?.as_deref() != Some(common) {
+        Ok(self
+            .root_layout(path)
+            .await?
+            .filter(|(_, found)| found == common)
+            .map(|(root, _)| root))
+    }
+    /// The Worktree `path` is the root of, and the shared metadata directory
+    /// of its Repository; nothing where `path` is no Worktree's root, and an
+    /// error where Git could not be run.
+    async fn root_layout(&self, path: &Path) -> Result<Option<(PathBuf, PathBuf)>, String> {
+        // One command reads both, a line each: every Git process costs
+        // milliseconds to start, and a checkout is validated often.
+        let output = self
+            .command(
+                path,
+                &[
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--show-toplevel",
+                    "--git-common-dir",
+                ],
+            )
+            .await?;
+        if !output.status.success() {
             return Ok(None);
         }
-        Ok(Some(root))
+        let (root, common) = match root_and_common(&output.stdout) {
+            Some(layout) => layout,
+            // A line break within a path leaves the lines indistinct, so each
+            // is read by a command of its own.
+            None => {
+                let Some(root) = self.text(path, &["rev-parse", "--show-toplevel"]).await? else {
+                    return Ok(None);
+                };
+                let Some(common) = self
+                    .text(
+                        path,
+                        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+                    )
+                    .await?
+                else {
+                    return Ok(None);
+                };
+                (root, common)
+            }
+        };
+        let (Ok(root), Ok(path), Ok(common)) = (
+            crate::paths::canonical(root),
+            crate::paths::canonical(path),
+            crate::paths::canonical(common),
+        ) else {
+            return Ok(None);
+        };
+        Ok((root == path).then_some((root, common)))
     }
     /// Whether Git confirms `root` as the root of a Worktree of `common`;
     /// an error where Git could not be run to say.
@@ -1286,6 +1329,22 @@ impl SourceControl for GitSourceControl {
 /// UTF-8 reads as nothing, as it would by a command of its own. `None` where
 /// the lines cannot be told apart, as where a path among them holds a line
 /// break.
+/// The two lines `rev-parse --show-toplevel --git-common-dir` printed, or
+/// nothing where it printed any other number of them, as a line break within
+/// either path makes it.
+fn root_and_common(stdout: &[u8]) -> Option<(String, String)> {
+    let text = std::str::from_utf8(stdout).ok()?;
+    let mut lines = text
+        .strip_suffix('\n')?
+        .split('\n')
+        .map(|line| line.trim_end_matches('\r'));
+    let (root, common) = (lines.next()?, lines.next()?);
+    lines
+        .next()
+        .is_none()
+        .then(|| (root.to_owned(), common.to_owned()))
+}
+
 fn probed_layout(stdout: &[u8], committed: bool) -> Option<[Option<String>; 3]> {
     let mut lines = stdout
         .split(|byte| *byte == b'\n')
@@ -1454,7 +1513,7 @@ fn recovery_in_progress(root: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::probed_layout;
+    use super::{probed_layout, root_and_common};
 
     #[test]
     fn reads_the_layout_probe_by_line_and_declines_lines_it_cannot_tell_apart() {
@@ -1510,6 +1569,32 @@ mod tests {
             format!("{common}\n{common}").into_bytes(),
         ] {
             assert_eq!(probed_layout(&indistinct, false), None);
+        }
+    }
+
+    #[test]
+    fn reads_a_root_and_its_common_metadata_by_line_and_declines_lines_it_cannot_tell_apart() {
+        let root = std::env::current_dir().unwrap();
+        let root = root.to_str().unwrap();
+        let common = format!("{root}/.git");
+        let read = Some((root.to_owned(), common.clone()));
+        assert_eq!(
+            root_and_common(format!("{root}\n{common}\n").as_bytes()),
+            read
+        );
+        assert_eq!(
+            root_and_common(format!("{root}\r\n{common}\r\n").as_bytes()),
+            read
+        );
+        // A line break within the root leaves three lines, and any but two
+        // are read a path at a time instead.
+        for indistinct in [
+            format!("{root}\nnested\n{common}\n").into_bytes(),
+            format!("{root}\n").into_bytes(),
+            format!("{root}\n{common}").into_bytes(),
+            b"\xff\n.git\n".to_vec(),
+        ] {
+            assert_eq!(root_and_common(&indistinct), None);
         }
     }
 }
