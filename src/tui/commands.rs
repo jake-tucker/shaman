@@ -260,6 +260,10 @@ pub enum SemanticCommandId {
     /// the open one where it names none. `/rename <title>` names the Title
     /// itself, which is set at once where it can stand as written.
     SessionRename,
+    /// Moves the open Session to another directory of its Server: the one
+    /// `/move <path>` names, read there as the Directory Browser's path
+    /// field reads one.
+    SessionMove,
     RenameInsert,
     RenameDeleteBackward,
     /// Empties the rename dialog's field.
@@ -866,6 +870,7 @@ impl SemanticCommandId {
             Self::SessionIconChoose => "session.icon.choose",
             Self::WorkspaceIconChoose => "workspace.icon.choose",
             Self::SessionRename => "session.rename",
+            Self::SessionMove => "session.move",
             Self::RenameInsert => "rename.insert",
             Self::RenameDeleteBackward => "rename.delete-backward",
             Self::RenameClear => "rename.clear",
@@ -2403,6 +2408,22 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         }),
         keybinding: None,
     },
+    // The Session's Server reads the path and decides, so an Origin that has
+    // stopped answering refuses the Move. "Relocate", "cd" and "switch
+    // worktree" are words the glossary sets aside for a Move, so none of them
+    // stands as an alias.
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::SessionMove,
+        title: "Move Session",
+        reach: SemanticReach::Origin,
+        description: "Move the open Session to another directory of its Server",
+        slash: Some(SlashCommand {
+            name: "move",
+            aliases: &["mv"],
+            takes_text: true,
+        }),
+        keybinding: None,
+    },
     SemanticCommandDescriptor {
         id: SemanticCommandId::RenameInsert,
         title: "Insert Title Text",
@@ -3759,7 +3780,8 @@ pub(super) fn command_matches(query: &str) -> Vec<SemanticCommandId> {
     // with one; any typed part of `connect` or `pair` ranks normally.
     // Onboarding is taken once, and again only on purpose, so it waits past
     // that window rather than pushing Pairing out of it, and so does the
-    // Usage Metrics view, looked in on now and then rather than worked in.
+    // Usage Metrics view, looked in on now and then rather than worked in,
+    // and a Move, asked of a Session now and then with a path in hand.
     // Each command moves to just after the one it follows, in this order.
     if query.is_empty() {
         for (id, follows) in [
@@ -3775,6 +3797,10 @@ pub(super) fn command_matches(query: &str) -> Vec<SemanticCommandId> {
             (
                 SemanticCommandId::MetricsShow,
                 SemanticCommandId::OnboardingOpen,
+            ),
+            (
+                SemanticCommandId::SessionMove,
+                SemanticCommandId::MetricsShow,
             ),
         ] {
             let Some(position) = matches.iter().position(|(_, _, _, held)| *held == id) else {

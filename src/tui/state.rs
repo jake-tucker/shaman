@@ -3024,8 +3024,17 @@ impl TuiState {
                 let Some(session) = self.session.as_mut() else {
                     return Err(anyhow!("Session update arrived before its snapshot"));
                 };
+                // The Workspace a Move leaves, read before the Move is taken.
+                let left = update
+                    .changes
+                    .iter()
+                    .any(|change| matches!(change, SessionChange::Moved { .. }))
+                    .then(|| session.snapshot().session.workspace.clone());
                 if !session.apply(update)? {
                     return Ok(false);
+                }
+                if let Some(left) = left {
+                    self.follow_move(&left);
                 }
             }
         }
@@ -3045,6 +3054,31 @@ impl TuiState {
         self.reconcile_command_mode();
         self.reconcile_subagent_picker();
         Ok(true)
+    }
+
+    /// Takes the Client's current Workspace to where the open Session now
+    /// works, after it Moved out of `left`, so the Session being viewed never
+    /// vanishes from view: the next Landing opens there, and a Sidebar
+    /// narrowed to the Workspace it left is narrowed to its new one. A
+    /// Subagent's Session is grouped under its parent's, so its Move takes
+    /// nothing with it.
+    fn follow_move(&mut self, left: &Workspace) {
+        let Some(session) = self
+            .session
+            .as_ref()
+            .map(|projection| projection.snapshot().session.clone())
+            .filter(|session| session.parent.is_none())
+        else {
+            return;
+        };
+        self.sidebar.follow_move(left, session.workspace.clone());
+        self.adopt_context(crate::protocol::ResolvedWorkspace {
+            execution_status: crate::protocol::ExecutionDirectoryStatus::Available,
+            workspace: session.workspace,
+            execution_directory: Some(session.execution_directory),
+            checkout: session.checkout,
+            checkouts: Vec::new(),
+        });
     }
 
     /// The root Session to report Viewed when this event Settles one of its
@@ -5717,6 +5751,13 @@ pub enum ApplicationTransition {
     CompactSession {
         session: SessionReference,
         request: crate::protocol::CompactSessionRequest,
+    },
+    /// Ask a Session's Server to Move it to another of its directories. The
+    /// Move reaches every Client viewing the Session on its own stream; only
+    /// a refusal is answered to the Client that asked.
+    MoveSession {
+        session: SessionReference,
+        request: crate::protocol::MoveSessionRequest,
     },
     /// Ask a Session's Provider what fills its context, answering with
     /// [`ApplicationEvent::ContextBreakdownRead`] under the same request.
@@ -9622,6 +9663,51 @@ impl Application {
         }
     }
 
+    /// Asks the open Session's Server to Move it to `path`, which that
+    /// Server reads against where the Session works. Whatever it answers
+    /// reaches every Client viewing the Session on its own stream, this one
+    /// included, so only a refusal comes back here.
+    fn move_open_session(&mut self, path: Option<String>) -> ApplicationTransition {
+        let refusal = |state: &mut TuiState, reason: &str| {
+            state.submission_error = Some(reason.to_owned());
+            ApplicationTransition::Continue
+        };
+        let Some(session) = self.state.session_reference.clone() else {
+            let reason = if self.state.provisional.is_some() {
+                "This Session has not started yet, so it has nowhere to Move from"
+            } else {
+                "Open a Session to Move it"
+            };
+            return refusal(&mut self.state, reason);
+        };
+        let in_sidekick_workspace = self.state.session.as_ref().is_some_and(|projection| {
+            self.state.paths_for(&session.origin).is_some_and(|paths| {
+                paths.is_sidekick_workspace(&projection.snapshot().session.workspace.path)
+            })
+        });
+        if in_sidekick_workspace {
+            return refusal(
+                &mut self.state,
+                "A Sidekick's Session never Moves: the Sidekick Workspace is what makes it one",
+            );
+        }
+        let Some(path) = path else {
+            return refusal(
+                &mut self.state,
+                "Name a directory to Move this Session to: /move <path>",
+            );
+        };
+        self.state.submission_error = None;
+        ApplicationTransition::MoveSession {
+            session,
+            request: crate::protocol::MoveSessionRequest {
+                destination: crate::protocol::MoveDestination::Directory {
+                    path: PathBuf::from(path),
+                },
+            },
+        }
+    }
+
     /// Opens the Context overlay on the open Session and asks its Provider
     /// what fills that Session's context.
     fn read_open_session_context(&mut self) -> ApplicationTransition {
@@ -11712,6 +11798,16 @@ impl Application {
                     _ => None,
                 };
                 Ok(self.compact_open_session(instructions))
+            }
+            // What was typed after `/move` is the destination, read by the
+            // Session's Server; a bare `/move` names none.
+            SemanticCommandId::SessionMove => {
+                self.state.command_mode = CommandMode::Composer;
+                let path = match invocation.subject {
+                    SemanticSubject::Text(text) => Some(text),
+                    _ => None,
+                };
+                Ok(self.move_open_session(path))
             }
             SemanticCommandId::SessionContext => {
                 self.state.command_mode = CommandMode::Composer;

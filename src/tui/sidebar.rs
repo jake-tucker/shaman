@@ -2012,6 +2012,20 @@ impl Sidebar {
         self.listing.adopt_current_workspace(workspace.into());
     }
 
+    /// Narrows the column to `to` where it was narrowed to `left`, the
+    /// Workspace the Session being viewed has Moved out of, so that Session
+    /// stays in view. A column scoped any other way is the reader's own
+    /// choice and is left as it stands.
+    pub(super) fn follow_move(
+        &mut self,
+        left: &crate::protocol::Workspace,
+        to: crate::protocol::Workspace,
+    ) {
+        if self.scope == SidebarListingScope::Workspace(left.clone()) {
+            self.choose_scope(SidebarListingScope::Workspace(to));
+        }
+    }
+
     /// Turns the column toward another Outlook. The rows it already holds for
     /// that Origin stand while it asks again, so a reader returning to a
     /// Remote sees the listing they left rather than a blank column that

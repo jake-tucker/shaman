@@ -27,6 +27,7 @@ mod metrics;
 mod model_options;
 mod model_picker;
 mod monitoring;
+mod moves;
 mod onboarding;
 mod prompts;
 mod provisional_session;

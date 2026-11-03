@@ -9,8 +9,8 @@ use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Position;
 use suru::{
     protocol::{
-        AgentSelection, CompactSessionRequest, ModelId, Outlook, PromptId, ProviderId, SessionId,
-        SessionReference,
+        AgentSelection, CompactSessionRequest, ModelId, MoveDestination, MoveSessionRequest,
+        Outlook, PromptId, ProviderId, SessionId, SessionReference,
     },
     tui::{
         Application, ApplicationEvent, ApplicationTransition, CommandId, CompletionMode,
@@ -577,6 +577,38 @@ fn autocomplete_tracks_the_active_composer_when_a_session_attaches() {
     let attached = rendered_application_rows(&application).join("\n");
     assert!(attached.contains("Existing Session Prompt"));
     assert!(!attached.contains("/new"));
+}
+
+/// `mv` is the one alias: "relocate", "cd" and "switch worktree" are words
+/// the glossary sets aside for a Move.
+#[test]
+fn move_and_its_alias_dispatch_one_semantic_move_action() {
+    assert_eq!(SemanticCommandId::SessionMove.as_str(), "session.move");
+    for typed in ["/move", "/mv"] {
+        let workspace = workspace_dir();
+        let mut application = Application::new(workspace.path(), Default::default());
+        let (session_id, _) = enter_session(&mut application, workspace.path());
+
+        type_terminal_text(&mut application, typed);
+        let autocomplete = rendered_application_rows(&application).join("\n");
+        assert!(
+            autocomplete.contains("/move") && autocomplete.contains("Move Session"),
+            "{typed} finds the command: {autocomplete}"
+        );
+        type_terminal_text(&mut application, " ~/elsewhere");
+        assert_eq!(
+            press_enter(&mut application),
+            ApplicationTransition::MoveSession {
+                session: SessionReference::new(Outlook::Local, session_id),
+                request: MoveSessionRequest {
+                    destination: MoveDestination::Directory {
+                        path: "~/elsewhere".into(),
+                    },
+                },
+            },
+            "{typed} Moves the open Session to what follows it"
+        );
+    }
 }
 
 /// An idle Session on `provider`, open in `application`, for `/compact` to be asked of.

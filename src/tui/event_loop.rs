@@ -1355,6 +1355,16 @@ impl RunLoop {
                     },
                 );
             }
+            ApplicationTransition::MoveSession { session, request } => {
+                let session_id = session.session_id;
+                self.spawn_operation(
+                    session,
+                    SessionOperation::MoveSession {
+                        session_id,
+                        request,
+                    },
+                );
+            }
             ApplicationTransition::ReadContextBreakdown {
                 session,
                 request_id,
@@ -1938,6 +1948,7 @@ impl RunLoop {
             | ApplicationTransition::SubmitDecision { .. }
             | ApplicationTransition::InterruptSession { .. }
             | ApplicationTransition::CompactSession { .. }
+            | ApplicationTransition::MoveSession { .. }
             | ApplicationTransition::ReadContextBreakdown { .. }
             | ApplicationTransition::ReadUsageMetrics { .. }
             | ApplicationTransition::ReadInsightsAndWorkspaces { .. }
@@ -4055,6 +4066,10 @@ enum SessionOperation {
         session_id: SessionId,
         request: crate::protocol::CompactSessionRequest,
     },
+    MoveSession {
+        session_id: SessionId,
+        request: crate::protocol::MoveSessionRequest,
+    },
 }
 
 impl SessionOperation {
@@ -4220,6 +4235,19 @@ impl SessionOperation {
                     error: compaction_refusal(&error),
                 },
             },
+            // The Session's stream carries the Move to every Client viewing
+            // it, so the outcome itself is not needed here; a refusal is
+            // said in the Server's own words.
+            Self::MoveSession {
+                session_id,
+                request,
+            } => operation_result(
+                session,
+                commands
+                    .move_session(session_id, &request)
+                    .await
+                    .map(|_| ()),
+            ),
         }
     }
 }
