@@ -12,12 +12,12 @@ use super::{directory_browser::ChosenDirectory, worktree_picker::WorktreeChoice}
 
 /// What a destination picker was opened for, which says what choosing in it
 /// does. The Workspace Picker hands its own to a Directory Browser its Browse
-/// row opens, so the chain concludes as the picker would have.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+/// row opens, so the chain concludes as the picker would have. There is no
+/// default: every opening names its purpose, and a closed picker holds none.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum DestinationPurpose {
     /// Opens the Landing where the reader chose, so the next Session begins
     /// there.
-    #[default]
     Landing,
 }
 

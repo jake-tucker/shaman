@@ -11,8 +11,9 @@ pub(super) struct WorktreePicker {
     pub(super) removal: Option<crate::protocol::CheckoutRemovalPreview>,
     pub(super) removal_request: Option<uuid::Uuid>,
     pub(super) open: bool,
-    /// What choosing a Worktree here is for.
-    purpose: DestinationPurpose,
+    /// What choosing a Worktree here is for, which a closed selector holds
+    /// none of.
+    purpose: Option<DestinationPurpose>,
     pub(super) loading: bool,
     pub(super) selected: usize,
     pub(super) context: Option<ResolvedWorkspace>,
@@ -33,14 +34,14 @@ impl WorktreePicker {
     pub(super) fn open(&mut self, purpose: DestinationPurpose) {
         *self = Self {
             open: true,
-            purpose,
+            purpose: Some(purpose),
             loading: true,
             ..Default::default()
         };
         self.window.open();
     }
-    pub(super) fn purpose(&self) -> &DestinationPurpose {
-        &self.purpose
+    pub(super) fn purpose(&self) -> Option<&DestinationPurpose> {
+        self.purpose.as_ref()
     }
     pub(super) fn close(&mut self) {
         *self = Self::default();

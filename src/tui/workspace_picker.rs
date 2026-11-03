@@ -30,8 +30,9 @@ pub(super) struct WorkspacePicker {
     paths: Option<WorkspacePaths>,
     open: bool,
     /// What choosing a Workspace here is for, which a Directory Browser
-    /// opened from it concludes by too.
-    purpose: DestinationPurpose,
+    /// opened from it concludes by too. A closed picker holds none; one
+    /// stepped aside keeps it for when it steps back.
+    purpose: Option<DestinationPurpose>,
     /// The Workspaces the Outlook's Server lists, and the conversation with
     /// it that keeps them true.
     listing: RegistryListing,
@@ -458,7 +459,7 @@ impl WorkspacePicker {
         Self {
             paths: None,
             open: false,
-            purpose: DestinationPurpose::default(),
+            purpose: None,
             listing: RegistryListing::new(current_workspace.into()),
             query: String::new(),
             selected: None,
@@ -479,7 +480,7 @@ impl WorkspacePicker {
     /// row is the reader's until a listing lands.
     pub(super) fn open(&mut self, purpose: DestinationPurpose) -> WorkspaceListRequest {
         self.open = true;
-        self.purpose = purpose;
+        self.purpose = Some(purpose);
         self.stepped_aside = false;
         self.refusal = None;
         self.query.clear();
@@ -497,7 +498,7 @@ impl WorkspacePicker {
 
     pub(super) fn close(&mut self) {
         self.open = false;
-        self.purpose = DestinationPurpose::default();
+        self.purpose = None;
         self.stepped_aside = false;
         self.refusal = None;
         self.query.clear();
@@ -535,8 +536,8 @@ impl WorkspacePicker {
         self.open
     }
 
-    pub(super) fn purpose(&self) -> &DestinationPurpose {
-        &self.purpose
+    pub(super) fn purpose(&self) -> Option<&DestinationPurpose> {
+        self.purpose.as_ref()
     }
 
     pub(super) fn is_loading(&self) -> bool {

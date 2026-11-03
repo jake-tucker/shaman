@@ -8328,8 +8328,9 @@ impl Application {
                 if self.state.worktree_picker.removal.is_some() {
                     return self.handle_worktree_command(SemanticCommandId::WorktreeRemove);
                 }
-                if let Some(choice) = self.state.worktree_picker.choice() {
-                    let purpose = self.state.worktree_picker.purpose().clone();
+                if let Some(choice) = self.state.worktree_picker.choice()
+                    && let Some(purpose) = self.state.worktree_picker.purpose().cloned()
+                {
                     return self.conclude(purpose, Destination::Worktree(choice));
                 }
             }
@@ -8406,9 +8407,11 @@ impl Application {
                     self.state.workspace_picker.refuse(refusal);
                 }
                 Some(WorkspacePickerChoice::Workspace(workspace)) => {
-                    let purpose = self.state.workspace_picker.purpose().clone();
+                    let purpose = self.state.workspace_picker.purpose().cloned();
                     self.state.workspace_picker.close();
-                    return Ok(self.conclude(purpose, Destination::Workspace(workspace)));
+                    if let Some(purpose) = purpose {
+                        return Ok(self.conclude(purpose, Destination::Workspace(workspace)));
+                    }
                 }
                 None => {}
             },
@@ -8465,7 +8468,7 @@ impl Application {
         }
     }
 
-    /// Moves the Landing to a Worktree chosen in the Worktree Selector, which
+    /// Takes the Landing to a Worktree chosen in the Worktree Selector, which
     /// affects the next Session's execution context only: a new Worktree is
     /// an intent made on first Prompt submission, and an existing one is
     /// resolved before the selector closes.
@@ -8614,14 +8617,16 @@ impl Application {
                 match browser.close() {
                     // A browser opened standalone has nowhere to go back to,
                     // so Esc closes it outright.
-                    DirectoryBrowserProvenance::Standalone(_) => {}
-                    DirectoryBrowserProvenance::FromWorkspacePicker(_) => {
+                    Some(DirectoryBrowserProvenance::Standalone(_)) | None => {}
+                    Some(DirectoryBrowserProvenance::FromWorkspacePicker(_)) => {
                         self.state.workspace_picker.step_back();
                     }
                     // The list editor, or Onboarding's step, stood beneath
                     // the browser all along, its draft as the reader left it.
-                    DirectoryBrowserProvenance::FromListEditor
-                    | DirectoryBrowserProvenance::FromOnboarding => {}
+                    Some(
+                        DirectoryBrowserProvenance::FromListEditor
+                        | DirectoryBrowserProvenance::FromOnboarding,
+                    ) => {}
                 }
                 None
             }
@@ -11571,11 +11576,11 @@ impl Application {
             SemanticCommandId::WorkspaceBrowse => {
                 let outlook = self.state.outlook.clone();
                 let execution_directory = self.state.browse_root(&outlook);
-                let provenance = if self.state.workspace_picker.is_open() {
+                let provenance = if self.state.workspace_picker.is_open()
+                    && let Some(purpose) = self.state.workspace_picker.purpose().cloned()
+                {
                     self.state.workspace_picker.step_aside();
-                    DirectoryBrowserProvenance::FromWorkspacePicker(
-                        self.state.workspace_picker.purpose().clone(),
-                    )
+                    DirectoryBrowserProvenance::FromWorkspacePicker(purpose)
                 } else {
                     DirectoryBrowserProvenance::Standalone(DestinationPurpose::Landing)
                 };

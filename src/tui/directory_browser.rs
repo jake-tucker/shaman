@@ -39,7 +39,11 @@ pub(super) struct DirectoryListingAsk {
 }
 
 /// Where the browser was opened from, which is where Esc takes the reader,
-/// and so what a choice is for.
+/// and so what a choice is for. Only the openings whose choice is somewhere
+/// to go carry a [`DestinationPurpose`], the one that choice concludes by,
+/// so it rides in their variants rather than beside them: a choice from the
+/// list editor or Onboarding is an entry of a draft, which no purpose says
+/// anything about.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum DirectoryBrowserProvenance {
     /// Opened by `/browse` or its chord, so Esc closes it outright and a
@@ -60,18 +64,11 @@ pub(super) enum DirectoryBrowserProvenance {
     FromOnboarding,
 }
 
-/// A browser not yet opened stands as one `/browse` would open, which is
-/// all a closed browser is asked of where it came from.
-impl Default for DirectoryBrowserProvenance {
-    fn default() -> Self {
-        Self::Standalone(DestinationPurpose::default())
-    }
-}
-
 #[derive(Clone, Debug, Default)]
 pub(super) struct DirectoryBrowser {
-    open: bool,
-    provenance: DirectoryBrowserProvenance,
+    /// Where the open browser was opened from; a closed browser came from
+    /// nowhere.
+    provenance: Option<DirectoryBrowserProvenance>,
     /// The Server whose directories the tree lists, which every listing it
     /// asks for is asked of.
     server: Outlook,
@@ -299,8 +296,7 @@ impl DirectoryBrowser {
         provenance: DirectoryBrowserProvenance,
     ) -> DirectoryListingAsk {
         self.close();
-        self.open = true;
-        self.provenance = provenance;
+        self.provenance = Some(provenance);
         self.server = server;
         self.base.clone_from(&execution_directory);
         self.field = self.beneath(&execution_directory.to_string_lossy());
@@ -318,9 +314,9 @@ impl DirectoryBrowser {
     }
 
     /// Closes the browser and forgets its tree, answering where it was opened
-    /// from, which is where the reader goes back to.
-    pub(super) fn close(&mut self) -> DirectoryBrowserProvenance {
-        self.open = false;
+    /// from, which is where the reader goes back to, or nothing where it was
+    /// not open.
+    pub(super) fn close(&mut self) -> Option<DirectoryBrowserProvenance> {
         self.resolved.clear();
         self.filter.clear();
         self.field_refusal = None;
@@ -330,11 +326,11 @@ impl DirectoryBrowser {
         self.awaiting.clear();
         self.refusal = None;
         self.pressed = None;
-        std::mem::take(&mut self.provenance)
+        self.provenance.take()
     }
 
     pub(super) const fn is_open(&self) -> bool {
-        self.open
+        self.provenance.is_some()
     }
 
     /// The Server whose directories the tree lists.
@@ -548,19 +544,19 @@ impl DirectoryBrowser {
             return None;
         }
         let base = self.base.clone();
-        Some((self.close(), ChosenDirectory { path, base }))
+        Some((self.close()?, ChosenDirectory { path, base }))
     }
 
     /// Whether the browser is open, opened from the settings panel's list
     /// editor.
     pub(super) fn opened_from_list_editor(&self) -> bool {
-        self.open && self.provenance == DirectoryBrowserProvenance::FromListEditor
+        self.provenance == Some(DirectoryBrowserProvenance::FromListEditor)
     }
 
     /// Whether the browser is open, opened from Onboarding's Workspace Roots
     /// step.
     pub(super) fn opened_from_onboarding(&self) -> bool {
-        self.open && self.provenance == DirectoryBrowserProvenance::FromOnboarding
+        self.provenance == Some(DirectoryBrowserProvenance::FromOnboarding)
     }
 
     /// Shows the directories the Server flagged hidden, each in its place
@@ -630,7 +626,7 @@ impl DirectoryBrowser {
         position: Position,
         repeats: bool,
     ) -> Option<SemanticCommandId> {
-        if !self.open {
+        if !self.is_open() {
             return None;
         }
         let last = self.pressed.take();
@@ -674,7 +670,7 @@ impl DirectoryBrowser {
         direction: ScrollDirection,
         lines: usize,
     ) -> bool {
-        if !self.open
+        if !self.is_open()
             || !self
                 .drawn
                 .borrow()
