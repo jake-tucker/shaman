@@ -106,7 +106,6 @@ fn choosing_a_remote_names_it_beside_the_workspace_on_landing_and_in_the_session
         .unwrap();
     let failed = rendered_application_rows_at(&application, 28, 20);
     assert!(failed[0].contains("studio"), "{failed:?}");
-    assert!(failed[0].contains("Server stopped"), "{failed:?}");
 
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(

@@ -63,7 +63,8 @@ use super::{
         ApplicationNoticeSlotContext, LandingFooterSlotContext, PromptContextSlotContext,
         PromptFooterSlotContext, RenderSlots, RenderedSlot, SessionComposerTopSlotContext,
         SlotText, WorkingIndicatorInterrupt, WorkingIndicatorSlotContext, WorkingIndicatorState,
-        truncate_from_left_to_width, truncate_slot_text, truncate_to_width,
+        truncate_from_left_to_width, truncate_middle_to_width, truncate_slot_text,
+        truncate_to_width,
     },
     spinner,
     state::{
@@ -84,6 +85,7 @@ const NARROW_TERMINAL_WIDTH: u16 = 44;
 const MINIMUM_TERMINAL_WIDTH: u16 = 28;
 const MINIMUM_TERMINAL_HEIGHT: u16 = 5;
 const LANDING_DETAILS_MINIMUM_HEIGHT: u16 = 9;
+const SESSION_HEADER_TITLE_GAP: usize = 2;
 const LANDING_LOGO: [&str; 7] = [
     "        █          ▀▀▀▀▀▀▀█",
     "▀▀▀▀▀▀▀▀█▀▀▀▀▀          ▄▀",
@@ -5196,17 +5198,36 @@ impl<'a> CheckoutStateReading<'a> {
     /// shown, which also tells a linked Worktree apart; an unreadable one is
     /// said in words either way.
     fn context(self, show_icons: bool) -> String {
-        use crate::protocol::{CheckoutKind, CheckoutRevision};
         let label = CheckoutStateLabel::spell(self, CheckoutStateForm::Standing);
-        let icon = match self.revision.filter(|_| show_icons) {
-            None => return label.text(),
-            Some(CheckoutRevision::Branch { .. }) => match self.kind {
+        match self.icon().filter(|_| show_icons) {
+            Some(icon) => icon_label(true, icon, &label.state),
+            None => label.text(),
+        }
+    }
+
+    /// `context`, cut from the middle of what HEAD stands on to fit `width`.
+    fn context_cut_to(self, show_icons: bool, width: usize) -> String {
+        let label = CheckoutStateLabel::spell(self, CheckoutStateForm::Standing);
+        match self.icon().filter(|_| show_icons) {
+            Some(icon) => {
+                let lead_width = icon_label(true, icon, "").width();
+                let state =
+                    truncate_middle_to_width(&label.state, width.saturating_sub(lead_width));
+                icon_label(true, icon, &state)
+            }
+            None => label.truncated_in_middle(width),
+        }
+    }
+
+    fn icon(self) -> Option<char> {
+        use crate::protocol::{CheckoutKind, CheckoutRevision};
+        match self.revision? {
+            CheckoutRevision::Branch { .. } => Some(match self.kind {
                 CheckoutKind::Main => NF_COD_GIT_BRANCH,
                 CheckoutKind::Linked => NF_COD_WORKTREE,
-            },
-            Some(CheckoutRevision::Detached { .. }) => NF_COD_GIT_COMMIT,
-        };
-        icon_label(true, icon, &label.state)
+            }),
+            CheckoutRevision::Detached { .. } => Some(NF_COD_GIT_COMMIT),
+        }
     }
 }
 
@@ -5287,6 +5308,14 @@ impl CheckoutStateLabel {
             self.suffix
         )
     }
+
+    fn truncated_in_middle(&self, width: usize) -> String {
+        format!(
+            "{}{}",
+            truncate_middle_to_width(&self.state, width.saturating_sub(self.suffix.width())),
+            self.suffix
+        )
+    }
 }
 
 fn icon_label(show_icons: bool, icon: char, label: &str) -> String {
@@ -5295,13 +5324,6 @@ fn icon_label(show_icons: bool, icon: char, label: &str) -> String {
     } else {
         label.to_owned()
     }
-}
-
-fn checkout_state_context(
-    reading: &crate::protocol::CheckoutSummary,
-    show_icons: bool,
-) -> Option<String> {
-    CheckoutStateReading::of(reading).map(|reading| reading.context(show_icons))
 }
 
 /// One Session set aside, as the single slim line the settled shelf gives it:
@@ -6827,9 +6849,7 @@ fn render_session_header(
     theme: &Theme,
 ) {
     let show_icons = state.settings().appearance.show_icons;
-    let connection = connection_status_text(state, ResponsiveDetail::CoreOnly);
-    let connection_width = connection.width().min(usize::from(area.width));
-    let left_width = usize::from(area.width).saturating_sub(connection_width.saturating_add(2));
+    let width = usize::from(area.width);
     let mut orientation = if detail.shows_secondary() {
         let workspace_icon = snapshot
             .session
@@ -6854,26 +6874,6 @@ fn render_session_header(
             .collect::<Vec<_>>()
             .join(" · ");
     }
-    if detail.shows_secondary()
-        && let Some(checkout) = state
-            .session_reference
-            .as_ref()
-            .zip(snapshot.session.checkout.as_ref())
-            .and_then(|(reference, checkout)| state.checkout_state(&reference.origin, &checkout.id))
-        && let Some(branch) = checkout_branch_context(checkout, show_icons)
-    {
-        orientation.push_str(" · ");
-        orientation.push_str(&branch);
-    }
-    let orientation = if !orientation.is_empty() {
-        truncate_to_width(&orientation, left_width)
-    } else {
-        String::new()
-    };
-    // Reserve the same space on both sides to keep the Title at the exact
-    // center, while leaving both indicators and a separating cell intact.
-    let side_width = orientation.width().max(connection_width) + 1;
-    let title_width = usize::from(area.width).saturating_sub(side_width.saturating_mul(2));
     let title = snapshot
         .title
         .split_whitespace()
@@ -6890,23 +6890,55 @@ fn render_session_header(
         .and_then(crate::icon_catalog::glyph)
         .map(|icon| format!("{icon} "));
     let icon_width = icon_prefix.as_deref().map(str::width).unwrap_or(0);
-    let title = truncate_to_width(&title, title_width.saturating_sub(icon_width));
-    let spacing =
-        " ".repeat(usize::from(area.width).saturating_sub(orientation.width() + connection_width));
+    // Each side may always hold a third of the header, and whatever more a
+    // centered Title leaves it, so a short Title stays centered however long
+    // the branch beside it runs.
+    let centered_side = (width.saturating_sub(icon_width + title.width()) / 2)
+        .saturating_sub(SESSION_HEADER_TITLE_GAP);
+    let side_width = (width / 3).max(centered_side);
+    let orientation = truncate_to_width(&orientation, side_width);
+    let branch = detail
+        .shows_secondary()
+        .then(|| {
+            state
+                .session_reference
+                .as_ref()
+                .zip(snapshot.session.checkout.as_ref())
+                .and_then(|(reference, checkout)| {
+                    state.checkout_state(&reference.origin, &checkout.id)
+                })
+                .and_then(|checkout| checkout_branch_context(checkout, show_icons, side_width))
+        })
+        .flatten()
+        .unwrap_or_default();
+    // The Title has all the sides leave it, and gives up the center before it
+    // gives up any of its text.
+    let side_reach = |side: &str| match side.width() {
+        0 => 0,
+        drawn_width => drawn_width + SESSION_HEADER_TITLE_GAP,
+    };
+    let title_start = side_reach(&orientation);
+    let title_room = width.saturating_sub(title_start + side_reach(&branch));
+    let title = truncate_to_width(&title, title_room.saturating_sub(icon_width));
+    let spacing = " ".repeat(width.saturating_sub(orientation.width() + branch.width()));
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(orientation, theme.text.subdued),
             Span::raw(spacing),
-            Span::styled(connection, status_style(state, theme)),
+            Span::styled(branch, theme.text.subdued),
         ])),
         area,
     );
     if !title.is_empty() {
-        let width = (icon_width + title.width()) as u16;
+        let drawn_width = icon_width + title.width();
+        let title_offset = (width.saturating_sub(drawn_width) / 2).clamp(
+            title_start,
+            title_start + title_room.saturating_sub(drawn_width),
+        );
         let title_area = Rect::new(
-            area.x + (area.width - width) / 2,
+            area.x + title_offset as u16,
             area.y,
-            width,
+            drawn_width as u16,
             area.height,
         );
         let mut spans = Vec::new();
@@ -6931,12 +6963,13 @@ fn render_session_header(
     }
 }
 
-/// A Session header names the branch its Worktree stands on beside the
+/// A Session header names the branch its Worktree stands on across from the
 /// Workspace, and stays quiet where there is no branch to name: a detached
 /// commit or an unreadable Worktree is not orientation.
 fn checkout_branch_context(
     checkout: &crate::protocol::CheckoutSummary,
     show_icons: bool,
+    width: usize,
 ) -> Option<String> {
     use crate::protocol::{CheckoutRevision, SourceControlAvailability};
 
@@ -6945,7 +6978,7 @@ fn checkout_branch_context(
     {
         return None;
     }
-    checkout_state_context(checkout, show_icons)
+    CheckoutStateReading::of(checkout).map(|reading| reading.context_cut_to(show_icons, width))
 }
 
 fn agent_selection_context(state: &TuiState, detail: ResponsiveDetail) -> String {
@@ -7678,7 +7711,7 @@ mod tests {
         },
         state::{Application, ApplicationEvent},
     };
-    use super::{session_footer_metrics_text, working_indicator_elapsed};
+    use super::{session_footer_metrics_text, truncate_middle_to_width, working_indicator_elapsed};
     use crate::{
         managed_client::{ManagedEvent, SessionEvent},
         protocol::{
@@ -7734,6 +7767,23 @@ mod tests {
             total_cost: None,
             own_cost: None,
             attachments: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_middle_cut_keeps_both_ends_and_gives_an_odd_column_to_the_end() {
+        for (value, width, expected) in [
+            ("abcdefghij", 10, "abcdefghij"),
+            ("abcdefghij", 7, "abc…hij"),
+            ("abcdefghij", 6, "ab…hij"),
+            ("abcdefghij", 2, "…j"),
+            ("abcdefghij", 1, "…"),
+            ("abcdefghij", 0, ""),
+            // A wide character that would overrun its half is left out whole.
+            ("界界界界界", 6, "界…界"),
+            ("界界界界界", 3, "…界"),
+        ] {
+            assert_eq!(truncate_middle_to_width(value, width), expected, "{width}");
         }
     }
 

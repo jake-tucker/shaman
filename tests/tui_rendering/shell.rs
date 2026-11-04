@@ -826,7 +826,6 @@ fn session_shell_degrades_metadata_before_transcript_or_composer_content() {
             .unwrap()
             .to_string_lossy()
             .as_ref(),
-        "Connected",
         "Keep the transcript visible",
         "Keep the draft visible",
         "Working (",
@@ -844,12 +843,7 @@ fn session_shell_degrades_metadata_before_transcript_or_composer_content() {
     );
 
     let narrow = rendered_application_rows_at(&application, 43, 10).join("\n");
-    for core in [
-        "Connected",
-        "Keep the draft visible",
-        "Working (",
-        "Esc to interrupt",
-    ] {
+    for core in ["Keep the draft visible", "Working (", "Esc to interrupt"] {
         assert!(
             narrow.contains(core),
             "narrow Session frame omitted {core:?}"
@@ -870,7 +864,7 @@ fn session_shell_degrades_metadata_before_transcript_or_composer_content() {
     assert!(short.contains("Working ("));
     assert!(
         !short.contains("Connected"),
-        "connection status belongs to the hidden Session header, not the composer footer: {short}"
+        "an open Session's footer carries no connection status: {short}"
     );
 
     let mut idle = Application::new(workspace.path(), Default::default());
@@ -988,7 +982,6 @@ fn reconnect_overlay_waits_for_the_grace_period_and_blocks_composer_input() {
     assert!(recovered.contains("Keep the Session visible"));
     assert!(recovered.contains("Preserve this draft"));
     assert!(!recovered.contains("must stay blocked"));
-    assert!(recovered.contains("Connected"));
 }
 
 #[test]

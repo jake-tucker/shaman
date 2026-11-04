@@ -4,6 +4,7 @@ use ratatui::{
     style::Style,
     text::{Line, Span},
 };
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::protocol::{SessionId, SessionTimestamp};
@@ -410,14 +411,16 @@ pub(super) fn truncate_slot_text(items: Vec<SlotText>, width: usize) -> Vec<Slot
         }
         let mut text = String::new();
         let mut reached_limit = false;
-        for character in item.text.chars() {
-            let character_width = character.width().unwrap_or(0);
-            if used + character_width > content_width {
+        // Grapheme by grapheme, as a frame draws them: a cluster can be wider
+        // than its characters count one by one.
+        for grapheme in item.text.graphemes(true) {
+            let grapheme_width = grapheme.width();
+            if used + grapheme_width > content_width {
                 reached_limit = true;
                 break;
             }
-            text.push(character);
-            used += character_width;
+            text.push_str(grapheme);
+            used += grapheme_width;
         }
         if !text.is_empty() {
             result.push(SlotText::new(text, item.style));
@@ -456,6 +459,28 @@ pub(super) fn truncate_from_left_to_width(value: &str, width: usize) -> String {
         used += character_width;
     }
     format!("…{suffix}")
+}
+
+/// `value` cut from its middle to fit `width` columns, an ellipsis standing
+/// for what was cut, so both its ends stay in view. An odd column falls to the
+/// end, which is where a branch name tells itself apart from its siblings.
+pub(super) fn truncate_middle_to_width(value: &str, width: usize) -> String {
+    if value.width() <= width {
+        return value.to_owned();
+    }
+    let prefix_width = width.saturating_sub(1) / 2;
+    let mut prefix = String::new();
+    let mut used = 0_usize;
+    for character in value.chars() {
+        let character_width = character.width().unwrap_or(1);
+        if used.saturating_add(character_width) > prefix_width {
+            break;
+        }
+        prefix.push(character);
+        used += character_width;
+    }
+    let rest = truncate_from_left_to_width(value, width - used);
+    format!("{prefix}{rest}")
 }
 
 pub(super) fn truncate_to_width(value: &str, width: usize) -> String {

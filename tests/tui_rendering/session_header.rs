@@ -1,8 +1,10 @@
-//! The viewed Session's Title stays centered between the header indicators.
+//! The viewed Session's Title stands between its Workspace and its branch:
+//! centered where it fits, and off center where that lets it show more.
 use crate::tui_rendering::support::{
-    connected_application, enter_session, navigable_session_snapshot, rendered_application_rows_at,
-    workspace_dir,
+    click_mouse, connected_application, enter_session, navigable_session_snapshot,
+    rendered_application_buffer, rendered_application_rows_at, text_position, workspace_dir,
 };
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use suru::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
@@ -11,7 +13,7 @@ use suru::{
         SessionSnapshot, SessionUpdate, SettingsSnapshot, SidebarVisibility,
         SourceControlAvailability,
     },
-    tui::{Application, ApplicationEvent},
+    tui::{Application, ApplicationEvent, ApplicationTransition},
 };
 
 fn settings(application: &mut Application) {
@@ -56,8 +58,31 @@ fn show(application: &mut Application, snapshot: &SessionSnapshot) {
 fn header(application: &Application, width: u16) -> String {
     rendered_application_rows_at(application, width, 20)
         .into_iter()
-        .find(|row| row.contains("Connected"))
+        .next()
         .expect("Session header")
+}
+
+/// How many columns of `row` stand before `text`.
+fn column_of(row: &str, text: &str) -> Option<usize> {
+    row.find(text).map(|offset| row[..offset].chars().count())
+}
+
+const LONG_BRANCH: &str = "feature/session-header-title-overflow-and-branch-placement";
+
+/// Fits beside a temporary Workspace's name and a third of a 100-column
+/// header, but is too long to stay centered there.
+const LONG_TITLE: &str = "Fix squashed titles at the top of a transcript";
+
+fn application_with_title_and_branch(
+    workspace: &std::path::Path,
+    title: &str,
+    branch: &str,
+) -> Application {
+    let (mut application, mut snapshot) =
+        session_on_checkout_branch(workspace, CheckoutKind::Main, branch, false);
+    snapshot.title = title.into();
+    show(&mut application, &snapshot);
+    application
 }
 
 fn application_with_checkout_branch(
@@ -66,6 +91,15 @@ fn application_with_checkout_branch(
     branch: &str,
     child: bool,
 ) -> Application {
+    session_on_checkout_branch(workspace, kind, branch, child).0
+}
+
+fn session_on_checkout_branch(
+    workspace: &std::path::Path,
+    kind: CheckoutKind,
+    branch: &str,
+    child: bool,
+) -> (Application, SessionSnapshot) {
     let mut application = connected_application(workspace);
     settings(&mut application);
     let (parent, mut snapshot) = enter_session(&mut application, workspace);
@@ -103,11 +137,153 @@ fn application_with_checkout_branch(
             }),
         ))
         .unwrap();
-    application
+    (application, snapshot)
 }
 
 #[test]
-fn branch_name_follows_the_workspace_name_in_the_session_header() {
+fn the_branch_stands_at_the_right_edge_and_no_connection_status_is_shown() {
+    let workspace = workspace_dir();
+    let application =
+        application_with_title_and_branch(workspace.path(), "Fix header", "feature/header");
+
+    // The default 80-column Session Content Column ends at column 90; the
+    // header keeps the normally padded terminal width regardless (ADR-0012).
+    let row = header(&application, 100);
+    assert!(row.trim_end().ends_with("feature/header"), "{row}");
+    assert_eq!(row.trim_end().chars().count(), 100 - 2, "{row}");
+    assert!(!row.contains(" · feature/header"), "{row}");
+    assert!(!row.contains("Connected"), "{row}");
+    assert_eq!(column_of(&row, "Fix header"), Some((100 - 10) / 2), "{row}");
+}
+
+#[test]
+fn a_long_branch_spends_the_room_a_short_title_leaves_without_moving_it() {
+    let workspace = workspace_dir();
+    let application =
+        application_with_title_and_branch(workspace.path(), "Fix header", LONG_BRANCH);
+
+    // The 96 columns inside the padding leave 43 beside a centered 10-column
+    // Title, and two of those separate it from the branch: 41 for the branch,
+    // its 40 kept characters split evenly about the ellipsis.
+    let row = header(&application, 100);
+    assert_eq!(column_of(&row, "Fix header"), Some((100 - 10) / 2), "{row}");
+    assert!(
+        row.trim_end()
+            .ends_with("  feature/session-head…and-branch-placement"),
+        "{row}"
+    );
+}
+
+#[test]
+fn a_long_title_moves_off_center_rather_than_truncating_beside_a_long_branch() {
+    let workspace = workspace_dir();
+    let application = application_with_title_and_branch(workspace.path(), LONG_TITLE, LONG_BRANCH);
+
+    // The branch keeps a third of the 96 columns inside the padding, 32, whose
+    // odd kept character falls to its distinguishing end. The Title stands two
+    // columns short of it: 98 - 32 - 2 - 46 = 18, where centered would be 27.
+    let row = header(&application, 100);
+    assert_eq!(column_of(&row, LONG_TITLE), Some(18), "{row}");
+    assert!(
+        row.trim_end()
+            .ends_with(&format!("{LONG_TITLE}  feature/session…branch-placement")),
+        "{row}"
+    );
+}
+
+#[test]
+fn a_title_too_long_for_the_header_truncates_between_its_neighbors() {
+    let workspace = workspace_dir();
+    let name = workspace.path().file_name().unwrap().to_string_lossy();
+    let application =
+        application_with_title_and_branch(workspace.path(), &"w".repeat(200), LONG_BRANCH);
+
+    for width in [60_u16, 100, 140] {
+        let row = header(&application, width);
+        assert!(
+            row.starts_with(&format!("  {name}  w")),
+            "width {width}: {row}"
+        );
+        assert!(row.contains("w…  feature/"), "width {width}: {row}");
+        assert!(
+            row.trim_end().ends_with("placement"),
+            "width {width}: {row}"
+        );
+    }
+}
+
+/// A warning sign asking for emoji presentation draws two columns wide though
+/// its characters count one between them, so a cut counting characters leaves
+/// the Title wider than the room it was cut for.
+#[test]
+fn a_title_with_an_emoji_presentation_truncates_inside_its_room() {
+    let workspace = workspace_dir();
+    let title = format!("\u{26A0}\u{FE0F} {}", "x".repeat(77));
+    let application = application_with_title_and_branch(workspace.path(), &title, "main");
+
+    let row = header(&application, 100);
+    assert!(row.trim_end().ends_with("x…  main"), "{row}");
+}
+
+/// A linked Worktree's own label stands whole, and the cut falls in the branch
+/// name beside it, so the name's end stays in view.
+#[test]
+fn a_cut_branch_keeps_its_end_ahead_of_a_linked_worktrees_label() {
+    let workspace = workspace_dir();
+    let (mut application, mut snapshot) =
+        session_on_checkout_branch(workspace.path(), CheckoutKind::Linked, LONG_BRANCH, false);
+    snapshot.title = LONG_TITLE.into();
+    show(&mut application, &snapshot);
+
+    // A third of the 96 columns inside the padding, less the 11 of the label.
+    let row = header(&application, 100);
+    assert!(
+        row.trim_end()
+            .ends_with("  feature/se…-placement (worktree)"),
+        "{row}"
+    );
+
+    // The glyph tells a linked Worktree apart where Icons draw, and its two
+    // columns come out of the same third.
+    enable_icons(&mut application);
+    let row = header(&application, 100);
+    assert!(
+        row.trim_end()
+            .ends_with("  \u{ec7e} feature/sessio…ranch-placement"),
+        "{row}"
+    );
+}
+
+#[test]
+fn a_press_finds_the_title_where_it_moved_off_center() {
+    let workspace = workspace_dir();
+    let mut application =
+        application_with_title_and_branch(workspace.path(), LONG_TITLE, LONG_BRANCH);
+
+    let buffer = rendered_application_buffer(&application, 100, 20);
+    let (column, row) = text_position(&buffer, LONG_TITLE);
+    assert_eq!(column, 18);
+    let transition = click_mouse(
+        &mut application,
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: column + 1,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+    )
+    .expect("handle a press");
+    assert!(
+        matches!(
+            transition,
+            ApplicationTransition::AskTitleProposalOffer { .. }
+        ),
+        "the moved Title stays the way into renaming: {transition:?}"
+    );
+}
+
+#[test]
+fn branch_name_stands_across_from_the_workspace_name_in_the_session_header() {
     let workspace = workspace_dir();
     let application = application_with_checkout_branch(
         workspace.path(),
@@ -118,12 +294,13 @@ fn branch_name_follows_the_workspace_name_in_the_session_header() {
 
     let row = header(&application, 240);
     assert!(
-        row.contains(&format!(
-            "{} · feature/header-context",
+        row.starts_with(&format!(
+            "  {}",
             workspace.path().file_name().unwrap().to_string_lossy()
         )),
         "{row}"
     );
+    assert!(row.trim_end().ends_with("feature/header-context"), "{row}");
     assert!(
         !row.contains(workspace.path().to_string_lossy().as_ref()),
         "the header names the Workspace without showing its full path: {row}"
@@ -148,10 +325,14 @@ fn icons_identify_the_workspace_and_worktree_in_the_session_header() {
 
         let row = header(&application, 240);
         assert!(
-            row.contains(&format!(
-                "\u{ea83} {} · {icon} feature/icons",
+            row.starts_with(&format!(
+                "  \u{ea83} {}",
                 workspace.path().file_name().unwrap().to_string_lossy()
             )),
+            "{row}"
+        );
+        assert!(
+            row.trim_end().ends_with(&format!("{icon} feature/icons")),
             "{row}"
         );
         assert!(!row.contains("(worktree)"), "{row}");
@@ -164,7 +345,9 @@ fn icons_identify_the_workspace_and_worktree_in_the_session_header() {
         settings(&mut application);
         let plain = header(&application, 240);
         assert!(
-            plain.contains(&format!(" · feature/icons{legacy_suffix}")),
+            plain
+                .trim_end()
+                .ends_with(&format!(" feature/icons{legacy_suffix}")),
             "{plain}"
         );
         assert!(
@@ -238,7 +421,6 @@ fn remote_header_icons_preserve_the_centered_title_and_compact_remote_label() {
         let row = header(&application, width);
         assert!(row.contains("\u{f0379} studio"), "width {width}: {row}");
         assert!(!row.contains('\u{ea83}'), "width {width}: {row}");
-        assert!(row.contains("Connected"), "width {width}: {row}");
     }
 }
 
@@ -249,18 +431,12 @@ fn main_branch_is_shown_in_the_session_header() {
         application_with_checkout_branch(workspace.path(), CheckoutKind::Main, "main", false);
 
     let row = header(&application, 240);
-    assert!(
-        row.contains(&format!(
-            "{} · main",
-            workspace.path().file_name().unwrap().to_string_lossy()
-        )),
-        "{row}"
-    );
+    assert!(row.trim_end().ends_with(" main"), "{row}");
 
     let linked =
         application_with_checkout_branch(workspace.path(), CheckoutKind::Linked, "main", false);
     let row = header(&linked, 240);
-    assert!(row.contains(" · main (worktree)"), "{row}");
+    assert!(row.trim_end().ends_with(" main (worktree)"), "{row}");
 }
 
 #[test]
@@ -275,10 +451,8 @@ fn linked_worktree_label_follows_the_branch_name_in_the_session_header() {
 
     let row = header(&application, 240);
     assert!(
-        row.contains(&format!(
-            "{} · feature/worktree-context (worktree)",
-            workspace.path().file_name().unwrap().to_string_lossy()
-        )),
+        row.trim_end()
+            .ends_with(" feature/worktree-context (worktree)"),
         "{row}"
     );
 }
@@ -295,10 +469,8 @@ fn viewed_child_uses_the_branch_state_shared_by_its_worktree() {
 
     let row = header(&application, 240);
     assert!(
-        row.contains(&format!(
-            "{} · feature/child-context (worktree)",
-            workspace.path().file_name().unwrap().to_string_lossy()
-        )),
+        row.trim_end()
+            .ends_with(" feature/child-context (worktree)"),
         "{row}"
     );
 }
@@ -327,7 +499,7 @@ fn title_is_centered_in_the_view_and_updates_with_the_session() {
                     .unwrap()
                     .to_string_lossy()
                     .as_ref()
-            ) && row.contains("Connected"),
+            ),
             "{row}"
         );
         assert!(!row.contains("Workspace") && !row.contains("Suru"), "{row}");
@@ -429,7 +601,7 @@ fn the_session_icon_counts_in_the_titles_width_budget() {
 }
 
 #[test]
-fn long_multiline_titles_shrink_without_overwriting_indicators() {
+fn long_multiline_titles_shrink_without_overwriting_the_workspace() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
     settings(&mut application);
@@ -440,24 +612,14 @@ fn long_multiline_titles_shrink_without_overwriting_indicators() {
     snapshot.title = "界".repeat(200);
     show(&mut application, &snapshot);
     let wide = header(&application, 200);
-    assert!(
-        wide.contains("界") && wide.contains('…') && wide.contains("Connected"),
-        "{wide}"
-    );
+    assert!(wide.contains("界") && wide.contains('…'), "{wide}");
     for width in 28..100 {
         let row = header(&application, width);
-        assert!(row.contains("Connected"), "width {width}: {row}");
         snapshot.title.clear();
         show(&mut application, &snapshot);
         let empty = header(&application, width);
-        // Every cell belonging to either existing indicator keeps its content.
-        let prefix = empty
-            .trim_end()
-            .split("Connected")
-            .next()
-            .unwrap()
-            .trim_end();
-        assert!(row.starts_with(prefix), "width {width}: {row}");
+        // Every cell the Workspace stands in keeps its content.
+        assert!(row.starts_with(empty.trim_end()), "width {width}: {row}");
         snapshot.title = "界".repeat(200);
         show(&mut application, &snapshot);
     }
