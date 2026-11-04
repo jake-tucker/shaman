@@ -6348,14 +6348,14 @@ fn render_session_surface(
         footer_height,
     );
     let viewport_with_latest = transcript_viewport_height(transcript_with_latest);
+    let bottom_without_latest = transcript_rows.saturating_sub(viewport_without_latest);
     let (away_from_bottom, viewport_height, maximum_scroll, scroll_position) =
         if interaction.follow_latest.get() {
-            let maximum_scroll = transcript_rows.saturating_sub(viewport_without_latest);
             (
                 false,
                 viewport_without_latest,
-                maximum_scroll,
-                maximum_scroll,
+                bottom_without_latest,
+                bottom_without_latest,
             )
         } else {
             let viewport_height = viewport_with_latest;
@@ -6371,15 +6371,17 @@ fn render_session_surface(
                             .clamp(0, maximum_scroll as isize) as usize
                     })
             });
-            if scroll_position >= maximum_scroll {
+            // The Latest hint gives its row back as it goes, so the reader is
+            // at the bottom once nothing is left below without it. Stopping a
+            // row short would draw the hint over the very row it points to.
+            if scroll_position >= bottom_without_latest {
                 interaction.follow_latest.set(true);
                 interaction.anchor.set(None);
-                let maximum_scroll = transcript_rows.saturating_sub(viewport_without_latest);
                 (
                     false,
                     viewport_without_latest,
-                    maximum_scroll,
-                    maximum_scroll,
+                    bottom_without_latest,
+                    bottom_without_latest,
                 )
             } else {
                 (true, viewport_height, maximum_scroll, scroll_position)

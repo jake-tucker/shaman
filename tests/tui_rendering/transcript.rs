@@ -190,6 +190,49 @@ fn terminal_input_capabilities_map_mouse_wheel_to_transcript_navigation() {
     );
 }
 
+/// The Latest hint takes a row from the Transcript, so the bottom reached while
+/// it is drawn sits one row past where the Transcript was following. The wheel
+/// coming back to where it left resumes following rather than stopping there
+/// with the hint drawn over a last row it could as well show.
+#[test]
+fn wheeling_back_to_the_bottom_resumes_following_with_the_last_row_shown() {
+    let workspace = workspace_dir();
+    let mut application = Application::new(workspace.path(), Default::default());
+    application
+        .handle_event(ApplicationEvent::SessionAttached(
+            navigable_session_snapshot(SessionId::new(), workspace.path(), 8),
+        ))
+        .expect("attach a long Session");
+    let following = rendered_application_rows_at(&application, 72, 18);
+
+    let wheel = |kind| {
+        InputEvent::Mouse(MouseEvent {
+            kind,
+            column: 12,
+            row: 6,
+            modifiers: KeyModifiers::NONE,
+        })
+    };
+    application
+        .handle_terminal_event(wheel(MouseEventKind::ScrollUp))
+        .expect("wheel up off the bottom");
+    assert!(
+        rendered_application_rows_at(&application, 72, 18)
+            .join("\n")
+            .contains("Latest ↓"),
+        "a notch up leaves the bottom"
+    );
+    application
+        .handle_terminal_event(wheel(MouseEventKind::ScrollDown))
+        .expect("wheel back down to the bottom");
+
+    assert_eq!(
+        rendered_application_rows_at(&application, 72, 18),
+        following,
+        "a notch back down draws what was there before the wheel turned"
+    );
+}
+
 #[test]
 fn transcript_content_with_terminal_escapes_renders_sanitized_cells() {
     let workspace = workspace_dir();
