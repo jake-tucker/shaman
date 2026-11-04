@@ -448,10 +448,10 @@ enum ProviderCommand {
     /// next Turn opens one in the directory it Moved to and resumes the
     /// conversation there. Every Watch running in the process it left is
     /// lost with it. A Turn at work keeps its connection until it settles.
-    /// `stopped` is answered once no such process runs, and dropped by an
-    /// actor that stops first.
+    /// Everything in `stopped` is answered once no such process runs, and
+    /// dropped by an actor that stops first.
     FollowMove {
-        stopped: oneshot::Sender<()>,
+        stopped: Vec<oneshot::Sender<()>>,
     },
 }
 
@@ -1640,7 +1640,10 @@ impl ProviderOrchestrator {
     /// The answer finishes once no Provider process of the Session runs in
     /// that directory, an actor released and still on its way out included,
     /// and the stop is under way whether or not it is awaited.
-    pub(crate) fn session_moved(&self, session_id: SessionId) -> crate::sessions::Released {
+    pub(crate) fn session_moved(
+        &self,
+        session_id: SessionId,
+    ) -> impl Future<Output = ()> + Send + use<> {
         let (stopped, followed) = oneshot::channel();
         let released = {
             let actors = self
@@ -1648,16 +1651,18 @@ impl ProviderOrchestrator {
                 .lock()
                 .expect("Provider actor registry lock is not poisoned");
             if let Some(actor) = actors.entries.get(&session_id) {
-                let _ = actor.commands.send(ProviderCommand::FollowMove { stopped });
+                let _ = actor.commands.send(ProviderCommand::FollowMove {
+                    stopped: vec![stopped],
+                });
             }
             actors.stopping.get(&session_id).cloned()
         };
-        Box::pin(async move {
+        async move {
             let _ = followed.await;
             if let Some(mut released) = released {
                 let _ = released.wait_for(|stopped| *stopped).await;
             }
-        })
+        }
     }
 
     pub(crate) fn open_session(&self, session_id: SessionId, prompt_id: PromptId) {
@@ -2795,8 +2800,9 @@ async fn run_provider_session(
                     _ = shutdown.wait() => break,
                     event = connected.events.next() => ActorInput::Event(event),
                     _ = std::future::ready(()), if !moves_to_follow.is_empty() => {
-                        let stopped = moves_to_follow.pop().expect("a Move to follow");
-                        ActorInput::Command(Some(ProviderCommand::FollowMove { stopped }))
+                        ActorInput::Command(Some(ProviderCommand::FollowMove {
+                            stopped: std::mem::take(&mut moves_to_follow),
+                        }))
                     }
                     _ = std::future::ready(()), if pending_prompt.is_some() => {
                         let prompt_id = pending_turn_starts.pop_front()
@@ -3413,7 +3419,9 @@ async fn run_provider_session(
                             "Stopped a moved Session's Provider process; its next Turn resumes it"
                         );
                     }
-                    let _ = stopped.send(());
+                    for stopped in stopped {
+                        let _ = stopped.send(());
+                    }
                     continue;
                 }
             };
@@ -3896,7 +3904,7 @@ async fn run_provider_session(
             // The Turn at work keeps the connection it began over, opened in
             // the directory a Move left, and it is let go of once that settles.
             ActorInput::Command(Some(ProviderCommand::FollowMove { stopped })) => {
-                moves_to_follow.push(stopped);
+                moves_to_follow.extend(stopped);
             }
 
             // A Delegation sent after the spawn reaches the Turn at work here
@@ -4578,9 +4586,11 @@ impl ProviderConnector<'_> {
     /// about to begin there — holding `inherited`, the guard its admission
     /// already took, where it took one — and records what the lease read of
     /// the checkout. Where the Worktree was recreated since `provider` was
-    /// opened over it, or the Session Moved since, the connection is dropped
-    /// so the next one opens in the new copy or the new directory, unless
-    /// Subagents still work in the old one, which refuses the Turn instead.
+    /// opened over it, the connection is dropped so the next one opens in the
+    /// new copy, unless Subagents still work in the old one, which refuses
+    /// the Turn instead. A Move has let go of its connection by now
+    /// ([`ProviderCommand::FollowMove`]); the directory is compared only as a
+    /// safety net, so no Turn ever runs where the Session does not work.
     async fn lease_worktree(
         &self,
         session: &crate::protocol::Session,
@@ -8299,7 +8309,7 @@ running 1 test",
         })
         .await;
 
-        let mut followed = fixture.providers.session_moved(session_id);
+        let mut followed = Box::pin(fixture.providers.session_moved(session_id));
         assert!(
             timeout(Duration::from_millis(50), &mut followed)
                 .await
@@ -8331,7 +8341,7 @@ running 1 test",
         let _events = run_to_idle(&mut fixture, session_id, Some(shutdown)).await;
         let released = fixture.providers.release_idle_actors(&[session_id]);
 
-        let mut followed = fixture.providers.session_moved(session_id);
+        let mut followed = Box::pin(fixture.providers.session_moved(session_id));
         assert!(
             timeout(Duration::from_millis(50), &mut followed)
                 .await

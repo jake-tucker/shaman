@@ -953,7 +953,7 @@ fn subtree(reporting_lifetime: &str) -> CostCoverage {
     }
 }
 
-async fn restore(
+pub(super) async fn restore(
     directory: &Path,
     records: Vec<PersistedSession>,
 ) -> (SessionStore, StorageWriter) {

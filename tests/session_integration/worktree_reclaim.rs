@@ -1062,6 +1062,32 @@ struct CountReclaimCandidates {
     candidates: std::sync::atomic::AtomicUsize,
     /// How many inspections have answered, however they answered.
     inspected: std::sync::atomic::AtomicUsize,
+    /// How many passes have listed the Repository's Worktrees, which each
+    /// hands on in the order of their paths, so one Worktree's turn comes
+    /// only once every Worktree before it has been dealt with whole.
+    listings: std::sync::atomic::AtomicUsize,
+    /// The Worktrees that have come up for Reclaim, in order.
+    observed: std::sync::Mutex<Vec<PathBuf>>,
+}
+
+impl CountReclaimCandidates {
+    fn new() -> Self {
+        Self {
+            git: GitSourceControl::default(),
+            candidates: std::sync::atomic::AtomicUsize::new(0),
+            inspected: std::sync::atomic::AtomicUsize::new(0),
+            listings: std::sync::atomic::AtomicUsize::new(0),
+            observed: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn has_observed(&self, root: &Path) -> bool {
+        self.observed
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|seen| seen == root)
+    }
 }
 
 #[async_trait::async_trait]
@@ -1087,8 +1113,22 @@ impl SourceControl for CountReclaimCandidates {
     async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
-    async fn reclaim_candidate_observed(&self, _target: &CheckoutRemovalTarget) {
+    async fn reclaim_candidate_observed(&self, target: &CheckoutRemovalTarget) {
         self.candidates.fetch_add(1, Ordering::SeqCst);
+        self.observed
+            .lock()
+            .unwrap()
+            .push(target.checkout.root.clone());
+    }
+
+    async fn list_checkouts(
+        &self,
+        repository: &Repository,
+    ) -> Result<Vec<CheckoutAssociation>, String> {
+        self.listings.fetch_add(1, Ordering::SeqCst);
+        let mut listed = self.git.list_checkouts(repository).await?;
+        listed.sort_by(|left, right| left.root.cmp(&right.root));
+        Ok(listed)
     }
 
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace {
@@ -1508,11 +1548,7 @@ async fn an_eager_exclusion_is_retried_by_a_later_sweep() {
         ],
     );
     let config = layout.server_config("reclaim-eager-lock-retry");
-    let adapter = Arc::new(CountReclaimCandidates {
-        git: GitSourceControl::default(),
-        candidates: std::sync::atomic::AtomicUsize::new(0),
-        inspected: std::sync::atomic::AtomicUsize::new(0),
-    });
+    let adapter = Arc::new(CountReclaimCandidates::new());
     let (runtime, mut provider) = ControlledProvider::new();
     let server = server::spawn_with_source_control(
         config.clone(),
@@ -1566,11 +1602,7 @@ async fn an_eager_exclusion_is_retried_by_a_later_sweep() {
 #[tokio::test]
 async fn a_working_subagent_refuses_delete_before_eager_reclaim_or_provider_shutdown() {
     let layout = ReclaimLayout::new("eager-working-child");
-    let adapter = Arc::new(CountReclaimCandidates {
-        git: GitSourceControl::default(),
-        candidates: std::sync::atomic::AtomicUsize::new(0),
-        inspected: std::sync::atomic::AtomicUsize::new(0),
-    });
+    let adapter = Arc::new(CountReclaimCandidates::new());
     let (runtime, mut provider) = ControlledProvider::new();
     let server = server::spawn_with_source_control(
         layout.server_config("reclaim-eager-working-child"),

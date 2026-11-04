@@ -1007,10 +1007,13 @@ impl SessionOperations {
 
         self.hydrate_prompt_owner(request.prompt.id).await?;
 
+        // A Subagent's Session takes no Prompt, which the store is about to say;
+        // being asked must not bring back a Worktree its parent Moved out of.
         let mut execution = None;
         if !self.sessions.knows_prompt(request.prompt.id)
             && let Some(snapshot) = self.sessions.snapshot(session_id)
             && snapshot.session.checkout.is_some()
+            && !snapshot.session.is_subagent()
         {
             let lease = self
                 .source_control

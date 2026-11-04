@@ -97,7 +97,7 @@ A Sidekick's act of making a new Workspace from a Repository URL, placed directl
 _Avoid_: Checkout (a Worktree's state), download, import, add repository
 
 **Worktree**:
-A Git Repository's working copy, either its main working copy or a linked one elsewhere on the same Server, shared by any Sessions that work within it. Every Worktree belongs to its Repository's Workspace, including those created outside Suru; settling a Session leaves it in place, while deleting the last Session that references a Managed Worktree, or Moving it elsewhere, can make it Reclaimable.
+A Git Repository's working copy, either its main working copy or a linked one elsewhere on the same Server, shared by any Sessions that work within it. Every Worktree belongs to its Repository's Workspace, including those created outside Suru; settling a Session leaves it in place, while deleting the last Session that references a Managed Worktree, or Moving that Session out of it, can make it Reclaimable.
 _Avoid_: Workspace (for an individual linked working copy)
 
 **Managed Worktree**:
@@ -105,7 +105,7 @@ A linked Worktree that Suru created for a Session, as it began or by a Move, liv
 _Avoid_: temporary worktree, auto worktree, sandbox
 
 **Reclaimable**:
-A Managed Worktree eligible for Reclaim because no Session or unfinished preparation references it, every Session that references it has been inactive past the configured threshold, or its failed preparation is older than that threshold. Working or Monitoring Sessions, changes Git would need force to discard, initialized submodules, and Git locks Suru did not place make it ineligible.
+A Managed Worktree eligible for Reclaim because no Session or unfinished preparation references it, every Session that references it has been inactive past the configured threshold, or its failed preparation is older than that threshold. A native Subagent's Session references a Worktree only through the Session whose Provider process it rides, unless it is itself at work. Working or Monitoring Sessions, changes Git would need force to discard, initialized submodules, and Git locks Suru did not place make it ineligible.
 
 **Reclaim**:
 The Server's unattended removal of a Reclaimable Managed Worktree, distinct from explicit removal that the user asks for and confirms. It retains the branch unless fully merged into its recorded base, and leaves affected Sessions' histories and settlement unchanged so their next Prompt can recover the Worktree.

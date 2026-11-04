@@ -35,18 +35,22 @@ impl SessionStore {
         (activity.affected, activity.working)
     }
 
+    /// What references the checkout, and how. A native Subagent's Session
+    /// left there by a Move of the Session whose Provider process it rides
+    /// references nothing (see [`SessionStoreState::left_behind_in`]).
     pub(crate) fn checkout_activity(&self, checkout: &CheckoutAssociation) -> CheckoutActivity {
         let state = self.state.lock().unwrap();
         let mut affected = 0;
         let mut working = 0;
         let mut monitoring = 0;
         let mut latest_updated_at = None;
-        for record in state.sessions.values() {
+        for (session_id, record) in &state.sessions {
             let session = &record.summary.session;
             if session
                 .checkout
                 .as_ref()
                 .is_some_and(|association| association.id == checkout.id)
+                && !state.left_behind_in(*session_id, &checkout.id)
             {
                 affected += 1;
                 working += usize::from(session.working_since.is_some());
@@ -391,6 +395,37 @@ impl SessionStore {
     }
 }
 
+impl SessionStoreState {
+    /// Whether `session_id` is a native Subagent's Session standing in
+    /// `checkout` only because the Session whose Provider process it rides has
+    /// Moved on. It stays where it was (ADR 0059), but it cannot work on its
+    /// own, so it references a Worktree only through that Session. One still
+    /// Working or Monitoring has a process to answer for and is not left
+    /// behind, nor is one whose lineage cannot be read.
+    fn left_behind_in(&self, session_id: SessionId, checkout: &CheckoutId) -> bool {
+        let Some(record) = self.sessions.get(&session_id) else {
+            return false;
+        };
+        let session = &record.summary.session;
+        if record.owns_provider_actor()
+            || session.working_since.is_some()
+            || session.monitoring_since.is_some()
+        {
+            return false;
+        }
+        self.actor_owner_of(session_id)
+            .and_then(|owner| self.sessions.get(&owner))
+            .is_some_and(|owner| {
+                owner
+                    .summary
+                    .session
+                    .checkout
+                    .as_ref()
+                    .is_none_or(|held| held.id != *checkout)
+            })
+    }
+}
+
 /// Whose reading is being recorded, which decides what it may overwrite.
 enum Recording {
     /// Taken under source control's mutation guard, so nothing Suru does to
@@ -492,5 +527,164 @@ async fn drain_until_shutdown<S: futures_util::Stream>(
                 handle(item);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::restoration_tests::{persisted, restore};
+    use super::*;
+    use crate::storage::{PersistedSession, StorageWriter};
+    use std::path::Path;
+
+    fn worktree(root: &Path) -> CheckoutAssociation {
+        let repository = RepositoryId("reference-fixture".to_owned());
+        CheckoutAssociation {
+            id: CheckoutId::from_root(&repository, root),
+            repository,
+            root: root.to_owned(),
+            kind: CheckoutKind::Linked,
+            recovery_revision: None,
+            reclaim: None,
+        }
+    }
+
+    fn standing_in(
+        mut session: PersistedSession,
+        checkout: Option<&CheckoutAssociation>,
+    ) -> PersistedSession {
+        session.summary.session.checkout = checkout.cloned();
+        session.snapshot.session.checkout = checkout.cloned();
+        session
+    }
+
+    /// What references `there` once `sessions` are restored, each standing
+    /// where the fixture put it.
+    async fn references(
+        directory: &Path,
+        sessions: Vec<PersistedSession>,
+        there: &CheckoutAssociation,
+    ) -> (CheckoutActivity, SessionStore, StorageWriter) {
+        let (store, writer) = restore(directory, sessions).await;
+        (store.checkout_activity(there), store, writer)
+    }
+
+    #[tokio::test]
+    async fn a_native_subagent_beside_its_parent_counts_as_it_always_did() {
+        let directory = tempfile::tempdir().unwrap();
+        let there = worktree(&directory.path().join("there"));
+        let parent = standing_in(persisted(directory.path(), None), Some(&there));
+        let child = standing_in(
+            persisted(directory.path(), Some(parent.snapshot.session.id)),
+            Some(&there),
+        );
+
+        let (activity, _store, writer) =
+            references(directory.path(), vec![parent, child], &there).await;
+
+        assert_eq!(activity.affected, 2);
+        writer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_native_subagent_whose_parent_moved_on_references_nothing_at_any_depth() {
+        let directory = tempfile::tempdir().unwrap();
+        let there = worktree(&directory.path().join("there"));
+        let elsewhere = worktree(&directory.path().join("elsewhere"));
+        for parent_stands_in in [Some(&elsewhere), None] {
+            let parent = standing_in(persisted(directory.path(), None), parent_stands_in);
+            let child = standing_in(
+                persisted(directory.path(), Some(parent.snapshot.session.id)),
+                Some(&there),
+            );
+            let grandchild = standing_in(
+                persisted(directory.path(), Some(child.snapshot.session.id)),
+                Some(&there),
+            );
+            let state = tempfile::tempdir().unwrap();
+
+            let (activity, _store, writer) =
+                references(state.path(), vec![parent, child, grandchild], &there).await;
+
+            assert_eq!(activity.affected, 0, "parent in {parent_stands_in:?}");
+            assert_eq!(activity.latest_updated_at, None);
+            writer.shutdown().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn a_brokered_subagent_counts_wherever_its_parent_went_and_so_does_what_rides_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let there = worktree(&directory.path().join("there"));
+        let elsewhere = worktree(&directory.path().join("elsewhere"));
+        let parent = standing_in(persisted(directory.path(), None), Some(&elsewhere));
+        let mut brokered = standing_in(
+            persisted(directory.path(), Some(parent.snapshot.session.id)),
+            Some(&there),
+        );
+        brokered.brokered = true;
+        let riding = standing_in(
+            persisted(directory.path(), Some(brokered.snapshot.session.id)),
+            Some(&there),
+        );
+
+        let (activity, _store, writer) =
+            references(directory.path(), vec![parent, brokered, riding], &there).await;
+
+        assert_eq!(activity.affected, 2);
+        writer.shutdown().await.unwrap();
+    }
+
+    /// Restoration keeps a child whose parent is gone, and no actor can have
+    /// run it, but nothing here says where its parent stood.
+    #[tokio::test]
+    async fn a_native_subagent_whose_lineage_cannot_be_read_still_counts() {
+        let directory = tempfile::tempdir().unwrap();
+        let there = worktree(&directory.path().join("there"));
+        let orphan = standing_in(
+            persisted(directory.path(), Some(SessionId::new())),
+            Some(&there),
+        );
+
+        let (activity, _store, writer) = references(directory.path(), vec![orphan], &there).await;
+
+        assert_eq!(activity.affected, 1);
+        writer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_native_subagent_still_at_work_counts_wherever_its_parent_went() {
+        let directory = tempfile::tempdir().unwrap();
+        let there = worktree(&directory.path().join("there"));
+        let elsewhere = worktree(&directory.path().join("elsewhere"));
+        let parent = standing_in(persisted(directory.path(), None), Some(&elsewhere));
+        let child = standing_in(
+            persisted(directory.path(), Some(parent.snapshot.session.id)),
+            Some(&there),
+        );
+        let child_id = child.snapshot.session.id;
+
+        let (idle, store, writer) = references(directory.path(), vec![parent, child], &there).await;
+        assert_eq!(idle.affected, 0);
+
+        store
+            .start_watch(
+                child_id,
+                crate::provider::ProviderWatchId::new("the build"),
+                "the build".to_owned(),
+            )
+            .unwrap();
+        let monitoring = store.checkout_activity(&there);
+        assert_eq!((monitoring.affected, monitoring.monitoring), (1, 1));
+
+        store.settle_watch(
+            child_id,
+            &crate::provider::ProviderWatchId::new("the build"),
+            false,
+        );
+        store.begin_subagent_turn(child_id, None).unwrap();
+        let working = store.checkout_activity(&there);
+        assert_eq!((working.affected, working.working), (1, 1));
+        writer.shutdown().await.unwrap();
     }
 }

@@ -84,6 +84,23 @@ fn orphan_beside(layout: &ReclaimLayout, name: &str) -> PathBuf {
     orphan
 }
 
+/// An orphan whose path sorts after every other Managed Worktree a test here
+/// names, so its turn in a pass [`CountReclaimCandidates`] lists comes last.
+const WITNESS: &str = "zz-witness";
+
+/// Waits for the witness of `layout`'s Repository to come up for Reclaim, by
+/// which time the pass has dealt with every Worktree before it whole.
+async fn the_pass_reaches_its_witness(adapter: &CountReclaimCandidates, layout: &ReclaimLayout) {
+    let witness = layout.main.join(".suru-worktrees").join(WITNESS);
+    timeout(PROGRESS_DEADLINE, async {
+        while !adapter.has_observed(&witness) {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("the orphan check reaches the last Worktree of its Repository");
+}
+
 /// Records where the layout's Managed Worktree branch began, so the merged
 /// branch rule can read it.
 fn record_branch_base(layout: &ReclaimLayout, name: &str) {
@@ -212,11 +229,8 @@ async fn a_move_out_of_source_control_reclaims_the_worktree_of_the_repository_it
 async fn left_alone(name: &str, arrange: impl FnOnce(&ReclaimLayout)) -> ReclaimLayout {
     let layout = ReclaimLayout::new(name);
     arrange(&layout);
-    let adapter = Arc::new(CountReclaimCandidates {
-        git: GitSourceControl::default(),
-        candidates: std::sync::atomic::AtomicUsize::new(0),
-        inspected: std::sync::atomic::AtomicUsize::new(0),
-    });
+    orphan_beside(&layout, WITNESS);
+    let adapter = Arc::new(CountReclaimCandidates::new());
     let (runtime, mut provider) = ControlledProvider::new();
     let server = spawn_over(
         &layout,
@@ -230,14 +244,11 @@ async fn left_alone(name: &str, arrange: impl FnOnce(&ReclaimLayout)) -> Reclaim
     let moved = move_session(&server, session.session.id, &layout.main).await;
 
     assert_eq!(moved.session.execution_directory.path, layout.main);
-    timeout(PROGRESS_DEADLINE, async {
-        while adapter.inspected.load(Ordering::SeqCst) == 0 {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
-    })
-    .await
-    .expect("the orphan check inspects the vacated Worktree");
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    the_pass_reaches_its_witness(&adapter, &layout).await;
+    assert!(
+        adapter.has_observed(&layout.managed) && adapter.inspected.load(Ordering::SeqCst) >= 1,
+        "the orphan check inspected the vacated Worktree"
+    );
     assert!(layout.managed.is_dir(), "{name} must refuse Reclaim");
     server.shutdown().await.unwrap();
     layout
@@ -311,28 +322,44 @@ async fn a_vacated_worktree_with_a_foreign_lock_is_not_reclaimed() {
 #[tokio::test]
 async fn a_worktree_another_session_still_works_in_is_not_reclaimed_until_that_one_leaves() {
     let layout = ReclaimLayout::new("move-sibling");
-    let (server, mut provider) = spawn_eager(&layout, "move-reclaim-sibling").await;
+    orphan_beside(&layout, WITNESS);
+    let adapter = Arc::new(CountReclaimCandidates::new());
+    let (runtime, mut provider) = ControlledProvider::new();
+    let server = spawn_over(&layout, "move-reclaim-sibling", runtime, adapter.clone()).await;
     let (first, _first_connection) = open(&server, &mut provider, &layout.managed).await;
     let (second, _second_connection) = open(&server, &mut provider, &layout.managed).await;
+    let mark = log_mark();
 
     move_session(&server, first.session.id, &layout.main).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    the_pass_reaches_its_witness(&adapter, &layout).await;
     assert!(
-        layout.managed.is_dir(),
+        !adapter.has_observed(&layout.managed),
         "the other Session still references the Worktree"
     );
+    assert!(layout.managed.is_dir());
+
+    // The pass lets go of the Repository as it says what it did, and a second
+    // check finding it held would be left to the sweep.
+    let witness = layout.main.join(".suru-worktrees").join(WITNESS);
+    let witness = witness.display().to_string();
+    wait_for_log(mark, "the witness's Reclaim", |log| {
+        log.lines()
+            .any(|line| line.contains(&witness) && line.contains("Managed Worktree Reclaimed"))
+    })
+    .await;
 
     move_session(&server, second.session.id, &layout.main).await;
     wait_for_path(&layout.managed, false).await;
     server.shutdown().await.unwrap();
 }
 
-/// A Move leaves Subagent Sessions where they are, so the Worktree they stand
-/// in is still referenced, as the orphan check counts references.
-#[tokio::test]
-async fn a_worktree_a_subagents_session_stands_in_is_not_reclaimed_when_its_parent_moves_out() {
-    let layout = ReclaimLayout::new("move-subagent");
-    let (server, mut provider) = spawn_eager(&layout, "move-reclaim-subagent").await;
+/// A Session with one native Subagent, settled, begun in `directory`: the
+/// Session, its Subagent's Session, and what its Provider holds.
+async fn session_with_a_settled_native_subagent(
+    server: &server::RunningServer,
+    provider: &mut ControlledProvider,
+    directory: &Path,
+) -> (SessionId, SessionId, ControlledProviderSession) {
     let session = support::create_session(
         server.descriptor(),
         &CreateSessionRequest {
@@ -340,7 +367,7 @@ async fn a_worktree_a_subagents_session_stands_in_is_not_reclaimed_when_its_pare
             preparation_id: None,
             agent_selection: None,
             execution_directory: ExecutionDirectory {
-                path: layout.managed.clone(),
+                path: directory.to_owned(),
             },
             prompt: prompt("Delegate some of the work"),
         },
@@ -354,13 +381,13 @@ async fn a_worktree_a_subagents_session_stands_in_is_not_reclaimed_when_its_pare
         .await
         .unwrap()
         .succeed();
-    let child = suru::provider::ProviderSubagentId::new("move-subagent");
+    let child = suru::provider::ProviderSubagentId::new("left-behind");
     connection
         .emit_and_wait_until_observed(ProviderEvent::SubagentStarted {
             subagent_id: child.clone(),
             name: "Explore".into(),
             description: "Stay behind".into(),
-            delegation: None,
+            delegation: Some("Map every seam.".to_owned()),
         })
         .await;
     connection
@@ -372,7 +399,7 @@ async fn a_worktree_a_subagents_session_stands_in_is_not_reclaimed_when_its_pare
     connection
         .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
         .await;
-    support::read_session_until(
+    let settled = support::read_session_until(
         &crate::support::loopback_client(),
         server.descriptor(),
         session.session.id,
@@ -380,14 +407,144 @@ async fn a_worktree_a_subagents_session_stands_in_is_not_reclaimed_when_its_pare
         |snapshot| snapshot.working_since().is_none(),
     )
     .await;
+    let Activity::Subagent { session_id, .. } = support::the_subagent_row(&settled) else {
+        unreachable!()
+    };
+    (session.session.id, *session_id, connection)
+}
 
-    move_session(&server, session.session.id, &layout.main).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
+/// What a Subagent's Session left in a Worktree since Reclaimed shows: all it
+/// ever did, where it stood, and that it is read rather than prompted, so
+/// nothing brings the Worktree back.
+async fn reads_where_it_was_left(
+    server: &server::RunningServer,
+    child: SessionId,
+    worktree: &Path,
+) {
+    let read = support::read_session(server.descriptor(), child).await;
+    assert_eq!(read.session.execution_directory.path, worktree);
     assert!(
-        layout.managed.is_dir(),
-        "the Subagent's Session still references the Worktree"
+        read.messages
+            .iter()
+            .any(|message| message.content.contains("Map every seam.")),
+        "its Transcript still reads: {:?}",
+        read.messages
     );
+    let refused = crate::support::loopback_client()
+        .post(format!(
+            "{}/v1/sessions/{child}/prompts",
+            server.descriptor().base_url
+        ))
+        .bearer_auth(&server.descriptor().token)
+        .json(&AdmitPromptRequest {
+            prompt: prompt("Carry on"),
+            delivery: PromptDelivery::Queue,
+        })
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), reqwest::StatusCode::CONFLICT);
+    assert_eq!(
+        refused.json::<SessionError>().await.unwrap().code,
+        SessionErrorCode::SubagentSession
+    );
+    assert!(!worktree.exists(), "and nothing recovered the Worktree");
+}
+
+/// A Move leaves a native Subagent's Session where it is, but that Session
+/// works only inside its parent's process, so it holds nothing back.
+#[tokio::test]
+async fn a_native_subagents_session_does_not_hold_the_worktree_its_parent_moves_out_of() {
+    let layout = ReclaimLayout::new("move-subagent");
+    let config = layout.server_config("move-reclaim-subagent");
+    let (runtime, mut provider) = ControlledProvider::new();
+    let server = server::spawn_with_provider_and_timings(
+        config.clone(),
+        runtime.clone(),
+        eager_only_timings(),
+    )
+    .await
+    .unwrap();
+    let (parent, child, _connection) =
+        session_with_a_settled_native_subagent(&server, &mut provider, &layout.managed).await;
+
+    move_session(&server, parent, &layout.main).await;
+
+    wait_for_path(&layout.managed, false).await;
+    reads_where_it_was_left(&server, child, &layout.managed).await;
+
+    // The parent's next Turn begins where it Moved to, and brings nothing back.
+    crate::support::loopback_client()
+        .post(format!(
+            "{}/v1/sessions/{parent}/prompts",
+            server.descriptor().base_url
+        ))
+        .bearer_auth(&server.descriptor().token)
+        .json(&AdmitPromptRequest {
+            prompt: prompt("Carry on here"),
+            delivery: PromptDelivery::Queue,
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let start = timeout(PROGRESS_DEADLINE, provider.next_start())
+        .await
+        .expect("the parent's next Turn starts its Provider");
+    assert_eq!(start.execution_directory(), layout.main);
+    assert!(!layout.managed.exists());
+    let _connection = start.succeed(identity());
     server.shutdown().await.unwrap();
+
+    let restarted = server::spawn_with_provider_and_timings(config, runtime, eager_only_timings())
+        .await
+        .unwrap();
+    reads_where_it_was_left(&restarted, child, &layout.managed).await;
+    restarted.shutdown().await.unwrap();
+}
+
+/// After a restart the left-behind Session's history is not yet read, and the
+/// sweep Reclaims around it all the same.
+#[tokio::test]
+async fn a_sweep_reclaims_around_a_native_subagents_session_whose_history_is_not_yet_read() {
+    let layout = ReclaimLayout::new("move-deferred");
+    git(
+        &layout.main,
+        &[
+            "worktree",
+            "lock",
+            "--reason",
+            "reader pin",
+            layout.managed.to_str().unwrap(),
+        ],
+    );
+    let config = layout.server_config("move-reclaim-deferred");
+    let (runtime, mut provider) = ControlledProvider::new();
+    let server = server::spawn_with_provider_and_timings(
+        config.clone(),
+        runtime.clone(),
+        eager_only_timings(),
+    )
+    .await
+    .unwrap();
+    let (parent, child, _connection) =
+        session_with_a_settled_native_subagent(&server, &mut provider, &layout.managed).await;
+    move_session(&server, parent, &layout.main).await;
+    server.shutdown().await.unwrap();
+    git(
+        &layout.main,
+        &["worktree", "unlock", layout.managed.to_str().unwrap()],
+    );
+
+    let restarted = server::spawn_with_provider_and_timings(config, runtime, timings())
+        .await
+        .unwrap();
+    restarted.workspace_discovery_settled().await;
+
+    wait_for_path(&layout.managed, false).await;
+    reads_where_it_was_left(&restarted, child, &layout.managed).await;
+    restarted.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -428,16 +585,25 @@ async fn an_unmerged_branch_outlives_the_worktree_a_move_left() {
     server.shutdown().await.unwrap();
 }
 
+/// Off lets a pass go no further than the Setting, so what stands for its
+/// having run is the stop it waited for, on the test's one thread.
 #[tokio::test]
 async fn off_leaves_a_worktree_a_move_left_empty() {
     let layout = ReclaimLayout::new("move-off");
     layout.pin(r#""off""#);
-    let (server, mut provider) = spawn_eager(&layout, "move-reclaim-off").await;
-    let (session, _connection) = open(&server, &mut provider, &layout.managed).await;
+    let adapter = Arc::new(CountReclaimCandidates::new());
+    let (runtime, mut provider) = ControlledProvider::new();
+    let server = spawn_over(&layout, "move-reclaim-off", runtime, adapter.clone()).await;
+    let (session, mut connection) = open(&server, &mut provider, &layout.managed).await;
 
     move_session(&server, session.session.id, &layout.main).await;
 
+    timeout(PROGRESS_DEADLINE, connection.next_shutdown())
+        .await
+        .expect("the Move stops the Provider process it left");
     tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(adapter.listings.load(Ordering::SeqCst), 0);
+    assert_eq!(adapter.candidates.load(Ordering::SeqCst), 0);
     assert!(layout.managed.is_dir(), "off disables the eager pass");
     server.shutdown().await.unwrap();
 }
@@ -475,11 +641,7 @@ async fn a_failed_reclaim_only_logs_and_leaves_the_move_standing() {
 #[tokio::test]
 async fn reclaim_waits_for_the_provider_process_a_move_stopped_there() {
     let layout = ReclaimLayout::new("move-stopping");
-    let adapter = Arc::new(CountReclaimCandidates {
-        git: GitSourceControl::default(),
-        candidates: std::sync::atomic::AtomicUsize::new(0),
-        inspected: std::sync::atomic::AtomicUsize::new(0),
-    });
+    let adapter = Arc::new(CountReclaimCandidates::new());
     let (runtime, mut provider) = ControlledProvider::new();
     let server = spawn_over(&layout, "move-reclaim-stopping", runtime, adapter.clone()).await;
     let (session, mut connection) = open(&server, &mut provider, &layout.managed).await;
@@ -508,33 +670,83 @@ async fn reclaim_waits_for_the_provider_process_a_move_stopped_there() {
     server.shutdown().await.unwrap();
 }
 
-/// A Move that leaves no Worktree runs no orphan check, which an orphan next
-/// door would not survive; one that leaves a Worktree then shows it would not.
+/// A Repository's listing is the first thing an orphan check does. Each Move
+/// here that leaves no Worktree comes before one that does, on the test's one
+/// thread, so a check it began would be counted by the time that one is done.
 #[tokio::test]
 async fn a_move_leaving_no_worktree_runs_no_orphan_check() {
     let layout = ReclaimLayout::new("move-nowhere");
-    let orphan = orphan_beside(&layout, "move-nowhere-orphan");
     let nested = layout.managed.join("nested");
     std::fs::create_dir(&nested).unwrap();
-    let (server, mut provider) = spawn_eager(&layout, "move-reclaim-nowhere").await;
+    let adapter = Arc::new(CountReclaimCandidates::new());
+    let (runtime, mut provider) = ControlledProvider::new();
+    let server = spawn_over(&layout, "move-reclaim-nowhere", runtime, adapter.clone()).await;
     let (session, _connection) = open(&server, &mut provider, &layout.managed).await;
 
+    // Already there, then within the Worktree, then out of it.
     move_session(&server, session.session.id, &layout.managed).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert!(orphan.is_dir(), "a Move to where it works changes nothing");
-
     move_session(&server, session.session.id, &nested).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert!(orphan.is_dir(), "a Move within a Worktree leaves none");
-
     move_session(&server, session.session.id, &layout.main).await;
     wait_for_path(&layout.managed, false).await;
-    wait_for_path(&orphan, false).await;
+    assert_eq!(
+        adapter.listings.load(Ordering::SeqCst),
+        1,
+        "only the Move out of the Worktree ran a check"
+    );
 
-    let left_main = orphan_beside(&layout, "move-nowhere-main");
+    // Out of the main working copy, and on from outside source control. A
+    // check either began would have Reclaimed the orphan the last Move enters.
+    let another = orphan_beside(&layout, "move-nowhere-another");
     move_session(&server, session.session.id, &layout.root).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert!(left_main.is_dir(), "the main working copy is never vacated");
+    move_session(&server, session.session.id, &another).await;
+    move_session(&server, session.session.id, &layout.main).await;
+    wait_for_path(&another, false).await;
+    assert_eq!(
+        adapter.listings.load(Ordering::SeqCst),
+        2,
+        "the main working copy is never vacated"
+    );
+    server.shutdown().await.unwrap();
+}
+
+/// A Repository busy with something else leaves the check nothing to do but
+/// say so, which the sweep is left to retry.
+#[tokio::test]
+async fn a_check_finding_its_repository_busy_says_the_sweep_will_retry() {
+    let layout = ReclaimLayout::new("move-busy");
+    let other = orphan_beside(&layout, "move-busy-other");
+    let mark = log_mark();
+    let adapter = Arc::new(PauseEagerRemoval {
+        git: GitSourceControl::default(),
+        reached_removal: tokio::sync::Notify::new(),
+        release_removal: tokio::sync::Notify::new(),
+    });
+    let (runtime, mut provider) = ControlledProvider::new();
+    let server = spawn_over(&layout, "move-reclaim-busy", runtime, adapter.clone()).await;
+    let (first, _first_connection) = open(&server, &mut provider, &layout.managed).await;
+    let (second, _second_connection) = open(&server, &mut provider, &other).await;
+
+    // The first check holds the Repository while Git removes its Worktree.
+    move_session(&server, first.session.id, &layout.main).await;
+    timeout(PROGRESS_DEADLINE, adapter.reached_removal.notified())
+        .await
+        .expect("the first check reaches Git");
+    let moved = move_session(&server, second.session.id, &layout.main).await;
+
+    assert_eq!(moved.session.execution_directory.path, layout.main);
+    let path = other.display().to_string();
+    wait_for_log(mark, "the busy Repository's retry", |log| {
+        log.lines().any(|line| {
+            line.contains(&path)
+                && line.contains(
+                    "Managed Worktree Reclaim found its Repository busy; the next sweep will retry",
+                )
+        })
+    })
+    .await;
+    assert!(other.is_dir());
+    adapter.release_removal.notify_one();
+    wait_for_path(&layout.managed, false).await;
     server.shutdown().await.unwrap();
 }
 

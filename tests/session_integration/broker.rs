@@ -52,6 +52,7 @@ mod deletion;
 mod interventions;
 mod late_output;
 mod limits;
+mod moves;
 mod posture;
 mod reports;
 mod send_wait;

@@ -114,7 +114,7 @@ impl SessionOperations {
             .map_err(MoveRefusal::Destination)?,
         };
         let outcome = match self.apply_move(session_id, destination).await? {
-            MoveApplied::Moved { session, .. } => {
+            MoveApplied::Moved(session) => {
                 self.record_act(session_id, author);
                 session
             }
@@ -175,19 +175,19 @@ impl SessionOperations {
             }
             _ => Vec::new(),
         };
-        let mut applied = self
-            .sessions
-            .move_to(session_id, resolved, left)
-            .map_err(|error| {
-                if let MoveSessionError::Storage(error) = &error {
-                    tracing::warn!(%session_id, "a Move was not stored: {error:#}");
-                }
-                store_refusal(error)
-            })?;
-        if let MoveApplied::Moved { vacated, .. } = &mut applied {
+        let (applied, vacated) =
+            self.sessions
+                .move_to(session_id, resolved, left)
+                .map_err(|error| {
+                    if let MoveSessionError::Storage(error) = &error {
+                        tracing::warn!(%session_id, "a Move was not stored: {error:#}");
+                    }
+                    store_refusal(error)
+                })?;
+        if matches!(applied, MoveApplied::Moved(_)) {
             let provider_stopped = self.providers.session_moved(session_id);
-            if let Some(repository) = vacated.take() {
-                self.orphan_checks.spawn(*repository, provider_stopped);
+            if let Some(repository) = vacated {
+                self.orphan_checks.spawn(repository, provider_stopped);
             }
         }
         Ok(applied)

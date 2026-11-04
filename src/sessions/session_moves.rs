@@ -16,7 +16,8 @@
 //!
 //! What runs the Session's conversation follows on its own: a Provider
 //! connection opened in another directory than the Session's own is let go
-//! of before its next Turn begins (see `ProviderOrchestrator::session_moved`).
+//! of at once, or once the Turn at work over it settles (see
+//! `ProviderOrchestrator::session_moved`).
 //! The Move is recorded in the Transcript by an Activity of its own, in the
 //! revision that moves the Session, and its Agent is owed a note of it at
 //! the head of its next Turn (see [`SessionStore::take_turn_head`]). A Worktree
@@ -102,12 +103,7 @@ impl MoveTarget<'_> {
 pub(crate) enum MoveApplied {
     /// The Session works in its destination from now on, as the summary
     /// says.
-    Moved {
-        session: SessionSummary,
-        /// The Repository of the linked Worktree the Session left, where it
-        /// left one rather than Moving within it.
-        vacated: Option<Box<Repository>>,
-    },
+    Moved(SessionSummary),
     /// The Session already worked there, and nothing changed.
     AlreadyThere(SessionSummary),
 }
@@ -124,7 +120,9 @@ impl SessionStore {
     }
 
     /// Moves a Session to work where `destination` was resolved from now on,
-    /// answering whether it Moved and the summary it left standing. The
+    /// answering whether it Moved and the summary it left standing, beside
+    /// the Repository of the linked Worktree it left, where it left one
+    /// rather than Moving within it. The
     /// Move's record names the branch of each Worktree it leaves or enters
     /// as the destination's reading of its Repository, or `left`, a reading
     /// of the Repository the Session leaves, found it.
@@ -140,7 +138,7 @@ impl SessionStore {
         session_id: SessionId,
         destination: ResolvedWorkspace,
         left: Vec<CheckoutSummary>,
-    ) -> Result<MoveApplied, MoveSessionError> {
+    ) -> Result<(MoveApplied, Option<Repository>), MoveSessionError> {
         let ResolvedWorkspace {
             mut workspace,
             execution_directory,
@@ -161,7 +159,7 @@ impl SessionStore {
         if record.snapshot.session.execution_directory == execution_directory {
             // Where a pending Move is kept, a Move to where the Session
             // already works is what clears it.
-            return Ok(MoveApplied::AlreadyThere(record.summary.clone()));
+            return Ok((MoveApplied::AlreadyThere(record.summary.clone()), None));
         }
         let session = &record.snapshot.session;
         let vacated = session
@@ -173,12 +171,12 @@ impl SessionStore {
                         .as_ref()
                         .is_none_or(|entered| entered.id != left.id)
             })
-            .and_then(|_| session.workspace.repository.clone());
+            .and_then(|_| session.workspace.repository.as_deref().cloned());
         // Dressed in what the Registry already holds for the Workspace,
         // without entering it: an entry the Move makes is made only once
         // storage has taken the Move.
         state.dress_workspace(&mut workspace);
-        let session = self
+        let summary = self
             .change_location(
                 &mut state,
                 session_id,
@@ -213,7 +211,7 @@ impl SessionStore {
             // every Session grouped there — this one included — wears it.
             self.regroup_workspace(&workspace.id);
         }
-        Ok(MoveApplied::Moved { session, vacated })
+        Ok((MoveApplied::Moved(summary), vacated))
     }
 }
 

@@ -21,10 +21,7 @@ use std::{
 use tokio::sync::watch;
 
 pub(super) fn spawn(
-    sessions: SessionStore,
-    source_control: SourceControlService,
-    preparations: PreparationStore,
-    settings: watch::Receiver<crate::protocol::SettingsSnapshot>,
+    reclaimer: Reclaimer,
     mut workspace_discovery: watch::Receiver<bool>,
     mut shutdown: watch::Receiver<bool>,
     timings: ServerTimings,
@@ -47,13 +44,6 @@ pub(super) fn spawn(
         if wait_or_shutdown(timings.worktree_reclaim_startup_delay, &mut shutdown).await {
             return;
         }
-        let reclaimer = Reclaimer {
-            sessions,
-            source_control,
-            preparations,
-            settings,
-            day: timings.worktree_reclaim_day,
-        };
         let registry = RegistryReads::new(timings.worktree_reclaim_registry_read_timeout);
         if run_pass_or_shutdown(&reclaimer, &registry, &mut shutdown).await {
             return;
@@ -84,22 +74,9 @@ pub(super) struct OrphanChecks {
 }
 
 impl OrphanChecks {
-    pub(super) fn new(
-        sessions: SessionStore,
-        source_control: SourceControlService,
-        preparations: PreparationStore,
-        settings: watch::Receiver<crate::protocol::SettingsSnapshot>,
-        shutdown: watch::Receiver<bool>,
-        day: Duration,
-    ) -> Self {
+    pub(super) fn new(reclaimer: Reclaimer, shutdown: watch::Receiver<bool>) -> Self {
         Self {
-            reclaimer: Reclaimer {
-                sessions,
-                source_control,
-                preparations,
-                settings,
-                day,
-            },
+            reclaimer,
             shutdown,
         }
     }
@@ -157,7 +134,7 @@ async fn wait_or_shutdown(duration: Duration, shutdown: &mut watch::Receiver<boo
 }
 
 #[derive(Clone)]
-struct Reclaimer {
+pub(super) struct Reclaimer {
     sessions: SessionStore,
     source_control: SourceControlService,
     preparations: PreparationStore,
@@ -168,6 +145,22 @@ struct Reclaimer {
 }
 
 impl Reclaimer {
+    pub(super) fn new(
+        sessions: SessionStore,
+        source_control: SourceControlService,
+        preparations: PreparationStore,
+        settings: watch::Receiver<crate::protocol::SettingsSnapshot>,
+        day: Duration,
+    ) -> Self {
+        Self {
+            sessions,
+            source_control,
+            preparations,
+            settings,
+            day,
+        }
+    }
+
     /// The Reclaim threshold of `days`, in milliseconds.
     fn threshold(&self, days: u64) -> u64 {
         let day = u64::try_from(self.day.as_millis()).unwrap_or(u64::MAX);
@@ -347,9 +340,11 @@ impl Reclaimer {
         // An unattended pass never queues behind Provider startup while
         // holding the global preparation serial; the next pass retries.
         let Ok(preparation_serial) = self.preparations.serial.try_lock() else {
+            self.busy(&checkout, rule);
             return;
         };
         let Some(_guard) = self.source_control.try_mutation_guard(&repository.id) else {
+            self.busy(&checkout, rule);
             return;
         };
         if !rule.qualifies(
@@ -664,6 +659,14 @@ impl Reclaimer {
             Ok(_) => {}
             Err(error) => self.failed(&checkout, rule, &error),
         }
+    }
+
+    fn busy(&self, checkout: &CheckoutAssociation, rule: ReclaimRule) {
+        tracing::info!(
+            checkout = %checkout.root.display(),
+            rule = rule.log_name(),
+            "Managed Worktree Reclaim found its Repository busy; the next sweep will retry"
+        );
     }
 
     fn failed(&self, checkout: &CheckoutAssociation, rule: ReclaimRule, error: &str) {

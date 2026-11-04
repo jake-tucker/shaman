@@ -1746,11 +1746,15 @@ async fn start(
             workspace_discovery.send_replace(true);
         });
     }
-    reclaim::spawn(
+    let reclaimer = reclaim::Reclaimer::new(
         sessions.clone(),
         source_control.clone(),
         preparations.clone(),
         settings.subscribe(),
+        timings.worktree_reclaim_day,
+    );
+    reclaim::spawn(
+        reclaimer.clone(),
         workspace_discovery_rx.clone(),
         provider_shutdown_rx.clone(),
         timings.clone(),
@@ -1841,14 +1845,7 @@ async fn start(
     // A Clone a Sidekick on a Peer asked for runs apart from its request,
     // until the stop begins, and the stop then waits for it to let go.
     let detached_clones = operations::DetachedClones::new(provider_shutdown_rx.clone());
-    let orphan_checks = reclaim::OrphanChecks::new(
-        sessions.clone(),
-        source_control.clone(),
-        preparations.clone(),
-        settings.subscribe(),
-        provider_shutdown_rx.clone(),
-        timings.worktree_reclaim_day,
-    );
+    let orphan_checks = reclaim::OrphanChecks::new(reclaimer, provider_shutdown_rx.clone());
     let operations = SessionOperations::new(
         sessions.clone(),
         providers.clone(),
