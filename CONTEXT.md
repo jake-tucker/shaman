@@ -97,7 +97,7 @@ A Sidekick's act of making a new Workspace from a Repository URL, placed directl
 _Avoid_: Checkout (a Worktree's state), download, import, add repository
 
 **Worktree**:
-A Git Repository's working copy, either its main working copy or a linked one elsewhere on the same Server, shared by any Sessions that work within it. Every Worktree belongs to its Repository's Workspace, including those created outside Suru; settling a Session leaves it in place, while deleting the last Session that references a Managed Worktree can make it Reclaimable.
+A Git Repository's working copy, either its main working copy or a linked one elsewhere on the same Server, shared by any Sessions that work within it. Every Worktree belongs to its Repository's Workspace, including those created outside Suru; settling a Session leaves it in place, while deleting the last Session that references a Managed Worktree, or Moving it elsewhere, can make it Reclaimable.
 _Avoid_: Workspace (for an individual linked working copy)
 
 **Managed Worktree**:

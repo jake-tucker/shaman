@@ -1385,6 +1385,7 @@ impl OnboardedStore {
 #[derive(Clone)]
 struct AppState {
     preparations: crate::source_control::PreparationStore,
+    orphan_checks: reclaim::OrphanChecks,
     source_control: crate::source_control::SourceControlService,
     workspace_paths: crate::protocol::WorkspacePaths,
     descriptor: Arc<RuntimeDescriptor>,
@@ -1840,11 +1841,20 @@ async fn start(
     // A Clone a Sidekick on a Peer asked for runs apart from its request,
     // until the stop begins, and the stop then waits for it to let go.
     let detached_clones = operations::DetachedClones::new(provider_shutdown_rx.clone());
+    let orphan_checks = reclaim::OrphanChecks::new(
+        sessions.clone(),
+        source_control.clone(),
+        preparations.clone(),
+        settings.subscribe(),
+        provider_shutdown_rx.clone(),
+        timings.worktree_reclaim_day,
+    );
     let operations = SessionOperations::new(
         sessions.clone(),
         providers.clone(),
         source_control.clone(),
         preparations.clone(),
+        orphan_checks.clone(),
         skill_catalog.clone(),
         model_catalog.clone(),
         attachment_store.clone(),
@@ -1909,6 +1919,7 @@ async fn start(
     );
     let state = AppState {
         preparations,
+        orphan_checks,
         source_control,
         // The paths this Server's clients name Workspaces by, its Sidekick
         // Workspace among them. The listing an Agent reads keeps the bare
@@ -4241,15 +4252,9 @@ async fn delete_session(
     match state.sessions.delete(session_id) {
         Ok(deleted) => {
             if let Some(repository) = deleted.repository {
-                reclaim::spawn_orphans(
-                    repository,
-                    state.sessions.clone(),
-                    state.source_control.clone(),
-                    state.preparations.clone(),
-                    state.settings.subscribe(),
-                    state.shutdown.provider_shutdown.subscribe(),
-                    state.timings.worktree_reclaim_day,
-                );
+                state
+                    .orphan_checks
+                    .spawn(repository, std::future::ready(()));
             }
             for owner in deleted.actor_owners {
                 state.providers.close_session(owner).await;

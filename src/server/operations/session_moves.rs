@@ -9,7 +9,9 @@
 //! it takes the new directory. A refusal at any step leaves the Session where
 //! it was. Once the Move stands, the Session's Provider actor is told, so the
 //! process it ran in the directory left behind stops and the next Turn
-//! resumes the conversation in the new one.
+//! resumes the conversation in the new one; and once that process has gone, a
+//! Worktree the Move left is given the orphan check a Session's deletion gives
+//! one, apart from the Move, which neither waits for it nor hears of it.
 
 use std::{fmt, path::PathBuf};
 
@@ -112,7 +114,7 @@ impl SessionOperations {
             .map_err(MoveRefusal::Destination)?,
         };
         let outcome = match self.apply_move(session_id, destination).await? {
-            MoveApplied::Moved(session) => {
+            MoveApplied::Moved { session, .. } => {
                 self.record_act(session_id, author);
                 session
             }
@@ -127,8 +129,9 @@ impl SessionOperations {
     /// Server's home: refuses one where no directory this Server can read
     /// stands now, resolves where it lies, refuses a bare Repository and the
     /// Sidekick Workspace, has the store take the new location while the
-    /// Session is still idle, and tells the Session's Provider actor it
-    /// Moved. Every Move — asked of an idle Session now, or in time one
+    /// Session is still idle, tells the Session's Provider actor it Moved, and
+    /// runs the orphan check for a Worktree it left, once the process stopped
+    /// there has gone. Every Move — asked of an idle Session now, or in time one
     /// pending until a Turn settles, whose destination may be gone by then
     /// — is applied, and its destination read, here.
     async fn apply_move(
@@ -172,7 +175,7 @@ impl SessionOperations {
             }
             _ => Vec::new(),
         };
-        let applied = self
+        let mut applied = self
             .sessions
             .move_to(session_id, resolved, left)
             .map_err(|error| {
@@ -181,8 +184,11 @@ impl SessionOperations {
                 }
                 store_refusal(error)
             })?;
-        if matches!(applied, MoveApplied::Moved(_)) {
-            self.providers.session_moved(session_id);
+        if let MoveApplied::Moved { vacated, .. } = &mut applied {
+            let provider_stopped = self.providers.session_moved(session_id);
+            if let Some(repository) = vacated.take() {
+                self.orphan_checks.spawn(*repository, provider_stopped);
+            }
         }
         Ok(applied)
     }

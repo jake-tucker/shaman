@@ -187,6 +187,7 @@ pub struct ControlledProviderSession {
     posture_updates: mpsc::UnboundedReceiver<PostureUpdate>,
     gate_posture_updates: Arc<AtomicBool>,
     shutdowns: mpsc::UnboundedReceiver<()>,
+    shutdown_hold: Arc<tokio::sync::RwLock<()>>,
     events: mpsc::UnboundedSender<ControlledProviderEvent>,
 }
 
@@ -297,6 +298,7 @@ struct ControlledSessionHandle {
     posture_updates: mpsc::UnboundedSender<PostureUpdate>,
     gate_posture_updates: Arc<AtomicBool>,
     shutdowns: mpsc::UnboundedSender<()>,
+    shutdown_hold: Arc<tokio::sync::RwLock<()>>,
 }
 
 impl ControlledProvider {
@@ -634,6 +636,7 @@ impl StartRequest {
         let (posture_updates_tx, posture_updates_rx) = mpsc::unbounded_channel();
         let gate_posture_updates = Arc::new(AtomicBool::new(false));
         let (shutdowns_tx, shutdowns_rx) = mpsc::unbounded_channel();
+        let shutdown_hold = Arc::new(tokio::sync::RwLock::new(()));
         let (events_tx, events_rx) = mpsc::unbounded_channel::<ControlledProviderEvent>();
         let events: ProviderEventStream = Box::pin(stream::unfold(events_rx, |mut events| async {
             events.recv().await.map(|(event, observed)| {
@@ -664,6 +667,7 @@ impl StartRequest {
                     posture_updates: posture_updates_tx,
                     gate_posture_updates: gate_posture_updates.clone(),
                     shutdowns: shutdowns_tx,
+                    shutdown_hold: shutdown_hold.clone(),
                 }),
                 events,
             )))
@@ -685,6 +689,7 @@ impl StartRequest {
             posture_updates: posture_updates_rx,
             gate_posture_updates,
             shutdowns: shutdowns_rx,
+            shutdown_hold,
             events: events_tx,
         }
     }
@@ -888,6 +893,16 @@ impl ControlledProviderSession {
             .recv()
             .await
             .expect("Suru shuts the Provider Session down rather than dropping it");
+    }
+
+    /// Keeps this Provider Session's shutdown from finishing until the answer
+    /// is dropped, as a Provider process slow to exit keeps it. Suru is told
+    /// of the shutdown it asks for all the same ([`Self::next_shutdown`]).
+    pub fn hold_shutdown(&self) -> tokio::sync::OwnedRwLockWriteGuard<()> {
+        self.shutdown_hold
+            .clone()
+            .try_write_owned()
+            .expect("nothing else holds or awaits this Provider Session's shutdown")
     }
 
     /// Whether Suru has already shut this Provider Session down, without
@@ -1659,7 +1674,11 @@ impl ProviderSession for ControlledSessionHandle {
         // A test that never looks has dropped the receiver; the shutdown
         // still succeeds.
         let _ = self.shutdowns.send(());
-        Box::pin(async { Ok(()) })
+        let hold = self.shutdown_hold.clone();
+        Box::pin(async move {
+            let _released = hold.read().await;
+            Ok(())
+        })
     }
 }
 

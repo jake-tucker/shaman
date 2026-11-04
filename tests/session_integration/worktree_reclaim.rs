@@ -1019,6 +1019,14 @@ impl SourceControl for PauseEagerRemoval {
         self.git.discover(directory).await
     }
 
+    async fn recover_checkout(
+        &self,
+        repository: &Repository,
+        checkout: &CheckoutAssociation,
+    ) -> Result<CheckoutRecovery, String> {
+        self.git.recover_checkout(repository, checkout).await
+    }
+
     async fn inspect_removal(
         &self,
         target: &CheckoutRemovalTarget,
@@ -1052,6 +1060,8 @@ impl SourceControl for PauseEagerRemoval {
 struct CountReclaimCandidates {
     git: GitSourceControl,
     candidates: std::sync::atomic::AtomicUsize,
+    /// How many inspections have answered, however they answered.
+    inspected: std::sync::atomic::AtomicUsize,
 }
 
 #[async_trait::async_trait]
@@ -1089,7 +1099,9 @@ impl SourceControl for CountReclaimCandidates {
         &self,
         target: &CheckoutRemovalTarget,
     ) -> Result<CheckoutRemovalInspection, String> {
-        self.git.inspect_removal(target).await
+        let inspection = self.git.inspect_removal(target).await;
+        self.inspected.fetch_add(1, Ordering::SeqCst);
+        inspection
     }
 
     async fn removal_branch_outcome(
@@ -1499,6 +1511,7 @@ async fn an_eager_exclusion_is_retried_by_a_later_sweep() {
     let adapter = Arc::new(CountReclaimCandidates {
         git: GitSourceControl::default(),
         candidates: std::sync::atomic::AtomicUsize::new(0),
+        inspected: std::sync::atomic::AtomicUsize::new(0),
     });
     let (runtime, mut provider) = ControlledProvider::new();
     let server = server::spawn_with_source_control(
@@ -1556,6 +1569,7 @@ async fn a_working_subagent_refuses_delete_before_eager_reclaim_or_provider_shut
     let adapter = Arc::new(CountReclaimCandidates {
         git: GitSourceControl::default(),
         candidates: std::sync::atomic::AtomicUsize::new(0),
+        inspected: std::sync::atomic::AtomicUsize::new(0),
     });
     let (runtime, mut provider) = ControlledProvider::new();
     let server = server::spawn_with_source_control(
@@ -3121,3 +3135,6 @@ async fn an_external_lock_preserves_an_old_failed_preparation_but_its_exact_suru
     wait_for_path(&intent, false).await;
     restarted.shutdown().await.unwrap();
 }
+
+#[path = "worktree_reclaim_moves.rs"]
+mod moves;

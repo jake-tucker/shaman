@@ -72,36 +72,62 @@ pub(super) fn spawn(
     });
 }
 
-/// Run the orphan population for the one Repository a successful Session
-/// deletion named. This task is deliberately detached from the DELETE
-/// response: Git refusal, a busy guard, and shutdown all leave a later sweep
-/// to retry without changing the completed Session operation.
-pub(super) fn spawn_orphans(
-    repository: Repository,
-    sessions: SessionStore,
-    source_control: SourceControlService,
-    preparations: PreparationStore,
-    settings: watch::Receiver<crate::protocol::SettingsSnapshot>,
-    mut shutdown: watch::Receiver<bool>,
-    day: Duration,
-) {
-    tokio::spawn(async move {
-        if *shutdown.borrow() {
-            return;
+/// Runs the orphan population for the one Repository a successful Session
+/// deletion, or a Move out of one of its Worktrees, named. Each run is
+/// deliberately detached from the operation that asked for it: Git refusal, a
+/// busy guard, and shutdown all leave a later sweep to retry without changing
+/// the completed Session operation.
+#[derive(Clone)]
+pub(super) struct OrphanChecks {
+    reclaimer: Reclaimer,
+    shutdown: watch::Receiver<bool>,
+}
+
+impl OrphanChecks {
+    pub(super) fn new(
+        sessions: SessionStore,
+        source_control: SourceControlService,
+        preparations: PreparationStore,
+        settings: watch::Receiver<crate::protocol::SettingsSnapshot>,
+        shutdown: watch::Receiver<bool>,
+        day: Duration,
+    ) -> Self {
+        Self {
+            reclaimer: Reclaimer {
+                sessions,
+                source_control,
+                preparations,
+                settings,
+                day,
+            },
+            shutdown,
         }
-        let reclaimer = Reclaimer {
-            sessions,
-            source_control,
-            preparations,
-            settings,
-            day,
-        };
-        tokio::select! {
-            biased;
-            _ = shutdown.changed() => {}
-            _ = reclaimer.orphans(&repository) => {}
-        }
-    });
+    }
+
+    /// Runs the check for `repository` apart from the caller, once `ready`
+    /// finishes: a Worktree is not looked at while what the caller stopped in
+    /// it may still be running there.
+    pub(super) fn spawn(
+        &self,
+        repository: Repository,
+        ready: impl Future<Output = ()> + Send + 'static,
+    ) {
+        let reclaimer = self.reclaimer.clone();
+        let mut shutdown = self.shutdown.clone();
+        tokio::spawn(async move {
+            if *shutdown.borrow() {
+                return;
+            }
+            tokio::select! {
+                biased;
+                _ = shutdown.changed() => {}
+                () = async {
+                    ready.await;
+                    reclaimer.orphans(&repository).await;
+                } => {}
+            }
+        });
+    }
 }
 
 async fn run_pass_or_shutdown(
@@ -130,6 +156,7 @@ async fn wait_or_shutdown(duration: Duration, shutdown: &mut watch::Receiver<boo
     }
 }
 
+#[derive(Clone)]
 struct Reclaimer {
     sessions: SessionStore,
     source_control: SourceControlService,
@@ -235,8 +262,8 @@ impl Reclaimer {
     }
 
     /// One Repository pass shared by the scheduled and eager paths. The eager
-    /// path selects only orphans, so deleting a Session never accelerates an
-    /// idle or failed-preparation threshold.
+    /// path selects only orphans, so deleting or Moving a Session never
+    /// accelerates an idle or failed-preparation threshold.
     async fn reclaim_repository(
         &self,
         repository: &Repository,
@@ -751,7 +778,7 @@ impl ReclaimRule {
 
     fn unavailable_reason(self) -> String {
         match self {
-            Self::Orphaned => "Worktree was Reclaimed after its last Session was deleted; prompt a retained Session to recover it".into(),
+            Self::Orphaned => "Worktree was Reclaimed once its last Session was gone from it; prompt a retained Session to recover it".into(),
             Self::Idle { days: 1 } => "Worktree was Reclaimed after 1 day of inactivity; prompt this Session to recover it".into(),
             Self::Idle { days } => format!("Worktree was Reclaimed after {days} days of inactivity; prompt this Session to recover it"),
             Self::FailedPreparation { days: 1 } => "Worktree was Reclaimed after its preparation failed 1 day ago".into(),

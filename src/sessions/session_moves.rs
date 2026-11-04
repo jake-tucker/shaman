@@ -19,11 +19,14 @@
 //! of before its next Turn begins (see `ProviderOrchestrator::session_moved`).
 //! The Move is recorded in the Transcript by an Activity of its own, in the
 //! revision that moves the Session, and its Agent is owed a note of it at
-//! the head of its next Turn (see [`SessionStore::take_turn_head`]).
+//! the head of its next Turn (see [`SessionStore::take_turn_head`]). A Worktree
+//! the Move leaves is named to whoever applied it, whose orphan check finds
+//! whether any Session still references it.
 
 use crate::protocol::{
-    Activity, ActivityId, ActivityStatus, CheckoutAssociation, CheckoutRevision, CheckoutSummary,
-    ExecutionDirectory, MoveLocation, ResolvedWorkspace, Session, SessionId, SessionSummary,
+    Activity, ActivityId, ActivityStatus, CheckoutAssociation, CheckoutKind, CheckoutRevision,
+    CheckoutSummary, ExecutionDirectory, MoveLocation, Repository, ResolvedWorkspace, Session,
+    SessionId, SessionSummary,
 };
 use crate::storage::WorkspaceProvenance;
 
@@ -99,7 +102,12 @@ impl MoveTarget<'_> {
 pub(crate) enum MoveApplied {
     /// The Session works in its destination from now on, as the summary
     /// says.
-    Moved(SessionSummary),
+    Moved {
+        session: SessionSummary,
+        /// The Repository of the linked Worktree the Session left, where it
+        /// left one rather than Moving within it.
+        vacated: Option<Box<Repository>>,
+    },
     /// The Session already worked there, and nothing changed.
     AlreadyThere(SessionSummary),
 }
@@ -155,11 +163,22 @@ impl SessionStore {
             // already works is what clears it.
             return Ok(MoveApplied::AlreadyThere(record.summary.clone()));
         }
+        let session = &record.snapshot.session;
+        let vacated = session
+            .checkout
+            .as_ref()
+            .filter(|left| {
+                left.kind == CheckoutKind::Linked
+                    && checkout
+                        .as_ref()
+                        .is_none_or(|entered| entered.id != left.id)
+            })
+            .and_then(|_| session.workspace.repository.clone());
         // Dressed in what the Registry already holds for the Workspace,
         // without entering it: an entry the Move makes is made only once
         // storage has taken the Move.
         state.dress_workspace(&mut workspace);
-        let summary = self
+        let session = self
             .change_location(
                 &mut state,
                 session_id,
@@ -194,7 +213,7 @@ impl SessionStore {
             // every Session grouped there — this one included — wears it.
             self.regroup_workspace(&workspace.id);
         }
-        Ok(MoveApplied::Moved(summary))
+        Ok(MoveApplied::Moved { session, vacated })
     }
 }
 

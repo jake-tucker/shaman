@@ -447,9 +447,12 @@ enum ProviderCommand {
     /// at work over it, as an idle stop lets go of one (ADR 0058), so the
     /// next Turn opens one in the directory it Moved to and resumes the
     /// conversation there. Every Watch running in the process it left is
-    /// lost with it. A Turn at work keeps its connection: the next Turn
-    /// lets go of it before it begins.
-    FollowMove,
+    /// lost with it. A Turn at work keeps its connection until it settles.
+    /// `stopped` is answered once no such process runs, and dropped by an
+    /// actor that stops first.
+    FollowMove {
+        stopped: oneshot::Sender<()>,
+    },
 }
 
 /// Why a Session's Provider gave no Context Breakdown.
@@ -1634,10 +1637,27 @@ impl ProviderOrchestrator {
     /// left stops now rather than when its idle wait elapses; see
     /// [`ProviderCommand::FollowMove`]. With no actor running there is
     /// nothing to stop: the next Turn starts one in the Session's directory.
-    pub(crate) fn session_moved(&self, session_id: SessionId) {
-        if let Some(actor) = self.actor_commands(session_id) {
-            let _ = actor.send(ProviderCommand::FollowMove);
-        }
+    /// The answer finishes once no Provider process of the Session runs in
+    /// that directory, an actor released and still on its way out included,
+    /// and the stop is under way whether or not it is awaited.
+    pub(crate) fn session_moved(&self, session_id: SessionId) -> crate::sessions::Released {
+        let (stopped, followed) = oneshot::channel();
+        let released = {
+            let actors = self
+                .actors
+                .lock()
+                .expect("Provider actor registry lock is not poisoned");
+            if let Some(actor) = actors.entries.get(&session_id) {
+                let _ = actor.commands.send(ProviderCommand::FollowMove { stopped });
+            }
+            actors.stopping.get(&session_id).cloned()
+        };
+        Box::pin(async move {
+            let _ = followed.await;
+            if let Some(mut released) = released {
+                let _ = released.wait_for(|stopped| *stopped).await;
+            }
+        })
     }
 
     pub(crate) fn open_session(&self, session_id: SessionId, prompt_id: PromptId) {
@@ -2720,6 +2740,8 @@ async fn run_provider_session(
     };
     let mut provider: Option<ConnectedProviderSession> = None;
     let mut active: Option<ActiveProviderTurn> = None;
+    // Moves heard while a Turn was at work, followed once it settles.
+    let mut moves_to_follow: Vec<oneshot::Sender<()>> = Vec::new();
     let mut subagents = SubagentRoutes::new(runtime.provider_id());
     let mut questionnaire_deliveries = QuestionnaireDeliveries::default();
     let mut decision_deliveries = DecisionDeliveries::default();
@@ -2763,12 +2785,19 @@ async fn run_provider_session(
             break;
         }
         if active.is_none() {
+            if provider.is_none() {
+                moves_to_follow.clear();
+            }
             let pending_prompt = pending_turn_starts.front().copied().or(deferred_prompt_id);
             let input = if let Some(connected) = provider.as_mut() {
                 tokio::select! {
                     biased;
                     _ = shutdown.wait() => break,
                     event = connected.events.next() => ActorInput::Event(event),
+                    _ = std::future::ready(()), if !moves_to_follow.is_empty() => {
+                        let stopped = moves_to_follow.pop().expect("a Move to follow");
+                        ActorInput::Command(Some(ProviderCommand::FollowMove { stopped }))
+                    }
                     _ = std::future::ready(()), if pending_prompt.is_some() => {
                         let prompt_id = pending_turn_starts.pop_front()
                             .or_else(|| deferred_prompt_id.take()).expect("pending Prompt");
@@ -3362,7 +3391,7 @@ async fn run_provider_session(
                     continue;
                 }
                 ProviderCommand::SteerPrompt => continue,
-                ProviderCommand::FollowMove => {
+                ProviderCommand::FollowMove { stopped } => {
                     let moved_to = sessions.execution_directory(session_id);
                     if let Some(left) = provider.take_if(|connected| {
                         moved_to
@@ -3384,6 +3413,7 @@ async fn run_provider_session(
                             "Stopped a moved Session's Provider process; its next Turn resumes it"
                         );
                     }
+                    let _ = stopped.send(());
                     continue;
                 }
             };
@@ -3863,9 +3893,11 @@ async fn run_provider_session(
             ActorInput::Command(Some(ProviderCommand::ContextBreakdown { response })) => {
                 answer_context_breakdown(Some(provider_session.clone()), response);
             }
-            // The Turn at work keeps the connection it began over; the next
-            // Turn lets go of it, opened in the directory a Move left.
-            ActorInput::Command(Some(ProviderCommand::FollowMove)) => {}
+            // The Turn at work keeps the connection it began over, opened in
+            // the directory a Move left, and it is let go of once that settles.
+            ActorInput::Command(Some(ProviderCommand::FollowMove { stopped })) => {
+                moves_to_follow.push(stopped);
+            }
 
             // A Delegation sent after the spawn reaches the Turn at work here
             // as a steer when a Delegation began it (ADR 0032); one its
@@ -8228,6 +8260,89 @@ running 1 test",
                 .connected_incarnation(session_id)
                 .is_some()
         );
+        fixture.stop.send_replace(true);
+        within("the orchestrator stops", fixture.providers.shutdown()).await;
+    }
+
+    /// A Move heard while a Turn is at work is followed once that settles, and
+    /// whoever waits on the process it left waits that long.
+    #[tokio::test]
+    async fn a_move_heard_while_a_turn_is_at_work_is_answered_once_the_turn_settles() {
+        let mut fixture = hand_fixture(false, Duration::from_secs(3_600)).await;
+        let created = create_session(&fixture.sessions, fixture.workspace.path(), "First");
+        let session_id = created.session.id;
+        fixture
+            .providers
+            .schedule_prompt(session_id, created.prompts[0].id)
+            .expect("schedule the first Prompt");
+        let events = answer(
+            within("the Provider starts", fixture.started.recv())
+                .await
+                .expect("the Provider start"),
+            None,
+        );
+        let sessions = &fixture.sessions;
+        waited("the Turn runs", || {
+            sessions
+                .snapshot(session_id)
+                .filter(|snapshot| {
+                    snapshot
+                        .turns
+                        .last()
+                        .is_some_and(|turn| turn.status == TurnStatus::Active)
+                })
+                .map(drop)
+        })
+        .await;
+        waited("the Provider connects", || {
+            fixture.providers.connected_incarnation(session_id)
+        })
+        .await;
+
+        let mut followed = fixture.providers.session_moved(session_id);
+        assert!(
+            timeout(Duration::from_millis(50), &mut followed)
+                .await
+                .is_err(),
+            "the Turn at work keeps its connection"
+        );
+
+        events
+            .send(Ok(ProviderEvent::TurnCompleted.into()))
+            .expect("the actor reads its events");
+        within("the Move is followed", followed).await;
+
+        fixture.stop.send_replace(true);
+        within("the orchestrator stops", fixture.providers.shutdown()).await;
+    }
+
+    /// A Session Moved as its released actor is on its way out still has a
+    /// process there until that actor has stopped.
+    #[tokio::test]
+    async fn a_move_waits_for_a_released_actor_still_stopping_its_process() {
+        let mut fixture = hand_fixture(false, Duration::from_secs(3_600)).await;
+        let created = create_session(&fixture.sessions, fixture.workspace.path(), "First");
+        let session_id = created.session.id;
+        fixture
+            .providers
+            .schedule_prompt(session_id, created.prompts[0].id)
+            .expect("schedule the first Prompt");
+        let (let_go, shutdown) = oneshot::channel();
+        let _events = run_to_idle(&mut fixture, session_id, Some(shutdown)).await;
+        let released = fixture.providers.release_idle_actors(&[session_id]);
+
+        let mut followed = fixture.providers.session_moved(session_id);
+        assert!(
+            timeout(Duration::from_millis(50), &mut followed)
+                .await
+                .is_err(),
+            "the released actor's process is still stopping"
+        );
+
+        let _ = let_go.send(());
+        within("the Move is followed", followed).await;
+        within("the released actor stops", released).await;
+
         fixture.stop.send_replace(true);
         within("the orchestrator stops", fixture.providers.shutdown()).await;
     }
