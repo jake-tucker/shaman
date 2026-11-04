@@ -12,7 +12,8 @@ use crate::{
     },
     source_control::SourceControlService,
     storage::{
-        AddedActivity, SettledActivity, StoredWorkspace, WorkspacePresentation, WorkspaceProvenance,
+        AddedActivity, LocationLanding, SettledActivity, StoredWorkspace, WorkspacePresentation,
+        WorkspaceProvenance,
     },
 };
 
@@ -857,11 +858,7 @@ impl SessionStore {
         let mut next = session.clone();
         next.workspace.clone_from(&workspace);
         next.checkout.clone_from(&checkout);
-        let mut landing = LocationLanding {
-            moved_from: record.moved_from.clone(),
-            added: None,
-            settled: None,
-        };
+        let mut landing = LocationLanding::keeping(record.moved_from.clone());
         let changes = match moved {
             Some(moved) => {
                 let record_of_it = match moved.settles {
@@ -935,13 +932,8 @@ impl SessionStore {
         id: SessionId,
         next: crate::protocol::Session,
         changes: Vec<SessionChange>,
-        landing: LocationLanding,
+        mut landing: LocationLanding,
     ) -> anyhow::Result<SessionSummary> {
-        let LocationLanding {
-            moved_from,
-            added,
-            settled,
-        } = landing;
         let record = state
             .sessions
             .get_mut(&id)
@@ -961,17 +953,18 @@ impl SessionStore {
         let validated =
             crate::session_projection::validate_changes(&record.snapshot, &update.changes)?;
         let save = record.take_save()?;
-        let recorded = added.is_some();
-        let settling = settled.is_some();
-        let takes_rows = record.unsaved.takes_added_rows();
-        self.storage.location_changed(
-            save,
-            next,
-            moved_from.clone(),
-            added.filter(|_| takes_rows),
-            settled.filter(|_| takes_rows),
-            update.revision,
-        )?;
+        let recorded = landing.added.is_some();
+        let settling = landing.settled.is_some();
+        let moved_from = landing.moved_from.clone();
+        // A row added past those storage holds stands only where the Session's
+        // next save does not write it whole, but a settling moves a row where
+        // it already stands, so the Session's own row, which leaves off naming
+        // the Move, never lands without it.
+        if !record.unsaved.takes_added_rows() {
+            landing.added = None;
+        }
+        self.storage
+            .location_changed(save, next, landing, update.revision)?;
         let _ = validated.apply(&mut record.snapshot, &update.changes);
         crate::session_projection::close_revision(&mut record.snapshot, update.revision);
         if recorded {
@@ -1022,15 +1015,6 @@ impl SessionStore {
         repositories.sort_by(|(_, left), (_, right)| left.cmp(right));
         repositories
     }
-}
-
-/// What storage takes in the one transaction that lands a change of where a
-/// Session stands: where its Agent last worked while it is owed the note of a
-/// Move, and the Activity added or settled recording a Move.
-pub(super) struct LocationLanding {
-    pub(super) moved_from: Option<crate::protocol::ExecutionDirectory>,
-    pub(super) added: Option<AddedActivity>,
-    pub(super) settled: Option<SettledActivity>,
 }
 
 /// A Registry entry discovered under a Workspace Root, as

@@ -1032,14 +1032,15 @@ impl Default for TuiState {
     }
 }
 
+/// How the line beneath the composer begins saying a Move is waiting, which
+/// ends in the Move's destination.
+pub(super) const MOVE_PENDING_SAID: &str = "The Session Moves once the work under way settles, to ";
+
 /// What is said beneath the composer of a Move waiting to take the Session to
-/// `destination`: named by its last component, so the line says when the Move
-/// applies however long the path.
+/// `destination`. With nothing under way it applies before the Session's next
+/// Turn begins, which is as soon as that reads.
 fn move_pending_acknowledgement(destination: &Path) -> String {
-    format!(
-        "The Session Moves to {} once its Turn settles.",
-        super::sidebar::workspace_name(destination)
-    )
+    format!("{MOVE_PENDING_SAID}{}", destination.display())
 }
 
 impl TuiState {
@@ -3166,6 +3167,17 @@ impl TuiState {
         self.reconcile_command_mode();
         self.reconcile_subagent_picker();
         Ok(true)
+    }
+
+    /// Whether the open Session's Transcript holds the Move `activity_id`
+    /// settled.
+    fn move_has_settled(&self, activity_id: crate::protocol::ActivityId) -> bool {
+        self.session.as_ref().is_some_and(|session| {
+            session.snapshot().activities.iter().any(|activity| {
+                activity.id() == activity_id
+                    && activity.status() != Some(crate::protocol::ActivityStatus::Active)
+            })
+        })
     }
 
     /// Takes the Client's current Workspace to where the open Session now
@@ -6759,9 +6771,12 @@ impl Application {
                         "The pending Move is cancelled, and the Session stays where it works."
                             .to_owned(),
                     ),
+                    // The Session's stream may have heard this Move settle
+                    // already, whose answer is then old news.
                     MoveOutcome::Pending { session } => session
                         .session
                         .pending_move
+                        .filter(|pending| !self.state.move_has_settled(pending.activity_id))
                         .map(|pending| move_pending_acknowledgement(&pending.destination.path)),
                 };
                 if acknowledged.is_some() {

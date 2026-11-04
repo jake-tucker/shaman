@@ -912,8 +912,13 @@ mod tests {
         sink.record_sidekick_act(interrupted.clone());
         // Commands are taken in order, so once this one is answered the act
         // has been tried, and failed.
-        sink.location_changed(None, session, None, None, None, revision)
-            .expect("the writer goes on after the failure");
+        sink.location_changed(
+            None,
+            session,
+            crate::storage::LocationLanding::keeping(None),
+            revision,
+        )
+        .expect("the writer goes on after the failure");
         database(directory.path())
             .batch_execute("ALTER TABLE sidekick_acts_away RENAME TO sidekick_acts;")
             .expect("give the table back");

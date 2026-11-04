@@ -465,9 +465,7 @@ fn persist_checkout_association(
     storage.location_changed(
         record.take_save()?,
         next,
-        record.moved_from.clone(),
-        None,
-        None,
+        crate::storage::LocationLanding::keeping(record.moved_from.clone()),
         revision,
     )?;
     crate::session_projection::apply_update(&mut record.snapshot, &update)?;

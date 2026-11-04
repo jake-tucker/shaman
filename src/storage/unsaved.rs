@@ -273,6 +273,27 @@ impl SettledActivity {
     }
 }
 
+/// What storage takes in the one transaction that lands a change of where a
+/// Session stands: where its Agent last worked while it is owed the note of a
+/// Move, and the Activity added or settled recording a Move.
+pub(crate) struct LocationLanding {
+    pub(crate) moved_from: Option<crate::protocol::ExecutionDirectory>,
+    pub(crate) added: Option<AddedActivity>,
+    pub(crate) settled: Option<SettledActivity>,
+}
+
+impl LocationLanding {
+    /// A change of location that records no Move, its Agent still owed
+    /// whatever note `moved_from` says.
+    pub(crate) const fn keeping(moved_from: Option<crate::protocol::ExecutionDirectory>) -> Self {
+        Self {
+            moved_from,
+            added: None,
+            settled: None,
+        }
+    }
+}
+
 /// How many of each kind of row a Session holds, and how long its Transcript
 /// is.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

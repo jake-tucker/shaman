@@ -98,7 +98,8 @@ const SUBAGENT_CONNECTION_LOST_MESSAGE: &str =
     "Provider execution failed: the Provider Session ended before the Subagent's work completed.";
 
 /// The failure a native Subagent's child Turn settles with when its parent's
-/// Session Moved and the Provider process both ran in was stopped with it.
+/// Session Moved and the Provider process both ran in was stopped with it: only
+/// one its Provider began as the Move applied, since one at work holds the Move.
 const SUBAGENT_PARENT_MOVED_MESSAGE: &str = "Provider execution ended: the parent Session Moved to another \
      directory, and its Provider process stopped before the Subagent's work completed.";
 
@@ -2814,10 +2815,13 @@ async fn run_provider_session(
             break;
         }
         if active.is_none() {
-            // A Move pending for the Turn that just settled applies before
-            // anything can begin the next one, so nothing runs in the
-            // directory it leaves from here on. The process there goes with
-            // it, ahead of any output still arriving from it.
+            // A Move nothing holds any longer applies before anything can
+            // begin another Turn, so nothing runs in the directory it leaves
+            // from here on. The process there goes with it, ahead of any output
+            // still arriving from it. Whatever settling it could not land, as
+            // storage refusing it, is tried again at the next input and holds
+            // nothing back meanwhile.
+            let mut move_not_landed = false;
             if sessions.pending_move_to_settle(session_id).is_some()
                 && let Some(settlements) = move_settlements.get()
             {
@@ -2832,15 +2836,15 @@ async fn run_provider_session(
                         _ = settled => {}
                     }
                 }
-                let connection_left = ConnectionLeftBehind {
-                    sessions: &sessions,
-                    updates: &updates,
-                    connected_incarnations: &connected_incarnations,
-                    session_id,
-                    stop_timeout,
-                };
-                connection_left.let_go(&mut provider, &mut subagents).await;
+                connector
+                    .let_go_of_connection_left_behind(&mut provider, &mut subagents)
+                    .await;
+                move_not_landed = sessions.pending_move_to_settle(session_id).is_some();
             }
+            // Held still, by a native Subagent or a Turn opened ahead of its
+            // command, it keeps whatever would begin another Turn waiting, for
+            // that to begin where the Move takes the Session.
+            let move_holds_turns = !move_not_landed && sessions.has_pending_move(session_id);
             if provider.is_none() {
                 moves_to_follow.clear();
             }
@@ -2855,16 +2859,16 @@ async fn run_provider_session(
                             stopped: std::mem::take(&mut moves_to_follow),
                         }))
                     }
-                    _ = std::future::ready(()), if pending_prompt.is_some() => {
+                    _ = std::future::ready(()), if pending_prompt.is_some() && !move_holds_turns => {
                         let prompt_id = pending_turn_starts.pop_front()
                             .or_else(|| deferred_prompt_id.take()).expect("pending Prompt");
                         ActorInput::Command(Some(ProviderCommand::StartPrompt { prompt_id }))
                     }
-                    _ = std::future::ready(()), if !pending_delegations.is_empty() => {
+                    _ = std::future::ready(()), if !pending_delegations.is_empty() && !move_holds_turns => {
                         let pending = pending_delegations.pop_front().expect("pending Delegation");
                         ActorInput::Command(Some(ProviderCommand::DeliverDelegation(pending)))
                     }
-                    _ = std::future::ready(()), if reports_owed => {
+                    _ = std::future::ready(()), if reports_owed && !move_holds_turns => {
                         reports_owed = false;
                         ActorInput::Command(Some(ProviderCommand::DeliverReports {
                             target: session_id,
@@ -2875,12 +2879,13 @@ async fn run_provider_session(
                     // nothing has reached the actor for that long.
                     () = tokio::time::sleep(idle_shutdown), if stops_when_idle => ActorInput::Idle,
                 }
-            } else if let Some(prompt_id) = pending_turn_starts
-                .pop_front()
-                .or_else(|| deferred_prompt_id.take())
+            } else if !move_holds_turns
+                && let Some(prompt_id) = pending_turn_starts
+                    .pop_front()
+                    .or_else(|| deferred_prompt_id.take())
             {
                 ActorInput::Command(Some(ProviderCommand::StartPrompt { prompt_id }))
-            } else if let Some(pending) = pending_delegations.pop_front() {
+            } else if !move_holds_turns && let Some(pending) = pending_delegations.pop_front() {
                 ActorInput::Command(Some(ProviderCommand::DeliverDelegation(pending)))
             } else {
                 tokio::select! {
@@ -3162,6 +3167,26 @@ async fn run_provider_session(
                 }
             };
             let Some(command) = command else { break };
+            // A Move asked while this waited is read afresh, so a Turn owed
+            // begins behind it in the destination, whenever it was asked.
+            let move_waits = !move_not_landed && sessions.has_pending_move(session_id);
+            let command = match command {
+                ProviderCommand::StartPrompt { prompt_id } if move_waits => {
+                    pending_turn_starts.push_front(prompt_id);
+                    continue;
+                }
+                ProviderCommand::DeliverDelegation(pending) if move_waits => {
+                    pending_delegations.push_front(pending);
+                    continue;
+                }
+                ProviderCommand::DeliverReports { target }
+                    if move_waits && target == session_id =>
+                {
+                    reports_owed = true;
+                    continue;
+                }
+                command => command,
+            };
             let prompt_id = match command {
                 ProviderCommand::SubmitDecision {
                     target,
@@ -3449,14 +3474,9 @@ async fn run_provider_session(
                 }
                 ProviderCommand::SteerPrompt => continue,
                 ProviderCommand::FollowMove { stopped } => {
-                    let connection_left = ConnectionLeftBehind {
-                        sessions: &sessions,
-                        updates: &updates,
-                        connected_incarnations: &connected_incarnations,
-                        session_id,
-                        stop_timeout,
-                    };
-                    connection_left.let_go(&mut provider, &mut subagents).await;
+                    connector
+                        .let_go_of_connection_left_behind(&mut provider, &mut subagents)
+                        .await;
                     for stopped in stopped {
                         let _ = stopped.send(());
                     }
@@ -4605,20 +4625,26 @@ enum ConnectionFailure {
 /// What an actor needs to open its Provider connection: the part of its
 /// environment every start reads, whichever Turn — a Prompt's or a
 /// Delegation's — is about to begin over it.
-/// What letting go of a Provider connection a Move left behind reads.
-struct ConnectionLeftBehind<'a> {
+struct ProviderConnector<'a> {
+    runtime: &'a Arc<dyn ProviderRuntime>,
+    source_control: &'a crate::source_control::SourceControlService,
     sessions: &'a SessionStore,
     updates: &'a ProviderUpdateGate,
+    settings: &'a watch::Receiver<SettingsSnapshot>,
+    broker: &'a BrokerAccess,
     connected_incarnations: &'a Arc<Mutex<HashMap<SessionId, u64>>>,
     session_id: SessionId,
+    provider_id: &'a ProviderId,
+    /// How long a Provider Session being let go of is waited on to stop.
     stop_timeout: Duration,
 }
 
-impl ConnectionLeftBehind<'_> {
+impl ProviderConnector<'_> {
     /// Stops `provider` where it was opened elsewhere than the Session works
-    /// now, ending whatever Subagent work is routed over it in words that say
-    /// its parent Moved; its next Turn resumes the conversation.
-    async fn let_go(
+    /// now; its next Turn resumes the conversation. A Move holds for every
+    /// native Subagent at work over it, so what this ends in words saying the
+    /// parent Moved can only be one its Provider began as the Move applied.
+    async fn let_go_of_connection_left_behind(
         &self,
         provider: &mut Option<ConnectedProviderSession>,
         subagents: &mut SubagentRoutes,
@@ -4650,23 +4676,7 @@ impl ConnectionLeftBehind<'_> {
             "Stopped a moved Session's Provider process; its next Turn resumes it"
         );
     }
-}
 
-struct ProviderConnector<'a> {
-    runtime: &'a Arc<dyn ProviderRuntime>,
-    source_control: &'a crate::source_control::SourceControlService,
-    sessions: &'a SessionStore,
-    updates: &'a ProviderUpdateGate,
-    settings: &'a watch::Receiver<SettingsSnapshot>,
-    broker: &'a BrokerAccess,
-    connected_incarnations: &'a Arc<Mutex<HashMap<SessionId, u64>>>,
-    session_id: SessionId,
-    provider_id: &'a ProviderId,
-    /// How long a Provider Session being let go of is waited on to stop.
-    stop_timeout: Duration,
-}
-
-impl ProviderConnector<'_> {
     /// Leases the Worktree the Session the actor owns works in, for a Turn
     /// about to begin there — holding `inherited`, the guard its admission
     /// already took, where it took one — and records what the lease read of

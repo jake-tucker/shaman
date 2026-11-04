@@ -24,31 +24,36 @@
 //! the Move leaves is named to whoever applied it, whose orphan check finds
 //! whether any Session still references it.
 //!
-//! A Move asked while a Turn of the Session's own runs or is owed is
-//! **pending**: its Activity stands Active and the Session's own row names the
-//! destination, both in one transaction, so a restart finds them whatever else
-//! it lost. What holds a Move is that Turn alone, since its Provider's process
-//! is bound to the directory until it settles. A Subagent still working holds
-//! nothing, though it keeps the Session Working: a brokered one has an actor
-//! and a directory of its own and carries on there, and a native one's work
-//! ends with the process it rides, in words that say its parent Moved
-//! (ADR 0059). So a Session with only Subagents at work Moves at once, as a
-//! Monitoring one does. A newer Move replaces a pending one, a Move to where
-//! the Session works cancels it, each settling the older Activity Interrupted
-//! in words saying why; and a pending Move owes its Agent no note until it
-//! applies.
-
-use std::sync::MutexGuard;
+//! A Move asked while a Turn of the Session's own runs or is owed, or while a
+//! native Subagent beneath it is Working, is **pending**: its Activity stands
+//! Active and the Session's own row names the destination, both in one
+//! transaction, so a restart finds them whatever else it lost. What holds it is
+//! whatever the Session's Provider process is running in the directory: its own
+//! Turn, and a native Subagent, a running Agent inside that process. A brokered
+//! Subagent holds nothing, though it keeps the Session Working, having an actor
+//! and a directory of its own to carry on in; nor does a Watch, which a Monitoring
+//! Session gives up by Moving at once. A Turn only owed holds the Move no longer
+//! once the actor comes to it: the Move applies first, and the Turn begins in the
+//! destination. A newer Move replaces a pending one, a Move to where the Session
+//! works cancels it, each settling the older Activity Interrupted in words saying
+//! why; and a pending Move owes its Agent no note until it applies.
+//!
+//! Prompts left waiting, bound to the Skills of the directory left, are bound
+//! anew under the same lock as the Move applies, so nothing reads the Session
+//! Moved with a Prompt bound behind it. A Prompt that was read in the directory
+//! left but admitted only after the Move fails at its delivery, naming the Skill:
+//! admission reads the catalog before it takes the store's lock, and is not held
+//! back for a Move.
 
 use crate::protocol::{
     Activity, ActivityId, ActivityStatus, CheckoutAssociation, CheckoutKind, CheckoutRevision,
-    CheckoutSummary, ExecutionDirectory, MoveLocation, PendingMove, Prompt, PromptStatus,
-    Repository, ResolvedWorkspace, Session, SessionChange, SessionId, SessionStatus,
+    CheckoutSummary, ExecutionDirectory, MoveLocation, MoveOutcome, PendingMove, Prompt, PromptId,
+    PromptStatus, Repository, ResolvedWorkspace, Session, SessionChange, SessionId, SessionStatus,
     SessionSummary, SkillInvocation, Workspace,
 };
-use crate::storage::{AddedActivity, SettledActivity, WorkspaceProvenance};
+use crate::storage::{AddedActivity, LocationLanding, SettledActivity, WorkspaceProvenance};
 
-use super::{SessionRecord, SessionStore, SessionStoreState, workspaces::LocationLanding};
+use super::{DeliveredTurnStatus, SessionRecord, SessionStore, SessionStoreState};
 
 /// How the Activity of a Move a Move to where the Session works cancelled
 /// says so.
@@ -138,32 +143,59 @@ impl MoveTarget<'_> {
     }
 }
 
-/// What a Move the store took came to.
-#[derive(Debug)]
-pub(crate) enum MoveApplied {
-    /// The Session works in its destination from now on, as the summary
-    /// says.
-    Moved(SessionSummary),
-    /// The Session already worked there, and nothing changed.
-    AlreadyThere(SessionSummary),
-    /// The Session's own Turn runs or is owed, so the Move waits for it to
-    /// settle, replacing any Move pending to elsewhere.
-    Pending(SessionSummary),
-    /// The Session already worked there, and the Move pending to elsewhere
-    /// is cancelled.
-    PendingCancelled(SessionSummary),
+/// A destination as it was read, and what was read of the Repository left,
+/// where a Move takes a Session.
+struct MoveDestinationRead {
+    execution_directory: ExecutionDirectory,
+    workspace: Workspace,
+    checkout: Option<CheckoutAssociation>,
+    readings: Vec<CheckoutSummary>,
 }
 
-/// What came of settling a pending Move the Session's own Turn no longer
-/// holds.
+impl MoveDestinationRead {
+    fn of(
+        destination: ResolvedWorkspace,
+        left: Vec<CheckoutSummary>,
+    ) -> Result<Self, MoveSessionError> {
+        let ResolvedWorkspace {
+            workspace,
+            execution_directory,
+            checkout,
+            mut checkouts,
+            ..
+        } = destination;
+        checkouts.extend(left);
+        Ok(Self {
+            execution_directory: execution_directory
+                .ok_or(MoveSessionError::NoExecutionDirectory)?,
+            workspace,
+            checkout,
+            readings: checkouts,
+        })
+    }
+}
+
+/// What a Move standing the Session in its destination left to be done once the
+/// store's lock is let go.
+struct MoveStood {
+    summary: SessionSummary,
+    vacated: Option<Repository>,
+    workspace: crate::protocol::WorkspaceId,
+    /// Whether a superseded entry passed something to the destination's
+    /// Workspace, which every Session grouped there must then be dressed in.
+    inherited: bool,
+}
+
+/// What came of settling a pending Move nothing holds any longer.
 #[derive(Debug)]
 pub(crate) enum PendingMoveSettled {
     /// The Session works in the Move's destination from now on.
     Moved,
     /// The Move settled with the Session where it stood.
     Stayed,
-    /// Another Move stands pending in its place, or a Turn of the Session's
-    /// own holds it again, so nothing was done with this one.
+    /// Another Move stands pending in its place, something holds it again, or
+    /// a Prompt binding Skills has come to wait since they were read, so
+    /// nothing was done with this one.
     Overtaken,
 }
 
@@ -179,8 +211,8 @@ impl SessionStore {
     }
 
     /// Moves a Session to work where `destination` was resolved from now on,
-    /// or from when a Turn of its own settles, answering which and the summary
-    /// it left standing, beside the Repository of the linked Worktree it left,
+    /// or from when what holds it settles, answering which and the summary it
+    /// left standing, beside the Repository of the linked Worktree it left,
     /// where it left one rather than Moving within it. The
     /// Move's record names the branch of each Worktree it leaves or enters
     /// as the destination's reading of its Repository, or `left`, a reading
@@ -196,17 +228,8 @@ impl SessionStore {
         session_id: SessionId,
         destination: ResolvedWorkspace,
         left: Vec<CheckoutSummary>,
-    ) -> Result<(MoveApplied, Option<Repository>), MoveSessionError> {
-        let ResolvedWorkspace {
-            mut workspace,
-            execution_directory,
-            checkout,
-            mut checkouts,
-            ..
-        } = destination;
-        checkouts.extend(left);
-        let execution_directory =
-            execution_directory.ok_or(MoveSessionError::NoExecutionDirectory)?;
+    ) -> Result<(MoveOutcome, Option<Repository>), MoveSessionError> {
+        let read = MoveDestinationRead::of(destination, left)?;
         let mut state = self
             .state
             .lock()
@@ -216,9 +239,9 @@ impl SessionStore {
         let record = record.expect("a Session that may Move is held");
         let session = &record.snapshot.session;
         let pending = session.pending_move.clone();
-        let stays = session.execution_directory == execution_directory;
-        let held = session.status != SessionStatus::Idle;
-        let summary = record.summary.clone();
+        let stays = session.execution_directory == read.execution_directory;
+        let owes_or_runs_a_turn = session.status != SessionStatus::Idle;
+        let session_summary = record.summary.clone();
         if stays {
             return match pending {
                 Some(_) => self
@@ -228,32 +251,37 @@ impl SessionStore {
                         ActivityStatus::Interrupted,
                         CANCELLED_BY_STAYING,
                     )
-                    .map(|summary| (MoveApplied::PendingCancelled(summary), None))
+                    .map(|session| (MoveOutcome::PendingCancelled { session }, None))
                     .map_err(MoveSessionError::Storage),
-                None => Ok((MoveApplied::AlreadyThere(summary), None)),
+                None => Ok((
+                    MoveOutcome::AlreadyThere {
+                        session: session_summary,
+                    },
+                    None,
+                )),
             };
         }
         let same_as_pending = pending
             .as_ref()
-            .is_some_and(|pending| pending.destination == execution_directory);
-        if held {
+            .is_some_and(|pending| pending.destination == read.execution_directory);
+        if owes_or_runs_a_turn || state.native_subagent_working(session_id) {
             if same_as_pending {
-                return Ok((MoveApplied::Pending(summary), None));
+                return Ok((
+                    MoveOutcome::Pending {
+                        session: session_summary,
+                    },
+                    None,
+                ));
             }
-            let target = MoveTarget {
-                execution_directory,
-                readings: &checkouts,
-                settles: None,
-            };
             return self
-                .record_pending(&mut state, session_id, &target, checkout.as_ref())
-                .map(|summary| (MoveApplied::Pending(summary), None))
+                .record_pending(&mut state, session_id, &read)
+                .map(|session| (MoveOutcome::Pending { session }, None))
                 .map_err(MoveSessionError::Storage);
         }
         // Nothing holds the Session, so this Move applies now, and one left
         // pending meanwhile is this very Move, or gives way to it.
         if !same_as_pending && pending.is_some() {
-            let replaced = replaced_by(&execution_directory);
+            let replaced = replaced_by(&read.execution_directory);
             self.give_up_pending(
                 &mut state,
                 session_id,
@@ -265,19 +293,12 @@ impl SessionStore {
         let settles = pending
             .filter(|_| same_as_pending)
             .map(|pending| pending.activity_id);
-        state.dress_workspace(&mut workspace);
-        let (summary, vacated) = self
-            .apply_location(
-                state,
-                session_id,
-                execution_directory,
-                workspace,
-                checkout,
-                &checkouts,
-                settles,
-            )
+        let stood = self
+            .stand_in_destination(&mut state, session_id, read, settles)
             .map_err(MoveSessionError::Storage)?;
-        Ok((MoveApplied::Moved(summary), vacated))
+        drop(state);
+        let (session, vacated) = self.dress_after_standing(stood);
+        Ok((MoveOutcome::Moved { session }, vacated))
     }
 
     /// Every Session a Move stands pending for, read in or not: what a Server
@@ -294,53 +315,66 @@ impl SessionStore {
             .collect()
     }
 
-    /// The Move pending for `session_id` that no Turn of its own holds any
-    /// longer, so it is to be settled now, before anything begins another.
-    /// A Prompt still waiting holds nothing: it is delivered after.
+    /// The Move pending for `session_id` that nothing holds any longer, so it
+    /// is to be settled now, before anything begins another Turn. A Prompt
+    /// still waiting holds nothing: it is delivered after, in the destination.
     pub(crate) fn pending_move_to_settle(&self, session_id: SessionId) -> Option<PendingMove> {
         let state = self
             .state
             .lock()
             .expect("Session store lock is not poisoned");
-        let record = state.sessions.get(&session_id)?;
-        let pending = record.snapshot.session.pending_move.clone()?;
-        (!holds_a_pending_move(record)).then_some(pending)
+        let pending = state
+            .sessions
+            .get(&session_id)?
+            .snapshot
+            .session
+            .pending_move
+            .clone()?;
+        (!state.holds_a_pending_move(session_id)).then_some(pending)
+    }
+
+    /// Whether a Move stands pending for `session_id`, held or not.
+    pub(crate) fn has_pending_move(&self, session_id: SessionId) -> bool {
+        self.state
+            .lock()
+            .expect("Session store lock is not poisoned")
+            .sessions
+            .get(&session_id)
+            .is_some_and(|record| record.snapshot.session.pending_move.is_some())
     }
 
     /// Applies `pending`, the Move pending for `session_id`, to where
     /// `destination` was resolved, its record naming branches as
-    /// [`Self::move_to`]'s does.
+    /// [`Self::move_to`]'s does, and under the same lock binds each Prompt
+    /// `prompts` names as it says. A Prompt binding Skills that `prompts` does
+    /// not name was admitted since they were read, so the Move is overtaken
+    /// and is to be read again.
     pub(crate) fn apply_pending_move(
         &self,
         session_id: SessionId,
         pending: &PendingMove,
         destination: ResolvedWorkspace,
         left: Vec<CheckoutSummary>,
+        prompts: Vec<WaitingPromptBound>,
     ) -> Result<(PendingMoveSettled, Option<Repository>), MoveSessionError> {
-        let ResolvedWorkspace {
-            mut workspace,
-            execution_directory,
-            checkout,
-            mut checkouts,
-            ..
-        } = destination;
-        checkouts.extend(left);
-        let execution_directory =
-            execution_directory.ok_or(MoveSessionError::NoExecutionDirectory)?;
+        let read = MoveDestinationRead::of(destination, left)?;
         let mut state = self
             .state
             .lock()
             .expect("Session store lock is not poisoned");
+        if !state.pending_move_stands(session_id, pending)? {
+            return Ok((PendingMoveSettled::Overtaken, None));
+        }
         let record = state
             .sessions
             .get(&session_id)
             .ok_or(MoveSessionError::SessionNotFound)?;
-        if record.snapshot.session.pending_move.as_ref() != Some(pending)
-            || holds_a_pending_move(record)
+        if waiting_prompts_with_skills(record)
+            .any(|waiting| prompts.iter().all(|bound| bound.prompt_id != waiting.id))
         {
             return Ok((PendingMoveSettled::Overtaken, None));
         }
-        if record.snapshot.session.execution_directory == execution_directory {
+        if record.snapshot.session.execution_directory == read.execution_directory {
             self.give_up_pending(
                 &mut state,
                 session_id,
@@ -350,18 +384,12 @@ impl SessionStore {
             .map_err(MoveSessionError::Storage)?;
             return Ok((PendingMoveSettled::Stayed, None));
         }
-        state.dress_workspace(&mut workspace);
-        let (_, vacated) = self
-            .apply_location(
-                state,
-                session_id,
-                execution_directory,
-                workspace,
-                checkout,
-                &checkouts,
-                Some(pending.activity_id),
-            )
+        let stood = self
+            .stand_in_destination(&mut state, session_id, read, Some(pending.activity_id))
             .map_err(MoveSessionError::Storage)?;
+        self.bind_waiting_prompts(&mut state, session_id, prompts);
+        drop(state);
+        let (_, vacated) = self.dress_after_standing(stood);
         Ok((PendingMoveSettled::Moved, vacated))
     }
 
@@ -377,13 +405,7 @@ impl SessionStore {
             .state
             .lock()
             .expect("Session store lock is not poisoned");
-        let record = state
-            .sessions
-            .get(&session_id)
-            .ok_or(MoveSessionError::SessionNotFound)?;
-        if record.snapshot.session.pending_move.as_ref() != Some(pending)
-            || holds_a_pending_move(record)
-        {
+        if !state.pending_move_stands(session_id, pending)? {
             return Ok(PendingMoveSettled::Overtaken);
         }
         self.give_up_pending(&mut state, session_id, ActivityStatus::Failed, reason)
@@ -392,62 +414,66 @@ impl SessionStore {
     }
 
     /// Every Prompt of `session_id` still waiting that binds a Skill, for a
-    /// Move that has just applied to bind anew in its destination.
+    /// Move about to apply to bind anew in its destination.
     pub(crate) fn waiting_prompts_with_skills(&self, session_id: SessionId) -> Vec<Prompt> {
         self.state
             .lock()
             .expect("Session store lock is not poisoned")
             .sessions
             .get(&session_id)
-            .map(|record| {
-                record
-                    .snapshot
-                    .prompts
-                    .iter()
-                    .filter(|prompt| {
-                        prompt.status == PromptStatus::Pending
-                            && !prompt.skill_invocations.is_empty()
-                    })
-                    .cloned()
-                    .collect()
-            })
+            .map(|record| waiting_prompts_with_skills(record).cloned().collect())
             .unwrap_or_default()
     }
 
-    /// Binds `prompt_id`, a Prompt of `session_id` still waiting, to
-    /// `skill_invocations`. One withdrawn or delivered meanwhile is left as
-    /// it stands.
-    pub(crate) fn rebind_waiting_prompt(
+    /// Binds each Prompt of `session_id` as `prompts` says: to the Skills found
+    /// for it, or, for one none could be, failing it in the words given. That
+    /// the Move stands is not undone by storage refusing any of this, which
+    /// leaves the Prompt to fail at its delivery instead.
+    fn bind_waiting_prompts(
         &self,
+        state: &mut SessionStoreState,
         session_id: SessionId,
-        prompt_id: crate::protocol::PromptId,
-        skill_invocations: Vec<SkillInvocation>,
-    ) -> anyhow::Result<()> {
-        let mut state = self
-            .state
-            .lock()
-            .expect("Session store lock is not poisoned");
-        let waiting = state.sessions.get(&session_id).is_some_and(|record| {
-            record
-                .snapshot
-                .prompts
-                .iter()
-                .any(|prompt| prompt.id == prompt_id && prompt.status == PromptStatus::Pending)
-        });
-        if waiting {
-            state.commit(
-                &self.storage,
-                session_id,
-                vec![SessionChange::PromptSkillsRebound {
-                    prompt_id,
-                    skill_invocations,
-                }],
-            )?;
+        prompts: Vec<WaitingPromptBound>,
+    ) {
+        for WaitingPromptBound { prompt_id, binding } in prompts {
+            let bound = match binding {
+                Ok(skill_invocations) => {
+                    let unchanged = state.sessions.get(&session_id).is_none_or(|record| {
+                        record.snapshot.prompts.iter().any(|prompt| {
+                            prompt.id == prompt_id && prompt.skill_invocations == skill_invocations
+                        })
+                    });
+                    if unchanged {
+                        continue;
+                    }
+                    state
+                        .commit(
+                            &self.storage,
+                            session_id,
+                            vec![SessionChange::PromptSkillsRebound {
+                                prompt_id,
+                                skill_invocations,
+                            }],
+                        )
+                        .map(|_| ())
+                }
+                Err(message) => self
+                    .deliver_prompt_under_lock(
+                        state,
+                        session_id,
+                        prompt_id,
+                        None,
+                        DeliveredTurnStatus::Failed { message },
+                    )
+                    .map(|_| ()),
+            };
+            if let Err(error) = bound {
+                tracing::warn!(%session_id, "a Prompt was not bound anew: {error:#}");
+            }
         }
-        Ok(())
     }
 
-    /// Records a Move to `target` as pending, in place of whichever stood
+    /// Records a Move to `read` as pending, in place of whichever stood
     /// pending before, whose Activity settles saying so. Storage takes both
     /// with the Session's own row naming the destination, so nothing it
     /// refuses changes anything and no crash finds one without the other.
@@ -455,8 +481,7 @@ impl SessionStore {
         &self,
         state: &mut SessionStoreState,
         session_id: SessionId,
-        target: &MoveTarget<'_>,
-        checkout: Option<&CheckoutAssociation>,
+        read: &MoveDestinationRead,
     ) -> anyhow::Result<SessionSummary> {
         if state.is_deferred(session_id) {
             anyhow::bail!("Session history must be hydrated before mutation");
@@ -466,36 +491,30 @@ impl SessionStore {
             .get(&session_id)
             .ok_or_else(|| anyhow::anyhow!("Session does not exist on this server instance"))?;
         let session = &record.snapshot.session;
-        let activity = target.activity(session, checkout, ActivityStatus::Active);
+        let target = MoveTarget {
+            execution_directory: read.execution_directory.clone(),
+            readings: &read.readings,
+            settles: None,
+        };
+        let activity = target.activity(session, read.checkout.as_ref(), ActivityStatus::Active);
         let mut next = session.clone();
         next.pending_move = Some(PendingMove {
             activity_id: activity.id(),
-            destination: target.execution_directory.clone(),
+            destination: read.execution_directory.clone(),
         });
         let mut changes = Vec::with_capacity(2);
-        let mut settled = None;
+        let mut landing = LocationLanding::keeping(record.moved_from.clone());
         if let Some(replaced) = settling_of_pending(
             record,
             ActivityStatus::Interrupted,
-            &replaced_by(&target.execution_directory),
+            &replaced_by(&read.execution_directory),
         )? {
-            settled = Some(replaced.row);
+            landing.settled = Some(replaced.row);
             changes.push(replaced.change);
         }
-        let added = AddedActivity::next_of(&record.snapshot, &activity)?;
+        landing.added = Some(AddedActivity::next_of(&record.snapshot, &activity)?);
         changes.push(SessionChange::ActivityAdded { activity });
-        let moved_from = record.moved_from.clone();
-        self.land_location(
-            state,
-            session_id,
-            next,
-            changes,
-            LocationLanding {
-                moved_from,
-                added: Some(added),
-                settled,
-            },
-        )
+        self.land_location(state, session_id, next, changes, landing)
     }
 
     /// Settles the Move pending for `session_id` as `status`, in the words of
@@ -520,18 +539,9 @@ impl SessionStore {
         };
         let mut next = record.snapshot.session.clone();
         next.pending_move = None;
-        let moved_from = record.moved_from.clone();
-        self.land_location(
-            state,
-            session_id,
-            next,
-            vec![settling.change],
-            LocationLanding {
-                moved_from,
-                added: None,
-                settled: Some(settling.row),
-            },
-        )
+        let mut landing = LocationLanding::keeping(record.moved_from.clone());
+        landing.settled = Some(settling.row);
+        self.land_location(state, session_id, next, vec![settling.change], landing)
     }
 
     /// Stands the Session in its new location, as [`Self::move_to`] and a
@@ -539,21 +549,23 @@ impl SessionStore {
     /// destination's Workspace is known from now on, as one a Session began in
     /// would be, and whatever another identity was entered for the
     /// destination, or for where its Workspace is presented, is superseded —
-    /// this Session no longer keeping it. `workspace` is dressed in what the
+    /// this Session no longer keeping it. The Workspace is dressed in what the
     /// Registry already holds for it, without entering it: an entry the Move
-    /// makes is made only once storage has taken the Move. Answers the summary
-    /// it left standing and the Repository of the linked Worktree it left.
-    #[allow(clippy::too_many_arguments)]
-    fn apply_location(
+    /// makes is made only once storage has taken the Move.
+    fn stand_in_destination(
         &self,
-        mut state: MutexGuard<'_, SessionStoreState>,
+        state: &mut SessionStoreState,
         session_id: SessionId,
-        execution_directory: ExecutionDirectory,
-        workspace: Workspace,
-        checkout: Option<CheckoutAssociation>,
-        readings: &[CheckoutSummary],
+        read: MoveDestinationRead,
         settles: Option<ActivityId>,
-    ) -> anyhow::Result<(SessionSummary, Option<Repository>)> {
+    ) -> anyhow::Result<MoveStood> {
+        let MoveDestinationRead {
+            execution_directory,
+            mut workspace,
+            checkout,
+            readings,
+        } = read;
+        state.dress_workspace(&mut workspace);
         let session = &state
             .sessions
             .get(&session_id)
@@ -572,11 +584,11 @@ impl SessionStore {
             .and_then(|_| session.workspace.repository.as_deref().cloned());
         let summary = self
             .change_location(
-                &mut state,
+                state,
                 session_id,
                 Some(MoveTarget {
                     execution_directory: execution_directory.clone(),
-                    readings,
+                    readings: &readings,
                     settles,
                 }),
                 workspace.clone(),
@@ -584,25 +596,92 @@ impl SessionStore {
             )?
             .expect("a Session held elsewhere than its destination changes location");
         self.enter_workspace(
-            &mut state,
+            state,
             &workspace.id,
             Some(&workspace),
             WorkspaceProvenance::Session,
         );
         let inherited = self.retire_superseded(
-            &mut state,
+            state,
             &workspace,
             Some(execution_directory.path.as_path()),
             Some(session_id),
         );
-        drop(state);
-        if inherited {
-            // What a superseded entry carried now dresses the Workspace, so
-            // every Session grouped there — this one included — wears it.
-            self.regroup_workspace(&workspace.id);
-        }
-        Ok((summary, vacated))
+        Ok(MoveStood {
+            summary,
+            vacated,
+            workspace: workspace.id,
+            inherited,
+        })
     }
+
+    /// Finishes what standing in a destination left for after the store's lock
+    /// is let go, answering the summary it left standing and the Repository of
+    /// the linked Worktree it left: what a superseded entry carried now dresses
+    /// the Workspace, so every Session grouped there — this one included —
+    /// wears it.
+    fn dress_after_standing(&self, stood: MoveStood) -> (SessionSummary, Option<Repository>) {
+        if stood.inherited {
+            self.regroup_workspace(&stood.workspace);
+        }
+        (stood.summary, stood.vacated)
+    }
+}
+
+impl SessionStoreState {
+    /// Whether a native Subagent beneath `session_id` is at work: a running
+    /// Agent inside the Session's own Provider process. One beneath a brokered
+    /// Subagent rides that one's process instead, and is no concern here.
+    fn native_subagent_working(&self, session_id: SessionId) -> bool {
+        self.actor_subtree(session_id)
+            .into_iter()
+            .skip(1)
+            .filter_map(|descendant| self.sessions.get(&descendant))
+            .any(|record| record.snapshot.session.status != SessionStatus::Idle)
+    }
+
+    /// Whether something still runs in the directory a Move pending for
+    /// `session_id` would leave: a Turn of its own, or a native Subagent.
+    fn holds_a_pending_move(&self, session_id: SessionId) -> bool {
+        let own_turn_open = self.sessions.get(&session_id).is_some_and(|record| {
+            record
+                .snapshot
+                .turns
+                .iter()
+                .any(|turn| !turn.status.is_terminal())
+        });
+        own_turn_open || self.native_subagent_working(session_id)
+    }
+
+    /// Whether `pending` is still the Move pending for `session_id` and
+    /// nothing holds it.
+    fn pending_move_stands(
+        &self,
+        session_id: SessionId,
+        pending: &PendingMove,
+    ) -> Result<bool, MoveSessionError> {
+        let record = self
+            .sessions
+            .get(&session_id)
+            .ok_or(MoveSessionError::SessionNotFound)?;
+        Ok(
+            record.snapshot.session.pending_move.as_ref() == Some(pending)
+                && !self.holds_a_pending_move(session_id),
+        )
+    }
+}
+
+/// How a Prompt left waiting by a Move is to stand in its destination: bound to
+/// the Skills found for it there, or failed in the words given.
+pub(crate) struct WaitingPromptBound {
+    pub(crate) prompt_id: PromptId,
+    pub(crate) binding: Result<Vec<SkillInvocation>, String>,
+}
+
+fn waiting_prompts_with_skills(record: &SessionRecord) -> impl Iterator<Item = &Prompt> {
+    record.snapshot.prompts.iter().filter(|prompt| {
+        prompt.status == PromptStatus::Pending && !prompt.skill_invocations.is_empty()
+    })
 }
 
 /// How the Activity of a pending Move a newer Move replaced says so.
@@ -658,17 +737,7 @@ fn settling_of_pending(
     }))
 }
 
-/// Whether a Turn of the Session's own stands open, which holds its pending
-/// Move until it settles.
-fn holds_a_pending_move(record: &SessionRecord) -> bool {
-    record
-        .snapshot
-        .turns
-        .iter()
-        .any(|turn| !turn.status.is_terminal())
-}
-
-/// Whether `record` names a Session that could Move, now or once its own Turn
+/// Whether `record` names a Session that could Move, now or once what holds it
 /// settles: one held, other than a native Subagent's.
 fn may_move(record: Option<&SessionRecord>) -> Result<(), MoveSessionError> {
     let record = record.ok_or(MoveSessionError::SessionNotFound)?;
@@ -684,11 +753,12 @@ mod tests {
 
     use diesel::{Connection, SqliteConnection, connection::SimpleConnection};
 
-    use super::{MoveApplied, MoveSessionError, PendingMoveSettled};
+    use super::{MoveSessionError, PendingMoveSettled};
     use crate::{
         protocol::{
             Activity, ActivityStatus, AdmitPromptRequest, CreateSessionRequest, ExecutionDirectory,
-            InitialPrompt, MoveLocation, PromptDelivery, PromptId, ResolvedWorkspace, SessionId,
+            InitialPrompt, MoveLocation, MoveOutcome, PromptDelivery, PromptId, ResolvedWorkspace,
+            SessionId,
         },
         provider::{MoveNote, Report},
         sessions::{DeliveredTurnStatus, ProviderTurnOutcome, SessionStore, StoreOutcome},
@@ -982,7 +1052,10 @@ mod tests {
                 Vec::new(),
             )
             .expect("take the Move");
-        assert!(matches!(applied, MoveApplied::Pending(_)), "{applied:?}");
+        assert!(
+            matches!(applied, MoveOutcome::Pending { .. }),
+            "{applied:?}"
+        );
         assert_eq!(store.pending_move_to_settle(session_id), None, "held");
 
         let (crashed_writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
@@ -1005,6 +1078,7 @@ mod tests {
                 session_id,
                 &pending,
                 ResolvedWorkspace::directory(directory(destination.path()).path),
+                Vec::new(),
                 Vec::new(),
             )
             .expect("apply it");
@@ -1080,7 +1154,7 @@ mod tests {
             )
             .expect("take the Move");
         assert!(
-            matches!(cancelled, MoveApplied::PendingCancelled(_)),
+            matches!(cancelled, MoveOutcome::PendingCancelled { .. }),
             "{cancelled:?}"
         );
 
@@ -1170,7 +1244,7 @@ mod tests {
         assert_eq!(crashed.pending_moves(), []);
         assert!(
             crashed
-                .apply_pending_move(session_id, &held, resolved, Vec::new())
+                .apply_pending_move(session_id, &held, resolved, Vec::new(), Vec::new())
                 .is_err(),
             "a settling still on its way finds nothing to apply"
         );
@@ -1196,6 +1270,275 @@ mod tests {
         };
         assert_eq!(after.pending_moves(), [], "nor does a restart find it");
         assert!(after.snapshot(session_id).is_none());
+        writer.shutdown().await.expect("stop the writer");
+    }
+
+    /// A store on the Session as storage holds it, its next save writing it
+    /// whole, which is how one whose stored shape is not vouched for stands.
+    async fn writing_whole(
+        data_dir: &Path,
+        session_id: SessionId,
+    ) -> (StorageWriter, SessionStore) {
+        let repository = StorageRepository::open(data_dir)
+            .await
+            .expect("open the repository again")
+            .with_idle_flush_delay(Duration::from_secs(3_600));
+        let persisted = repository
+            .session(session_id)
+            .await
+            .expect("read the Session")
+            .expect("the Session is stored");
+        let (writer, storage) = StorageWriter::spawn(repository);
+        let store = SessionStore::new(
+            crate::storage::RestoredSessions {
+                readable: vec![persisted],
+                ..Default::default()
+            },
+            storage,
+            Vec::new(),
+            Default::default(),
+        );
+        (writer, store)
+    }
+
+    /// A Session whose next save writes it whole still lands a settling with
+    /// its location: a crash before that save finds the row settled, never a
+    /// Move standing Active that nothing is left to settle.
+    #[tokio::test]
+    async fn a_crash_before_a_whole_save_finds_a_settled_move_settled() {
+        let data_dir = tempfile::tempdir().expect("create isolated data directory");
+        let origin = tempfile::tempdir().expect("create the origin");
+        let destination = tempfile::tempdir().expect("create the destination");
+        let resolved = ResolvedWorkspace::directory(directory(destination.path()).path);
+        let (writer, store, session_id) = working_session(data_dir.path(), origin.path()).await;
+        store
+            .move_to(session_id, resolved.clone(), Vec::new())
+            .expect("take the Move");
+        writer.shutdown().await.expect("stop the writer");
+
+        let (writer, whole) = writing_whole(data_dir.path(), session_id).await;
+        let pending = whole
+            .pending_move_to_settle(session_id)
+            .expect("the stopped Turn holds it no longer");
+        let (settled, _) = whole
+            .apply_pending_move(session_id, &pending, resolved, Vec::new(), Vec::new())
+            .expect("apply it");
+        assert!(matches!(settled, PendingMoveSettled::Moved), "{settled:?}");
+
+        let (crashed_writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+        assert_eq!(crashed.pending_moves(), []);
+        assert_eq!(
+            moves(&crashed, session_id),
+            [(ActivityStatus::Completed, None)]
+        );
+        crashed_writer.shutdown().await.expect("stop the reader");
+        writer.shutdown().await.expect("stop the writer");
+    }
+
+    /// However the Session's own row and its Move Activities came to disagree,
+    /// recovery reads them back into agreement: a Move standing Active with
+    /// nothing pending settles as what happened, and never reads as waiting.
+    #[tokio::test]
+    async fn a_move_standing_active_with_nothing_pending_settles_as_it_is_read() {
+        let data_dir = tempfile::tempdir().expect("create isolated data directory");
+        let origin = tempfile::tempdir().expect("create the origin");
+        let destination = tempfile::tempdir().expect("create the destination");
+        let (writer, store, session_id) = working_session(data_dir.path(), origin.path()).await;
+        store
+            .move_to(
+                session_id,
+                ResolvedWorkspace::directory(directory(destination.path()).path),
+                Vec::new(),
+            )
+            .expect("take the Move");
+        let mut database = SqliteConnection::establish(
+            data_dir
+                .path()
+                .join("suru.db")
+                .to_str()
+                .expect("the fixture's path is UTF-8"),
+        )
+        .expect("open the database");
+        database
+            .batch_execute(
+                "PRAGMA busy_timeout = 5000; \
+                 UPDATE sessions SET workspace = json_remove(workspace, '$.pending_move');",
+            )
+            .expect("have the row name nothing pending");
+
+        let (crashed_writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+
+        assert_eq!(crashed.pending_moves(), []);
+        assert_eq!(
+            moves(&crashed, session_id),
+            [(
+                ActivityStatus::Interrupted,
+                Some("Suru stopped before it could apply".to_owned())
+            )]
+        );
+        crashed_writer.shutdown().await.expect("stop the reader");
+        writer.shutdown().await.expect("stop the writer");
+    }
+
+    /// A row naming a pending Move whose Activity is not standing has nothing
+    /// to settle, and is pending no longer.
+    #[tokio::test]
+    async fn a_pending_move_naming_no_activity_standing_is_pending_no_longer() {
+        let data_dir = tempfile::tempdir().expect("create isolated data directory");
+        let origin = tempfile::tempdir().expect("create the origin");
+        let destination = tempfile::tempdir().expect("create the destination");
+        let (writer, store, session_id) = working_session(data_dir.path(), origin.path()).await;
+        store
+            .move_to(
+                session_id,
+                ResolvedWorkspace::directory(directory(destination.path()).path),
+                Vec::new(),
+            )
+            .expect("take the Move");
+        let mut database = SqliteConnection::establish(
+            data_dir
+                .path()
+                .join("suru.db")
+                .to_str()
+                .expect("the fixture's path is UTF-8"),
+        )
+        .expect("open the database");
+        database
+            .batch_execute(
+                "PRAGMA busy_timeout = 5000; \
+                 UPDATE sessions SET workspace = json_set(workspace, \
+                 '$.pending_move.activity_id', '00000000-0000-4000-8000-000000000000');",
+            )
+            .expect("have the row name an Activity that does not stand");
+
+        let (crashed_writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+
+        let found = crashed.snapshot(session_id).expect("the Session stands");
+        assert_eq!(found.session.pending_move, None);
+        assert_eq!(crashed.pending_move_to_settle(session_id), None);
+        crashed_writer.shutdown().await.expect("stop the reader");
+        writer.shutdown().await.expect("stop the writer");
+    }
+
+    /// Owing a Turn holds a Move only until the actor comes to it, and a Prompt
+    /// withdrawn leaves the Move standing to apply.
+    #[tokio::test]
+    async fn a_move_asked_of_an_owed_turn_is_pending_and_outlasts_its_withdrawal() {
+        let data_dir = tempfile::tempdir().expect("create isolated data directory");
+        let origin = tempfile::tempdir().expect("create the origin");
+        let destination = tempfile::tempdir().expect("create the destination");
+        let (writer, store, session_id) = idle_session(data_dir.path(), origin.path()).await;
+        let owed = PromptId::new();
+        store
+            .admit(
+                session_id,
+                AdmitPromptRequest {
+                    delivery: PromptDelivery::Queue,
+                    prompt: prompt(owed),
+                },
+                Vec::new(),
+                None,
+            )
+            .expect("admit a Prompt");
+
+        let (answered, _) = store
+            .move_to(
+                session_id,
+                ResolvedWorkspace::directory(directory(destination.path()).path),
+                Vec::new(),
+            )
+            .expect("take the Move");
+
+        assert!(
+            matches!(answered, MoveOutcome::Pending { .. }),
+            "{answered:?}"
+        );
+        assert!(
+            store.pending_move_to_settle(session_id).is_some(),
+            "the actor applies it ahead of the Turn owed"
+        );
+        store
+            .interrupt_or_withdraw(session_id)
+            .expect("withdraw the Prompt");
+        assert!(store.pending_move_to_settle(session_id).is_some());
+        writer.shutdown().await.expect("stop the writer");
+    }
+
+    /// A Prompt binding Skills that came to wait after they were read keeps the
+    /// Move from applying with it left bound behind: it is read again.
+    #[tokio::test]
+    async fn a_prompt_admitted_since_the_skills_were_read_overtakes_a_settling() {
+        let data_dir = tempfile::tempdir().expect("create isolated data directory");
+        let origin = tempfile::tempdir().expect("create the origin");
+        let destination = tempfile::tempdir().expect("create the destination");
+        let resolved = ResolvedWorkspace::directory(directory(destination.path()).path);
+        let (writer, store, session_id) = idle_session(data_dir.path(), origin.path()).await;
+        let bound = PromptId::new();
+        let skill = crate::protocol::SkillInvocation {
+            skill_id: crate::protocol::SkillId::new("origin-deploy"),
+            name: "deploy".to_owned(),
+            scope: None,
+            span: crate::protocol::TextSpan { start: 0, end: 7 },
+        };
+        let mut waiting = prompt(bound);
+        waiting.text = "$deploy".to_owned();
+        waiting.skill_invocations = vec![skill.clone()];
+        store
+            .admit(
+                session_id,
+                AdmitPromptRequest {
+                    delivery: PromptDelivery::Queue,
+                    prompt: waiting,
+                },
+                Vec::new(),
+                None,
+            )
+            .expect("admit a Prompt");
+        store
+            .move_to(session_id, resolved.clone(), Vec::new())
+            .expect("take the Move");
+        let pending = store
+            .pending_move_to_settle(session_id)
+            .expect("no Turn holds it");
+
+        let (overtaken, _) = store
+            .apply_pending_move(
+                session_id,
+                &pending,
+                resolved.clone(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .expect("read the Move");
+        assert!(
+            matches!(overtaken, PendingMoveSettled::Overtaken),
+            "{overtaken:?}"
+        );
+
+        let rebound = crate::protocol::SkillInvocation {
+            skill_id: crate::protocol::SkillId::new("destination-deploy"),
+            ..skill
+        };
+        let (settled, _) = store
+            .apply_pending_move(
+                session_id,
+                &pending,
+                resolved,
+                Vec::new(),
+                vec![super::WaitingPromptBound {
+                    prompt_id: bound,
+                    binding: Ok(vec![rebound.clone()]),
+                }],
+            )
+            .expect("apply the Move");
+        assert!(matches!(settled, PendingMoveSettled::Moved), "{settled:?}");
+        let found = store.snapshot(session_id).expect("the Session stands");
+        let held = found
+            .prompts
+            .iter()
+            .find(|prompt| prompt.id == bound)
+            .expect("the Prompt waits");
+        assert_eq!(held.skill_invocations, [rebound], "bound with the Move");
         writer.shutdown().await.expect("stop the writer");
     }
 }

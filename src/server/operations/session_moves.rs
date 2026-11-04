@@ -15,14 +15,18 @@
 //! it nor hears of it.
 //!
 //! A pending Move is settled here too, asked for by the Session's Provider
-//! actor as soon as its Turn has settled and before it begins anything else,
-//! and by this Server as it starts, since a Turn a stop left open settles only
-//! in being read back and no later settling comes. The destination is read
-//! again: a Move that cannot stand now settles failed with the Session in
-//! place. Prompts left waiting bound to the Skills of the directory left are
-//! bound anew by name in the destination, under the Worktree rule: a unique
-//! match binds, and anything else fails the Prompt naming the Skills rather
-//! than dropping one or guessing.
+//! actor as soon as nothing holds it and before it begins anything else, and by
+//! this Server as it starts, since a Turn a stop left open settles only in being
+//! read back and no later settling comes. The destination is read again: a Move
+//! that cannot stand now settles failed with the Session in place. Prompts left
+//! waiting bound to the Skills of the directory left are matched by name in the
+//! destination before the Move applies, under the Worktree rule: a unique match
+//! binds, and anything else fails the Prompt naming the Skills rather than
+//! dropping one or guessing. The store takes the Move and those bindings under
+//! one lock, so settlements that overlap, one asked by an actor as another runs
+//! from the start, need no order among them: whichever lands first leaves the
+//! other nothing pending, and no reader sees the Session Moved with a Prompt
+//! still bound behind it.
 
 use std::{fmt, path::PathBuf};
 
@@ -31,11 +35,11 @@ use tokio::task::JoinSet;
 
 use super::SessionOperations;
 use crate::protocol::{
-    Author, CheckoutSummary, InitialPrompt, MoveDestination, MoveOutcome, PendingMove,
-    ResolvedWorkspace, SessionId,
+    Author, CheckoutSummary, ExecutionDirectory, InitialPrompt, MoveDestination, MoveOutcome,
+    PendingMove, ResolvedWorkspace, SessionId,
 };
 use crate::provider::{MoveSettlement, skill_delivery_failure_message};
-use crate::sessions::{DeliveredTurnStatus, MoveApplied, MoveSessionError, PendingMoveSettled};
+use crate::sessions::{MoveSessionError, PendingMoveSettled, WaitingPromptBound};
 
 /// Why a Move was refused. Each leaves the Session where it was.
 #[derive(Debug)]
@@ -93,8 +97,9 @@ impl SessionOperations {
     /// it. Refused, leaving the Session where it was, for a Session this
     /// Server does not hold, a native Subagent's or a Sidekick's, and for a
     /// destination that names no directory an Agent can work in, or one in the
-    /// Sidekick Workspace. A Turn of the Session's own holds the Move pending
-    /// until it settles; a Session with none Moves at once.
+    /// Sidekick Workspace. A Turn of the Session's own, or a native Subagent at
+    /// work beneath it, holds the Move pending until it settles; a Session with
+    /// neither Moves at once.
     pub(crate) async fn move_session(
         &self,
         session_id: SessionId,
@@ -124,27 +129,19 @@ impl SessionOperations {
             .map_err(MoveRefusal::Destination)?,
         };
         let (resolved, left) = self.read_destination(session_id, destination).await?;
-        let (applied, vacated) = self
+        let (outcome, vacated) = self
             .sessions
             .move_to(session_id, resolved, left)
             .map_err(|error| stored_refusal(session_id, error))?;
-        Ok(match applied {
-            MoveApplied::Moved(session) => {
-                self.record_act(session_id, author);
-                self.follow_move(session_id, vacated);
-                MoveOutcome::Moved { session }
-            }
-            // Nothing changed, so nothing is stopped and no act recorded.
-            MoveApplied::AlreadyThere(session) => MoveOutcome::AlreadyThere { session },
-            MoveApplied::Pending(session) => {
-                self.record_act(session_id, author);
-                MoveOutcome::Pending { session }
-            }
-            MoveApplied::PendingCancelled(session) => {
-                self.record_act(session_id, author);
-                MoveOutcome::PendingCancelled { session }
-            }
-        })
+        // A Move to where the Session stood with nothing pending changed
+        // nothing, so nothing is stopped and no act recorded.
+        if !matches!(outcome, MoveOutcome::AlreadyThere { .. }) {
+            self.record_act(session_id, author);
+        }
+        if matches!(outcome, MoveOutcome::Moved { .. }) {
+            self.follow_move(session_id, vacated);
+        }
+        Ok(outcome)
     }
 
     /// Settles every pending Move this Server was started finding, and each
@@ -183,25 +180,20 @@ impl SessionOperations {
         });
     }
 
-    /// Settles the Move pending for `session_id` where no Turn of its own
-    /// holds it any longer: applies it, or fails it for whatever now stands
-    /// against its destination. A Move a newer one overtakes meanwhile gives
-    /// way to that one. Storage refusing either leaves it pending, to be tried
-    /// again at the Session's next settling.
+    /// Settles the Move pending for `session_id` where nothing holds it any
+    /// longer: applies it, or fails it for whatever now stands against its
+    /// destination. A Move a newer one overtakes meanwhile gives way to that
+    /// one. Storage refusing either leaves it pending, to be tried again at the
+    /// Session's next settling.
     async fn settle_pending_move(&self, session_id: SessionId) {
-        if let Err(error) = self.hydrate(session_id).await {
-            tracing::warn!(%session_id, "a pending Move's Session could not be read: {error:#}");
+        // Hydrating says what it could not read for itself.
+        if self.hydrate(session_id).await.is_err() {
             return;
         }
         while let Some(pending) = self.sessions.pending_move_to_settle(session_id) {
-            let settled = self.settle_this_move(session_id, &pending).await;
-            match settled {
+            match self.apply_or_fail_move(session_id, &pending).await {
                 Ok(PendingMoveSettled::Overtaken) => {}
-                Ok(PendingMoveSettled::Moved) => {
-                    self.bind_waiting_prompts_anew(session_id).await;
-                    return;
-                }
-                Ok(PendingMoveSettled::Stayed) => return,
+                Ok(PendingMoveSettled::Moved | PendingMoveSettled::Stayed) => return,
                 Err(MoveSessionError::Storage(error)) => {
                     tracing::warn!(%session_id, "a pending Move was not stored: {error:#}");
                     return;
@@ -212,7 +204,7 @@ impl SessionOperations {
     }
 
     /// Applies or fails `pending` as its destination reads now.
-    async fn settle_this_move(
+    async fn apply_or_fail_move(
         &self,
         session_id: SessionId,
         pending: &PendingMove,
@@ -222,9 +214,12 @@ impl SessionOperations {
             .await;
         match read {
             Ok((resolved, left)) => {
+                let prompts = self
+                    .waiting_prompts_bound_in(session_id, resolved.execution_directory.as_ref())
+                    .await;
                 let (settled, vacated) = self
                     .sessions
-                    .apply_pending_move(session_id, pending, resolved, left)?;
+                    .apply_pending_move(session_id, pending, resolved, left, prompts)?;
                 if matches!(settled, PendingMoveSettled::Moved) {
                     self.follow_move(session_id, vacated);
                 }
@@ -238,61 +233,55 @@ impl SessionOperations {
         }
     }
 
-    /// Binds every Prompt of `session_id` still waiting, by name, to the
-    /// Skills of the directory the Session just Moved to, ahead of any
-    /// delivery, which demands the exact Skill. A Prompt that cannot be bound
-    /// so fails, naming the Skills, as one its delivery found unbound would.
-    async fn bind_waiting_prompts_anew(&self, session_id: SessionId) {
-        let prompts = self.sessions.waiting_prompts_with_skills(session_id);
-        if prompts.is_empty() {
-            return;
-        }
-        let (Some(provider), Some(directory)) = (
-            self.sessions.provider(session_id),
-            self.sessions.execution_directory(session_id),
-        ) else {
-            return;
-        };
-        for prompt in prompts {
+    /// How every Prompt of `session_id` still waiting that binds a Skill is to
+    /// stand in `directory`, where the Session is about to Move: bound by name
+    /// to the Skills found there, ahead of any delivery, which demands the
+    /// exact Skill, or failed, naming the Skills, as one its delivery found
+    /// unbound would.
+    async fn waiting_prompts_bound_in(
+        &self,
+        session_id: SessionId,
+        directory: Option<&ExecutionDirectory>,
+    ) -> Vec<WaitingPromptBound> {
+        let mut bound = Vec::new();
+        for prompt in self.sessions.waiting_prompts_with_skills(session_id) {
             let waiting = InitialPrompt {
                 id: prompt.id,
                 text: prompt.text.clone(),
                 skill_invocations: prompt.skill_invocations.clone(),
                 attachments: prompt.attachments.clone(),
             };
-            let rebound = tokio::time::timeout(
-                self.checkout_skill_timeout,
-                self.skill_catalog
-                    .rebind_prepared_prompt(provider.clone(), &directory, &waiting),
-            )
-            .await;
-            let failure = match rebound {
-                Ok(Ok(rebound)) => {
-                    if rebound.skill_invocations != prompt.skill_invocations
-                        && let Err(error) = self.sessions.rebind_waiting_prompt(
-                            session_id,
-                            prompt.id,
-                            rebound.skill_invocations,
+            let binding = match (self.sessions.provider(session_id), directory) {
+                (Some(provider), Some(directory)) => tokio::time::timeout(
+                    self.checkout_skill_timeout,
+                    self.skill_catalog
+                        .rebind_prepared_prompt(provider, &directory.path, &waiting),
+                )
+                .await
+                .map_or_else(
+                    |_| {
+                        Err(
+                            "Skill Invocation delivery failed: the destination's Skill Catalog \
+                             could not be read in time"
+                                .to_owned(),
                         )
-                    {
-                        tracing::warn!(%session_id, "a Prompt was not bound anew: {error:#}");
-                    }
-                    continue;
-                }
-                Ok(Err(error)) => skill_delivery_failure_message(error),
-                Err(_) => "Skill Invocation delivery failed: the destination's Skill Catalog \
-                           could not be read in time"
-                    .to_owned(),
+                    },
+                    |rebound| {
+                        rebound
+                            .map(|rebound| rebound.skill_invocations)
+                            .map_err(skill_delivery_failure_message)
+                    },
+                ),
+                _ => Err(
+                    "Skill Invocation delivery failed: the Session Provider is unknown".to_owned(),
+                ),
             };
-            if let Err(error) = self.sessions.deliver_prompt(
-                session_id,
-                prompt.id,
-                None,
-                DeliveredTurnStatus::Failed { message: failure },
-            ) {
-                tracing::warn!(%session_id, "a Prompt that could not be bound anew did not fail: {error:#}");
-            }
+            bound.push(WaitingPromptBound {
+                prompt_id: prompt.id,
+                binding,
+            });
         }
+        bound
     }
 
     /// Reads `destination`, a path already read against the Session's

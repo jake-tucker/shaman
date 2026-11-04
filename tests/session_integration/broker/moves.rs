@@ -136,3 +136,40 @@ async fn a_brokered_subagents_session_holds_the_worktree_its_parent_moves_out_of
     wait_until_gone(&worktree).await;
     hosted.server.shutdown().await.expect("shut down server");
 }
+
+/// A brokered Subagent has an actor and a directory of its own, so with only
+/// one at work beneath it its parent Moves at once, and it carries on where it
+/// was.
+#[tokio::test]
+async fn a_brokered_subagent_at_work_holds_no_move_of_its_parent() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut delegating = delegating(state_dir.path(), "broker-move-holds-nothing", None).await;
+    let descriptor = delegating.descriptor.clone();
+    let child_id = delegating
+        .client
+        .spawn_subagent(researcher("codex", "gpt-5.5", json!({})))
+        .await;
+    let (child_provider, _) =
+        run_child(&mut delegating.hosted.codex, codex_selection("high")).await;
+    settle_callers_turn(&delegating, "the caller's Turn settles").await;
+    let origin = read_session(&descriptor, child_id)
+        .await
+        .session
+        .execution_directory;
+    let destination = delegating.hosted.workspace.path().join("moved here");
+    std::fs::create_dir(&destination).expect("create the destination");
+    let destination = suru::paths::canonical(&destination).expect("canonicalize the destination");
+
+    move_session(&descriptor, delegating.caller, &destination).await;
+
+    let child = read_session(&descriptor, child_id).await;
+    assert_eq!(child.session.execution_directory, origin);
+    assert!(child.session.working_since.is_some(), "still at work there");
+    drop(child_provider);
+    delegating
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}

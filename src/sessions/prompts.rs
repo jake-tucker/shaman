@@ -394,9 +394,7 @@ impl SessionStore {
         self.storage.location_changed(
             save,
             record.snapshot.session.clone(),
-            record.moved_from.clone(),
-            None,
-            None,
+            crate::storage::LocationLanding::keeping(record.moved_from.clone()),
             record.snapshot.revision,
         )?;
         Ok(())
@@ -851,6 +849,24 @@ impl SessionStore {
             .state
             .lock()
             .expect("Session store lock is not poisoned");
+        self.deliver_prompt_under_lock(
+            &mut state,
+            session_id,
+            prompt_id,
+            agent_id,
+            delivered_turn_status,
+        )
+    }
+
+    /// [`Self::deliver_prompt`], for one already holding the store's lock.
+    pub(super) fn deliver_prompt_under_lock(
+        &self,
+        state: &mut SessionStoreState,
+        session_id: SessionId,
+        prompt_id: PromptId,
+        agent_id: Option<AgentId>,
+        delivered_turn_status: DeliveredTurnStatus,
+    ) -> anyhow::Result<Option<DeliveredTurn>> {
         let (prompt, agent) = {
             let record = state
                 .sessions

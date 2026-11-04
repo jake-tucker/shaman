@@ -5143,6 +5143,24 @@ fn sidebar_active_row_lines(
     ]
 }
 
+/// The Session footer's line saying `error`, `width` columns wide, followed by
+/// the Agent Selection where it leaves room. A pending Move's destination that
+/// does not fit keeps its end, as other path rows do.
+fn session_footer_error(error: &str, agent: &str, width: usize) -> String {
+    let whole = format!("Error: {error} · {agent}");
+    if whole.width() <= width {
+        return whole;
+    }
+    match error.strip_prefix(super::state::MOVE_PENDING_SAID) {
+        Some(destination) => {
+            let said = format!("Error: {}", super::state::MOVE_PENDING_SAID);
+            let room = width.saturating_sub(said.width());
+            format!("{said}{}", truncate_from_left_to_width(destination, room))
+        }
+        None => whole,
+    }
+}
+
 /// The line beneath an active row's Title: its Checkout State, and where a
 /// pending Move will take the Session, which is the one to keep where the
 /// column cannot hold both.
@@ -6303,11 +6321,16 @@ fn render_session_surface(
     if !working_indicator_lines.is_empty() {
         working_indicator_lines.insert(0, Line::default());
     }
+    let usage = session_footer_metrics_text(snapshot, content_width)
+        .map(|text| SlotText::new(text, theme.text.subdued));
     let (agent, agent_style) = if let Some(error) = state.submission_error.as_ref() {
         (
-            format!(
-                "Error: {error} · {}",
-                agent_selection_context(state, ResponsiveDetail::CoreOnly)
+            session_footer_error(
+                error,
+                &agent_selection_context(state, ResponsiveDetail::CoreOnly),
+                usage.as_ref().map_or(usize::from(content_width), |usage| {
+                    usize::from(content_width).saturating_sub(usage.text.width() + 2)
+                }),
             ),
             theme.feedback.error,
         )
@@ -6320,8 +6343,6 @@ fn render_session_surface(
             theme.text.subdued,
         )
     };
-    let usage = session_footer_metrics_text(snapshot, content_width)
-        .map(|text| SlotText::new(text, theme.text.subdued));
     let footer = slots.prompt_footer(
         &PromptFooterSlotContext {
             session_id,

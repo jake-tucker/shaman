@@ -153,6 +153,7 @@ impl SessionStore {
                     persisted.snapshot.pending_approvals_revision =
                         held.snapshot.pending_approvals_revision;
 
+                    forget_pending_move_with_no_record(&mut persisted);
                     let (mut record, recovered_activities) =
                         restored_record(persisted, &mut state.prompts);
                     // Storage holds the history as it was read, save for
@@ -422,6 +423,10 @@ impl SessionStoreState {
     }
 }
 
+/// How the Activity of a Move a stop left standing with nothing pending says
+/// so.
+const MOVE_LOST_TO_A_STOP: &str = "Suru stopped before it could apply";
+
 /// Both eager in-memory fixtures and durable hydration use the same recovery
 /// rules for Prompt identity/order and historical Questionnaire availability.
 ///
@@ -434,7 +439,8 @@ pub(super) fn restored_record(
     mut persisted: PersistedSession,
     prompts: &mut std::collections::HashMap<PromptId, PromptOwner>,
 ) -> (SessionRecord, Vec<usize>) {
-    let recovered_activities = recover_interventions(&mut persisted);
+    let mut recovered_activities = recover_interventions(&mut persisted);
+    recovered_activities.extend(recover_moves(&mut persisted));
     let next_prompt_order = persisted
         .snapshot
         .prompts
@@ -566,10 +572,69 @@ fn recover_interventions(persisted: &mut PersistedSession) -> Vec<usize> {
     recovered
 }
 
-/// Whether reading `activity` back from storage would move it, as
-/// [`recover_interventions`] reads an Approval or Questionnaire still waiting.
+/// Settles every Move standing Active that the Session's own row does not name
+/// as pending, which storage writing them together should leave none of, and
+/// which nothing would settle otherwise. It settles as what happened: applied
+/// where the Session works in its destination, and otherwise not. Answers with
+/// the positions of those it moved.
+fn recover_moves(persisted: &mut PersistedSession) -> Vec<usize> {
+    let session = &persisted.snapshot.session;
+    let pending = session.pending_move.as_ref().map(|move_| move_.activity_id);
+    let directory = session.execution_directory.clone();
+    let mut recovered = Vec::new();
+    for (position, activity) in persisted.snapshot.activities.iter_mut().enumerate() {
+        let Activity::Move {
+            id,
+            status: status @ ActivityStatus::Active,
+            to,
+            error,
+            ..
+        } = activity
+        else {
+            continue;
+        };
+        if pending == Some(*id) {
+            continue;
+        }
+        if to.execution_directory == directory {
+            *status = ActivityStatus::Completed;
+        } else {
+            *status = ActivityStatus::Interrupted;
+            *error = Some(MOVE_LOST_TO_A_STOP.to_owned());
+        }
+        recovered.push(position);
+    }
+    recovered
+}
+
+/// Lets go of a pending Move whose Activity the history just read does not hold
+/// standing, which would have no record to settle. Only a history read whole can
+/// say so, which a Session still waiting in storage has not been.
+fn forget_pending_move_with_no_record(persisted: &mut PersistedSession) {
+    let stands = |pending: &crate::protocol::PendingMove| {
+        persisted.snapshot.activities.iter().any(|activity| {
+            activity.id() == pending.activity_id
+                && activity.status() == Some(ActivityStatus::Active)
+        })
+    };
+    if !persisted
+        .snapshot
+        .session
+        .pending_move
+        .as_ref()
+        .is_some_and(stands)
+    {
+        persisted.snapshot.session.pending_move = None;
+        persisted.summary.session.pending_move = None;
+    }
+}
+
+/// Whether reading `activity` back from storage could move it, as
+/// [`recover_interventions`] reads an Approval or Questionnaire still waiting
+/// and [`recover_moves`] a Move left standing Active.
 pub(super) fn recovery_moves(activity: &Activity) -> bool {
     match activity {
+        Activity::Move { status, .. } => *status == ActivityStatus::Active,
         Activity::Approval { outcome, .. } => {
             OpenInterventions::Abandoned.approval_outcome(*outcome) != *outcome
         }

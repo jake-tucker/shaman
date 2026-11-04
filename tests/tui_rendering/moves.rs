@@ -1642,10 +1642,11 @@ fn a_pending_move_is_acknowledged_saying_when_it_applies() {
 
     let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
     assert!(
-        unwrapped(&rows).contains(&unwrapped(&[
-            "The Session Moves to beta-work once its Turn settles.".to_owned()
-        ])),
-        "{}",
+        rows.iter().any(|row| {
+            row.contains("The Session Moves once the work under way settles, to ")
+                && row.trim_end().contains("beta-work")
+        }),
+        "the destination keeps its end however long its path: {}",
         rows.join("\n")
     );
 
@@ -1667,7 +1668,54 @@ fn a_pending_move_is_acknowledged_saying_when_it_applies() {
         )))
         .expect("hear the Move settle");
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
-    assert!(!screen.contains("once its Turn settles"), "{screen}");
+    assert!(!screen.contains("once the work under way"), "{screen}");
+}
+
+/// The Session's stream can carry a Move settling ahead of the answer that it
+/// was pending, which then has nothing left to say.
+#[test]
+fn the_answer_that_a_move_is_pending_says_nothing_once_it_has_settled() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (session_id, snapshot) = enter_session(&mut application, &directories.alpha);
+    let (activity_id, from, to) = hear_move_pending(&mut application, &snapshot, &directories.beta);
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(snapshot.revision.0 + 2),
+                changes: vec![SessionChange::MoveSettled {
+                    activity_id,
+                    status: ActivityStatus::Completed,
+                    from,
+                    to,
+                    error: None,
+                }],
+            },
+        )))
+        .expect("hear the Move settle");
+
+    let mut answered = summary_bound_for(
+        session_id,
+        "The work that Moves",
+        &directories.alpha,
+        Some(&directories.beta),
+    );
+    answered.session.pending_move = Some(PendingMove {
+        activity_id,
+        destination: ExecutionDirectory {
+            path: directories.beta.clone(),
+        },
+    });
+    application
+        .handle_event(ApplicationEvent::SessionMoved {
+            session: SessionReference::new(Outlook::Local, session_id),
+            outcome: MoveOutcome::Pending { session: answered },
+        })
+        .expect("hear the answer late");
+
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(!screen.contains("once the work under way"), "{screen}");
 }
 
 /// The answer to a Move arrives on its own time, and says nothing beneath the
@@ -1693,7 +1741,7 @@ fn the_answer_to_a_move_is_said_only_of_the_session_it_was_asked_of() {
         .expect("hear another Session's answer");
 
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
-    assert!(!screen.contains("once its Turn settles"), "{screen}");
+    assert!(!screen.contains("once the work under way"), "{screen}");
 }
 
 #[test]
@@ -1815,6 +1863,13 @@ fn a_pending_moves_row_stands_active_then_settles_where_it_stands() {
             "{}",
             rows.join("\n")
         );
+        assert!(
+            rows.iter()
+                .any(|row| row.trim_start().starts_with("⠋ Moving from")),
+            "behind a Spinner: {}",
+            rows.join("\n")
+        );
+        assert!(application.wants_spinner(), "which the run loop ticks");
 
         application
             .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
