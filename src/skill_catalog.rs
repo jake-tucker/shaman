@@ -244,7 +244,7 @@ impl SkillCatalogService {
                         invocation.skill_id
                     ))
                 })?;
-            if descriptor.name != invocation.name || descriptor.scope != invocation.scope {
+            if !descriptor.identifies(invocation) {
                 return Err(SkillCatalogError::InvalidInvocation(format!(
                     "Skill identity `{}` does not match its safe metadata",
                     invocation.skill_id

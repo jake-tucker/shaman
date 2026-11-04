@@ -19,8 +19,9 @@ use suru::{
     protocol::{
         Activity, ActivityId, ActivityStatus, AdmitPromptRequest, AgentSelection,
         EffectiveSettings, ExecutionDirectory, ModelId, MoveDestination, MoveLocation, MoveOutcome,
-        MoveSessionRequest, Outlook, ProviderId, SessionChange, SessionId, SessionListItem,
-        SessionReference, SessionRevision, SessionSnapshot, SessionUpdate, SidebarScope,
+        MoveSessionRequest, Outlook, PromptDelivery, PromptOrder, PromptStatus, ProviderId,
+        SessionChange, SessionId, SessionListItem, SessionReference, SessionRevision,
+        SessionSnapshot, SessionStatus, SessionTimestamp, SessionUpdate, SidebarScope,
         SidebarSettings, SidebarVisibility, SkillCatalog, SkillCatalogCapabilities,
         SkillCatalogRequest, SkillCatalogStatus, SkillDescriptor, SkillId, SkillInvocation,
         SkillPromptDelivery, TextSpan, Workspace, WorkspacePaths,
@@ -604,6 +605,15 @@ fn viewing_session(provider: &str, directory: &Path) -> (Application, SessionSna
     (application, snapshot)
 }
 
+fn catalog_request(provider: &str, directory: &Path) -> SkillCatalogRequest {
+    SkillCatalogRequest {
+        provider: ProviderId::new(provider),
+        execution_directory: ExecutionDirectory {
+            path: directory.to_owned(),
+        },
+    }
+}
+
 /// `status` as the Skill Catalog `provider` gives of `directory`, reaching
 /// the Client.
 fn deliver_catalog(
@@ -613,12 +623,7 @@ fn deliver_catalog(
     skills: Vec<SkillDescriptor>,
     status: SkillCatalogStatus,
 ) {
-    let request = SkillCatalogRequest {
-        provider: ProviderId::new(provider),
-        execution_directory: ExecutionDirectory {
-            path: directory.to_owned(),
-        },
-    };
+    let request = catalog_request(provider, directory);
     application
         .handle_event(ApplicationEvent::SkillsListed {
             request: request.clone(),
@@ -841,8 +846,8 @@ fn a_missing_or_ambiguous_skill_blocks_the_draft_naming_every_one_affected() {
             );
 
             let said = blocked(&mut application);
-            assert!(said.contains("missing:gone"), "{learned:?}: {said}");
-            assert!(said.contains("ambiguous:review"), "{learned:?}: {said}");
+            assert!(said.contains("missing:`$gone`"), "{learned:?}: {said}");
+            assert!(said.contains("ambiguous:`$review`"), "{learned:?}: {said}");
             assert!(
                 drawn(&application).contains(draft),
                 "the draft is kept, nothing dropped: {}",
@@ -887,7 +892,7 @@ fn an_ambiguous_skill_is_settled_by_choosing_one_from_the_destinations_completio
         &directories.beta,
         vec![first.clone(), skill("beta-review-two", "review")],
     );
-    assert!(blocked(&mut application).contains("ambiguous:review"));
+    assert!(blocked(&mut application).contains("ambiguous:`$review`"));
 
     for _ in 0.."w ".len() {
         application
@@ -945,17 +950,9 @@ fn a_draft_with_bound_skills_waits_for_the_destinations_catalog() {
             ApplicationTransition::Continue
         );
 
-        // Nor does a Catalog of the destination that is not yet current.
-        for status in [
-            SkillCatalogStatus::Loading,
-            SkillCatalogStatus::Refreshing,
-            SkillCatalogStatus::Stale {
-                message: "fixture".to_owned(),
-            },
-            SkillCatalogStatus::Unavailable {
-                message: "fixture".to_owned(),
-            },
-        ] {
+        // Nor does a Catalog of the destination still being read, which will
+        // answer on its own.
+        for status in [SkillCatalogStatus::Loading, SkillCatalogStatus::Refreshing] {
             deliver_catalog(
                 &mut application,
                 "codex",
@@ -963,10 +960,8 @@ fn a_draft_with_bound_skills_waits_for_the_destinations_catalog() {
                 vec![skill("beta-explain", "explain"), skill("beta-gone", "gone")],
                 status,
             );
-            assert_eq!(
-                press_enter(&mut application),
-                ApplicationTransition::Continue
-            );
+            let said = blocked(&mut application);
+            assert!(said.contains("waitingfortheSkillCatalog"), "{said}");
         }
 
         let explain = skill("beta-explain", "explain");
@@ -994,6 +989,120 @@ fn a_draft_with_bound_skills_waits_for_the_destinations_catalog() {
     }
 }
 
+/// A destination whose Skills could not be read will not answer by itself: no
+/// one lists it again, and its Server keeps the failure. The draft says so
+/// rather than waiting, Enter asks again, and the Catalog that then comes
+/// settles it.
+#[test]
+fn a_destination_whose_skills_could_not_be_read_is_asked_again_by_enter() {
+    type Failure = fn(&mut Application, &Path);
+    let failures: [(&str, Failure); 3] = [
+        ("Stale", |application, directory| {
+            deliver_catalog(
+                application,
+                "codex",
+                directory,
+                vec![skill("beta-explain-old", "explain")],
+                SkillCatalogStatus::Stale {
+                    message: "fixture".to_owned(),
+                },
+            );
+        }),
+        ("Unavailable", |application, directory| {
+            deliver_catalog(
+                application,
+                "codex",
+                directory,
+                Vec::new(),
+                SkillCatalogStatus::Unavailable {
+                    message: "fixture".to_owned(),
+                },
+            );
+        }),
+        ("a failed listing", |application, directory| {
+            application
+                .handle_event(ApplicationEvent::SkillListingFailed {
+                    request: catalog_request("codex", directory),
+                    error: "the Server did not answer".to_owned(),
+                })
+                .expect("hear the listing fail");
+        }),
+    ];
+    for (failure, fail) in failures {
+        let directories = directories();
+        let (mut application, snapshot) = viewing_session("codex", &directories.alpha);
+        offer_skills(
+            &mut application,
+            "codex",
+            &directories.alpha,
+            vec![skill("alpha-explain", "explain")],
+        );
+        type_terminal_text(&mut application, "$explain now");
+        hear_moved(&mut application, &snapshot, &directories.beta);
+        fail(&mut application, &directories.beta);
+
+        assert_eq!(
+            press_enter(&mut application),
+            ApplicationTransition::RefreshSkills(catalog_request("codex", &directories.beta)),
+            "{failure}: nothing is sent, and the Catalog is asked for again"
+        );
+        let said = unwrapped(&rendered_application_rows_at(&application, WIDE, HEIGHT));
+        assert!(said.contains("$explain"), "{failure}: {said}");
+        assert!(said.contains("couldnotberead"), "{failure}: {said}");
+        assert!(!said.contains("waitingfor"), "{failure}: {said}");
+        assert!(drawn(&application).contains("$explain now"), "{failure}");
+
+        // Asking again, it is being read: wait, asking nothing more.
+        deliver_catalog(
+            &mut application,
+            "codex",
+            &directories.beta,
+            Vec::new(),
+            SkillCatalogStatus::Refreshing,
+        );
+        let said = blocked(&mut application);
+        assert!(said.contains("waitingfor"), "{failure}: {said}");
+
+        let destination = skill("beta-explain", "explain");
+        offer_skills(
+            &mut application,
+            "codex",
+            &directories.beta,
+            vec![destination.clone()],
+        );
+        let said = unwrapped(&rendered_application_rows_at(&application, WIDE, HEIGHT));
+        assert!(
+            !said.contains("waitingfor") && !said.contains("couldnotberead"),
+            "{failure}: what was said gives way once the Catalog answers: {said}"
+        );
+        assert_eq!(
+            submitted(&mut application).prompt.skill_invocations,
+            vec![invocation(&destination, TextSpan { start: 0, end: 8 })],
+            "{failure}"
+        );
+    }
+}
+
+/// Failed discovery asks a draft with no carried Skill for nothing: it submits
+/// as before.
+#[test]
+fn a_draft_without_bound_skills_is_not_held_by_a_catalog_that_could_not_be_read() {
+    let directories = directories();
+    let (mut application, snapshot) = viewing_session("codex", &directories.alpha);
+    hear_moved(&mut application, &snapshot, &directories.beta);
+    deliver_catalog(
+        &mut application,
+        "codex",
+        &directories.beta,
+        Vec::new(),
+        SkillCatalogStatus::Unavailable {
+            message: "fixture".to_owned(),
+        },
+    );
+    type_terminal_text(&mut application, "Plain words");
+    assert_eq!(submitted(&mut application).prompt.text, "Plain words");
+}
+
 /// What a blocked Enter said during the wait becomes what the Catalog then
 /// says, without another Enter.
 #[test]
@@ -1012,7 +1121,7 @@ fn a_block_said_while_waiting_gives_way_to_the_skills_the_catalog_could_not_matc
 
     offer_skills(&mut application, "codex", &directories.beta, Vec::new());
     let said = unwrapped(&rendered_application_rows_at(&application, WIDE, HEIGHT));
-    assert!(said.contains("missing:gone"), "{said}");
+    assert!(said.contains("missing:`$gone`"), "{said}");
 }
 
 #[test]
@@ -1304,6 +1413,113 @@ fn a_draft_a_refused_prompt_sets_aside_follows_the_move_from_history() {
         .expect("walk to the draft set aside");
     assert!(drawn(&application).contains("$explain now"));
 
+    assert_eq!(
+        submitted(&mut application).prompt.skill_invocations,
+        vec![invocation(&destination, TextSpan { start: 0, end: 8 })]
+    );
+}
+
+/// A Move carries what was bound before it, and only that. A Prompt bound where
+/// the Session now stands and refused comes back judged as any binding is, so
+/// a Skill replaced there under the same name is stale, not guessed at.
+#[test]
+fn a_prompt_bound_after_the_move_and_refused_is_not_guessed_at_by_name() {
+    let directories = directories();
+    let (mut application, snapshot) = viewing_session("codex", &directories.alpha);
+    hear_moved(&mut application, &snapshot, &directories.beta);
+    offer_skills(
+        &mut application,
+        "codex",
+        &directories.beta,
+        vec![skill("beta-review", "review")],
+    );
+    type_terminal_text(&mut application, "$review now");
+    let transition = press_enter(&mut application);
+    let ApplicationTransition::AdmitPrompt { session, request } = transition else {
+        panic!("the draft is sent, not {transition:?}");
+    };
+
+    offer_skills(
+        &mut application,
+        "codex",
+        &directories.beta,
+        vec![skill("beta-review-replaced", "review")],
+    );
+    application
+        .handle_event(ApplicationEvent::PromptAdmissionFailed {
+            session,
+            prompt_id: request.prompt.id,
+            error: "Skill identity is not offered".to_owned(),
+        })
+        .expect("hear the refusal");
+
+    let said = blocked(&mut application);
+    assert!(said.contains("$review"), "{said}");
+    assert!(said.contains("stale"), "{said}");
+}
+
+/// A Prompt sent before the Move and withdrawn after it, with a draft standing
+/// in its place, waits in history and follows the Move when recalled.
+#[test]
+fn a_prompt_withdrawn_after_the_move_follows_it_from_history() {
+    let directories = directories();
+    let (mut application, mut snapshot) = viewing_session("codex", &directories.alpha);
+    offer_skills(
+        &mut application,
+        "codex",
+        &directories.alpha,
+        vec![skill("alpha-explain", "explain")],
+    );
+    type_terminal_text(&mut application, "$explain now");
+    let transition = press_enter(&mut application);
+    let ApplicationTransition::AdmitPrompt { request, .. } = transition else {
+        panic!("the draft is sent, not {transition:?}");
+    };
+    let mut admitted = snapshot.prompts[0].clone();
+    admitted.id = request.prompt.id;
+    admitted.text.clone_from(&request.prompt.text);
+    admitted
+        .skill_invocations
+        .clone_from(&request.prompt.skill_invocations);
+    admitted.delivery = PromptDelivery::Steer;
+    admitted.status = PromptStatus::Pending;
+    admitted.admission_order = PromptOrder(snapshot.prompts[0].admission_order.0 + 1);
+    snapshot.prompts.push(admitted);
+    snapshot.session.working_since = Some(SessionTimestamp::now());
+    snapshot.session.status = SessionStatus::Active;
+    snapshot.revision = SessionRevision(snapshot.revision.0 + 1);
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
+            snapshot.clone(),
+        )))
+        .expect("the Session is Working for the Prompt");
+    for _ in 0..2 {
+        application
+            .handle_terminal_event(InputEvent::Key(KeyEvent::new(
+                KeyCode::Esc,
+                KeyModifiers::NONE,
+            )))
+            .expect("interrupt");
+    }
+    type_terminal_text(&mut application, "A draft now standing");
+
+    snapshot.prompts[1].status = PromptStatus::Cancelled;
+    snapshot.session.working_since = None;
+    snapshot.session.status = SessionStatus::Idle;
+    resubscribe_moved(&mut application, &snapshot, &directories.beta);
+    let destination = skill("beta-explain", "explain");
+    offer_skills(
+        &mut application,
+        "codex",
+        &directories.beta,
+        vec![destination.clone()],
+    );
+    assert!(drawn(&application).contains("A draft now standing"));
+
+    application
+        .handle_event(ApplicationEvent::Command(CommandId::HistoryPrevious))
+        .expect("recall the withdrawn Prompt");
+    assert!(drawn(&application).contains("$explain now"));
     assert_eq!(
         submitted(&mut application).prompt.skill_invocations,
         vec![invocation(&destination, TextSpan { start: 0, end: 8 })]

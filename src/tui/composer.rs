@@ -81,12 +81,13 @@ struct ComposerState {
     /// The Execution Directory of the Session this draft belongs to, as last
     /// consulted: a draft is kept across Sessions being opened and left, so a
     /// Move is known by the Session no longer standing here, however the
-    /// Client came to hear of it.
+    /// Client came to hear of it. `None` on the Landing, or until consulted.
     session_directory: Option<PathBuf>,
-    /// Whether that Session has Moved while this draft was kept. A Prompt
-    /// coming back may have been bound before the Move, so what it binds is
-    /// carried as the draft's own Skills were.
-    session_moved: bool,
+    /// Where each Prompt this Client sent from this draft's Session stood when
+    /// it went, so one coming back is carried only if the Session has left
+    /// there. Read by identity rather than held with the Prompt, because a
+    /// withdrawn Prompt comes back rebuilt from the Session's own snapshot.
+    sent_from: HashMap<PromptId, PathBuf>,
 }
 
 /// Which content a draft holds: renewed whenever the draft is replaced or
@@ -110,15 +111,6 @@ impl DraftGeneration {
 struct HistoryEntry {
     text: String,
     bindings: TextBindings,
-}
-
-impl HistoryEntry {
-    fn from_prompt(prompt: &InitialPrompt) -> Self {
-        Self {
-            text: prompt.text.clone(),
-            bindings: TextBindings::from_prompt(prompt),
-        }
-    }
 }
 
 /// What a composer draws over its text: each binding without an issue in its
@@ -389,6 +381,14 @@ impl ComposerMemory {
             .note_session_directory(directory);
     }
 
+    /// Whether the draft binds a Skill carried over a Move and not yet found
+    /// in the destination.
+    pub(super) fn has_carried_skills(&self, key: ComposerKey) -> bool {
+        self.composers
+            .get(&key)
+            .is_some_and(|composer| composer.bindings.has_carried_skills())
+    }
+
     pub(super) fn resolve_skills(
         &mut self,
         key: ComposerKey,
@@ -554,7 +554,7 @@ impl ComposerMemory {
         if composer.text.is_empty() {
             composer.admission_failed(prompt);
         } else {
-            composer.push_history(HistoryEntry::from_prompt(prompt));
+            composer.push_returned_prompt(prompt);
         }
     }
 
@@ -568,7 +568,7 @@ impl ComposerMemory {
         if composer.text.is_empty() {
             composer.restore_prompt(prompt);
         } else {
-            composer.push_history(HistoryEntry::from_prompt(prompt));
+            composer.push_returned_prompt(prompt);
         }
     }
 
@@ -663,31 +663,52 @@ impl ComposerMemory {
 
 impl ComposerState {
     fn note_session_directory(&mut self, directory: &Path) {
+        // A Move is inferred from the path the Server stores, which has one
+        // spelling, so a difference here is never the same directory re-spelled.
         if self
             .session_directory
             .as_deref()
             .is_some_and(|stood| stood != directory)
         {
-            self.session_moved = true;
             self.bindings.carry_skills();
             for entry in self.history.iter_mut().chain(self.history_scratch.as_mut()) {
                 entry.bindings.carry_skills();
             }
         }
-        if self.session_directory.as_deref() != Some(directory) {
-            self.session_directory = Some(directory.to_owned());
-        }
+        self.session_directory = Some(directory.to_owned());
     }
 
     /// Forgets the Session, for a draft handed to the Landing: there a binding
     /// is judged by the Landing's rule alone.
     fn leave_session(&mut self) {
         self.session_directory = None;
-        self.session_moved = false;
+        self.sent_from.clear();
         self.bindings.settle_carried_skills();
         for entry in self.history.iter_mut().chain(self.history_scratch.as_mut()) {
             entry.bindings.settle_carried_skills();
         }
+    }
+
+    /// What `prompt` binds as it comes back: carried where this Client sent it
+    /// from a directory the Session has since left. Bound anywhere else — here,
+    /// or by another Client — it is judged as any binding is.
+    fn returned_bindings(&self, prompt: &InitialPrompt) -> TextBindings {
+        let mut bindings = TextBindings::from_prompt(prompt);
+        if self
+            .sent_from
+            .get(&prompt.id)
+            .is_some_and(|sent_from| self.session_directory.as_ref() != Some(sent_from))
+        {
+            bindings.carry_skills();
+        }
+        bindings
+    }
+
+    fn push_returned_prompt(&mut self, prompt: &InitialPrompt) {
+        self.push_history(HistoryEntry {
+            text: prompt.text.clone(),
+            bindings: self.returned_bindings(prompt),
+        });
     }
 
     fn resolve_skills(&mut self, catalog: Option<&crate::protocol::SkillCatalog>) {
@@ -951,6 +972,9 @@ impl ComposerState {
             .as_ref()
             .filter(|retry| retry.text == text && bindings.are_carried_by(retry))
             .map_or_else(PromptId::new, |retry| retry.id);
+        if let Some(directory) = &self.session_directory {
+            self.sent_from.insert(id, directory.clone());
+        }
         self.skill_issues.clear();
         self.selection_anchor = None;
         self.cursor = 0;
@@ -980,10 +1004,7 @@ impl ComposerState {
         self.generation = DraftGeneration::fresh();
         self.text.clone_from(&prompt.text);
         self.selection_anchor = None;
-        self.bindings = TextBindings::from_prompt(prompt);
-        if self.session_moved {
-            self.bindings.carry_skills();
-        }
+        self.bindings = self.returned_bindings(prompt);
         self.highest_image_number = self.bindings.highest_image_number();
         self.skill_issues.clear();
         self.cursor = self.text.len();
@@ -993,7 +1014,7 @@ impl ComposerState {
     }
 
     fn admission_reconciled(&mut self, prompt: &InitialPrompt) {
-        self.push_history(HistoryEntry::from_prompt(prompt));
+        self.push_returned_prompt(prompt);
         if self
             .retry
             .as_ref()
@@ -1004,7 +1025,7 @@ impl ComposerState {
     }
 
     fn late_admission_reconciled(&mut self, prompt: &InitialPrompt) -> bool {
-        self.push_history(HistoryEntry::from_prompt(prompt));
+        self.push_returned_prompt(prompt);
         let restored_was_current = self
             .retry
             .as_ref()

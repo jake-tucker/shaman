@@ -1711,6 +1711,20 @@ impl TuiState {
         if !self.composer_completion.is_skill_completion() {
             return None;
         }
+        self.failed_skill_catalog_request()
+    }
+
+    /// What a blocked submission asks again, where a Skill the draft carried
+    /// over a Move waits on a destination Catalog that could not be read:
+    /// nothing else would ask, and a Server keeps answering with that failure.
+    fn carried_skills_retry_request(&self) -> Option<SkillCatalogRequest> {
+        if !self.composers.has_carried_skills(self.composer_key()) {
+            return None;
+        }
+        self.failed_skill_catalog_request()
+    }
+
+    fn failed_skill_catalog_request(&self) -> Option<SkillCatalogRequest> {
         matches!(
             self.current_skill_catalog()?.status,
             crate::protocol::SkillCatalogStatus::Stale { .. }
@@ -7421,11 +7435,21 @@ impl Application {
                 self.state.load_skill_catalog(request, catalog);
                 Ok(ApplicationTransition::Continue)
             }
-            ApplicationEvent::SkillListingFailed { request, error: _ } => {
-                if self.state.skill_catalog_request().as_ref() == Some(&request) {
-                    self.state.skill_catalog = None;
-                    self.state.sync_composer_completion();
-                }
+            // Nothing lists a request again once it has been asked, so a failed
+            // listing stands as a Catalog that could not be read, which is
+            // what a retry looks for.
+            ApplicationEvent::SkillListingFailed { request, error } => {
+                let catalog = SkillCatalog {
+                    provider: request.provider.clone(),
+                    execution_directory: request.execution_directory.clone(),
+                    skills: Vec::new(),
+                    capabilities: crate::protocol::SkillCatalogCapabilities {
+                        max_distinct_invocations: None,
+                        supported_deliveries: Vec::new(),
+                    },
+                    status: crate::protocol::SkillCatalogStatus::Unavailable { message: error },
+                };
+                self.state.load_skill_catalog(request, catalog);
                 Ok(ApplicationTransition::Continue)
             }
             ApplicationEvent::LandingAgentSelectionConfirmed(selection) => {
@@ -9693,7 +9717,12 @@ impl Application {
         {
             self.state.submission_error = Some(error.to_owned());
             self.state.composer_completion.dismiss_active();
-            return ApplicationTransition::Continue;
+            return self
+                .state
+                .carried_skills_retry_request()
+                .map_or(ApplicationTransition::Continue, |request| {
+                    ApplicationTransition::RefreshSkills(request)
+                });
         }
         if !matches!(key, ComposerKey::Session(_))
             && self.state.new_worktree.is_none()

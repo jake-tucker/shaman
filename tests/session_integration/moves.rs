@@ -10,7 +10,10 @@
 //! drops any connection whose directory differs, so a Report waits for the next
 //! Turn rather than waking one.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use crate::session_integration::{
     provider_support::{ControlledProvider, ControlledProviderRuntime, ControlledProviderSession},
@@ -945,8 +948,108 @@ async fn a_drafts_bound_skill_reaches_every_provider_as_the_destinations_skill()
     }
 }
 
+/// A destination whose discovery fails holds a draft's bound Skills back, and
+/// the failure stands at the Server until asked again: Enter asks, and the
+/// Provider is handed the destination's Skill once discovery succeeds.
+#[tokio::test]
+async fn enter_asks_again_for_a_destination_whose_skills_could_not_be_read() {
+    let mut fixture = IdleSession::begin("move-draft-unread-skills-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let explain_in = |directory: &str| SkillDescriptor {
+        id: SkillId::new(format!("{directory}-explain")),
+        name: "explain".to_owned(),
+        description: format!("Explain from the {directory}"),
+        scope: Some("Workspace".to_owned()),
+    };
+    let provider = ProviderId::new(PROVIDER);
+    for (directory, skill) in [
+        (fixture.origin.clone(), explain_in("origin")),
+        (destination.clone(), explain_in("destination")),
+    ] {
+        fixture.runtime.offer_skills_in(SkillCatalog {
+            provider: provider.clone(),
+            execution_directory: ExecutionDirectory { path: directory },
+            skills: vec![skill],
+            capabilities: SkillCatalogCapabilities {
+                max_distinct_invocations: None,
+                supported_deliveries: vec![
+                    SkillPromptDelivery::Initial,
+                    SkillPromptDelivery::Queue,
+                    SkillPromptDelivery::Steer,
+                ],
+            },
+            status: SkillCatalogStatus::Fresh { warning: None },
+        });
+    }
+    let mut application = Application::new(&fixture.origin, Default::default());
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
+            fixture.read().await,
+        )))
+        .expect("view the Session");
+    let origin = fixture.origin.clone();
+    offer_catalog_from_server(&fixture, &mut application, &provider, &origin).await;
+    application
+        .handle_event(ApplicationEvent::Command(CommandId::InsertText(
+            "Please $explain this".to_owned(),
+        )))
+        .expect("write the draft");
+
+    fixture
+        .runtime
+        .fail_skill_discovery("fixture discovery failed");
+    fixture
+        .move_to(&destination)
+        .await
+        .expect("Move the idle Session");
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
+            fixture.read().await,
+        )))
+        .expect("find the Session moved");
+    offer_catalog_from_server(&fixture, &mut application, &provider, &destination).await;
+    let transition = application
+        .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
+        .expect("try the draft");
+    let ApplicationTransition::RefreshSkills(request) = transition else {
+        panic!("the failed Catalog is asked for again, not {transition:?}");
+    };
+
+    fixture.runtime.clear_skill_discovery_failure();
+    fixture
+        .client
+        .refresh_skills(request)
+        .await
+        .expect("ask for the Catalog again");
+    offer_catalog_from_server(&fixture, &mut application, &provider, &destination).await;
+    let transition = application
+        .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
+        .expect("submit the draft");
+    let ApplicationTransition::AdmitPrompt { request, .. } = transition else {
+        panic!("the draft is sent, not {transition:?}");
+    };
+    fixture
+        .client
+        .admit_prompt(fixture.session_id, request)
+        .await
+        .expect("the Server takes the destination's binding");
+    let start = timeout(PROGRESS_DEADLINE, fixture.provider.next_start())
+        .await
+        .expect("the next Turn starts the Provider again");
+    let mut resumed = start.succeed(identity());
+    let turn = timeout(PROGRESS_DEADLINE, resumed.next_turn())
+        .await
+        .expect("the Prompt reaches the Provider");
+    assert_eq!(
+        turn.skill_invocations()[0].skill_id,
+        explain_in("destination").id
+    );
+    turn.succeed();
+    fixture.shutdown().await;
+}
+
 /// The Client taking the Skill Catalog its Server gives of `directory`, once
-/// discovery there has settled.
+/// discovery there has settled one way or the other.
 async fn offer_catalog_from_server(
     fixture: &IdleSession,
     application: &mut Application,
@@ -960,16 +1063,20 @@ async fn offer_catalog_from_server(
         },
     };
     let catalog = timeout(PROGRESS_DEADLINE, async {
+        let mut poll = tokio::time::interval(Duration::from_millis(5));
         loop {
+            poll.tick().await;
             let catalog = fixture
                 .client
                 .list_skills(request.clone())
                 .await
                 .expect("list Skills");
-            if matches!(catalog.status, SkillCatalogStatus::Fresh { .. }) {
+            if !matches!(
+                catalog.status,
+                SkillCatalogStatus::Loading | SkillCatalogStatus::Refreshing
+            ) {
                 return catalog;
             }
-            tokio::task::yield_now().await;
         }
     })
     .await

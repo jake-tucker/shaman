@@ -923,6 +923,16 @@ pub struct SkillDescriptor {
     pub scope: Option<String>,
 }
 
+impl SkillDescriptor {
+    /// Whether this is the very Skill `invocation` is bound to, by identity
+    /// and safe metadata alike.
+    pub(crate) fn identifies(&self, invocation: &SkillInvocation) -> bool {
+        self.id == invocation.skill_id
+            && self.name == invocation.name
+            && self.scope == invocation.scope
+    }
+}
+
 /// A delivery context in which a Provider can honor Skill Invocations. Initial
 /// is distinct from Steer even though an initial Prompt currently enters the
 /// Session store with steer delivery: Providers such as Claude support one and
@@ -1018,6 +1028,24 @@ pub(crate) fn skill_marker_matches(marker: &str, name: &str) -> bool {
         .is_some_and(|visible| skill_names_equal(visible, name))
 }
 
+/// Adds `name` to `names` unless a Skill of that name is there already.
+pub(crate) fn push_skill_name_once(names: &mut Vec<String>, name: &str) {
+    if !names
+        .iter()
+        .any(|existing| skill_names_equal(existing, name))
+    {
+        names.push(name.to_owned());
+    }
+}
+
+/// Why a Skill Invocation has no one Skill of its name in another directory's
+/// Catalog.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SkillNameMismatch {
+    Missing,
+    Ambiguous,
+}
+
 /// The names that kept Skill Invocations from being matched by name in another
 /// directory's Catalog, each once.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -1027,30 +1055,69 @@ pub(crate) struct UnmatchedSkills {
 }
 
 impl UnmatchedSkills {
-    pub(crate) fn names(&self, name: &str) -> bool {
-        self.missing
-            .iter()
-            .chain(&self.ambiguous)
-            .any(|unmatched| skill_names_equal(unmatched, name))
+    pub(crate) fn record(&mut self, mismatch: SkillNameMismatch, name: &str) {
+        let names = match mismatch {
+            SkillNameMismatch::Missing => &mut self.missing,
+            SkillNameMismatch::Ambiguous => &mut self.ambiguous,
+        };
+        push_skill_name_once(names, name);
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.missing.is_empty() && self.ambiguous.is_empty()
+    }
+
+    /// These names as a composer presents a Skill: `` `$name` ``.
+    pub(crate) fn as_markers(&self) -> String {
+        self.reasons(|name| format!("`${name}`"))
+    }
+
+    fn reasons(&self, present: impl Fn(&str) -> String) -> String {
+        let listed = |names: &[String]| names.iter().map(|name| present(name)).collect::<Vec<_>>();
+        let mut reasons = Vec::new();
+        if !self.missing.is_empty() {
+            reasons.push(format!("missing: {}", listed(&self.missing).join(", ")));
+        }
+        if !self.ambiguous.is_empty() {
+            reasons.push(format!("ambiguous: {}", listed(&self.ambiguous).join(", ")));
+        }
+        reasons.join("; ")
     }
 }
 
 impl std::fmt::Display for UnmatchedSkills {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut reasons = Vec::new();
-        if !self.missing.is_empty() {
-            reasons.push(format!("missing: {}", self.missing.join(", ")));
-        }
-        if !self.ambiguous.is_empty() {
-            reasons.push(format!("ambiguous: {}", self.ambiguous.join(", ")));
-        }
-        formatter.write_str(&reasons.join("; "))
+        formatter.write_str(&self.reasons(str::to_owned))
     }
 }
 
-/// Resolves Skills bound in one directory against the fresh `skills` of the
-/// directory they are going to, answering each invocation's Skill in order.
-/// All match or none do, so callers never observe a partially retargeted set.
+/// Resolves a Skill bound in one directory against the fresh `skills` of the
+/// directory it is going to.
+pub(crate) fn match_skill_by_name<'a>(
+    skills: &'a [SkillDescriptor],
+    invocation: &SkillInvocation,
+) -> Result<&'a SkillDescriptor, SkillNameMismatch> {
+    // A correction made from the destination autocomplete already carries
+    // destination authority. Preserve it so an ambiguous name can be resolved
+    // explicitly and the general stale-binding rule remains unchanged outside
+    // this exception.
+    if let Some(destination) = skills.iter().find(|skill| skill.identifies(invocation)) {
+        return Ok(destination);
+    }
+    let matches = skills
+        .iter()
+        .filter(|skill| skill_names_equal(&skill.name, &invocation.name))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [destination] => Ok(destination),
+        [] => Err(SkillNameMismatch::Missing),
+        _ => Err(SkillNameMismatch::Ambiguous),
+    }
+}
+
+/// Resolves a whole Prompt's Skills as [`match_skill_by_name`] does, answering
+/// each invocation's Skill in order. All match or none do, so callers never
+/// observe a partially retargeted set.
 pub(crate) fn match_skills_by_name<'a>(
     skills: &'a [SkillDescriptor],
     invocations: &[SkillInvocation],
@@ -1058,38 +1125,12 @@ pub(crate) fn match_skills_by_name<'a>(
     let mut destinations = Vec::with_capacity(invocations.len());
     let mut unmatched = UnmatchedSkills::default();
     for invocation in invocations {
-        // A correction made from the destination autocomplete already
-        // carries destination authority. Preserve it so an ambiguous name
-        // can be resolved explicitly and the general stale-binding rule
-        // remains unchanged outside this exception.
-        if let Some(destination) = skills.iter().find(|skill| {
-            skill.id == invocation.skill_id
-                && skill.name == invocation.name
-                && skill.scope == invocation.scope
-        }) {
-            destinations.push(destination);
-            continue;
-        }
-        let matches = skills
-            .iter()
-            .filter(|skill| skill_names_equal(&skill.name, &invocation.name))
-            .collect::<Vec<_>>();
-        let names = match matches.as_slice() {
-            [destination] => {
-                destinations.push(*destination);
-                continue;
-            }
-            [] => &mut unmatched.missing,
-            _ => &mut unmatched.ambiguous,
-        };
-        if !names
-            .iter()
-            .any(|name| skill_names_equal(name, &invocation.name))
-        {
-            names.push(invocation.name.clone());
+        match match_skill_by_name(skills, invocation) {
+            Ok(destination) => destinations.push(destination),
+            Err(mismatch) => unmatched.record(mismatch, &invocation.name),
         }
     }
-    if unmatched == UnmatchedSkills::default() {
+    if unmatched.is_empty() {
         Ok(destinations)
     } else {
         Err(unmatched)
