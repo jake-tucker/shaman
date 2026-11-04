@@ -1032,6 +1032,16 @@ impl Default for TuiState {
     }
 }
 
+/// What is said beneath the composer of a Move waiting to take the Session to
+/// `destination`: named by its last component, so the line says when the Move
+/// applies however long the path.
+fn move_pending_acknowledgement(destination: &Path) -> String {
+    format!(
+        "The Session Moves to {} once its Turn settles.",
+        super::sidebar::workspace_name(destination)
+    )
+}
+
 impl TuiState {
     pub(super) fn new(workspace: impl AsRef<Path>) -> Self {
         // Taken as the one reading at launch, so a spelling reached through a
@@ -3115,12 +3125,25 @@ impl TuiState {
                     )),
                     _ => None,
                 });
+                // And once it has settled however it did, what was said of it
+                // waiting no longer holds.
+                let acknowledgement_spent = update.changes.iter().any(|change| {
+                    matches!(change, SessionChange::MoveSettled { to, .. }
+                    if self.submission_error.as_deref()
+                        == Some(
+                            move_pending_acknowledgement(&to.execution_directory.path)
+                                .as_str()
+                        ))
+                });
                 if !session.apply(update)? {
                     return Ok(false);
                 }
                 if let Some(left) = left {
                     self.sync_composer_completion();
                     self.follow_move(&left);
+                }
+                if acknowledgement_spent {
+                    self.submission_error = None;
                 }
                 if move_failure.is_some() {
                     self.submission_error = move_failure;
@@ -6720,8 +6743,13 @@ impl Application {
             }
             // A Move that stands reaches this Client on the Session's own
             // stream, as it reaches every other, so its answer adds nothing.
-            ApplicationEvent::SessionMoved { outcome, .. } => {
+            // One that waits, or changes nothing, is said beneath the composer
+            // of the Session it was asked of, if that is still the one open.
+            ApplicationEvent::SessionMoved { session, outcome } => {
                 use crate::protocol::MoveOutcome;
+                if self.state.session_reference.as_ref() != Some(&session) {
+                    return Ok(ApplicationTransition::Continue);
+                }
                 let acknowledged = match outcome {
                     MoveOutcome::Moved { .. } => None,
                     MoveOutcome::AlreadyThere { .. } => {
@@ -6731,14 +6759,10 @@ impl Application {
                         "The pending Move is cancelled, and the Session stays where it works."
                             .to_owned(),
                     ),
-                    MoveOutcome::Pending { session } => {
-                        session.session.pending_move.map(|pending| {
-                            format!(
-                                "The Session Moves to {} once its Turn settles.",
-                                super::sidebar::workspace_name(&pending.destination.path)
-                            )
-                        })
-                    }
+                    MoveOutcome::Pending { session } => session
+                        .session
+                        .pending_move
+                        .map(|pending| move_pending_acknowledgement(&pending.destination.path)),
                 };
                 if acknowledged.is_some() {
                     self.state.submission_error = acknowledged;

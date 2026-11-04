@@ -1648,7 +1648,52 @@ fn a_pending_move_is_acknowledged_saying_when_it_applies() {
         "{}",
         rows.join("\n")
     );
-    assert_eq!(snapshot.session.execution_directory.path, directories.alpha);
+
+    // The line goes once the Move has applied, which it no longer describes.
+    let (activity_id, from, to) = hear_move_pending(&mut application, &snapshot, &directories.beta);
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(snapshot.revision.0 + 2),
+                changes: vec![SessionChange::MoveSettled {
+                    activity_id,
+                    status: ActivityStatus::Completed,
+                    from,
+                    to,
+                    error: None,
+                }],
+            },
+        )))
+        .expect("hear the Move settle");
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(!screen.contains("once its Turn settles"), "{screen}");
+}
+
+/// The answer to a Move arrives on its own time, and says nothing beneath the
+/// composer of a Session the reader has since gone to.
+#[test]
+fn the_answer_to_a_move_is_said_only_of_the_session_it_was_asked_of() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (session_id, _) = enter_session(&mut application, &directories.alpha);
+
+    application
+        .handle_event(ApplicationEvent::SessionMoved {
+            session: SessionReference::new(Outlook::Local, SessionId::new()),
+            outcome: MoveOutcome::Pending {
+                session: summary_bound_for(
+                    session_id,
+                    "The work that Moves",
+                    &directories.alpha,
+                    Some(&directories.beta),
+                ),
+            },
+        })
+        .expect("hear another Session's answer");
+
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(!screen.contains("once its Turn settles"), "{screen}");
 }
 
 #[test]
