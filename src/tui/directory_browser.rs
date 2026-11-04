@@ -57,7 +57,7 @@ pub(super) enum DirectoryBrowserProvenance {
     /// Opened from a row of the Move picker, so Esc goes back to that row, and
     /// a choice closes the picker as well as the browser and concludes as its
     /// purpose says.
-    FromWorktreeSelector(DestinationPurpose),
+    FromMovePicker(DestinationPurpose),
     /// Opened from the settings panel's editor of a list of directories, so
     /// it stands over the panel, Esc goes back to the editor, and a choice is
     /// an entry of the list rather than where the next Session works.
@@ -74,7 +74,7 @@ impl DirectoryBrowserProvenance {
         match self {
             Self::Standalone(purpose)
             | Self::FromWorkspacePicker(purpose)
-            | Self::FromWorktreeSelector(purpose) => Some(purpose),
+            | Self::FromMovePicker(purpose) => Some(purpose),
             Self::FromListEditor | Self::FromOnboarding => None,
         }
     }
@@ -584,6 +584,16 @@ impl DirectoryBrowser {
                 }
             )
         })
+    }
+
+    /// The Workspace resolution of the directory focus stands on, read as a
+    /// chosen one is, with the browser left standing while its Server answers.
+    pub(super) fn focused_resolution(&self) -> ResolveWorkspaceRequest {
+        ChosenDirectory {
+            path: self.focused.directory().to_owned(),
+            base: self.base.clone(),
+        }
+        .into_workspace_resolution()
     }
 
     /// Whether the browser is open, opened from the settings panel's list
@@ -1297,7 +1307,7 @@ mod tests {
         for provenance in [
             DirectoryBrowserProvenance::Standalone(DestinationPurpose::Landing),
             DirectoryBrowserProvenance::FromWorkspacePicker(DestinationPurpose::Landing),
-            DirectoryBrowserProvenance::FromWorktreeSelector(DestinationPurpose::Landing),
+            DirectoryBrowserProvenance::FromMovePicker(DestinationPurpose::Landing),
             DirectoryBrowserProvenance::FromListEditor,
         ] {
             let mut browser = DirectoryBrowser::default();

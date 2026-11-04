@@ -2657,6 +2657,122 @@ fn server_replacement_restores_draft_and_retries_the_same_worktree_intent_after_
     assert_eq!(create.preparation_id, Some(request.id));
 }
 
+/// What the Worktree Selector's box holds, without the Landing beneath it.
+fn selector_box(app: &Application) -> String {
+    text(app)
+        .lines()
+        .skip_while(|line| !line.contains(" Worktrees "))
+        .take_while(|line| !line.contains('└'))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A lost Remote refuses a removal being confirmed inside the selector, where
+/// the reader is looking. Esc takes back the confirmation and what it said, a
+/// second closes the selector, and the Landing goes on saying the refusal.
+#[test]
+fn a_lost_remote_refuses_a_removal_in_the_selector_and_escape_steps_out() {
+    let layout = Layout::new();
+    let mut app = layout.app();
+    crate::tui_rendering::connecting::turn_to_studio(&mut app);
+    app.handle_event(ApplicationEvent::WorkspaceResolved {
+        outlook: Outlook::Remote("studio".to_owned()),
+        surface: suru::tui::WorkspaceResolutionSurface::Outlook,
+        request_id: 2,
+        result: Ok(layout.context.clone()),
+    })
+    .unwrap();
+    let transition = command(&mut app, SemanticCommandId::WorktreeList);
+    answer(&mut app, transition, layout.context.clone());
+    key(&mut app, KeyCode::Down);
+    key(&mut app, KeyCode::Down);
+    let ApplicationTransition::PreviewCheckoutRemoval { request_id, target } =
+        key(&mut app, KeyCode::Char('d'))
+    else {
+        panic!("read-only preview");
+    };
+    app.handle_event(ApplicationEvent::CheckoutRemoval {
+        request_id,
+        result: Ok(RemoveCheckoutResult {
+            preview: CheckoutRemovalPreview {
+                target: *target,
+                inspection: CheckoutRemovalInspection {
+                    checkout: layout.context.checkouts[1].clone(),
+                    tracked: vec![],
+                    untracked: vec![],
+                    ignored: vec![],
+                    lock: None,
+                    initialized_submodules: vec![],
+                },
+                branch_outcome: CheckoutBranchOutcome::Retained,
+                affected_sessions: 1,
+                working_sessions: 0,
+            },
+            removed: false,
+            error: None,
+        }),
+    })
+    .unwrap();
+    crate::tui_rendering::support::studio_stops_answering(
+        &mut app,
+        1,
+        std::time::Duration::from_secs(5),
+    );
+
+    assert!(matches!(
+        key(&mut app, KeyCode::Enter),
+        ApplicationTransition::Continue
+    ));
+    let refused = selector_box(&app);
+    assert!(refused.contains("studio is unreachable"), "{refused}");
+    assert!(refused.contains("affected Sessions"), "{refused}");
+
+    key(&mut app, KeyCode::Esc);
+    let stepped = selector_box(&app);
+    assert!(stepped.contains("New Worktree"), "{stepped}");
+    assert!(!stepped.contains("studio is unreachable"), "{stepped}");
+    assert!(!stepped.contains("affected Sessions"), "{stepped}");
+
+    key(&mut app, KeyCode::Esc);
+    let closed = text(&app);
+    assert!(!closed.contains(" Worktrees "), "{closed}");
+    assert!(closed.contains("studio is unreachable"), "{closed}");
+}
+
+/// With no confirmation to take back, Esc closes the selector at once.
+#[test]
+fn a_lost_remote_refuses_a_worktree_in_the_selector_and_escape_closes_it() {
+    let layout = Layout::new();
+    let mut app = layout.app();
+    crate::tui_rendering::connecting::turn_to_studio(&mut app);
+    app.handle_event(ApplicationEvent::WorkspaceResolved {
+        outlook: Outlook::Remote("studio".to_owned()),
+        surface: suru::tui::WorkspaceResolutionSurface::Outlook,
+        request_id: 2,
+        result: Ok(layout.context.clone()),
+    })
+    .unwrap();
+    let transition = command(&mut app, SemanticCommandId::WorktreeList);
+    answer(&mut app, transition, layout.context.clone());
+    crate::tui_rendering::support::studio_stops_answering(
+        &mut app,
+        1,
+        std::time::Duration::from_secs(5),
+    );
+
+    assert!(matches!(
+        key(&mut app, KeyCode::Enter),
+        ApplicationTransition::Continue
+    ));
+    let refused = selector_box(&app);
+    assert!(refused.contains("studio is unreachable"), "{refused}");
+
+    key(&mut app, KeyCode::Esc);
+    let closed = text(&app);
+    assert!(!closed.contains(" Worktrees "), "{closed}");
+    assert!(closed.contains("studio is unreachable"), "{closed}");
+}
+
 #[test]
 fn linked_removal_confirmation_warns_counts_cancel_is_read_only_and_force_is_distinct() {
     let layout = Layout::new();

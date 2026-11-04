@@ -2069,6 +2069,10 @@ impl RunLoop {
         if !matches!(follow, ApplicationTransition::Continue) {
             let _ = self.dispatch_transition(follow);
         }
+        let read = self.application.take_move_picker_read();
+        if !matches!(read, ApplicationTransition::Continue) {
+            let _ = self.dispatch_transition(read);
+        }
     }
 
     /// Abandons the Title proposal held for the rename dialog once the dialog

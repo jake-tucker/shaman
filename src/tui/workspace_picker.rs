@@ -10,6 +10,7 @@ use std::{
 };
 
 use ratatui::layout::Position;
+use unicode_width::UnicodeWidthStr;
 
 use crate::protocol::{
     MAX_WORKSPACE_DESCRIPTION_CHARS, Outlook, Workspace, WorkspaceDescription, WorkspaceId,
@@ -557,6 +558,31 @@ impl WorkspacePicker {
     /// reached the Server.
     pub(super) fn refusal(&self) -> Option<&str> {
         self.refusal.as_deref()
+    }
+
+    /// The keys the picker answers, in `width` columns: named in full where
+    /// the box can hold them, and by the keys alone where it cannot — the same
+    /// trade the rows make of "[current]" for "C", so a narrow terminal loses
+    /// wording rather than an affordance. While a Workspace chosen for a Move
+    /// is `reading`, nothing has happened yet, and it says so.
+    pub(super) fn footer_hint(&self, reading: bool, width: usize) -> &'static str {
+        if reading {
+            return "Reading that Workspace… · Esc back";
+        }
+        let moving = self
+            .purpose
+            .as_ref()
+            .is_some_and(DestinationPurpose::is_move);
+        let full = if moving {
+            "Enter Move · Ctrl+O browse · Ctrl+E describe · Esc back"
+        } else {
+            "Enter switch · Ctrl+O browse · Ctrl+E describe · Esc close"
+        };
+        if full.width() <= width {
+            full
+        } else {
+            "Enter · ^O · ^E · Esc"
+        }
     }
 
     /// Says `refusal` inside the picker until it closes, leaving its query

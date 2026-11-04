@@ -397,9 +397,12 @@ pub(super) fn render_with_slots(
             render_workspace_description_editor(frame, state, main, theme);
         }
     }
+    // A question the browser's choice led to stands in its place until it is
+    // answered or taken back.
     if state.directory_browser.is_open()
         && !state.directory_browser.opened_from_list_editor()
         && !state.directory_browser.opened_from_onboarding()
+        && !state.worktree_picker.asks_which()
         && !state.reconnect_overlay_visible()
     {
         render_directory_browser(frame, state, main, theme);
@@ -2088,29 +2091,9 @@ fn render_workspace_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, 
         }
     }
     if shows_footer && lines.len() < content_height {
-        // Named in full where the box can hold it, and by the keys alone where
-        // it cannot — the same trade the rows make of "[current]" for "C", so
-        // a narrow terminal loses wording rather than an affordance.
-        // A Workspace chosen for a Move is read before anything happens, and
-        // the picker stands while its Server answers.
-        let footer = if state.reading_move_workspace() {
-            "Reading that Workspace… · Esc back"
-        } else {
-            let moving = state
-                .workspace_picker
-                .purpose()
-                .is_some_and(|purpose| purpose.is_move());
-            let full = if moving {
-                "Enter Move · Ctrl+O browse · Ctrl+E describe · Esc back"
-            } else {
-                "Enter switch · Ctrl+O browse · Ctrl+E describe · Esc close"
-            };
-            if full.width() <= content_width {
-                full
-            } else {
-                "Enter · ^O · ^E · Esc"
-            }
-        };
+        let footer = state
+            .workspace_picker
+            .footer_hint(state.reading_move_workspace(), content_width);
         lines.push(Line::styled(
             truncate_to_width(footer, content_width),
             theme.text.subdued,
@@ -2241,10 +2224,14 @@ fn render_directory_browser(frame: &mut Frame<'_>, state: &TuiState, main: Rect,
                 "Type · Backspace · Tab · Alt+H",
             ));
         }
-        lines.push(named(
-            "↑↓ move · Space open/close · → open · ← up · Enter choose · Esc close",
-            "↑↓ · Space · → · ← · Enter · Esc",
-        ));
+        lines.push(if state.reading_move_workspace() {
+            named("Reading that Repository… · Esc back", "Reading… · Esc")
+        } else {
+            named(
+                "↑↓ move · Space open/close · → open · ← up · Enter choose · Esc close",
+                "↑↓ · Space · → · ← · Enter · Esc",
+            )
+        });
     }
     render_overlay_box(
         frame,

@@ -391,8 +391,9 @@ pub enum WorkspaceResolutionSurface {
     /// of the Client's own location adopts the answer.
     MovePicker,
     /// A Workspace chosen to Move the open Session to, whose Server says where
-    /// in it that is. The Workspace Picker stands while it answers, holding
-    /// the purpose the answer concludes by.
+    /// in it that is, or a bare Repository chosen in the Directory Browser. The
+    /// picker that chose stands while it answers, holding the purpose the
+    /// answer concludes by.
     MoveWorkspace,
 }
 
@@ -627,6 +628,9 @@ pub struct TuiState {
     /// Workspace to follow once its Server resolves it; taken by
     /// [`Application::take_move_follow`].
     move_follow: Option<ResolveWorkspaceRequest>,
+    /// Whether the open Session has Moved since the Move picker last read it;
+    /// taken by [`Application::take_move_picker_read`].
+    move_picker_stale: bool,
     pub(super) identity: Option<ServerIdentity>,
     /// What each Origin's connection is presently recovering from, keyed by
     /// the Origin whose Server stopped answering. `Outlook::Local` is this
@@ -1084,6 +1088,7 @@ impl TuiState {
             pending_workspace_resolutions: HashMap::new(),
             chosen_workspace: None,
             move_follow: None,
+            move_picker_stale: false,
             identity: None,
             recovering: HashMap::new(),
             manually_stopped: false,
@@ -1615,8 +1620,6 @@ impl TuiState {
         for surface in [
             WorkspaceResolutionSurface::Sidekick,
             WorkspaceResolutionSurface::WorkspacePicker,
-            WorkspaceResolutionSurface::MovePicker,
-            WorkspaceResolutionSurface::MoveWorkspace,
         ] {
             self.pending_workspace_resolutions.remove(&surface);
         }
@@ -1624,8 +1627,15 @@ impl TuiState {
     }
 
     /// Closes every picker of a Move's chain, however far along it the reader
-    /// stands, leaving any opened for another purpose as it was.
+    /// stands, and lets go of what they were waiting on, leaving any opened
+    /// for another purpose as it was.
     fn close_move_pickers(&mut self) {
+        for surface in [
+            WorkspaceResolutionSurface::MovePicker,
+            WorkspaceResolutionSurface::MoveWorkspace,
+        ] {
+            self.pending_workspace_resolutions.remove(&surface);
+        }
         let moving =
             |purpose: Option<&DestinationPurpose>| purpose.is_some_and(DestinationPurpose::is_move);
         if moving(self.worktree_picker.purpose()) {
@@ -1639,7 +1649,17 @@ impl TuiState {
         }
     }
 
-    /// Whether a Workspace chosen for a Move is still being read by its Server.
+    /// Says why what was chosen for a Move was refused, in whichever picker
+    /// chose it: the browser stands over the Workspace Picker it came from.
+    fn refuse_move_choice(&mut self, refusal: String) {
+        if self.directory_browser.is_open() {
+            self.directory_browser.refuse(refusal);
+        } else {
+            self.workspace_picker.refuse(refusal);
+        }
+    }
+
+    /// Whether what was chosen for a Move is still being read by its Server.
     pub(super) fn reading_move_workspace(&self) -> bool {
         self.pending_workspace_resolutions
             .contains_key(&WorkspaceResolutionSurface::MoveWorkspace)
@@ -3240,6 +3260,8 @@ impl TuiState {
     /// Workspace Picker would, remembering the directory the Session works
     /// in, and stands there once it answers.
     fn follow_move(&mut self, left: &crate::protocol::WorkspaceId) {
+        // Any Session's Move leaves the picker open on it saying where it stood.
+        self.move_picker_stale = true;
         if self.open_subagent_parent().is_some() {
             return;
         }
@@ -7201,13 +7223,23 @@ impl Application {
                             // Following a Move is not the reader choosing
                             // where to work, so it lets go of no claim nor
                             // intent of theirs.
+                            // An answer to where the Client works that is still
+                            // on its way is older news than this, so it lands
+                            // nowhere; what the turn owed the Sidebar still
+                            // happens, and here the Sidebar reads the follow.
                             WorkspaceResolutionSurface::Move => {
                                 self.state.stand_in(workspace);
+                                if self.state.cancel_workspace_resolution(
+                                    WorkspaceResolutionSurface::Outlook,
+                                ) {
+                                    self.state.sidebar.refresh_after_outlook_workspace();
+                                    return Ok(self.take_session_listing_transition());
+                                }
                                 Ok(ApplicationTransition::Continue)
                             }
                             // Listing where a Session might Move adopts nothing.
                             WorkspaceResolutionSurface::MovePicker => {
-                                self.state.worktree_picker.load(workspace);
+                                self.state.worktree_picker.take_move_reading(Ok(workspace));
                                 Ok(ApplicationTransition::Continue)
                             }
                             WorkspaceResolutionSurface::MoveWorkspace => {
@@ -7256,11 +7288,11 @@ impl Application {
                             // The ways out of the picker stand, so a Session
                             // whose directory has gone can still leave it.
                             WorkspaceResolutionSurface::MovePicker => {
-                                self.state.worktree_picker.fail(error);
+                                self.state.worktree_picker.take_move_reading(Err(error));
                             }
                             // Nothing Moved; the picker that chose says why.
                             WorkspaceResolutionSurface::MoveWorkspace => {
-                                self.state.workspace_picker.refuse(error);
+                                self.state.refuse_move_choice(error);
                             }
                             // The reader stays where they were, told why the
                             // Sidekick could not be reached.
@@ -8141,7 +8173,7 @@ impl Application {
             self.state.workspace_picker.refuse(refusal.clone());
         }
         if self.state.worktree_picker.open {
-            self.state.worktree_picker.error = Some(refusal.clone());
+            self.state.worktree_picker.refuse(refusal.clone());
         }
         // The Usage Metrics view covers the whole frame, so it says so itself,
         // and leaves nothing behind for the screen it returns to.
@@ -8658,9 +8690,12 @@ impl Application {
                     return ApplicationTransition::Continue;
                 }
                 // Asked which Worktree of a bare Repository, Esc goes back to
-                // choosing a Workspace, which the Move picker stands aside for.
+                // whichever picker chose it: the browser where it still stands,
+                // and otherwise the Workspace Picker.
                 if self.state.worktree_picker.withdraw_question() {
-                    self.state.workspace_picker.step_back();
+                    if !self.state.directory_browser.is_open() {
+                        self.state.workspace_picker.step_back();
+                    }
                     return ApplicationTransition::Continue;
                 }
                 self.state.worktree_picker.close();
@@ -8686,7 +8721,9 @@ impl Application {
                         return self.conclude(purpose, Destination::Worktree(choice));
                     }
                     // Each stands in the picker's place, which Esc comes back
-                    // to, and concludes as the picker would have.
+                    // to, and concludes as the picker would have. The Workspace
+                    // Picker lists the Outlook's Server, which is this Session's
+                    // Origin: turning the Outlook leaves the Session it viewed.
                     Some(WorktreePickerRow::AnotherWorkspace) => {
                         self.state.worktree_picker.step_aside();
                         return ApplicationTransition::ListWorkspaces(
@@ -8855,7 +8892,7 @@ impl Application {
             return self.issue_move(session, directory);
         }
         if let Some(reason) = self.state.worktree_picker.refusal(&choice) {
-            self.state.worktree_picker.fail(reason);
+            self.state.worktree_picker.refuse(reason);
             return ApplicationTransition::Continue;
         }
         match choice {
@@ -8870,17 +8907,22 @@ impl Application {
         }
     }
 
-    /// Takes the Server's reading of the Workspace chosen for a Move, which
-    /// says where in it that is: the Client's last Execution Directory there,
-    /// or its main Worktree. A bare Repository has neither, and a Move there
-    /// could only be refused, so it asks which Worktree first.
+    /// Takes the Server's reading of what was chosen for a Move, which says
+    /// where in it that is: the Client's last Execution Directory there, or its
+    /// main Worktree. A bare Repository has neither, and a Move there could
+    /// only be refused, so it asks which Worktree first, over the Workspace
+    /// Picker or the Directory Browser that chose it.
     fn move_to_resolved_workspace(
         &mut self,
         context: crate::protocol::ResolvedWorkspace,
     ) -> ApplicationTransition {
         use crate::protocol::ExecutionDirectoryStatus;
-        let Some(DestinationPurpose::Move { session }) =
-            self.state.workspace_picker.purpose().cloned()
+        let Some(DestinationPurpose::Move { session }) = self
+            .state
+            .directory_browser
+            .purpose()
+            .or(self.state.workspace_picker.purpose())
+            .cloned()
         else {
             return ApplicationTransition::Continue;
         };
@@ -8893,13 +8935,12 @@ impl Application {
                 ApplicationTransition::Continue
             }
             (ExecutionDirectoryStatus::Unavailable { reason }, _) => {
-                self.state.workspace_picker.refuse(reason.clone());
+                self.state.refuse_move_choice(reason.clone());
                 ApplicationTransition::Continue
             }
             (ExecutionDirectoryStatus::Available, None) => {
                 self.state
-                    .workspace_picker
-                    .refuse("That Workspace names no directory to work in".to_owned());
+                    .refuse_move_choice("That Workspace names no directory to work in".to_owned());
                 ApplicationTransition::Continue
             }
             (ExecutionDirectoryStatus::Available, Some(directory)) => {
@@ -9056,7 +9097,9 @@ impl Application {
     /// at the directory the Landing would begin a Session in, or for a Move at
     /// where the Session stands. Opened over the Workspace Picker — by its
     /// Browse row or its key — or from the Move picker's row, it stands in that
-    /// picker's place, which steps aside until the browser is done.
+    /// picker's place, which steps aside until the browser is done. For a Move
+    /// the Outlook's Server is the Session's Origin, since turning the Outlook
+    /// leaves the Session it viewed.
     fn open_directory_browser(&mut self) -> ApplicationTransition {
         let outlook = self.state.outlook.clone();
         let provenance = if self.state.worktree_picker.open
@@ -9064,7 +9107,7 @@ impl Application {
             && let Some(purpose) = self.state.worktree_picker.purpose().cloned()
         {
             self.state.worktree_picker.step_aside();
-            DirectoryBrowserProvenance::FromWorktreeSelector(purpose)
+            DirectoryBrowserProvenance::FromMovePicker(purpose)
         } else if self.state.workspace_picker.is_open()
             && let Some(purpose) = self.state.workspace_picker.purpose().cloned()
         {
@@ -9124,15 +9167,18 @@ impl Application {
             // was opened for says.
             SemanticCommandId::DirectoryBrowserChoose => {
                 // A Move to a bare Repository could only be refused, and the
-                // row already says that is what it is.
+                // row already says that is what it is, so its Server is asked
+                // for its Worktrees with the browser standing for Esc to find.
                 if browser.purpose().is_some_and(DestinationPurpose::is_move)
                     && browser.focused_is_bare()
                 {
-                    browser.refuse(
-                        "A bare Repository has nowhere to work; choose one of its Worktrees"
-                            .to_owned(),
-                    );
-                    return ApplicationTransition::Continue;
+                    let surface = WorkspaceResolutionSurface::MoveWorkspace;
+                    return ApplicationTransition::ResolveWorkspace {
+                        outlook: browser.server().clone(),
+                        surface,
+                        request: browser.focused_resolution(),
+                        request_id: self.state.begin_workspace_resolution(surface),
+                    };
                 }
                 let Some((provenance, chosen)) = browser.choose_focused() else {
                     return ApplicationTransition::Continue;
@@ -9145,7 +9191,7 @@ impl Application {
                         self.state.workspace_picker.close();
                         purpose
                     }
-                    DirectoryBrowserProvenance::FromWorktreeSelector(purpose) => {
+                    DirectoryBrowserProvenance::FromMovePicker(purpose) => {
                         self.state.worktree_picker.close();
                         purpose
                     }
@@ -9174,7 +9220,7 @@ impl Application {
                     Some(DirectoryBrowserProvenance::FromWorkspacePicker(_)) => {
                         self.state.workspace_picker.step_back();
                     }
-                    Some(DirectoryBrowserProvenance::FromWorktreeSelector(_)) => {
+                    Some(DirectoryBrowserProvenance::FromMovePicker(_)) => {
                         self.state.worktree_picker.step_back();
                     }
                     // The list editor, or Onboarding's step, stood beneath
@@ -9184,6 +9230,9 @@ impl Application {
                         | DirectoryBrowserProvenance::FromOnboarding,
                     ) => {}
                 }
+                // Stepping back lets go of a Repository still being read.
+                self.state
+                    .cancel_workspace_resolution(WorkspaceResolutionSurface::MoveWorkspace);
                 None
             }
             SemanticCommandId::DirectoryBrowserHiddenToggle => {
@@ -10204,11 +10253,22 @@ impl Application {
         }
     }
 
-    /// Opens the Move picker on `session`, reading its own Repository from
-    /// where it stands, on its own Server. The answer is the picker's alone:
-    /// nothing of the Client's current Workspace or Landing adopts it.
+    /// Opens the Move picker on `session`, and reads it.
     fn open_move_picker(&mut self, session: SessionReference) -> ApplicationTransition {
+        self.state.submission_error = None;
+        let outlook = session.origin.clone();
+        self.state
+            .worktree_picker
+            .open(DestinationPurpose::Move { session });
+        self.read_move_picker(outlook)
+    }
+
+    /// Reads the open Session's own Repository for the Move picker, from where
+    /// it stands, on `origin`, its own Server. The answer is the picker's
+    /// alone: nothing of the Client's current Workspace or Landing adopts it.
+    fn read_move_picker(&mut self, origin: Outlook) -> ApplicationTransition {
         let Some(snapshot) = self.state.session.as_ref().map(|open| open.snapshot()) else {
+            self.state.close_move_pickers();
             return self.state.refuse("Open a Session to Move it");
         };
         let request = ResolveWorkspaceRequest {
@@ -10219,13 +10279,8 @@ impl Application {
             path: snapshot.session.workspace.path.clone(),
         };
         let surface = WorkspaceResolutionSurface::MovePicker;
-        self.state.submission_error = None;
-        let outlook = session.origin.clone();
-        self.state
-            .worktree_picker
-            .open(DestinationPurpose::Move { session });
         ApplicationTransition::ResolveWorkspace {
-            outlook,
+            outlook: origin,
             surface,
             request_id: self.state.begin_workspace_resolution(surface),
             request,
@@ -13499,6 +13554,22 @@ impl Application {
             surface: WorkspaceResolutionSurface::Move,
             request_id,
             request,
+        }
+    }
+
+    /// The reading the Move picker needs where its Session has Moved beneath
+    /// it, since the rows and the mark it drew say where it stood. Asked again
+    /// rather than closed, so the reader keeps their place in the chain.
+    pub fn take_move_picker_read(&mut self) -> ApplicationTransition {
+        if !std::mem::take(&mut self.state.move_picker_stale) {
+            return ApplicationTransition::Continue;
+        }
+        match self.state.worktree_picker.purpose() {
+            Some(DestinationPurpose::Move { session }) => {
+                let origin = session.origin.clone();
+                self.read_move_picker(origin)
+            }
+            _ => ApplicationTransition::Continue,
         }
     }
 

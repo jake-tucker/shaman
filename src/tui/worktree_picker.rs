@@ -118,6 +118,31 @@ impl WorktreePicker {
         self.loading = false;
         self.error = Some(error);
     }
+    /// Takes a reading of the Session a Move picker was opened on, into the
+    /// picker itself even where a question stands over it. The reader stays on
+    /// the row they were on while the rows stand as they did, and otherwise
+    /// starts over on the first.
+    pub(super) fn take_move_reading(&mut self, reading: Result<ResolvedWorkspace, String>) {
+        if let Some(beneath) = &mut self.asked_over {
+            return beneath.take_move_reading(reading);
+        }
+        match reading {
+            Ok(context) => {
+                let rows = self.rows();
+                self.load(context);
+                if self.rows() != rows {
+                    self.selected = 0;
+                    self.window.open();
+                }
+            }
+            Err(error) => self.fail(error),
+        }
+    }
+    /// Says `refusal` inside the picker, leaving its rows and the one the
+    /// reader is on as they were.
+    pub(super) fn refuse(&mut self, refusal: String) {
+        self.error = Some(refusal);
+    }
     pub(super) fn move_by(&mut self, delta: isize) {
         if self.loading || self.removal.is_some() {
             return;
