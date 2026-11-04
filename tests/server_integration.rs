@@ -2061,6 +2061,58 @@ async fn a_remote_session_is_moved_by_its_owning_server() {
         destination,
         "the Remote holds the Session where it Moved"
     );
+
+    // A new Worktree is the Remote's to make, of a Repository its own home
+    // holds, and it starts from that Repository's own commit.
+    let repository = home.path().join("repository");
+    std::fs::create_dir(&repository).expect("create the Remote's Repository");
+    for args in [
+        vec!["init", "-b", "main"],
+        vec![
+            "-c",
+            "user.name=Suru Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "initial",
+        ],
+    ] {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repository)
+            .args(args)
+            .output()
+            .expect("run Git");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let suru::protocol::MoveOutcome::Moved { session } = remote
+        .move_session(
+            created.session.id,
+            &suru::protocol::MoveSessionRequest {
+                destination: suru::protocol::MoveDestination::NewWorktree {
+                    directory: "~/repository".into(),
+                },
+            },
+        )
+        .await
+        .expect("Move the Remote's Session into a Worktree the Remote makes")
+    else {
+        panic!("the Remote's idle Session Moves at once");
+    };
+    let worktree = suru::paths::canonical(&repository)
+        .unwrap()
+        .join(suru::protocol::MANAGED_WORKTREE_DIRECTORY)
+        .join("begin-remote");
+    assert_eq!(session.session.execution_directory.path, worktree);
+    assert!(worktree.is_dir(), "it stands on the Remote's own disk");
     drop(native);
     pair.shutdown().await;
 }

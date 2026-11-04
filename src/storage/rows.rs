@@ -1558,6 +1558,8 @@ enum StoredActivityPayload<'a> {
         to: Cow<'a, crate::protocol::MoveLocation>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<Cow<'a, str>>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        new_worktree: bool,
     },
 }
 
@@ -1744,12 +1746,14 @@ impl StoredActivityPayload<'_> {
                 from,
                 to,
                 error,
+                new_worktree,
             } => Activity::Move {
                 id,
                 status,
                 from: from.into_owned(),
                 to: to.into_owned(),
                 error: owned(error),
+                new_worktree,
             },
         })
     }
@@ -1923,12 +1927,14 @@ impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
                 from,
                 to,
                 error,
+                new_worktree,
                 ..
             } => Self::Move {
                 status: *status,
                 from: Cow::Borrowed(from),
                 to: Cow::Borrowed(to),
                 error: borrowed(error),
+                new_worktree: *new_worktree,
             },
         }
     }

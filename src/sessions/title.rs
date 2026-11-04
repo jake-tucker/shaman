@@ -69,6 +69,12 @@
 //! never the second attempt the derivation below never makes of its own
 //! accord.
 //!
+//! A Session Moved into a new Managed Worktree has that Worktree's branch named
+//! by an Errand of its own ([`Derivation::derive_moved_branch`]), reading the
+//! Session's Prompts so far as a proposal does and asking for the branch alone,
+//! so its Title stands. The same Setting governs it, and the same rules and
+//! locks of source control rename the branch.
+//!
 //! Everything here is best-effort by construction. Derivation runs in the
 //! background alongside the real first Turn and never blocks or gates it; the
 //! Title is attempted once per Session and never again, so its branch is too;
@@ -433,6 +439,82 @@ impl Derivation {
         self.errand_at(session_id, provider).is_some()
     }
 
+    /// Forks the Errand naming `created`'s branch anew for the Session of
+    /// `snapshot`, which a Move just stood in the new Managed Worktree it
+    /// belongs to, and returns at once. It reads the Session's Prompts so far
+    /// and asks for the branch alone, so its Title stands. A Setting or Session
+    /// that derives nothing, and an Errand that fails or names nothing usable,
+    /// leave the branch its first name, saying so in the Log and nowhere else.
+    pub(crate) fn derive_moved_branch(&self, snapshot: &SessionSnapshot, created: CreatedBranch) {
+        let session_id = snapshot.session.id;
+        let provider = snapshot
+            .session
+            .agent_selection
+            .as_ref()
+            .map(|selection| selection.provider.clone());
+        let Some(errand_at) = self.errand_at(session_id, provider) else {
+            return;
+        };
+        let prompts = admitted_prompts(snapshot);
+        if prompts.is_empty() {
+            tracing::debug!(%session_id, "no Errand: the Session has no Prompt to name a branch from");
+            return;
+        }
+        let prompt = moved_branch_prompt(&prompts);
+        let execution_directory = snapshot.session.execution_directory.path.clone();
+        let errands = self.errands.clone();
+        let models = self.models.clone();
+        let sessions = self.sessions.clone();
+        let source_control = self.source_control.clone();
+        let preparations = self.preparations.clone();
+        tokio::spawn(async move {
+            let (provider, pinned) = match &errand_at {
+                ErrandAt::Provider(provider) => (provider, None),
+                ErrandAt::Selection(selection) => (&selection.provider, Some(selection)),
+            };
+            let Some(selection) = models.resolved_errand_selection(provider, pinned).await else {
+                tracing::info!(
+                    %session_id,
+                    "no Errand: `{provider}` offers no Model to run one at"
+                );
+                return;
+            };
+            let errand = ProviderErrand {
+                prompt,
+                schema: moved_branch_schema(),
+                selection,
+                execution_directory,
+            };
+            let proposal = match errands.run(ErrandPurpose::MovedBranch, errand).await {
+                Ok(answer) => answer["branch"]
+                    .as_str()
+                    .and_then(naming::proposed_fragment),
+                Err(failure) => {
+                    tracing::info!(%session_id, "Branch Errand produced no branch: {failure}");
+                    None
+                }
+            };
+            match proposal {
+                Some(proposal) => {
+                    rename_branch(
+                        session_id,
+                        &source_control,
+                        &preparations,
+                        &sessions,
+                        &created,
+                        &proposal,
+                    )
+                    .await
+                }
+                None => tracing::info!(
+                    %session_id,
+                    branch = %created.branch,
+                    "no usable branch was derived, so the Managed Worktree keeps its first name"
+                ),
+            }
+        });
+    }
+
     /// Derives a Title proposal from `snapshot`'s Prompts so far, at the
     /// user's asking, and answers it without storing anything: the user keeps
     /// it by renaming the Session to it. Runs while its caller waits, so a
@@ -464,13 +546,8 @@ impl Derivation {
                 "`{provider}` offers no Model to derive a Title at"
             )));
         };
-        let prompts = snapshot
-            .prompts
-            .iter()
-            .filter(|prompt| prompt.status != PromptStatus::Cancelled)
-            .collect::<Vec<_>>();
         let errand = ProviderErrand {
-            prompt: proposal_prompt(&prompts),
+            prompt: proposal_prompt(&admitted_prompts(snapshot)),
             schema: proposal_schema(),
             selection,
             execution_directory: snapshot.session.execution_directory.path.clone(),
@@ -964,12 +1041,21 @@ fn errand_prompt(
     )
 }
 
-/// The Prompt a Title proposal's Errand carries: what to write, and the
-/// Session's Prompts so far to write it about, within the one budget a first
-/// Prompt is held to. The first Prompt opens the work and the latest say where
-/// it went, so where they cannot all be carried the first keeps up to half the
-/// budget and the latest fill the rest, those between them giving way.
-fn proposal_prompt(prompts: &[&Prompt]) -> String {
+/// The Prompts of `snapshot`'s Session so far, as an Errand reads them.
+fn admitted_prompts(snapshot: &SessionSnapshot) -> Vec<&Prompt> {
+    snapshot
+        .prompts
+        .iter()
+        .filter(|prompt| prompt.status != PromptStatus::Cancelled)
+        .collect()
+}
+
+/// A Session's Prompts so far, as an Errand carries them to write about, within
+/// the one budget a first Prompt is held to. The first Prompt opens the work and
+/// the latest say where it went, so where they cannot all be carried the first
+/// keeps up to half the budget and the latest fill the rest, those between them
+/// giving way.
+fn carried_requests(prompts: &[&Prompt]) -> String {
     let texts = prompts
         .iter()
         .map(|prompt| titling_text(&prompt.text, &prompt.skill_invocations, &prompt.attachments))
@@ -1004,6 +1090,12 @@ fn proposal_prompt(prompts: &[&Prompt]) -> String {
         }
         carried.extend(latest.into_iter().rev());
     }
+    carried.join("\n\n---\n\n")
+}
+
+/// The Prompt a Title proposal's Errand carries: what to write, and the
+/// Session's Prompts so far to write it about.
+fn proposal_prompt(prompts: &[&Prompt]) -> String {
     format!(
         "Name the piece of work the requests below have carried out so far, in the order \
          they were made.\n\n\
@@ -1011,8 +1103,36 @@ fn proposal_prompt(prompts: &[&Prompt]) -> String {
          the work and what it is meant to achieve. Do not echo the wording of the requests, \
          do not address the reader, and do not end with a full stop.\n\n\
          The requests:\n{}",
-        carried.join("\n\n---\n\n")
+        carried_requests(prompts)
     )
+}
+
+/// The Prompt a Moved Session's branch Errand carries: what to write, and the
+/// Session's Prompts so far to write it about.
+fn moved_branch_prompt(prompts: &[&Prompt]) -> String {
+    format!(
+        "Name the branch for the piece of work the requests below have carried out so far, \
+         in the order they were made.\n\n\
+         Answer with a branch name of 2 to 5 plain words describing the work, with no prefix \
+         and no issue numbers, and never naming a Skill as its subject.\n\n\
+         The requests:\n{}",
+        carried_requests(prompts)
+    )
+}
+
+/// The shape a Moved Session's branch Errand answers in: the branch alone.
+fn moved_branch_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "branch": {
+                "type": "string",
+                "description": "2 to 5 plain words describing the work, with no prefix, no issue numbers, and no Skill's name as its subject",
+            },
+        },
+        "required": ["branch"],
+        "additionalProperties": false,
+    })
 }
 
 /// The shape a Title proposal's Errand answers in: the Title alone.

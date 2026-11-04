@@ -14,6 +14,30 @@
 //! Session's deletion gives one, apart from the Move, which neither waits for
 //! it nor hears of it.
 //!
+//! A Move asked into a new Managed Worktree has it made here, as it is asked,
+//! whatever then holds the Move, so whoever asks learns at once whether it could
+//! be: a failed preparation is a refusal, with the Session where it stood. It
+//! runs as a new Session's does, under the same two locks in the same
+//! order, but for what names it and where it starts: the Session's Title, and
+//! the commit the Session's own Worktree stands at where that lies in the
+//! Repository asked for. In any other Repository the Session's commit means
+//! nothing, so the Worktree starts from the commit the directory named stands
+//! at, a bare Repository's root included. Its intent keeps the Worktree from any
+//! orphan check, and leaves a failure and a crash to the rule for failed
+//! preparations: it intends no Session of its own, so no Session's Prompt is
+//! withheld for it. It is marked admitted as the Worktree stands whole, which
+//! leaves only an orphan for a crash to find, and retired once the Move lands,
+//! while both locks are still held. From there the Session's own row references
+//! the Worktree, as it stands there or as its pending Move is bound there,
+//! however long what holds it runs and through a restart. Both locks are let go
+//! before anything follows the Move, or the orphan check it runs for the
+//! Worktree left would find its Repository busy.
+//!
+//! Once a Move that made its Worktree applies, here or at the settling below, an
+//! Errand names the Worktree's branch anew. A pending Move replaced, cancelled or
+//! failed is bound for its destination no longer, so that destination's
+//! Repository is given the orphan check too, whose refusals stand as ever.
+//!
 //! A pending Move is settled here too, asked for by the Session's Provider
 //! actor as soon as nothing holds it and before it begins anything else, and by
 //! this Server as it starts, since a Turn a stop left open settles only in being
@@ -28,7 +52,10 @@
 //! other nothing pending, and no reader sees the Session Moved with a Prompt
 //! still bound behind it.
 
-use std::{fmt, path::PathBuf};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+};
 
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
@@ -36,10 +63,12 @@ use tokio::task::JoinSet;
 use super::SessionOperations;
 use crate::protocol::{
     Author, CheckoutSummary, ExecutionDirectory, InitialPrompt, MoveDestination, MoveOutcome,
-    PendingMove, ResolvedWorkspace, SessionId,
+    PendingMove, PreparationId, PreparedCheckout, ResolvedWorkspace, Session, SessionId,
+    SourceControlCapability,
 };
 use crate::provider::{MoveSettlement, skill_delivery_failure_message};
-use crate::sessions::{MoveSessionError, PendingMoveSettled, WaitingPromptBound};
+use crate::sessions::{MoveAftermath, MoveSessionError, PendingMoveSettled, WaitingPromptBound};
+use crate::source_control::PreparationCheckpoint;
 
 /// Why a Move was refused. Each leaves the Session where it was.
 #[derive(Debug)]
@@ -55,8 +84,8 @@ pub(crate) enum MoveRefusal {
     /// The destination lies in the Sidekick Workspace, where any Agent at
     /// work is a Sidekick.
     SidekickDestination,
-    /// The destination names no directory an Agent can work in, for the
-    /// reason given.
+    /// The destination names no directory an Agent can work in, or no new
+    /// Worktree could be made there, for the reason given.
     Destination(String),
     /// The destination is a bare Repository's root, which no Agent works in.
     BareRepository,
@@ -92,14 +121,22 @@ impl fmt::Display for MoveRefusal {
     }
 }
 
+/// A new Managed Worktree made for a Move, under the locks that keep every
+/// Reclaim from it until the Move stands.
+struct MadeWorktree<'a> {
+    preparation: PreparedCheckout,
+    _serial: tokio::sync::MutexGuard<'a, ()>,
+    _mutation: tokio::sync::OwnedMutexGuard<()>,
+}
+
 impl SessionOperations {
     /// Moves a Session to `destination` for `author`, answering what came of
     /// it. Refused, leaving the Session where it was, for a Session this
     /// Server does not hold, a native Subagent's or a Sidekick's, and for a
-    /// destination that names no directory an Agent can work in, or one in the
-    /// Sidekick Workspace. A Turn of the Session's own, or a native Subagent at
-    /// work beneath it, holds the Move pending until it settles; a Session with
-    /// neither Moves at once.
+    /// destination that names no directory an Agent can work in, one in the
+    /// Sidekick Workspace, or a new Worktree that could not be made. A Turn of
+    /// the Session's own, or a native Subagent at work beneath it, holds the Move
+    /// pending until it settles; a Session with neither Moves at once.
     pub(crate) async fn move_session(
         &self,
         session_id: SessionId,
@@ -120,28 +157,163 @@ impl SessionOperations {
         // The path is read against where the Session works and this
         // Server's home as it is asked for; whether a directory stands there
         // is read now, and again if the Move waits.
-        let destination = match destination {
-            MoveDestination::Directory { path } => crate::source_control::written_path(
-                &path,
+        let written = |path: &Path| {
+            crate::source_control::written_path(
+                path,
                 &session.execution_directory.path,
                 self.home.as_deref(),
             )
-            .map_err(MoveRefusal::Destination)?,
+            .map_err(MoveRefusal::Destination)
         };
-        let (resolved, left) = self.read_destination(session_id, destination).await?;
-        let (outcome, vacated) = self
-            .sessions
-            .move_to(session_id, resolved, left)
-            .map_err(|error| stored_refusal(session_id, error))?;
+        let (outcome, mut aftermath) = match destination {
+            MoveDestination::Directory { path } => {
+                let (resolved, left) = self.read_destination(session_id, written(&path)?).await?;
+                self.sessions
+                    .move_to(session_id, resolved, left)
+                    .map_err(|error| stored_refusal(session_id, error))?
+            }
+            MoveDestination::NewWorktree { directory } => {
+                let made = self
+                    .make_worktree(session_id, &session, written(&directory)?)
+                    .await?;
+                self.move_into_made_worktree(session_id, made).await?
+            }
+        };
         // A Move to where the Session stood with nothing pending changed
         // nothing, so nothing is stopped and no act recorded.
         if !matches!(outcome, MoveOutcome::AlreadyThere { .. }) {
             self.record_act(session_id, author);
         }
+        if let Some(abandoned) = aftermath.abandoned.take() {
+            self.check_abandoned_destination(&abandoned).await;
+        }
         if matches!(outcome, MoveOutcome::Moved { .. }) {
-            self.follow_move(session_id, vacated);
+            self.follow_move(session_id, aftermath);
         }
         Ok(outcome)
+    }
+
+    /// Makes the new Managed Worktree a Move asks for of the Repository
+    /// `directory` lies in, and answers it with the locks it was made under
+    /// still held. A failure leaves its intent for the rule for failed
+    /// preparations, which alone knows how to retire whatever part of it was
+    /// made.
+    async fn make_worktree(
+        &self,
+        session_id: SessionId,
+        session: &Session,
+        directory: PathBuf,
+    ) -> Result<MadeWorktree<'_>, MoveRefusal> {
+        let directory = readable_directory(directory).await?;
+        let named = self.source_control.resolve(&directory, None).await;
+        if self.sidekick_workspace.holds(&named.workspace) {
+            return Err(MoveRefusal::SidekickDestination);
+        }
+        let repository = named.workspace.repository.as_deref().ok_or_else(|| {
+            MoveRefusal::Destination(format!(
+                "A new Worktree can only be made in a Repository, and {} is not in one",
+                directory.display()
+            ))
+        })?;
+        if let SourceControlCapability::Unsupported { reason } =
+            &repository.capabilities.create_checkout
+        {
+            return Err(MoveRefusal::Destination(reason.clone()));
+        }
+        // The Session's own commit where it works in this Repository, read
+        // with everything else under the lock below, and refused rather than
+        // started from anywhere else where it cannot be read. The commit of any
+        // other Repository's directory is all there is to start from there.
+        let same_repository = session
+            .workspace
+            .repository
+            .as_deref()
+            .is_some_and(|held| held.id == repository.id);
+        let source = if same_repository {
+            readable_directory(session.execution_directory.path.clone())
+                .await
+                .map_err(|_| {
+                    MoveRefusal::Destination(format!(
+                        "The Worktree the Session stands in, {}, cannot be read for the commit a \
+                         new one would start from",
+                        session.execution_directory.path.display()
+                    ))
+                })?
+        } else {
+            directory
+        };
+        let not_made = |error: String| {
+            tracing::info!(%session_id, "a Move's new Worktree was not made: {error}");
+            MoveRefusal::Destination(format!("No new Worktree could be made: {error}"))
+        };
+        let serial = self.preparations.serial.lock().await;
+        let (mut preparation, mutation) = self
+            .source_control
+            .plan_worktree(
+                PreparationId::default(),
+                &source,
+                &self.sessions.title(session_id).unwrap_or_default(),
+                &self.preparations.intended_destinations(),
+            )
+            .await
+            .map_err(not_made)?;
+        let made = async {
+            self.preparations.save(&preparation)?;
+            self.source_control
+                .checkpoint(PreparationCheckpoint::IntentPersisted, &preparation)
+                .await?;
+            self.source_control.prepare_checkout(&preparation).await?;
+            preparation.checkout_created = true;
+            preparation.ready = true;
+            preparation.admitted_session = Some(session_id);
+            self.preparations.save(&preparation)
+        }
+        .await;
+        made.map_err(not_made)?;
+        tracing::info!(
+            %session_id,
+            source = %source.display(),
+            destination = %preparation.destination.path.display(),
+            "Managed Worktree made for a Move"
+        );
+        Ok(MadeWorktree {
+            preparation,
+            _serial: serial,
+            _mutation: mutation,
+        })
+    }
+
+    /// Moves the Session into the Worktree made for it, retiring that
+    /// Worktree's intent and letting go of its locks whatever comes of it. A
+    /// Move that cannot stand leaves that Worktree to the orphan check.
+    async fn move_into_made_worktree(
+        &self,
+        session_id: SessionId,
+        made: MadeWorktree<'_>,
+    ) -> Result<(MoveOutcome, MoveAftermath), MoveRefusal> {
+        let preparation = &made.preparation;
+        let moved = match self
+            .read_destination(session_id, preparation.destination.path.clone())
+            .await
+        {
+            Ok((resolved, left)) => self
+                .sessions
+                .move_to_new_worktree(session_id, resolved, left)
+                .map_err(|error| stored_refusal(session_id, error)),
+            Err(refusal) => Err(refusal),
+        };
+        if let Err(error) = self.preparations.delete_after_admission(preparation) {
+            tracing::warn!(
+                %session_id,
+                "A Move's Worktree preparation intent could not be deleted: {error}"
+            );
+        }
+        let repository = preparation.repository.clone();
+        drop(made);
+        if moved.is_err() {
+            self.orphan_checks.spawn(repository, std::future::ready(()));
+        }
+        moved
     }
 
     /// Settles every pending Move this Server was started finding, and each
@@ -221,27 +393,54 @@ impl SessionOperations {
                     .sessions
                     .apply_pending_move(session_id, pending, resolved, left, prompts)
                 {
-                    Ok((settled, vacated)) => {
+                    Ok((settled, aftermath)) => {
                         if matches!(settled, PendingMoveSettled::Moved) {
-                            self.follow_move(session_id, vacated);
+                            self.follow_move(session_id, aftermath);
                         }
                         Ok(settled)
                     }
                     // Left pending, its label would stand with nothing to
                     // settle it.
-                    Err(MoveSessionError::NoExecutionDirectory) => self.sessions.fail_pending_move(
-                        session_id,
-                        pending,
-                        &MoveRefusal::BareRepository.to_string(),
-                    ),
+                    Err(MoveSessionError::NoExecutionDirectory) => {
+                        self.fail_pending_move(session_id, pending, &MoveRefusal::BareRepository)
+                            .await
+                    }
                     Err(error) => Err(error),
                 }
             }
             Err(MoveRefusal::SessionNotFound) => Err(MoveSessionError::SessionNotFound),
-            Err(refusal) => {
-                self.sessions
-                    .fail_pending_move(session_id, pending, &refusal.to_string())
-            }
+            Err(refusal) => self.fail_pending_move(session_id, pending, &refusal).await,
+        }
+    }
+
+    /// Fails `pending` for `refusal`, and gives what it was bound for the
+    /// orphan check it was held back from.
+    async fn fail_pending_move(
+        &self,
+        session_id: SessionId,
+        pending: &PendingMove,
+        refusal: &MoveRefusal,
+    ) -> Result<PendingMoveSettled, MoveSessionError> {
+        let settled = self
+            .sessions
+            .fail_pending_move(session_id, pending, &refusal.to_string())?;
+        if matches!(settled, PendingMoveSettled::Stayed) {
+            self.check_abandoned_destination(&pending.destination).await;
+        }
+        Ok(settled)
+    }
+
+    /// Runs the orphan check for the Repository of `destination`, which a
+    /// pending Move given up was bound for, apart from whoever gave it up.
+    /// One no longer in a Repository has nothing to check.
+    async fn check_abandoned_destination(&self, destination: &ExecutionDirectory) {
+        let reading = self
+            .source_control
+            .read_unremembered(&destination.path)
+            .await;
+        if let Some(repository) = reading.workspace.repository {
+            self.orphan_checks
+                .spawn(*repository, std::future::ready(()));
         }
     }
 
@@ -309,14 +508,7 @@ impl SessionOperations {
         session_id: SessionId,
         destination: PathBuf,
     ) -> Result<(ResolvedWorkspace, Vec<CheckoutSummary>), MoveRefusal> {
-        let directory = tokio::task::spawn_blocking(move || {
-            crate::source_control::readable_directory(&destination)
-        })
-        .await
-        .map_err(|_| {
-            MoveRefusal::Destination("Suru could not finish reading the destination".to_owned())
-        })?
-        .map_err(MoveRefusal::Destination)?;
+        let directory = readable_directory(destination).await?;
         let resolved = self.source_control.resolve(&directory, None).await;
         if self.sidekick_workspace.holds(&resolved.workspace) {
             return Err(MoveRefusal::SidekickDestination);
@@ -348,16 +540,33 @@ impl SessionOperations {
         Ok((resolved, left))
     }
 
-    /// Tells the Session's Provider actor it Moved, and runs the orphan check
-    /// for `vacated`, a Worktree it left, once the process stopped there has
-    /// gone. The actor settling a pending Move has already let go of that
-    /// process by the time it reads this.
-    fn follow_move(&self, session_id: SessionId, vacated: Option<crate::protocol::Repository>) {
+    /// Tells the Session's Provider actor it Moved, runs the orphan check for
+    /// a Worktree it left once the process stopped there has gone, and sets
+    /// about naming anew the branch of a Worktree made for this Move. The
+    /// actor settling a pending Move has already let go of that process by the
+    /// time it reads this.
+    fn follow_move(&self, session_id: SessionId, aftermath: MoveAftermath) {
         let provider_stopped = self.providers.session_moved(session_id);
-        if let Some(repository) = vacated {
+        if let Some(repository) = aftermath.vacated {
             self.orphan_checks.spawn(repository, provider_stopped);
         }
+        if let Some(created) = aftermath.created_branch
+            && let Some(snapshot) = self.sessions.snapshot(session_id)
+        {
+            self.derivation.derive_moved_branch(&snapshot, created);
+        }
     }
+}
+
+/// `destination` where a directory this Server can read stands now, read off
+/// the Server's own threads, or the reason there is none.
+async fn readable_directory(destination: PathBuf) -> Result<PathBuf, MoveRefusal> {
+    tokio::task::spawn_blocking(move || crate::source_control::readable_directory(&destination))
+        .await
+        .map_err(|_| {
+            MoveRefusal::Destination("Suru could not finish reading the destination".to_owned())
+        })?
+        .map_err(MoveRefusal::Destination)
 }
 
 /// What a store's refusal of a Move tells whoever asked, logging what the

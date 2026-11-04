@@ -63,7 +63,8 @@ pub(super) fn spawn(
 }
 
 /// Runs the orphan population for the one Repository a successful Session
-/// deletion, or a Move out of one of its Worktrees, named. Each run is
+/// deletion, a Move out of one of its Worktrees, or a pending Move given up on
+/// one, named. Each run is
 /// deliberately detached from the operation that asked for it: Git refusal, a
 /// busy guard, and shutdown all leave a later sweep to retry without changing
 /// the completed Session operation.

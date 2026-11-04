@@ -1429,3 +1429,6 @@ async fn every_session_sharing_the_worktree_reports_the_new_branch() {
     drop(catalog);
     fixture.server.shutdown().await.expect("shut down server");
 }
+
+#[path = "worktree_branch_derivation_moves.rs"]
+mod moves;

@@ -58,7 +58,9 @@ mod restoration_tests;
 mod saves;
 mod selection;
 mod session_moves;
-pub(crate) use session_moves::{MoveSessionError, PendingMoveSettled, WaitingPromptBound};
+pub(crate) use session_moves::{
+    MoveAftermath, MoveSessionError, PendingMoveSettled, WaitingPromptBound,
+};
 mod settled;
 mod settlement;
 mod sidekick_acts;

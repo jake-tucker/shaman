@@ -2315,6 +2315,7 @@ mod tests {
             from,
             to,
             error: None,
+            new_worktree: false,
         };
         let (first, second, third) = (
             location("first", Some("main")),

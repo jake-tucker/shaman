@@ -868,3 +868,418 @@ async fn a_move_back_as_the_worktree_is_removed_is_recovered_by_the_next_prompt(
     assert!(layout.managed.join("tracked").is_file());
     server.shutdown().await.unwrap();
 }
+
+/// Asks for a new Managed Worktree of `directory`'s Repository, as a Client does.
+async fn move_into_new_worktree(
+    server: &server::RunningServer,
+    session_id: SessionId,
+    directory: &Path,
+) -> MoveOutcome {
+    crate::support::loopback_client()
+        .post(format!(
+            "{}/v1/sessions/{session_id}/move",
+            server.descriptor().base_url
+        ))
+        .bearer_auth(&server.descriptor().token)
+        .json(&MoveSessionRequest {
+            destination: MoveDestination::NewWorktree {
+                directory: directory.to_owned(),
+            },
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+/// A Session at work in `path`, with the Turn a Move then asked would wait for.
+async fn working_in(
+    server: &server::RunningServer,
+    provider: &mut ControlledProvider,
+    path: &Path,
+) -> (
+    SessionId,
+    ControlledProviderSession,
+    crate::support::provider::TurnStart,
+) {
+    let (session, mut connection) = open(server, provider, path).await;
+    let session_id = session.session.id;
+    crate::support::loopback_client()
+        .post(format!(
+            "{}/v1/sessions/{session_id}/prompts",
+            server.descriptor().base_url
+        ))
+        .bearer_auth(&server.descriptor().token)
+        .json(&AdmitPromptRequest {
+            prompt: prompt("Carry on"),
+            delivery: PromptDelivery::Queue,
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let turn = timeout(PROGRESS_DEADLINE, connection.next_turn())
+        .await
+        .expect("the Turn reaches its Provider");
+    (session_id, connection, turn)
+}
+
+/// The Title a Session [`working_in`] begins with names its Move's Worktree.
+fn made_for_move(layout: &ReclaimLayout) -> PathBuf {
+    layout.main.join(".suru-worktrees").join("original-history")
+}
+
+/// The trap of a pending Move: nothing stands in its Worktree, and any orphan
+/// check in the Repository passes over all of its Worktrees.
+#[tokio::test]
+async fn an_orphan_check_while_a_move_is_pending_leaves_its_new_worktree_standing() {
+    let layout = ReclaimLayout::new("move-pending-orphan");
+    orphan_beside(&layout, WITNESS);
+    let adapter = Arc::new(CountReclaimCandidates::new());
+    let (runtime, mut provider) = ControlledProvider::new();
+    let server = spawn_over(&layout, "move-pending-orphan", runtime, adapter.clone()).await;
+    let (session_id, connection, turn) = working_in(&server, &mut provider, &layout.main).await;
+
+    let answer = move_into_new_worktree(&server, session_id, &layout.main).await;
+
+    assert!(matches!(answer, MoveOutcome::Pending { .. }), "{answer:?}");
+    let made = made_for_move(&layout);
+    assert!(made.is_dir(), "made as it was asked");
+
+    // Another Session leaving its Worktree runs the orphan check over this
+    // Repository, whose every Worktree it deals with before the witness's turn.
+    let (other, _other_connection) = open(&server, &mut provider, &layout.managed).await;
+    move_session(&server, other.session.id, &layout.main).await;
+    wait_for_path(&layout.managed, false).await;
+    the_pass_reaches_its_witness(&adapter, &layout).await;
+    assert!(
+        !adapter.has_observed(&made),
+        "the destination of a pending Move is no candidate"
+    );
+    assert!(made.is_dir(), "the destination of a pending Move stands");
+
+    turn.succeed();
+    connection
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    timeout(PROGRESS_DEADLINE, async {
+        while support::read_session(server.descriptor(), session_id)
+            .await
+            .session
+            .execution_directory
+            .path
+            != made
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the Move applies once the Turn settles");
+    assert!(made.is_dir());
+    server.shutdown().await.unwrap();
+}
+
+/// However long the Turn holding it runs, the sweep's own rules, whose thresholds
+/// go by in a moment here, leave a pending Move's Worktree alone.
+#[tokio::test]
+async fn the_sweep_leaves_a_pending_moves_new_worktree_standing_past_every_threshold() {
+    let layout = ReclaimLayout::new("move-pending-sweep");
+    let adapter = Arc::new(CountReclaimCandidates::new());
+    let (runtime, mut provider) = ControlledProvider::new();
+    let server = server::spawn_with_source_control(
+        layout.server_config("move-pending-sweep"),
+        vec![runtime],
+        timings().with_worktree_reclaim_day(Duration::from_millis(1)),
+        adapter.clone(),
+    )
+    .await
+    .unwrap();
+    let (session_id, _connection, _turn) = working_in(&server, &mut provider, &layout.main).await;
+
+    move_into_new_worktree(&server, session_id, &layout.main).await;
+
+    let made = made_for_move(&layout);
+    wait_for_path(&layout.managed, false).await;
+    let listings = adapter.listings.load(Ordering::SeqCst);
+    timeout(PROGRESS_DEADLINE, async {
+        while adapter.listings.load(Ordering::SeqCst) < listings + 2 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("the sweep passes over the Repository again");
+    assert!(made.is_dir(), "the sweep left the pending Move's Worktree");
+    server.shutdown().await.unwrap();
+}
+
+/// A newer Move leaves what the older made empty, which Reclaim takes as it takes
+/// any other, with its branch, since nothing was ever committed there.
+#[tokio::test]
+async fn a_pending_move_replaced_leaves_its_empty_worktree_to_reclaim() {
+    let layout = ReclaimLayout::new("move-pending-replaced");
+    let (server, mut provider) = spawn_eager(&layout, "move-pending-replaced").await;
+    let (session_id, _connection, _turn) = working_in(&server, &mut provider, &layout.main).await;
+    move_into_new_worktree(&server, session_id, &layout.main).await;
+    let replaced = made_for_move(&layout);
+    assert!(replaced.is_dir());
+
+    let answer = move_into_new_worktree(&server, session_id, &layout.main).await;
+
+    let MoveOutcome::Pending { session } = answer else {
+        panic!("the newer Move waits too, not {answer:?}");
+    };
+    let bound = session
+        .session
+        .pending_move
+        .expect("the newer Move stands pending")
+        .destination
+        .path;
+    assert_ne!(bound, replaced);
+    wait_for_path(&replaced, false).await;
+    wait_for_branch(&layout.main, "refs/heads/suru/original-history", false).await;
+    assert!(bound.is_dir(), "the newer Move's Worktree stands");
+    server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_pending_move_cancelled_leaves_its_empty_worktree_to_reclaim() {
+    let layout = ReclaimLayout::new("move-pending-cancelled");
+    let (server, mut provider) = spawn_eager(&layout, "move-pending-cancelled").await;
+    let (session_id, _connection, _turn) = working_in(&server, &mut provider, &layout.main).await;
+    move_into_new_worktree(&server, session_id, &layout.main).await;
+    let made = made_for_move(&layout);
+    assert!(made.is_dir());
+
+    let answer: MoveOutcome = crate::support::loopback_client()
+        .post(format!(
+            "{}/v1/sessions/{session_id}/move",
+            server.descriptor().base_url
+        ))
+        .bearer_auth(&server.descriptor().token)
+        .json(&MoveSessionRequest {
+            destination: MoveDestination::Directory {
+                path: layout.main.clone(),
+            },
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert!(
+        matches!(answer, MoveOutcome::PendingCancelled { .. }),
+        "{answer:?}"
+    );
+    wait_for_path(&made, false).await;
+    server.shutdown().await.unwrap();
+}
+
+/// Reclaim's refusals stand for a Worktree a replaced Move left: one someone
+/// wrote to meanwhile is theirs.
+#[tokio::test]
+async fn a_replaced_moves_worktree_holding_changes_is_refused_by_reclaim() {
+    let layout = ReclaimLayout::new("move-pending-changed");
+    orphan_beside(&layout, WITNESS);
+    let adapter = Arc::new(CountReclaimCandidates::new());
+    let (runtime, mut provider) = ControlledProvider::new();
+    let server = spawn_over(&layout, "move-pending-changed", runtime, adapter.clone()).await;
+    let (session_id, _connection, _turn) = working_in(&server, &mut provider, &layout.main).await;
+    move_into_new_worktree(&server, session_id, &layout.main).await;
+    let made = made_for_move(&layout);
+    std::fs::write(made.join("personal"), "keep").unwrap();
+
+    move_into_new_worktree(&server, session_id, &layout.main).await;
+
+    the_pass_reaches_its_witness(&adapter, &layout).await;
+    assert!(
+        adapter.has_observed(&made) && adapter.inspected.load(Ordering::SeqCst) >= 1,
+        "the orphan check inspected the Worktree the Move let go of"
+    );
+    assert!(made.join("personal").is_file());
+    server.shutdown().await.unwrap();
+}
+
+/// A pending Move whose destination has gone fails with the Session in place,
+/// whatever else stands in the Repository.
+#[tokio::test]
+async fn a_pending_moves_worktree_gone_by_its_settling_fails_it_with_the_session_in_place() {
+    let layout = ReclaimLayout::new("move-pending-gone");
+    let (server, mut provider) = spawn_eager(&layout, "move-pending-gone").await;
+    let (session_id, connection, turn) = working_in(&server, &mut provider, &layout.main).await;
+    move_into_new_worktree(&server, session_id, &layout.main).await;
+    git(
+        &layout.main,
+        &[
+            "worktree",
+            "remove",
+            "--force",
+            made_for_move(&layout).to_str().unwrap(),
+        ],
+    );
+
+    turn.succeed();
+    connection
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+
+    let settled = timeout(PROGRESS_DEADLINE, async {
+        loop {
+            let read = support::read_session(server.descriptor(), session_id).await;
+            if read.session.pending_move.is_none() {
+                return read;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the Move settles");
+    assert_eq!(settled.session.execution_directory.path, layout.main);
+    assert!(settled.activities.iter().any(|activity| matches!(
+        activity,
+        Activity::Move {
+            status: ActivityStatus::Failed,
+            ..
+        }
+    )));
+    server.shutdown().await.unwrap();
+}
+
+/// Moving out of one Managed Worktree into a new one gives the Worktree left its
+/// orphan check, which finds the Repository's locks free: the Move let go of
+/// them, so nothing waits for a sweep.
+#[tokio::test]
+async fn a_move_into_a_new_worktree_reclaims_the_one_it_left_without_the_sweep() {
+    let layout = ReclaimLayout::new("move-new-from-managed");
+    let (server, mut provider) = spawn_eager(&layout, "move-new-from-managed").await;
+    let (session, _connection) = open(&server, &mut provider, &layout.managed).await;
+
+    let answer = move_into_new_worktree(&server, session.session.id, &layout.managed).await;
+
+    assert!(matches!(answer, MoveOutcome::Moved { .. }), "{answer:?}");
+    wait_for_path(&layout.managed, false).await;
+    assert!(made_for_move(&layout).is_dir());
+    server.shutdown().await.unwrap();
+}
+
+/// The destination of a pending Move is worked in as far as an explicit removal
+/// goes, which would otherwise pull it from under the Move.
+#[tokio::test]
+async fn a_pending_moves_worktree_is_counted_at_work_by_a_removal_preview() {
+    let layout = ReclaimLayout::new("move-pending-removal");
+    let (server, mut provider) = spawn_eager(&layout, "move-pending-removal").await;
+    let (session_id, _connection, _turn) = working_in(&server, &mut provider, &layout.main).await;
+    move_into_new_worktree(&server, session_id, &layout.main).await;
+    let made = made_for_move(&layout);
+
+    let repository = remember_repository(&server, &layout.main).await;
+    let checkout = repository
+        .checkouts
+        .iter()
+        .find(|checkout| checkout.association.root == made)
+        .expect("the Repository lists the Worktree")
+        .association
+        .clone();
+    let preview: CheckoutRemovalPreview = crate::support::loopback_client()
+        .post(format!(
+            "{}/v1/checkouts/removal-preview",
+            server.descriptor().base_url
+        ))
+        .bearer_auth(&server.descriptor().token)
+        .json(&CheckoutRemovalTarget {
+            repository: repository
+                .workspace
+                .repository
+                .as_deref()
+                .expect("in a Repository")
+                .clone(),
+            checkout,
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert_eq!(preview.working_sessions, 1);
+    server.shutdown().await.unwrap();
+}
+
+/// Refuses a preparation once its Worktree stands.
+struct FailCheckoutCreation;
+
+#[async_trait::async_trait]
+impl suru::source_control::PreparationObserver for FailCheckoutCreation {
+    async fn checkpoint(
+        &self,
+        at: suru::source_control::PreparationCheckpoint,
+        _preparation: &PreparedCheckout,
+    ) -> Result<(), String> {
+        match at {
+            suru::source_control::PreparationCheckpoint::CheckoutCreated => {
+                Err("the disk gave out".to_owned())
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+/// A failed preparation is left to the rule for failed preparations, past whose
+/// threshold it goes as any other does, except that it withheld no Prompt: it was
+/// never going to begin a Session.
+#[tokio::test]
+async fn a_failed_moves_worktree_goes_past_the_threshold_and_withholds_no_prompt_of_the_session() {
+    let layout = ReclaimLayout::new("move-failed-threshold");
+    let (runtime, mut provider) = ControlledProvider::new();
+    let server = server::spawn_with_source_control(
+        layout.server_config("move-failed-threshold"),
+        vec![runtime],
+        timings().with_worktree_reclaim_day(Duration::from_millis(1)),
+        Arc::new(
+            GitSourceControl::default().with_preparation_observer(Arc::new(FailCheckoutCreation)),
+        ),
+    )
+    .await
+    .unwrap();
+    let (session, _connection) = open(&server, &mut provider, &layout.main).await;
+    let session_id = session.session.id;
+    let refused = crate::support::loopback_client()
+        .post(format!(
+            "{}/v1/sessions/{session_id}/move",
+            server.descriptor().base_url
+        ))
+        .bearer_auth(&server.descriptor().token)
+        .json(&MoveSessionRequest {
+            destination: MoveDestination::NewWorktree {
+                directory: layout.main.clone(),
+            },
+        })
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+
+    wait_for_path(&made_for_move(&layout), false).await;
+    wait_for_branch(&layout.main, "refs/heads/suru/original-history", false).await;
+    let read = support::read_session(server.descriptor(), session_id).await;
+    assert_eq!(read.session.execution_directory.path, layout.main);
+    assert!(
+        read.prompts
+            .iter()
+            .all(|prompt| prompt.status != PromptStatus::Cancelled),
+        "{:?}",
+        read.prompts
+    );
+    server.shutdown().await.unwrap();
+}

@@ -80,6 +80,14 @@ fn to(path: impl Into<PathBuf>) -> MoveSessionRequest {
     }
 }
 
+fn into_new_worktree(directory: impl Into<PathBuf>) -> MoveSessionRequest {
+    MoveSessionRequest {
+        destination: MoveDestination::NewWorktree {
+            directory: directory.into(),
+        },
+    }
+}
+
 fn moved(outcome: MoveOutcome) -> SessionSummary {
     let MoveOutcome::Moved { session } = outcome else {
         panic!("the Move applies at once, not {outcome:?}");
@@ -1244,6 +1252,12 @@ async fn a_native_subagents_session_is_refused_in_words_that_say_why() {
         "{}",
         refused.message
     );
+    let error = fixture
+        .client
+        .move_session(child, &into_new_worktree(&destination))
+        .await
+        .expect_err("as is one into a new Worktree");
+    assert_eq!(refusal(&error).code, SessionErrorCode::SubagentSession);
     fixture.shutdown().await;
 }
 
@@ -1303,6 +1317,15 @@ async fn a_sidekicks_session_never_moves_nor_does_any_session_move_into_its_work
     let refused = refusal(&error);
     assert_eq!(refused.code, SessionErrorCode::SidekickWorkspaceSession);
     assert!(refused.message.contains("Sidekick"), "{}", refused.message);
+    let error = fixture
+        .client
+        .move_session(sidekick.session.id, &into_new_worktree(&destination))
+        .await
+        .expect_err("nor into a new Worktree");
+    assert_eq!(
+        refusal(&error).code,
+        SessionErrorCode::SidekickWorkspaceSession
+    );
     fixture.shutdown().await;
 }
 

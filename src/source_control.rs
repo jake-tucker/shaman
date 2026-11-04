@@ -717,29 +717,53 @@ impl SourceControlService {
         ),
         String,
     > {
-        let name = naming::name_fragment(&naming::without_bound_spans(
+        let naming_text = naming::without_bound_spans(
             &request.prompt.text,
             &request.prompt.skill_invocations,
             &request.prompt.attachments,
-        )?);
-        let source = self.resolve(&request.source.path, None).await;
+        )?;
+        let (mut plan, guard) = self
+            .plan_worktree(request.id, &request.source.path, &naming_text, reserved)
+            .await?;
+        if let Some(intended) = request.intended_session {
+            plan.intended_session = intended;
+        }
+        Ok((plan, guard))
+    }
+    /// Plan a new Managed Worktree named from `naming_text`, shaped as every
+    /// Managed Worktree's name is, and started from the commit `source` stands
+    /// at, which the plan captures with the branch naming it under the
+    /// Repository's mutation guard, answered with the plan. The plan intends a
+    /// Session of its own until it is told otherwise.
+    pub(crate) async fn plan_worktree(
+        &self,
+        id: crate::protocol::PreparationId,
+        source_directory: &Path,
+        naming_text: &str,
+        reserved: &[PathBuf],
+    ) -> Result<
+        (
+            crate::protocol::PreparedCheckout,
+            tokio::sync::OwnedMutexGuard<()>,
+        ),
+        String,
+    > {
+        let name = naming::name_fragment(naming_text);
+        let source = self.resolve(source_directory, None).await;
         let repository = source.workspace.repository.as_ref().ok_or(
             "A new Worktree can only be made in a Repository, and this directory is not in one",
         )?;
         let guard = self.mutation_guard(&repository.id).await;
         let current = self
-            .resolve(&request.source.path, Some(&source.workspace))
+            .resolve(source_directory, Some(&source.workspace))
             .await;
         if current.workspace.repository.as_ref().map(|repo| &repo.id) != Some(&repository.id) {
             return Err("Source Repository changed during preparation".into());
         }
-        let mut plan = self
+        let plan = self
             .adapter
-            .plan_checkout(request.id, &current, &name, reserved)
+            .plan_checkout(id, &current, &name, reserved)
             .await?;
-        if let Some(intended) = request.intended_session {
-            plan.intended_session = intended;
-        }
         Ok((plan, guard))
     }
     pub(crate) async fn prepare_checkout(

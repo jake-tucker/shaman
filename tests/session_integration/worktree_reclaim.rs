@@ -1135,6 +1135,20 @@ impl SourceControl for CountReclaimCandidates {
         self.git.discover(directory).await
     }
 
+    async fn plan_checkout(
+        &self,
+        id: PreparationId,
+        source: &ResolvedWorkspace,
+        name: &str,
+        reserved: &[PathBuf],
+    ) -> Result<PreparedCheckout, String> {
+        self.git.plan_checkout(id, source, name, reserved).await
+    }
+
+    async fn prepare_checkout(&self, plan: &PreparedCheckout) -> Result<ResolvedWorkspace, String> {
+        self.git.prepare_checkout(plan).await
+    }
+
     async fn inspect_removal(
         &self,
         target: &CheckoutRemovalTarget,

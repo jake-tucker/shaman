@@ -37,7 +37,13 @@ impl SessionStore {
 
     /// What references the checkout, and how. A native Subagent's Session
     /// left there by a Move of the Session whose Provider process it rides
-    /// references nothing (see [`SessionStoreState::left_behind_in`]).
+    /// references nothing (see [`SessionStoreState::left_behind_in`]). A
+    /// Session a pending Move is bound for the checkout counts as at work
+    /// there, on the Session's own row, so a restart finds the reference with
+    /// the Move: whatever holds that Move may take a long while, and neither
+    /// housekeeping nor an explicit removal takes the destination from under
+    /// it. Once the Move is replaced, cancelled or failed the reference is
+    /// gone with it.
     pub(crate) fn checkout_activity(&self, checkout: &CheckoutAssociation) -> CheckoutActivity {
         let state = self.state.lock().unwrap();
         let mut affected = 0;
@@ -46,14 +52,18 @@ impl SessionStore {
         let mut latest_updated_at = None;
         for (session_id, record) in &state.sessions {
             let session = &record.summary.session;
-            if session
+            let bound_for = session
+                .pending_move
+                .as_ref()
+                .is_some_and(|pending| pending.destination.path.starts_with(&checkout.root));
+            let stands_in = session
                 .checkout
                 .as_ref()
                 .is_some_and(|association| association.id == checkout.id)
-                && !state.left_behind_in(*session_id, &checkout.id)
-            {
+                && !state.left_behind_in(*session_id, &checkout.id);
+            if stands_in || bound_for {
                 affected += 1;
-                working += usize::from(session.working_since.is_some());
+                working += usize::from(session.working_since.is_some() || bound_for);
                 monitoring += usize::from(session.monitoring_since.is_some());
                 latest_updated_at = Some(
                     latest_updated_at
@@ -566,6 +576,36 @@ mod tests {
     ) -> (CheckoutActivity, SessionStore, StorageWriter) {
         let (store, writer) = restore(directory, sessions).await;
         (store.checkout_activity(there), store, writer)
+    }
+
+    /// What a restart reads back: the pending Move on the Session's own row,
+    /// with none of its history read yet.
+    #[tokio::test]
+    async fn a_session_a_pending_move_is_bound_for_counts_there_as_at_work_across_a_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let there = worktree(&directory.path().join("there"));
+        let elsewhere = worktree(&directory.path().join("elsewhere"));
+        let mut bound = standing_in(persisted(directory.path(), None), Some(&elsewhere));
+        let pending = PendingMove {
+            activity_id: ActivityId::new(),
+            destination: ExecutionDirectory {
+                path: there.root.join("beneath"),
+            },
+        };
+        bound.summary.session.pending_move = Some(pending.clone());
+        bound.snapshot.session.pending_move = Some(pending);
+
+        let (activity, store, writer) = references(directory.path(), vec![bound], &there).await;
+
+        assert_eq!((activity.affected, activity.working), (1, 1));
+        assert!(activity.unfinished());
+        let left = store.checkout_activity(&elsewhere);
+        assert_eq!(
+            (left.affected, left.working),
+            (1, 0),
+            "where it stands is referenced as ever"
+        );
+        writer.shutdown().await.unwrap();
     }
 
     #[tokio::test]

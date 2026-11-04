@@ -8872,7 +8872,7 @@ impl Application {
             }
             // The Session's Server reads a relative path from where the
             // Session works, which is what the browser listed it from.
-            Destination::Directory(chosen) => self.issue_move(session, chosen.path),
+            Destination::Directory(chosen) => self.issue_move_to(session, chosen.path),
         }
     }
 
@@ -8889,7 +8889,7 @@ impl Application {
             && self.state.worktree_picker.current_checkout() == Some(&checkout.association.id)
             && let Some(directory) = self.state.open_session_directory()
         {
-            return self.issue_move(session, directory);
+            return self.issue_move_to(session, directory);
         }
         if let Some(reason) = self.state.worktree_picker.refusal(&choice) {
             self.state.worktree_picker.refuse(reason);
@@ -8897,12 +8897,17 @@ impl Application {
         }
         match choice {
             WorktreeChoice::New => {
-                self.state.close_move_pickers();
-                self.state
-                    .refuse("Creating a Worktree by Move is not yet available")
+                // The refusal above speaks for a picker with no Repository.
+                let Some(directory) = self.state.worktree_picker.repository_directory() else {
+                    return ApplicationTransition::Continue;
+                };
+                self.issue_move(
+                    session,
+                    crate::protocol::MoveDestination::NewWorktree { directory },
+                )
             }
             WorktreeChoice::Checkout(checkout) => {
-                self.issue_move(session, checkout.association.root)
+                self.issue_move_to(session, checkout.association.root)
             }
         }
     }
@@ -8945,22 +8950,33 @@ impl Application {
             }
             (ExecutionDirectoryStatus::Available, Some(directory)) => {
                 let path = directory.path.clone();
-                self.issue_move(session, path)
+                self.issue_move_to(session, path)
             }
         }
     }
 
-    /// Asks `session`'s Server to Move it to `path`, done with every picker
-    /// that led here. Whatever it answers is said on the composer's error
-    /// line, and reaches every Client viewing the Session on its own stream.
-    fn issue_move(&mut self, session: SessionReference, path: PathBuf) -> ApplicationTransition {
+    /// Asks `session`'s Server to Move it to the directory at `path`.
+    fn issue_move_to(&mut self, session: SessionReference, path: PathBuf) -> ApplicationTransition {
+        self.issue_move(
+            session,
+            crate::protocol::MoveDestination::Directory { path },
+        )
+    }
+
+    /// Asks `session`'s Server to Move it to `destination`, done with every
+    /// picker that led here. Whatever it answers is said on the composer's
+    /// error line, and reaches every Client viewing the Session on its own
+    /// stream.
+    fn issue_move(
+        &mut self,
+        session: SessionReference,
+        destination: crate::protocol::MoveDestination,
+    ) -> ApplicationTransition {
         self.state.close_move_pickers();
         self.state.submission_error = None;
         ApplicationTransition::MoveSession {
             session,
-            request: crate::protocol::MoveSessionRequest {
-                destination: crate::protocol::MoveDestination::Directory { path },
-            },
+            request: crate::protocol::MoveSessionRequest { destination },
         }
     }
 
@@ -10248,7 +10264,7 @@ impl Application {
             );
         }
         match path {
-            Some(path) => self.issue_move(session, PathBuf::from(path)),
+            Some(path) => self.issue_move_to(session, PathBuf::from(path)),
             None => self.open_move_picker(session),
         }
     }

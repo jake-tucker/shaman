@@ -470,6 +470,7 @@ fn hear_recorded_move(
                             from: location(&snapshot.session.execution_directory.path, from),
                             to: location(destination, to),
                             error: error.map(str::to_owned),
+                            new_worktree: false,
                         },
                     },
                 ],
@@ -1568,6 +1569,7 @@ fn hear_move_pending(
                         from: from.clone(),
                         to: to.clone(),
                         error: None,
+                        new_worktree: false,
                     },
                 }],
             },
@@ -2178,6 +2180,17 @@ fn move_there(session: &SessionReference, path: &Path) -> ApplicationTransition 
     }
 }
 
+fn move_into_new_worktree(session: &SessionReference, directory: &Path) -> ApplicationTransition {
+    ApplicationTransition::MoveSession {
+        session: session.clone(),
+        request: MoveSessionRequest {
+            destination: MoveDestination::NewWorktree {
+                directory: directory.to_owned(),
+            },
+        },
+    }
+}
+
 fn line_of(screen: &str, needle: &str) -> usize {
     screen
         .lines()
@@ -2390,12 +2403,39 @@ fn choosing_the_current_worktree_stays_where_the_session_stands_beneath_its_root
     }
 }
 
-/// Until a Move can make a Worktree, the row says so and asks nothing.
+/// One keypress gives the work its own Worktree: the row names where the
+/// Session works, for its Server to read the Repository from, and closes.
 #[test]
-fn the_new_worktree_row_says_it_is_not_yet_available_and_asks_nothing() {
+fn the_new_worktree_row_asks_for_a_new_worktree_of_where_the_session_works() {
     let fixture = MoveFixture::new();
+    let (mut application, _, session) = fixture.viewing(&fixture.nested);
+    open_move_picker(&mut application, fixture.at(&fixture.nested));
+
+    assert_eq!(
+        press_enter(&mut application),
+        move_into_new_worktree(&session, &fixture.nested)
+    );
+
+    let drawn = screen(&application);
+    assert!(!drawn.contains(" Move Session "), "{drawn}");
+}
+
+/// A Repository that cannot make a Worktree says so inside the picker, which
+/// stands, and asks its Server nothing.
+#[test]
+fn a_repository_that_cannot_make_a_worktree_refuses_the_row_inside_the_picker() {
+    let fixture = MoveFixture::new();
+    let mut context = fixture.at(&fixture.linked);
+    let repository = context
+        .workspace
+        .repository
+        .as_mut()
+        .expect("the fixture is a Repository");
+    repository.capabilities.create_checkout = SourceControlCapability::Unsupported {
+        reason: "This Repository cannot make a Worktree".to_owned(),
+    };
     let (mut application, _, _) = fixture.viewing(&fixture.linked);
-    open_move_picker(&mut application, fixture.at(&fixture.linked));
+    open_move_picker(&mut application, context);
 
     assert_eq!(
         press_enter(&mut application),
@@ -2404,10 +2444,13 @@ fn the_new_worktree_row_says_it_is_not_yet_available_and_asks_nothing() {
 
     let drawn = screen(&application);
     assert!(
-        drawn.contains("Creating a Worktree by Move is not yet available"),
+        drawn.contains("This Repository cannot make a Worktree"),
         "{drawn}"
     );
-    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert!(
+        drawn.contains(" Move Session "),
+        "the picker stands: {drawn}"
+    );
 }
 
 /// A Repository that cannot make a Worktree says why as the Landing's does,
@@ -2709,6 +2752,34 @@ fn a_bare_repository_asks_which_worktree_and_concludes_in_a_move() {
     assert!(!drawn.contains("Which Worktree"), "{drawn}");
     assert!(!drawn.contains(" Workspaces "), "{drawn}");
     assert!(!drawn.contains(" Move Session "), "{drawn}");
+}
+
+/// The bare Repository has no directory to work in, so New Worktree there names
+/// the Repository it was asked of, rather than where the Session works.
+#[test]
+fn a_bare_repositorys_new_worktree_row_asks_for_a_worktree_of_that_repository() {
+    let fixture = MoveFixture::new();
+    let (bare, _) = bare_repository("vault");
+    let root = bare.workspace.path.clone();
+    let (mut application, _, session) = fixture.viewing(&fixture.linked);
+    open_move_picker(&mut application, fixture.at(&fixture.linked));
+    open_workspace_picker(
+        &mut application,
+        &Outlook::Local,
+        vec![bare.workspace.clone()],
+    );
+    type_terminal_text(&mut application, "bare");
+    let resolution = press_enter(&mut application);
+    answer_with(&mut application, &resolution, Ok(bare));
+    assert!(screen(&application).contains("› New Worktree"));
+
+    assert_eq!(
+        press_enter(&mut application),
+        move_into_new_worktree(&session, &root)
+    );
+    let drawn = screen(&application);
+    assert!(!drawn.contains("Which Worktree"), "{drawn}");
+    assert!(!drawn.contains(" Workspaces "), "{drawn}");
 }
 
 /// Browse… roots the browser where the Session stands, not where the next

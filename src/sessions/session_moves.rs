@@ -40,6 +40,12 @@
 //! works cancels it, each settling the older Activity Interrupted in words saying
 //! why; and a pending Move owes its Agent no note until it applies.
 //!
+//! A new Managed Worktree a Move made for itself says so in the Move's Activity,
+//! which outlives a restart with the rest of its record, so that whichever
+//! settling applies the Move knows to name the Worktree's branch anew. Whoever
+//! lets a Move go by replacing or cancelling it, or failing it, is told where it
+//! was bound, and a Worktree it was bound for is Reclaimable again from then on.
+//!
 //! Prompts left waiting, bound to the Skills of the directory left, are bound
 //! anew under the same lock as the Move applies, so nothing reads the Session
 //! Moved with a Prompt bound behind it. A Prompt that was read in the directory
@@ -53,6 +59,7 @@ use crate::protocol::{
     PromptStatus, Repository, ResolvedWorkspace, Session, SessionChange, SessionId, SessionStatus,
     SessionSummary, SkillInvocation, Workspace,
 };
+use crate::source_control::CreatedBranch;
 use crate::storage::{AddedActivity, LocationLanding, SettledActivity, WorkspaceProvenance};
 
 use super::{DeliveredTurnStatus, SessionRecord, SessionStore, SessionStoreState};
@@ -89,6 +96,8 @@ pub(super) struct MoveTarget<'a> {
     /// The Activity already recording this Move, pending until now, which it
     /// settles rather than adding one of its own.
     pub(super) settles: Option<ActivityId>,
+    /// Whether Suru made the destination's Managed Worktree for this Move.
+    pub(super) new_worktree: bool,
 }
 
 impl MoveTarget<'_> {
@@ -108,6 +117,7 @@ impl MoveTarget<'_> {
             from,
             to,
             error: None,
+            new_worktree: self.new_worktree,
         }
     }
 
@@ -121,28 +131,31 @@ impl MoveTarget<'_> {
         (
             MoveLocation {
                 execution_directory: session.execution_directory.clone(),
-                branch: self.branch(session.checkout.as_ref()),
+                branch: branch_in(self.readings, session.checkout.as_ref()),
             },
             MoveLocation {
                 execution_directory: self.execution_directory.clone(),
-                branch: self.branch(checkout),
+                branch: branch_in(self.readings, checkout),
             },
         )
     }
+}
 
-    /// The branch checked out in the Worktree `checkout` names, as the
-    /// readings found it; `None` outside a Worktree, for one on no branch,
-    /// and for one nothing read.
-    fn branch(&self, checkout: Option<&CheckoutAssociation>) -> Option<String> {
-        let checkout = checkout?;
-        self.readings
-            .iter()
-            .find(|reading| reading.association.id == checkout.id)
-            .and_then(|reading| match &reading.revision {
-                Some(CheckoutRevision::Branch { name, .. }) => Some(name.clone()),
-                _ => None,
-            })
-    }
+/// The branch checked out in the Worktree `checkout` names, as `readings` found
+/// it; `None` outside a Worktree, for one on no branch, and for one nothing
+/// read.
+fn branch_in(
+    readings: &[CheckoutSummary],
+    checkout: Option<&CheckoutAssociation>,
+) -> Option<String> {
+    let checkout = checkout?;
+    readings
+        .iter()
+        .find(|reading| reading.association.id == checkout.id)
+        .and_then(|reading| match &reading.revision {
+            Some(CheckoutRevision::Branch { name, .. }) => Some(name.clone()),
+            _ => None,
+        })
 }
 
 /// Where a Move takes a Session, as its destination was just read: the directory
@@ -153,6 +166,8 @@ struct MoveDestinationRead {
     workspace: Workspace,
     checkout: Option<CheckoutAssociation>,
     readings: Vec<CheckoutSummary>,
+    /// Whether Suru made the destination's Managed Worktree for this Move.
+    new_worktree: bool,
 }
 
 impl MoveDestinationRead {
@@ -174,16 +189,54 @@ impl MoveDestinationRead {
             workspace,
             checkout,
             readings: checkouts,
+            new_worktree: false,
         })
+    }
+
+    /// The branch to name anew once the Session stands here, where Suru made
+    /// this Worktree for the Move and has found the branch it stands on.
+    fn created_branch(&self) -> Option<CreatedBranch> {
+        if !self.new_worktree {
+            return None;
+        }
+        Some(CreatedBranch {
+            repository: self.workspace.repository.as_deref()?.clone(),
+            checkout: self.checkout.clone()?,
+            branch: branch_in(&self.readings, self.checkout.as_ref())?,
+        })
+    }
+}
+
+/// What is left to do of a Move once the store's lock is let go, none of which
+/// the Move waits for.
+#[derive(Debug, Default)]
+pub(crate) struct MoveAftermath {
+    /// The Repository of a linked Worktree the Session left.
+    pub(crate) vacated: Option<Repository>,
+    /// Where a pending Move this one gave way over was bound, which nothing is
+    /// bound for on its account any longer.
+    pub(crate) abandoned: Option<ExecutionDirectory>,
+    /// The branch of the new Managed Worktree the Session now stands in.
+    pub(crate) created_branch: Option<CreatedBranch>,
+}
+
+impl MoveAftermath {
+    fn abandoning(pending: Option<PendingMove>) -> Self {
+        Self {
+            abandoned: pending.map(|pending| pending.destination),
+            ..Self::default()
+        }
     }
 }
 
 /// A Session standing in its destination, with what is left to do and to say of
 /// that once the store's lock is let go: the summary it left standing, the
-/// Repository of a linked Worktree it left, and the Workspace it now stands in.
+/// Repository of a linked Worktree it left, the branch of a new Managed Worktree
+/// it entered, and the Workspace it now stands in.
 struct MoveStood {
     summary: SessionSummary,
     vacated: Option<Repository>,
+    created_branch: Option<CreatedBranch>,
     workspace: crate::protocol::WorkspaceId,
     /// Whether a superseded entry passed something to the destination's
     /// Workspace, which every Session grouped there must then be dressed in.
@@ -216,9 +269,7 @@ impl SessionStore {
 
     /// Moves a Session to work where `destination` was resolved from now on,
     /// or from when what holds it settles, answering which and the summary it
-    /// left standing, beside the Repository of the linked Worktree it left,
-    /// where it left one rather than Moving within it. The
-    /// Move's record names the branch of each Worktree it leaves or enters
+    /// left standing, beside what is left to do of it. The Move's record names the branch of each Worktree it leaves or enters
     /// as the destination's reading of its Repository, or `left`, a reading
     /// of the Repository the Session leaves, found it.
     ///
@@ -232,8 +283,28 @@ impl SessionStore {
         session_id: SessionId,
         destination: ResolvedWorkspace,
         left: Vec<CheckoutSummary>,
-    ) -> Result<(MoveOutcome, Option<Repository>), MoveSessionError> {
-        let read = MoveDestinationRead::of(destination, left)?;
+    ) -> Result<(MoveOutcome, MoveAftermath), MoveSessionError> {
+        self.move_as_read(session_id, MoveDestinationRead::of(destination, left)?)
+    }
+
+    /// [`Self::move_to`] the new Managed Worktree made for this Move, which
+    /// `destination` was resolved within.
+    pub(crate) fn move_to_new_worktree(
+        &self,
+        session_id: SessionId,
+        destination: ResolvedWorkspace,
+        left: Vec<CheckoutSummary>,
+    ) -> Result<(MoveOutcome, MoveAftermath), MoveSessionError> {
+        let mut read = MoveDestinationRead::of(destination, left)?;
+        read.new_worktree = true;
+        self.move_as_read(session_id, read)
+    }
+
+    fn move_as_read(
+        &self,
+        session_id: SessionId,
+        mut read: MoveDestinationRead,
+    ) -> Result<(MoveOutcome, MoveAftermath), MoveSessionError> {
         let mut state = self
             .state
             .lock()
@@ -255,13 +326,18 @@ impl SessionStore {
                         ActivityStatus::Interrupted,
                         CANCELLED_BY_STAYING,
                     )
-                    .map(|session| (MoveOutcome::PendingCancelled { session }, None))
+                    .map(|session| {
+                        (
+                            MoveOutcome::PendingCancelled { session },
+                            MoveAftermath::abandoning(pending),
+                        )
+                    })
                     .map_err(MoveSessionError::Storage),
                 None => Ok((
                     MoveOutcome::AlreadyThere {
                         session: session_summary,
                     },
-                    None,
+                    MoveAftermath::default(),
                 )),
             };
         }
@@ -274,35 +350,46 @@ impl SessionStore {
                     MoveOutcome::Pending {
                         session: session_summary,
                     },
-                    None,
+                    MoveAftermath::default(),
                 ));
             }
             return self
                 .record_pending(&mut state, session_id, &read)
-                .map(|session| (MoveOutcome::Pending { session }, None))
+                .map(|session| {
+                    (
+                        MoveOutcome::Pending { session },
+                        MoveAftermath::abandoning(pending),
+                    )
+                })
                 .map_err(MoveSessionError::Storage);
         }
         // Nothing holds the Session, so this Move applies now, and one left
         // pending meanwhile is this very Move, or gives way to it.
-        if !same_as_pending && pending.is_some() {
-            let replaced = replaced_by(&read.execution_directory);
-            self.give_up_pending(
-                &mut state,
-                session_id,
-                ActivityStatus::Interrupted,
-                &replaced,
-            )
-            .map_err(MoveSessionError::Storage)?;
-        }
-        let settles = pending
-            .filter(|_| same_as_pending)
-            .map(|pending| pending.activity_id);
+        let (settles, abandoned) = match pending {
+            Some(pending) if same_as_pending => {
+                read.new_worktree |= made_its_worktree(record, &pending);
+                (Some(pending.activity_id), None)
+            }
+            Some(pending) => {
+                let replaced = replaced_by(&read.execution_directory);
+                self.give_up_pending(
+                    &mut state,
+                    session_id,
+                    ActivityStatus::Interrupted,
+                    &replaced,
+                )
+                .map_err(MoveSessionError::Storage)?;
+                (None, Some(pending.destination))
+            }
+            None => (None, None),
+        };
         let stood = self
             .stand_in_destination(&mut state, session_id, read, settles)
             .map_err(MoveSessionError::Storage)?;
         drop(state);
-        let (session, vacated) = self.dress_after_standing(stood);
-        Ok((MoveOutcome::Moved { session }, vacated))
+        let (session, mut aftermath) = self.dress_after_standing(stood);
+        aftermath.abandoned = abandoned;
+        Ok((MoveOutcome::Moved { session }, aftermath))
     }
 
     /// Every Session a Move stands pending for, read in or not: what a Server
@@ -383,14 +470,14 @@ impl SessionStore {
         destination: ResolvedWorkspace,
         left: Vec<CheckoutSummary>,
         prompts: Vec<WaitingPromptBound>,
-    ) -> Result<(PendingMoveSettled, Option<Repository>), MoveSessionError> {
-        let read = MoveDestinationRead::of(destination, left)?;
+    ) -> Result<(PendingMoveSettled, MoveAftermath), MoveSessionError> {
+        let mut read = MoveDestinationRead::of(destination, left)?;
         let mut state = self
             .state
             .lock()
             .expect("Session store lock is not poisoned");
         if !state.pending_move_stands(session_id, pending)? {
-            return Ok((PendingMoveSettled::Overtaken, None));
+            return Ok((PendingMoveSettled::Overtaken, MoveAftermath::default()));
         }
         let record = state
             .sessions
@@ -399,8 +486,9 @@ impl SessionStore {
         if waiting_prompts_with_skills(record)
             .any(|waiting| prompts.iter().all(|bound| bound.prompt_id != waiting.id))
         {
-            return Ok((PendingMoveSettled::Overtaken, None));
+            return Ok((PendingMoveSettled::Overtaken, MoveAftermath::default()));
         }
+        read.new_worktree = made_its_worktree(record, pending);
         if record.snapshot.session.execution_directory == read.execution_directory {
             self.give_up_pending(
                 &mut state,
@@ -409,15 +497,15 @@ impl SessionStore {
                 ALREADY_THERE,
             )
             .map_err(MoveSessionError::Storage)?;
-            return Ok((PendingMoveSettled::Stayed, None));
+            return Ok((PendingMoveSettled::Stayed, MoveAftermath::default()));
         }
         let stood = self
             .stand_in_destination(&mut state, session_id, read, Some(pending.activity_id))
             .map_err(MoveSessionError::Storage)?;
         self.bind_waiting_prompts(&mut state, session_id, prompts);
         drop(state);
-        let (_, vacated) = self.dress_after_standing(stood);
-        Ok((PendingMoveSettled::Moved, vacated))
+        let (_, aftermath) = self.dress_after_standing(stood);
+        Ok((PendingMoveSettled::Moved, aftermath))
     }
 
     /// Fails `pending`, the Move pending for `session_id`, for `reason`,
@@ -522,6 +610,7 @@ impl SessionStore {
             execution_directory: read.execution_directory.clone(),
             readings: &read.readings,
             settles: None,
+            new_worktree: read.new_worktree,
         };
         let activity = target.activity(session, read.checkout.as_ref(), ActivityStatus::Active);
         let mut next = session.clone();
@@ -586,11 +675,13 @@ impl SessionStore {
         read: MoveDestinationRead,
         settles: Option<ActivityId>,
     ) -> anyhow::Result<MoveStood> {
+        let created_branch = read.created_branch();
         let MoveDestinationRead {
             execution_directory,
             mut workspace,
             checkout,
             readings,
+            new_worktree,
         } = read;
         state.dress_workspace(&mut workspace);
         let session = &state
@@ -617,6 +708,7 @@ impl SessionStore {
                     execution_directory: execution_directory.clone(),
                     readings: &readings,
                     settles,
+                    new_worktree,
                 }),
                 workspace.clone(),
                 checkout,
@@ -637,21 +729,28 @@ impl SessionStore {
         Ok(MoveStood {
             summary,
             vacated,
+            created_branch,
             workspace: workspace.id,
             inherited,
         })
     }
 
     /// Finishes what standing in a destination left for after the store's lock
-    /// is let go, answering the summary it left standing and the Repository of
-    /// the linked Worktree it left: what a superseded entry carried now dresses
-    /// the Workspace, so every Session grouped there — this one included —
-    /// wears it.
-    fn dress_after_standing(&self, stood: MoveStood) -> (SessionSummary, Option<Repository>) {
+    /// is let go, answering the summary it left standing and what is left to
+    /// do of it: what a superseded entry carried now dresses the Workspace, so
+    /// every Session grouped there — this one included — wears it.
+    fn dress_after_standing(&self, stood: MoveStood) -> (SessionSummary, MoveAftermath) {
         if stood.inherited {
             self.regroup_workspace(&stood.workspace);
         }
-        (stood.summary, stood.vacated)
+        (
+            stood.summary,
+            MoveAftermath {
+                vacated: stood.vacated,
+                created_branch: stood.created_branch,
+                ..MoveAftermath::default()
+            },
+        )
     }
 }
 
@@ -716,6 +815,16 @@ fn waiting_prompts_with_skills(record: &SessionRecord) -> impl Iterator<Item = &
     })
 }
 
+/// Whether `pending`'s Activity says Suru made the Worktree it is bound for.
+fn made_its_worktree(record: &SessionRecord, pending: &PendingMove) -> bool {
+    record.snapshot.activities.iter().any(|activity| {
+        matches!(
+            activity,
+            Activity::Move { id, new_worktree: true, .. } if *id == pending.activity_id
+        )
+    })
+}
+
 /// How the Activity of a pending Move a newer Move replaced says so.
 fn replaced_by(destination: &ExecutionDirectory) -> String {
     format!("a Move to {} replaced it", destination.path.display())
@@ -736,14 +845,18 @@ fn settling_of_pending(
     let Some(pending) = &session.pending_move else {
         return Ok(None);
     };
-    let (from, to) = record
+    let (from, to, new_worktree) = record
         .snapshot
         .activities
         .iter()
         .find_map(|activity| match activity {
-            Activity::Move { id, from, to, .. } if *id == pending.activity_id => {
-                Some((from.clone(), to.clone()))
-            }
+            Activity::Move {
+                id,
+                from,
+                to,
+                new_worktree,
+                ..
+            } if *id == pending.activity_id => Some((from.clone(), to.clone(), *new_worktree)),
             _ => None,
         })
         .ok_or_else(|| anyhow::anyhow!("a pending Move's Activity stands in its Transcript"))?;
@@ -757,6 +870,7 @@ fn settling_of_pending(
                 from: from.clone(),
                 to: to.clone(),
                 error: error.clone(),
+                new_worktree,
             },
         )?,
         change: SessionChange::MoveSettled {

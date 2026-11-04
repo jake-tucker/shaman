@@ -69,6 +69,9 @@ pub(crate) enum ErrandPurpose {
     SessionTitle,
     /// A Title proposed at the user's asking.
     TitleProposal,
+    /// The branch name of a new Managed Worktree a Session Moved into, derived
+    /// alone so the Title stands.
+    MovedBranch,
     /// A Workspace's Description, derived with its Icon.
     WorkspaceDescription,
 }

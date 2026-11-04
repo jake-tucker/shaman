@@ -250,6 +250,18 @@ impl WorktreePicker {
             },
         }
     }
+    /// A directory naming the Repository these Worktrees are of, as its Server
+    /// reads it: where the next Session would work, or for a Repository with
+    /// nowhere to work yet, as a bare one has, its Workspace's own path.
+    pub(super) fn repository_directory(&self) -> Option<std::path::PathBuf> {
+        let context = self.context.as_ref()?;
+        Some(
+            context
+                .execution_directory
+                .as_ref()
+                .map_or_else(|| context.workspace.path.clone(), |dir| dir.path.clone()),
+        )
+    }
     /// The Worktree the next Session would already work in, which its row
     /// marks and choosing again means staying put.
     pub(super) fn current_checkout(&self) -> Option<&CheckoutId> {

@@ -3058,6 +3058,10 @@ pub enum Activity {
         /// Move carries one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
+        /// Whether Suru made the Managed Worktree `to` names for this Move,
+        /// whose branch an Errand names anew once the Move applies.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        new_worktree: bool,
     },
 }
 
@@ -5343,6 +5347,15 @@ pub enum MoveDestination {
     /// home. One that does not exist, is not a directory or cannot be read
     /// is refused before anything changes.
     Directory { path: PathBuf },
+    /// A new Managed Worktree of the Repository `directory` lies in, named
+    /// as a [`Self::Directory`] path is, made as this asks and named from the
+    /// Session's Title. It starts from the commit the Session's Worktree
+    /// stands at where the Session works in that Repository, and otherwise
+    /// from the one `directory` stands at, which may be a bare Repository's
+    /// root. Uncommitted changes stay where they are. A Repository that
+    /// cannot make one, and a directory in none, are refused before anything
+    /// changes.
+    NewWorktree { directory: PathBuf },
 }
 
 /// What came of a Move the Session's Server took.

@@ -872,6 +872,7 @@ impl SessionStore {
                                 from: from.clone(),
                                 to: to.clone(),
                                 error: None,
+                                new_worktree: moved.new_worktree,
                             },
                         )?);
                         next.pending_move = None;
