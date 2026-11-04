@@ -217,13 +217,25 @@ impl SessionOperations {
                 let prompts = self
                     .waiting_prompts_bound_in(session_id, resolved.execution_directory.as_ref())
                     .await;
-                let (settled, vacated) = self
+                match self
                     .sessions
-                    .apply_pending_move(session_id, pending, resolved, left, prompts)?;
-                if matches!(settled, PendingMoveSettled::Moved) {
-                    self.follow_move(session_id, vacated);
+                    .apply_pending_move(session_id, pending, resolved, left, prompts)
+                {
+                    Ok((settled, vacated)) => {
+                        if matches!(settled, PendingMoveSettled::Moved) {
+                            self.follow_move(session_id, vacated);
+                        }
+                        Ok(settled)
+                    }
+                    // Left pending, its label would stand with nothing to
+                    // settle it.
+                    Err(MoveSessionError::NoExecutionDirectory) => self.sessions.fail_pending_move(
+                        session_id,
+                        pending,
+                        &MoveRefusal::BareRepository.to_string(),
+                    ),
+                    Err(error) => Err(error),
                 }
-                Ok(settled)
             }
             Err(MoveRefusal::SessionNotFound) => Err(MoveSessionError::SessionNotFound),
             Err(refusal) => {

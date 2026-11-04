@@ -138,6 +138,15 @@ impl IdleSession {
     }
 
     async fn begin_on(provider_name: &str, channel: &'static str, origin: &str) -> Self {
+        Self::begin_timed(provider_name, channel, origin, ServerTimings::default()).await
+    }
+
+    async fn begin_timed(
+        provider_name: &str,
+        channel: &'static str,
+        origin: &str,
+        timings: ServerTimings,
+    ) -> Self {
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let home = tempfile::tempdir().expect("create the Server's home");
         let origin = home.path().join(origin);
@@ -147,7 +156,7 @@ impl IdleSession {
             ProviderId::new(provider_name),
             vec![hosted_model(provider_name, MODEL)],
         );
-        let server = spawn(state_dir.path(), home.path(), channel, &runtime).await;
+        let server = spawn_timed(state_dir.path(), home.path(), channel, &runtime, timings).await;
         let client = connected_client(state_dir.path(), channel).await;
         let created = client
             .create_session(CreateSessionRequest {
@@ -462,12 +471,22 @@ async fn spawn(
     channel: &str,
     runtime: &std::sync::Arc<ControlledProviderRuntime>,
 ) -> RunningServer {
+    spawn_timed(state_dir, home, channel, runtime, ServerTimings::default()).await
+}
+
+async fn spawn_timed(
+    state_dir: &Path,
+    home: &Path,
+    channel: &str,
+    runtime: &std::sync::Arc<ControlledProviderRuntime>,
+    timings: ServerTimings,
+) -> RunningServer {
     server::spawn_with_provider_and_timings(
         ServerConfig::new(state_dir, channel)
             .expect("configure server")
             .with_home_dir(home),
         runtime.clone(),
-        ServerTimings::default(),
+        timings,
     )
     .await
     .expect("spawn server")
@@ -2138,9 +2157,33 @@ async fn native_subagent_completes(fixture: &IdleSession) {
         .await;
 }
 
+/// The Provider waking the parent with what the Subagent found: a Continuation
+/// saying `text`, settled.
+async fn continuation_comes_and_settles(fixture: &IdleSession, text: &str) {
+    fixture
+        .provider_session
+        .emit(ProviderEvent::ContinuationStarted {
+            selection: hosted_selection(PROVIDER, MODEL),
+        });
+    fixture
+        .provider_session
+        .emit(ProviderEvent::AgentMessageStarted);
+    fixture
+        .provider_session
+        .emit(ProviderEvent::AgentMessageDelta {
+            content: text.to_owned(),
+        });
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+}
+
 /// A native Subagent is a running Agent inside the process a Move stops, so
-/// its parent's Turn settling first does not apply the Move: the Subagent
-/// finishing does, and nothing of its work is failed for it.
+/// its parent's Turn settling first does not apply the Move, nor does the
+/// Subagent finishing, since the Provider then wakes its parent with the result:
+/// the Move applies once that Continuation has settled, with what it said
+/// standing, and the next Turn begins in the destination.
 #[tokio::test]
 async fn a_native_subagent_still_working_holds_a_move_until_it_settles() {
     let mut fixture = IdleSession::begin("move-native-holds-test", "origin").await;
@@ -2162,12 +2205,28 @@ async fn a_native_subagent_still_working_holds_a_move_until_it_settles() {
     assert!(!fixture.provider_session.was_shut_down());
 
     native_subagent_completes(&fixture).await;
+    let waiting = fixture.read().await;
+    assert_eq!(
+        waiting.session.execution_directory.path, fixture.origin,
+        "its result is owed to its parent, over the process it would stop"
+    );
+    assert!(!fixture.provider_session.was_shut_down());
+
+    continuation_comes_and_settles(&fixture, "The mapping is done.").await;
     let settled = fixture
-        .session_where("the Move applies as the Subagent settles", |snapshot| {
+        .session_where("the Move applies as the Continuation settles", |snapshot| {
             snapshot.session.execution_directory.path == destination
         })
         .await;
     assert_eq!(bound_for(&settled), None);
+    assert!(
+        settled
+            .messages
+            .iter()
+            .any(|message| message.content == "The mapping is done."),
+        "the parent heard the result before the Move: {:?}",
+        settled.messages
+    );
     let row = settled
         .activities
         .iter()
@@ -2186,6 +2245,14 @@ async fn a_native_subagent_still_working_holds_a_move_until_it_settles() {
         .await
         .expect("read the Subagent's Session");
     assert_eq!(child.session.execution_directory.path, fixture.origin);
+    let start_directory = {
+        fixture.admit("Carry on").await;
+        let start = timeout(PROGRESS_DEADLINE, fixture.provider.next_start())
+            .await
+            .expect("the next Turn starts the Provider again");
+        start.execution_directory().to_owned()
+    };
+    assert_eq!(start_directory, destination);
     fixture.shutdown().await;
 }
 
@@ -2203,8 +2270,9 @@ async fn a_move_asked_with_only_a_native_subagent_working_waits_for_it() {
     pending(fixture.ask_move(&destination).await.expect("take the Move"));
 
     native_subagent_completes(&fixture).await;
+    continuation_comes_and_settles(&fixture, "The mapping is done.").await;
     fixture
-        .session_where("the Move applies as the Subagent settles", |snapshot| {
+        .session_where("the Move applies as the Continuation settles", |snapshot| {
             snapshot.session.execution_directory.path == destination
         })
         .await;
@@ -2266,6 +2334,7 @@ async fn a_prompt_admitted_behind_a_move_a_native_subagent_holds_begins_in_the_d
     );
 
     native_subagent_completes(&fixture).await;
+    continuation_comes_and_settles(&fixture, "The mapping is done.").await;
 
     let start = timeout(PROGRESS_DEADLINE, fixture.provider.next_start())
         .await
@@ -2312,11 +2381,195 @@ async fn a_move_behind_a_prompt_withdrawn_still_applies() {
         .expect("withdraw it");
 
     native_subagent_completes(&fixture).await;
+    continuation_comes_and_settles(&fixture, "The mapping is done.").await;
 
     fixture
         .session_where("the Move applies", |snapshot| {
             snapshot.session.execution_directory.path == destination
         })
         .await;
+    fixture.shutdown().await;
+}
+
+/// A Move asked in the moment a native Subagent's result is owed to its parent,
+/// with the Session reading as idle, waits for that too rather than stopping the
+/// process it is about to be told over.
+#[tokio::test]
+async fn a_move_asked_while_a_continuation_is_owed_waits_for_it() {
+    let mut fixture = IdleSession::begin("move-owed-asked-test", "origin").await;
+    let destination = fixture.directory("destination");
+    with_native_subagent(&mut fixture).await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    native_subagent_completes(&fixture).await;
+
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+    assert!(!fixture.provider_session.was_shut_down());
+
+    continuation_comes_and_settles(&fixture, "The mapping is done.").await;
+    let settled = fixture
+        .session_where("the Move applies as the Continuation settles", |snapshot| {
+            snapshot.session.execution_directory.path == destination
+        })
+        .await;
+    assert!(
+        settled
+            .messages
+            .iter()
+            .any(|message| message.content == "The mapping is done.")
+    );
+    fixture.shutdown().await;
+}
+
+/// A Watch waking the Agent leaves a Continuation owed just as a Subagent's late
+/// settle does, whatever a Watch still running would have held.
+#[tokio::test]
+async fn a_move_asked_as_a_watch_wakes_the_agent_waits_for_what_it_woke() {
+    let fixture = IdleSession::begin("move-watch-woke-test", "origin").await;
+    let destination = fixture.directory("destination");
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::WatchStarted {
+            watch_id: ProviderWatchId::new("task-tests"),
+            description: "cargo test".to_owned(),
+        })
+        .await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::WatchSettled {
+            watch_id: ProviderWatchId::new("task-tests"),
+            outcome: suru::provider::ProviderWatchOutcome::Completed,
+            summary: None,
+            woke_agent: true,
+        })
+        .await;
+
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+
+    continuation_comes_and_settles(&fixture, "The tests pass.").await;
+    fixture
+        .session_where("the Move applies as the Continuation settles", |snapshot| {
+            snapshot.session.execution_directory.path == destination
+        })
+        .await;
+    fixture.shutdown().await;
+}
+
+/// A Subagent that settled inside its Turn had that Turn to land in, so nothing
+/// is owed a Move's wait, and the Move applies as the Turn settles.
+#[tokio::test]
+async fn a_subagent_settled_inside_its_turn_holds_no_move_past_that_turn() {
+    let mut fixture = IdleSession::begin("move-inside-turn-test", "origin").await;
+    let destination = fixture.directory("destination");
+    with_native_subagent(&mut fixture).await;
+    native_subagent_completes(&fixture).await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+
+    fixture
+        .session_where("the Move applies as the Turn settles", |snapshot| {
+            snapshot.session.execution_directory.path == destination
+        })
+        .await;
+    fixture.shutdown().await;
+}
+
+/// The way out of a Continuation owed that never comes: an interrupt stands it
+/// down, though the Session reads as idle, and the Move applies.
+#[tokio::test]
+async fn interrupting_a_continuation_a_move_waits_for_applies_it() {
+    let mut fixture = IdleSession::begin("move-owed-interrupt-test", "origin").await;
+    let destination = fixture.directory("destination");
+    with_native_subagent(&mut fixture).await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    native_subagent_completes(&fixture).await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+
+    fixture
+        .client
+        .interrupt_session(fixture.session_id)
+        .await
+        .expect("the interrupt stands the Continuation down");
+
+    fixture
+        .session_where("the Move applies", |snapshot| {
+            snapshot.session.execution_directory.path == destination
+        })
+        .await;
+    fixture.shutdown().await;
+}
+
+/// No Provider promises a Continuation and nothing reads as at work, so a Move
+/// does not wait without end for one that never comes.
+#[tokio::test]
+async fn a_move_gives_up_a_continuation_that_never_comes() {
+    let mut fixture = IdleSession::begin_timed(
+        PROVIDER,
+        "move-owed-gives-up-test",
+        "origin",
+        ServerTimings::default().with_move_continuation_grace(Duration::from_millis(5)),
+    )
+    .await;
+    let destination = fixture.directory("destination");
+    with_native_subagent(&mut fixture).await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    native_subagent_completes(&fixture).await;
+
+    fixture
+        .session_where("the Move stops waiting and applies", |snapshot| {
+            snapshot.session.execution_directory.path == destination
+        })
+        .await;
+    fixture.shutdown().await;
+}
+
+/// Prompts waiting behind a Move begin in the destination in the order they were
+/// admitted, whichever way each came to wait.
+#[tokio::test]
+async fn prompts_waiting_behind_a_move_begin_in_the_order_they_were_admitted() {
+    let mut fixture = IdleSession::begin("move-order-test", "origin").await;
+    let destination = fixture.directory("destination");
+    with_native_subagent(&mut fixture).await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+    fixture.admit("First").await;
+    fixture.admit("Second").await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    // This one arrives as the Move already holds the Turns waiting.
+    fixture.admit("Third").await;
+    native_subagent_completes(&fixture).await;
+    continuation_comes_and_settles(&fixture, "The mapping is done.").await;
+
+    let start = timeout(PROGRESS_DEADLINE, fixture.provider.next_start())
+        .await
+        .expect("the first Prompt starts the Provider again");
+    assert_eq!(start.execution_directory(), destination);
+    fixture.provider_session = start.succeed(identity());
+    for expected in ["First", "Second", "Third"] {
+        let turn = timeout(PROGRESS_DEADLINE, fixture.provider_session.next_turn())
+            .await
+            .expect("the Prompt reaches the Provider");
+        assert_eq!(turn.prompt(), expected);
+        turn.succeed();
+        fixture
+            .provider_session
+            .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+            .await;
+    }
     fixture.shutdown().await;
 }

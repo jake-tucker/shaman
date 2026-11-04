@@ -135,6 +135,12 @@ pub(crate) const PROVIDER_STOP_TIMEOUT: Duration = Duration::from_secs(2);
 /// [`ProviderRuntime::launches_a_process_per_session`].
 pub(crate) const PROVIDER_IDLE_SHUTDOWN: Duration = Duration::from_secs(10 * 60);
 
+/// How long a pending Move waits for the Continuation a Subagent settling, or a
+/// Watch waking the Agent, past its Turn leaves owed, before giving it up. No
+/// Provider promises one, and the Session reads as idle meanwhile, with nothing
+/// for a reader to interrupt, so it is not waited for without end.
+pub(crate) const MOVE_CONTINUATION_GRACE: Duration = Duration::from_secs(60);
+
 /// Checkout guards taken while admitting a Prompt, held until that Prompt's
 /// preparation inherits them or the Prompt leaves the queue.
 type CheckoutGuards = Arc<Mutex<HashMap<(SessionId, PromptId), tokio::sync::OwnedMutexGuard<()>>>>;
@@ -182,7 +188,14 @@ pub(crate) struct MoveSettlement {
     pub(crate) answer: oneshot::Sender<()>,
 }
 
-type MoveSettlements = Arc<std::sync::OnceLock<mpsc::UnboundedSender<MoveSettlement>>>;
+/// Who settles a Session's pending Move, and how long it waits on an owed
+/// Continuation.
+struct MoveSettling {
+    settlements: mpsc::UnboundedSender<MoveSettlement>,
+    continuation_grace: Duration,
+}
+
+type MoveSettlements = Arc<std::sync::OnceLock<MoveSettling>>;
 
 /// What a delegating Agent asked the Broker to spawn, its Agent Selection
 /// already checked against the Model Catalog: the Provider, Model and Model
@@ -733,6 +746,12 @@ struct SubagentRoutes {
     /// beginning clears it, because from then on such output has a Turn to
     /// land in.
     late_settle_owes_continuation: bool,
+    /// When a Subagent settled, or a Watch's settling woke the Agent, with no
+    /// Turn open, since a Turn last began: the Provider is about to wake the
+    /// Agent with the result, which a Move stopping the process would lose, so
+    /// this holds a pending Move for a while. One settling inside a Turn holds
+    /// nothing, its result having that Turn to land in however it ends.
+    continuation_awaited_since: Option<tokio::time::Instant>,
     /// The Watch Outcomes waiting for the next Turn of the Session whose
     /// Agent their Watches woke. They sit beside the owed Continuation because
     /// they wait on the same wake, and beside the routes because a woken
@@ -805,6 +824,7 @@ impl SubagentRoutes {
             identities: HashMap::new(),
             stopped: HashSet::new(),
             late_settle_owes_continuation: false,
+            continuation_awaited_since: None,
             watch_outcomes: HeldWatchOutcomes::default(),
         }
     }
@@ -845,6 +865,13 @@ impl SubagentRoutes {
     /// owed a Continuation of the Session that owns the actor, rather than
     /// being stray: some Subagent riding the actor is still working, or one
     /// just settled and its provoked output is still to come.
+    /// Forgets the Continuation owed, a Turn having begun for whatever output
+    /// comes to land in, or an interrupt having stood it down.
+    const fn continuation_answered(&mut self) {
+        self.late_settle_owes_continuation = false;
+        self.continuation_awaited_since = None;
+    }
+
     fn owes_continuation(&self) -> bool {
         self.late_settle_owes_continuation || !self.working.is_empty() || !self.routes.is_empty()
     }
@@ -1047,7 +1074,7 @@ impl SubagentRoutes {
         for subagent in working {
             self.settle_stopped(sessions, updates, &subagent);
         }
-        self.late_settle_owes_continuation = false;
+        self.continuation_answered();
         self.watch_outcomes.drop_all();
     }
 
@@ -1646,9 +1673,17 @@ impl ProviderOrchestrator {
 
     /// Has each Provider actor ask of `settlements` to settle its Session's
     /// pending Move, once the Turn holding it has settled and before it
-    /// begins anything else.
-    pub(crate) fn settle_moves_through(&self, settlements: mpsc::UnboundedSender<MoveSettlement>) {
-        let _ = self.move_settlements.set(settlements);
+    /// begins anything else, giving up on an owed Continuation holding it once
+    /// `continuation_grace` has passed.
+    pub(crate) fn settle_moves_through(
+        &self,
+        settlements: mpsc::UnboundedSender<MoveSettlement>,
+        continuation_grace: Duration,
+    ) {
+        let _ = self.move_settlements.set(MoveSettling {
+            settlements,
+            continuation_grace,
+        });
     }
 
     pub(crate) fn has_session_actor(&self, id: SessionId) -> bool {
@@ -2815,6 +2850,16 @@ async fn run_provider_session(
             break;
         }
         if active.is_none() {
+            // What the store is told the Provider is about to wake the Agent
+            // with holds a Move, however it is asked. Nothing is on its way
+            // over a connection that has gone.
+            if provider.is_none() {
+                subagents.continuation_awaited_since = None;
+            }
+            sessions.set_continuation_awaited(
+                session_id,
+                subagents.continuation_awaited_since.is_some(),
+            );
             // A Move nothing holds any longer applies before anything can
             // begin another Turn, so nothing runs in the directory it leaves
             // from here on. The process there goes with it, ahead of any output
@@ -2823,10 +2868,11 @@ async fn run_provider_session(
             // nothing back meanwhile.
             let mut move_not_landed = false;
             if sessions.pending_move_to_settle(session_id).is_some()
-                && let Some(settlements) = move_settlements.get()
+                && let Some(settling) = move_settlements.get()
             {
                 let (answer, settled) = oneshot::channel();
-                if settlements
+                if settling
+                    .settlements
                     .send(MoveSettlement { session_id, answer })
                     .is_ok()
                 {
@@ -2841,10 +2887,18 @@ async fn run_provider_session(
                     .await;
                 move_not_landed = sessions.pending_move_to_settle(session_id).is_some();
             }
-            // Held still, by a native Subagent or a Turn opened ahead of its
-            // command, it keeps whatever would begin another Turn waiting, for
-            // that to begin where the Move takes the Session.
+            // Held still, by a native Subagent, an owed Continuation or a Turn
+            // opened ahead of its command, it keeps whatever would begin another
+            // Turn waiting, for that to begin where the Move takes the Session.
             let move_holds_turns = !move_not_landed && sessions.has_pending_move(session_id);
+            let continuation_given_up_at = subagents
+                .continuation_awaited_since
+                .zip(move_settlements.get())
+                .map(|(since, settling)| since + settling.continuation_grace);
+            // Whether the input taken next came off the actor's own queues,
+            // where it goes back to the place it held, rather than off its
+            // commands, which come behind what already waits.
+            let mut taken_from_a_queue = false;
             if provider.is_none() {
                 moves_to_follow.clear();
             }
@@ -2860,11 +2914,13 @@ async fn run_provider_session(
                         }))
                     }
                     _ = std::future::ready(()), if pending_prompt.is_some() && !move_holds_turns => {
+                        taken_from_a_queue = true;
                         let prompt_id = pending_turn_starts.pop_front()
                             .or_else(|| deferred_prompt_id.take()).expect("pending Prompt");
                         ActorInput::Command(Some(ProviderCommand::StartPrompt { prompt_id }))
                     }
                     _ = std::future::ready(()), if !pending_delegations.is_empty() && !move_holds_turns => {
+                        taken_from_a_queue = true;
                         let pending = pending_delegations.pop_front().expect("pending Delegation");
                         ActorInput::Command(Some(ProviderCommand::DeliverDelegation(pending)))
                     }
@@ -2875,6 +2931,14 @@ async fn run_provider_session(
                         }))
                     }
                     command = commands.recv() => ActorInput::Command(command),
+                    // The Continuation owed has not come, so a Move stops
+                    // waiting for it. Whatever else is owed still reads as owed.
+                    () = tokio::time::sleep_until(
+                        continuation_given_up_at.unwrap_or_else(tokio::time::Instant::now)
+                    ), if continuation_given_up_at.is_some() => {
+                        subagents.continuation_awaited_since = None;
+                        ActorInput::Idle
+                    }
                     // Restarted with every input, so it elapses only once
                     // nothing has reached the actor for that long.
                     () = tokio::time::sleep(idle_shutdown), if stops_when_idle => ActorInput::Idle,
@@ -2884,8 +2948,10 @@ async fn run_provider_session(
                     .pop_front()
                     .or_else(|| deferred_prompt_id.take())
             {
+                taken_from_a_queue = true;
                 ActorInput::Command(Some(ProviderCommand::StartPrompt { prompt_id }))
             } else if !move_holds_turns && let Some(pending) = pending_delegations.pop_front() {
+                taken_from_a_queue = true;
                 ActorInput::Command(Some(ProviderCommand::DeliverDelegation(pending)))
             } else {
                 tokio::select! {
@@ -3036,9 +3102,13 @@ async fn run_provider_session(
                                 subagent_id,
                                 status,
                             } => {
-                                let _ = updates.apply(|| {
+                                let settled = updates.apply(|| {
                                     subagents.settle_subagent(&sessions, &subagent_id, status)
                                 });
+                                if matches!(settled, Some(Some(_))) {
+                                    subagents.continuation_awaited_since =
+                                        Some(tokio::time::Instant::now());
+                                }
                             }
                             // Anything else is late output. Owed to Subagents
                             // still working past their Turn's settle — or to
@@ -3122,7 +3192,7 @@ async fn run_provider_session(
                                     &identity,
                                     event,
                                 );
-                                subagents.late_settle_owes_continuation = false;
+                                subagents.continuation_answered();
                                 if !matches!(projection, ProviderEventProjection::Terminal) {
                                     active = Some(continuation);
                                 }
@@ -3172,11 +3242,29 @@ async fn run_provider_session(
             let move_waits = !move_not_landed && sessions.has_pending_move(session_id);
             let command = match command {
                 ProviderCommand::StartPrompt { prompt_id } if move_waits => {
-                    pending_turn_starts.push_front(prompt_id);
+                    let queued = sessions.snapshot(session_id).is_some_and(|snapshot| {
+                        snapshot.prompts.iter().any(|prompt| {
+                            prompt.id == prompt_id && prompt.delivery == PromptDelivery::Queue
+                        })
+                    });
+                    if taken_from_a_queue {
+                        pending_turn_starts.push_front(prompt_id);
+                    } else if queued {
+                        // Prompts queued behind a Turn have no command of their
+                        // own and wait in the Session, so one arriving behind
+                        // them waits there too, to begin in admission order.
+                        defer_next_queued_prompt(&mut deferred_prompt_id, &sessions, session_id);
+                    } else {
+                        pending_turn_starts.push_back(prompt_id);
+                    }
                     continue;
                 }
                 ProviderCommand::DeliverDelegation(pending) if move_waits => {
-                    pending_delegations.push_front(pending);
+                    if taken_from_a_queue {
+                        pending_delegations.push_front(pending);
+                    } else {
+                        pending_delegations.push_back(pending);
+                    }
                     continue;
                 }
                 ProviderCommand::DeliverReports { target }
@@ -3260,7 +3348,7 @@ async fn run_provider_session(
                     {
                         RequestedCompaction::Began(turn) => {
                             active = Some(*turn);
-                            subagents.late_settle_owes_continuation = false;
+                            subagents.continuation_answered();
                         }
                         RequestedCompaction::NotBegun => {
                             defer_next_queued_prompt(
@@ -3331,7 +3419,7 @@ async fn run_provider_session(
                     {
                         ReportWake::Began(turn_id) => {
                             active = Some(ActiveProviderTurn::new_report_continuation(turn_id));
-                            subagents.late_settle_owes_continuation = false;
+                            subagents.continuation_answered();
                             // A Watch that woke the Agent heads the Turn it
                             // next works in, whatever began it.
                             release_watch_outcomes(
@@ -3348,8 +3436,10 @@ async fn run_provider_session(
                     continue;
                 }
                 ProviderCommand::InterruptSession { response } => {
-                    // A wake the interrupt beats begins no Turn to explain.
+                    // A wake the interrupt beats begins no Turn to explain,
+                    // and nothing is left waiting for it.
                     subagents.watch_outcomes.drop_all();
+                    subagents.continuation_answered();
                     // Nor is a Report put back for want of a Turn delivered
                     // on the interrupt's heels: it waits for the next Turn.
                     reports_owed = false;
@@ -3724,7 +3814,7 @@ async fn run_provider_session(
                 let _ = updates.apply(|| sessions.reports_delivered(session_id));
             }
             active = Some(ActiveProviderTurn::new(turn_id));
-            subagents.late_settle_owes_continuation = false;
+            subagents.continuation_answered();
             // A Prompt that won the race to a Watch's wake begins the Turn
             // in which the Agent hears of it.
             release_watch_outcomes(&sessions, &updates, &mut subagents, session_id, turn_id);
@@ -4578,6 +4668,9 @@ async fn run_provider_session(
             }
         }
     }
+
+    // Nothing it owed a Continuation over can come now.
+    sessions.set_continuation_awaited(session_id, false);
 
     // The actor holds the only handle to its Turn's normalizers, so settle the Turn
     // here rather than dropping them: whatever stopped this actor also stopped the
@@ -5566,6 +5659,7 @@ fn track_watch(
             // a Turn wakes the Agent into that Turn instead.
             if woke_agent && active_turn.is_none() && owner == session_id {
                 subagents.late_settle_owes_continuation = true;
+                subagents.continuation_awaited_since = Some(tokio::time::Instant::now());
             }
             let Some(outcome) = WatchOutcome::of(
                 outcome,

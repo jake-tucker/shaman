@@ -29,7 +29,9 @@
 //! Active and the Session's own row names the destination, both in one
 //! transaction, so a restart finds them whatever else it lost. What holds it is
 //! whatever the Session's Provider process is running in the directory: its own
-//! Turn, and a native Subagent, a running Agent inside that process. A brokered
+//! Turn, a native Subagent, a running Agent inside that process, and for a while
+//! the Continuation owed once such work settles past its Turn, which the Provider
+//! is about to wake the Agent with and the process stopping would lose. A brokered
 //! Subagent holds nothing, though it keeps the Session Working, having an actor
 //! and a directory of its own to carry on in; nor does a Watch, which a Monitoring
 //! Session gives up by Moving at once. A Turn only owed holds the Move no longer
@@ -143,8 +145,9 @@ impl MoveTarget<'_> {
     }
 }
 
-/// A destination as it was read, and what was read of the Repository left,
-/// where a Move takes a Session.
+/// Where a Move takes a Session, as its destination was just read: the directory
+/// it will work in, the Workspace and Worktree holding that, and what was read of
+/// the Worktrees on either side, which the Move's record names branches from.
 struct MoveDestinationRead {
     execution_directory: ExecutionDirectory,
     workspace: Workspace,
@@ -175,8 +178,9 @@ impl MoveDestinationRead {
     }
 }
 
-/// What a Move standing the Session in its destination left to be done once the
-/// store's lock is let go.
+/// A Session standing in its destination, with what is left to do and to say of
+/// that once the store's lock is let go: the summary it left standing, the
+/// Repository of a linked Worktree it left, and the Workspace it now stands in.
 struct MoveStood {
     summary: SessionSummary,
     vacated: Option<Repository>,
@@ -264,7 +268,7 @@ impl SessionStore {
         let same_as_pending = pending
             .as_ref()
             .is_some_and(|pending| pending.destination == read.execution_directory);
-        if owes_or_runs_a_turn || state.native_subagent_working(session_id) {
+        if owes_or_runs_a_turn || state.process_still_busy(session_id) {
             if same_as_pending {
                 return Ok((
                     MoveOutcome::Pending {
@@ -331,6 +335,20 @@ impl SessionStore {
             .pending_move
             .clone()?;
         (!state.holds_a_pending_move(session_id)).then_some(pending)
+    }
+
+    /// Says whether the Provider is about to wake `session_id`'s Agent with a
+    /// result its process stopping would lose, as its Provider actor reads it.
+    pub(crate) fn set_continuation_awaited(&self, session_id: SessionId, awaited: bool) {
+        let mut state = self
+            .state
+            .lock()
+            .expect("Session store lock is not poisoned");
+        if awaited {
+            state.continuations_awaited.insert(session_id);
+        } else {
+            state.continuations_awaited.remove(&session_id);
+        }
     }
 
     /// Whether a Move stands pending for `session_id`, held or not.
@@ -629,19 +647,24 @@ impl SessionStore {
 }
 
 impl SessionStoreState {
-    /// Whether a native Subagent beneath `session_id` is at work: a running
-    /// Agent inside the Session's own Provider process. One beneath a brokered
-    /// Subagent rides that one's process instead, and is no concern here.
-    fn native_subagent_working(&self, session_id: SessionId) -> bool {
-        self.actor_subtree(session_id)
-            .into_iter()
-            .skip(1)
-            .filter_map(|descendant| self.sessions.get(&descendant))
-            .any(|record| record.snapshot.session.status != SessionStatus::Idle)
+    /// Whether the Session's own Provider process has anything left to do for
+    /// it beyond a Turn of its own: a native Subagent at work beneath it, a
+    /// running Agent inside that process, or a Continuation owed. A native
+    /// Subagent beneath a brokered one rides that one's process instead, and is
+    /// no concern here.
+    fn process_still_busy(&self, session_id: SessionId) -> bool {
+        self.continuations_awaited.contains(&session_id)
+            || self
+                .actor_subtree(session_id)
+                .into_iter()
+                .skip(1)
+                .filter_map(|descendant| self.sessions.get(&descendant))
+                .any(|record| record.snapshot.session.status != SessionStatus::Idle)
     }
 
     /// Whether something still runs in the directory a Move pending for
-    /// `session_id` would leave: a Turn of its own, or a native Subagent.
+    /// `session_id` would leave: a Turn of its own, or what else its process has
+    /// to do.
     fn holds_a_pending_move(&self, session_id: SessionId) -> bool {
         let own_turn_open = self.sessions.get(&session_id).is_some_and(|record| {
             record
@@ -650,7 +673,7 @@ impl SessionStoreState {
                 .iter()
                 .any(|turn| !turn.status.is_terminal())
         });
-        own_turn_open || self.native_subagent_working(session_id)
+        own_turn_open || self.process_still_busy(session_id)
     }
 
     /// Whether `pending` is still the Move pending for `session_id` and

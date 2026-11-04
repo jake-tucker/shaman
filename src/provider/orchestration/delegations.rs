@@ -289,7 +289,7 @@ pub(super) async fn run_delegated_turn(
     match begin_delegated_turn(connector, provider, subagents, shutdown, turn_id, input).await {
         DelegatedTurnStart::Began => {
             *active = Some(ActiveProviderTurn::new_delegated(turn_id));
-            subagents.late_settle_owes_continuation = false;
+            subagents.continuation_answered();
             // A Watch that woke the Agent heads the Turn it next works in,
             // whatever began it.
             release_watch_outcomes(

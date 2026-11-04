@@ -215,6 +215,9 @@ struct SessionStoreState {
     /// Provider orchestration has asked to hear of it: the Session the Report
     /// is for, whose Agent the orchestrator then delivers it to (see
     /// [`SessionStore::announce_held_reports_to`]).
+    /// The Sessions whose Provider actor says the Provider is about to wake
+    /// their Agent with a result a Move stopping its process would lose.
+    continuations_awaited: std::collections::HashSet<SessionId>,
     report_notices: Option<mpsc::UnboundedSender<SessionId>>,
 }
 
@@ -465,6 +468,7 @@ impl SessionStore {
             registry_moves: Default::default(),
             worked_order: Vec::new(),
             report_notices: None,
+            continuations_awaited: Default::default(),
         };
         state.worked_order = state.worked_order();
         // A history still waiting in storage has nothing a save could be

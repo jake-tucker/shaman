@@ -234,6 +234,9 @@ pub struct ServerTimings {
     /// or pipes however many there are. Its conversation resumes from its
     /// stored Resume State at its next Turn.
     pub provider_idle_shutdown: Duration,
+    /// How long a pending Move waits for the Continuation a Subagent settling
+    /// past its Turn leaves owed, before giving it up.
+    pub move_continuation_grace: Duration,
     /// How long a newly issued Invite remains redeemable.
     pub invite_ttl: Duration,
     /// How long removing a Remote waits for that Remote to acknowledge the
@@ -396,6 +399,7 @@ impl Default for ServerTimings {
             errand_timeout: DEFAULT_ERRAND_TIMEOUT,
             provider_stop_timeout: crate::provider::PROVIDER_STOP_TIMEOUT,
             provider_idle_shutdown: crate::provider::PROVIDER_IDLE_SHUTDOWN,
+            move_continuation_grace: crate::provider::MOVE_CONTINUATION_GRACE,
             invite_ttl: Duration::from_secs(10 * 60),
             remote_withdrawal_timeout: Duration::from_secs(5),
             remote_reach_timeout: Duration::from_secs(10),
@@ -524,6 +528,13 @@ impl ServerTimings {
     /// out the default.
     pub fn with_provider_stop_timeout(mut self, timeout: Duration) -> Self {
         self.provider_stop_timeout = timeout;
+        self
+    }
+
+    /// Bounds how long a pending Move waits on an owed Continuation; injectable
+    /// so tests see it given up without waiting out the default.
+    pub fn with_move_continuation_grace(mut self, grace: Duration) -> Self {
+        self.move_continuation_grace = grace;
         self
     }
 
@@ -1896,7 +1907,7 @@ async fn start(
     // A pending Move settles as its Session's Turn does, asked for by that
     // Session's Provider actor, and as this Server starts.
     let (move_settlements, asked_move_settlements) = tokio::sync::mpsc::unbounded_channel();
-    providers.settle_moves_through(move_settlements);
+    providers.settle_moves_through(move_settlements, timings.move_continuation_grace);
     operations.settle_pending_moves(asked_move_settlements, provider_shutdown_rx.clone());
     // A Broker Tool spawning a Subagent starts that Subagent's Provider actor
     // through the same orchestrator every other Session's runs on, one

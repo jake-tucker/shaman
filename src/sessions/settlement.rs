@@ -503,6 +503,13 @@ impl SessionStoreState {
             }
             return Ok(InterruptReading::Subagents);
         }
+        if record.snapshot.session.pending_move.is_some()
+            && self.continuations_awaited.contains(&session_id)
+        {
+            // All that is left is what a Move waits on, which reads as nothing
+            // at work, and the interrupt stands it down.
+            return Ok(InterruptReading::Subagents);
+        }
         if record.snapshot.session.monitoring_since.is_some() {
             // Only Watches are left, and nothing a Turn owns: stopping them
             // is the whole interrupt (ADR 0030).

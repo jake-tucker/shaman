@@ -39,8 +39,8 @@ pub use codex::CodexRuntime;
 pub use copilot::CopilotRuntime;
 pub(crate) use orchestration::{
     BrokeredDelivery, BrokeredSendRefusal, BrokeredSpawnRefusal, BrokeredStop,
-    BrokeredSubagentRequest, ContextBreakdownError, MoveSettlement, PROVIDER_IDLE_SHUTDOWN,
-    PROVIDER_STOP_TIMEOUT, ProviderOrchestrator, ProviderUpdateGate,
+    BrokeredSubagentRequest, ContextBreakdownError, MOVE_CONTINUATION_GRACE, MoveSettlement,
+    PROVIDER_IDLE_SHUTDOWN, PROVIDER_STOP_TIMEOUT, ProviderOrchestrator, ProviderUpdateGate,
     skill_delivery_failure_message,
 };
 pub use report::{
