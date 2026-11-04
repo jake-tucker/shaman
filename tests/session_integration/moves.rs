@@ -2,6 +2,13 @@
 //! directory of its Server while its identity, Transcript and conversation
 //! stay, every Client viewing it or its listings sees where it went, and its
 //! Provider follows at the next Turn by resuming the conversation there.
+//!
+//! The Agent's note is tested ahead of a Prompt here and ahead of a held Report
+//! in the broker's Report tests. Neither a Watch Outcome nor a Continuation a
+//! Report wakes can be the first input after a Move: the Move ends the Provider
+//! connection the Session ran on, whose Watches end with it, and `lease_worktree`
+//! drops any connection whose directory differs, so a Report waits for the next
+//! Turn rather than waking one.
 
 use std::path::{Path, PathBuf};
 

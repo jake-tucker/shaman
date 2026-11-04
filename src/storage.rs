@@ -38,7 +38,7 @@ mod unsaved;
 mod writer;
 
 pub(crate) use activity_rows::{ActivityRowSink, ActivityTallyRow, Spelled};
-pub(crate) use unsaved::{SessionRows, Unsaved};
+pub(crate) use unsaved::{AddedActivity, SessionRows, Unsaved};
 pub(crate) use writer::{
     Deletion, HeldSessions, IDLE_FLUSH_DELAY, SAVE_RETRY_INTERVAL, StorageSink, StorageWriter,
     TakenSaves, is_turn_boundary,
@@ -1044,6 +1044,7 @@ impl StorageRepository {
         &self,
         session: &crate::protocol::Session,
         moved_from: Option<&crate::protocol::ExecutionDirectory>,
+        added: Option<AddedActivity>,
         revision: crate::protocol::SessionRevision,
     ) -> Result<(), StorageError> {
         let mut connection = connect(&self.database_path)?;
@@ -1051,17 +1052,25 @@ impl StorageRepository {
             session_id: session.id,
             message: error.to_string(),
         })?;
-        diesel::update(sessions::table.filter(sessions::id.eq(session.id.to_string())))
-            .set((
-                sessions::workspace.eq(SessionRow::session_metadata_payload(session, moved_from)?),
-                sessions::revision.eq(revision),
-            ))
-            .execute(&mut connection)
-            .map_err(|error| StorageError::Write {
-                session_id: session.id,
-                message: error.to_string(),
-            })?;
-        Ok(())
+        let metadata = SessionRow::session_metadata_payload(session, moved_from)?;
+        in_transaction(&mut connection, |connection| {
+            diesel::update(sessions::table.filter(sessions::id.eq(session.id.to_string())))
+                .set((
+                    sessions::workspace.eq(metadata),
+                    sessions::revision.eq(revision),
+                ))
+                .execute(connection)?;
+            if let Some(AddedActivity(row)) = added {
+                diesel::insert_into(activities::table)
+                    .values(row)
+                    .execute(connection)?;
+            }
+            Ok(())
+        })
+        .map_err(|message| StorageError::Write {
+            session_id: session.id,
+            message,
+        })
     }
 
     /// Deletes a Session's rows, and with them every Attachment it references

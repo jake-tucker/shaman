@@ -395,6 +395,7 @@ impl SessionStore {
             save,
             record.snapshot.session.clone(),
             record.moved_from.clone(),
+            None,
             record.snapshot.revision,
         )?;
         Ok(())

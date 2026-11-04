@@ -5370,14 +5370,6 @@ fn push_move_activity(
 ) {
     use crate::protocol::ActivityStatus;
 
-    let location = |location: &crate::protocol::MoveLocation| {
-        let directory = location.execution_directory.path.display();
-        match &location.branch {
-            Some(branch) => format!("{directory} ({branch})"),
-            None => directory.to_string(),
-        }
-    };
-    let (from, to) = (location(from), location(to));
     let (marker, style) = subagent_marker(status, theme);
     let text = match status {
         ActivityStatus::Active => format!("Moving from {from} to {to} once the Session settles"),

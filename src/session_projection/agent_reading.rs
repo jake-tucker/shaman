@@ -59,9 +59,9 @@ use time::{OffsetDateTime, macros::format_description};
 use crate::protocol::{
     Activity, ActivityStatus, Answer, Approval, ApprovalOutcome, ApprovalSubject, Author,
     CompactionTrigger, Decision, ExcerptQuestionnaire, FileChange, Message, MessageRole,
-    MessageStatus, MoveLocation, Question, QuestionAnswer, Questionnaire, QuestionnaireOutcome,
-    ReadingSpan, ServerReference, SessionSnapshot, SessionTimestamp, TranscriptItem, Turn, TurnId,
-    TurnStatus, WatchOutcomeStatus,
+    MessageStatus, Question, QuestionAnswer, Questionnaire, QuestionnaireOutcome, ReadingSpan,
+    ServerReference, SessionSnapshot, SessionTimestamp, TranscriptItem, Turn, TurnId, TurnStatus,
+    WatchOutcomeStatus,
 };
 pub(crate) use crate::protocol::{
     DEFAULT_MAX_CHARS, DEFAULT_TURNS, Detail, EntryNumber, Position, ReadRefusal, ReadRequest,
@@ -457,9 +457,9 @@ impl<'a> Transcript<'a> {
             .map(|(index, turn)| (turn.id, index))
             .collect::<HashMap<_, _>>();
         // A Move belongs to no Turn, so it is read with the Turn the
-        // Transcript reached before it: the last one its Agent worked in
-        // where the Session stood before.
-        let mut reached = None;
+        // Transcript reached before it, or the first Turn where it reached
+        // none, which is the one that follows it.
+        let mut reached = session.turns.first().map(|turn| turn.id);
         for item in &session.transcript {
             let (turn_id, entry) = match item {
                 TranscriptItem::Message { message_id } => match messages.get(message_id) {
@@ -888,7 +888,7 @@ impl<'a> Transcript<'a> {
                 format!("\"{title}\", first asked: {prompt}")
             }
             Activity::Move { from, to, .. } => {
-                format!("from {} to {}", move_location(from), move_location(to))
+                format!("from {from} to {to}")
             }
         }
     }
@@ -1093,8 +1093,8 @@ impl<'a> Transcript<'a> {
                 from, to, error, ..
             } => {
                 whole.pop();
-                whole.push_str(&format!("\nfrom: {}", move_location(from)));
-                whole.push_str(&format!("\nto: {}", move_location(to)));
+                whole.push_str(&format!("\nfrom: {from}"));
+                whole.push_str(&format!("\nto: {to}"));
                 if let Some(error) = error {
                     whole.push_str(&format!("\nerror: {error}"));
                 }
@@ -1301,16 +1301,6 @@ fn activity_label(activity: &Activity) -> Spans {
         }
     };
     Spans::text(label)
-}
-
-/// One end of a Move as a line says it: the directory, and the branch of
-/// the Worktree it lies in where it has one.
-fn move_location(location: &MoveLocation) -> String {
-    let directory = location.execution_directory.path.display();
-    match &location.branch {
-        Some(branch) => format!("{directory} (branch {branch})"),
-        None => directory.to_string(),
-    }
 }
 
 /// How a Compaction changed the context's size, where either side is known.
@@ -1681,8 +1671,9 @@ mod tests {
 
     use super::*;
     use crate::protocol::{
-        ActivityId, ApprovalId, Delegator, MessageId, ModelId, PromptId, QuestionnaireId, Session,
-        SessionId, SessionRevision, SubagentInterventions, TurnId, Workspace,
+        ActivityId, ApprovalId, Delegator, ExecutionDirectory, MessageId, ModelId, MoveLocation,
+        PromptId, QuestionnaireId, Session, SessionId, SessionRevision, SubagentInterventions,
+        TurnId, Workspace,
     };
     use crate::questionnaire::{Question, QuestionChoice};
 
@@ -2304,6 +2295,56 @@ mod tests {
                 .transcript
                 .starts_with("[Turn 4 of 4 · failed at 2026-10-01T09:32:03Z after 2m 3s: The build broke. · 1 Activity not shown]"),
             "a failed Turn's heading says what it failed with"
+        );
+    }
+
+    /// A Move belongs to no Turn, so it is read with the Turn the Transcript
+    /// reached before it, or with the one that follows where it reached none,
+    /// saying each end's branch as every surface does.
+    #[test]
+    fn a_move_is_read_with_the_turn_before_it_or_failing_that_the_one_after() {
+        let location = |directory: &str, branch: Option<&str>| MoveLocation {
+            execution_directory: ExecutionDirectory {
+                path: PathBuf::from(ROOT).join(directory),
+            },
+            branch: branch.map(str::to_owned),
+        };
+        let moved = |from: MoveLocation, to: MoveLocation| Activity::Move {
+            id: ActivityId::new(),
+            status: ActivityStatus::Completed,
+            from,
+            to,
+            error: None,
+        };
+        let (first, second, third) = (
+            location("first", Some("main")),
+            location("second", Some("feature")),
+            location("third", None),
+        );
+        let mut fixture = Fixture::new();
+        fixture.activity(moved(first.clone(), second.clone()));
+        let turn = fixture.turn(TurnStatus::Completed);
+        fixture.user(turn, "Carry on");
+        fixture.activity(moved(second.clone(), third.clone()));
+
+        let reading = fixture.window(Window {
+            detail: Detail::Activities,
+            ..Window::default()
+        });
+
+        assert!(
+            reading.transcript.contains(&format!(
+                "\n1.1 move [completed]: from {first} to {second}\n"
+            )),
+            "a Move ahead of every Turn leads the Turn after it: {}",
+            reading.transcript
+        );
+        assert!(
+            reading
+                .transcript
+                .ends_with(&format!("\n1.3 move [completed]: from {second} to {third}")),
+            "and one after a Turn's entries follows them: {}",
+            reading.transcript
         );
     }
 

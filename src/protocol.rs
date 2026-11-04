@@ -2953,6 +2953,18 @@ pub struct MoveLocation {
     pub branch: Option<String>,
 }
 
+/// The one way a surface names an end of a Move: the directory, and the
+/// branch beside it where it has one.
+impl fmt::Display for MoveLocation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.execution_directory.path.display())?;
+        match &self.branch {
+            Some(branch) => write!(formatter, " ({branch})"),
+            None => Ok(()),
+        }
+    }
+}
+
 impl Activity {
     pub const fn id(&self) -> ActivityId {
         match self {

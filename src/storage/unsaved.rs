@@ -20,10 +20,11 @@
 
 use std::{collections::BTreeSet, time::Instant};
 
-use crate::protocol::{SessionChange, SessionId, SessionSnapshot, SessionSummary};
+use crate::protocol::{Activity, SessionChange, SessionId, SessionSnapshot, SessionSummary};
 
 use super::{
-    SessionSave, StorageError, StoredSidekickAct, StoredSubagentIdentity, rows::StoredRows,
+    SessionSave, StorageError, StoredSidekickAct, StoredSubagentIdentity,
+    rows::{ActivityRow, StoredRows},
 };
 
 /// One Session as a save reads it where its history is held, borrowed for
@@ -185,6 +186,29 @@ impl Unsaved {
         self.moved_at = Some(Instant::now());
     }
 
+    /// Whether a row added to the Session can stand in storage on its own:
+    /// not where its next save writes it whole, as a Session handed over
+    /// whose shape in storage is not this process's to know.
+    pub(crate) fn takes_added_rows(&self) -> bool {
+        self.held && !self.rows.is_whole()
+    }
+
+    /// Notes that storage took the Session's next Activity with its location
+    /// — one past those it held, in its Transcript — where it
+    /// [takes added rows](Self::takes_added_rows); otherwise the Session owes
+    /// the save that writes it whole, with that Activity among it.
+    pub(crate) fn activity_added_with_location(&mut self) {
+        if !self.held {
+            return;
+        }
+        if self.rows.is_whole() {
+            self.owe();
+        } else {
+            self.rows.stored.activities += 1;
+            self.rows.stored.transcript += 1;
+        }
+    }
+
     /// Encodes what storage lacks of the Session `session` reads, with the
     /// acts waiting here, into a save of its own, and owes nothing from then
     /// on: `None` where nothing is owed. Only the rows that moved are encoded,
@@ -205,6 +229,22 @@ impl Unsaved {
             rows,
             acts: std::mem::take(&mut self.acts),
         }))
+    }
+}
+
+/// The row of the Activity a Session adds next, encoded to land in the one
+/// transaction that changes where the Session stands, rather than with a
+/// later save: a Move's record, which no crash may leave behind the Move.
+pub(crate) struct AddedActivity(pub(super) ActivityRow);
+
+impl AddedActivity {
+    /// The row of `activity`, about to take its place after everything
+    /// `snapshot` holds.
+    pub(crate) fn next_of(
+        snapshot: &SessionSnapshot,
+        activity: &Activity,
+    ) -> Result<Self, StorageError> {
+        ActivityRow::next_of(snapshot, activity).map(Self)
     }
 }
 

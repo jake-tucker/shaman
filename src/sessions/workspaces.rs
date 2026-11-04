@@ -11,7 +11,7 @@ use crate::{
         SourceControlCapability, Workspace, WorkspaceId, WorkspaceUnavailability,
     },
     source_control::SourceControlService,
-    storage::{StoredWorkspace, WorkspacePresentation, WorkspaceProvenance},
+    storage::{AddedActivity, StoredWorkspace, WorkspacePresentation, WorkspaceProvenance},
 };
 
 /// Why a Repository its Registry entry presents, but which this Server has
@@ -798,7 +798,7 @@ impl SessionStore {
         // sharing a Workspace through this same path, as a Description's
         // landing does).
         state.dress_workspace(&mut workspace);
-        self.relocate(&mut state, id, None, workspace, checkout)?;
+        self.change_location(&mut state, id, None, workspace, checkout)?;
         Ok(inherited)
     }
 
@@ -808,11 +808,13 @@ impl SessionStore {
     /// it refuses leaves the Session where it was; once it stands, every
     /// reader of the Session, its listings and the Sidekick tree naming it
     /// hears of it. A Worktree the Session already knew keeps what it knew
-    /// of it. A Move is recorded in the same revision by its Activity, and
-    /// leaves the Session's Agent owed the note of it. Answers the summary
-    /// the change left standing, or `None` where the Session is not held or
-    /// already stands there. The caller enters and dresses `workspace`.
-    pub(super) fn relocate(
+    /// of it. A Move is recorded in the same revision by its Activity, which
+    /// storage takes with the location, so no crash finds a Session Moved
+    /// with no record of it, and leaves the Session's Agent owed the note of
+    /// it. Answers the summary the change left standing, or `None` where the
+    /// Session is not held or already stands there. The caller enters and
+    /// dresses `workspace`.
+    pub(super) fn change_location(
         &self,
         state: &mut SessionStoreState,
         id: SessionId,
@@ -820,6 +822,12 @@ impl SessionStore {
         workspace: Workspace,
         mut checkout: Option<crate::protocol::CheckoutAssociation>,
     ) -> anyhow::Result<Option<SessionSummary>> {
+        // A Move's record takes its place after the history held here, so
+        // that history must be here: a move_session hydrated it, and a tree
+        // evicted since is refused as any commit to it would be.
+        if moved.is_some() && state.is_deferred(id) {
+            anyhow::bail!("Session history must be hydrated before mutation");
+        }
         let Some(record) = state.sessions.get_mut(&id) else {
             return Ok(None);
         };
@@ -847,10 +855,11 @@ impl SessionStore {
         next.workspace.clone_from(&workspace);
         next.checkout.clone_from(&checkout);
         let mut moved_from = record.moved_from.clone();
-        let recorded = moved.is_some();
+        let mut added = None;
         let changes = match moved {
             Some(moved) => {
                 let activity = moved.activity(session, checkout.as_ref());
+                added = Some(AddedActivity::next_of(&record.snapshot, &activity)?);
                 // The Agent is told once, at its next Turn, from where it
                 // last worked; a Move back there leaves it nothing to tell.
                 let last_worked = moved_from.unwrap_or_else(|| session.execution_directory.clone());
@@ -883,22 +892,24 @@ impl SessionStore {
             ),
             changes,
         };
-        // Storage takes the location, and the note the Agent is owed, before
-        // the Session does, so one it refuses leaves the Session where it
-        // was. The Move's Activity lands with the Session's next save.
+        // Storage takes the location, the Move's record, and the note the
+        // Agent is owed together, before the Session does, so one it refuses
+        // leaves the Session where it was.
         let validated =
             crate::session_projection::validate_changes(&record.snapshot, &update.changes)?;
+        let save = record.take_save()?;
+        let recorded = added.is_some();
         self.storage.location_changed(
-            record.take_save()?,
+            save,
             next,
             moved_from.clone(),
+            added.filter(|_| record.unsaved.takes_added_rows()),
             update.revision,
         )?;
-        let landed = validated.apply(&mut record.snapshot, &update.changes);
+        let _ = validated.apply(&mut record.snapshot, &update.changes);
         crate::session_projection::close_revision(&mut record.snapshot, update.revision);
         if recorded {
-            // The Move's record is a row storage lacks.
-            record.unsaved.note(&update.changes, &landed);
+            record.unsaved.activity_added_with_location();
         }
         record.moved_from = moved_from;
         record.summary.session = record.snapshot.session.clone();

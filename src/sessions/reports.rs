@@ -12,11 +12,12 @@
 //! takes has its Agent working again, so a Session the user had set aside is
 //! brought back once one is delivered — never while one only waits.
 //!
-//! The note of a Move is owed here too, though it waits otherwise: it is
-//! stored with the Session rather than held, so a restart before the next
-//! Turn still owes it; it heads only the input that begins a Turn, never a
-//! steer, ahead of any Report beside it; and it wakes nothing, since the
-//! Move stopped whatever Provider process could have taken it.
+//! The note of a Move is a Report too, delivered as these are, but none of
+//! this store's holding: it is owed by what is stored with the Session, so a
+//! restart before the next Turn still owes it, and built as it is taken; it
+//! heads only the input that begins a Turn, never a steer, ahead of any Report
+//! beside it; and it wakes nothing, since the Move ended whatever Provider
+//! connection could have taken it.
 //!
 //! Nothing here reaches a Transcript: a Report stands in none, and a Move
 //! is recorded by its own Activity.
@@ -149,6 +150,12 @@ impl SessionStore {
     }
 }
 
+// Saying the note is owed no longer reaches storage only where the Session's
+// history is held, which it always is here: both functions below run while
+// the Turn the note heads stands open — delivering a Prompt or opening a
+// Delegation or Continuation commits that Turn first, and it settles only
+// after an input its Provider refused is held again — so no tree holding it
+// is evicted, and no Turn begins over a history still waiting in storage.
 impl SessionRecord {
     /// Takes the head of this Session's next Turn: the note of a Move its
     /// Agent is owed, from where it last worked to where the Session stands

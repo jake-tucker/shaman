@@ -160,7 +160,7 @@ impl SessionStore {
         // storage has taken the Move.
         state.dress_workspace(&mut workspace);
         let summary = self
-            .relocate(
+            .change_location(
                 &mut state,
                 session_id,
                 Some(MoveTarget {
@@ -171,7 +171,7 @@ impl SessionStore {
                 checkout,
             )
             .map_err(MoveSessionError::Storage)?
-            .expect("a Session held elsewhere than its destination is relocated");
+            .expect("a Session held elsewhere than its destination changes location");
         // The destination's Workspace is known from now on, as one a Session
         // began in would be, and whatever another identity was entered for
         // the destination, or for where its Workspace is presented, is
@@ -209,4 +209,249 @@ fn may_move(record: Option<&SessionRecord>) -> Result<(), MoveSessionError> {
         return Err(MoveSessionError::Working);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{path::Path, time::Duration};
+
+    use diesel::{Connection, SqliteConnection, connection::SimpleConnection};
+
+    use super::MoveSessionError;
+    use crate::{
+        protocol::{
+            Activity, ActivityStatus, AdmitPromptRequest, CreateSessionRequest, ExecutionDirectory,
+            InitialPrompt, MoveLocation, PromptDelivery, PromptId, ResolvedWorkspace, SessionId,
+        },
+        provider::{MoveNote, Report},
+        sessions::{DeliveredTurnStatus, ProviderTurnOutcome, SessionStore, StoreOutcome},
+        storage::{StorageRepository, StorageWriter},
+    };
+
+    fn prompt(id: PromptId) -> InitialPrompt {
+        InitialPrompt {
+            id,
+            text: "Map the provider seams".to_owned(),
+            skill_invocations: Vec::new(),
+            attachments: Vec::new(),
+        }
+    }
+
+    fn complete_turn(store: &SessionStore, session_id: SessionId, prompt: PromptId) {
+        let delivered = store
+            .deliver_prompt(session_id, prompt, None, DeliveredTurnStatus::Active)
+            .expect("deliver the Prompt")
+            .expect("the Prompt was still owed a Turn");
+        store
+            .finish_provider_turn(
+                session_id,
+                delivered.turn_id,
+                ProviderTurnOutcome::Completed {
+                    trailing_output: Default::default(),
+                },
+            )
+            .expect("settle the Turn");
+    }
+
+    /// An idle Session in `origin`, on a writer whose idle saves never come
+    /// within a test: what storage holds of it is only ever what a command
+    /// wrote, which is what a crash at any moment would leave.
+    async fn idle_session(
+        data_dir: &Path,
+        origin: &Path,
+    ) -> (StorageWriter, SessionStore, SessionId) {
+        let repository = StorageRepository::open(data_dir)
+            .await
+            .expect("open Session repository")
+            .with_idle_flush_delay(Duration::from_secs(3_600));
+        let (writer, storage) = StorageWriter::spawn(repository);
+        let store = SessionStore::new(Default::default(), storage, Vec::new(), Default::default());
+        let first = PromptId::new();
+        let StoreOutcome::Created(snapshot) = store
+            .create(CreateSessionRequest {
+                session_id: None,
+                preparation_id: None,
+                agent_selection: None,
+                execution_directory: ExecutionDirectory {
+                    path: origin.to_owned(),
+                },
+                prompt: prompt(first),
+            })
+            .expect("create the Session")
+        else {
+            panic!("a fresh Prompt creates a Session")
+        };
+        complete_turn(&store, snapshot.session.id, first);
+        (writer, store, snapshot.session.id)
+    }
+
+    /// The store a Server starting now would hold, reading what storage holds
+    /// beside a writer that has flushed nothing: what a crash leaves.
+    async fn as_a_crash_leaves_it(
+        data_dir: &Path,
+        session_id: SessionId,
+    ) -> (StorageWriter, SessionStore) {
+        let repository = StorageRepository::open(data_dir)
+            .await
+            .expect("open the repository again");
+        let restored = repository.load_sessions().await.expect("read Sessions");
+        let (writer, storage) = StorageWriter::spawn(repository);
+        let store = SessionStore::new(restored, storage, Vec::new(), Default::default());
+        store.hydrate(session_id).await.expect("read its history");
+        (writer, store)
+    }
+
+    /// `path` as the store names a directory it works in, which is
+    /// canonically.
+    fn directory(path: &Path) -> ExecutionDirectory {
+        ExecutionDirectory {
+            path: crate::paths::canonical(path).expect("canonicalize a directory the test made"),
+        }
+    }
+
+    /// A Move stands in storage whole the moment it is applied: where the
+    /// Session works, the Activity recording it and the note its Agent is
+    /// owed all land in one command, ahead of any save, so a crash straight
+    /// after it finds all three. The saves after it build on that record.
+    #[tokio::test]
+    async fn a_crash_after_a_move_finds_the_session_moved_with_its_record_and_its_note_owed() {
+        let data_dir = tempfile::tempdir().expect("create isolated data directory");
+        let origin = tempfile::tempdir().expect("create the origin");
+        let destination = tempfile::tempdir().expect("create the destination");
+        let (writer, store, session_id) = idle_session(data_dir.path(), origin.path()).await;
+
+        store
+            .move_to(
+                session_id,
+                ResolvedWorkspace::directory(directory(destination.path()).path),
+                Vec::new(),
+            )
+            .expect("Move the idle Session");
+        let moved = store.snapshot(session_id).expect("the Session is held");
+
+        let (crashed_writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+        let found = crashed.snapshot(session_id).expect("the Session stands");
+        assert_eq!(
+            found.session.execution_directory,
+            directory(destination.path())
+        );
+        assert_eq!(found.activities, moved.activities, "its record stands");
+        assert_eq!(
+            found.transcript, moved.transcript,
+            "where the Transcript has it"
+        );
+        assert_eq!(
+            crashed.take_turn_head(session_id),
+            [Report::from(MoveNote {
+                from: directory(origin.path()),
+                to: directory(destination.path()),
+            })],
+            "and its Agent is still owed the note"
+        );
+        crashed_writer.shutdown().await.expect("stop the reader");
+
+        // The Session's next Turn saves past the record, in step with it.
+        let next = PromptId::new();
+        let StoreOutcome::Created(_) = store
+            .admit(
+                session_id,
+                AdmitPromptRequest {
+                    delivery: PromptDelivery::Queue,
+                    prompt: prompt(next),
+                },
+                Vec::new(),
+                None,
+            )
+            .expect("admit a Prompt after the Move")
+        else {
+            panic!("a fresh Prompt is admitted")
+        };
+        complete_turn(&store, session_id, next);
+        let worked_on = store.snapshot(session_id).expect("the Session is held");
+        let (crashed_writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+        let found = crashed.snapshot(session_id).expect("the Session stands");
+        assert_eq!(found.activities, worked_on.activities);
+        assert_eq!(found.messages, worked_on.messages);
+        assert_eq!(found.transcript, worked_on.transcript);
+        crashed_writer.shutdown().await.expect("stop the reader");
+        writer.shutdown().await.expect("stop the writer");
+    }
+
+    /// Storage refusing the record refuses the Move: the Session stays where
+    /// it was, here and in storage, and a Move once storage takes it again
+    /// records itself once.
+    #[tokio::test]
+    async fn a_move_whose_record_storage_refuses_changes_nothing() {
+        let data_dir = tempfile::tempdir().expect("create isolated data directory");
+        let origin = tempfile::tempdir().expect("create the origin");
+        let destination = tempfile::tempdir().expect("create the destination");
+        let (writer, store, session_id) = idle_session(data_dir.path(), origin.path()).await;
+        let before = store.snapshot(session_id).expect("the Session is held");
+        let mut database = SqliteConnection::establish(
+            data_dir
+                .path()
+                .join("suru.db")
+                .to_str()
+                .expect("the fixture's path is UTF-8"),
+        )
+        .expect("open the database");
+        database
+            .batch_execute(
+                "PRAGMA busy_timeout = 5000; \
+                 CREATE TRIGGER refuse_activities BEFORE INSERT ON activities \
+                 BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END;",
+            )
+            .expect("have storage refuse the record");
+
+        let resolved = ResolvedWorkspace::directory(directory(destination.path()).path);
+        let refused = store
+            .move_to(session_id, resolved.clone(), Vec::new())
+            .expect_err("a Move whose record storage refuses is refused");
+
+        assert!(
+            matches!(refused, MoveSessionError::Storage(_)),
+            "{refused:?}"
+        );
+        assert_eq!(store.snapshot(session_id).as_ref(), Some(&before));
+        assert_eq!(store.take_turn_head(session_id), [], "and owes no note");
+        let (crashed_writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+        assert_eq!(
+            crashed
+                .snapshot(session_id)
+                .expect("the Session stands")
+                .session
+                .execution_directory,
+            directory(origin.path()),
+            "the location rolled back with the record"
+        );
+        crashed_writer.shutdown().await.expect("stop the reader");
+
+        database
+            .batch_execute("DROP TRIGGER refuse_activities;")
+            .expect("have storage take the record again");
+        store
+            .move_to(session_id, resolved, Vec::new())
+            .expect("Move once storage takes it");
+        let (crashed_writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+        let found = crashed.snapshot(session_id).expect("the Session stands");
+        assert_eq!(
+            found
+                .activities
+                .iter()
+                .filter_map(|activity| match activity {
+                    Activity::Move { status, from, .. } => Some((*status, from.clone())),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            [(
+                ActivityStatus::Completed,
+                MoveLocation {
+                    execution_directory: directory(origin.path()),
+                    branch: None,
+                }
+            )],
+        );
+        crashed_writer.shutdown().await.expect("stop the reader");
+        writer.shutdown().await.expect("stop the writer");
+    }
 }

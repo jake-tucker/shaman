@@ -431,6 +431,7 @@ fn persist_checkout_association(
         record.take_save()?,
         next,
         record.moved_from.clone(),
+        None,
         revision,
     )?;
     crate::session_projection::apply_update(&mut record.snapshot, &update)?;

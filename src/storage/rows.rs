@@ -1097,6 +1097,23 @@ impl ActivityRow {
         })
     }
 
+    /// The row of `activity`, about to take its place after everything
+    /// `snapshot` holds.
+    pub(super) fn next_of(
+        snapshot: &crate::protocol::SessionSnapshot,
+        activity: &Activity,
+    ) -> Result<Self, StorageError> {
+        let session_id = snapshot.session.id;
+        let id = session_id.to_string();
+        Self::from_activity(
+            TranscriptPosition {
+                row: RowPosition::new(session_id, &id, snapshot.activities.len()),
+                transcript_order: snapshot.transcript.len(),
+            },
+            activity,
+        )
+    }
+
     fn payload(session_id: SessionId, activity: &Activity) -> Result<String, StorageError> {
         encode(
             session_id,
@@ -1539,22 +1556,6 @@ impl StoredActivityPayload<'_> {
     /// The Activity this payload stores, in `turn_id` — `None` for one of
     /// a kind that belongs to a Turn but was stored with none.
     fn into_activity(self, id: ActivityId, turn_id: Option<TurnId>) -> Option<Activity> {
-        if let Self::Move {
-            status,
-            from,
-            to,
-            error,
-        } = self
-        {
-            return Some(Activity::Move {
-                id,
-                status,
-                from: from.into_owned(),
-                to: to.into_owned(),
-                error: owned(error),
-            });
-        }
-        let turn_id = turn_id?;
         Some(match self {
             Self::Approval {
                 approval,
@@ -1566,7 +1567,7 @@ impl StoredActivityPayload<'_> {
                 asked_at,
             } => Activity::Approval {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 approval: approval.into_owned(),
                 tool_activity_id,
                 detail_truncated,
@@ -1584,7 +1585,7 @@ impl StoredActivityPayload<'_> {
                 settled_at,
             } => Activity::Questionnaire {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 questionnaire: questionnaire.into_owned(),
                 outcome,
                 answer: answer.map(Cow::into_owned),
@@ -1594,12 +1595,12 @@ impl StoredActivityPayload<'_> {
             },
             Self::Status { text } => Activity::Status {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 text: text.into_owned(),
             },
             Self::Error { text } => Activity::Error {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 text: text.into_owned(),
             },
             Self::Command {
@@ -1611,7 +1612,7 @@ impl StoredActivityPayload<'_> {
                 exit_status,
             } => Activity::Command {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 status,
                 command: command.into_owned(),
                 cwd,
@@ -1621,7 +1622,7 @@ impl StoredActivityPayload<'_> {
             },
             Self::FileChange { status, changes } => Activity::FileChange {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 status,
                 changes: changes.into_iter().map(Into::into).collect(),
             },
@@ -1636,7 +1637,7 @@ impl StoredActivityPayload<'_> {
                 omitted_parts,
             } => Activity::ToolCall {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 status,
                 name: name.into_owned(),
                 server: owned(server),
@@ -1654,7 +1655,7 @@ impl StoredActivityPayload<'_> {
                 duration_ms,
             } => Activity::Reasoning {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 status,
                 title: owned(title),
                 content: content.into_owned(),
@@ -1672,7 +1673,7 @@ impl StoredActivityPayload<'_> {
                 delegated_at,
             } => Activity::Subagent {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 status,
                 name: name.into_owned(),
                 description: description.into_owned(),
@@ -1688,7 +1689,7 @@ impl StoredActivityPayload<'_> {
                 summary,
             } => Activity::WatchOutcome {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 status,
                 description: description.into_owned(),
                 summary: owned(summary),
@@ -1704,7 +1705,7 @@ impl StoredActivityPayload<'_> {
                 summary_truncated,
             } => Activity::Compaction {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 status,
                 trigger,
                 instructions: owned(instructions),
@@ -1722,14 +1723,25 @@ impl StoredActivityPayload<'_> {
                 prompt,
             } => Activity::Subsession {
                 id,
-                turn_id,
+                turn_id: turn_id?,
                 session_id,
                 origin: owned(origin),
                 origin_fingerprint: owned(origin_fingerprint),
                 title: title.into_owned(),
                 prompt: prompt.into_owned(),
             },
-            Self::Move { .. } => unreachable!("a Move is read before any Turn is asked for"),
+            Self::Move {
+                status,
+                from,
+                to,
+                error,
+            } => Activity::Move {
+                id,
+                status,
+                from: from.into_owned(),
+                to: to.into_owned(),
+                error: owned(error),
+            },
         })
     }
 }

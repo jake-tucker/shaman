@@ -4,8 +4,8 @@
 //! and steer every Provider already takes (ADR 0035). There are three: the
 //! Subagent Report a delegating Agent is given when a brokered Subagent's Turn
 //! settles, the Sidekick Report a Sidekick is given of a Session it set to
-//! work (see [`SidekickReport`]), and the note an Agent is given at the head
-//! of its first Turn after its Session Moved (see [`MoveNote`]).
+//! work (see [`SidekickReport`]), and the note of a Move an Agent is given at
+//! the head of its first Turn after its Session Moved (see [`MoveNote`]).
 //!
 //! The Session store builds a Report where what it tells of happens; it is
 //! rendered here, once, into the words every harness sends, so an Agent reads
@@ -66,12 +66,10 @@ impl fmt::Display for Report {
     }
 }
 
-/// What an Agent is told of its Session's Move (ADR 0059): that its Execution
-/// Directory changed from where it last worked to where the Session stands
-/// now, however many Moves came between. Nothing the Agent began before the
-/// Move followed it: its Subagents still work where they were, and whatever
-/// it left running in the background ended with the Provider process the
-/// Move stopped.
+/// The Report an Agent is given of its Session's own Move (ADR 0059): that its
+/// Execution Directory changed from where it last worked to where the Session
+/// stands now, however many Moves came between, and that its Subagents did not
+/// follow, since a Move leaves them working where they were.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MoveNote {
     pub from: ExecutionDirectory,
@@ -87,8 +85,7 @@ impl fmt::Display for MoveNote {
             formatter,
             "Note from Suru: this Session Moved, and its Execution Directory changed from {from} to \
              {to}. Work in {to} from now on, not in {from}. Subagents spawned before the Move still \
-             work where they were, so spawn new ones for work here rather than continuing those. \
-             Anything you left running in the background before the Move ended with it."
+             work where they were, so spawn new ones for work here rather than continuing those."
         )
     }
 }
@@ -273,7 +270,10 @@ mod tests {
             text.contains("Subagents spawned before the Move still work where they were"),
             "{text}"
         );
-        assert!(text.contains("spawn new ones"), "{text}");
+        assert!(
+            text.ends_with("spawn new ones for work here rather than continuing those."),
+            "the note says nothing more: {text}"
+        );
         assert_eq!(
             Report::from(note).to_string(),
             text,
