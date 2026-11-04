@@ -351,6 +351,15 @@ impl SessionStore {
         }
     }
 
+    /// Forgets any Continuation said to be awaited for `session_id`, as an actor
+    /// ending does, perhaps in a panic that poisoned the lock, which is no time
+    /// to panic again: a poisoned store has nothing left to hold back.
+    pub(crate) fn forget_continuation_awaited(&self, session_id: SessionId) {
+        if let Ok(mut state) = self.state.lock() {
+            state.continuations_awaited.remove(&session_id);
+        }
+    }
+
     /// Whether a Move stands pending for `session_id`, held or not.
     pub(crate) fn has_pending_move(&self, session_id: SessionId) -> bool {
         self.state

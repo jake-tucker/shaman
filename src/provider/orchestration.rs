@@ -2744,6 +2744,7 @@ async fn forward_held_reports(
 /// Drop also handles cancellation or a panic before the normal shutdown path.
 struct CheckoutActorCleanup {
     session_id: SessionId,
+    sessions: SessionStore,
     checkout_guards: CheckoutGuards,
     connected_incarnations: Arc<Mutex<HashMap<SessionId, u64>>>,
     /// Set once the actor is released, whose releaser has cleared both
@@ -2764,6 +2765,8 @@ impl Drop for CheckoutActorCleanup {
             .lock()
             .unwrap()
             .remove(&self.session_id);
+        // However the actor ended, nothing it owed a Continuation over can come.
+        self.sessions.forget_continuation_awaited(self.session_id);
     }
 }
 
@@ -2799,6 +2802,7 @@ async fn run_provider_session(
     }
     let _checkout_cleanup = CheckoutActorCleanup {
         session_id,
+        sessions: sessions.clone(),
         checkout_guards: checkout_guards.clone(),
         connected_incarnations: connected_incarnations.clone(),
         released,

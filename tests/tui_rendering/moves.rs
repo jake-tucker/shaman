@@ -1940,3 +1940,74 @@ fn a_pending_move_failing_at_settlement_is_said_beneath_the_composer() {
         "the Session went nowhere"
     );
 }
+
+/// A Move waiting on a Continuation owed has a Session reading as idle, so the
+/// Working Indicator says what it waits on and offers the way out: the two-press
+/// interrupt asks the Server, and stands down once the Move has settled.
+#[test]
+fn escape_interrupts_what_a_pending_move_waits_on_with_nothing_else_running() {
+    let press_escape = |application: &mut Application| {
+        application
+            .handle_terminal_event(InputEvent::Key(KeyEvent::new(
+                KeyCode::Esc,
+                KeyModifiers::NONE,
+            )))
+            .expect("press Escape")
+    };
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (session_id, snapshot) = enter_session(&mut application, &directories.alpha);
+    assert_eq!(
+        press_escape(&mut application),
+        ApplicationTransition::Continue
+    );
+    let (activity_id, from, to) = hear_move_pending(&mut application, &snapshot, &directories.beta);
+
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(
+        screen.contains("Waiting to Move (Esc to interrupt)"),
+        "{screen}"
+    );
+
+    assert_eq!(
+        press_escape(&mut application),
+        ApplicationTransition::Continue,
+        "the first press arms it"
+    );
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(
+        screen.contains("Waiting to Move (Esc again to interrupt)"),
+        "{screen}"
+    );
+    let ApplicationTransition::InterruptSession { session } = press_escape(&mut application) else {
+        panic!("the second Escape asks the Server to interrupt the Session");
+    };
+    assert_eq!(session.session_id, session_id);
+
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(snapshot.revision.0 + 2),
+                changes: vec![SessionChange::MoveSettled {
+                    activity_id,
+                    status: ActivityStatus::Completed,
+                    from,
+                    to,
+                    error: None,
+                }],
+            },
+        )))
+        .expect("hear the Move settle");
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(!screen.contains("Waiting to Move"), "{screen}");
+    assert_eq!(
+        press_escape(&mut application),
+        ApplicationTransition::Continue
+    );
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(
+        !screen.contains("Esc again"),
+        "and the key is inert: {screen}"
+    );
+}

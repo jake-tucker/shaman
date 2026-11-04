@@ -70,6 +70,9 @@ pub(super) enum WorkingIndicatorState {
     /// Nothing is Working, but Watches the Agent left running may still wake
     /// it (ADR 0030). Interrupting stops them rather than any Turn.
     Monitoring,
+    /// Nothing reads as at work, but a pending Move waits on what its Provider
+    /// owes the Agent (ADR 0059). Interrupting gives up waiting.
+    WaitingToMove,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

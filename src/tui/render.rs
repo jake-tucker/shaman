@@ -6217,6 +6217,15 @@ fn render_session(
             interrupt: Some(interrupt),
             watching: watching_subject(&snapshot.watches),
         }
+    } else if snapshot.session.pending_move.is_some() {
+        // Nothing reads as at work, so this is where the reader learns why the
+        // Move has not happened, and that they can stop it waiting.
+        SessionTail::Working {
+            state: WorkingIndicatorState::WaitingToMove,
+            working_since: None,
+            interrupt: (!subagent_view).then(|| interrupt_guidance(state)),
+            watching: None,
+        }
     } else {
         SessionTail::Quiet
     };
@@ -6755,6 +6764,7 @@ fn working_indicator_label(state: WorkingIndicatorState) -> &'static str {
         WorkingIndicatorState::Working => "Working",
         WorkingIndicatorState::WaitingForSubagents => "Waiting for subagents",
         WorkingIndicatorState::Monitoring => "Monitoring",
+        WorkingIndicatorState::WaitingToMove => "Waiting to Move",
     }
 }
 

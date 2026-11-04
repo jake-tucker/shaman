@@ -5054,10 +5054,14 @@ impl TuiState {
         if snapshot.working_since().is_some() {
             return Some(InterruptTarget::Prompt);
         }
+        if snapshot.monitoring_since().is_some() {
+            return Some(InterruptTarget::Watches);
+        }
         snapshot
-            .monitoring_since()
+            .session
+            .pending_move
             .is_some()
-            .then_some(InterruptTarget::Watches)
+            .then_some(InterruptTarget::PendingMove)
     }
 
     /// Whether the reader has confirmed stopping the Watches of the Monitoring
@@ -5122,6 +5126,7 @@ impl TuiState {
                             InterruptTarget::Subagents
                                 | InterruptTarget::Prompt
                                 | InterruptTarget::Watches
+                                | InterruptTarget::PendingMove
                         )
                     ),
                 };
@@ -5151,6 +5156,9 @@ enum InterruptTarget {
     /// Nothing is Working, but the Session is Monitoring: interrupting stops
     /// the Watches it waits on, and settles nothing (ADR 0030).
     Watches,
+    /// Nothing reads as at work, but a Move is pending: all that can hold it
+    /// is a Continuation owed, which interrupting stands down (ADR 0059).
+    PendingMove,
 }
 
 /// Which neighbour a queued Prompt selection command moves to.
@@ -9582,7 +9590,7 @@ impl Application {
             self.state.keep_interrupted_turn_open(turn_id);
         } else if target == Some(InterruptTarget::Watches) {
             self.state.request_watch_stop(&session);
-        } else {
+        } else if target != Some(InterruptTarget::PendingMove) {
             self.state.await_withdrawal(&session, None);
         }
         ApplicationTransition::InterruptSession { session }
@@ -9591,8 +9599,9 @@ impl Application {
     fn request_interrupt(&mut self) {
         // The gesture reaches whatever the Session is Working for: the active
         // Turn, the Subagents that outlived it, or the Prompt it has admitted
-        // and not delivered. With none of them there is nothing to stop and the
-        // key stays inert.
+        // and not delivered; or else its Watches, or what a pending Move waits
+        // on. With none of them there is nothing to stop and the key stays
+        // inert.
         // A claim that has already taken the reader's confirmation is waiting
         // on the Session to send it to; asking again would arm a gesture that
         // has nothing left to say.
@@ -9610,9 +9619,10 @@ impl Application {
         self.state.command_mode = CommandMode::InterruptConfirmation {
             turn_id: match target {
                 InterruptTarget::Turn(turn_id) => Some(turn_id),
-                InterruptTarget::Subagents | InterruptTarget::Prompt | InterruptTarget::Watches => {
-                    None
-                }
+                InterruptTarget::Subagents
+                | InterruptTarget::Prompt
+                | InterruptTarget::Watches
+                | InterruptTarget::PendingMove => None,
             },
             armed_at: self.state.presentation_clock.now(),
         };

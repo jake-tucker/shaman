@@ -4247,7 +4247,7 @@ impl SessionOperation {
                 }
             }
             Self::InterruptSession { session_id } => {
-                operation_result(session, commands.interrupt_session(session_id).await)
+                interrupt_result(session, commands.interrupt_session(session_id).await)
             }
             Self::CompactSession {
                 session_id,
@@ -4301,6 +4301,23 @@ fn compaction_refusal(error: &anyhow::Error) -> String {
         }
         _ => refusal.message.clone(),
     }
+}
+
+/// What an interrupt came to: finding nothing left to stop is no failure, the
+/// work having ended on its own, or the Move it would have let go having applied
+/// meanwhile, between the reader asking and the Server hearing.
+fn interrupt_result(session: SessionReference, result: anyhow::Result<()>) -> SubmissionResult {
+    let nothing_left = result.as_ref().is_err_and(|error| {
+        error
+            .downcast_ref::<crate::protocol::SessionError>()
+            .is_some_and(|refusal| {
+                refusal.code == crate::protocol::SessionErrorCode::NothingToInterrupt
+            })
+    });
+    if nothing_left {
+        return SubmissionResult::OperationSucceeded(session);
+    }
+    operation_result(session, result)
 }
 
 fn operation_result(session: SessionReference, result: anyhow::Result<()>) -> SubmissionResult {
@@ -6738,6 +6755,35 @@ mod compaction_refusal_tests {
     use crate::protocol::{SessionError, SessionErrorCode};
 
     use super::compaction_refusal;
+
+    /// An interrupt finding nothing left to stop raises no error, the work it
+    /// was asked to stop having ended, or the Move it would have let go having
+    /// applied; any other refusal still says why.
+    #[test]
+    fn an_interrupt_finding_nothing_left_to_stop_is_no_failure() {
+        use crate::protocol::{Outlook, SessionError, SessionErrorCode};
+        use crate::tui::event_loop::{SessionReference, SubmissionResult, interrupt_result};
+        let session = SessionReference::new(Outlook::Local, crate::protocol::SessionId::new());
+        let refused = |code| {
+            Err(anyhow::Error::new(SessionError {
+                code,
+                message: "the server's own words".to_owned(),
+                unreachable: None,
+            }))
+        };
+
+        assert!(matches!(
+            interrupt_result(
+                session.clone(),
+                refused(SessionErrorCode::NothingToInterrupt)
+            ),
+            SubmissionResult::OperationSucceeded(_)
+        ));
+        assert!(matches!(
+            interrupt_result(session, refused(SessionErrorCode::SessionNotFound)),
+            SubmissionResult::OperationFailed { .. }
+        ));
+    }
 
     #[test]
     fn each_typed_refusal_of_a_compaction_is_explained_and_anything_else_said_as_it_came() {
