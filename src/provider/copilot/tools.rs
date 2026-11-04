@@ -415,6 +415,7 @@ mod tests {
             ("stop_subagent", ToolDisposition::BrokerRow),
             ("begin_session", ToolDisposition::BrokerRow),
             ("send_prompt", ToolDisposition::ToolCall),
+            ("move_session", ToolDisposition::ToolCall),
             ("list_providers", ToolDisposition::ToolCall),
             ("read_subagent", ToolDisposition::ToolCall),
             ("wait_subagents", ToolDisposition::ToolCall),

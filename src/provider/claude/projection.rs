@@ -4322,6 +4322,11 @@ mod tests {
                 json!({"session_id": "s", "prompt": "Look."}),
                 Some("tool_call"),
             ),
+            (
+                "mcp__suru__move_session",
+                json!({"directory": "/work"}),
+                Some("tool_call"),
+            ),
         ];
         for (name, input, row) in uses {
             let mut projection = fresh_projection();

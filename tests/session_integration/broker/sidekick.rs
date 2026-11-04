@@ -33,7 +33,7 @@ mod settings;
 pub(super) mod workspaces;
 
 /// The Tools every Agent is offered, in the Broker's order.
-pub(super) const ORDINARY_TOOLS: [&str; 7] = [
+pub(super) const ORDINARY_TOOLS: [&str; 8] = [
     "list_providers",
     "spawn_subagent",
     "read_subagent",
@@ -41,10 +41,11 @@ pub(super) const ORDINARY_TOOLS: [&str; 7] = [
     "wait_subagents",
     "stop_subagent",
     "list_workspaces",
+    "move_session",
 ];
 
 /// The Tools a Sidekick is offered: the ordinary ones, then its own.
-pub(super) const SIDEKICK_TOOLS: [&str; 26] = [
+pub(super) const SIDEKICK_TOOLS: [&str; 27] = [
     "list_providers",
     "spawn_subagent",
     "read_subagent",
@@ -52,6 +53,7 @@ pub(super) const SIDEKICK_TOOLS: [&str; 26] = [
     "wait_subagents",
     "stop_subagent",
     "list_workspaces",
+    "move_session",
     "list_sessions",
     "read_session",
     "send_prompt",

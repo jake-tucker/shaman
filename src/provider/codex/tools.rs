@@ -297,6 +297,7 @@ mod tests {
             "wait_subagents",
             "list_sessions",
             "send_prompt",
+            "move_session",
         ] {
             let call = mcp("suru", tool, "inProgress", Value::Null, Value::Null);
             assert!(!call.is_recorded_elsewhere(), "{tool} is a Tool Call");

@@ -4450,10 +4450,12 @@ fn move_refusal(refusal: &MoveRefusal) -> Response {
             StatusCode::CONFLICT,
             SessionErrorCode::SidekickWorkspaceSession,
         ),
-        MoveRefusal::Destination(_) | MoveRefusal::BareRepository => (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            SessionErrorCode::InvalidWorkspace,
-        ),
+        MoveRefusal::Destination(_) | MoveRefusal::BareRepository | MoveRefusal::BeyondAgent(_) => {
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                SessionErrorCode::InvalidWorkspace,
+            )
+        }
         MoveRefusal::Storage => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
     session_error_response(status, code, refusal.to_string())

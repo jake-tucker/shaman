@@ -13,8 +13,9 @@
 //! show its Session as working on its own Turn rather than waiting for Subagents.
 //!
 //! The note is written for what the Agent is to the Broker (ADR 0042). Every Agent's names the
-//! Tools every Agent is offered, and says in a sentence that `list_workspaces` tells it where the
-//! user's other work lives, so it thinks to look (ADR 0051). A Sidekick's goes on to say what a
+//! Tools every Agent is offered, says in a sentence that `list_workspaces` tells it where the
+//! user's other work lives, so it thinks to look (ADR 0051), and says in another what
+//! `move_session` reaches (ADR 0059). A Sidekick's goes on to say what a
 //! Sidekick is, to name the Tools that are its alone — read off the same registry the Broker lists
 //! and dispatches by, so a Tool added there is named here without more — to say how it reaches
 //! the user's other machines (ADR 0044), to say what it may not do, so it does not attempt what
@@ -84,6 +85,7 @@ fn agent_note(tool_name: &impl Fn(&str) -> String) -> String {
     let list_providers = tool_name(BrokerTool::ListProviders.name());
     let wait_subagents = tool_name(BrokerTool::WaitSubagents.name());
     let list_workspaces = tool_name(BrokerTool::ListWorkspaces.name());
+    let move_session = tool_name(BrokerTool::MoveSession.name());
     format!(
         "Suru, the app hosting this session, offers you Tools of its own through its Broker: \
          {tools}. With them you can spawn Subagents on any Provider Suru hosts, on the Model you \
@@ -94,7 +96,10 @@ fn agent_note(tool_name: &impl Fn(&str) -> String) -> String {
          Subagents, end your turn rather than calling {wait_subagents}. Your own tools for \
          spawning Subagents remain available, and Suru never re-routes them. Call \
          {list_workspaces} to learn where the user's other work lives: the Workspaces they work \
-         in on this machine, each with what it is for."
+         in on this machine, each with what it is for. Call {move_session} when your work belongs \
+         elsewhere: it Moves your Session, or a Subagent's you spawned through Suru, into a \
+         Worktree of your Repository, a new one included, or outside source control beneath your \
+         Workspace's directory."
     )
 }
 
@@ -292,8 +297,26 @@ mod tests {
             claude_named,
         );
         let words = note.split_whitespace().count();
-        assert!(words <= 150, "the note runs to {words} words: {note}");
+        assert!(words <= 185, "the note runs to {words} words: {note}");
         assert!(!note.contains('\n'), "the note is one line: {note:?}");
+    }
+
+    /// Every Agent is told in one sentence that `move_session` exists and how far it reaches, so
+    /// it thinks of it when its work belongs elsewhere and does not try it beyond that.
+    #[test]
+    fn every_agent_is_told_in_one_sentence_what_move_session_reaches() {
+        for role in [BrokerRole::Agent, BrokerRole::Sidekick] {
+            let note = instruction_note(role, &MemoryIndex::default(), &[], claude_named);
+            assert!(
+                note.contains(
+                    " Call mcp__suru__move_session when your work belongs elsewhere: it Moves your \
+                     Session, or a Subagent's you spawned through Suru, into a Worktree of your \
+                     Repository, a new one included, or outside source control beneath your \
+                     Workspace's directory."
+                ),
+                "{role:?} is told what move_session reaches: {note}"
+            );
+        }
     }
 
     /// Every Agent is offered a listing of its own Server's Workspaces, and told in one sentence

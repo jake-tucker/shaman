@@ -5,9 +5,10 @@
 //!
 //! Which caller is offered a Tool is part of the Tool's own description
 //! ([`BrokerTool::is_sidekicks`]): every Agent is offered the Tools through
-//! which it reaches any Provider, and a listing of its own Server's
-//! Workspaces, and a Sidekick those besides the Tools that work across Suru
-//! itself (ADR 0042, ADR 0051). The transport lists and dispatches by
+//! which it reaches any Provider, a listing of its own Server's Workspaces,
+//! and a Move of its own Session bounded by where it works, and a Sidekick
+//! those besides the Tools that work across Suru itself (ADR 0042, ADR 0051,
+//! ADR 0059). The transport lists and dispatches by
 //! [`BrokerTool::offered_to`], and the note an Agent is told names what it
 //! reads, so a Sidekick's Tool is declared here and nowhere else. A Tool
 //! every Agent is offered is described to each caller as it answers that
@@ -18,6 +19,7 @@ mod origins;
 mod session_acts;
 mod session_beginning;
 mod session_listing;
+mod session_moves;
 mod session_reading;
 mod settings;
 mod workspaces;
@@ -66,6 +68,9 @@ pub(super) enum BrokerTool {
     /// Every Agent's: the Workspaces on its own Server, as compact rows — and
     /// for a Sidekick, those on a Remote, or Everywhere.
     ListWorkspaces,
+    /// Every Agent's: its own Session, or a brokered Subagent's beneath it,
+    /// Moved no further than where it works.
+    MoveSession,
     /// A Sidekick's: the Sessions on its own Server, a Remote, or Everywhere,
     /// as compact rows.
     ListSessions,
@@ -116,7 +121,7 @@ pub(super) enum BrokerTool {
 impl BrokerTool {
     /// Every Tool, in the order `tools/list` lists those a caller is offered:
     /// every Agent's first, then a Sidekick's own.
-    pub(super) const ALL: [Self; 26] = [
+    pub(super) const ALL: [Self; 27] = [
         Self::ListProviders,
         Self::SpawnSubagent,
         Self::ReadSubagent,
@@ -124,6 +129,7 @@ impl BrokerTool {
         Self::WaitSubagents,
         Self::StopSubagent,
         Self::ListWorkspaces,
+        Self::MoveSession,
         Self::ListSessions,
         Self::ReadSession,
         Self::SendPrompt,
@@ -178,7 +184,8 @@ impl BrokerTool {
             | Self::SendToSubagent
             | Self::WaitSubagents
             | Self::StopSubagent
-            | Self::ListWorkspaces => false,
+            | Self::ListWorkspaces
+            | Self::MoveSession => false,
         }
     }
 
@@ -209,6 +216,7 @@ impl BrokerTool {
             | Self::SendToSubagent
             | Self::WaitSubagents
             | Self::StopSubagent
+            | Self::MoveSession
             | Self::ListRemotes
             | Self::ListSettings
             | Self::DescribeSetting
@@ -243,6 +251,7 @@ impl BrokerTool {
             Self::SendToSubagent => "send_to_subagent",
             Self::WaitSubagents => crate::protocol::WAIT_SUBAGENTS_TOOL,
             Self::StopSubagent => "stop_subagent",
+            Self::MoveSession => "move_session",
             Self::ListSessions => "list_sessions",
             Self::ReadSession => "read_session",
             Self::SendPrompt => "send_prompt",
@@ -285,6 +294,7 @@ impl BrokerTool {
             | Self::BeginSession
             | Self::AnswerQuestionnaire
             | Self::ListWorkspaces
+            | Self::MoveSession
             | Self::SetWorkspaceDescription
             | Self::CloneWorkspace
             | Self::ListRemotes
@@ -315,6 +325,7 @@ impl BrokerTool {
             Self::SendToSubagent => "Send to Subagent",
             Self::WaitSubagents => "Wait on Subagents",
             Self::StopSubagent => "Stop Subagent",
+            Self::MoveSession => "Move Session",
             Self::ListSessions => "List Sessions",
             Self::ReadSession => "Read Session",
             Self::SendPrompt => "Send Prompt",
@@ -349,6 +360,7 @@ impl BrokerTool {
             Self::SendToSubagent => SEND_TO_SUBAGENT_DESCRIPTION,
             Self::WaitSubagents => WAIT_SUBAGENTS_DESCRIPTION,
             Self::StopSubagent => STOP_SUBAGENT_DESCRIPTION,
+            Self::MoveSession => session_moves::DESCRIPTION,
             Self::ListSessions => session_listing::DESCRIPTION,
             Self::ReadSession => session_reading::DESCRIPTION,
             Self::SendPrompt => session_acts::SEND_PROMPT_DESCRIPTION,
@@ -476,6 +488,7 @@ impl BrokerTool {
                 },
                 "additionalProperties": false,
             }),
+            Self::MoveSession => session_moves::input_schema(),
             Self::ListSessions => session_listing::input_schema(),
             Self::ReadSession => session_reading::input_schema(),
             Self::SendPrompt => session_acts::send_prompt_schema(),
@@ -519,6 +532,7 @@ impl BrokerTool {
             | Self::SendToSubagent
             | Self::WaitSubagents
             | Self::StopSubagent
+            | Self::MoveSession
             | Self::ListSessions
             | Self::ReadSession
             | Self::SendPrompt
@@ -558,6 +572,7 @@ impl BrokerTool {
             Self::SpawnSubagent
             | Self::SendToSubagent
             | Self::StopSubagent
+            | Self::MoveSession
             | Self::SendPrompt
             | Self::InterruptSession
             | Self::SettleSession
@@ -867,6 +882,7 @@ impl BrokerTools {
                     .map_err(ToolRefusal)?;
                 Ok(stop_answer(subagent, stop))
             }
+            BrokerTool::MoveSession => self.move_session(call).await,
             BrokerTool::ListSessions => {
                 let arguments = session_listing::ListArguments::read(&call.arguments)?;
                 let gathered = self
@@ -2096,6 +2112,7 @@ mod tests {
                 "wait_subagents",
                 "stop_subagent",
                 "list_workspaces",
+                "move_session",
             ]
         );
         assert!(

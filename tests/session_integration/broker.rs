@@ -46,6 +46,7 @@ use crate::session_integration::{
     support::{create_session, read_session, read_session_until},
 };
 
+mod agent_moves;
 mod attribution;
 mod cost;
 mod deletion;
@@ -547,7 +548,8 @@ async fn a_session_lists_every_hosted_provider_through_the_broker_with_the_token
             "send_to_subagent",
             "wait_subagents",
             "stop_subagent",
-            "list_workspaces"
+            "list_workspaces",
+            "move_session"
         ],
         "the Broker offers every Tool any Agent is offered, in its own order"
     );
@@ -712,7 +714,8 @@ async fn a_harness_speaking_the_2026_07_28_revision_is_answered_a_tool_list_it_c
             "send_to_subagent",
             "wait_subagents",
             "stop_subagent",
-            "list_workspaces"
+            "list_workspaces",
+            "move_session"
         ],
     );
     assert_eq!(
