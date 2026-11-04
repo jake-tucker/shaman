@@ -6,19 +6,30 @@
 //! another purpose draws and behaves as it always does and only concludes
 //! differently.
 
-use crate::protocol::Workspace;
+use crate::protocol::{SessionReference, Workspace};
 
 use super::{directory_browser::ChosenDirectory, worktree_picker::WorktreeChoice};
 
 /// What a destination picker was opened for, which says what choosing in it
-/// does. The Workspace Picker hands its own to a Directory Browser its Browse
-/// row opens, so the chain concludes as the picker would have. There is no
-/// default: every opening names its purpose, and a closed picker holds none.
+/// does. A picker hands its own to any picker a row of it opens, so the chain
+/// concludes as the first would have. There is no default: every opening names
+/// its purpose, and a closed picker holds none.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum DestinationPurpose {
     /// Opens the Landing where the reader chose, so the next Session begins
     /// there.
     Landing,
+    /// Moves `session` where the reader chose. It names the Session it was
+    /// opened on, whose Server every picker in the chain reads and the Move
+    /// goes to, and nothing of the Client's own location moves until the
+    /// Session does.
+    Move { session: SessionReference },
+}
+
+impl DestinationPurpose {
+    pub(super) const fn is_move(&self) -> bool {
+        matches!(self, Self::Move { .. })
+    }
 }
 
 /// Where the reader chose to go, as the picker they chose it in names it.

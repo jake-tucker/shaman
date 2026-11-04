@@ -1762,7 +1762,8 @@ fn render_session_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, th
 /// The Worktree Selector: a centered box over the Landing that says where the
 /// next Session stands today on a line of its own, then offers a new Worktree
 /// ahead of every Worktree the Repository already has, each named by its
-/// Checkout State and where it stands.
+/// Checkout State and where it stands. Opened for a Move it says the same of
+/// the Session, and goes on to the ways out to another Workspace or directory.
 fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, theme: &Theme) {
     let picker = &state.worktree_picker;
     let area = centered_rect(
@@ -1827,53 +1828,76 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         }));
     } else if picker.loading {
         lines.push(Line::styled("Loading Worktrees…", theme.text.subdued));
-    } else if let Some(context) = &picker.context {
-        // Where the next Session stands today, which the reader reads rather
-        // than chooses: the Worktree it is in has a row of its own below.
-        let presentation = context
-            .workspace
-            .repository
-            .as_ref()
-            .map(|repository| repository.presentation_path());
-        let current = context
-            .execution_directory
-            .as_ref()
-            .map(|directory| state.worktree_location(&state.outlook, &directory.path, presentation))
-            .unwrap_or_else(|| "No working copy selected".to_owned());
-        lines.push(Line::styled(
-            truncate_to_width(
-                &format!("Current: {current}{}", picker.current_status()),
-                width,
-            ),
-            theme.text.subdued,
-        ));
-        let reason = context
-            .workspace
-            .repository
-            .as_ref()
-            .map(|r| &r.capabilities.create_checkout);
-        let mut rows = vec![match reason {
-            Some(crate::protocol::SourceControlCapability::Available) => "New Worktree".to_owned(),
-            Some(crate::protocol::SourceControlCapability::Unsupported { reason }) => {
-                format!("New Worktree unavailable · {reason}")
-            }
-            None => "New Worktree unavailable · no Repository".to_owned(),
-        }];
-        rows.extend(context.checkouts.iter().map(|checkout| {
-            // The Worktree the reader is already in is marked rather than
-            // moved, so the rows keep the order the Repository gives them.
-            let marker = if picker.current_checkout() == Some(&checkout.association.id) {
-                "* "
+    } else if picker.context.is_some() || picker.offers_elsewhere() {
+        let mut rows = Vec::new();
+        if let Some(context) = &picker.context {
+            // Where the next Session stands today, which the reader reads
+            // rather than chooses: the Worktree it is in has a row of its own
+            // below. A bare Repository's has no such place, so it is asked.
+            let presentation = context
+                .workspace
+                .repository
+                .as_ref()
+                .map(|repository| repository.presentation_path());
+            let heading = if picker.asks_which() {
+                format!(
+                    "Which Worktree of {}?",
+                    state.workspace_name(&state.outlook, &context.workspace.path)
+                )
             } else {
-                ""
+                let current = context
+                    .execution_directory
+                    .as_ref()
+                    .map(|directory| {
+                        state.worktree_location(&state.outlook, &directory.path, presentation)
+                    })
+                    .unwrap_or_else(|| "No working copy selected".to_owned());
+                format!("Current: {current}{}", picker.current_status())
             };
-            let location =
-                state.worktree_location(&state.outlook, &checkout.association.root, presentation);
-            match CheckoutStateLabel::read_in(checkout, CheckoutStateForm::Choosing) {
-                Some(label) => format!("{marker}{} · {location}", label.text()),
-                None => format!("{marker}{location}"),
+            lines.push(Line::styled(
+                truncate_to_width(&heading, width),
+                theme.text.subdued,
+            ));
+            if picker.offers_worktrees() {
+                let reason = context
+                    .workspace
+                    .repository
+                    .as_ref()
+                    .map(|r| &r.capabilities.create_checkout);
+                rows.push(match reason {
+                    Some(crate::protocol::SourceControlCapability::Available) => {
+                        "New Worktree".to_owned()
+                    }
+                    Some(crate::protocol::SourceControlCapability::Unsupported { reason }) => {
+                        format!("New Worktree unavailable · {reason}")
+                    }
+                    None => "New Worktree unavailable · no Repository".to_owned(),
+                });
+                rows.extend(context.checkouts.iter().map(|checkout| {
+                    // The Worktree the reader is already in is marked rather
+                    // than moved, so the rows keep the order the Repository
+                    // gives them.
+                    let marker = if picker.current_checkout() == Some(&checkout.association.id) {
+                        "* "
+                    } else {
+                        ""
+                    };
+                    let location = state.worktree_location(
+                        &state.outlook,
+                        &checkout.association.root,
+                        presentation,
+                    );
+                    match CheckoutStateLabel::read_in(checkout, CheckoutStateForm::Choosing) {
+                        Some(label) => format!("{marker}{} · {location}", label.text()),
+                        None => format!("{marker}{location}"),
+                    }
+                }));
             }
-        }));
+        }
+        if picker.offers_elsewhere() {
+            rows.push("Another Workspace…".to_owned());
+            rows.push("Browse…".to_owned());
+        }
         let available_rows = capacity.saturating_sub(2).max(1);
         let shown = picker
             .window
@@ -1897,7 +1921,13 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             ));
         }
         lines.push(Line::styled(
-            "Enter select · d Remove linked Worktree · Esc close",
+            if picker.offers_removal() {
+                "Enter select · d Remove linked Worktree · Esc close"
+            } else if picker.asks_which() {
+                "Enter select · Esc back"
+            } else {
+                "Enter select · Esc close"
+            },
             theme.text.subdued,
         ));
     }
@@ -1915,7 +1945,11 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         SelectionSurface::Worktrees,
         area,
         lines,
-        " Worktrees ",
+        if picker.is_moving() {
+            " Move Session "
+        } else {
+            " Worktrees "
+        },
         theme,
     );
 }
@@ -2057,11 +2091,25 @@ fn render_workspace_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, 
         // Named in full where the box can hold it, and by the keys alone where
         // it cannot — the same trade the rows make of "[current]" for "C", so
         // a narrow terminal loses wording rather than an affordance.
-        const FOOTER: &str = "Enter switch · Ctrl+O browse · Ctrl+E describe · Esc close";
-        let footer = if FOOTER.width() <= content_width {
-            FOOTER
+        // A Workspace chosen for a Move is read before anything happens, and
+        // the picker stands while its Server answers.
+        let footer = if state.reading_move_workspace() {
+            "Reading that Workspace… · Esc back"
         } else {
-            "Enter · ^O · ^E · Esc"
+            let moving = state
+                .workspace_picker
+                .purpose()
+                .is_some_and(|purpose| purpose.is_move());
+            let full = if moving {
+                "Enter Move · Ctrl+O browse · Ctrl+E describe · Esc back"
+            } else {
+                "Enter switch · Ctrl+O browse · Ctrl+E describe · Esc close"
+            };
+            if full.width() <= content_width {
+                full
+            } else {
+                "Enter · ^O · ^E · Esc"
+            }
         };
         lines.push(Line::styled(
             truncate_to_width(footer, content_width),

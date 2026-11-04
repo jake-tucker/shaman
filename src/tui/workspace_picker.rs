@@ -45,10 +45,11 @@ pub(super) struct WorkspacePicker {
     /// they were choosing rather than on whatever now stands in its place.
     selected: Option<Offer>,
     /// Whether the picker has stepped aside for a Directory Browser opened
-    /// from it, drawing nothing and taking no keys while it keeps its query,
-    /// the row the reader was on, its scroll, and the listing it drew them
-    /// from, so Esc from the browser brings it back as the reader left it
-    /// (see [`Self::step_aside`] and [`Self::step_back`]).
+    /// from it, or for the question which Worktree of a bare Repository a Move
+    /// is bound for, drawing nothing and taking no keys while it keeps its
+    /// query, the row the reader was on, its scroll, and the listing it drew
+    /// them from, so Esc from either brings it back as the reader left it (see
+    /// [`Self::step_aside`] and [`Self::step_back`]).
     stepped_aside: bool,
     /// Why what the reader asked of the picker was refused before it reached
     /// the Server, said inside the picker because the picker stands over the
@@ -509,11 +510,11 @@ impl WorkspacePicker {
         self.listing.clear();
     }
 
-    /// Stands the picker aside for the Directory Browser opened from it: it
+    /// Stands the picker aside for what the reader went on to from it: it
     /// draws nothing and takes no keys, but keeps everything the reader left
     /// it with for [`Self::step_back`]. Only its row menu is put away, being
     /// no part of where the reader was, and any refusal it was saying, which
-    /// a browser that opened has answered.
+    /// going on has answered.
     pub(super) fn step_aside(&mut self) {
         if !self.open {
             return;
@@ -524,8 +525,8 @@ impl WorkspacePicker {
         self.refusal = None;
     }
 
-    /// Brings back a picker standing aside for the Directory Browser, as the
-    /// reader left it; one that has since closed stays closed.
+    /// Brings back a picker standing aside, as the reader left it; one that
+    /// has since closed stays closed.
     pub(super) fn step_back(&mut self) {
         if std::mem::take(&mut self.stepped_aside) {
             self.open = true;

@@ -54,6 +54,10 @@ pub(super) enum DirectoryBrowserProvenance {
     /// the picker as well as the browser and concludes as the purpose the
     /// picker was opened for says.
     FromWorkspacePicker(DestinationPurpose),
+    /// Opened from a row of the Move picker, so Esc goes back to that row, and
+    /// a choice closes the picker as well as the browser and concludes as its
+    /// purpose says.
+    FromWorktreeSelector(DestinationPurpose),
     /// Opened from the settings panel's editor of a list of directories, so
     /// it stands over the panel, Esc goes back to the editor, and a choice is
     /// an entry of the list rather than where the next Session works.
@@ -62,6 +66,18 @@ pub(super) enum DirectoryBrowserProvenance {
     /// flow, Esc goes back to the step, and a choice is an entry of the
     /// step's draft.
     FromOnboarding,
+}
+
+impl DirectoryBrowserProvenance {
+    /// What a choice concludes by, where a choice is somewhere to go.
+    pub(super) const fn purpose(&self) -> Option<&DestinationPurpose> {
+        match self {
+            Self::Standalone(purpose)
+            | Self::FromWorkspacePicker(purpose)
+            | Self::FromWorktreeSelector(purpose) => Some(purpose),
+            Self::FromListEditor | Self::FromOnboarding => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -333,6 +349,14 @@ impl DirectoryBrowser {
         self.provenance.is_some()
     }
 
+    /// What a choice here concludes by, where the browser is open for
+    /// somewhere to go.
+    pub(super) fn purpose(&self) -> Option<&DestinationPurpose> {
+        self.provenance
+            .as_ref()
+            .and_then(DirectoryBrowserProvenance::purpose)
+    }
+
     /// The Server whose directories the tree lists.
     pub(super) fn server(&self) -> &Outlook {
         &self.server
@@ -545,6 +569,21 @@ impl DirectoryBrowser {
         }
         let base = self.base.clone();
         Some((self.close()?, ChosenDirectory { path, base }))
+    }
+
+    /// Whether the Server read the directory focus stands on as a bare
+    /// Repository, which has no Worktree of its own to work in.
+    pub(super) fn focused_is_bare(&self) -> bool {
+        self.rows().iter().any(|row| {
+            matches!(
+                &row.kind,
+                DirectoryBrowserRowKind::Directory {
+                    focused: true,
+                    source_control: Some(DirectorySourceControl::BareRepository),
+                    ..
+                }
+            )
+        })
     }
 
     /// Whether the browser is open, opened from the settings panel's list
@@ -1258,6 +1297,7 @@ mod tests {
         for provenance in [
             DirectoryBrowserProvenance::Standalone(DestinationPurpose::Landing),
             DirectoryBrowserProvenance::FromWorkspacePicker(DestinationPurpose::Landing),
+            DirectoryBrowserProvenance::FromWorktreeSelector(DestinationPurpose::Landing),
             DirectoryBrowserProvenance::FromListEditor,
         ] {
             let mut browser = DirectoryBrowser::default();

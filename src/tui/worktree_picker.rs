@@ -19,6 +19,13 @@ pub(super) struct WorktreePicker {
     pub(super) context: Option<ResolvedWorkspace>,
     pub(super) error: Option<String>,
     pub(super) window: ListWindow,
+    /// Whether the picker has stepped aside for a picker one of its rows
+    /// opened, drawing nothing and taking no keys while it keeps the row the
+    /// reader was on (see [`Self::step_aside`] and [`Self::step_back`]).
+    stepped_aside: bool,
+    /// The Move picker standing aside beneath this one, while this one asks
+    /// which Worktree of a bare Repository is meant (see [`Self::ask_which`]).
+    asked_over: Option<Box<WorktreePicker>>,
 }
 
 /// What a row stands for. The Worktree the reader is already in is one of the
@@ -28,6 +35,16 @@ pub(super) struct WorktreePicker {
 pub(super) enum WorktreeChoice {
     Checkout(Box<CheckoutSummary>),
     New,
+}
+
+/// What choosing the row the reader is on does.
+#[derive(Clone, Debug)]
+pub(super) enum WorktreePickerRow {
+    Worktree(WorktreeChoice),
+    /// Opens the Workspace Picker, in the Move picker.
+    AnotherWorkspace,
+    /// Opens the Directory Browser, in the Move picker.
+    Browse,
 }
 
 impl WorktreePicker {
@@ -46,6 +63,52 @@ impl WorktreePicker {
     pub(super) fn close(&mut self) {
         *self = Self::default();
     }
+    /// Stands the picker aside for the picker a row of it opened: it draws
+    /// nothing and takes no keys, but keeps the rows and the one the reader
+    /// was on for [`Self::step_back`].
+    pub(super) fn step_aside(&mut self) {
+        if self.open {
+            self.open = false;
+            self.stepped_aside = true;
+            self.error = None;
+        }
+    }
+    /// Brings back a picker standing aside, as the reader left it; one that
+    /// has since closed stays closed.
+    pub(super) fn step_back(&mut self) {
+        if std::mem::take(&mut self.stepped_aside) {
+            self.open = true;
+        }
+    }
+    /// Asks which Worktree of the bare Repository `context` reads, over the
+    /// Move picker standing aside, since a Session never lands on a bare root.
+    /// It offers that Repository's Worktrees alone.
+    pub(super) fn ask_which(&mut self, purpose: DestinationPurpose, context: ResolvedWorkspace) {
+        let beneath = std::mem::take(self);
+        *self = Self {
+            open: true,
+            purpose: Some(purpose),
+            context: Some(context),
+            asked_over: Some(Box::new(beneath)),
+            ..Default::default()
+        };
+        self.window.open();
+    }
+    /// Whether the picker is asking which Worktree of a bare Repository.
+    pub(super) const fn asks_which(&self) -> bool {
+        self.asked_over.is_some()
+    }
+    /// Takes back the question [`Self::ask_which`] asked, leaving what it was
+    /// asked over standing aside as it was, and answers whether there was one.
+    pub(super) fn withdraw_question(&mut self) -> bool {
+        match self.asked_over.take() {
+            Some(beneath) => {
+                *self = *beneath;
+                true
+            }
+            None => false,
+        }
+    }
     pub(super) fn load(&mut self, context: ResolvedWorkspace) {
         self.context = Some(context);
         self.loading = false;
@@ -60,14 +123,61 @@ impl WorktreePicker {
             return;
         }
         let count = self.rows();
+        if count == 0 {
+            return;
+        }
         self.selected = (self.selected as isize + delta).rem_euclid(count as isize) as usize;
         self.window.reveal();
     }
-    /// New Worktree first, then one row per Worktree of the Repository.
+    /// New Worktree first, then one row per Worktree of the Repository, then
+    /// the Move picker's ways out of it.
     fn rows(&self) -> usize {
+        self.worktree_rows() + if self.offers_elsewhere() { 2 } else { 0 }
+    }
+    fn worktree_rows(&self) -> usize {
+        if !self.offers_worktrees() {
+            return 0;
+        }
         self.context
             .as_ref()
             .map_or(1, |context| context.checkouts.len() + 1)
+    }
+    /// Whether this picker is the Move's, opened on a Session.
+    pub(super) fn is_moving(&self) -> bool {
+        self.purpose
+            .as_ref()
+            .is_some_and(DestinationPurpose::is_move)
+    }
+    /// Whether Worktrees are on offer at all: a Session that stands outside
+    /// source control has none to be told of, and the Landing says so instead.
+    pub(super) fn offers_worktrees(&self) -> bool {
+        !self.is_moving()
+            || self
+                .context
+                .as_ref()
+                .is_some_and(|context| context.workspace.repository.is_some())
+    }
+    /// Whether the Another Workspace… and Browse… rows stand: in the Move
+    /// picker, but not over the question of which Worktree it led to.
+    pub(super) fn offers_elsewhere(&self) -> bool {
+        self.is_moving() && !self.asks_which()
+    }
+    /// Whether the removal keys mean anything here. A Move goes somewhere; it
+    /// removes nothing from under the Session it is moving.
+    pub(super) fn offers_removal(&self) -> bool {
+        !self.is_moving()
+    }
+    /// What choosing the row the reader is on does.
+    pub(super) fn selected_row(&self) -> Option<WorktreePickerRow> {
+        if self.loading {
+            return None;
+        }
+        match self.selected.checked_sub(self.worktree_rows()) {
+            None => self.choice().map(WorktreePickerRow::Worktree),
+            Some(0) if self.offers_elsewhere() => Some(WorktreePickerRow::AnotherWorkspace),
+            Some(1) if self.offers_elsewhere() => Some(WorktreePickerRow::Browse),
+            Some(_) => None,
+        }
     }
     pub(super) fn choice(&self) -> Option<WorktreeChoice> {
         if self.loading {
@@ -245,6 +355,31 @@ mod tests {
                 .as_deref(),
             Some("gone")
         );
+    }
+
+    /// A Server asking for a working copy of what is no Repository has nothing
+    /// to offer, and walking nothing stays where it is.
+    #[test]
+    fn a_question_with_no_worktrees_offers_nothing_to_walk() {
+        let mut picker = WorktreePicker::default();
+        let session = crate::protocol::SessionReference::new(
+            crate::protocol::Outlook::Local,
+            crate::protocol::SessionId::new(),
+        );
+        let purpose = DestinationPurpose::Move { session };
+        picker.ask_which(
+            purpose,
+            ResolvedWorkspace {
+                execution_status: ExecutionDirectoryStatus::RequiresWorkingCopy,
+                workspace: Workspace::directory(root("plain")),
+                execution_directory: None,
+                checkout: None,
+                checkouts: Vec::new(),
+            },
+        );
+        picker.move_by(1);
+        assert_eq!(picker.selected, 0);
+        assert!(picker.selected_row().is_none());
     }
 
     #[test]

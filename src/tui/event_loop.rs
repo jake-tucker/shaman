@@ -317,7 +317,11 @@ impl SessionTasks {
     ) {
         if !matches!(
             surface,
-            WorkspaceResolutionSurface::Outlook | WorkspaceResolutionSurface::WorktreeList
+            WorkspaceResolutionSurface::Outlook
+                | WorkspaceResolutionSurface::WorktreeList
+                | WorkspaceResolutionSurface::Move
+                | WorkspaceResolutionSurface::MovePicker
+                | WorkspaceResolutionSurface::MoveWorkspace
         ) {
             self.cancel_workspace_resolution(WorkspaceResolutionSurface::Outlook);
         }

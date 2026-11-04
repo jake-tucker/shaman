@@ -6,8 +6,9 @@
 use crate::tui_rendering::support::{
     answer_workspace_resolution, application_looking_at_studio, connected_application,
     deliver_settings, drawn_in_sidebar, enter_active_session, enter_session, fixture_instance_id,
-    listed_session, ready_health, rendered_application_rows, rendered_application_rows_at,
-    selector_label, studio_stops_answering, type_terminal_text, workspace_dir,
+    invoke, key, listed_session, named_workspace_path, ready_health, rendered_application_rows,
+    rendered_application_rows_at, selector_label, studio_stops_answering, type_terminal_text,
+    workspace_dir, workspace_resolution,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use std::{
@@ -18,16 +19,21 @@ use suru::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
         Activity, ActivityId, ActivityStatus, AdmitPromptRequest, AgentSelection,
-        EffectiveSettings, ExecutionDirectory, ModelId, MoveDestination, MoveLocation, MoveOutcome,
-        MoveSessionRequest, Outlook, PendingMove, PromptDelivery, PromptOrder, PromptStatus,
-        ProviderId, SessionChange, SessionId, SessionListItem, SessionReference, SessionRevision,
-        SessionSnapshot, SessionStatus, SessionSummary, SessionTimestamp, SessionUpdate,
-        SidebarScope, SidebarSettings, SidebarVisibility, SkillCatalog, SkillCatalogCapabilities,
-        SkillCatalogRequest, SkillCatalogStatus, SkillDescriptor, SkillId, SkillInvocation,
-        SkillPromptDelivery, TextSpan, Workspace, WorkspacePaths,
+        CheckoutAssociation, CheckoutId, CheckoutKind, CheckoutRevision, CheckoutSummary,
+        ChildDirectory, DirectoryListing, DirectorySourceControl, EffectiveSettings,
+        ExecutionDirectory, ExecutionDirectoryStatus, ListDirectoryRequest, ModelId,
+        MoveDestination, MoveLocation, MoveOutcome, MoveSessionRequest, Outlook, PendingMove,
+        PromptDelivery, PromptOrder, PromptStatus, ProviderId, Repository, RepositoryId,
+        RepositoryLocation, ResolvedWorkspace, SessionChange, SessionId, SessionListItem,
+        SessionReference, SessionRevision, SessionSnapshot, SessionStatus, SessionSummary,
+        SessionTimestamp, SessionUpdate, SidebarScope, SidebarSettings, SidebarVisibility,
+        SkillCatalog, SkillCatalogCapabilities, SkillCatalogRequest, SkillCatalogStatus,
+        SkillDescriptor, SkillId, SkillInvocation, SkillPromptDelivery, SourceControlAvailability,
+        SourceControlCapabilities, SourceControlCapability, TextSpan, Workspace, WorkspacePaths,
     },
     tui::{
-        Application, ApplicationEvent, ApplicationTransition, CommandId, WorkspaceResolutionSurface,
+        Application, ApplicationEvent, ApplicationTransition, CommandId, DirectoryListingId,
+        SemanticCommandId, WorkspaceResolutionSurface,
     },
 };
 
@@ -146,25 +152,6 @@ fn slash_move_with_a_path_asks_the_open_sessions_server_to_move_it_there() {
             .join("\n")
             .contains("/move"),
         "the command spends the line it was typed on, never sending it as a Prompt"
-    );
-}
-
-#[test]
-fn bare_slash_move_says_a_path_is_needed_and_asks_nothing() {
-    let directories = directories();
-    let mut application = connected_application(&directories.alpha);
-    enter_session(&mut application, &directories.alpha);
-
-    type_terminal_text(&mut application, "/move");
-    assert_eq!(
-        press_enter(&mut application),
-        ApplicationTransition::Continue,
-        "with no destination there is nothing to ask the Server"
-    );
-    let screen = rendered_application_rows(&application).join("\n");
-    assert!(
-        screen.contains("Name a directory to Move this Session to"),
-        "the reader is told what the command wants: {screen}"
     );
 }
 
@@ -2010,4 +1997,1048 @@ fn escape_interrupts_what_a_pending_move_waits_on_with_nothing_else_running() {
         !screen.contains("Esc again"),
         "and the key is inert: {screen}"
     );
+}
+
+/// A Repository with a main Worktree and a linked one holding a subdirectory,
+/// rooted per platform, read as its Server would answer for each of them.
+struct MoveFixture {
+    main: PathBuf,
+    linked: PathBuf,
+    nested: PathBuf,
+    context: ResolvedWorkspace,
+}
+
+fn creating_capabilities() -> SourceControlCapabilities {
+    SourceControlCapabilities {
+        create_checkout: SourceControlCapability::Available,
+        ..SourceControlCapabilities::discovery_only()
+    }
+}
+
+fn checkout_summary(repository: &RepositoryId, root: &Path, kind: CheckoutKind) -> CheckoutSummary {
+    CheckoutSummary {
+        association: CheckoutAssociation {
+            recovery_revision: None,
+            reclaim: None,
+            id: CheckoutId::from_root(repository, root),
+            repository: repository.clone(),
+            root: root.to_owned(),
+            kind,
+        },
+        revision: Some(CheckoutRevision::Branch {
+            name: root
+                .file_name()
+                .expect("a Worktree root has a name")
+                .to_string_lossy()
+                .into_owned(),
+            commit: Some("1234567890abcdef".to_owned()),
+        }),
+        availability: SourceControlAvailability::Available,
+    }
+}
+
+impl MoveFixture {
+    fn new() -> Self {
+        let root = crate::tui_rendering::support::named_workspace_path("repo");
+        let main = root.join("main");
+        let linked = root.join("linked");
+        let nested = linked.join("nested");
+        let metadata = main.join(".git");
+        let id = RepositoryId::from_metadata("git", &metadata);
+        let workspace = Workspace {
+            id: id.workspace_id(),
+            path: main.clone(),
+            repository: Some(Box::new(Repository {
+                id: id.clone(),
+                system: "git".to_owned(),
+                metadata_directory: metadata,
+                location: RepositoryLocation::Main { root: main.clone() },
+                availability: SourceControlAvailability::Available,
+                capabilities: creating_capabilities(),
+            })),
+            source_control: SourceControlAvailability::Available,
+            icon: None,
+            description: None,
+            unavailable: None,
+        };
+        let checkouts = vec![
+            checkout_summary(&id, &main, CheckoutKind::Main),
+            checkout_summary(&id, &linked, CheckoutKind::Linked),
+        ];
+        let context = ResolvedWorkspace {
+            workspace,
+            execution_status: ExecutionDirectoryStatus::Available,
+            execution_directory: Some(ExecutionDirectory {
+                path: linked.clone(),
+            }),
+            checkout: Some(checkouts[1].association.clone()),
+            checkouts,
+        };
+        Self {
+            main,
+            linked,
+            nested,
+            context,
+        }
+    }
+
+    /// The Repository as its Server reads it for a Session standing at `path`.
+    fn at(&self, path: &Path) -> ResolvedWorkspace {
+        let mut context = self.context.clone();
+        context.execution_directory = Some(ExecutionDirectory {
+            path: path.to_owned(),
+        });
+        context.checkout = context
+            .checkouts
+            .iter()
+            .rev()
+            .find(|checkout| path.starts_with(&checkout.association.root))
+            .map(|checkout| checkout.association.clone());
+        context
+    }
+
+    /// A Client elsewhere, viewing a Session of this Repository at `path`.
+    fn viewing(&self, path: &Path) -> (Application, SessionId, SessionReference) {
+        let mut application = connected_application(&named_workspace_path("elsewhere"));
+        let (session_id, snapshot) = enter_session(&mut application, path);
+        stand_session_in(&mut application, snapshot, &self.at(path));
+        (
+            application,
+            session_id,
+            SessionReference::new(Outlook::Local, session_id),
+        )
+    }
+}
+
+/// Takes the Session's stream saying it works in `context`, the way a Client
+/// viewing a Session of another Workspace hears it.
+fn stand_session_in(
+    application: &mut Application,
+    mut snapshot: SessionSnapshot,
+    context: &ResolvedWorkspace,
+) {
+    snapshot.revision = SessionRevision(snapshot.revision.0 + 1);
+    snapshot.session.workspace = context.workspace.clone();
+    snapshot.session.execution_directory = context
+        .execution_directory
+        .clone()
+        .expect("a Session works in a directory");
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
+        .expect("hear where the Session works");
+}
+
+fn screen(application: &Application) -> String {
+    rendered_application_rows_at(application, WIDE, HEIGHT).join("\n")
+}
+
+fn slash_move(application: &mut Application) -> ApplicationTransition {
+    type_terminal_text(application, "/move");
+    press_enter(application)
+}
+
+/// Answers the resolution `transition` asks of its Server with `result`.
+fn answer_with(
+    application: &mut Application,
+    transition: &ApplicationTransition,
+    result: Result<ResolvedWorkspace, String>,
+) -> ApplicationTransition {
+    let (outlook, surface, request_id, _) = workspace_resolution(transition)
+        .unwrap_or_else(|| panic!("expected a Workspace resolution, not {transition:?}"));
+    application
+        .handle_event(ApplicationEvent::WorkspaceResolved {
+            outlook,
+            surface,
+            request_id,
+            result,
+        })
+        .expect("deliver the Server's resolution")
+}
+
+/// Opens the Move picker on `context`, as its Server answers for the Session.
+fn open_move_picker(application: &mut Application, context: ResolvedWorkspace) {
+    let reading = slash_move(application);
+    assert_eq!(
+        answer_with(application, &reading, Ok(context)),
+        ApplicationTransition::Continue
+    );
+}
+
+fn move_there(session: &SessionReference, path: &Path) -> ApplicationTransition {
+    ApplicationTransition::MoveSession {
+        session: session.clone(),
+        request: MoveSessionRequest {
+            destination: MoveDestination::Directory {
+                path: path.to_owned(),
+            },
+        },
+    }
+}
+
+fn line_of(screen: &str, needle: &str) -> usize {
+    screen
+        .lines()
+        .position(|line| line.contains(needle))
+        .unwrap_or_else(|| panic!("{needle} is drawn: {screen}"))
+}
+
+/// Walks down to the row holding `needle`.
+fn walk_to(application: &mut Application, needle: &str) {
+    for _ in 0..12 {
+        if screen(application)
+            .lines()
+            .any(|line| line.contains('›') && line.contains(needle))
+        {
+            return;
+        }
+        key(application, KeyCode::Down);
+    }
+    panic!("no row holds {needle}: {}", screen(application));
+}
+
+fn another_workspace(path: &Path) -> Workspace {
+    Workspace::directory(path.to_owned())
+}
+
+/// Chooses the Another Workspace… row, the Server answering it lists
+/// `workspaces`, leaving the reader on the Workspace Picker.
+fn open_workspace_picker(
+    application: &mut Application,
+    outlook: &Outlook,
+    workspaces: Vec<Workspace>,
+) {
+    walk_to(application, "Another Workspace…");
+    let listing = press_enter(application);
+    let ApplicationTransition::ListWorkspaces(request) = listing else {
+        panic!("the row asks for the Workspaces, not {listing:?}");
+    };
+    assert_eq!(request.outlook(), outlook, "of the Session's Server");
+    application
+        .handle_event(ApplicationEvent::WorkspacesListed {
+            request,
+            listing: crate::tui_rendering::support::workspace_listing(workspaces),
+        })
+        .expect("list the Workspaces");
+}
+
+/// Answers the Directory Browser's listing of `root` with child directories.
+fn answer_directories(
+    application: &mut Application,
+    listing_id: DirectoryListingId,
+    root: &Path,
+    children: &[&str],
+) {
+    application
+        .handle_event(ApplicationEvent::DirectoryListed {
+            listing_id,
+            result: Ok(DirectoryListing {
+                root: root.to_owned(),
+                parent: root.parent().map(Path::to_owned),
+                source_control: DirectorySourceControl::Plain,
+                children: children
+                    .iter()
+                    .map(|name| ChildDirectory {
+                        name: (*name).to_owned(),
+                        path: root.join(name),
+                        source_control: DirectorySourceControl::Plain,
+                        hidden: false,
+                    })
+                    .collect(),
+            }),
+        })
+        .expect("list the directory");
+}
+
+/// The bare Repository the Server asks a Worktree of, with one linked
+/// Worktree to choose.
+fn bare_repository(name: &str) -> (ResolvedWorkspace, PathBuf) {
+    let root = named_workspace_path(name);
+    let bare = root.join("bare.git");
+    let worktree = root.join("feature");
+    let id = RepositoryId::from_metadata("git", &bare);
+    let workspace = Workspace {
+        id: id.workspace_id(),
+        path: bare.clone(),
+        repository: Some(Box::new(Repository {
+            id: id.clone(),
+            system: "git".to_owned(),
+            metadata_directory: bare.clone(),
+            location: RepositoryLocation::Bare { root: bare },
+            availability: SourceControlAvailability::Available,
+            capabilities: creating_capabilities(),
+        })),
+        source_control: SourceControlAvailability::Available,
+        icon: None,
+        description: None,
+        unavailable: None,
+    };
+    (
+        ResolvedWorkspace {
+            workspace,
+            execution_status: ExecutionDirectoryStatus::RequiresWorkingCopy,
+            execution_directory: None,
+            checkout: None,
+            checkouts: vec![checkout_summary(&id, &worktree, CheckoutKind::Linked)],
+        },
+        worktree,
+    )
+}
+
+/// Bare `/move` reads the viewed Session's own Repository, where the Session
+/// stands, rather than anything of the Landing's, and offers a new Worktree
+/// first and selected, every Worktree with its Checkout State and location,
+/// and the ways out to another Workspace or any directory.
+#[test]
+fn bare_slash_move_opens_the_picker_on_the_sessions_own_repository() {
+    let fixture = MoveFixture::new();
+    let (mut application, _, _) = fixture.viewing(&fixture.nested);
+
+    let reading = slash_move(&mut application);
+
+    let (outlook, _, _, request) = workspace_resolution(&reading)
+        .unwrap_or_else(|| panic!("the picker reads the Repository, not {reading:?}"));
+    assert_eq!(outlook, Outlook::Local);
+    assert_eq!(
+        request.workspace_id,
+        Some(fixture.context.workspace.id.clone())
+    );
+    assert_eq!(
+        request.remembered_execution_directory,
+        Some(ExecutionDirectory {
+            path: fixture.nested.clone()
+        }),
+        "standing where the Session works"
+    );
+    assert!(screen(&application).contains("Loading Worktrees…"));
+
+    answer_with(&mut application, &reading, Ok(fixture.at(&fixture.nested)));
+    let drawn = screen(&application);
+    assert!(drawn.contains(" Move Session "), "{drawn}");
+    let new_worktree = line_of(&drawn, "› New Worktree");
+    let main = line_of(&drawn, "main · ");
+    let linked = line_of(&drawn, "* linked");
+    let workspace = line_of(&drawn, "Another Workspace…");
+    let browse = line_of(&drawn, "Browse…");
+    assert!(
+        new_worktree < main && main < linked && linked < workspace && workspace < browse,
+        "{drawn}"
+    );
+    assert!(
+        !drawn.contains("Remove"),
+        "a Worktree is not removed from the Move picker: {drawn}"
+    );
+}
+
+#[test]
+fn choosing_another_worktree_moves_the_session_to_its_root_and_closes_the_picker() {
+    let fixture = MoveFixture::new();
+    let (mut application, _, session) = fixture.viewing(&fixture.nested);
+    open_move_picker(&mut application, fixture.at(&fixture.nested));
+
+    walk_to(&mut application, "main · ");
+
+    assert_eq!(
+        press_enter(&mut application),
+        move_there(&session, &fixture.main)
+    );
+    assert!(!screen(&application).contains(" Move Session "));
+}
+
+/// A mis-pick changes nothing, and is how a pending Move is taken back: the
+/// Move goes to where the Session stands, even beneath the Worktree's root,
+/// which the Server takes as staying.
+#[test]
+fn choosing_the_current_worktree_stays_where_the_session_stands_beneath_its_root() {
+    let fixture = MoveFixture::new();
+    for (standing, outcome, said) in [
+        (
+            fixture.nested.clone(),
+            MoveOutcome::AlreadyThere {
+                session: summary_bound_for(SessionId::new(), "Work", &fixture.nested, None),
+            },
+            "The Session already works there.",
+        ),
+        (
+            fixture.linked.clone(),
+            MoveOutcome::PendingCancelled {
+                session: summary_bound_for(SessionId::new(), "Work", &fixture.linked, None),
+            },
+            "The pending Move is cancelled",
+        ),
+    ] {
+        let (mut application, _, session) = fixture.viewing(&standing);
+        open_move_picker(&mut application, fixture.at(&standing));
+
+        walk_to(&mut application, "* linked");
+
+        assert_eq!(
+            press_enter(&mut application),
+            move_there(&session, &standing)
+        );
+        assert!(!screen(&application).contains(" Move Session "));
+        application
+            .handle_event(ApplicationEvent::SessionMoved { session, outcome })
+            .expect("hear the answer");
+        assert!(
+            screen(&application).contains(said),
+            "{}",
+            screen(&application)
+        );
+    }
+}
+
+/// Until a Move can make a Worktree, the row says so and asks nothing.
+#[test]
+fn the_new_worktree_row_says_it_is_not_yet_available_and_asks_nothing() {
+    let fixture = MoveFixture::new();
+    let (mut application, _, _) = fixture.viewing(&fixture.linked);
+    open_move_picker(&mut application, fixture.at(&fixture.linked));
+
+    assert_eq!(
+        press_enter(&mut application),
+        ApplicationTransition::Continue
+    );
+
+    let drawn = screen(&application);
+    assert!(
+        drawn.contains("Creating a Worktree by Move is not yet available"),
+        "{drawn}"
+    );
+    assert!(!drawn.contains(" Move Session "), "{drawn}");
+}
+
+/// A Repository that cannot make a Worktree says why as the Landing's does,
+/// and one its Server cannot read now is no place to Move to.
+#[test]
+fn a_worktree_that_cannot_be_gone_to_is_refused_inside_the_picker() {
+    let fixture = MoveFixture::new();
+    let mut context = fixture.at(&fixture.linked);
+    context.checkouts[0].availability = SourceControlAvailability::Unavailable {
+        reason: "The Worktree's disk is gone".to_owned(),
+    };
+    let (mut application, _, _) = fixture.viewing(&fixture.linked);
+    open_move_picker(&mut application, context);
+
+    walk_to(&mut application, "[unavailable]");
+
+    assert_eq!(
+        press_enter(&mut application),
+        ApplicationTransition::Continue
+    );
+    let drawn = screen(&application);
+    assert!(drawn.contains("The Worktree's disk is gone"), "{drawn}");
+    assert!(
+        drawn.contains(" Move Session "),
+        "the picker stands: {drawn}"
+    );
+}
+
+#[test]
+fn a_session_outside_source_control_is_offered_only_the_two_rows() {
+    let directory = named_workspace_path("plain");
+    let mut application = connected_application(&named_workspace_path("elsewhere"));
+    enter_session(&mut application, &directory);
+
+    open_move_picker(
+        &mut application,
+        ResolvedWorkspace::directory(directory.clone()),
+    );
+
+    let drawn = screen(&application);
+    assert!(drawn.contains("› Another Workspace…"), "{drawn}");
+    assert!(drawn.contains("Browse…"), "{drawn}");
+    assert!(!drawn.contains("New Worktree"), "{drawn}");
+}
+
+/// What the picker reads of the Session is the picker's alone: the Client's
+/// current Workspace, its next Landing and a draft stand as they were.
+#[test]
+fn opening_the_picker_on_a_session_leaves_the_clients_landing_and_draft_alone() {
+    let fixture = MoveFixture::new();
+    let (mut application, _, session) = fixture.viewing(&fixture.linked);
+    type_terminal_text(&mut application, "half a thought");
+    let reading = invoke(&mut application, SemanticCommandId::SessionMove);
+    answer_with(&mut application, &reading, Ok(fixture.at(&fixture.linked)));
+    walk_to(&mut application, "main · ");
+
+    assert_eq!(
+        press_enter(&mut application),
+        move_there(&session, &fixture.main)
+    );
+    assert!(
+        screen(&application).contains("half a thought"),
+        "the draft stands: {}",
+        screen(&application)
+    );
+    let reading = invoke(&mut application, SemanticCommandId::SessionMove);
+    answer_with(&mut application, &reading, Ok(fixture.at(&fixture.linked)));
+    key(&mut application, KeyCode::Esc);
+    assert!(screen(&application).contains("half a thought"));
+
+    invoke(&mut application, SemanticCommandId::SessionNew);
+    let landing = screen(&application);
+    assert!(landing.contains("elsewhere"), "{landing}");
+    assert!(
+        !landing.contains("linked"),
+        "the Landing stays where the Client works: {landing}"
+    );
+}
+
+/// The Workspace Picker's Workspace lands as it would land a new Session: the
+/// Client's last Execution Directory in it, which the Server takes.
+#[test]
+fn another_workspace_lands_where_the_workspace_picker_would_land_a_new_session() {
+    let fixture = MoveFixture::new();
+    let ledger = named_workspace_path("ledger");
+    let remembered = ledger.join("deep");
+    let (mut application, _, _) = fixture.viewing(&fixture.linked);
+    // The Client has stood in `ledger/deep` before.
+    invoke(&mut application, SemanticCommandId::SessionNew);
+    let listing = invoke(&mut application, SemanticCommandId::WorkspaceList);
+    let ApplicationTransition::ListWorkspaces(request) = listing else {
+        panic!("the Workspace Picker asks for its Workspaces, not {listing:?}");
+    };
+    application
+        .handle_event(ApplicationEvent::WorkspacesListed {
+            request,
+            listing: crate::tui_rendering::support::workspace_listing(vec![another_workspace(
+                &ledger,
+            )]),
+        })
+        .expect("list the Workspaces");
+    type_terminal_text(&mut application, "ledger");
+    let landing = press_enter(&mut application);
+    answer_with(
+        &mut application,
+        &landing,
+        Ok(ResolvedWorkspace {
+            execution_directory: Some(ExecutionDirectory {
+                path: remembered.clone(),
+            }),
+            ..ResolvedWorkspace::directory(ledger.clone())
+        }),
+    );
+    let (session_id, snapshot) = enter_session(&mut application, &fixture.linked);
+    stand_session_in(&mut application, snapshot, &fixture.at(&fixture.linked));
+    let session = SessionReference::new(Outlook::Local, session_id);
+
+    open_move_picker(&mut application, fixture.at(&fixture.linked));
+    open_workspace_picker(
+        &mut application,
+        &Outlook::Local,
+        vec![another_workspace(&ledger)],
+    );
+    assert!(screen(&application).contains(" Workspaces "));
+    type_terminal_text(&mut application, "ledger");
+    let resolution = press_enter(&mut application);
+
+    let (_, _, _, request) = workspace_resolution(&resolution)
+        .unwrap_or_else(|| panic!("the Workspace is resolved first, not {resolution:?}"));
+    assert_eq!(request.workspace_id, Some(another_workspace(&ledger).id));
+    assert_eq!(
+        request.remembered_execution_directory,
+        Some(ExecutionDirectory {
+            path: remembered.clone()
+        })
+    );
+    assert_eq!(
+        answer_with(
+            &mut application,
+            &resolution,
+            Ok(ResolvedWorkspace {
+                execution_directory: Some(ExecutionDirectory {
+                    path: remembered.clone(),
+                }),
+                ..ResolvedWorkspace::directory(ledger.clone())
+            }),
+        ),
+        move_there(&session, &remembered)
+    );
+    let drawn = screen(&application);
+    assert!(!drawn.contains(" Workspaces "), "{drawn}");
+    assert!(!drawn.contains(" Move Session "), "{drawn}");
+}
+
+/// Esc walks the chain back a step at a time, each picker as the reader left
+/// it, and an answer to a Workspace let go of Moves nothing.
+#[test]
+fn escape_steps_back_through_the_workspace_chain() {
+    let fixture = MoveFixture::new();
+    let ledger = named_workspace_path("ledger");
+    let (mut application, _, _) = fixture.viewing(&fixture.linked);
+    open_move_picker(&mut application, fixture.at(&fixture.linked));
+    open_workspace_picker(
+        &mut application,
+        &Outlook::Local,
+        vec![another_workspace(&ledger)],
+    );
+    type_terminal_text(&mut application, "ledger");
+    let resolution = press_enter(&mut application);
+    let drawn = screen(&application);
+    assert!(
+        drawn.contains(" Workspaces ") && drawn.contains("Reading that Workspace…"),
+        "the picker stands while its Server answers: {drawn}"
+    );
+
+    let cancelled = key(&mut application, KeyCode::Esc);
+    assert!(
+        matches!(
+            cancelled,
+            ApplicationTransition::CancelWorkspaceResolution(_)
+        ),
+        "{cancelled:?}"
+    );
+    let drawn = screen(&application);
+    assert!(drawn.contains(" Move Session "), "{drawn}");
+    assert!(
+        drawn.contains("› Another Workspace…"),
+        "the reader is back on the row they chose: {drawn}"
+    );
+    assert_eq!(
+        answer_with(
+            &mut application,
+            &resolution,
+            Ok(ResolvedWorkspace::directory(ledger)),
+        ),
+        ApplicationTransition::Continue,
+        "an answer to a choice let go of Moves nothing"
+    );
+
+    assert_eq!(
+        key(&mut application, KeyCode::Esc),
+        ApplicationTransition::Continue
+    );
+    assert!(!screen(&application).contains(" Move Session "));
+}
+
+/// A refused resolution says why in the picker standing over the Session, and
+/// nothing Moves.
+#[test]
+fn a_workspace_its_server_refuses_is_said_in_the_picker_and_moves_nothing() {
+    let fixture = MoveFixture::new();
+    let ledger = named_workspace_path("ledger");
+    for result in [
+        Err("The selected directory no longer belongs".to_owned()),
+        Ok(ResolvedWorkspace {
+            execution_status: ExecutionDirectoryStatus::Unavailable {
+                reason: "The selected directory no longer belongs".to_owned(),
+            },
+            ..ResolvedWorkspace::directory(ledger.clone())
+        }),
+    ] {
+        let (mut application, _, _) = fixture.viewing(&fixture.linked);
+        open_move_picker(&mut application, fixture.at(&fixture.linked));
+        open_workspace_picker(
+            &mut application,
+            &Outlook::Local,
+            vec![another_workspace(&ledger)],
+        );
+        type_terminal_text(&mut application, "ledger");
+        let resolution = press_enter(&mut application);
+
+        assert_eq!(
+            answer_with(&mut application, &resolution, result),
+            ApplicationTransition::Continue
+        );
+        let drawn = screen(&application);
+        assert!(drawn.contains(" Workspaces "), "{drawn}");
+        assert!(
+            drawn.contains("The selected directory no longer belongs"),
+            "{drawn}"
+        );
+    }
+}
+
+/// A bare Repository is asked a Worktree of before any Move goes to the
+/// Server, which could only refuse it, and the Worktree chosen Moves the
+/// Session as the picker was opened to. Esc steps back through the chain.
+#[test]
+fn a_bare_repository_asks_which_worktree_and_concludes_in_a_move() {
+    let fixture = MoveFixture::new();
+    let (bare, worktree) = bare_repository("vault");
+    let (mut application, _, session) = fixture.viewing(&fixture.linked);
+    open_move_picker(&mut application, fixture.at(&fixture.linked));
+    open_workspace_picker(
+        &mut application,
+        &Outlook::Local,
+        vec![bare.workspace.clone()],
+    );
+    type_terminal_text(&mut application, "bare");
+    let resolution = press_enter(&mut application);
+
+    assert_eq!(
+        answer_with(&mut application, &resolution, Ok(bare)),
+        ApplicationTransition::Continue,
+        "nothing is asked of the Server until a Worktree is chosen"
+    );
+    let drawn = screen(&application);
+    assert!(drawn.contains("Which Worktree"), "{drawn}");
+    assert!(drawn.contains("› New Worktree"), "{drawn}");
+    assert!(drawn.contains("feature"), "{drawn}");
+    assert!(!drawn.contains("Another Workspace…"), "{drawn}");
+    assert!(!drawn.contains("Remove"), "{drawn}");
+
+    key(&mut application, KeyCode::Esc);
+    let drawn = screen(&application);
+    assert!(drawn.contains(" Workspaces "), "{drawn}");
+    assert!(drawn.contains("bare"), "the query stands: {drawn}");
+    key(&mut application, KeyCode::Esc);
+    let drawn = screen(&application);
+    assert!(drawn.contains("› Another Workspace…"), "{drawn}");
+    assert!(
+        drawn.contains("* linked"),
+        "the Move picker is its own again, not the bare Repository's: {drawn}"
+    );
+
+    let resolution = {
+        press_enter(&mut application);
+        type_terminal_text(&mut application, "bare");
+        press_enter(&mut application)
+    };
+    let (bare, _) = bare_repository("vault");
+    answer_with(&mut application, &resolution, Ok(bare));
+    walk_to(&mut application, "feature");
+    assert_eq!(
+        press_enter(&mut application),
+        move_there(&session, &worktree)
+    );
+    let drawn = screen(&application);
+    assert!(!drawn.contains("Which Worktree"), "{drawn}");
+    assert!(!drawn.contains(" Workspaces "), "{drawn}");
+    assert!(!drawn.contains(" Move Session "), "{drawn}");
+}
+
+/// Browse… roots the browser where the Session stands, not where the next
+/// Session would, Esc comes back to the row, and the directory chosen is the
+/// Move's destination with nothing resolved for a Landing.
+#[test]
+fn browse_opens_the_directory_browser_where_the_session_stands_and_concludes_in_a_move() {
+    let fixture = MoveFixture::new();
+    let (mut application, _, session) = fixture.viewing(&fixture.nested);
+    open_move_picker(&mut application, fixture.at(&fixture.nested));
+
+    walk_to(&mut application, "Browse…");
+    let listing = press_enter(&mut application);
+    let ApplicationTransition::ListDirectory {
+        outlook, request, ..
+    } = &listing
+    else {
+        panic!("the row lists the Session's directory, not {listing:?}");
+    };
+    assert_eq!(*outlook, Outlook::Local);
+    assert_eq!(
+        *request,
+        ListDirectoryRequest {
+            path: fixture.nested.clone(),
+            base: Some(fixture.nested.clone()),
+        }
+    );
+    assert!(!screen(&application).contains(" Move Session "));
+
+    key(&mut application, KeyCode::Esc);
+    let drawn = screen(&application);
+    assert!(
+        drawn.contains("› Browse…"),
+        "stepped back onto the row: {drawn}"
+    );
+    assert!(drawn.contains(" Move Session "), "{drawn}");
+
+    let ApplicationTransition::ListDirectory { listing_id, .. } = press_enter(&mut application)
+    else {
+        panic!("the row opens the browser again");
+    };
+    answer_directories(&mut application, listing_id, &fixture.nested, &["inner"]);
+    key(&mut application, KeyCode::Down);
+
+    assert_eq!(
+        press_enter(&mut application),
+        move_there(&session, &fixture.nested.join("inner")),
+    );
+    let drawn = screen(&application);
+    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert!(!drawn.contains("Loading"), "{drawn}");
+}
+
+/// A bare Repository the browser knows for one is refused inside it, since
+/// the Server could only refuse the Move.
+#[test]
+fn browsing_to_a_bare_repository_refuses_it_in_the_browser_and_asks_nothing() {
+    let fixture = MoveFixture::new();
+    let (mut application, _, _) = fixture.viewing(&fixture.nested);
+    open_move_picker(&mut application, fixture.at(&fixture.nested));
+    walk_to(&mut application, "Browse…");
+    let ApplicationTransition::ListDirectory { listing_id, .. } = press_enter(&mut application)
+    else {
+        panic!("the row opens the browser");
+    };
+    application
+        .handle_event(ApplicationEvent::DirectoryListed {
+            listing_id,
+            result: Ok(DirectoryListing {
+                root: fixture.nested.clone(),
+                parent: fixture.nested.parent().map(Path::to_owned),
+                source_control: DirectorySourceControl::Plain,
+                children: vec![ChildDirectory {
+                    name: "vault.git".to_owned(),
+                    path: fixture.nested.join("vault.git"),
+                    source_control: DirectorySourceControl::BareRepository,
+                    hidden: false,
+                }],
+            }),
+        })
+        .expect("list the directory");
+    key(&mut application, KeyCode::Down);
+
+    assert_eq!(
+        press_enter(&mut application),
+        ApplicationTransition::Continue
+    );
+
+    let drawn = screen(&application);
+    assert!(
+        drawn.contains("A bare Repository has nowhere to work"),
+        "{drawn}"
+    );
+    assert!(drawn.contains("vault.git"), "the browser stands: {drawn}");
+}
+
+/// The Workspace Picker's own way into the browser steps back through both
+/// and concludes in a Move too, rooted where the Session stands.
+#[test]
+fn browse_from_the_workspace_picker_concludes_in_a_move_and_steps_back_through_both() {
+    let fixture = MoveFixture::new();
+    let (mut application, _, session) = fixture.viewing(&fixture.nested);
+    open_move_picker(&mut application, fixture.at(&fixture.nested));
+    open_workspace_picker(
+        &mut application,
+        &Outlook::Local,
+        vec![another_workspace(&named_workspace_path("ledger"))],
+    );
+
+    let listing = invoke(&mut application, SemanticCommandId::WorkspaceBrowse);
+    let ApplicationTransition::ListDirectory {
+        request,
+        listing_id,
+        ..
+    } = listing
+    else {
+        panic!("the picker opens the browser, not {listing:?}");
+    };
+    assert_eq!(request.path, fixture.nested);
+    assert_eq!(request.base.as_ref(), Some(&fixture.nested));
+
+    key(&mut application, KeyCode::Esc);
+    assert!(screen(&application).contains(" Workspaces "));
+    key(&mut application, KeyCode::Esc);
+    assert!(screen(&application).contains(" Move Session "));
+
+    open_workspace_picker(
+        &mut application,
+        &Outlook::Local,
+        vec![another_workspace(&named_workspace_path("ledger"))],
+    );
+    let ApplicationTransition::ListDirectory {
+        listing_id: again, ..
+    } = invoke(&mut application, SemanticCommandId::WorkspaceBrowse)
+    else {
+        panic!("the picker opens the browser again");
+    };
+    assert_ne!(again, listing_id);
+    answer_directories(&mut application, again, &fixture.nested, &["inner"]);
+    key(&mut application, KeyCode::Down);
+    assert_eq!(
+        press_enter(&mut application),
+        move_there(&session, &fixture.nested.join("inner")),
+    );
+    let drawn = screen(&application);
+    assert!(!drawn.contains(" Workspaces "), "{drawn}");
+    assert!(!drawn.contains(" Move Session "), "{drawn}");
+}
+
+/// A Remote's Session is Moved on that Remote: everything the picker lists is
+/// asked of it, and the Move goes to it.
+#[test]
+fn a_remote_sessions_picker_reads_that_remote_and_its_move_goes_there() {
+    let fixture = MoveFixture::new();
+    let studio = Outlook::Remote("studio".to_owned());
+    let mut application = application_looking_at_studio();
+    let (session_id, snapshot, _) = enter_active_session(&mut application, &fixture.linked);
+    stand_session_in(&mut application, snapshot, &fixture.at(&fixture.linked));
+    let session = SessionReference::new(studio.clone(), session_id);
+
+    let reading = slash_move(&mut application);
+    let (outlook, _, _, _) = workspace_resolution(&reading).expect("the Remote is asked");
+    assert_eq!(outlook, studio);
+    answer_with(&mut application, &reading, Ok(fixture.at(&fixture.linked)));
+
+    open_workspace_picker(
+        &mut application,
+        &studio,
+        vec![another_workspace(&named_workspace_path("ledger"))],
+    );
+    let listing = invoke(&mut application, SemanticCommandId::WorkspaceBrowse);
+    let ApplicationTransition::ListDirectory { outlook, .. } = &listing else {
+        panic!("the browser lists the Remote's directories, not {listing:?}");
+    };
+    assert_eq!(*outlook, studio);
+    key(&mut application, KeyCode::Esc);
+
+    type_terminal_text(&mut application, "ledger");
+    let resolution = press_enter(&mut application);
+    let (outlook, _, _, _) = workspace_resolution(&resolution).expect("the Remote resolves it");
+    assert_eq!(outlook, studio);
+    assert_eq!(
+        answer_with(
+            &mut application,
+            &resolution,
+            Ok(ResolvedWorkspace::directory(named_workspace_path("ledger"))),
+        ),
+        move_there(&session, &named_workspace_path("ledger"))
+    );
+}
+
+#[test]
+fn a_remote_that_stopped_answering_refuses_the_picker_and_a_choice_made_in_it() {
+    let fixture = MoveFixture::new();
+    let mut application = application_looking_at_studio();
+    let (_, snapshot, _) = enter_active_session(&mut application, &fixture.linked);
+    stand_session_in(&mut application, snapshot, &fixture.at(&fixture.linked));
+
+    let reading = slash_move(&mut application);
+    answer_with(&mut application, &reading, Ok(fixture.at(&fixture.linked)));
+    studio_stops_answering(&mut application, 1, Duration::from_secs(5));
+    walk_to(&mut application, "main · ");
+    assert_eq!(
+        press_enter(&mut application),
+        ApplicationTransition::Continue
+    );
+    let drawn = screen(&application);
+    assert!(drawn.contains(" Move Session "), "{drawn}");
+    assert!(drawn.contains("studio is unreachable"), "{drawn}");
+    key(&mut application, KeyCode::Esc);
+
+    assert_eq!(
+        slash_move(&mut application),
+        ApplicationTransition::Continue
+    );
+    let drawn = screen(&application);
+    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert!(drawn.contains("studio is unreachable"), "{drawn}");
+}
+
+/// A Working Session takes the picker as an idle one does; the Server holds
+/// what it is asked as pending.
+#[test]
+fn a_working_session_is_moved_from_the_picker_and_told_it_is_pending() {
+    let fixture = MoveFixture::new();
+    let mut application = connected_application(&named_workspace_path("elsewhere"));
+    let (session_id, snapshot, _) = enter_active_session(&mut application, &fixture.linked);
+    stand_session_in(&mut application, snapshot, &fixture.at(&fixture.linked));
+    let session = SessionReference::new(Outlook::Local, session_id);
+
+    open_move_picker(&mut application, fixture.at(&fixture.linked));
+    walk_to(&mut application, "main · ");
+    assert_eq!(
+        press_enter(&mut application),
+        move_there(&session, &fixture.main)
+    );
+
+    application
+        .handle_event(ApplicationEvent::SessionMoved {
+            session,
+            outcome: MoveOutcome::Pending {
+                session: summary_bound_for(
+                    session_id,
+                    "Work",
+                    &fixture.linked,
+                    Some(&fixture.main),
+                ),
+            },
+        })
+        .expect("hear the answer");
+    let drawn = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(
+        drawn.contains("The Session Moves once the work under way settles"),
+        "{drawn}"
+    );
+}
+
+/// A Repository its Server could not read leaves the ways out on offer, so a
+/// Session whose directory has gone can still be Moved away from it.
+#[test]
+fn a_repository_the_server_could_not_read_still_offers_the_two_rows() {
+    let fixture = MoveFixture::new();
+    let (mut application, _, _) = fixture.viewing(&fixture.linked);
+
+    let reading = slash_move(&mut application);
+    answer_with(
+        &mut application,
+        &reading,
+        Err("The directory is gone".to_owned()),
+    );
+
+    let drawn = screen(&application);
+    assert!(drawn.contains("The directory is gone"), "{drawn}");
+    assert!(drawn.contains("› Another Workspace…"), "{drawn}");
+    assert!(drawn.contains("Browse…"), "{drawn}");
+    assert!(!drawn.contains("New Worktree"), "{drawn}");
+}
+
+/// Leaving the Session is done with Moving it: nothing of the chain stands
+/// over the next screen, and an answer arriving later Moves nothing.
+#[test]
+fn leaving_the_session_lets_go_of_the_chain() {
+    let fixture = MoveFixture::new();
+    let ledger = named_workspace_path("ledger");
+    let (mut application, _, _) = fixture.viewing(&fixture.linked);
+    open_move_picker(&mut application, fixture.at(&fixture.linked));
+    open_workspace_picker(
+        &mut application,
+        &Outlook::Local,
+        vec![another_workspace(&ledger)],
+    );
+    type_terminal_text(&mut application, "ledger");
+    let resolution = press_enter(&mut application);
+
+    invoke(&mut application, SemanticCommandId::SessionNew);
+
+    let drawn = screen(&application);
+    assert!(!drawn.contains(" Workspaces "), "{drawn}");
+    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert_eq!(
+        answer_with(
+            &mut application,
+            &resolution,
+            Ok(ResolvedWorkspace::directory(ledger)),
+        ),
+        ApplicationTransition::Continue
+    );
+    assert!(!screen(&application).contains("Moves"));
+
+    // Nor does a later Workspace Picker step back into the Move picker.
+    let listing = invoke(&mut application, SemanticCommandId::WorkspaceList);
+    assert!(matches!(listing, ApplicationTransition::ListWorkspaces(_)));
+    key(&mut application, KeyCode::Esc);
+    assert!(!screen(&application).contains(" Move Session "));
+}
+
+/// The removal keys of the Landing's selector mean nothing here, where
+/// nothing offers them.
+#[test]
+fn the_move_picker_removes_no_worktree() {
+    let fixture = MoveFixture::new();
+    let (mut application, _, _) = fixture.viewing(&fixture.nested);
+    open_move_picker(&mut application, fixture.at(&fixture.nested));
+    walk_to(&mut application, "main · ");
+
+    assert_eq!(
+        key(&mut application, KeyCode::Char('d')),
+        ApplicationTransition::Continue
+    );
+    let drawn = screen(&application);
+    assert!(
+        !drawn.contains("Main checkout cannot be removed"),
+        "{drawn}"
+    );
+    assert!(!drawn.contains("Remove linked"), "{drawn}");
 }
