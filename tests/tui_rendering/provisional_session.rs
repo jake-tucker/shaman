@@ -29,6 +29,7 @@ pub fn created_session_snapshot(
         title: prompt.text.trim().to_owned(),
         icon: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: session_id,

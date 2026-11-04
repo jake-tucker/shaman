@@ -9,7 +9,7 @@
 //! Each test reads what the parent's double was handed, which is what its
 //! Agent would read.
 
-use suru::protocol::{ExecutionDirectory, MoveDestination, MoveSessionRequest};
+use suru::protocol::{ExecutionDirectory, MoveDestination, MoveOutcome, MoveSessionRequest};
 use suru::provider::{MoveNote, Report, SubagentReport, SubagentReportOutcome};
 
 use super::*;
@@ -520,6 +520,106 @@ async fn a_moved_parent_is_told_of_its_move_ahead_of_the_report_waiting_for_its_
         "the note of the Move heads the Turn's input, ahead of the Report that waited for it"
     );
     assert_eq!(turn.prompt(), "What did the Researcher find?");
+
+    hosted.server.shutdown().await.expect("shut down server");
+}
+
+/// A brokered Subagent holds no Move of its parent: the parent's own Turn
+/// settling applies it, the Subagent carries on where it was over an actor of
+/// its own, and its Report then begins no Continuation in the directory the
+/// parent left, but waits behind the note for the parent's next Turn.
+#[tokio::test]
+async fn a_pending_move_applies_past_a_working_subagent_whose_report_then_waits_behind_its_note() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut delegating = delegating(state_dir.path(), "broker-report-pending", None).await;
+    let descriptor = delegating.descriptor.clone();
+    let child_id = delegating
+        .client
+        .spawn_subagent(researcher("codex", "gpt-5.5", json!({})))
+        .await;
+    let (child_provider, _) =
+        run_child(&mut delegating.hosted.codex, codex_selection("high")).await;
+    let caller = delegating.caller;
+    let origin = read_session(&descriptor, caller)
+        .await
+        .session
+        .execution_directory;
+    let destination = delegating.hosted.workspace.path().join("moved here");
+    std::fs::create_dir(&destination).expect("create the destination");
+    let destination = ExecutionDirectory {
+        path: suru::paths::canonical(&destination).expect("canonicalize the destination"),
+    };
+
+    let answer: MoveOutcome = crate::support::loopback_client()
+        .post(format!("{}/v1/sessions/{caller}/move", descriptor.base_url))
+        .bearer_auth(&descriptor.token)
+        .json(&MoveSessionRequest {
+            destination: MoveDestination::Directory {
+                path: destination.path.clone(),
+            },
+        })
+        .send()
+        .await
+        .expect("ask for the Move")
+        .error_for_status()
+        .expect("the Move is taken")
+        .json()
+        .await
+        .expect("decode the Move's answer");
+    assert!(matches!(answer, MoveOutcome::Pending { .. }), "{answer:?}");
+
+    delegating
+        .caller_provider
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    read_until(&descriptor, caller, "the Move applies", |snapshot| {
+        snapshot.session.execution_directory == destination
+    })
+    .await;
+    let working = read_session(&descriptor, child_id).await;
+    assert_eq!(working.session.execution_directory, origin, "where it was");
+    assert!(
+        working.session.working_since.is_some(),
+        "and still at work there"
+    );
+
+    say(&descriptor, child_id, &child_provider, ANSWER).await;
+    child_provider
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    let settled = row_settles(&descriptor, caller, child_id).await;
+    let expected = report_of(
+        &settled,
+        child_id,
+        SubagentReportOutcome::Completed,
+        Some(ANSWER),
+    );
+    assert_eq!(
+        settled.turns.len(),
+        1,
+        "no Continuation ran where the parent worked"
+    );
+
+    let Delegating { mut hosted, .. } = delegating;
+    admit_prompt(&descriptor, caller, "What did the Researcher find?").await;
+    let relaunch = next_start(&mut hosted.claude).await;
+    assert_eq!(relaunch.execution_directory(), destination.path);
+    let mut relaunched = relaunch.succeed(AgentIdentity {
+        agent: AgentId::new("claude-agent"),
+        selection: default_selection(&claude_models()),
+    });
+    let turn = next_turn(&mut relaunched, "the Prompt's Turn reaches its Provider").await;
+    assert_eq!(
+        turn.reports(),
+        [
+            MoveNote {
+                from: origin,
+                to: destination,
+            }
+            .into(),
+            expected
+        ]
+    );
 
     hosted.server.shutdown().await.expect("shut down server");
 }

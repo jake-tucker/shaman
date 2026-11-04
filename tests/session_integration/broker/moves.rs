@@ -27,7 +27,10 @@ async fn move_session(descriptor: &RuntimeDescriptor, session_id: SessionId, pat
         .expect("the Move is taken")
         .json()
         .await
-        .expect("decode the Move's answer");
+        .expect("decode the Move's answer")
+    else {
+        panic!("the Move applies at once");
+    };
     assert_eq!(session.session.execution_directory.path, path);
 }
 

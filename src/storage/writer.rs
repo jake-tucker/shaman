@@ -45,8 +45,9 @@ use crate::{
 };
 
 use super::{
-    AddedActivity, Landing, SessionSave, StorageError, StorageRepository, StoredResumeState,
-    StoredSidekickAct, WorkspacePresentation, WorkspaceProvenance, WorkspaceWrite,
+    AddedActivity, Landing, SessionSave, SettledActivity, StorageError, StorageRepository,
+    StoredResumeState, StoredSidekickAct, WorkspacePresentation, WorkspaceProvenance,
+    WorkspaceWrite,
 };
 
 /// How long the writer waits without a command before an idle tick, and how
@@ -121,6 +122,7 @@ enum WriterCommand {
         session: Box<crate::protocol::Session>,
         moved_from: Option<crate::protocol::ExecutionDirectory>,
         added: Option<AddedActivity>,
+        settled: Option<SettledActivity>,
         revision: crate::protocol::SessionRevision,
         durability: std_mpsc::SyncSender<Result<(), String>>,
     },
@@ -347,6 +349,7 @@ impl Writer {
                 session,
                 moved_from,
                 added,
+                settled,
                 revision,
                 durability,
             } => {
@@ -354,7 +357,13 @@ impl Writer {
                 // which keeps the Session where it was.
                 self.hand_over(save);
                 let result = self.land().and_then(|()| {
-                    repository.save_location(&session, moved_from.as_ref(), added, revision)
+                    repository.save_location(
+                        &session,
+                        moved_from.as_ref(),
+                        added,
+                        settled,
+                        revision,
+                    )
                 });
                 let _ = durability.send(result.map_err(|error| error.to_string()));
             }
@@ -817,16 +826,18 @@ impl StorageSink {
             .expect("the writer is running");
     }
 
-    /// Persists where a Session works now, where its Agent last worked while
-    /// it is owed the note of a Move (`moved_from`), and the Activity
-    /// recording that Move (`added`), all in one transaction, after `save`,
-    /// what the Session owed storage before it moved.
+    /// Persists where a Session works now, the Move it waits on, where its
+    /// Agent last worked while it is owed the note of a Move (`moved_from`),
+    /// the Activity recording a Move (`added`), and the settling of one
+    /// recorded before (`settled`), all in one transaction, after `save`, what
+    /// the Session owed storage before it moved.
     pub(crate) fn location_changed(
         &self,
         save: Option<SessionSave>,
         session: crate::protocol::Session,
         moved_from: Option<crate::protocol::ExecutionDirectory>,
         added: Option<AddedActivity>,
+        settled: Option<SettledActivity>,
         revision: crate::protocol::SessionRevision,
     ) -> Result<(), StorageError> {
         let (durability, receipt) = std_mpsc::sync_channel(0);
@@ -836,6 +847,7 @@ impl StorageSink {
                 session: Box::new(session),
                 moved_from,
                 added,
+                settled,
                 revision,
                 durability,
             })
@@ -1331,6 +1343,7 @@ mod tests {
     /// between them.
     fn session(workspace: &Path) -> PersistedSession {
         let session = Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: SessionId::new(),

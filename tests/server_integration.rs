@@ -2041,7 +2041,10 @@ async fn a_remote_session_is_moved_by_its_owning_server() {
             },
         )
         .await
-        .expect("Move the Remote's Session through the Pairing");
+        .expect("Move the Remote's Session through the Pairing")
+    else {
+        panic!("the Remote's idle Session Moves at once");
+    };
 
     assert_eq!(
         session.session.execution_directory.path, destination,

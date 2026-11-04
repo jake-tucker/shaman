@@ -11,7 +11,9 @@ use crate::{
         SourceControlCapability, Workspace, WorkspaceId, WorkspaceUnavailability,
     },
     source_control::SourceControlService,
-    storage::{AddedActivity, StoredWorkspace, WorkspacePresentation, WorkspaceProvenance},
+    storage::{
+        AddedActivity, SettledActivity, StoredWorkspace, WorkspacePresentation, WorkspaceProvenance,
+    },
 };
 
 /// Why a Repository its Registry entry presents, but which this Server has
@@ -808,12 +810,13 @@ impl SessionStore {
     /// it refuses leaves the Session where it was; once it stands, every
     /// reader of the Session, its listings and the Sidekick tree naming it
     /// hears of it. A Worktree the Session already knew keeps what it knew
-    /// of it. A Move is recorded in the same revision by its Activity, which
-    /// storage takes with the location, so no crash finds a Session Moved
-    /// with no record of it, and leaves the Session's Agent owed the note of
-    /// it. Answers the summary the change left standing, or `None` where the
-    /// Session is not held or already stands there. The caller enters and
-    /// dresses `workspace`.
+    /// of it. A Move is recorded in the same revision by its Activity — added
+    /// as settled, or the pending Move's own settling — which storage takes
+    /// with the location, so no crash finds a Session Moved with no record of
+    /// it, and leaves the Session's Agent owed the note of it. Answers the
+    /// summary the change left standing, or `None` where the Session is not
+    /// held or already stands there. The caller enters and dresses
+    /// `workspace`.
     pub(super) fn change_location(
         &self,
         state: &mut SessionStoreState,
@@ -854,16 +857,52 @@ impl SessionStore {
         let mut next = session.clone();
         next.workspace.clone_from(&workspace);
         next.checkout.clone_from(&checkout);
-        let mut moved_from = record.moved_from.clone();
-        let mut added = None;
+        let mut landing = LocationLanding {
+            moved_from: record.moved_from.clone(),
+            added: None,
+            settled: None,
+        };
         let changes = match moved {
             Some(moved) => {
-                let activity = moved.activity(session, checkout.as_ref());
-                added = Some(AddedActivity::next_of(&record.snapshot, &activity)?);
+                let record_of_it = match moved.settles {
+                    Some(activity_id) => {
+                        let (from, to) = moved.ends(session, checkout.as_ref());
+                        landing.settled = Some(SettledActivity::of(
+                            id,
+                            &crate::protocol::Activity::Move {
+                                id: activity_id,
+                                status: crate::protocol::ActivityStatus::Completed,
+                                from: from.clone(),
+                                to: to.clone(),
+                                error: None,
+                            },
+                        )?);
+                        next.pending_move = None;
+                        SessionChange::MoveSettled {
+                            activity_id,
+                            status: crate::protocol::ActivityStatus::Completed,
+                            from,
+                            to,
+                            error: None,
+                        }
+                    }
+                    None => {
+                        let activity = moved.activity(
+                            session,
+                            checkout.as_ref(),
+                            crate::protocol::ActivityStatus::Completed,
+                        );
+                        landing.added = Some(AddedActivity::next_of(&record.snapshot, &activity)?);
+                        SessionChange::ActivityAdded { activity }
+                    }
+                };
                 // The Agent is told once, at its next Turn, from where it
                 // last worked; a Move back there leaves it nothing to tell.
-                let last_worked = moved_from.unwrap_or_else(|| session.execution_directory.clone());
-                moved_from = (last_worked != moved.execution_directory).then_some(last_worked);
+                let last_worked = landing
+                    .moved_from
+                    .unwrap_or_else(|| session.execution_directory.clone());
+                landing.moved_from =
+                    (last_worked != moved.execution_directory).then_some(last_worked);
                 next.execution_directory
                     .clone_from(&moved.execution_directory);
                 vec![
@@ -872,7 +911,7 @@ impl SessionStore {
                         workspace,
                         checkout,
                     },
-                    SessionChange::ActivityAdded { activity },
+                    record_of_it,
                 ]
             }
             None => vec![SessionChange::WorkspaceChanged {
@@ -880,6 +919,33 @@ impl SessionStore {
                 checkout,
             }],
         };
+        self.land_location(state, id, next, changes, landing)
+            .map(Some)
+    }
+
+    /// Lands `changes` as the Session `id`'s next revision, leaving its own
+    /// row as `next` says, with `landing` in the same transaction: storage
+    /// takes them before the Session does, so what it refuses leaves the
+    /// Session as it was. Once they stand, every reader of the Session, its
+    /// listings and the Sidekick tree naming it hears of them. Answers the
+    /// summary they left standing.
+    pub(super) fn land_location(
+        &self,
+        state: &mut SessionStoreState,
+        id: SessionId,
+        next: crate::protocol::Session,
+        changes: Vec<SessionChange>,
+        landing: LocationLanding,
+    ) -> anyhow::Result<SessionSummary> {
+        let LocationLanding {
+            moved_from,
+            added,
+            settled,
+        } = landing;
+        let record = state
+            .sessions
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("Session does not exist on this server instance"))?;
         let update = crate::protocol::SessionUpdate {
             session_id: id,
             revision: crate::protocol::SessionRevision(
@@ -892,24 +958,27 @@ impl SessionStore {
             ),
             changes,
         };
-        // Storage takes the location, the Move's record, and the note the
-        // Agent is owed together, before the Session does, so one it refuses
-        // leaves the Session where it was.
         let validated =
             crate::session_projection::validate_changes(&record.snapshot, &update.changes)?;
         let save = record.take_save()?;
         let recorded = added.is_some();
+        let settling = settled.is_some();
+        let takes_rows = record.unsaved.takes_added_rows();
         self.storage.location_changed(
             save,
             next,
             moved_from.clone(),
-            added.filter(|_| record.unsaved.takes_added_rows()),
+            added.filter(|_| takes_rows),
+            settled.filter(|_| takes_rows),
             update.revision,
         )?;
         let _ = validated.apply(&mut record.snapshot, &update.changes);
         crate::session_projection::close_revision(&mut record.snapshot, update.revision);
         if recorded {
             record.unsaved.activity_added_with_location();
+        }
+        if settling {
+            record.unsaved.activity_settled_with_location();
         }
         record.moved_from = moved_from;
         record.summary.session = record.snapshot.session.clone();
@@ -922,7 +991,7 @@ impl SessionStore {
         }
         // A Sidekick's tree names the Workspace of each Session beneath it.
         state.announce_subagent_tree(id);
-        Ok(Some(summary))
+        Ok(summary)
     }
 
     /// Every Repository the Workspace Registry holds an entry for, by its
@@ -953,6 +1022,15 @@ impl SessionStore {
         repositories.sort_by(|(_, left), (_, right)| left.cmp(right));
         repositories
     }
+}
+
+/// What storage takes in the one transaction that lands a change of where a
+/// Session stands: where its Agent last worked while it is owed the note of a
+/// Move, and the Activity added or settled recording a Move.
+pub(super) struct LocationLanding {
+    pub(super) moved_from: Option<crate::protocol::ExecutionDirectory>,
+    pub(super) added: Option<AddedActivity>,
+    pub(super) settled: Option<SettledActivity>,
 }
 
 /// A Registry entry discovered under a Workspace Root, as

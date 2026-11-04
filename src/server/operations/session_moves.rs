@@ -5,19 +5,37 @@
 //! Session API, a Remote's Client through the Pairing, and in time an Agent
 //! through the Broker — so each is judged alike: the Session first, then its
 //! destination, read as the Directory Browser's path field reads a path, then
-//! the store's own check, under its lock, that the Session is still idle as
-//! it takes the new directory. A refusal at any step leaves the Session where
-//! it was. Once the Move stands, the Session's Provider actor is told, so the
-//! process it ran in the directory left behind stops and the next Turn
-//! resumes the conversation in the new one; and once that process has gone, a
-//! Worktree the Move left is given the orphan check a Session's deletion gives
-//! one, apart from the Move, which neither waits for it nor hears of it.
+//! the store's own decision, under its lock, whether the Session takes the new
+//! directory now or a Turn of its own holds the Move pending. A refusal at any
+//! step leaves the Session where it was. Once the Move stands, the Session's
+//! Provider actor is told, so the process it ran in the directory left behind
+//! stops and the next Turn resumes the conversation in the new one; and once
+//! that process has gone, a Worktree the Move left is given the orphan check a
+//! Session's deletion gives one, apart from the Move, which neither waits for
+//! it nor hears of it.
+//!
+//! A pending Move is settled here too, asked for by the Session's Provider
+//! actor as soon as its Turn has settled and before it begins anything else,
+//! and by this Server as it starts, since a Turn a stop left open settles only
+//! in being read back and no later settling comes. The destination is read
+//! again: a Move that cannot stand now settles failed with the Session in
+//! place. Prompts left waiting bound to the Skills of the directory left are
+//! bound anew by name in the destination, under the Worktree rule: a unique
+//! match binds, and anything else fails the Prompt naming the Skills rather
+//! than dropping one or guessing.
 
 use std::{fmt, path::PathBuf};
 
+use tokio::sync::{mpsc, watch};
+use tokio::task::JoinSet;
+
 use super::SessionOperations;
-use crate::protocol::{Author, MoveDestination, MoveOutcome, SessionId};
-use crate::sessions::{MoveApplied, MoveSessionError};
+use crate::protocol::{
+    Author, CheckoutSummary, InitialPrompt, MoveDestination, MoveOutcome, PendingMove,
+    ResolvedWorkspace, SessionId,
+};
+use crate::provider::{MoveSettlement, skill_delivery_failure_message};
+use crate::sessions::{DeliveredTurnStatus, MoveApplied, MoveSessionError, PendingMoveSettled};
 
 /// Why a Move was refused. Each leaves the Session where it was.
 #[derive(Debug)]
@@ -27,8 +45,6 @@ pub(crate) enum MoveRefusal {
     /// The Session is a native Subagent's, which runs inside its parent's
     /// Provider process.
     NativeSubagent,
-    /// The Session, or a Subagent beneath it, is Working.
-    Working,
     /// The Session is a Sidekick's, whose Workspace is its identity: refused
     /// whoever asks, a Sidekick included.
     SidekickSession,
@@ -51,10 +67,6 @@ impl fmt::Display for MoveRefusal {
             Self::NativeSubagent => formatter.write_str(
                 "The Session is a native Subagent's, which works inside its parent's Provider \
                  process, so it cannot Move on its own.",
-            ),
-            Self::Working => formatter.write_str(
-                "The Session is Working, and its Provider works in its directory until the Turn \
-                 settles; Move it once it is idle.",
             ),
             Self::SidekickSession => formatter.write_str(
                 "The Session is a Sidekick's, and the Sidekick Workspace is what makes it one, so \
@@ -79,12 +91,10 @@ impl fmt::Display for MoveRefusal {
 impl SessionOperations {
     /// Moves a Session to `destination` for `author`, answering what came of
     /// it. Refused, leaving the Session where it was, for a Session this
-    /// Server does not hold, a native Subagent's, a Sidekick's, or one that
-    /// is Working, and for a destination that names no directory an Agent
-    /// can work in, or one in the Sidekick Workspace. A Monitoring Session is
-    /// not Working and Moves at once.
-    ///
-    /// The single place a Move is applied is [`Self::apply_move`].
+    /// Server does not hold, a native Subagent's or a Sidekick's, and for a
+    /// destination that names no directory an Agent can work in, or one in the
+    /// Sidekick Workspace. A Turn of the Session's own holds the Move pending
+    /// until it settles; a Session with none Moves at once.
     pub(crate) async fn move_session(
         &self,
         session_id: SessionId,
@@ -104,7 +114,7 @@ impl SessionOperations {
         self.sessions.may_move(session_id).map_err(store_refusal)?;
         // The path is read against where the Session works and this
         // Server's home as it is asked for; whether a directory stands there
-        // is read when the Move is applied.
+        // is read now, and again if the Move waits.
         let destination = match destination {
             MoveDestination::Directory { path } => crate::source_control::written_path(
                 &path,
@@ -113,32 +123,191 @@ impl SessionOperations {
             )
             .map_err(MoveRefusal::Destination)?,
         };
-        let outcome = match self.apply_move(session_id, destination).await? {
+        let (resolved, left) = self.read_destination(session_id, destination).await?;
+        let (applied, vacated) = self
+            .sessions
+            .move_to(session_id, resolved, left)
+            .map_err(|error| stored_refusal(session_id, error))?;
+        Ok(match applied {
             MoveApplied::Moved(session) => {
                 self.record_act(session_id, author);
-                session
+                self.follow_move(session_id, vacated);
+                MoveOutcome::Moved { session }
             }
             // Nothing changed, so nothing is stopped and no act recorded.
-            MoveApplied::AlreadyThere(session) => session,
-        };
-        Ok(MoveOutcome::Moved { session: outcome })
+            MoveApplied::AlreadyThere(session) => MoveOutcome::AlreadyThere { session },
+            MoveApplied::Pending(session) => {
+                self.record_act(session_id, author);
+                MoveOutcome::Pending { session }
+            }
+            MoveApplied::PendingCancelled(session) => {
+                self.record_act(session_id, author);
+                MoveOutcome::PendingCancelled { session }
+            }
+        })
     }
 
-    /// Applies a Move of `session_id` to the directory at `destination`, a
-    /// path already read against the Session's Execution Directory and this
-    /// Server's home: refuses one where no directory this Server can read
-    /// stands now, resolves where it lies, refuses a bare Repository and the
-    /// Sidekick Workspace, has the store take the new location while the
-    /// Session is still idle, tells the Session's Provider actor it Moved, and
-    /// runs the orphan check for a Worktree it left, once the process stopped
-    /// there has gone. Every Move — asked of an idle Session now, or in time one
-    /// pending until a Turn settles, whose destination may be gone by then
-    /// — is applied, and its destination read, here.
-    async fn apply_move(
+    /// Settles every pending Move this Server was started finding, and each
+    /// one a Session's Provider actor asks of `asked` from here on, until the
+    /// stop begins. A Move a stop catches stays pending, to be settled at the
+    /// next start.
+    pub(crate) fn settle_pending_moves(
+        &self,
+        mut asked: mpsc::UnboundedReceiver<MoveSettlement>,
+        mut shutdown: watch::Receiver<bool>,
+    ) {
+        let operations = self.clone();
+        tokio::spawn(async move {
+            let mut settling = JoinSet::new();
+            for session_id in operations.sessions.pending_moves() {
+                let operations = operations.clone();
+                settling.spawn(async move { operations.settle_pending_move(session_id).await });
+            }
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = shutdown.changed() => break,
+                    settlement = asked.recv() => {
+                        let Some(MoveSettlement { session_id, answer }) = settlement else {
+                            break;
+                        };
+                        let operations = operations.clone();
+                        settling.spawn(async move {
+                            operations.settle_pending_move(session_id).await;
+                            let _ = answer.send(());
+                        });
+                    }
+                    Some(_) = settling.join_next(), if !settling.is_empty() => {}
+                }
+            }
+        });
+    }
+
+    /// Settles the Move pending for `session_id` where no Turn of its own
+    /// holds it any longer: applies it, or fails it for whatever now stands
+    /// against its destination. A Move a newer one overtakes meanwhile gives
+    /// way to that one. Storage refusing either leaves it pending, to be tried
+    /// again at the Session's next settling.
+    async fn settle_pending_move(&self, session_id: SessionId) {
+        if let Err(error) = self.hydrate(session_id).await {
+            tracing::warn!(%session_id, "a pending Move's Session could not be read: {error:#}");
+            return;
+        }
+        while let Some(pending) = self.sessions.pending_move_to_settle(session_id) {
+            let settled = self.settle_this_move(session_id, &pending).await;
+            match settled {
+                Ok(PendingMoveSettled::Overtaken) => {}
+                Ok(PendingMoveSettled::Moved) => {
+                    self.bind_waiting_prompts_anew(session_id).await;
+                    return;
+                }
+                Ok(PendingMoveSettled::Stayed) => return,
+                Err(MoveSessionError::Storage(error)) => {
+                    tracing::warn!(%session_id, "a pending Move was not stored: {error:#}");
+                    return;
+                }
+                Err(_) => return,
+            }
+        }
+    }
+
+    /// Applies or fails `pending` as its destination reads now.
+    async fn settle_this_move(
+        &self,
+        session_id: SessionId,
+        pending: &PendingMove,
+    ) -> Result<PendingMoveSettled, MoveSessionError> {
+        let read = self
+            .read_destination(session_id, pending.destination.path.clone())
+            .await;
+        match read {
+            Ok((resolved, left)) => {
+                let (settled, vacated) = self
+                    .sessions
+                    .apply_pending_move(session_id, pending, resolved, left)?;
+                if matches!(settled, PendingMoveSettled::Moved) {
+                    self.follow_move(session_id, vacated);
+                }
+                Ok(settled)
+            }
+            Err(MoveRefusal::SessionNotFound) => Err(MoveSessionError::SessionNotFound),
+            Err(refusal) => {
+                self.sessions
+                    .fail_pending_move(session_id, pending, &refusal.to_string())
+            }
+        }
+    }
+
+    /// Binds every Prompt of `session_id` still waiting, by name, to the
+    /// Skills of the directory the Session just Moved to, ahead of any
+    /// delivery, which demands the exact Skill. A Prompt that cannot be bound
+    /// so fails, naming the Skills, as one its delivery found unbound would.
+    async fn bind_waiting_prompts_anew(&self, session_id: SessionId) {
+        let prompts = self.sessions.waiting_prompts_with_skills(session_id);
+        if prompts.is_empty() {
+            return;
+        }
+        let (Some(provider), Some(directory)) = (
+            self.sessions.provider(session_id),
+            self.sessions.execution_directory(session_id),
+        ) else {
+            return;
+        };
+        for prompt in prompts {
+            let waiting = InitialPrompt {
+                id: prompt.id,
+                text: prompt.text.clone(),
+                skill_invocations: prompt.skill_invocations.clone(),
+                attachments: prompt.attachments.clone(),
+            };
+            let rebound = tokio::time::timeout(
+                self.checkout_skill_timeout,
+                self.skill_catalog
+                    .rebind_prepared_prompt(provider.clone(), &directory, &waiting),
+            )
+            .await;
+            let failure = match rebound {
+                Ok(Ok(rebound)) => {
+                    if rebound.skill_invocations != prompt.skill_invocations
+                        && let Err(error) = self.sessions.rebind_waiting_prompt(
+                            session_id,
+                            prompt.id,
+                            rebound.skill_invocations,
+                        )
+                    {
+                        tracing::warn!(%session_id, "a Prompt was not bound anew: {error:#}");
+                    }
+                    continue;
+                }
+                Ok(Err(error)) => skill_delivery_failure_message(error),
+                Err(_) => "Skill Invocation delivery failed: the destination's Skill Catalog \
+                           could not be read in time"
+                    .to_owned(),
+            };
+            if let Err(error) = self.sessions.deliver_prompt(
+                session_id,
+                prompt.id,
+                None,
+                DeliveredTurnStatus::Failed { message: failure },
+            ) {
+                tracing::warn!(%session_id, "a Prompt that could not be bound anew did not fail: {error:#}");
+            }
+        }
+    }
+
+    /// Reads `destination`, a path already read against the Session's
+    /// Execution Directory and this Server's home: refuses one where no
+    /// directory this Server can read stands now, resolves where it lies,
+    /// refuses a bare Repository and the Sidekick Workspace. Answers the
+    /// reading, beside one of the Worktrees of the Repository the Session
+    /// would leave, which the Move's record names a branch from. Every Move —
+    /// asked now, or pending until a Turn settles, whose destination may be
+    /// gone by then — has its destination read here.
+    async fn read_destination(
         &self,
         session_id: SessionId,
         destination: PathBuf,
-    ) -> Result<MoveApplied, MoveRefusal> {
+    ) -> Result<(ResolvedWorkspace, Vec<CheckoutSummary>), MoveRefusal> {
         let directory = tokio::task::spawn_blocking(move || {
             crate::source_control::readable_directory(&destination)
         })
@@ -175,23 +344,28 @@ impl SessionOperations {
             }
             _ => Vec::new(),
         };
-        let (applied, vacated) =
-            self.sessions
-                .move_to(session_id, resolved, left)
-                .map_err(|error| {
-                    if let MoveSessionError::Storage(error) = &error {
-                        tracing::warn!(%session_id, "a Move was not stored: {error:#}");
-                    }
-                    store_refusal(error)
-                })?;
-        if matches!(applied, MoveApplied::Moved(_)) {
-            let provider_stopped = self.providers.session_moved(session_id);
-            if let Some(repository) = vacated {
-                self.orphan_checks.spawn(repository, provider_stopped);
-            }
-        }
-        Ok(applied)
+        Ok((resolved, left))
     }
+
+    /// Tells the Session's Provider actor it Moved, and runs the orphan check
+    /// for `vacated`, a Worktree it left, once the process stopped there has
+    /// gone. The actor settling a pending Move has already let go of that
+    /// process by the time it reads this.
+    fn follow_move(&self, session_id: SessionId, vacated: Option<crate::protocol::Repository>) {
+        let provider_stopped = self.providers.session_moved(session_id);
+        if let Some(repository) = vacated {
+            self.orphan_checks.spawn(repository, provider_stopped);
+        }
+    }
+}
+
+/// What a store's refusal of a Move tells whoever asked, logging what the
+/// Server's own storage did.
+fn stored_refusal(session_id: SessionId, error: MoveSessionError) -> MoveRefusal {
+    if let MoveSessionError::Storage(error) = &error {
+        tracing::warn!(%session_id, "a Move was not stored: {error:#}");
+    }
+    store_refusal(error)
 }
 
 /// What the store's refusal of a Move tells whoever asked for it.
@@ -199,7 +373,6 @@ fn store_refusal(error: MoveSessionError) -> MoveRefusal {
     match error {
         MoveSessionError::SessionNotFound => MoveRefusal::SessionNotFound,
         MoveSessionError::NativeSubagent => MoveRefusal::NativeSubagent,
-        MoveSessionError::Working => MoveRefusal::Working,
         MoveSessionError::NoExecutionDirectory => MoveRefusal::BareRepository,
         MoveSessionError::Storage(_) => MoveRefusal::Storage,
     }

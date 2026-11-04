@@ -3248,6 +3248,10 @@ pub struct Session {
     pub id: SessionId,
     pub workspace: Workspace,
     pub execution_directory: ExecutionDirectory,
+    /// Where a Move asked while the Session's own Turn runs will take it once
+    /// that Turn settles (ADR 0059); absent where none is pending.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_move: Option<PendingMove>,
     pub checkout: Option<CheckoutAssociation>,
     pub agent_selection: Option<AgentSelection>,
     pub agent_selection_availability: ModelAvailability,
@@ -3323,6 +3327,7 @@ impl Session {
     /// Agent yet, for a test that reads only where a Session is.
     pub(crate) fn for_tests(workspace: Workspace) -> Self {
         Self {
+            pending_move: None,
             context_fill: None,
             id: SessionId::new(),
             execution_directory: ExecutionDirectory {
@@ -4969,6 +4974,22 @@ pub enum SessionChange {
         workspace: Workspace,
         checkout: Option<CheckoutAssociation>,
     },
+    /// The pending Move `activity_id` records settled: applied, failed, or
+    /// given up for another, in the words of `error`. Each end reads as the
+    /// Move last found it, and the Session no longer waits on it.
+    MoveSettled {
+        activity_id: ActivityId,
+        status: ActivityStatus,
+        from: MoveLocation,
+        to: MoveLocation,
+        error: Option<String>,
+    },
+    /// A Prompt still waiting was bound anew to `skill_invocations`, the same
+    /// Skills as a Move's destination identifies them.
+    PromptSkillsRebound {
+        prompt_id: PromptId,
+        skill_invocations: Vec<SkillInvocation>,
+    },
     TitleChanged {
         title: String,
         icon: Option<String>,
@@ -5331,6 +5352,24 @@ pub enum MoveOutcome {
     /// The Session works in its destination from now on, as its summary
     /// says; its Provider follows at its next Turn.
     Moved { session: SessionSummary },
+    /// The Session already works in its destination, and nothing changed.
+    AlreadyThere { session: SessionSummary },
+    /// The Session's own Turn is at work, so the Move waits for it to settle:
+    /// its summary names the destination, and its Transcript the Move's
+    /// Activity, Active until the Move applies or fails.
+    Pending { session: SessionSummary },
+    /// The Session already works in its destination, and the Move pending
+    /// to elsewhere is cancelled.
+    PendingCancelled { session: SessionSummary },
+}
+
+/// A Move waiting for the Session's own Turn to settle: the Activity
+/// recording it, and where it will take the Session (ADR 0059).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PendingMove {
+    pub activity_id: ActivityId,
+    pub destination: ExecutionDirectory,
 }
 
 /// Whether the Session's Origin would derive a Title proposal for it if

@@ -852,6 +852,7 @@ pub(super) fn record_work(count: usize) {
 
 pub(super) fn persisted(workspace: &Path, parent: Option<SessionId>) -> PersistedSession {
     let session = Session {
+        pending_move: None,
         checkout: None,
         context_fill: None,
         id: SessionId::new(),

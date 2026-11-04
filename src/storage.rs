@@ -38,7 +38,7 @@ mod unsaved;
 mod writer;
 
 pub(crate) use activity_rows::{ActivityRowSink, ActivityTallyRow, Spelled};
-pub(crate) use unsaved::{AddedActivity, SessionRows, Unsaved};
+pub(crate) use unsaved::{AddedActivity, SessionRows, SettledActivity, Unsaved};
 pub(crate) use writer::{
     Deletion, HeldSessions, IDLE_FLUSH_DELAY, SAVE_RETRY_INTERVAL, StorageSink, StorageWriter,
     TakenSaves, is_turn_boundary,
@@ -1045,6 +1045,7 @@ impl StorageRepository {
         session: &crate::protocol::Session,
         moved_from: Option<&crate::protocol::ExecutionDirectory>,
         added: Option<AddedActivity>,
+        settled: Option<SettledActivity>,
         revision: crate::protocol::SessionRevision,
     ) -> Result<(), StorageError> {
         let mut connection = connect(&self.database_path)?;
@@ -1060,6 +1061,11 @@ impl StorageRepository {
                     sessions::revision.eq(revision),
                 ))
                 .execute(connection)?;
+            if let Some(SettledActivity(moved)) = &settled {
+                diesel::update(activities::table.find(&moved.id))
+                    .set(activities::payload.eq(&moved.payload))
+                    .execute(connection)?;
+            }
             if let Some(AddedActivity(row)) = added {
                 diesel::insert_into(activities::table)
                     .values(row)

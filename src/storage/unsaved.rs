@@ -24,7 +24,7 @@ use crate::protocol::{Activity, SessionChange, SessionId, SessionSnapshot, Sessi
 
 use super::{
     SessionSave, StorageError, StoredSidekickAct, StoredSubagentIdentity,
-    rows::{ActivityRow, StoredRows},
+    rows::{ActivityRow, MovedPayload, StoredRows},
 };
 
 /// One Session as a save reads it where its history is held, borrowed for
@@ -209,6 +209,16 @@ impl Unsaved {
         }
     }
 
+    /// Notes that storage took a settling of one of the Session's Activities
+    /// with its location, where it [takes added
+    /// rows](Self::takes_added_rows); otherwise the Session owes the save that
+    /// writes it whole, with that settling among it.
+    pub(crate) fn activity_settled_with_location(&mut self) {
+        if self.held && self.rows.is_whole() {
+            self.owe();
+        }
+    }
+
     /// Encodes what storage lacks of the Session `session` reads, with the
     /// acts waiting here, into a save of its own, and owes nothing from then
     /// on: `None` where nothing is owed. Only the rows that moved are encoded,
@@ -245,6 +255,21 @@ impl AddedActivity {
         activity: &Activity,
     ) -> Result<Self, StorageError> {
         ActivityRow::next_of(snapshot, activity).map(Self)
+    }
+}
+
+/// The row of an Activity storage holds, as it stands once settled, encoded
+/// to land in the one transaction that changes where the Session stands: the
+/// pending Move a change of location applies, fails, or gives up.
+pub(crate) struct SettledActivity(pub(super) MovedPayload);
+
+impl SettledActivity {
+    /// The row of `activity`, one of `session_id`'s.
+    pub(crate) fn of(session_id: SessionId, activity: &Activity) -> Result<Self, StorageError> {
+        Ok(Self(MovedPayload {
+            id: activity.id().to_string(),
+            payload: ActivityRow::payload(session_id, activity)?,
+        }))
     }
 }
 
@@ -385,6 +410,7 @@ enum Table {
 fn moved_row(change: &SessionChange) -> Option<Table> {
     match change {
         SessionChange::PromptDeliveryChanged { .. }
+        | SessionChange::PromptSkillsRebound { .. }
         | SessionChange::PromptStatusChanged { .. }
         | SessionChange::PromptWithdrawn { .. }
         | SessionChange::PromptTaken { .. } => Some(Table::Prompts),
@@ -418,6 +444,7 @@ fn moved_row(change: &SessionChange) -> Option<Table> {
         | SessionChange::SubagentModelChanged { .. }
         | SessionChange::SubagentStatusChanged { .. }
         | SessionChange::CompactionSettled { .. }
+        | SessionChange::MoveSettled { .. }
         | SessionChange::CompactionAfterMeasured { .. }
         | SessionChange::SubsessionTitleChanged { .. } => Some(Table::Activities),
         // A row added lies past those storage holds; everything else moves

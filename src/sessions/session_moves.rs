@@ -23,15 +23,40 @@
 //! the head of its next Turn (see [`SessionStore::take_turn_head`]). A Worktree
 //! the Move leaves is named to whoever applied it, whose orphan check finds
 //! whether any Session still references it.
+//!
+//! A Move asked while a Turn of the Session's own runs or is owed is
+//! **pending**: its Activity stands Active and the Session's own row names the
+//! destination, both in one transaction, so a restart finds them whatever else
+//! it lost. What holds a Move is that Turn alone, since its Provider's process
+//! is bound to the directory until it settles. A Subagent still working holds
+//! nothing, though it keeps the Session Working: a brokered one has an actor
+//! and a directory of its own and carries on there, and a native one's work
+//! ends with the process it rides, in words that say its parent Moved
+//! (ADR 0059). So a Session with only Subagents at work Moves at once, as a
+//! Monitoring one does. A newer Move replaces a pending one, a Move to where
+//! the Session works cancels it, each settling the older Activity Interrupted
+//! in words saying why; and a pending Move owes its Agent no note until it
+//! applies.
+
+use std::sync::MutexGuard;
 
 use crate::protocol::{
     Activity, ActivityId, ActivityStatus, CheckoutAssociation, CheckoutKind, CheckoutRevision,
-    CheckoutSummary, ExecutionDirectory, MoveLocation, Repository, ResolvedWorkspace, Session,
-    SessionId, SessionSummary,
+    CheckoutSummary, ExecutionDirectory, MoveLocation, PendingMove, Prompt, PromptStatus,
+    Repository, ResolvedWorkspace, Session, SessionChange, SessionId, SessionStatus,
+    SessionSummary, SkillInvocation, Workspace,
 };
-use crate::storage::WorkspaceProvenance;
+use crate::storage::{AddedActivity, SettledActivity, WorkspaceProvenance};
 
-use super::{SessionRecord, SessionStore};
+use super::{SessionRecord, SessionStore, SessionStoreState, workspaces::LocationLanding};
+
+/// How the Activity of a Move a Move to where the Session works cancelled
+/// says so.
+const CANCELLED_BY_STAYING: &str = "a Move to where the Session works cancelled it";
+
+/// How the Activity of a pending Move found to lead where the Session already
+/// works, once it could apply, says so.
+const ALREADY_THERE: &str = "the Session already works there";
 
 /// Why the store would not Move a Session.
 #[derive(Debug)]
@@ -40,9 +65,6 @@ pub(crate) enum MoveSessionError {
     /// The Session is a native Subagent's, whose conversation runs in its
     /// parent's Provider process and so cannot work anywhere else.
     NativeSubagent,
-    /// The Session, or a Subagent beneath it, is Working: its Provider's
-    /// process is bound to its directory until the Turn settles.
-    Working,
     /// The destination resolved to no directory an Agent can work in.
     NoExecutionDirectory,
     /// Storage refused the new location, which leaves the Session where it
@@ -57,30 +79,48 @@ pub(crate) enum MoveSessionError {
 pub(super) struct MoveTarget<'a> {
     pub(super) execution_directory: ExecutionDirectory,
     pub(super) readings: &'a [CheckoutSummary],
+    /// The Activity already recording this Move, pending until now, which it
+    /// settles rather than adding one of its own.
+    pub(super) settles: Option<ActivityId>,
 }
 
 impl MoveTarget<'_> {
     /// The record of `session` Moving here, into the Worktree `checkout`
-    /// names where it lies in one, settled as applied: its Activity, which
-    /// belongs to no Turn.
+    /// names where it lies in one, standing as `status` says: its Activity,
+    /// which belongs to no Turn.
     pub(super) fn activity(
         &self,
         session: &Session,
         checkout: Option<&CheckoutAssociation>,
+        status: ActivityStatus,
     ) -> Activity {
+        let (from, to) = self.ends(session, checkout);
         Activity::Move {
             id: ActivityId::new(),
-            status: ActivityStatus::Completed,
-            from: MoveLocation {
+            status,
+            from,
+            to,
+            error: None,
+        }
+    }
+
+    /// Where `session` works and where this takes it, into the Worktree
+    /// `checkout` names where it lies in one, as a Move's record names them.
+    pub(super) fn ends(
+        &self,
+        session: &Session,
+        checkout: Option<&CheckoutAssociation>,
+    ) -> (MoveLocation, MoveLocation) {
+        (
+            MoveLocation {
                 execution_directory: session.execution_directory.clone(),
                 branch: self.branch(session.checkout.as_ref()),
             },
-            to: MoveLocation {
+            MoveLocation {
                 execution_directory: self.execution_directory.clone(),
                 branch: self.branch(checkout),
             },
-            error: None,
-        }
+        )
     }
 
     /// The branch checked out in the Worktree `checkout` names, as the
@@ -106,6 +146,25 @@ pub(crate) enum MoveApplied {
     Moved(SessionSummary),
     /// The Session already worked there, and nothing changed.
     AlreadyThere(SessionSummary),
+    /// The Session's own Turn runs or is owed, so the Move waits for it to
+    /// settle, replacing any Move pending to elsewhere.
+    Pending(SessionSummary),
+    /// The Session already worked there, and the Move pending to elsewhere
+    /// is cancelled.
+    PendingCancelled(SessionSummary),
+}
+
+/// What came of settling a pending Move the Session's own Turn no longer
+/// holds.
+#[derive(Debug)]
+pub(crate) enum PendingMoveSettled {
+    /// The Session works in the Move's destination from now on.
+    Moved,
+    /// The Move settled with the Session where it stood.
+    Stayed,
+    /// Another Move stands pending in its place, or a Turn of the Session's
+    /// own holds it again, so nothing was done with this one.
+    Overtaken,
 }
 
 impl SessionStore {
@@ -120,17 +179,16 @@ impl SessionStore {
     }
 
     /// Moves a Session to work where `destination` was resolved from now on,
-    /// answering whether it Moved and the summary it left standing, beside
-    /// the Repository of the linked Worktree it left, where it left one
-    /// rather than Moving within it. The
+    /// or from when a Turn of its own settles, answering which and the summary
+    /// it left standing, beside the Repository of the linked Worktree it left,
+    /// where it left one rather than Moving within it. The
     /// Move's record names the branch of each Worktree it leaves or enters
     /// as the destination's reading of its Repository, or `left`, a reading
     /// of the Repository the Session leaves, found it.
     ///
-    /// Refused for a native Subagent's Session, and while the Session is
-    /// Working; a Monitoring Session is not Working and Moves at once. A
-    /// Move to where the Session already works changes nothing, and records
-    /// nothing. A Move storage refuses changes nothing either: the
+    /// Refused for a native Subagent's Session. A Move to where the Session
+    /// already works changes nothing and records nothing, but cancels one
+    /// pending. A Move storage refuses changes nothing either: the
     /// destination's Workspace is entered in the Registry only once the
     /// Session stands there.
     pub(crate) fn move_to(
@@ -156,12 +214,352 @@ impl SessionStore {
         let record = state.sessions.get(&session_id);
         may_move(record)?;
         let record = record.expect("a Session that may Move is held");
-        if record.snapshot.session.execution_directory == execution_directory {
-            // Where a pending Move is kept, a Move to where the Session
-            // already works is what clears it.
-            return Ok((MoveApplied::AlreadyThere(record.summary.clone()), None));
-        }
         let session = &record.snapshot.session;
+        let pending = session.pending_move.clone();
+        let stays = session.execution_directory == execution_directory;
+        let held = session.status != SessionStatus::Idle;
+        let summary = record.summary.clone();
+        if stays {
+            return match pending {
+                Some(_) => self
+                    .give_up_pending(
+                        &mut state,
+                        session_id,
+                        ActivityStatus::Interrupted,
+                        CANCELLED_BY_STAYING,
+                    )
+                    .map(|summary| (MoveApplied::PendingCancelled(summary), None))
+                    .map_err(MoveSessionError::Storage),
+                None => Ok((MoveApplied::AlreadyThere(summary), None)),
+            };
+        }
+        let same_as_pending = pending
+            .as_ref()
+            .is_some_and(|pending| pending.destination == execution_directory);
+        if held {
+            if same_as_pending {
+                return Ok((MoveApplied::Pending(summary), None));
+            }
+            let target = MoveTarget {
+                execution_directory,
+                readings: &checkouts,
+                settles: None,
+            };
+            return self
+                .record_pending(&mut state, session_id, &target, checkout.as_ref())
+                .map(|summary| (MoveApplied::Pending(summary), None))
+                .map_err(MoveSessionError::Storage);
+        }
+        // Nothing holds the Session, so this Move applies now, and one left
+        // pending meanwhile is this very Move, or gives way to it.
+        if !same_as_pending && pending.is_some() {
+            let replaced = replaced_by(&execution_directory);
+            self.give_up_pending(
+                &mut state,
+                session_id,
+                ActivityStatus::Interrupted,
+                &replaced,
+            )
+            .map_err(MoveSessionError::Storage)?;
+        }
+        let settles = pending
+            .filter(|_| same_as_pending)
+            .map(|pending| pending.activity_id);
+        state.dress_workspace(&mut workspace);
+        let (summary, vacated) = self
+            .apply_location(
+                state,
+                session_id,
+                execution_directory,
+                workspace,
+                checkout,
+                &checkouts,
+                settles,
+            )
+            .map_err(MoveSessionError::Storage)?;
+        Ok((MoveApplied::Moved(summary), vacated))
+    }
+
+    /// Every Session a Move stands pending for, read in or not: what a Server
+    /// starting settles, since nothing survives a stop to settle their Turns
+    /// but the reading of them, and so no later settling comes.
+    pub(crate) fn pending_moves(&self) -> Vec<SessionId> {
+        self.state
+            .lock()
+            .expect("Session store lock is not poisoned")
+            .sessions
+            .iter()
+            .filter(|(_, record)| record.snapshot.session.pending_move.is_some())
+            .map(|(&session_id, _)| session_id)
+            .collect()
+    }
+
+    /// The Move pending for `session_id` that no Turn of its own holds any
+    /// longer, so it is to be settled now, before anything begins another.
+    /// A Prompt still waiting holds nothing: it is delivered after.
+    pub(crate) fn pending_move_to_settle(&self, session_id: SessionId) -> Option<PendingMove> {
+        let state = self
+            .state
+            .lock()
+            .expect("Session store lock is not poisoned");
+        let record = state.sessions.get(&session_id)?;
+        let pending = record.snapshot.session.pending_move.clone()?;
+        (!holds_a_pending_move(record)).then_some(pending)
+    }
+
+    /// Applies `pending`, the Move pending for `session_id`, to where
+    /// `destination` was resolved, its record naming branches as
+    /// [`Self::move_to`]'s does.
+    pub(crate) fn apply_pending_move(
+        &self,
+        session_id: SessionId,
+        pending: &PendingMove,
+        destination: ResolvedWorkspace,
+        left: Vec<CheckoutSummary>,
+    ) -> Result<(PendingMoveSettled, Option<Repository>), MoveSessionError> {
+        let ResolvedWorkspace {
+            mut workspace,
+            execution_directory,
+            checkout,
+            mut checkouts,
+            ..
+        } = destination;
+        checkouts.extend(left);
+        let execution_directory =
+            execution_directory.ok_or(MoveSessionError::NoExecutionDirectory)?;
+        let mut state = self
+            .state
+            .lock()
+            .expect("Session store lock is not poisoned");
+        let record = state
+            .sessions
+            .get(&session_id)
+            .ok_or(MoveSessionError::SessionNotFound)?;
+        if record.snapshot.session.pending_move.as_ref() != Some(pending)
+            || holds_a_pending_move(record)
+        {
+            return Ok((PendingMoveSettled::Overtaken, None));
+        }
+        if record.snapshot.session.execution_directory == execution_directory {
+            self.give_up_pending(
+                &mut state,
+                session_id,
+                ActivityStatus::Interrupted,
+                ALREADY_THERE,
+            )
+            .map_err(MoveSessionError::Storage)?;
+            return Ok((PendingMoveSettled::Stayed, None));
+        }
+        state.dress_workspace(&mut workspace);
+        let (_, vacated) = self
+            .apply_location(
+                state,
+                session_id,
+                execution_directory,
+                workspace,
+                checkout,
+                &checkouts,
+                Some(pending.activity_id),
+            )
+            .map_err(MoveSessionError::Storage)?;
+        Ok((PendingMoveSettled::Moved, vacated))
+    }
+
+    /// Fails `pending`, the Move pending for `session_id`, for `reason`,
+    /// leaving the Session where it works.
+    pub(crate) fn fail_pending_move(
+        &self,
+        session_id: SessionId,
+        pending: &PendingMove,
+        reason: &str,
+    ) -> Result<PendingMoveSettled, MoveSessionError> {
+        let mut state = self
+            .state
+            .lock()
+            .expect("Session store lock is not poisoned");
+        let record = state
+            .sessions
+            .get(&session_id)
+            .ok_or(MoveSessionError::SessionNotFound)?;
+        if record.snapshot.session.pending_move.as_ref() != Some(pending)
+            || holds_a_pending_move(record)
+        {
+            return Ok(PendingMoveSettled::Overtaken);
+        }
+        self.give_up_pending(&mut state, session_id, ActivityStatus::Failed, reason)
+            .map_err(MoveSessionError::Storage)?;
+        Ok(PendingMoveSettled::Stayed)
+    }
+
+    /// Every Prompt of `session_id` still waiting that binds a Skill, for a
+    /// Move that has just applied to bind anew in its destination.
+    pub(crate) fn waiting_prompts_with_skills(&self, session_id: SessionId) -> Vec<Prompt> {
+        self.state
+            .lock()
+            .expect("Session store lock is not poisoned")
+            .sessions
+            .get(&session_id)
+            .map(|record| {
+                record
+                    .snapshot
+                    .prompts
+                    .iter()
+                    .filter(|prompt| {
+                        prompt.status == PromptStatus::Pending
+                            && !prompt.skill_invocations.is_empty()
+                    })
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Binds `prompt_id`, a Prompt of `session_id` still waiting, to
+    /// `skill_invocations`. One withdrawn or delivered meanwhile is left as
+    /// it stands.
+    pub(crate) fn rebind_waiting_prompt(
+        &self,
+        session_id: SessionId,
+        prompt_id: crate::protocol::PromptId,
+        skill_invocations: Vec<SkillInvocation>,
+    ) -> anyhow::Result<()> {
+        let mut state = self
+            .state
+            .lock()
+            .expect("Session store lock is not poisoned");
+        let waiting = state.sessions.get(&session_id).is_some_and(|record| {
+            record
+                .snapshot
+                .prompts
+                .iter()
+                .any(|prompt| prompt.id == prompt_id && prompt.status == PromptStatus::Pending)
+        });
+        if waiting {
+            state.commit(
+                &self.storage,
+                session_id,
+                vec![SessionChange::PromptSkillsRebound {
+                    prompt_id,
+                    skill_invocations,
+                }],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Records a Move to `target` as pending, in place of whichever stood
+    /// pending before, whose Activity settles saying so. Storage takes both
+    /// with the Session's own row naming the destination, so nothing it
+    /// refuses changes anything and no crash finds one without the other.
+    fn record_pending(
+        &self,
+        state: &mut SessionStoreState,
+        session_id: SessionId,
+        target: &MoveTarget<'_>,
+        checkout: Option<&CheckoutAssociation>,
+    ) -> anyhow::Result<SessionSummary> {
+        if state.is_deferred(session_id) {
+            anyhow::bail!("Session history must be hydrated before mutation");
+        }
+        let record = state
+            .sessions
+            .get(&session_id)
+            .ok_or_else(|| anyhow::anyhow!("Session does not exist on this server instance"))?;
+        let session = &record.snapshot.session;
+        let activity = target.activity(session, checkout, ActivityStatus::Active);
+        let mut next = session.clone();
+        next.pending_move = Some(PendingMove {
+            activity_id: activity.id(),
+            destination: target.execution_directory.clone(),
+        });
+        let mut changes = Vec::with_capacity(2);
+        let mut settled = None;
+        if let Some(replaced) = settling_of_pending(
+            record,
+            ActivityStatus::Interrupted,
+            &replaced_by(&target.execution_directory),
+        )? {
+            settled = Some(replaced.row);
+            changes.push(replaced.change);
+        }
+        let added = AddedActivity::next_of(&record.snapshot, &activity)?;
+        changes.push(SessionChange::ActivityAdded { activity });
+        let moved_from = record.moved_from.clone();
+        self.land_location(
+            state,
+            session_id,
+            next,
+            changes,
+            LocationLanding {
+                moved_from,
+                added: Some(added),
+                settled,
+            },
+        )
+    }
+
+    /// Settles the Move pending for `session_id` as `status`, in the words of
+    /// `error`, with the Session where it works and its Agent owed nothing of
+    /// it. Answers the summary it left standing.
+    fn give_up_pending(
+        &self,
+        state: &mut SessionStoreState,
+        session_id: SessionId,
+        status: ActivityStatus,
+        error: &str,
+    ) -> anyhow::Result<SessionSummary> {
+        if state.is_deferred(session_id) {
+            anyhow::bail!("Session history must be hydrated before mutation");
+        }
+        let record = state
+            .sessions
+            .get(&session_id)
+            .ok_or_else(|| anyhow::anyhow!("Session does not exist on this server instance"))?;
+        let Some(settling) = settling_of_pending(record, status, error)? else {
+            return Ok(record.summary.clone());
+        };
+        let mut next = record.snapshot.session.clone();
+        next.pending_move = None;
+        let moved_from = record.moved_from.clone();
+        self.land_location(
+            state,
+            session_id,
+            next,
+            vec![settling.change],
+            LocationLanding {
+                moved_from,
+                added: None,
+                settled: Some(settling.row),
+            },
+        )
+    }
+
+    /// Stands the Session in its new location, as [`Self::move_to`] and a
+    /// pending Move's application both do: it takes the location, then the
+    /// destination's Workspace is known from now on, as one a Session began in
+    /// would be, and whatever another identity was entered for the
+    /// destination, or for where its Workspace is presented, is superseded —
+    /// this Session no longer keeping it. `workspace` is dressed in what the
+    /// Registry already holds for it, without entering it: an entry the Move
+    /// makes is made only once storage has taken the Move. Answers the summary
+    /// it left standing and the Repository of the linked Worktree it left.
+    #[allow(clippy::too_many_arguments)]
+    fn apply_location(
+        &self,
+        mut state: MutexGuard<'_, SessionStoreState>,
+        session_id: SessionId,
+        execution_directory: ExecutionDirectory,
+        workspace: Workspace,
+        checkout: Option<CheckoutAssociation>,
+        readings: &[CheckoutSummary],
+        settles: Option<ActivityId>,
+    ) -> anyhow::Result<(SessionSummary, Option<Repository>)> {
+        let session = &state
+            .sessions
+            .get(&session_id)
+            .ok_or_else(|| anyhow::anyhow!("Session does not exist on this server instance"))?
+            .snapshot
+            .session;
         let vacated = session
             .checkout
             .as_ref()
@@ -172,27 +570,19 @@ impl SessionStore {
                         .is_none_or(|entered| entered.id != left.id)
             })
             .and_then(|_| session.workspace.repository.as_deref().cloned());
-        // Dressed in what the Registry already holds for the Workspace,
-        // without entering it: an entry the Move makes is made only once
-        // storage has taken the Move.
-        state.dress_workspace(&mut workspace);
         let summary = self
             .change_location(
                 &mut state,
                 session_id,
                 Some(MoveTarget {
                     execution_directory: execution_directory.clone(),
-                    readings: &checkouts,
+                    readings,
+                    settles,
                 }),
                 workspace.clone(),
                 checkout,
-            )
-            .map_err(MoveSessionError::Storage)?
+            )?
             .expect("a Session held elsewhere than its destination changes location");
-        // The destination's Workspace is known from now on, as one a Session
-        // began in would be, and whatever another identity was entered for
-        // the destination, or for where its Workspace is presented, is
-        // superseded — this Session no longer keeping it.
         self.enter_workspace(
             &mut state,
             &workspace.id,
@@ -211,19 +601,79 @@ impl SessionStore {
             // every Session grouped there — this one included — wears it.
             self.regroup_workspace(&workspace.id);
         }
-        Ok((MoveApplied::Moved(summary), vacated))
+        Ok((summary, vacated))
     }
 }
 
-/// Whether `record` names a Session that could Move now: one held, other
-/// than a native Subagent's, and not Working.
+/// How the Activity of a pending Move a newer Move replaced says so.
+fn replaced_by(destination: &ExecutionDirectory) -> String {
+    format!("a Move to {} replaced it", destination.path.display())
+}
+
+/// The settling of the Move pending for `record`, where one is.
+struct PendingSettling {
+    change: SessionChange,
+    row: SettledActivity,
+}
+
+fn settling_of_pending(
+    record: &SessionRecord,
+    status: ActivityStatus,
+    error: &str,
+) -> anyhow::Result<Option<PendingSettling>> {
+    let session = &record.snapshot.session;
+    let Some(pending) = &session.pending_move else {
+        return Ok(None);
+    };
+    let (from, to) = record
+        .snapshot
+        .activities
+        .iter()
+        .find_map(|activity| match activity {
+            Activity::Move { id, from, to, .. } if *id == pending.activity_id => {
+                Some((from.clone(), to.clone()))
+            }
+            _ => None,
+        })
+        .ok_or_else(|| anyhow::anyhow!("a pending Move's Activity stands in its Transcript"))?;
+    let error = Some(error.to_owned());
+    Ok(Some(PendingSettling {
+        row: SettledActivity::of(
+            session.id,
+            &Activity::Move {
+                id: pending.activity_id,
+                status,
+                from: from.clone(),
+                to: to.clone(),
+                error: error.clone(),
+            },
+        )?,
+        change: SessionChange::MoveSettled {
+            activity_id: pending.activity_id,
+            status,
+            from,
+            to,
+            error,
+        },
+    }))
+}
+
+/// Whether a Turn of the Session's own stands open, which holds its pending
+/// Move until it settles.
+fn holds_a_pending_move(record: &SessionRecord) -> bool {
+    record
+        .snapshot
+        .turns
+        .iter()
+        .any(|turn| !turn.status.is_terminal())
+}
+
+/// Whether `record` names a Session that could Move, now or once its own Turn
+/// settles: one held, other than a native Subagent's.
 fn may_move(record: Option<&SessionRecord>) -> Result<(), MoveSessionError> {
     let record = record.ok_or(MoveSessionError::SessionNotFound)?;
     if record.snapshot.session.parent.is_some() && !record.brokered {
         return Err(MoveSessionError::NativeSubagent);
-    }
-    if record.snapshot.session.working_since.is_some() {
-        return Err(MoveSessionError::Working);
     }
     Ok(())
 }
@@ -234,7 +684,7 @@ mod tests {
 
     use diesel::{Connection, SqliteConnection, connection::SimpleConnection};
 
-    use super::MoveSessionError;
+    use super::{MoveApplied, MoveSessionError, PendingMoveSettled};
     use crate::{
         protocol::{
             Activity, ActivityStatus, AdmitPromptRequest, CreateSessionRequest, ExecutionDirectory,
@@ -469,6 +919,283 @@ mod tests {
             )],
         );
         crashed_writer.shutdown().await.expect("stop the reader");
+        writer.shutdown().await.expect("stop the writer");
+    }
+
+    /// A Session with its own Turn at work, as a pending Move finds it.
+    async fn working_session(
+        data_dir: &Path,
+        origin: &Path,
+    ) -> (StorageWriter, SessionStore, SessionId) {
+        let (writer, store, session_id) = idle_session(data_dir, origin).await;
+        let next = PromptId::new();
+        let StoreOutcome::Created(_) = store
+            .admit(
+                session_id,
+                AdmitPromptRequest {
+                    delivery: PromptDelivery::Queue,
+                    prompt: prompt(next),
+                },
+                Vec::new(),
+                None,
+            )
+            .expect("admit a Prompt")
+        else {
+            panic!("a fresh Prompt is admitted")
+        };
+        store
+            .deliver_prompt(session_id, next, None, DeliveredTurnStatus::Active)
+            .expect("deliver the Prompt")
+            .expect("the Prompt was still owed a Turn");
+        (writer, store, session_id)
+    }
+
+    fn moves(store: &SessionStore, session_id: SessionId) -> Vec<(ActivityStatus, Option<String>)> {
+        store
+            .snapshot(session_id)
+            .expect("the Session is held")
+            .activities
+            .iter()
+            .filter_map(|activity| match activity {
+                Activity::Move { status, error, .. } => Some((*status, error.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A pending Move stands in storage the moment it is asked: a crash mid-Turn
+    /// finds the Session where it worked, bound for its destination with the
+    /// Move's row Active and no note owed, and hands it over once its stopped
+    /// Turn has settled. Applying it lands the row, the location and the note
+    /// together in turn, and nothing it leaves is pending.
+    #[tokio::test]
+    async fn a_crash_mid_turn_finds_a_pending_move_to_settle_and_settling_it_lands_whole() {
+        let data_dir = tempfile::tempdir().expect("create isolated data directory");
+        let origin = tempfile::tempdir().expect("create the origin");
+        let destination = tempfile::tempdir().expect("create the destination");
+        let (writer, store, session_id) = working_session(data_dir.path(), origin.path()).await;
+
+        let (applied, _) = store
+            .move_to(
+                session_id,
+                ResolvedWorkspace::directory(directory(destination.path()).path),
+                Vec::new(),
+            )
+            .expect("take the Move");
+        assert!(matches!(applied, MoveApplied::Pending(_)), "{applied:?}");
+        assert_eq!(store.pending_move_to_settle(session_id), None, "held");
+
+        let (crashed_writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+        assert_eq!(crashed.pending_moves(), [session_id]);
+        let found = crashed.snapshot(session_id).expect("the Session stands");
+        assert_eq!(found.session.execution_directory, directory(origin.path()));
+        assert_eq!(
+            moves(&crashed, session_id),
+            [(ActivityStatus::Active, None)],
+            "its record stands Active"
+        );
+        assert_eq!(crashed.take_turn_head(session_id), [], "owing no note yet");
+        let pending = crashed
+            .pending_move_to_settle(session_id)
+            .expect("the stopped Turn holds it no longer");
+        assert_eq!(pending.destination, directory(destination.path()));
+
+        let (settled, _) = crashed
+            .apply_pending_move(
+                session_id,
+                &pending,
+                ResolvedWorkspace::directory(directory(destination.path()).path),
+                Vec::new(),
+            )
+            .expect("apply it");
+        assert!(matches!(settled, PendingMoveSettled::Moved), "{settled:?}");
+        crashed_writer.shutdown().await.expect("stop the reader");
+
+        let (again_writer, again) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+        assert_eq!(again.pending_moves(), []);
+        assert_eq!(
+            again
+                .snapshot(session_id)
+                .expect("the Session stands")
+                .session
+                .execution_directory,
+            directory(destination.path())
+        );
+        assert_eq!(
+            moves(&again, session_id),
+            [(ActivityStatus::Completed, None)],
+            "the one row settled with the location"
+        );
+        assert_eq!(
+            again.take_turn_head(session_id),
+            [Report::from(MoveNote {
+                from: directory(origin.path()),
+                to: directory(destination.path()),
+            })],
+            "and the note is owed from here"
+        );
+        again_writer.shutdown().await.expect("stop the reader");
+        writer.shutdown().await.expect("stop the writer");
+    }
+
+    /// Replacing a pending Move lands the older row settled with the newer one
+    /// added, and cancelling lands it settled with nothing pending, so a crash
+    /// finds neither half done.
+    #[tokio::test]
+    async fn replacing_and_cancelling_a_pending_move_land_in_one_transaction() {
+        let data_dir = tempfile::tempdir().expect("create isolated data directory");
+        let origin = tempfile::tempdir().expect("create the origin");
+        let first = tempfile::tempdir().expect("create the first destination");
+        let second = tempfile::tempdir().expect("create the second destination");
+        let (writer, store, session_id) = working_session(data_dir.path(), origin.path()).await;
+        for destination in [&first, &second] {
+            store
+                .move_to(
+                    session_id,
+                    ResolvedWorkspace::directory(directory(destination.path()).path),
+                    Vec::new(),
+                )
+                .expect("take the Move");
+        }
+
+        let (crashed_writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+        let replaced = format!(
+            "a Move to {} replaced it",
+            directory(second.path()).path.display()
+        );
+        assert_eq!(
+            moves(&crashed, session_id),
+            [
+                (ActivityStatus::Interrupted, Some(replaced.clone())),
+                (ActivityStatus::Active, None),
+            ]
+        );
+        crashed_writer.shutdown().await.expect("stop the reader");
+
+        let (cancelled, _) = store
+            .move_to(
+                session_id,
+                ResolvedWorkspace::directory(directory(origin.path()).path),
+                Vec::new(),
+            )
+            .expect("take the Move");
+        assert!(
+            matches!(cancelled, MoveApplied::PendingCancelled(_)),
+            "{cancelled:?}"
+        );
+
+        let (crashed_writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+        assert_eq!(crashed.pending_moves(), []);
+        assert_eq!(
+            moves(&crashed, session_id),
+            [
+                (ActivityStatus::Interrupted, Some(replaced)),
+                (
+                    ActivityStatus::Interrupted,
+                    Some(super::CANCELLED_BY_STAYING.to_owned())
+                ),
+            ]
+        );
+        assert_eq!(crashed.take_turn_head(session_id), [], "owing no note");
+        crashed_writer.shutdown().await.expect("stop the reader");
+        writer.shutdown().await.expect("stop the writer");
+    }
+
+    /// Storage refusing a pending Move leaves nothing pending and the older
+    /// one standing, here and in storage.
+    #[tokio::test]
+    async fn a_pending_move_storage_refuses_changes_nothing() {
+        let data_dir = tempfile::tempdir().expect("create isolated data directory");
+        let origin = tempfile::tempdir().expect("create the origin");
+        let destination = tempfile::tempdir().expect("create the destination");
+        let (writer, store, session_id) = working_session(data_dir.path(), origin.path()).await;
+        let before = store.snapshot(session_id).expect("the Session is held");
+        let mut database = SqliteConnection::establish(
+            data_dir
+                .path()
+                .join("suru.db")
+                .to_str()
+                .expect("the fixture's path is UTF-8"),
+        )
+        .expect("open the database");
+        database
+            .batch_execute(
+                "PRAGMA busy_timeout = 5000; \
+                 CREATE TRIGGER refuse_activities BEFORE INSERT ON activities \
+                 BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END;",
+            )
+            .expect("have storage refuse the record");
+
+        let refused = store
+            .move_to(
+                session_id,
+                ResolvedWorkspace::directory(directory(destination.path()).path),
+                Vec::new(),
+            )
+            .expect_err("a Move whose record storage refuses is refused");
+
+        assert!(
+            matches!(refused, MoveSessionError::Storage(_)),
+            "{refused:?}"
+        );
+        assert_eq!(store.snapshot(session_id).as_ref(), Some(&before));
+        assert_eq!(store.pending_moves(), []);
+        writer.shutdown().await.expect("stop the writer");
+    }
+
+    /// A Session deleted while it waits on a pending Move takes the Move with
+    /// it: nothing stands pending, and storage holds none to find again.
+    #[tokio::test]
+    async fn a_session_deleted_with_a_pending_move_leaves_nothing_behind() {
+        let data_dir = tempfile::tempdir().expect("create isolated data directory");
+        let origin = tempfile::tempdir().expect("create the origin");
+        let destination = tempfile::tempdir().expect("create the destination");
+        let (writer, store, session_id) = working_session(data_dir.path(), origin.path()).await;
+        let resolved = ResolvedWorkspace::directory(directory(destination.path()).path);
+        store
+            .move_to(session_id, resolved.clone(), Vec::new())
+            .expect("take the Move");
+        let held = store
+            .snapshot(session_id)
+            .expect("the Session is held")
+            .session
+            .pending_move
+            .expect("the Move is pending");
+        writer.shutdown().await.expect("stop the writer");
+
+        // A restart reads the stopped Turn as ended, so a deletion may reach
+        // the Session before the Move is settled.
+        let (writer, crashed) = as_a_crash_leaves_it(data_dir.path(), session_id).await;
+        crashed.delete(session_id).expect("delete the Session");
+        assert_eq!(crashed.pending_moves(), []);
+        assert!(
+            crashed
+                .apply_pending_move(session_id, &held, resolved, Vec::new())
+                .is_err(),
+            "a settling still on its way finds nothing to apply"
+        );
+        assert!(
+            crashed
+                .listed_workspaces()
+                .iter()
+                .all(|workspace| workspace.path != directory(destination.path()).path),
+            "and no Workspace was entered for where it was bound"
+        );
+        writer.shutdown().await.expect("stop the writer");
+
+        let (writer, after) = {
+            let repository = StorageRepository::open(data_dir.path())
+                .await
+                .expect("open the repository again");
+            let restored = repository.load_sessions().await.expect("read Sessions");
+            let (writer, storage) = StorageWriter::spawn(repository);
+            (
+                writer,
+                SessionStore::new(restored, storage, Vec::new(), Default::default()),
+            )
+        };
+        assert_eq!(after.pending_moves(), [], "nor does a restart find it");
+        assert!(after.snapshot(session_id).is_none());
         writer.shutdown().await.expect("stop the writer");
     }
 }

@@ -750,6 +750,7 @@ impl SessionRow {
                 checkout: session.checkout.clone(),
                 approval_posture: session.approval_posture,
                 moved_from: moved_from.cloned(),
+                pending_move: session.pending_move.clone(),
             },
         )
     }
@@ -788,6 +789,7 @@ impl SessionRow {
                     .transpose()?,
                 id,
                 execution_directory: metadata.execution_directory,
+                pending_move: metadata.pending_move,
                 workspace: metadata.workspace,
                 agent_selection,
                 agent_selection_availability: decode(
@@ -1114,7 +1116,10 @@ impl ActivityRow {
         )
     }
 
-    fn payload(session_id: SessionId, activity: &Activity) -> Result<String, StorageError> {
+    pub(super) fn payload(
+        session_id: SessionId,
+        activity: &Activity,
+    ) -> Result<String, StorageError> {
         encode(
             session_id,
             "Activity payload",
@@ -1173,6 +1178,10 @@ struct StoredSessionMetadata {
     /// since and its Agent has yet to be told (ADR 0059).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     moved_from: Option<crate::protocol::ExecutionDirectory>,
+    /// The Move waiting for the Session's own Turn to settle, which a restart
+    /// must find without reading the Session's history (ADR 0059).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pending_move: Option<crate::protocol::PendingMove>,
 }
 
 #[derive(Deserialize, Serialize)]

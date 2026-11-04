@@ -19,10 +19,10 @@ use suru::{
     protocol::{
         Activity, ActivityId, ActivityStatus, AdmitPromptRequest, AgentSelection,
         EffectiveSettings, ExecutionDirectory, ModelId, MoveDestination, MoveLocation, MoveOutcome,
-        MoveSessionRequest, Outlook, PromptDelivery, PromptOrder, PromptStatus, ProviderId,
-        SessionChange, SessionId, SessionListItem, SessionReference, SessionRevision,
-        SessionSnapshot, SessionStatus, SessionTimestamp, SessionUpdate, SidebarScope,
-        SidebarSettings, SidebarVisibility, SkillCatalog, SkillCatalogCapabilities,
+        MoveSessionRequest, Outlook, PendingMove, PromptDelivery, PromptOrder, PromptStatus,
+        ProviderId, SessionChange, SessionId, SessionListItem, SessionReference, SessionRevision,
+        SessionSnapshot, SessionStatus, SessionSummary, SessionTimestamp, SessionUpdate,
+        SidebarScope, SidebarSettings, SidebarVisibility, SkillCatalog, SkillCatalogCapabilities,
         SkillCatalogRequest, SkillCatalogStatus, SkillDescriptor, SkillId, SkillInvocation,
         SkillPromptDelivery, TextSpan, Workspace, WorkspacePaths,
     },
@@ -194,8 +194,6 @@ fn slash_move_with_no_session_open_is_refused_on_the_landing() {
 fn a_refused_move_says_why_and_leaves_the_session_where_it_was() {
     for refusal in [
         "No directory is at ../nowhere, so the Session stays where it is.",
-        "The Session is Working, and its Provider works in its directory until the Turn \
-         settles; Move it once it is idle.",
         "The Session is a Sidekick's, and the Sidekick Workspace is what makes it one, so it \
          never Moves.",
     ] {
@@ -1551,4 +1549,294 @@ fn a_skill_replaced_where_the_session_still_stands_stays_stale() {
         vec![skill("alpha-review-replaced", "review")],
     );
     assert!(blocked(&mut application).contains("stale"));
+}
+
+/// The Session's own stream saying a Move to `destination` was asked while
+/// its Turn runs: its Activity added Active, which is the Move pending.
+fn hear_move_pending(
+    application: &mut Application,
+    snapshot: &SessionSnapshot,
+    destination: &Path,
+) -> (ActivityId, MoveLocation, MoveLocation) {
+    let location = |path: &Path| MoveLocation {
+        execution_directory: ExecutionDirectory {
+            path: path.to_owned(),
+        },
+        branch: None,
+    };
+    let (id, from, to) = (
+        ActivityId::new(),
+        location(&snapshot.session.execution_directory.path),
+        location(destination),
+    );
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id: snapshot.session.id,
+                revision: SessionRevision(snapshot.revision.0 + 1),
+                changes: vec![SessionChange::ActivityAdded {
+                    activity: Activity::Move {
+                        id,
+                        status: ActivityStatus::Active,
+                        from: from.clone(),
+                        to: to.clone(),
+                        error: None,
+                    },
+                }],
+            },
+        )))
+        .expect("hear the Move pending");
+    (id, from, to)
+}
+
+/// The Session as the answer to a Move left pending to `destination` names
+/// it, and as a listing reads it.
+fn summary_bound_for(
+    session_id: SessionId,
+    title: &str,
+    workspace: &Path,
+    destination: Option<&Path>,
+) -> SessionSummary {
+    let SessionListItem::Readable(mut summary) = listed_session(session_id, title, workspace, 1, 1)
+    else {
+        panic!("a listed Session is readable");
+    };
+    summary.session.pending_move = destination.map(|destination| PendingMove {
+        activity_id: ActivityId::new(),
+        destination: ExecutionDirectory {
+            path: destination.to_owned(),
+        },
+    });
+    summary.session.status = SessionStatus::Active;
+    summary.session.working_since = Some(SessionTimestamp(1));
+    *summary
+}
+
+/// `/move` on a Working Session is accepted, and the line beneath the composer
+/// says when it applies. Nothing about the line may read as a Skill's issue,
+/// which a Move's draft tracks by its text.
+#[test]
+fn a_pending_move_is_acknowledged_saying_when_it_applies() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (session_id, snapshot) = enter_session(&mut application, &directories.alpha);
+    type_terminal_text(&mut application, "/move ../beta-work");
+    assert_eq!(
+        press_enter(&mut application),
+        move_to(session_id, "../beta-work")
+    );
+
+    application
+        .handle_event(ApplicationEvent::SessionMoved {
+            session: SessionReference::new(Outlook::Local, session_id),
+            outcome: MoveOutcome::Pending {
+                session: summary_bound_for(
+                    session_id,
+                    "The work that Moves",
+                    &directories.alpha,
+                    Some(&directories.beta),
+                ),
+            },
+        })
+        .expect("hear the Move pending");
+
+    let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
+    assert!(
+        unwrapped(&rows).contains(&unwrapped(&[
+            "The Session Moves to beta-work once its Turn settles.".to_owned()
+        ])),
+        "{}",
+        rows.join("\n")
+    );
+    assert_eq!(snapshot.session.execution_directory.path, directories.alpha);
+}
+
+#[test]
+fn a_move_to_where_the_session_works_says_so_and_a_cancelled_one_says_it_is_cancelled() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (session_id, _) = enter_session(&mut application, &directories.alpha);
+    let session = SessionReference::new(Outlook::Local, session_id);
+    let summary = summary_bound_for(session_id, "The work", &directories.alpha, None);
+
+    application
+        .handle_event(ApplicationEvent::SessionMoved {
+            session: session.clone(),
+            outcome: MoveOutcome::AlreadyThere {
+                session: summary.clone(),
+            },
+        })
+        .expect("hear the answer");
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(
+        screen.contains("The Session already works there."),
+        "{screen}"
+    );
+
+    application
+        .handle_event(ApplicationEvent::SessionMoved {
+            session,
+            outcome: MoveOutcome::PendingCancelled { session: summary },
+        })
+        .expect("hear the answer");
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(screen.contains("The pending Move is cancelled"), "{screen}");
+}
+
+/// The Sidebar reads where the Session is bound off its summary, so a second
+/// Client names it too, until a listing the Move's settling invalidated says
+/// otherwise.
+#[test]
+fn the_sidebar_labels_a_pending_destination_until_the_listing_clears_it() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (session_id, _) = enter_session(&mut application, &directories.alpha);
+    let ApplicationTransition::ListSessions(request) = deliver_settings(
+        &mut application,
+        EffectiveSettings {
+            sidebar: SidebarSettings {
+                initial_visibility: SidebarVisibility::Shown,
+                initial_scope: SidebarScope::CurrentWorkspace,
+                ..SidebarSettings::default()
+            },
+            ..EffectiveSettings::default()
+        },
+    ) else {
+        panic!("a Sidebar coming into view asks for its Sessions");
+    };
+    application
+        .handle_event(ApplicationEvent::SessionsListed {
+            request,
+            sessions: vec![SessionListItem::Readable(Box::new(summary_bound_for(
+                session_id,
+                "The work that Moves",
+                &directories.alpha,
+                Some(&directories.beta),
+            )))],
+        })
+        .expect("hydrate the Sidebar");
+
+    let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
+    assert!(drawn_in_sidebar(&rows, "→ beta-work"), "{rows:#?}");
+
+    let ApplicationTransition::ListSessions(request) = application
+        .handle_event(ApplicationEvent::Managed(
+            ManagedEvent::SessionCatalogInvalidated { session_id },
+        ))
+        .expect("hear the listing invalidated")
+    else {
+        panic!("an invalidated listing is asked for again");
+    };
+    application
+        .handle_event(ApplicationEvent::SessionsListed {
+            request,
+            sessions: vec![SessionListItem::Readable(Box::new(summary_bound_for(
+                session_id,
+                "The work that Moves",
+                &directories.alpha,
+                None,
+            )))],
+        })
+        .expect("take the listing the Move left");
+
+    let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
+    assert!(drawn_in_sidebar(&rows, "The work that Moves"), "{rows:#?}");
+    assert!(!drawn_in_sidebar(&rows, "→ beta-work"), "{rows:#?}");
+}
+
+/// A pending Move stands Active with a Spinner in the Transcript, and its one
+/// row reads what became of it once it settles.
+#[test]
+fn a_pending_moves_row_stands_active_then_settles_where_it_stands() {
+    let directories = directories();
+    for (status, error, reads) in [
+        (ActivityStatus::Completed, None, "✓ Moved from"),
+        (
+            ActivityStatus::Interrupted,
+            Some("a Move to elsewhere replaced it"),
+            "did not apply: a Move to elsewhere replaced it",
+        ),
+    ] {
+        let mut application = connected_application(&directories.alpha);
+        let (_, snapshot) = enter_session(&mut application, &directories.alpha);
+        let (activity_id, from, to) =
+            hear_move_pending(&mut application, &snapshot, &directories.beta);
+        let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
+        assert!(
+            unwrapped(&rows).contains(&unwrapped(&[format!(
+                "to {} once the Session settles",
+                directories.beta.display()
+            )])),
+            "{}",
+            rows.join("\n")
+        );
+
+        application
+            .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+                SessionUpdate {
+                    session_id: snapshot.session.id,
+                    revision: SessionRevision(snapshot.revision.0 + 2),
+                    changes: vec![SessionChange::MoveSettled {
+                        activity_id,
+                        status,
+                        from,
+                        to,
+                        error: error.map(str::to_owned),
+                    }],
+                },
+            )))
+            .expect("hear the Move settle");
+
+        let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
+        assert!(
+            unwrapped(&rows).contains(&unwrapped(&[reads.to_owned()])),
+            "{reads}: {}",
+            rows.join("\n")
+        );
+        assert!(
+            !unwrapped(&rows).contains(&unwrapped(&["once the Session settles".to_owned()])),
+            "{}",
+            rows.join("\n")
+        );
+    }
+}
+
+/// A Move that could not apply when its Turn settled is told to whoever views
+/// the Session, the Session where it was and the failed row its durable record.
+#[test]
+fn a_pending_move_failing_at_settlement_is_said_beneath_the_composer() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (_, snapshot) = enter_session(&mut application, &directories.alpha);
+    let (activity_id, from, to) = hear_move_pending(&mut application, &snapshot, &directories.beta);
+
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id: snapshot.session.id,
+                revision: SessionRevision(snapshot.revision.0 + 2),
+                changes: vec![SessionChange::MoveSettled {
+                    activity_id,
+                    status: ActivityStatus::Failed,
+                    from,
+                    to,
+                    error: Some("No directory is there".to_owned()),
+                }],
+            },
+        )))
+        .expect("hear the Move fail");
+
+    let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
+    let told = unwrapped(&["The Move to beta-work failed: No directory is there".to_owned()]);
+    let row = unwrapped(&[format!(
+        "to {} failed: No directory is there",
+        directories.beta.display()
+    )]);
+    assert!(unwrapped(&rows).contains(&told), "{}", rows.join("\n"));
+    assert!(unwrapped(&rows).contains(&row), "{}", rows.join("\n"));
+    assert_eq!(
+        application.take_move_follow(),
+        ApplicationTransition::Continue,
+        "the Session went nowhere"
+    );
 }

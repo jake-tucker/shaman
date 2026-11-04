@@ -326,6 +326,9 @@ pub(super) enum SidebarShelf<'a> {
     /// another at a glance.
     Active {
         checkout_state: Option<&'a crate::protocol::CheckoutSummary>,
+        /// Where a pending Move will take this Session once its Turn settles,
+        /// which the line beneath its Title names.
+        pending_move: Option<&'a Path>,
         /// The Workspace this Session is rooted in, drawn by its last
         /// component. A Session Suru could not read may not know its Workspace
         /// at all.
@@ -2025,7 +2028,17 @@ impl Sidebar {
         left: &crate::protocol::WorkspaceId,
         to: crate::protocol::Workspace,
     ) {
-        if matches!(&self.scope, SidebarListingScope::Workspace(narrowed) if narrowed.id == *left) {
+        let SidebarListingScope::Workspace(narrowed) = &mut self.scope else {
+            return;
+        };
+        if narrowed.id != *left {
+            return;
+        }
+        // Within one Workspace the column stands as it was, and so does a
+        // selector the reader has open.
+        if to.id == *left {
+            *narrowed = to;
+        } else {
             self.choose_scope(SidebarListingScope::Workspace(to));
         }
     }
@@ -2343,6 +2356,10 @@ impl Sidebar {
                         open,
                         Some(row.reading(open)),
                         SidebarShelf::Active {
+                            pending_move: session
+                                .readable()
+                                .and_then(|summary| summary.session.pending_move.as_ref())
+                                .map(|pending| pending.destination.path.as_path()),
                             checkout_state: session
                                 .readable()
                                 .and_then(|summary| summary.checkout_state.as_ref()),
@@ -4476,6 +4493,7 @@ mod tests {
         SessionListItem::Readable(Box::new(SessionSummary {
             checkout_state: None,
             session: Session {
+                pending_move: None,
                 checkout: None,
                 context_fill: None,
                 id: SessionId::new(),

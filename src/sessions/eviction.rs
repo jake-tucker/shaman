@@ -327,6 +327,7 @@ impl SessionStoreState {
         // Work runs in it, or is owed there.
         session.working_since.is_some()
             || session.monitoring_since.is_some()
+            || session.pending_move.is_some()
             || session.status != SessionStatus::Idle
             || snapshot.turns.iter().any(|turn| !turn.status.is_terminal())
             || snapshot

@@ -184,6 +184,7 @@ fn summary(context: &ResolvedWorkspace, title: &str) -> SessionListItem {
     SessionListItem::Readable(Box::new(SessionSummary {
         checkout_state: None,
         session: Session {
+            pending_move: None,
             id: SessionId::new(),
             workspace: context.workspace.clone(),
             execution_directory: context.execution_directory.clone().unwrap(),

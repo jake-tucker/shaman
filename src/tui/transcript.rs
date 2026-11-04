@@ -5374,9 +5374,13 @@ fn push_move_activity(
     let text = match status {
         ActivityStatus::Active => format!("Moving from {from} to {to} once the Session settles"),
         ActivityStatus::Completed => format!("Moved from {from} to {to}"),
-        ActivityStatus::Failed | ActivityStatus::Interrupted => match error {
+        ActivityStatus::Failed => match error {
             Some(error) => format!("Move from {from} to {to} failed: {error}"),
             None => format!("Move from {from} to {to} failed"),
+        },
+        ActivityStatus::Interrupted => match error {
+            Some(error) => format!("Move from {from} to {to} did not apply: {error}"),
+            None => format!("Move from {from} to {to} did not apply"),
         },
     };
     push_prefixed_lines_with_indent(lines, &format!("  {marker}"), "    ", &text, style);
@@ -7314,6 +7318,7 @@ mod tests {
             title: String::new(),
             icon: None,
             session: Session {
+                pending_move: None,
                 checkout: None,
                 context_fill: None,
                 id: crate::protocol::SessionId::new(),

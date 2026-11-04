@@ -12,7 +12,7 @@ async fn move_session(
     session_id: SessionId,
     path: &Path,
 ) -> SessionSummary {
-    let MoveOutcome::Moved { session } = crate::support::loopback_client()
+    let answer: MoveOutcome = crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/move",
             server.descriptor().base_url
@@ -31,7 +31,10 @@ async fn move_session(
         .json()
         .await
         .unwrap();
-    session
+    match answer {
+        MoveOutcome::Moved { session } | MoveOutcome::AlreadyThere { session } => session,
+        answer => panic!("the Move applies at once, not {answer:?}"),
+    }
 }
 
 /// A Server that Reclaims only eagerly, over `adapter`.
@@ -545,6 +548,66 @@ async fn a_sweep_reclaims_around_a_native_subagents_session_whose_history_is_not
     wait_for_path(&layout.managed, false).await;
     reads_where_it_was_left(&restarted, child, &layout.managed).await;
     restarted.shutdown().await.unwrap();
+}
+
+/// A Move out of a Worktree asked while a Turn runs there leaves it standing
+/// until that Turn settles, and only then gives it the orphan check.
+#[tokio::test]
+async fn a_pending_move_reclaims_the_worktree_it_leaves_only_once_it_applies() {
+    let layout = ReclaimLayout::new("move-pending");
+    let (server, mut provider) = spawn_eager(&layout, "move-reclaim-pending").await;
+    let (session, mut connection) = open(&server, &mut provider, &layout.managed).await;
+    let session_id = session.session.id;
+    crate::support::loopback_client()
+        .post(format!(
+            "{}/v1/sessions/{session_id}/prompts",
+            server.descriptor().base_url
+        ))
+        .bearer_auth(&server.descriptor().token)
+        .json(&AdmitPromptRequest {
+            prompt: prompt("Carry on"),
+            delivery: PromptDelivery::Queue,
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let turn = timeout(PROGRESS_DEADLINE, connection.next_turn())
+        .await
+        .expect("the Turn reaches its Provider");
+
+    let answer: MoveOutcome = crate::support::loopback_client()
+        .post(format!(
+            "{}/v1/sessions/{session_id}/move",
+            server.descriptor().base_url
+        ))
+        .bearer_auth(&server.descriptor().token)
+        .json(&MoveSessionRequest {
+            destination: MoveDestination::Directory {
+                path: layout.main.clone(),
+            },
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(matches!(answer, MoveOutcome::Pending { .. }), "{answer:?}");
+    assert!(layout.managed.is_dir(), "the Turn still works there");
+
+    turn.succeed();
+    connection
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+
+    wait_for_path(&layout.managed, false).await;
+    let read = support::read_session(server.descriptor(), session_id).await;
+    assert_eq!(read.session.execution_directory.path, layout.main);
+    server.shutdown().await.unwrap();
 }
 
 #[tokio::test]

@@ -2817,6 +2817,7 @@ fn rooted(title: &str, workspace: &Path, updated_at: u64) -> SessionListItem {
     SessionListItem::Readable(Box::new(SessionSummary {
         checkout_state: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: SessionId::new(),

@@ -1684,6 +1684,7 @@ fn session_summary(
     SessionListItem::Readable(Box::new(SessionSummary {
         checkout_state: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: session_id,

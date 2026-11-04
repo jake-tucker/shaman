@@ -936,6 +936,7 @@ fn failed_session_snapshot(session_id: SessionId, workspace: &std::path::Path) -
         title: String::new(),
         icon: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: session_id,

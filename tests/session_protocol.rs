@@ -434,6 +434,7 @@ fn session_summary_round_trips_with_discovery_metadata() {
     let summary = SessionSummary {
         checkout_state: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),
@@ -564,6 +565,7 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
         title: String::new(),
         icon: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: Some(suru::protocol::ContextFill {
                 occupied_tokens: 12_400,
@@ -972,6 +974,7 @@ fn a_prompt_a_sidekick_sent_and_its_message_name_the_sidekick_and_the_users_own_
 /// `workspace`.
 fn session_at(id: SessionId, workspace: &std::path::Path) -> Session {
     Session {
+        pending_move: None,
         checkout: None,
         context_fill: None,
         id,
@@ -2958,6 +2961,7 @@ fn a_snapshot_and_its_updates_describe_the_attachments_its_session_binds() {
     let snapshot = serde_json::from_value::<SessionSnapshot>(json!({
         "title": "",
         "session": serde_json::to_value(Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),

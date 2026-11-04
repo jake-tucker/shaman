@@ -1893,6 +1893,11 @@ async fn start(
         )
         .with_report_wake_grace(timings.remote_report_wake_grace),
     );
+    // A pending Move settles as its Session's Turn does, asked for by that
+    // Session's Provider actor, and as this Server starts.
+    let (move_settlements, asked_move_settlements) = tokio::sync::mpsc::unbounded_channel();
+    providers.settle_moves_through(move_settlements);
+    operations.settle_pending_moves(asked_move_settlements, provider_shutdown_rx.clone());
     // A Broker Tool spawning a Subagent starts that Subagent's Provider actor
     // through the same orchestrator every other Session's runs on, one
     // reading a Subagent reads it from the same Session store, and a
@@ -4423,7 +4428,6 @@ fn move_refusal(refusal: &MoveRefusal) -> Response {
     let (status, code) = match refusal {
         MoveRefusal::SessionNotFound => (StatusCode::NOT_FOUND, SessionErrorCode::SessionNotFound),
         MoveRefusal::NativeSubagent => (StatusCode::CONFLICT, SessionErrorCode::SubagentSession),
-        MoveRefusal::Working => (StatusCode::CONFLICT, SessionErrorCode::WorkingSession),
         MoveRefusal::SidekickSession | MoveRefusal::SidekickDestination => (
             StatusCode::CONFLICT,
             SessionErrorCode::SidekickWorkspaceSession,

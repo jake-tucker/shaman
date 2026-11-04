@@ -168,7 +168,20 @@ pub(crate) struct ProviderOrchestrator {
     broker: BrokerAccess,
     /// Where the bytes of a delivered Prompt's Attachments are read from.
     attachments: AttachmentStore,
+    /// Who settles a Session's pending Move once its Turn has settled, which
+    /// reads what this orchestrator does not reach; see
+    /// [`Self::settle_moves_through`].
+    move_settlements: MoveSettlements,
 }
+
+/// One ask to settle the Move pending for a Session, answered once it has,
+/// however it came out.
+pub(crate) struct MoveSettlement {
+    pub(crate) session_id: SessionId,
+    pub(crate) answer: oneshot::Sender<()>,
+}
+
+type MoveSettlements = Arc<std::sync::OnceLock<mpsc::UnboundedSender<MoveSettlement>>>;
 
 /// What a delegating Agent asked the Broker to spawn, its Agent Selection
 /// already checked against the Model Catalog: the Provider, Model and Model
@@ -486,6 +499,7 @@ struct ConnectedProviderSession {
 }
 
 struct ProviderSessionContext {
+    move_settlements: MoveSettlements,
     source_control: crate::source_control::SourceControlService,
     checkout_guards: CheckoutGuards,
     connected_incarnations: Arc<Mutex<HashMap<SessionId, u64>>>,
@@ -1591,6 +1605,7 @@ impl ProviderOrchestrator {
             connected_incarnations: Default::default(),
             broker,
             attachments,
+            move_settlements: Default::default(),
         };
         // Every Report the store comes to hold is handed on to the
         // actor that reaches its Agent, for as long as the Server runs.
@@ -1626,6 +1641,13 @@ impl ProviderOrchestrator {
             .unwrap()
             .get(&session)
             .copied()
+    }
+
+    /// Has each Provider actor ask of `settlements` to settle its Session's
+    /// pending Move, once the Turn holding it has settled and before it
+    /// begins anything else.
+    pub(crate) fn settle_moves_through(&self, settlements: mpsc::UnboundedSender<MoveSettlement>) {
+        let _ = self.move_settlements.set(settlements);
     }
 
     pub(crate) fn has_session_actor(&self, id: SessionId) -> bool {
@@ -1917,6 +1939,7 @@ impl ProviderOrchestrator {
                 settings: self.settings.clone(),
                 broker: self.broker.clone(),
                 attachments: self.attachments.clone(),
+                move_settlements: self.move_settlements.clone(),
                 predecessor,
                 released: released.clone(),
             },
@@ -2728,6 +2751,7 @@ async fn run_provider_session(
         settings,
         broker,
         attachments,
+        move_settlements,
         predecessor,
         released,
     } = context;
@@ -2790,6 +2814,33 @@ async fn run_provider_session(
             break;
         }
         if active.is_none() {
+            // A Move pending for the Turn that just settled applies before
+            // anything can begin the next one, so nothing runs in the
+            // directory it leaves from here on. The process there goes with
+            // it, ahead of any output still arriving from it.
+            if sessions.pending_move_to_settle(session_id).is_some()
+                && let Some(settlements) = move_settlements.get()
+            {
+                let (answer, settled) = oneshot::channel();
+                if settlements
+                    .send(MoveSettlement { session_id, answer })
+                    .is_ok()
+                {
+                    tokio::select! {
+                        biased;
+                        _ = shutdown.wait() => break,
+                        _ = settled => {}
+                    }
+                }
+                let connection_left = ConnectionLeftBehind {
+                    sessions: &sessions,
+                    updates: &updates,
+                    connected_incarnations: &connected_incarnations,
+                    session_id,
+                    stop_timeout,
+                };
+                connection_left.let_go(&mut provider, &mut subagents).await;
+            }
             if provider.is_none() {
                 moves_to_follow.clear();
             }
@@ -3398,27 +3449,14 @@ async fn run_provider_session(
                 }
                 ProviderCommand::SteerPrompt => continue,
                 ProviderCommand::FollowMove { stopped } => {
-                    let moved_to = sessions.execution_directory(session_id);
-                    if let Some(left) = provider.take_if(|connected| {
-                        moved_to
-                            .as_ref()
-                            .is_some_and(|moved_to| *moved_to != connected.execution_directory)
-                    }) {
-                        connected_incarnations.lock().unwrap().remove(&session_id);
-                        end_provider_connection(
-                            &mut provider,
-                            &mut subagents,
-                            &sessions,
-                            &updates,
-                            session_id,
-                            SUBAGENT_PARENT_MOVED_MESSAGE,
-                        );
-                        let _ = timeout(stop_timeout, left.session.shutdown()).await;
-                        tracing::info!(
-                            %session_id,
-                            "Stopped a moved Session's Provider process; its next Turn resumes it"
-                        );
-                    }
+                    let connection_left = ConnectionLeftBehind {
+                        sessions: &sessions,
+                        updates: &updates,
+                        connected_incarnations: &connected_incarnations,
+                        session_id,
+                        stop_timeout,
+                    };
+                    connection_left.let_go(&mut provider, &mut subagents).await;
                     for stopped in stopped {
                         let _ = stopped.send(());
                     }
@@ -4567,6 +4605,53 @@ enum ConnectionFailure {
 /// What an actor needs to open its Provider connection: the part of its
 /// environment every start reads, whichever Turn — a Prompt's or a
 /// Delegation's — is about to begin over it.
+/// What letting go of a Provider connection a Move left behind reads.
+struct ConnectionLeftBehind<'a> {
+    sessions: &'a SessionStore,
+    updates: &'a ProviderUpdateGate,
+    connected_incarnations: &'a Arc<Mutex<HashMap<SessionId, u64>>>,
+    session_id: SessionId,
+    stop_timeout: Duration,
+}
+
+impl ConnectionLeftBehind<'_> {
+    /// Stops `provider` where it was opened elsewhere than the Session works
+    /// now, ending whatever Subagent work is routed over it in words that say
+    /// its parent Moved; its next Turn resumes the conversation.
+    async fn let_go(
+        &self,
+        provider: &mut Option<ConnectedProviderSession>,
+        subagents: &mut SubagentRoutes,
+    ) {
+        let session_id = self.session_id;
+        let moved_to = self.sessions.execution_directory(session_id);
+        let Some(left) = provider.take_if(|connected| {
+            moved_to
+                .as_ref()
+                .is_some_and(|moved_to| *moved_to != connected.execution_directory)
+        }) else {
+            return;
+        };
+        self.connected_incarnations
+            .lock()
+            .unwrap()
+            .remove(&session_id);
+        end_provider_connection(
+            provider,
+            subagents,
+            self.sessions,
+            self.updates,
+            session_id,
+            SUBAGENT_PARENT_MOVED_MESSAGE,
+        );
+        let _ = timeout(self.stop_timeout, left.session.shutdown()).await;
+        tracing::info!(
+            %session_id,
+            "Stopped a moved Session's Provider process; its next Turn resumes it"
+        );
+    }
+}
+
 struct ProviderConnector<'a> {
     runtime: &'a Arc<dyn ProviderRuntime>,
     source_control: &'a crate::source_control::SourceControlService,
@@ -5853,7 +5938,7 @@ async fn revalidate_prompt_skills(
         .map_err(skill_delivery_failure_message)
 }
 
-fn skill_delivery_failure_message(error: SkillCatalogError) -> String {
+pub(crate) fn skill_delivery_failure_message(error: SkillCatalogError) -> String {
     let cause = match error {
         SkillCatalogError::InvalidWorkspace => {
             "the Session Workspace is no longer valid".to_owned()

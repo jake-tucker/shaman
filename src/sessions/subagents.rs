@@ -498,6 +498,7 @@ impl SessionStoreState {
             title: child.title.clone(),
             icon: None,
             session: Session {
+                pending_move: None,
                 checkout: parent_session.checkout.clone(),
                 context_fill: None,
                 id: session_id,

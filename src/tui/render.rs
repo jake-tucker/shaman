@@ -5143,17 +5143,31 @@ fn sidebar_active_row_lines(
     ]
 }
 
+/// The line beneath an active row's Title: its Checkout State, and where a
+/// pending Move will take the Session, which is the one to keep where the
+/// column cannot hold both.
 fn sidebar_checkout_label(shelf: SidebarShelf<'_>, width: usize, show_icons: bool) -> String {
     let SidebarShelf::Active {
-        checkout_state: Some(reading),
+        checkout_state,
+        pending_move,
         ..
     } = shelf
     else {
         return String::new();
     };
-    CheckoutStateReading::of(reading)
+    let checkout = checkout_state
+        .and_then(CheckoutStateReading::of)
         .map(|reading| reading.as_a_sidebar_row_draws_it(width, show_icons))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let Some(destination) = pending_move else {
+        return checkout;
+    };
+    let bound_for = format!("→ {}", sidebar::workspace_name(destination));
+    if checkout.is_empty() || checkout.width() + 1 + bound_for.width() > width {
+        bound_for
+    } else {
+        format!("{checkout} {bound_for}")
+    }
 }
 
 /// One Worktree's Checkout State as every surface reads it: whether it is
@@ -7735,6 +7749,7 @@ mod tests {
             title: String::new(),
             icon: None,
             session: Session {
+                pending_move: None,
                 checkout: None,
                 context_fill,
                 id: SessionId::new(),
@@ -8111,6 +8126,7 @@ mod tests {
                     title: String::new(),
                     icon: None,
                     session: Session {
+                        pending_move: None,
                         checkout: None,
                         context_fill: None,
                         id: session_id,
@@ -8197,6 +8213,7 @@ mod tests {
                     title: String::new(),
                     icon: None,
                     session: Session {
+                        pending_move: None,
                         checkout: None,
                         context_fill: None,
                         id: session_id,

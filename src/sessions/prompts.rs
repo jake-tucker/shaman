@@ -396,6 +396,7 @@ impl SessionStore {
             record.snapshot.session.clone(),
             record.moved_from.clone(),
             None,
+            None,
             record.snapshot.revision,
         )?;
         Ok(())
@@ -525,6 +526,7 @@ impl SessionStore {
             // gets one draws just as cleanly.
             icon: None,
             session: Session {
+                pending_move: None,
                 checkout: location.checkout,
                 context_fill: None,
                 id: session_id,

@@ -573,6 +573,7 @@ pub fn failed_session_snapshot(
         title: String::new(),
         icon: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: session_id,
@@ -636,6 +637,7 @@ pub fn selected_session_snapshot(
         title: String::new(),
         icon: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: session_id,
@@ -680,6 +682,7 @@ pub fn navigable_session_snapshot(
         title: String::new(),
         icon: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: session_id,
@@ -976,6 +979,7 @@ pub fn listed_session(
     SessionListItem::Readable(Box::new(SessionSummary {
         checkout_state: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: session_id,

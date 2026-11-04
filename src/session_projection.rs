@@ -314,6 +314,19 @@ impl ValidatedChanges {
                     next.transcript.push(TranscriptItem::Activity {
                         activity_id: activity.id(),
                     });
+                    // A Move's Activity added Active is that Move pending.
+                    if let Activity::Move {
+                        id,
+                        status: ActivityStatus::Active,
+                        to,
+                        ..
+                    } = activity
+                    {
+                        next.session.pending_move = Some(crate::protocol::PendingMove {
+                            activity_id: *id,
+                            destination: to.execution_directory.clone(),
+                        });
+                    }
                 }
                 SessionChange::CommandOutputAppended { content, .. } => {
                     let Activity::Command { output, .. } = &mut next.activities[resolved()] else {
@@ -567,6 +580,43 @@ impl ValidatedChanges {
                     next.session.workspace.clone_from(workspace);
                     next.session.checkout.clone_from(checkout);
                 }
+                SessionChange::MoveSettled {
+                    activity_id,
+                    status,
+                    from,
+                    to,
+                    error,
+                } => {
+                    let Activity::Move {
+                        status: current_status,
+                        from: current_from,
+                        to: current_to,
+                        error: current_error,
+                        ..
+                    } = &mut next.activities[resolved()]
+                    else {
+                        unreachable!("{RESOLVED}");
+                    };
+                    *current_status = *status;
+                    current_from.clone_from(from);
+                    current_to.clone_from(to);
+                    current_error.clone_from(error);
+                    if next
+                        .session
+                        .pending_move
+                        .as_ref()
+                        .is_some_and(|pending| pending.activity_id == *activity_id)
+                    {
+                        next.session.pending_move = None;
+                    }
+                }
+                SessionChange::PromptSkillsRebound {
+                    skill_invocations, ..
+                } => {
+                    next.prompts[resolved()]
+                        .skill_invocations
+                        .clone_from(skill_invocations);
+                }
                 SessionChange::SessionStatusChanged { status } => next.session.status = *status,
             }
         }
@@ -675,6 +725,16 @@ impl<'a> Validation<'a> {
                 }
                 self.prompts.add(prompt);
                 None
+            }
+            SessionChange::PromptSkillsRebound { prompt_id, .. } => {
+                let Some((index, prompt)) = self.prompts.find(|prompt| prompt.id == *prompt_id)
+                else {
+                    bail!("Session update referenced an unknown Prompt");
+                };
+                if prompt.status != PromptStatus::Pending {
+                    bail!("Session update bound the Skills of a Prompt no longer waiting");
+                }
+                Some(index)
             }
             SessionChange::PromptDeliveryChanged {
                 prompt_id,
@@ -1281,6 +1341,24 @@ impl<'a> Validation<'a> {
                 *after_measured = after_tokens.is_some();
                 Some(index)
             }
+            SessionChange::MoveSettled {
+                activity_id,
+                status,
+                ..
+            } => {
+                let (index, standing) = self.activity(activity_id)?;
+                let ActivityStanding::Move {
+                    status: current_status,
+                } = standing
+                else {
+                    bail!("Session update settled a different Activity kind as a Move");
+                };
+                if *current_status != ActivityStatus::Active || *status == ActivityStatus::Active {
+                    bail!("Session update contained an invalid Move status transition");
+                }
+                *current_status = *status;
+                Some(index)
+            }
             SessionChange::CompactionAfterMeasured { activity_id, .. } => {
                 let (index, standing) = self.activity(activity_id)?;
                 let ActivityStanding::Compaction {
@@ -1598,6 +1676,9 @@ impl From<&Message> for MessageStanding {
 /// What a later change in the same batch could be refused over about an
 /// Activity, by its kind.
 enum ActivityStanding {
+    Move {
+        status: ActivityStatus,
+    },
     Approval {
         outcome: ApprovalOutcome,
         turn_id: TurnId,
@@ -1688,10 +1769,10 @@ impl From<&Activity> for ActivityStanding {
                 after_measured: after_tokens.is_some(),
             },
             Activity::Subsession { .. } => Self::Subsession,
-            Activity::Status { .. }
-            | Activity::Error { .. }
-            | Activity::WatchOutcome { .. }
-            | Activity::Move { .. } => Self::Other,
+            Activity::Move { status, .. } => Self::Move { status: *status },
+            Activity::Status { .. } | Activity::Error { .. } | Activity::WatchOutcome { .. } => {
+                Self::Other
+            }
         }
     }
 }
@@ -1766,6 +1847,7 @@ mod tests {
             title: String::new(),
             icon: None,
             session: Session {
+                pending_move: None,
                 checkout: None,
                 context_fill: None,
                 id: session_id,

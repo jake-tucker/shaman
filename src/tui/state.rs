@@ -3100,12 +3100,30 @@ impl TuiState {
                     .iter()
                     .any(|change| matches!(change, SessionChange::Moved { .. }))
                     .then(|| session.snapshot().session.workspace.id.clone());
+                // A Move that could not apply when its Turn settled is told to
+                // whoever is viewing the Session, beside the row recording it.
+                let move_failure = update.changes.iter().find_map(|change| match change {
+                    SessionChange::MoveSettled {
+                        status: crate::protocol::ActivityStatus::Failed,
+                        to,
+                        error,
+                        ..
+                    } => Some(format!(
+                        "The Move to {} failed: {}",
+                        super::sidebar::workspace_name(&to.execution_directory.path),
+                        error.as_deref().unwrap_or("Suru could not apply it")
+                    )),
+                    _ => None,
+                });
                 if !session.apply(update)? {
                     return Ok(false);
                 }
                 if let Some(left) = left {
                     self.sync_composer_completion();
                     self.follow_move(&left);
+                }
+                if move_failure.is_some() {
+                    self.submission_error = move_failure;
                 }
             }
         }
@@ -4710,6 +4728,7 @@ impl TuiState {
             title: provisional.prompt.text.trim().to_owned(),
             icon: None,
             session: crate::protocol::Session {
+                pending_move: None,
                 context_fill: None,
                 id: provisional.session_id,
                 workspace: self.workspace.clone(),
@@ -6701,9 +6720,31 @@ impl Application {
             }
             // A Move that stands reaches this Client on the Session's own
             // stream, as it reaches every other, so its answer adds nothing.
-            ApplicationEvent::SessionMoved { outcome, .. } => match outcome {
-                crate::protocol::MoveOutcome::Moved { .. } => Ok(ApplicationTransition::Continue),
-            },
+            ApplicationEvent::SessionMoved { outcome, .. } => {
+                use crate::protocol::MoveOutcome;
+                let acknowledged = match outcome {
+                    MoveOutcome::Moved { .. } => None,
+                    MoveOutcome::AlreadyThere { .. } => {
+                        Some("The Session already works there.".to_owned())
+                    }
+                    MoveOutcome::PendingCancelled { .. } => Some(
+                        "The pending Move is cancelled, and the Session stays where it works."
+                            .to_owned(),
+                    ),
+                    MoveOutcome::Pending { session } => {
+                        session.session.pending_move.map(|pending| {
+                            format!(
+                                "The Session Moves to {} once its Turn settles.",
+                                super::sidebar::workspace_name(&pending.destination.path)
+                            )
+                        })
+                    }
+                };
+                if acknowledged.is_some() {
+                    self.state.submission_error = acknowledged;
+                }
+                Ok(ApplicationTransition::Continue)
+            }
             ApplicationEvent::TitleProposalOffered { opening, offered } => {
                 self.state.rename_dialog.offer_answered(opening, offered);
                 Ok(ApplicationTransition::Continue)
@@ -7050,41 +7091,33 @@ impl Application {
                 }
                 match result {
                     Ok(workspace) => {
-                        if surface == WorkspaceResolutionSurface::WorktreeList {
-                            self.state.adopt_context(workspace.clone());
-                            self.state.worktree_picker.load(workspace);
-                            return Ok(ApplicationTransition::Continue);
-                        }
                         // A Worktree chosen outright is where the reader now
                         // stands. Another Workspace leaves the one they were
                         // in to remember where they stood before the claim,
                         // since adopting it lets go of the claim. An Outlook's
                         // answer belongs to a turn that already let go of any
                         // claim before it, so it settles nothing here.
-                        // Following a Move is not the reader choosing where to
-                        // work, so it lets go of no claim nor intent of theirs.
-                        if surface == WorkspaceResolutionSurface::Move {
-                            self.state.stand_in(workspace);
-                            return Ok(ApplicationTransition::Continue);
-                        }
                         match surface {
+                            WorkspaceResolutionSurface::WorktreeList => {
+                                self.state.adopt_context(workspace.clone());
+                                self.state.worktree_picker.load(workspace);
+                                Ok(ApplicationTransition::Continue)
+                            }
+                            // Following a Move is not the reader choosing
+                            // where to work, so it lets go of no claim nor
+                            // intent of theirs.
+                            WorkspaceResolutionSurface::Move => {
+                                self.state.stand_in(workspace);
+                                Ok(ApplicationTransition::Continue)
+                            }
                             WorkspaceResolutionSurface::WorktreeSelection => {
                                 self.state.landing_return = None;
-                            }
-                            WorkspaceResolutionSurface::Outlook => {}
-                            _ => self.state.return_landing(),
-                        }
-                        self.state.adopt_context(workspace.clone());
-                        match surface {
-                            WorkspaceResolutionSurface::WorktreeList
-                            | WorkspaceResolutionSurface::Move => {
-                                unreachable!("handled above")
-                            }
-                            WorkspaceResolutionSurface::WorktreeSelection => {
+                                self.state.adopt_context(workspace);
                                 self.state.worktree_picker.close();
                                 Ok(ApplicationTransition::Continue)
                             }
                             WorkspaceResolutionSurface::Outlook => {
+                                self.state.adopt_context(workspace);
                                 self.state.sidebar.refresh_after_outlook_workspace();
                                 Ok(self.take_session_listing_transition())
                             }
@@ -7093,13 +7126,19 @@ impl Application {
                             // rest beneath whatever they have begun writing
                             // rather than opening a fresh one over it.
                             WorkspaceResolutionSurface::WorkspacePicker => {
+                                self.state.return_landing();
+                                self.state.adopt_context(workspace);
                                 self.state.chosen_workspace = None;
                                 // Nor is the Landing still waiting, whatever
                                 // it told a reader who pressed Enter meanwhile.
                                 self.state.submission_error = None;
                                 Ok(ApplicationTransition::Continue)
                             }
-                            WorkspaceResolutionSurface::Sidekick => Ok(self.open_landing()),
+                            WorkspaceResolutionSurface::Sidekick => {
+                                self.state.return_landing();
+                                self.state.adopt_context(workspace);
+                                Ok(self.open_landing())
+                            }
                         }
                     }
                     Err(error) => {

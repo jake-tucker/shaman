@@ -124,6 +124,7 @@ fn child_with_working_subagent(
         title: String::new(),
         icon: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: child_id,

@@ -3,6 +3,11 @@
 //! stay, every Client viewing it or its listings sees where it went, and its
 //! Provider follows at the next Turn by resuming the conversation there.
 //!
+//! A Move asked while the Session's own Turn runs is pending until that Turn
+//! settles, however it does, and through a restart; what stands in the
+//! Transcript, the listing and the Agent's input around it is tested from here
+//! too, and what a crash leaves of it in the store's own tests.
+//!
 //! The Agent's note is tested ahead of a Prompt here and ahead of a held Report
 //! in the broker's Report tests. Neither a Watch Outcome nor a Continuation a
 //! Report wakes can be the first input after a Move: the Move ends the Provider
@@ -76,7 +81,17 @@ fn to(path: impl Into<PathBuf>) -> MoveSessionRequest {
 }
 
 fn moved(outcome: MoveOutcome) -> SessionSummary {
-    let MoveOutcome::Moved { session } = outcome;
+    let MoveOutcome::Moved { session } = outcome else {
+        panic!("the Move applies at once, not {outcome:?}");
+    };
+    session
+}
+
+/// The Session a Move left pending, as the answer to it reads.
+fn pending(outcome: MoveOutcome) -> SessionSummary {
+    let MoveOutcome::Pending { session } = outcome else {
+        panic!("the Move waits for the Turn to settle, not {outcome:?}");
+    };
     session
 }
 
@@ -192,6 +207,39 @@ impl IdleSession {
             .map(moved)
     }
 
+    async fn ask_move(&self, path: impl Into<PathBuf>) -> anyhow::Result<MoveOutcome> {
+        self.client.move_session(self.session_id, &to(path)).await
+    }
+
+    /// A Turn begun by `text`, reaching the Provider over the connection
+    /// still running: what a Move then asked of the Session waits for.
+    async fn working(&mut self, text: &str) -> crate::support::provider::TurnStart {
+        self.admit(text).await;
+        timeout(PROGRESS_DEADLINE, self.provider_session.next_turn())
+            .await
+            .expect("the Turn reaches its Provider")
+    }
+
+    /// The Session as the listing of Sessions has it.
+    async fn listed(&self) -> SessionSummary {
+        let sessions = self
+            .client
+            .list_sessions(None)
+            .await
+            .expect("list the Sessions");
+        sessions
+            .into_iter()
+            .find_map(|item| match item {
+                suru::protocol::SessionListItem::Readable(summary)
+                    if summary.session.id == self.session_id =>
+                {
+                    Some(*summary)
+                }
+                _ => None,
+            })
+            .expect("the Session is listed")
+    }
+
     async fn read(&self) -> SessionSnapshot {
         self.client
             .read_session(self.session_id)
@@ -253,7 +301,13 @@ impl IdleSession {
         drop(client);
         server.shutdown().await.expect("shut down server");
         let server = spawn(state_dir.path(), home.path(), channel, &runtime).await;
-        let client = connected_client(state_dir.path(), channel).await;
+        // Connected, with no reading of what it first hears, since a Move this
+        // start settles may speak among it.
+        let client = ManagedClient::connect(
+            ManagedClientConfig::new(state_dir.path(), channel).expect("configure"),
+        )
+        .await
+        .expect("connect client");
         Self {
             state_dir,
             home,
@@ -729,10 +783,13 @@ async fn a_move_to_where_the_session_works_changes_nothing() {
     let mut fixture = IdleSession::begin("move-in-place-test", "origin").await;
     let before = fixture.read().await;
 
-    let summary = fixture
-        .move_to(".")
+    let MoveOutcome::AlreadyThere { session: summary } = fixture
+        .ask_move(".")
         .await
-        .expect("a Move to where the Session works is taken");
+        .expect("a Move to where the Session works is taken")
+    else {
+        panic!("the answer says the Session already works there");
+    };
 
     assert_eq!(summary.session.execution_directory.path, fixture.origin);
     assert_eq!(
@@ -1084,31 +1141,6 @@ async fn offer_catalog_from_server(
     application
         .handle_event(ApplicationEvent::SkillsListed { request, catalog })
         .expect("take the Skill Catalog");
-}
-
-#[tokio::test]
-async fn a_working_session_is_refused_in_words_that_say_why() {
-    let mut fixture = IdleSession::begin("move-working-test", "origin").await;
-    let destination = fixture.directory("destination");
-    fixture.admit("Keep working").await;
-    let turn = timeout(PROGRESS_DEADLINE, fixture.provider_session.next_turn())
-        .await
-        .expect("the Turn reaches its Provider");
-
-    let error = fixture
-        .move_to(&destination)
-        .await
-        .expect_err("a Working Session is refused");
-
-    let refused = refusal(&error);
-    assert_eq!(refused.code, SessionErrorCode::WorkingSession);
-    assert!(refused.message.contains("Working"), "{}", refused.message);
-    assert_eq!(
-        fixture.read().await.session.execution_directory.path,
-        fixture.origin
-    );
-    turn.succeed();
-    fixture.shutdown().await;
 }
 
 #[tokio::test]
@@ -1492,5 +1524,637 @@ async fn a_move_back_to_where_the_agent_last_worked_owes_it_no_note() {
         "the Agent works where it last worked, so nothing is news to it"
     );
     assert_eq!(moves_recorded(&fixture.read().await).len(), 2);
+    fixture.shutdown().await;
+}
+
+/// Each Move a Session's Transcript records, oldest first, as it stands now
+/// and in the words it gave where it did not apply.
+fn move_records(snapshot: &SessionSnapshot) -> Vec<(ActivityStatus, PathBuf, Option<String>)> {
+    snapshot
+        .activities
+        .iter()
+        .filter_map(|activity| match activity {
+            Activity::Move {
+                status, to, error, ..
+            } => Some((*status, to.execution_directory.path.clone(), error.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The directory the Move pending for `snapshot`'s Session will take it to.
+fn bound_for(snapshot: &SessionSnapshot) -> Option<PathBuf> {
+    snapshot
+        .session
+        .pending_move
+        .as_ref()
+        .map(|pending| pending.destination.path.clone())
+}
+
+fn stands_idle(snapshot: &SessionSnapshot) -> bool {
+    snapshot.session.pending_move.is_none() && snapshot.session.working_since.is_none()
+}
+
+#[tokio::test]
+async fn a_move_of_a_working_session_waits_for_its_turn_and_applies_as_it_settles() {
+    let mut fixture = IdleSession::begin("move-pending-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let (_observer, mut stream) = following(&fixture).await;
+    let turn = fixture.working("Keep working").await;
+
+    let answered = pending(
+        fixture
+            .ask_move(&destination)
+            .await
+            .expect("a Move of a Working Session is taken"),
+    );
+
+    assert_eq!(answered.session.execution_directory.path, fixture.origin);
+    assert_eq!(
+        answered
+            .session
+            .pending_move
+            .as_ref()
+            .map(|pending| pending.destination.path.clone()),
+        Some(destination.clone()),
+        "its answer names where it is bound"
+    );
+    let waiting = fixture.read().await;
+    assert_eq!(waiting.session.execution_directory.path, fixture.origin);
+    assert_eq!(bound_for(&waiting), Some(destination.clone()));
+    assert_eq!(
+        move_records(&waiting),
+        [(ActivityStatus::Active, destination.clone(), None)],
+        "its row stands Active while it waits"
+    );
+    assert_eq!(
+        fixture
+            .listed()
+            .await
+            .session
+            .pending_move
+            .map(|pending| pending.destination.path),
+        Some(destination.clone()),
+        "and the listing names where it is bound"
+    );
+    assert!(
+        !fixture.provider_session.was_shut_down(),
+        "the Turn at work keeps the process it began over"
+    );
+
+    turn.succeed();
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    let settled = fixture
+        .session_where("the Move applies as the Turn settles", |snapshot| {
+            snapshot.session.execution_directory.path == destination
+        })
+        .await;
+
+    assert_eq!(bound_for(&settled), None);
+    assert_eq!(
+        moves_recorded(&settled),
+        [applied(
+            location(&fixture.origin, None),
+            location(&destination, None)
+        )],
+        "the one row settles, naming both ends"
+    );
+    assert_eq!(fixture.listed().await.session.pending_move, None);
+    let SessionChange::Moved {
+        execution_directory: heard,
+        ..
+    } = next_move_heard(&mut stream).await
+    else {
+        panic!("only a Move is heard here");
+    };
+    assert_eq!(heard.path, destination, "a second Client hears it");
+    timeout(PROGRESS_DEADLINE, fixture.provider_session.next_shutdown())
+        .await
+        .expect("the process in the directory it left stops");
+
+    let turn = fixture.next_turn_begun_by("Carry on").await;
+    assert_eq!(
+        turn.reports(),
+        [note(&fixture.origin, &destination)],
+        "its Agent is told at the next Turn, and only now"
+    );
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn interrupting_a_session_applies_its_pending_move_as_the_turn_settles() {
+    let mut fixture = IdleSession::begin("move-interrupt-test", "origin").await;
+    let destination = fixture.directory("destination");
+    fixture.working("Keep working").await.succeed();
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+
+    let (acknowledged, ()) = tokio::join!(
+        fixture.client.interrupt_session(fixture.session_id),
+        async {
+            timeout(PROGRESS_DEADLINE, fixture.provider_session.next_interrupt())
+                .await
+                .expect("the interrupt reaches the Provider")
+                .succeed();
+        }
+    );
+    acknowledged.expect("the Provider stops the Turn");
+    fixture
+        .provider_session
+        .emit(ProviderEvent::TurnInterrupted);
+
+    let settled = fixture
+        .session_where("the interrupted Turn lets the Move apply", |snapshot| {
+            snapshot.session.execution_directory.path == destination
+        })
+        .await;
+    assert_eq!(
+        moves_recorded(&settled),
+        [applied(
+            location(&fixture.origin, None),
+            location(&destination, None)
+        )]
+    );
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_newer_move_replaces_a_pending_one_and_a_move_to_the_same_destination_is_that_one() {
+    let mut fixture = IdleSession::begin("move-replace-test", "origin").await;
+    let first = fixture.directory("first");
+    let second = fixture.directory("second");
+    let turn = fixture.working("Keep working").await;
+    pending(fixture.ask_move(&first).await.expect("take the Move"));
+
+    let answered = pending(
+        fixture
+            .ask_move(&second)
+            .await
+            .expect("take the newer Move"),
+    );
+    assert_eq!(
+        answered
+            .session
+            .pending_move
+            .map(|pending| pending.destination.path),
+        Some(second.clone())
+    );
+    let replaced = format!("a Move to {} replaced it", second.display());
+    assert_eq!(
+        move_records(&fixture.read().await),
+        [
+            (
+                ActivityStatus::Interrupted,
+                first.clone(),
+                Some(replaced.clone())
+            ),
+            (ActivityStatus::Active, second.clone(), None),
+        ],
+        "the older row settles saying why, and the newer stands Active"
+    );
+
+    pending(
+        fixture
+            .ask_move(&second)
+            .await
+            .expect("take the same Move again"),
+    );
+    assert_eq!(
+        move_records(&fixture.read().await).len(),
+        2,
+        "the destination it is already bound for adds nothing"
+    );
+
+    turn.succeed();
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    let settled = fixture
+        .session_where("the newer Move applies", |snapshot| {
+            snapshot.session.execution_directory.path == second
+        })
+        .await;
+    assert_eq!(
+        move_records(&settled),
+        [
+            (ActivityStatus::Interrupted, first, Some(replaced)),
+            (ActivityStatus::Completed, second, None),
+        ]
+    );
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_move_to_where_the_session_works_cancels_a_pending_one() {
+    let mut fixture = IdleSession::begin("move-cancel-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let turn = fixture.working("Keep working").await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+
+    let cancelled = fixture
+        .ask_move(&fixture.origin.clone())
+        .await
+        .expect("a Move to where the Session works is taken");
+
+    let MoveOutcome::PendingCancelled { session } = cancelled else {
+        panic!("the answer says the pending Move is cancelled, not {cancelled:?}");
+    };
+    assert_eq!(session.session.pending_move, None);
+    assert_eq!(fixture.listed().await.session.pending_move, None);
+    assert_eq!(
+        move_records(&fixture.read().await),
+        [(
+            ActivityStatus::Interrupted,
+            destination,
+            Some("a Move to where the Session works cancelled it".to_owned())
+        )]
+    );
+
+    turn.succeed();
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    fixture.session_where("the Turn settles", stands_idle).await;
+    assert_eq!(
+        fixture.read().await.session.execution_directory.path,
+        fixture.origin,
+        "the Session stays where it works"
+    );
+    let turn = timeout(PROGRESS_DEADLINE, async {
+        fixture.admit("Carry on").await;
+        fixture.provider_session.next_turn().await
+    })
+    .await
+    .expect("the next Turn reaches the Provider still running");
+    assert_eq!(turn.reports(), [], "and its Agent is told of no Move");
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_pending_moves_destination_gone_at_settlement_fails_it_and_the_session_stays() {
+    let mut fixture = IdleSession::begin("move-gone-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let turn = fixture.working("Keep working").await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+    std::fs::remove_dir_all(&destination).expect("take the destination away");
+
+    turn.succeed();
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    let settled = fixture
+        .session_where("the Move fails as the Turn settles", stands_idle)
+        .await;
+
+    assert_eq!(settled.session.execution_directory.path, fixture.origin);
+    let records = move_records(&settled);
+    let [(ActivityStatus::Failed, to, Some(reason))] = records.as_slice() else {
+        panic!("the row settles failed with a reason: {records:?}");
+    };
+    assert_eq!(*to, destination);
+    assert!(
+        reason.contains("so the Session stays where it is"),
+        "{reason}"
+    );
+    assert!(
+        !fixture.provider_session.was_shut_down(),
+        "the Session's process stays with the Session"
+    );
+    let turn = timeout(PROGRESS_DEADLINE, async {
+        fixture.admit("Carry on").await;
+        fixture.provider_session.next_turn().await
+    })
+    .await
+    .expect("the next Turn reaches the Provider still running");
+    assert_eq!(turn.reports(), [], "a failed Move owes its Agent nothing");
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_pending_move_outlives_a_restart_and_applies_as_the_stopped_turn_settles() {
+    let mut fixture = IdleSession::begin("move-restart-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let _turn = fixture.working("Keep working").await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+
+    let mut fixture = fixture.restarted().await;
+
+    // No later settling comes, nor does anything read the Session: the Server
+    // settles it as it starts, so the listing reaches where it was sent.
+    timeout(PROGRESS_DEADLINE, async {
+        while fixture.listed().await.session.execution_directory.path != destination {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the pending Move applies once the Server starts");
+    let settled = fixture.read().await;
+    assert!(
+        settled
+            .turns
+            .iter()
+            .all(|turn| turn.status != suru::protocol::TurnStatus::Active),
+        "the Turn the stop left open has settled"
+    );
+    assert_eq!(bound_for(&settled), None);
+    assert_eq!(
+        moves_recorded(&settled),
+        [applied(
+            location(&fixture.origin, None),
+            location(&destination, None)
+        )],
+        "the row the Move stood Active in settled"
+    );
+
+    let turn = fixture.next_turn_begun_by("Carry on").await;
+    assert_eq!(turn.reports(), [note(&fixture.origin, &destination)]);
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_pending_moves_destination_gone_across_a_restart_fails_it() {
+    let mut fixture = IdleSession::begin("move-restart-gone-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let _turn = fixture.working("Keep working").await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+    let fixture = {
+        let fixture = fixture;
+        std::fs::remove_dir_all(&destination).expect("take the destination away");
+        fixture.restarted().await
+    };
+
+    let settled = fixture
+        .session_where("the Move fails once the Server starts", |snapshot| {
+            snapshot.session.pending_move.is_none()
+        })
+        .await;
+
+    assert_eq!(settled.session.execution_directory.path, fixture.origin);
+    assert!(
+        matches!(
+            move_records(&settled).as_slice(),
+            [(ActivityStatus::Failed, _, Some(_))]
+        ),
+        "{:?}",
+        move_records(&settled)
+    );
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_prompt_queued_behind_a_pending_move_begins_in_the_destination() {
+    let mut fixture = IdleSession::begin("move-queued-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let turn = fixture.working("Keep working").await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+    fixture.admit("And then this").await;
+
+    turn.succeed();
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+
+    let start = timeout(PROGRESS_DEADLINE, fixture.provider.next_start())
+        .await
+        .expect("the queued Prompt starts the Provider again");
+    assert_eq!(
+        start.execution_directory(),
+        destination,
+        "the next Turn runs where the Session was sent, never where it was"
+    );
+    assert_eq!(
+        start.resume_state(),
+        Some(&resume_state()),
+        "resuming the conversation"
+    );
+    fixture.provider_session = start.succeed(identity());
+    let turn = timeout(PROGRESS_DEADLINE, fixture.provider_session.next_turn())
+        .await
+        .expect("the queued Prompt reaches the Provider");
+    assert_eq!(turn.prompt(), "And then this");
+    assert_eq!(turn.reports(), [note(&fixture.origin, &destination)]);
+    fixture.shutdown().await;
+}
+
+/// The Skill `name` offered in `directory` under an identity of `id`.
+fn offer_skill_in(fixture: &IdleSession, directory: &Path, skills: Vec<SkillDescriptor>) {
+    fixture.runtime.offer_skills_in(SkillCatalog {
+        provider: ProviderId::new(PROVIDER),
+        execution_directory: ExecutionDirectory {
+            path: directory.to_owned(),
+        },
+        skills,
+        capabilities: SkillCatalogCapabilities {
+            max_distinct_invocations: None,
+            supported_deliveries: vec![SkillPromptDelivery::Initial, SkillPromptDelivery::Queue],
+        },
+        status: SkillCatalogStatus::Fresh { warning: None },
+    });
+}
+
+fn deploy_skill(id: &str) -> SkillDescriptor {
+    SkillDescriptor {
+        id: SkillId::new(id),
+        name: "deploy".to_owned(),
+        description: "Deploy the work".to_owned(),
+        scope: Some("Workspace".to_owned()),
+    }
+}
+
+fn invoking(skill: &SkillDescriptor) -> AdmitPromptRequest {
+    AdmitPromptRequest {
+        prompt: InitialPrompt {
+            id: PromptId::new(),
+            text: "$deploy".to_owned(),
+            skill_invocations: vec![SkillInvocation {
+                skill_id: skill.id.clone(),
+                name: skill.name.clone(),
+                scope: skill.scope.clone(),
+                span: TextSpan { start: 0, end: 7 },
+            }],
+            attachments: Vec::new(),
+        },
+        delivery: PromptDelivery::Queue,
+    }
+}
+
+#[tokio::test]
+async fn a_queued_prompts_skill_follows_a_pending_move_to_the_destinations_skill() {
+    let mut fixture = IdleSession::begin("move-queued-skill-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let at_origin = deploy_skill("origin-deploy");
+    let at_destination = deploy_skill("destination-deploy");
+    offer_skill_in(&fixture, &fixture.origin.clone(), vec![at_origin.clone()]);
+    offer_skill_in(&fixture, &destination, vec![at_destination.clone()]);
+    let turn = fixture.working("Keep working").await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+    fixture
+        .client
+        .admit_prompt(fixture.session_id, invoking(&at_origin))
+        .await
+        .expect("queue a Prompt bound where the Session still works");
+
+    turn.succeed();
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+
+    let start = timeout(PROGRESS_DEADLINE, fixture.provider.next_start())
+        .await
+        .expect("the queued Prompt starts the Provider again");
+    fixture.provider_session = start.succeed(identity());
+    let turn = timeout(PROGRESS_DEADLINE, fixture.provider_session.next_turn())
+        .await
+        .expect("the queued Prompt reaches the Provider");
+    assert_eq!(turn.skill_invocations()[0].skill_id, at_destination.id);
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_queued_prompts_skill_the_destination_lacks_fails_it_naming_the_skill() {
+    let mut fixture = IdleSession::begin("move-queued-skill-gone-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let at_origin = deploy_skill("origin-deploy");
+    offer_skill_in(&fixture, &fixture.origin.clone(), vec![at_origin.clone()]);
+    offer_skill_in(&fixture, &destination, Vec::new());
+    let turn = fixture.working("Keep working").await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+    fixture
+        .client
+        .admit_prompt(fixture.session_id, invoking(&at_origin))
+        .await
+        .expect("queue a Prompt bound where the Session still works");
+
+    turn.succeed();
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+
+    let settled = fixture
+        .session_where("the Prompt fails once the Move applies", |snapshot| {
+            snapshot.session.execution_directory.path == destination
+                && snapshot
+                    .turns
+                    .last()
+                    .is_some_and(|turn| turn.status == suru::protocol::TurnStatus::Failed)
+        })
+        .await;
+    let failure = settled
+        .activities
+        .iter()
+        .rev()
+        .find_map(|activity| match activity {
+            Activity::Error { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .expect("the Prompt's failure stands in the Transcript");
+    assert!(failure.contains("deploy"), "it names the Skill: {failure}");
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_monitoring_session_at_settlement_applies_its_pending_move_rather_than_waiting() {
+    let mut fixture = IdleSession::begin("move-monitoring-settle-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let turn = fixture.working("Start a Watch").await;
+    turn.succeed();
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::WatchStarted {
+            watch_id: ProviderWatchId::new("task-tests"),
+            description: "cargo test".to_owned(),
+        })
+        .await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+
+    let settled = fixture
+        .session_where("the Move applies, with a Watch standing", |snapshot| {
+            snapshot.session.execution_directory.path == destination
+        })
+        .await;
+    assert_eq!(bound_for(&settled), None);
+    timeout(PROGRESS_DEADLINE, fixture.provider_session.next_shutdown())
+        .await
+        .expect("the Provider process its Watch ran in stops with the Move");
+    fixture
+        .session_where("the Watch is lost with its process", |snapshot| {
+            snapshot.session.monitoring_since.is_none()
+        })
+        .await;
+    fixture.shutdown().await;
+}
+
+/// A Subagent still working past its parent's Turn holds no Move: its parent
+/// settled, and a native Subagent's work ends with the process it rides, in
+/// words that say its parent Moved, while its Session stays where it was.
+#[tokio::test]
+async fn a_subagent_still_working_holds_no_move_of_its_parent() {
+    let mut fixture = IdleSession::begin("move-subagent-settle-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let turn = fixture.working("Delegate the mapping").await;
+    turn.succeed();
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::SubagentStarted {
+            subagent_id: ProviderSubagentId::new("task-1"),
+            name: "Explore".to_owned(),
+            description: "Map the provider seams".to_owned(),
+            delegation: None,
+        })
+        .await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+
+    let settled = fixture
+        .session_where("the Move applies as the Turn settles", |snapshot| {
+            snapshot.session.execution_directory.path == destination
+        })
+        .await;
+    let child = settled
+        .activities
+        .iter()
+        .find_map(|activity| match activity {
+            Activity::Subagent { session_id, .. } => Some(*session_id),
+            _ => None,
+        })
+        .expect("a Subagent row");
+    timeout(PROGRESS_DEADLINE, async {
+        loop {
+            let snapshot = fixture
+                .client
+                .read_session(child)
+                .await
+                .expect("read the Subagent's Session");
+            if snapshot.session.working_since.is_none() {
+                assert_eq!(snapshot.session.execution_directory.path, fixture.origin);
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the Subagent's work ends with the process it rode");
+
+    // Asked now of the parent with nothing of its own at work, a Move does not
+    // wait on anything.
+    let back = fixture.directory("back");
+    moved(fixture.ask_move(&back).await.expect("Move at once"));
     fixture.shutdown().await;
 }

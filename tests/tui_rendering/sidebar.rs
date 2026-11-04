@@ -7446,6 +7446,53 @@ fn esc_closes_the_selector_before_it_gives_up_the_query() {
 
 /// The selector answers a pointer as readily as the keys: one press opens the
 /// entries, and a press on one of them chooses it.
+/// A Move within the Workspace the column is narrowed to changes nothing the
+/// reader chose, a selector they have open included.
+#[test]
+fn a_move_within_the_narrowed_workspace_leaves_an_open_selector_open() {
+    let workspace = workspace_dir();
+    let mut application = connected_application(workspace.path());
+    let (session_id, snapshot) = enter_session(&mut application, workspace.path());
+    let request = expect_sidebar_listing(deliver_settings(
+        &mut application,
+        suru::protocol::EffectiveSettings {
+            sidebar: suru::protocol::SidebarSettings {
+                initial_visibility: SidebarVisibility::Shown,
+                initial_scope: suru::protocol::SidebarScope::CurrentWorkspace,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    ));
+    application
+        .handle_event(ApplicationEvent::SessionsListed {
+            request,
+            sessions: vec![listed("The work", workspace.path(), 1, now())],
+        })
+        .expect("hydrate the Sidebar");
+    press_line(&mut application, MouseButton::Left, "▸ ");
+    let opened = selector_entries(&application);
+    assert!(!opened.is_empty(), "the entries stand open");
+
+    application
+        .handle_event(ApplicationEvent::Session(
+            suru::managed_client::SessionEvent::Updated(suru::protocol::SessionUpdate {
+                session_id,
+                revision: suru::protocol::SessionRevision(snapshot.revision.0 + 1),
+                changes: vec![SessionChange::Moved {
+                    execution_directory: suru::protocol::ExecutionDirectory {
+                        path: workspace.path().join("nested"),
+                    },
+                    workspace: snapshot.session.workspace.clone(),
+                    checkout: None,
+                }],
+            }),
+        ))
+        .expect("hear the Session Move");
+
+    assert_eq!(selector_entries(&application), opened);
+}
+
 #[test]
 fn a_press_on_the_selector_opens_it_and_a_press_on_an_entry_chooses_it() {
     let workspace = workspace_dir();

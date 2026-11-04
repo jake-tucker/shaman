@@ -727,6 +727,7 @@ async fn run_loop(
     let mut clipboard = clipboard_thread::ClipboardThread::new(native_clipboard);
     let mut delivery = ClipboardDelivery::default();
     loop {
+        run.sync_move_follow();
         run.sync_skill_catalog();
         run.sync_title_proposal();
         run.sync_subagent_tree();
@@ -2055,6 +2056,17 @@ impl RunLoop {
         ControlFlow::Continue(())
     }
 
+    /// Takes the Client's current Workspace along with a Move the open Session
+    /// has been heard to make, however it was heard: on its stream, in a
+    /// snapshot it was attached or reconciled to, or in a Session just created.
+    /// Called once per loop iteration, so no event can leave one unasked.
+    fn sync_move_follow(&mut self) {
+        let follow = self.application.take_move_follow();
+        if !matches!(follow, ApplicationTransition::Continue) {
+            let _ = self.dispatch_transition(follow);
+        }
+    }
+
     /// Abandons the Title proposal held for the rename dialog once the dialog
     /// no longer waits on it — stopped, closed, or its Session gone — so the
     /// request, and the Errand behind it, never runs on unheard.
@@ -2128,9 +2140,6 @@ impl RunLoop {
                         "an open Session event only continues or reports Viewed: {other:?}"
                     ),
                 }
-                // A Move the event carried takes the current Workspace along.
-                let follow = self.application.take_move_follow();
-                let _ = self.dispatch_transition(follow);
             }
             Some(Err(error)) => {
                 if let Some(event) =
@@ -2616,11 +2625,7 @@ impl RunLoop {
                     self.tasks.adopt(subscription);
                     self.tasks.abort_subscribing();
                 }
-                let flow = self.dispatch_transition(transition);
-                // The Session open again may have Moved while it was not.
-                let follow = self.application.take_move_follow();
-                let _ = self.dispatch_transition(follow);
-                return Ok(flow);
+                return Ok(self.dispatch_transition(transition));
             }
             SessionPickerResult::AttachFailed {
                 reference, error, ..
@@ -6139,6 +6144,7 @@ mod tests {
                     title: String::new(),
                     icon: None,
                     session: Session {
+                        pending_move: None,
                         checkout: None,
                         context_fill: None,
                         id: SessionId::new(),
@@ -7081,6 +7087,7 @@ mod ready_event_tests {
             title: String::new(),
             icon: None,
             session: Session {
+                pending_move: None,
                 checkout: None,
                 context_fill: None,
                 id: SessionId::new(),

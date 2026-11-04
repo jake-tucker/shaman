@@ -75,6 +75,7 @@ fn session_running(commands: &[(&str, ActivityStatus)]) -> (SessionSnapshot, Vec
         title: String::new(),
         icon: None,
         session: Session {
+            pending_move: None,
             checkout: None,
             context_fill: None,
             id: SessionId::new(),

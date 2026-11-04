@@ -621,6 +621,7 @@ fn a_remote_session_row_carries_its_origin_into_its_attach() {
             sessions: vec![SessionListItem::Readable(Box::new(SessionSummary {
                 checkout_state: None,
                 session: Session {
+                    pending_move: None,
                     checkout: None,
                     context_fill: None,
                     id: session_id,
