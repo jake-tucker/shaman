@@ -118,6 +118,7 @@ impl MoveTarget<'_> {
             to,
             error: None,
             new_worktree: self.new_worktree,
+            to_checkout: checkout.map(|entered| entered.id.clone()),
         }
     }
 
@@ -221,7 +222,9 @@ pub(crate) struct MoveAftermath {
 }
 
 impl MoveAftermath {
-    fn abandoning(pending: Option<PendingMove>) -> Self {
+    /// What is left to do of a Move that left the Session where it works, but
+    /// gave up `pending`.
+    fn giving_up(pending: Option<PendingMove>) -> Self {
         Self {
             abandoned: pending.map(|pending| pending.destination),
             ..Self::default()
@@ -329,7 +332,7 @@ impl SessionStore {
                     .map(|session| {
                         (
                             MoveOutcome::PendingCancelled { session },
-                            MoveAftermath::abandoning(pending),
+                            MoveAftermath::giving_up(pending),
                         )
                     })
                     .map_err(MoveSessionError::Storage),
@@ -358,7 +361,7 @@ impl SessionStore {
                 .map(|session| {
                     (
                         MoveOutcome::Pending { session },
-                        MoveAftermath::abandoning(pending),
+                        MoveAftermath::giving_up(pending),
                     )
                 })
                 .map_err(MoveSessionError::Storage);
@@ -390,6 +393,32 @@ impl SessionStore {
         let (session, mut aftermath) = self.dress_after_standing(stood);
         aftermath.abandoned = abandoned;
         Ok((MoveOutcome::Moved { session }, aftermath))
+    }
+
+    /// Whether `session_id` works in the Worktree rooted at `destination`, or
+    /// a Move stands pending to take it there: what a Move's intent found on
+    /// a restart is left for once that Move has landed.
+    pub(crate) fn landed_move_into(
+        &self,
+        session_id: SessionId,
+        destination: &std::path::Path,
+    ) -> bool {
+        self.state
+            .lock()
+            .expect("Session store lock is not poisoned")
+            .sessions
+            .get(&session_id)
+            .is_some_and(|record| {
+                let session = &record.summary.session;
+                session
+                    .checkout
+                    .as_ref()
+                    .is_some_and(|checkout| checkout.root == destination)
+                    || session
+                        .pending_move
+                        .as_ref()
+                        .is_some_and(|pending| pending.destination.path == destination)
+            })
     }
 
     /// Every Session a Move stands pending for, read in or not: what a Server
@@ -617,6 +646,7 @@ impl SessionStore {
         next.pending_move = Some(PendingMove {
             activity_id: activity.id(),
             destination: read.execution_directory.clone(),
+            checkout: read.checkout.as_ref().map(|entered| entered.id.clone()),
         });
         let mut changes = Vec::with_capacity(2);
         let mut landing = LocationLanding::keeping(record.moved_from.clone());
@@ -845,7 +875,7 @@ fn settling_of_pending(
     let Some(pending) = &session.pending_move else {
         return Ok(None);
     };
-    let (from, to, new_worktree) = record
+    let (from, to, new_worktree, to_checkout) = record
         .snapshot
         .activities
         .iter()
@@ -855,8 +885,11 @@ fn settling_of_pending(
                 from,
                 to,
                 new_worktree,
+                to_checkout,
                 ..
-            } if *id == pending.activity_id => Some((from.clone(), to.clone(), *new_worktree)),
+            } if *id == pending.activity_id => {
+                Some((from.clone(), to.clone(), *new_worktree, to_checkout.clone()))
+            }
             _ => None,
         })
         .ok_or_else(|| anyhow::anyhow!("a pending Move's Activity stands in its Transcript"))?;
@@ -871,6 +904,7 @@ fn settling_of_pending(
                 to: to.clone(),
                 error: error.clone(),
                 new_worktree,
+                to_checkout,
             },
         )?,
         change: SessionChange::MoveSettled {

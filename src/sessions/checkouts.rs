@@ -14,6 +14,9 @@ pub(crate) struct CheckoutActivity {
     /// asks only after Working, but Reclaim counts these too: a Watch may be
     /// a process still running in the Worktree, and its Session is not done.
     pub(crate) monitoring: usize,
+    /// Sessions a pending Move has bound for the checkout, wherever they work
+    /// now. Counted among `affected`, and never as Working or Monitoring here.
+    pub(crate) pending_moves: usize,
     pub(crate) latest_updated_at: Option<SessionTimestamp>,
     /// A Session whose history cannot be read still owns its possible
     /// checkout. Automatic removal cannot safely rewrite its recovery facts,
@@ -23,23 +26,25 @@ pub(crate) struct CheckoutActivity {
 
 impl CheckoutActivity {
     /// Whether any Session referencing the checkout is still at work, Working
-    /// or Monitoring, which is what keeps housekeeping away from it.
+    /// or Monitoring, or bound there by a pending Move, which is what keeps
+    /// housekeeping away from it.
     pub(crate) const fn unfinished(&self) -> bool {
-        self.working != 0 || self.monitoring != 0
+        self.working != 0 || self.monitoring != 0 || self.pending_moves != 0
+    }
+
+    /// Whether a Session stands in the way of removing the checkout, even
+    /// by force: one Working there, or a pending Move bound there.
+    pub(crate) const fn blocks_removal(&self) -> bool {
+        self.working != 0 || self.pending_moves != 0
     }
 }
 
 impl SessionStore {
-    pub(crate) fn checkout_references(&self, checkout: &CheckoutAssociation) -> (usize, usize) {
-        let activity = self.checkout_activity(checkout);
-        (activity.affected, activity.working)
-    }
-
     /// What references the checkout, and how. A native Subagent's Session
     /// left there by a Move of the Session whose Provider process it rides
     /// references nothing (see [`SessionStoreState::left_behind_in`]). A
-    /// Session a pending Move is bound for the checkout counts as at work
-    /// there, on the Session's own row, so a restart finds the reference with
+    /// pending Move references the one Worktree its destination was read to
+    /// lie in, on the Session's own row, so a restart finds the reference with
     /// the Move: whatever holds that Move may take a long while, and neither
     /// housekeeping nor an explicit removal takes the destination from under
     /// it. Once the Move is replaced, cancelled or failed the reference is
@@ -49,13 +54,14 @@ impl SessionStore {
         let mut affected = 0;
         let mut working = 0;
         let mut monitoring = 0;
+        let mut pending_moves = 0;
         let mut latest_updated_at = None;
         for (session_id, record) in &state.sessions {
             let session = &record.summary.session;
             let bound_for = session
                 .pending_move
                 .as_ref()
-                .is_some_and(|pending| pending.destination.path.starts_with(&checkout.root));
+                .is_some_and(|pending| pending.checkout.as_ref() == Some(&checkout.id));
             let stands_in = session
                 .checkout
                 .as_ref()
@@ -63,8 +69,11 @@ impl SessionStore {
                 && !state.left_behind_in(*session_id, &checkout.id);
             if stands_in || bound_for {
                 affected += 1;
-                working += usize::from(session.working_since.is_some() || bound_for);
-                monitoring += usize::from(session.monitoring_since.is_some());
+                if stands_in {
+                    working += usize::from(session.working_since.is_some());
+                    monitoring += usize::from(session.monitoring_since.is_some());
+                }
+                pending_moves += usize::from(bound_for);
                 latest_updated_at = Some(
                     latest_updated_at
                         .map_or(record.summary.updated_at, |latest: SessionTimestamp| {
@@ -101,6 +110,7 @@ impl SessionStore {
             affected,
             working,
             monitoring,
+            pending_moves,
             latest_updated_at,
             unreadable,
         }
@@ -579,11 +589,13 @@ mod tests {
     }
 
     /// What a restart reads back: the pending Move on the Session's own row,
-    /// with none of its history read yet.
+    /// with none of its history read yet. It holds the Worktree it names, and no
+    /// other: the main Worktree's root contains every Managed Worktree's.
     #[tokio::test]
-    async fn a_session_a_pending_move_is_bound_for_counts_there_as_at_work_across_a_restart() {
+    async fn a_pending_move_references_exactly_the_worktree_it_is_bound_for_across_a_restart() {
         let directory = tempfile::tempdir().unwrap();
-        let there = worktree(&directory.path().join("there"));
+        let main = worktree(&directory.path().join("main"));
+        let there = worktree(&main.root.join(MANAGED_WORKTREE_DIRECTORY).join("there"));
         let elsewhere = worktree(&directory.path().join("elsewhere"));
         let mut bound = standing_in(persisted(directory.path(), None), Some(&elsewhere));
         let pending = PendingMove {
@@ -591,14 +603,22 @@ mod tests {
             destination: ExecutionDirectory {
                 path: there.root.join("beneath"),
             },
+            checkout: Some(there.id.clone()),
         };
         bound.summary.session.pending_move = Some(pending.clone());
         bound.snapshot.session.pending_move = Some(pending);
 
         let (activity, store, writer) = references(directory.path(), vec![bound], &there).await;
 
-        assert_eq!((activity.affected, activity.working), (1, 1));
-        assert!(activity.unfinished());
+        assert_eq!(
+            (activity.affected, activity.working, activity.pending_moves),
+            (1, 0, 1),
+            "it stands as bound there, not as Working there"
+        );
+        assert!(activity.unfinished() && activity.blocks_removal());
+        let containing = store.checkout_activity(&main);
+        assert_eq!(containing.affected, 0, "the main Worktree is not counted");
+        assert!(!containing.unfinished());
         let left = store.checkout_activity(&elsewhere);
         assert_eq!(
             (left.affected, left.working),

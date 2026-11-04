@@ -71,6 +71,10 @@ pub enum PreparationCheckpoint {
     IntentRetired,
 }
 
+/// What is said of a new Worktree asked of a directory in no Repository.
+pub(crate) const NOT_IN_A_REPOSITORY: &str =
+    "A new Worktree can only be made in a Repository, and this directory is not in one";
+
 /// The branch a fresh Managed Worktree preparation created, named for the
 /// Worktree it belongs to: what a Title derivation may propose a better name
 /// for. Only a Session admitted from that preparation carries one.
@@ -734,7 +738,8 @@ impl SourceControlService {
     /// Managed Worktree's name is, and started from the commit `source` stands
     /// at, which the plan captures with the branch naming it under the
     /// Repository's mutation guard, answered with the plan. The plan intends a
-    /// Session of its own until it is told otherwise.
+    /// Session to begin there, under an identity of its own, until it is told
+    /// otherwise.
     pub(crate) async fn plan_worktree(
         &self,
         id: crate::protocol::PreparationId,
@@ -750,9 +755,11 @@ impl SourceControlService {
     > {
         let name = naming::name_fragment(naming_text);
         let source = self.resolve(source_directory, None).await;
-        let repository = source.workspace.repository.as_ref().ok_or(
-            "A new Worktree can only be made in a Repository, and this directory is not in one",
-        )?;
+        let repository = source
+            .workspace
+            .repository
+            .as_ref()
+            .ok_or(NOT_IN_A_REPOSITORY)?;
         let guard = self.mutation_guard(&repository.id).await;
         let current = self
             .resolve(source_directory, Some(&source.workspace))

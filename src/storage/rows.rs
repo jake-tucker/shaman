@@ -1560,6 +1560,8 @@ enum StoredActivityPayload<'a> {
         error: Option<Cow<'a, str>>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         new_worktree: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to_checkout: Option<Cow<'a, crate::protocol::CheckoutId>>,
     },
 }
 
@@ -1747,6 +1749,7 @@ impl StoredActivityPayload<'_> {
                 to,
                 error,
                 new_worktree,
+                to_checkout,
             } => Activity::Move {
                 id,
                 status,
@@ -1754,6 +1757,7 @@ impl StoredActivityPayload<'_> {
                 to: to.into_owned(),
                 error: owned(error),
                 new_worktree,
+                to_checkout: to_checkout.map(Cow::into_owned),
             },
         })
     }
@@ -1928,6 +1932,7 @@ impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
                 to,
                 error,
                 new_worktree,
+                to_checkout,
                 ..
             } => Self::Move {
                 status: *status,
@@ -1935,6 +1940,7 @@ impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
                 to: Cow::Borrowed(to),
                 error: borrowed(error),
                 new_worktree: *new_worktree,
+                to_checkout: to_checkout.as_ref().map(Cow::Borrowed),
             },
         }
     }

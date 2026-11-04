@@ -1170,10 +1170,11 @@ async fn a_move_into_a_new_worktree_reclaims_the_one_it_left_without_the_sweep()
     server.shutdown().await.unwrap();
 }
 
-/// The destination of a pending Move is worked in as far as an explicit removal
-/// goes, which would otherwise pull it from under the Move.
+/// An explicit removal would pull a pending Move's destination from under it, so
+/// its preview says the Move is bound there, and removal is refused in those
+/// words: the Session works elsewhere, so it does not call it Working there.
 #[tokio::test]
-async fn a_pending_moves_worktree_is_counted_at_work_by_a_removal_preview() {
+async fn a_removal_preview_says_a_pending_move_is_bound_there_and_removal_is_refused() {
     let layout = ReclaimLayout::new("move-pending-removal");
     let (server, mut provider) = spawn_eager(&layout, "move-pending-removal").await;
     let (session_id, _connection, _turn) = working_in(&server, &mut provider, &layout.main).await;
@@ -1212,7 +1213,38 @@ async fn a_pending_moves_worktree_is_counted_at_work_by_a_removal_preview() {
         .await
         .unwrap();
 
-    assert_eq!(preview.working_sessions, 1);
+    assert_eq!(preview.affected_sessions, 1);
+    assert_eq!(preview.working_sessions, 0);
+    assert_eq!(preview.pending_moves, 1);
+
+    let refused: RemoveCheckoutResult = crate::support::loopback_client()
+        .post(format!(
+            "{}/v1/checkouts/remove",
+            server.descriptor().base_url
+        ))
+        .bearer_auth(&server.descriptor().token)
+        .json(&RemoveCheckoutRequest {
+            preview,
+            force: true,
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(!refused.removed);
+    assert!(
+        refused
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("pending Move")),
+        "{:?}",
+        refused.error
+    );
+    assert!(made.is_dir());
     server.shutdown().await.unwrap();
 }
 

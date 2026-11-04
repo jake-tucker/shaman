@@ -873,6 +873,7 @@ impl SessionStore {
                                 to: to.clone(),
                                 error: None,
                                 new_worktree: moved.new_worktree,
+                                to_checkout: checkout.as_ref().map(|entered| entered.id.clone()),
                             },
                         )?);
                         next.pending_move = None;

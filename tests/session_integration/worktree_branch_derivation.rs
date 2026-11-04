@@ -203,6 +203,15 @@ impl SourceControl for WitnessedGit {
     async fn prepare_checkout(&self, plan: &PreparedCheckout) -> Result<ResolvedWorkspace, String> {
         self.git.prepare_checkout(plan).await
     }
+    async fn retire_preparation(
+        &self,
+        preparation: &PreparedCheckout,
+        retire_branch: bool,
+    ) -> Result<CheckoutBranchOutcome, String> {
+        self.git
+            .retire_preparation(preparation, retire_branch)
+            .await
+    }
     async fn recover_checkout(
         &self,
         repository: &Repository,

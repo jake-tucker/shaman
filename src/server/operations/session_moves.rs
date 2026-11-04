@@ -23,11 +23,15 @@
 //! Repository asked for. In any other Repository the Session's commit means
 //! nothing, so the Worktree starts from the commit the directory named stands
 //! at, a bare Repository's root included. Its intent keeps the Worktree from any
-//! orphan check, and leaves a failure and a crash to the rule for failed
-//! preparations: it intends no Session of its own, so no Session's Prompt is
-//! withheld for it. It is marked admitted as the Worktree stands whole, which
-//! leaves only an orphan for a crash to find, and retired once the Move lands,
-//! while both locks are still held. From there the Session's own row references
+//! orphan check, and marks it made for a Move, so no Session is taken to be
+//! beginning there and none has a Prompt withheld for it. A failure that left
+//! something standing is left to the rule for failed preparations, and one that
+//! left nothing retires the intent at once, since no retry could reuse it and it
+//! would only hold the name. It is marked admitted as the Worktree stands whole,
+//! which leaves only an orphan for a crash to find, and retired once the Move
+//! lands, while both locks are still held. A crash in that moment leaves an
+//! intent naming a Move already landed, which the next start retires, so it
+//! holds up neither the branch's Errand nor the name. From there the Session's own row references
 //! the Worktree, as it stands there or as its pending Move is bound there,
 //! however long what holds it runs and through a restart. Both locks are let go
 //! before anything follows the Move, or the orphan check it runs for the
@@ -63,12 +67,12 @@ use tokio::task::JoinSet;
 use super::SessionOperations;
 use crate::protocol::{
     Author, CheckoutSummary, ExecutionDirectory, InitialPrompt, MoveDestination, MoveOutcome,
-    PendingMove, PreparationId, PreparedCheckout, ResolvedWorkspace, Session, SessionId,
-    SourceControlCapability,
+    PendingMove, PreparationId, PreparedCheckout, Repository, ResolvedWorkspace, Session,
+    SessionId, SourceControlCapability,
 };
 use crate::provider::{MoveSettlement, skill_delivery_failure_message};
 use crate::sessions::{MoveAftermath, MoveSessionError, PendingMoveSettled, WaitingPromptBound};
-use crate::source_control::PreparationCheckpoint;
+use crate::source_control::{NOT_IN_A_REPOSITORY, PreparationStore};
 
 /// Why a Move was refused. Each leaves the Session where it was.
 #[derive(Debug)]
@@ -195,9 +199,7 @@ impl SessionOperations {
 
     /// Makes the new Managed Worktree a Move asks for of the Repository
     /// `directory` lies in, and answers it with the locks it was made under
-    /// still held. A failure leaves its intent for the rule for failed
-    /// preparations, which alone knows how to retire whatever part of it was
-    /// made.
+    /// still held.
     async fn make_worktree(
         &self,
         session_id: SessionId,
@@ -209,39 +211,17 @@ impl SessionOperations {
         if self.sidekick_workspace.holds(&named.workspace) {
             return Err(MoveRefusal::SidekickDestination);
         }
-        let repository = named.workspace.repository.as_deref().ok_or_else(|| {
-            MoveRefusal::Destination(format!(
-                "A new Worktree can only be made in a Repository, and {} is not in one",
-                directory.display()
-            ))
-        })?;
+        let repository = named
+            .workspace
+            .repository
+            .as_deref()
+            .ok_or_else(|| MoveRefusal::Destination(NOT_IN_A_REPOSITORY.to_owned()))?;
         if let SourceControlCapability::Unsupported { reason } =
             &repository.capabilities.create_checkout
         {
             return Err(MoveRefusal::Destination(reason.clone()));
         }
-        // The Session's own commit where it works in this Repository, read
-        // with everything else under the lock below, and refused rather than
-        // started from anywhere else where it cannot be read. The commit of any
-        // other Repository's directory is all there is to start from there.
-        let same_repository = session
-            .workspace
-            .repository
-            .as_deref()
-            .is_some_and(|held| held.id == repository.id);
-        let source = if same_repository {
-            readable_directory(session.execution_directory.path.clone())
-                .await
-                .map_err(|_| {
-                    MoveRefusal::Destination(format!(
-                        "The Worktree the Session stands in, {}, cannot be read for the commit a \
-                         new one would start from",
-                        session.execution_directory.path.display()
-                    ))
-                })?
-        } else {
-            directory
-        };
+        let source = new_worktree_source(session, repository, directory).await?;
         let not_made = |error: String| {
             tracing::info!(%session_id, "a Move's new Worktree was not made: {error}");
             MoveRefusal::Destination(format!("No new Worktree could be made: {error}"))
@@ -257,19 +237,19 @@ impl SessionOperations {
             )
             .await
             .map_err(not_made)?;
+        preparation.for_move = true;
         let made = async {
             self.preparations.save(&preparation)?;
-            self.source_control
-                .checkpoint(PreparationCheckpoint::IntentPersisted, &preparation)
-                .await?;
-            self.source_control.prepare_checkout(&preparation).await?;
-            preparation.checkout_created = true;
+            self.create_planned_checkout(&mut preparation).await?;
             preparation.ready = true;
             preparation.admitted_session = Some(session_id);
             self.preparations.save(&preparation)
         }
         .await;
-        made.map_err(not_made)?;
+        if let Err(error) = made {
+            self.retire_where_nothing_was_made(&preparation).await;
+            return Err(not_made(error));
+        }
         tracing::info!(
             %session_id,
             source = %source.display(),
@@ -281,6 +261,31 @@ impl SessionOperations {
             _serial: serial,
             _mutation: mutation,
         })
+    }
+
+    /// Retires the intent of a preparation that failed with nothing standing
+    /// where its Worktree would be, along with any branch it had claimed, so
+    /// the name is free at once: no Move comes back to reuse it. Anything
+    /// standing there is left for the rule for failed preparations, whose
+    /// threshold gives whoever made it time to say. Its caller holds the locks
+    /// preparation holds.
+    async fn retire_where_nothing_was_made(&self, preparation: &PreparedCheckout) {
+        if std::fs::symlink_metadata(&preparation.destination.path).is_ok() {
+            return;
+        }
+        let retired = async {
+            self.source_control
+                .retire_preparation(preparation, true)
+                .await?;
+            self.preparations.retire_and_delete(preparation.id)
+        }
+        .await;
+        if let Err(error) = retired {
+            tracing::warn!(
+                preparation = %preparation.id.0,
+                "A Move's failed Worktree preparation will be retired by Reclaim: {error}"
+            );
+        }
     }
 
     /// Moves the Session into the Worktree made for it, retiring that
@@ -433,7 +438,7 @@ impl SessionOperations {
     /// Runs the orphan check for the Repository of `destination`, which a
     /// pending Move given up was bound for, apart from whoever gave it up.
     /// One no longer in a Repository has nothing to check.
-    async fn check_abandoned_destination(&self, destination: &ExecutionDirectory) {
+    pub(crate) async fn check_abandoned_destination(&self, destination: &ExecutionDirectory) {
         let reading = self
             .source_control
             .read_unremembered(&destination.path)
@@ -554,6 +559,51 @@ impl SessionOperations {
             && let Some(snapshot) = self.sessions.snapshot(session_id)
         {
             self.derivation.derive_moved_branch(&snapshot, created);
+        }
+    }
+}
+
+/// Where a Session's new Worktree in `repository` starts from: the Session's
+/// own directory where it works in that Repository, refused rather than started
+/// from anywhere else where it cannot be read, and otherwise `directory`, since
+/// the Session's commit means nothing in another Repository.
+async fn new_worktree_source(
+    session: &Session,
+    repository: &Repository,
+    directory: PathBuf,
+) -> Result<PathBuf, MoveRefusal> {
+    if !session.stands_in_repository(&repository.id) {
+        return Ok(directory);
+    }
+    readable_directory(session.execution_directory.path.clone())
+        .await
+        .map_err(|_| {
+            MoveRefusal::Destination(format!(
+                "The Worktree the Session stands in, {}, cannot be read for the commit a new one \
+                 would start from",
+                session.execution_directory.path.display()
+            ))
+        })
+}
+
+/// Retires what a crash left of each Move that had already landed: an intent
+/// naming a Worktree its Session stands in, or is bound for, would hold up that
+/// Worktree's branch rename and its name. Read as a Server starts, before any
+/// pending Move settles or any Reclaim looks; an intent whose Move did not land
+/// is left for Reclaim, which finds an orphan.
+pub(crate) fn retire_landed_move_intents(
+    preparations: &PreparationStore,
+    sessions: &crate::sessions::SessionStore,
+) {
+    for (preparation, session) in preparations.admitted_moves() {
+        if !sessions.landed_move_into(session, &preparation.destination.path) {
+            continue;
+        }
+        if let Err(error) = preparations.retire_and_delete(preparation.id) {
+            tracing::warn!(
+                preparation = %preparation.id.0,
+                "A landed Move's Worktree preparation intent could not be retired: {error}"
+            );
         }
     }
 }

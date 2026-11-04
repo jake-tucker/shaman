@@ -105,7 +105,7 @@ A linked Worktree that Suru created for a Session, as it began or by a Move, liv
 _Avoid_: temporary worktree, auto worktree, sandbox
 
 **Reclaimable**:
-A Managed Worktree eligible for Reclaim because no Session, pending Move or unfinished preparation references it, every Session that references it has been inactive past the configured threshold, or its failed preparation is older than that threshold. A native Subagent's Session references a Worktree only through the Session whose Provider process it rides, unless it is itself at work. Working or Monitoring Sessions, a Session a pending Move is bound there, changes Git would need force to discard, initialized submodules, and Git locks Suru did not place make it ineligible.
+A Managed Worktree eligible for Reclaim because no Session, pending Move or unfinished preparation references it, every Session that references it has been inactive past the configured threshold, or its failed preparation is older than that threshold. A native Subagent's Session references a Worktree only through the Session whose Provider process it rides, unless it is itself at work. Working or Monitoring Sessions, a Session whose pending Move is bound there, changes Git would need force to discard, initialized submodules, and Git locks Suru did not place make it ineligible.
 
 **Reclaim**:
 The Server's unattended removal of a Reclaimable Managed Worktree, distinct from explicit removal that the user asks for and confirms. It retains the branch unless fully merged into its recorded base, and leaves affected Sessions' histories and settlement unchanged so their next Prompt can recover the Worktree.

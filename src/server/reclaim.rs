@@ -560,22 +560,26 @@ impl Reclaimer {
             .source_control
             .retire_preparation(preparation, retire_branch)
             .await?;
-        let withheld_prompt = self
-            .sessions
-            .preparation_prompt_first_line(preparation.intended_session)
-            .await?;
-        if let Some(first_line) = &withheld_prompt {
-            tracing::info!(
-                checkout = %checkout.root.display(),
-                preparation = %preparation.id.0,
-                rule = rule.log_name(),
-                prompt_first_line = first_line,
-                "Failed Worktree preparation Prompt withheld by Reclaim"
-            );
+        // A Move's preparation has no Session beginning there to keep a Prompt
+        // back from.
+        if !preparation.for_move {
+            let withheld_prompt = self
+                .sessions
+                .preparation_prompt_first_line(preparation.intended_session)
+                .await?;
+            if let Some(first_line) = &withheld_prompt {
+                tracing::info!(
+                    checkout = %checkout.root.display(),
+                    preparation = %preparation.id.0,
+                    rule = rule.log_name(),
+                    prompt_first_line = first_line,
+                    "Failed Worktree preparation Prompt withheld by Reclaim"
+                );
+            }
+            self.sessions
+                .retire_preparation_prompt(preparation.intended_session)
+                .await?;
         }
-        self.sessions
-            .retire_preparation_prompt(preparation.intended_session)
-            .await?;
         self.preparations.retire(preparation.id)?;
         self.preparations.finish_retirement(preparation.id)?;
         tracing::info!(

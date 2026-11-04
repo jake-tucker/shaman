@@ -262,6 +262,12 @@ pub struct PreparedCheckout {
     pub ready: bool,
     pub intended_session: super::SessionId,
     pub admitted_session: Option<super::SessionId>,
+    /// Whether this was made for a Session already standing to Move into,
+    /// rather than for one to begin. No Session takes `intended_session`
+    /// then, and none has a Prompt waiting on it; `admitted_session` names
+    /// the Session Moving, once the Worktree stands whole.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub for_move: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -343,6 +349,11 @@ pub struct CheckoutRemovalPreview {
     pub branch_outcome: CheckoutBranchOutcome,
     pub affected_sessions: usize,
     pub working_sessions: usize,
+    /// How many of the affected Sessions a pending Move has bound for this
+    /// Worktree, wherever they work now. Each blocks removal as a Session
+    /// Working here does.
+    #[serde(default)]
+    pub pending_moves: usize,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]

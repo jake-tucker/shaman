@@ -471,6 +471,7 @@ fn hear_recorded_move(
                             to: location(destination, to),
                             error: error.map(str::to_owned),
                             new_worktree: false,
+                            to_checkout: None,
                         },
                     },
                 ],
@@ -1570,6 +1571,7 @@ fn hear_move_pending(
                         to: to.clone(),
                         error: None,
                         new_worktree: false,
+                        to_checkout: None,
                     },
                 }],
             },
@@ -1595,6 +1597,7 @@ fn summary_bound_for(
         destination: ExecutionDirectory {
             path: destination.to_owned(),
         },
+        checkout: None,
     });
     summary.session.status = SessionStatus::Active;
     summary.session.working_since = Some(SessionTimestamp(1));
@@ -1695,6 +1698,7 @@ fn the_answer_that_a_move_is_pending_says_nothing_once_it_has_settled() {
         destination: ExecutionDirectory {
             path: directories.beta.clone(),
         },
+        checkout: None,
     });
     application
         .handle_event(ApplicationEvent::SessionMoved {

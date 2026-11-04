@@ -95,7 +95,7 @@ pub(crate) use origins::{
     SilentRemote, WorkspaceListingMoves,
 };
 pub(crate) use remote_entries::RemoteWatches;
-pub(crate) use session_moves::MoveRefusal;
+pub(crate) use session_moves::{MoveRefusal, retire_landed_move_intents};
 #[cfg(test)]
 pub(crate) use settings::ServingNotAdopted;
 pub(crate) use settings::{SettingChanged, SettingsAdoption};
@@ -825,6 +825,24 @@ impl SessionOperations {
         Ok(StoreOutcome::Created(snapshot))
     }
 
+    /// Creates the Worktree `preparation` plans, whose intent is already
+    /// stored, under the locks its caller holds, leaving the caller to store
+    /// what it made of that, and whatever it asks of the Worktree next.
+    async fn create_planned_checkout(
+        &self,
+        preparation: &mut crate::protocol::PreparedCheckout,
+    ) -> Result<crate::protocol::ResolvedWorkspace, String> {
+        self.source_control
+            .checkpoint(
+                crate::source_control::PreparationCheckpoint::IntentPersisted,
+                preparation,
+            )
+            .await?;
+        let resolved = self.source_control.prepare_checkout(preparation).await?;
+        preparation.checkout_created = true;
+        Ok(resolved)
+    }
+
     /// Prepares a new Managed Worktree for a Session about to begin from
     /// `request.source`, answering the preparation and where the Session
     /// would work, or why the Worktree is not ready yet — a failure after the
@@ -928,15 +946,7 @@ impl SessionOperations {
         progress.stage("repository mutation guard acquired");
         let mut location = None;
         let operation = async {
-            self.source_control
-                .checkpoint(
-                    crate::source_control::PreparationCheckpoint::IntentPersisted,
-                    &preparation,
-                )
-                .await?;
-            let resolved = self.source_control.prepare_checkout(&preparation).await?;
-            location = Some(resolved);
-            preparation.checkout_created = true;
+            location = Some(self.create_planned_checkout(&mut preparation).await?);
             self.preparations.save(&preparation)?;
             progress.stage("checkout created");
             progress.stage("checkout ready; refreshing destination Skills");

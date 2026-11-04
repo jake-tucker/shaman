@@ -1283,6 +1283,16 @@ async fn a_sidekicks_session_never_moves_nor_does_any_session_move_into_its_work
         SessionErrorCode::SidekickWorkspaceSession
     );
 
+    let into_new = fixture
+        .client
+        .move_session(fixture.session_id, &into_new_worktree(&sidekick_workspace))
+        .await
+        .expect_err("nor into a new Worktree of it");
+    assert_eq!(
+        refusal(&into_new).code,
+        SessionErrorCode::SidekickWorkspaceSession
+    );
+
     let sidekick = fixture
         .client
         .create_session(CreateSessionRequest {
@@ -2299,6 +2309,125 @@ async fn a_move_asked_with_only_a_native_subagent_working_waits_for_it() {
             snapshot.session.execution_directory.path == destination
         })
         .await;
+    fixture.shutdown().await;
+}
+
+/// A Repository of its own beneath the fixture's home, which is not the one the
+/// Session works in, so nothing but the Move asked names it.
+fn repository_beneath_home(fixture: &IdleSession, name: &str) -> PathBuf {
+    let repository = fixture.directory(name);
+    git(&repository, &["init", "-b", "main"]);
+    git(
+        &repository,
+        &[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "initial",
+        ],
+    );
+    repository
+}
+
+/// A native Subagent at work, and a new Worktree of `repository` a Move then
+/// asked waits for it to settle, answered with that Worktree.
+async fn new_worktree_bound_behind_a_native_subagent(
+    fixture: &mut IdleSession,
+    repository: &Path,
+) -> PathBuf {
+    with_native_subagent(fixture).await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    let outcome = fixture
+        .client
+        .move_session(fixture.session_id, &into_new_worktree(repository))
+        .await
+        .expect("take the Move");
+    pending(outcome)
+        .session
+        .pending_move
+        .expect("the Move stands pending")
+        .destination
+        .path
+}
+
+async fn until_gone(path: &Path) {
+    timeout(PROGRESS_DEADLINE, async {
+        while path.exists() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("{} is Reclaimed", path.display()));
+}
+
+/// Deleting a Session is the most final way of giving up its pending Move. The
+/// only window for it is with nothing Working and a Continuation still owed,
+/// since a Working Session cannot be deleted. The Session here works outside
+/// source control, so only the Move names the Repository to check.
+#[tokio::test]
+async fn deleting_a_session_leaves_the_worktree_its_pending_move_made_to_reclaim() {
+    let mut fixture = IdleSession::begin("move-deleted-pending-test", "origin").await;
+    let repository = repository_beneath_home(&fixture, "repository");
+    let made = new_worktree_bound_behind_a_native_subagent(&mut fixture, &repository).await;
+    assert!(made.is_dir());
+    native_subagent_completes(&fixture).await;
+    fixture
+        .session_where("nothing is left Working", |snapshot| {
+            snapshot.session.pending_move.is_some() && snapshot.session.working_since.is_none()
+        })
+        .await;
+
+    fixture
+        .client
+        .delete_session(fixture.session_id)
+        .await
+        .expect("a Session nothing Working holds may be deleted");
+
+    until_gone(&made).await;
+    fixture.shutdown().await;
+}
+
+/// A Move may wait for days behind a native Subagent, past every threshold,
+/// with its Session not Working where it is bound. Each witness a sweep takes
+/// follows a whole pass over the Repository, so two say one looked at the
+/// pending Move's Worktree start to finish and left it.
+#[tokio::test]
+async fn no_sweep_takes_a_worktree_a_move_waiting_on_a_native_subagent_is_bound_for() {
+    let mut fixture = IdleSession::begin_timed(
+        PROVIDER,
+        "move-pending-native-sweep-test",
+        "origin",
+        ServerTimings::default()
+            .with_worktree_reclaim_startup_delay(Duration::from_millis(1))
+            .with_worktree_reclaim_interval(Duration::from_millis(5))
+            .with_worktree_reclaim_day(Duration::from_millis(1)),
+    )
+    .await;
+    let repository = repository_beneath_home(&fixture, "repository");
+    let made = new_worktree_bound_behind_a_native_subagent(&mut fixture, &repository).await;
+
+    for witness in ["first-witness", "second-witness"] {
+        let witness_path = repository.join(".suru-worktrees").join(witness);
+        git(
+            &repository,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                &format!("suru/{witness}"),
+                witness_path.to_str().unwrap(),
+            ],
+        );
+        until_gone(&witness_path).await;
+    }
+
+    assert!(made.is_dir(), "no rule takes it while the Move is bound");
+    assert_eq!(bound_for(&fixture.read().await), Some(made));
     fixture.shutdown().await;
 }
 

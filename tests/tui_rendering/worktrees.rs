@@ -1646,6 +1646,7 @@ fn prepared(layout: &Layout, request: &PrepareCheckoutRequest) -> PrepareCheckou
             ready: true,
             intended_session: SessionId::new(),
             admitted_session: None,
+            for_move: false,
         },
         location: Some(location),
         error: None,
@@ -2442,6 +2443,7 @@ fn removing_the_original_worktree_from_a_refused_claim_returns_the_landing_to_it
         branch_outcome: CheckoutBranchOutcome::Deleted,
         affected_sessions: 0,
         working_sessions: 0,
+        pending_moves: 0,
     };
     app.handle_event(ApplicationEvent::CheckoutRemoval {
         request_id,
@@ -2707,6 +2709,7 @@ fn a_lost_remote_refuses_a_removal_in_the_selector_and_escape_steps_out() {
                 branch_outcome: CheckoutBranchOutcome::Retained,
                 affected_sessions: 1,
                 working_sessions: 0,
+                pending_moves: 0,
             },
             removed: false,
             error: None,
@@ -2800,6 +2803,7 @@ fn linked_removal_confirmation_warns_counts_cancel_is_read_only_and_force_is_dis
         branch_outcome: CheckoutBranchOutcome::Retained,
         affected_sessions: 3,
         working_sessions: 0,
+        pending_moves: 0,
     };
     app.handle_event(ApplicationEvent::CheckoutRemoval {
         request_id,
@@ -2877,6 +2881,7 @@ fn main_removal_unavailable_and_canceled_preview_response_is_ignored() {
         branch_outcome: CheckoutBranchOutcome::Deleted,
         affected_sessions: 0,
         working_sessions: 0,
+        pending_moves: 0,
     };
     app.handle_event(ApplicationEvent::CheckoutRemoval {
         request_id,
@@ -2888,6 +2893,66 @@ fn main_removal_unavailable_and_canceled_preview_response_is_ignored() {
     })
     .unwrap();
     assert!(!text(&app).contains("affected Sessions"));
+}
+
+/// A pending Move bound for the Worktree blocks its removal, and the preview
+/// says that is what does, rather than calling its Session Working there.
+#[test]
+fn a_removal_preview_names_a_pending_move_bound_there_and_refuses_the_removal() {
+    let layout = Layout::new();
+    let mut app = layout.app();
+    let transition = command(&mut app, SemanticCommandId::WorktreeList);
+    answer(&mut app, transition, layout.context.clone());
+    key(&mut app, KeyCode::Down);
+    key(&mut app, KeyCode::Down);
+    let ApplicationTransition::PreviewCheckoutRemoval { request_id, target } =
+        key(&mut app, KeyCode::Char('d'))
+    else {
+        panic!("preview linked");
+    };
+    app.handle_event(ApplicationEvent::CheckoutRemoval {
+        request_id,
+        result: Ok(RemoveCheckoutResult {
+            preview: CheckoutRemovalPreview {
+                target: *target,
+                inspection: CheckoutRemovalInspection {
+                    checkout: layout.context.checkouts[1].clone(),
+                    tracked: vec![],
+                    untracked: vec![],
+                    ignored: vec![],
+                    lock: None,
+                    initialized_submodules: vec![],
+                },
+                branch_outcome: CheckoutBranchOutcome::Deleted,
+                affected_sessions: 1,
+                working_sessions: 0,
+                pending_moves: 1,
+            },
+            removed: false,
+            error: None,
+        }),
+    })
+    .unwrap();
+
+    let rendered = text(&app);
+    assert!(
+        rendered.contains("1 affected Sessions on this Server · 0 Working"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("A pending Move is bound here"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("A pending Move blocks removal"),
+        "{rendered}"
+    );
+    assert_eq!(
+        key(&mut app, KeyCode::Enter),
+        ApplicationTransition::Continue
+    );
+    let rendered = text(&app);
+    assert!(rendered.contains("removal is blocked"), "{rendered}");
 }
 
 #[test]
@@ -2916,6 +2981,7 @@ fn successful_removal_marks_selected_exact_directory_unavailable_and_keeps_it_se
         branch_outcome: CheckoutBranchOutcome::Deleted,
         affected_sessions: 2,
         working_sessions: 0,
+        pending_moves: 0,
     };
     app.handle_event(ApplicationEvent::CheckoutRemoval {
         request_id,

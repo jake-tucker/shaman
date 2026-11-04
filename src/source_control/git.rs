@@ -689,6 +689,7 @@ impl SourceControl for GitSourceControl {
                 ready: false,
                 intended_session: SessionId::new(),
                 admitted_session: None,
+                for_move: false,
             });
         }
         Err("Could not allocate a unique managed Worktree name".to_owned())

@@ -2316,6 +2316,7 @@ mod tests {
             to,
             error: None,
             new_worktree: false,
+            to_checkout: None,
         };
         let (first, second, third) = (
             location("first", Some("main")),

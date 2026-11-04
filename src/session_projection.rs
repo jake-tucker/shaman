@@ -319,12 +319,14 @@ impl ValidatedChanges {
                         id,
                         status: ActivityStatus::Active,
                         to,
+                        to_checkout,
                         ..
                     } = activity
                     {
                         next.session.pending_move = Some(crate::protocol::PendingMove {
                             activity_id: *id,
                             destination: to.execution_directory.clone(),
+                            checkout: to_checkout.clone(),
                         });
                     }
                 }

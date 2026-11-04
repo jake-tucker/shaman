@@ -1679,6 +1679,7 @@ async fn start(
     )
     .with_settings(settings.subscribe())
     .with_sidekicks(sidekick_workspace.clone(), sidekick_acts);
+    operations::retire_landed_move_intents(&preparations, &sessions);
     let source_control = crate::source_control::SourceControlService::new(source_control)
         .with_sidekick_workspace(sidekick_workspace.clone())
         .with_clone_staging(clone_staging);
@@ -3030,14 +3031,14 @@ async fn removal_preview(
         .source_control
         .removal_branch_outcome(&target, &inspection)
         .await?;
-    let (affected_sessions, working_sessions) =
-        state.sessions.checkout_references(&target.checkout);
+    let activity = state.sessions.checkout_activity(&target.checkout);
     Ok(crate::protocol::CheckoutRemovalPreview {
         target,
         inspection,
         branch_outcome,
-        affected_sessions,
-        working_sessions,
+        affected_sessions: activity.affected,
+        working_sessions: activity.working,
+        pending_moves: activity.pending_moves,
     })
 }
 async fn preview_checkout_removal(State(state): State<AppState>, request: Request) -> Response {
@@ -3084,6 +3085,7 @@ async fn remove_checkout(State(state): State<AppState>, request: Request) -> Res
     };
     let result = async {
         if preview.working_sessions != 0 { return Err("A Session associated with this Worktree is Working on this Server; force cannot override it".to_owned()); }
+        if preview.pending_moves != 0 { return Err("A pending Move is bound for this Worktree; replace or cancel it first, as force cannot override it".to_owned()); }
         if preview != request.preview { return Err("Worktree conditions or affected Sessions changed; review the updated preview and confirm again".to_owned()); }
         if preview.inspection.requires_force() && !request.force { return Err("Git requires explicit force removal for these conditions; review and choose Force remove".to_owned()); }
         let preparations = state.preparations.for_destination(&preview.target.checkout.root)?;
@@ -3094,11 +3096,10 @@ async fn remove_checkout(State(state): State<AppState>, request: Request) -> Res
         state.sessions.record_checkout(recovery.clone()).map_err(|e| format!("Cannot persist recovery facts before removal: {e}"))?;
         if state
             .sessions
-            .checkout_references(&preview.target.checkout)
-            .1
-            != 0
+            .checkout_activity(&preview.target.checkout)
+            .blocks_removal()
         {
-            return Err("A Session became Working; Worktree removal is blocked".into());
+            return Err("A Session became Working or bound here; Worktree removal is blocked".into());
         }
         let branch_outcome = match state.source_control.remove_checkout(&preview.target, &preview.inspection, request.force, preview.branch_outcome).await {
             Ok(outcome) => outcome,
@@ -4268,6 +4269,12 @@ async fn delete_session(
                 state
                     .orphan_checks
                     .spawn(repository, std::future::ready(()));
+            }
+            for destination in &deleted.abandoned {
+                state
+                    .operations
+                    .check_abandoned_destination(destination)
+                    .await;
             }
             for owner in deleted.actor_owners {
                 state.providers.close_session(owner).await;

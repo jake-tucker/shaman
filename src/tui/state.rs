@@ -8610,6 +8610,11 @@ impl Application {
                             Some("A Session is Working on this Server; removal is blocked".into());
                         return ApplicationTransition::Continue;
                     }
+                    if preview.pending_moves != 0 {
+                        picker.error =
+                            Some("A pending Move is bound here; removal is blocked".into());
+                        return ApplicationTransition::Continue;
+                    }
                     let force = command == SemanticCommandId::WorktreeForceRemove;
                     if preview.inspection.requires_force() && !force {
                         picker.error = Some(

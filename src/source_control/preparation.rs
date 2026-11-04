@@ -139,7 +139,7 @@ impl PreparationStore {
         }
     }
 
-    fn retire_and_delete(&self, id: PreparationId) -> Result<(), String> {
+    pub(crate) fn retire_and_delete(&self, id: PreparationId) -> Result<(), String> {
         let retired = self.retire(id);
         let deleted = self.finish_retirement(id);
         match (retired, deleted) {
@@ -237,10 +237,24 @@ impl PreparationStore {
             .unwrap_or_default()
             .into_iter()
             .filter_map(|preparation| {
-                preparation
-                    .admitted_session
-                    .is_none()
+                (preparation.admitted_session.is_none() && !preparation.for_move)
                     .then_some(preparation.intended_session)
+            })
+            .collect()
+    }
+
+    /// Every stored intention a Move made a Worktree under, naming the Session
+    /// it was made for: normally gone before the Move's answer, so one found
+    /// here outlived a crash at that moment. An unreadable intention names
+    /// no Session.
+    pub(crate) fn admitted_moves(&self) -> Vec<(PreparedCheckout, crate::protocol::SessionId)> {
+        self.intentions(UnreadableIntent::Skip, RetiredIntent::Exclude)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|preparation| preparation.for_move)
+            .filter_map(|preparation| {
+                let session = preparation.admitted_session?;
+                Some((preparation, session))
             })
             .collect()
     }

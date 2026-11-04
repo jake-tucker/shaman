@@ -350,6 +350,9 @@ pub(crate) struct DeletedSession {
     /// A Session outside supported source control has no Repository pass to
     /// run after deletion.
     pub(crate) repository: Option<crate::protocol::Repository>,
+    /// Where any Move left pending in the deleted subtree was bound, which
+    /// nothing is bound for on its account any longer.
+    pub(crate) abandoned: Vec<crate::protocol::ExecutionDirectory>,
     /// Every Session whose Provider actor held a conversation the deletion
     /// took, the deleted Session first: each actor has nothing left to serve
     /// and is closed.
@@ -792,6 +795,12 @@ impl SessionStore {
         }) {
             return Err(DeleteSessionError::WorkingSession);
         }
+        let abandoned = doomed
+            .iter()
+            .filter_map(|doomed_id| state.sessions.get(doomed_id))
+            .filter_map(|record| record.summary.session.pending_move.as_ref())
+            .map(|pending| pending.destination.clone())
+            .collect();
         // Every Provider actor holding a conversation the deletion takes
         // closes with it: the deleted Session's own — a top-level Session
         // owns one even when its history was unreadable and the store holds
@@ -882,6 +891,7 @@ impl SessionStore {
         }
         Ok(DeletedSession {
             repository,
+            abandoned,
             actor_owners,
         })
     }

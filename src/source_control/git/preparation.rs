@@ -380,6 +380,7 @@ mod tests {
             ready: false,
             intended_session: SessionId::from_uuid(identity(2)),
             admitted_session: None,
+            for_move: false,
         }
     }
 

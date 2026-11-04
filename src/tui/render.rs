@@ -1795,6 +1795,12 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             "{} affected Sessions on this Server · {} Working",
             preview.affected_sessions, preview.working_sessions
         )));
+        if preview.pending_moves != 0 {
+            lines.push(Line::raw(format!(
+                "A pending Move is bound here for {} of them",
+                preview.pending_moves
+            )));
+        }
         let facts = &preview.inspection;
         lines.push(Line::raw(format!(
             "Tracked changes: {} · untracked: {} · ignored: {}",
@@ -1824,6 +1830,8 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             "Removing…"
         } else if preview.working_sessions != 0 {
             "Working Sessions block removal · Esc cancel"
+        } else if preview.pending_moves != 0 {
+            "A pending Move blocks removal · Esc cancel"
         } else if facts.requires_force() {
             "F Force remove · Esc cancel"
         } else {

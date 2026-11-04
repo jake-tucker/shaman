@@ -769,9 +769,8 @@ async fn a_failed_preparation_refuses_the_move_at_once_even_while_a_turn_holds_i
 /// What a failed preparation left stands for the rule for failed preparations
 /// to retire, so a Move asked again takes a name of its own beside it.
 #[tokio::test]
-async fn asked_again_after_a_failed_preparation_takes_another_name() {
-    let observer = Arc::new(FailOnce::default());
-    let failing = observer.clone();
+async fn asked_again_after_a_failed_preparation_left_a_worktree_takes_another_name() {
+    let failing = Arc::new(FailOnce::at(PreparationCheckpoint::CheckoutCreated));
     let mut fixture = Fixture::start_with_git(
         "move-new-worktree-failed-once",
         None,
@@ -800,9 +799,153 @@ async fn asked_again_after_a_failed_preparation_takes_another_name() {
     fixture.server.shutdown().await.expect("shut down server");
 }
 
+/// With nothing standing where the Worktree would be, there is nothing to hold
+/// the name for, and no Move comes back to reuse what the failure left: the
+/// branch it claimed goes with it, and the retry takes the first name.
+#[tokio::test]
+async fn asked_again_after_a_failed_preparation_left_nothing_takes_the_first_name() {
+    let failing = Arc::new(FailOnce::at(PreparationCheckpoint::BranchCreated));
+    let mut fixture = Fixture::start_with_git(
+        "move-new-worktree-failed-early",
+        None,
+        timings(),
+        move |_| GitSourceControl::default().with_preparation_observer(failing),
+    )
+    .await;
+    let main = fixture.main.clone();
+    let (session_id, _session) = fixture.idle_session(&main, "Tune the parser").await;
+    fixture
+        .move_into_new_worktree(session_id, &main)
+        .await
+        .expect_err("the first preparation fails");
+    assert!(!fixture.managed("tune-parser").exists());
+    assert!(!branches(&main).contains(&"suru/tune-parser".to_owned()));
+
+    let moved = moved_summary(
+        fixture
+            .move_into_new_worktree(session_id, &main)
+            .await
+            .expect("the Move stands"),
+    );
+
+    assert_eq!(
+        moved.session.execution_directory.path,
+        fixture.managed("tune-parser")
+    );
+    fixture.server.shutdown().await.expect("shut down server");
+}
+
+/// Keeps what a preparation's intent reads once its Worktree stands.
 #[derive(Default)]
+struct KeepIntent {
+    intent: std::sync::Mutex<Option<PreparedCheckout>>,
+}
+
+#[async_trait::async_trait]
+impl PreparationObserver for KeepIntent {
+    async fn checkpoint(
+        &self,
+        at: PreparationCheckpoint,
+        preparation: &PreparedCheckout,
+    ) -> Result<(), String> {
+        if at == PreparationCheckpoint::CheckoutCreated {
+            *self.intent.lock().unwrap() = Some(preparation.clone());
+        }
+        Ok(())
+    }
+}
+
+/// A crash just after a Move lands, before its intent is deleted, finds the
+/// intent admitted and the Session bound for its Worktree. Left standing it would
+/// refuse the branch's rename for as long as the Session referenced the
+/// Worktree; the next start retires it first.
+#[tokio::test]
+async fn an_intent_a_crash_left_behind_a_landed_move_is_retired_as_the_server_starts() {
+    let kept = Arc::new(KeepIntent::default());
+    let observer = kept.clone();
+    let mut fixture =
+        Fixture::start_with_git("move-new-worktree-crash", None, timings(), move |_| {
+            GitSourceControl::default().with_preparation_observer(observer)
+        })
+        .await;
+    let main = fixture.main.clone();
+    let (session_id, mut session) = fixture.idle_session(&main, "Tune the parser").await;
+    let _turn = fixture
+        .working(session_id, &mut session, "Keep working")
+        .await;
+    fixture
+        .move_into_new_worktree(session_id, &main)
+        .await
+        .expect("the Move is taken");
+    let Fixture {
+        _temporary,
+        _config,
+        state,
+        channel,
+        server,
+        client,
+        provider,
+        ..
+    } = fixture;
+    drop(client);
+    server.shutdown().await.expect("shut down server");
+    drop(provider);
+    // What the crash would have left: the intent as it stood, admitted.
+    let mut intent = kept
+        .intent
+        .lock()
+        .unwrap()
+        .take()
+        .expect("the Worktree was made");
+    assert!(intent.for_move);
+    intent.admitted_session = Some(session_id);
+    let intents = ServerConfig::new(&state, channel)
+        .unwrap()
+        .data_dir()
+        .join("checkout-preparations");
+    std::fs::create_dir_all(&intents).unwrap();
+    let stored = intents.join(format!("{}.json", intent.id.0));
+    std::fs::write(&stored, serde_json::to_vec(&intent).unwrap()).unwrap();
+
+    let (server, _client, mut provider, mut renames, _) = spawn(
+        &state,
+        channel,
+        None,
+        timings(),
+        GitSourceControl::default(),
+    )
+    .await;
+
+    assert!(!stored.exists(), "the start retired it");
+    let errand = timeout(PROGRESS_DEADLINE, provider.next_errand())
+        .await
+        .expect("the Move's Errand reaches the Provider after the restart");
+    errand.succeed(json!({ "branch": "Parser tables" }));
+    assert_eq!(
+        timeout(PROGRESS_DEADLINE, renames.recv())
+            .await
+            .expect("the rename reaches source control")
+            .expect("the Server is still running"),
+        Ok(BranchRename::Renamed {
+            branch: "suru/parser-tables".to_owned()
+        })
+    );
+    server.shutdown().await.expect("shut down server");
+}
+
+/// Fails the preparation at one checkpoint, the first time it comes.
 struct FailOnce {
+    at: PreparationCheckpoint,
     failed: std::sync::atomic::AtomicBool,
+}
+
+impl FailOnce {
+    fn at(at: PreparationCheckpoint) -> Self {
+        Self {
+            at,
+            failed: Default::default(),
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -812,9 +955,7 @@ impl PreparationObserver for FailOnce {
         at: PreparationCheckpoint,
         _preparation: &PreparedCheckout,
     ) -> Result<(), String> {
-        if at == PreparationCheckpoint::CheckoutCreated
-            && !self.failed.swap(true, std::sync::atomic::Ordering::SeqCst)
-        {
+        if at == self.at && !self.failed.swap(true, std::sync::atomic::Ordering::SeqCst) {
             return Err("the disk gave out".to_owned());
         }
         Ok(())

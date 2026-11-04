@@ -3062,6 +3062,10 @@ pub enum Activity {
         /// whose branch an Errand names anew once the Move applies.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         new_worktree: bool,
+        /// The Worktree `to` lies in, where it lies in one. While the Move
+        /// is pending that Worktree is what it is bound for.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to_checkout: Option<CheckoutId>,
     },
 }
 
@@ -3311,6 +3315,14 @@ impl Author {
 }
 
 impl Session {
+    /// Whether the Session works in the Repository `repository` identifies.
+    pub fn stands_in_repository(&self, repository: &RepositoryId) -> bool {
+        self.workspace
+            .repository
+            .as_deref()
+            .is_some_and(|held| held.id == *repository)
+    }
+
     /// Whether this is a Subagent's Session — a child of the Session whose
     /// Turn spawned it. Every property of being one keys off this single
     /// reading: excluded from listings and the catalog, refusing Prompts, and
@@ -5383,6 +5395,12 @@ pub enum MoveOutcome {
 pub struct PendingMove {
     pub activity_id: ActivityId,
     pub destination: ExecutionDirectory,
+    /// The Worktree the destination lies in, where it lies in one, as it was
+    /// read when the Move was asked. It references that Worktree exactly, and
+    /// none whose root merely contains the destination, as the main Worktree's
+    /// contains every Managed Worktree's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkout: Option<CheckoutId>,
 }
 
 /// Whether the Session's Origin would derive a Title proposal for it if
