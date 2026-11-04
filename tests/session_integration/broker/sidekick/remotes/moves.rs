@@ -86,7 +86,7 @@ async fn a_remotes_session_is_moved_by_the_remote_reading_the_path_itself() {
             "message": format!(
                 "Session {target}'s Move to {} on the Remote `{REMOTE}` is pending: it applies \
                  once its Turn and any native Subagents it has running settle, and its next Turn \
-                 works there. It keeps working in {} until then.",
+                 works there. It keeps working in {} on the Remote `{REMOTE}` until then.",
                 beside.display(),
                 origin.display()
             ),
@@ -192,8 +192,9 @@ async fn a_new_worktree_of_a_remotes_repository_is_made_there() {
             "Suru made a new Worktree at {} on the Remote `{REMOTE}` from the commit HEAD stands \
              at now, and Session {target}'s Move there is pending: it applies once its Turn and \
              any native Subagents it has running settle, and its next Turn works there. It keeps \
-             working in {} until then. Commits made there after this call, and changes left \
-             uncommitted, stay on the old branch and never reach the new Worktree.",
+             working in {} on the Remote `{REMOTE}` until then. Commits made there after this \
+             call, and changes left uncommitted, stay on the old branch and never reach the new \
+             Worktree.",
             worktree.display(),
             origin.display()
         ))

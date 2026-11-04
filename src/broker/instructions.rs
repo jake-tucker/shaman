@@ -13,16 +13,17 @@
 //! show its Session as working on its own Turn rather than waiting for Subagents.
 //!
 //! The note is written for what the Agent is to the Broker (ADR 0042). Every Agent's names the
-//! Tools every Agent is offered, says in a sentence that `list_workspaces` tells it where the
-//! user's other work lives, so it thinks to look (ADR 0051), and says in another what
-//! `move_session` reaches of that Agent (ADR 0059). A Sidekick's goes on to say what a
+//! Tools every Agent is offered and says in a sentence that `list_workspaces` tells it where the
+//! user's other work lives, so it thinks to look (ADR 0051). Any Agent but a Sidekick is told in
+//! another what `move_session` reaches of it (ADR 0059). A Sidekick's goes on to say what a
 //! Sidekick is, to name the Tools that are its alone — read off the same registry the Broker lists
 //! and dispatches by, so a Tool added there is named here without more — to say how it reaches
 //! the user's other machines (ADR 0044), to say what it may not do, so it does not attempt what
 //! will be refused (ADR 0043), to name the Workspace Roots its Clones are bound to as the user had
 //! named them when it was started — as a JSON array, so the note stays one line however a Root is
-//! spelled — and that a Clone on a Remote is bound by that Remote's own Roots instead, and to say a
-//! Sidekick Report wakes it, so it does not poll the Sessions it set to work.
+//! spelled — and that a Clone on a Remote is bound by that Remote's own Roots instead, to say what
+//! its own `move_session` reaches once it knows what a Remote is, and to say a Sidekick Report
+//! wakes it, so it does not poll the Sessions it set to work.
 //!
 //! Where Memories exist, a Sidekick's note ends with an index of them: the titles of the
 //! [`INDEXED_TITLES`] most recently changed, newest first, each beside the memory_id it is recalled
@@ -61,9 +62,9 @@ pub(crate) fn instruction_note(
     roots: &[String],
     tool_name: impl Fn(&str) -> String,
 ) -> String {
-    let note = format!("{} {}", agent_note(&tool_name), move_note(role, &tool_name));
+    let note = agent_note(&tool_name);
     match role {
-        BrokerRole::Agent => note,
+        BrokerRole::Agent => format!("{note} {}", ordinary_move_note(&tool_name)),
         BrokerRole::Sidekick if memories.is_empty() => {
             format!("{note} {}", sidekick_note(roots, &tool_name))
         }
@@ -99,30 +100,20 @@ fn agent_note(tool_name: &impl Fn(&str) -> String) -> String {
     )
 }
 
-/// What an Agent that is `role` to the Broker is told `move_session` reaches: for a Sidekick's
-/// Subagent as for any other Agent, no further than where it works; for a Sidekick, what no other
-/// is offered, and what it still may not do.
-fn move_note(role: BrokerRole, tool_name: &impl Fn(&str) -> String) -> String {
+/// What any Agent but a Sidekick is told `move_session` reaches, a Sidekick's Subagent among them:
+/// no further than where it works.
+fn ordinary_move_note(tool_name: &impl Fn(&str) -> String) -> String {
     let move_session = tool_name(BrokerTool::MoveSession.name());
-    match role {
-        BrokerRole::Agent => format!(
-            "Call {move_session} to Move your Session, or a Subagent you spawned through Suru, \
-             into a Worktree of your Repository or, outside source control, beneath your \
-             Workspace's directory."
-        ),
-        BrokerRole::Sidekick => format!(
-            "Call {move_session} to Move any other Session you reach, a Subagent you spawned \
-             among them, on this server or at a Remote's `origin`, to any directory of that \
-             server, which reads and judges it itself, another Workspace or a new Worktree \
-             included; no Sidekick's Session Moves, yours included, nor a native Subagent's, nor \
-             one in the Sidekick Workspace beneath another Sidekick, none Moves into that \
-             Workspace, and the Subagents you spawn reach only where they work."
-        ),
-    }
+    format!(
+        "Call {move_session} to Move your Session, or a Subagent you spawned through Suru, into a \
+         Worktree of your Repository or, outside source control, beneath your Workspace's \
+         directory."
+    )
 }
 
 /// What a Sidekick is told besides: what it is, the Tools that are its alone, how it reaches a
-/// Remote, the Workspace Roots `roots` its Clones are bound to, and the acts no Tool offers it.
+/// Remote, the Workspace Roots `roots` its Clones are bound to, what its `move_session` reaches, and
+/// the acts no Tool offers it.
 fn sidekick_note(roots: &[String], tool_name: &impl Fn(&str) -> String) -> String {
     let tools = BrokerTool::offered_to(BrokerRole::Sidekick)
         .filter(|tool| tool.is_sidekicks())
@@ -145,6 +136,7 @@ fn sidekick_note(roots: &[String], tool_name: &impl Fn(&str) -> String) -> Strin
     .map(|tool| tool_name(tool.name()));
     let [list_settings, describe_setting, set_setting] = &settings;
     let cloning = clone_note(roots, tool_name);
+    let move_session = tool_name(BrokerTool::MoveSession.name());
     format!(
         "You are a Sidekick: an Agent that works across Suru itself rather than within one body \
          of work, so Suru offers you Tools of its own for that as well: {tools}. Their \
@@ -165,13 +157,17 @@ fn sidekick_note(roots: &[String], tool_name: &impl Fn(&str) -> String) -> Strin
          from what it last said, and an act on one is refused rather than kept for later. What \
          you send a Remote stands there as sent by a Sidekick on this machine, and its own \
          Sidekick Workspace refuses you as yours does. Nothing else reaches a Remote: its \
-         Settings and Memories are its own. {cloning} You cannot delete a \
+         Settings and Memories are its own. {cloning} Call {move_session} to Move any other \
+         Session you reach, here or on a Remote by its `origin`, to any directory of that \
+         Session's server, another Workspace or a new Worktree included; that server reads the \
+         path and refuses in its own words, and your own Session never Moves. You cannot delete a \
          Session, decide an Approval, change an Approval Posture, read or change the Settings \
          that govern Serving and Pairing, or add, log in to or remove a Relay, and you may not \
-         act on any Session of the Sidekick Workspace, your own included, but to Move a Subagent \
-         you spawned, nor begin one there, though you may read them. You may answer a Questionnaire, which asks for input, and \
-         the user sees your Answer as given by you; but an Approval asks for the user's \
-         consent, so tell them of one rather than deciding it. The Subagents you spawn are \
+         act on any Session of the Sidekick Workspace, your own included, except to Move a \
+         Subagent you spawned out of it, nor begin one there, though you may read them. You may \
+         answer a Questionnaire, which asks for input, and the user sees your Answer as given by \
+         you; but an Approval asks for the user's consent, so tell them of one rather than \
+         deciding it. The Subagents you spawn are \
          offered none of these Tools, so do such work \
          yourself rather than delegating it. When the work you set going in a Session you \
          began, sent a Prompt or answered settles, or that Session comes to owe a Questionnaire \
@@ -340,9 +336,10 @@ mod tests {
         );
     }
 
-    /// A Sidekick is told how much further `move_session` reaches than for any other Agent,
-    /// across Remotes, each of which reads the path itself; what it still does not reach; and
-    /// that its Subagents are told otherwise. It is never told it Moves its own Session.
+    /// A Sidekick is told how much further `move_session` reaches than for any other Agent, once
+    /// it has been told what a Remote and an `origin` are, and that each server reads the path
+    /// itself. What is refused it reads in the Tool's description. It is never told it Moves its
+    /// own Session.
     #[test]
     fn a_sidekick_is_told_in_one_sentence_what_its_move_session_reaches() {
         let note = instruction_note(
@@ -351,17 +348,17 @@ mod tests {
             &[],
             claude_named,
         );
+        let sentence = " Call mcp__suru__move_session to Move any other Session you reach, here or \
+                        on a Remote by its `origin`, to any directory of that Session's server, \
+                        another Workspace or a new Worktree included; that server reads the path \
+                        and refuses in its own words, and your own Session never Moves. ";
+        let told = note
+            .find(sentence)
+            .unwrap_or_else(|| panic!("the note says what it reaches: {note}"));
         assert!(
-            note.contains(
-                " Call mcp__suru__move_session to Move any other Session you reach, a Subagent \
-                 you spawned among them, on this server or at a Remote's `origin`, to any \
-                 directory of that server, which reads and judges it itself, another Workspace or \
-                 a new Worktree included; no Sidekick's Session Moves, yours included, nor a \
-                 native Subagent's, nor one in the Sidekick Workspace beneath another Sidekick, \
-                 none Moves into that Workspace, and the Subagents you spawn reach only where \
-                 they work. "
-            ),
-            "{note}"
+            note.find("The user's other machines running Suru are Remotes")
+                .is_some_and(|remotes| remotes < told),
+            "and only once it has said what a Remote is: {note}"
         );
         assert!(
             !note.contains("to Move your Session") && !note.contains("Worktree of your Repository"),
@@ -489,8 +486,8 @@ mod tests {
             "change an Approval Posture",
             "the Settings that govern Serving and Pairing",
             "add, log in to or remove a Relay",
-            "may not act on any Session of the Sidekick Workspace, your own included",
-            "nor begin one there",
+            "may not act on any Session of the Sidekick Workspace, your own included, except to \
+             Move a Subagent you spawned out of it, nor begin one there",
             "The Subagents you spawn are offered none of these Tools",
         ] {
             assert!(

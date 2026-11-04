@@ -8,12 +8,13 @@
 //! where the Agent works.
 //!
 //! The Tool is offered to every Agent, in the form that answers the caller. A
-//! Sidekick's reaches any Session it may act on, on its own Server or on a Remote
-//! its `origin` names, and any directory there: at a Remote the very text given is
-//! carried through the Pairing, for the Remote to read and judge as it does a
-//! Client's. It names its own author, as its other acts do, and takes `session_id`
-//! always, since its own Session never Moves and could only be refused. A Sidekick's
-//! Subagent is no Sidekick, and is offered the ordinary form.
+//! Sidekick's reaches any Session it may act on, on its own Server or on a
+//! Remote its `origin` names, and any directory there: at a Remote the very text
+//! given is carried through the Pairing, for the Remote to read and judge as it
+//! does a Client's. It names its own author, as its other acts do, and takes
+//! `session_id` always, since its own Session never Moves and could only be
+//! refused. A Sidekick's Subagent is no Sidekick, and is offered the ordinary
+//! form.
 //!
 //! An Agent is Working whenever it calls a Tool, so a Move of its own Session is
 //! by nature pending. Its answer is therefore the Agent's instruction as much as
@@ -28,7 +29,7 @@ use serde_json::{Map, Value, json};
 use super::session_acts::origin_of_a_session_read_named;
 use super::{BrokerTool, BrokerTools, ToolCall, ToolRefusal, origins, takes_only};
 use crate::broker::BrokerRole;
-use crate::protocol::{MoveDestination, MoveOutcome, Outlook, SessionId};
+use crate::protocol::{MoveDestination, MoveOutcome, SessionId};
 
 pub(super) const DESCRIPTION: &str = "\
 Move a Session to another directory: it keeps its conversation and works there \
@@ -78,8 +79,29 @@ what that means for you.",
 /// The JSON Schema of `move_session`'s arguments, as an Agent that is `role` to
 /// the Broker may give them.
 pub(super) fn input_schema(role: BrokerRole) -> Value {
+    let new_worktree = json!({
+        "type": "boolean",
+        "description": "true to Move the Session instead into a new Worktree of the \
+            directory's Repository, which Suru makes as you call.",
+    });
     match role {
-        BrokerRole::Agent => agents_input_schema(),
+        BrokerRole::Agent => json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The Session to Move: left out for your own, or the id of a \
+                        Subagent spawned with spawn_subagent by you or by a Subagent beneath you.",
+                },
+                "directory": directory_property(
+                    "within a Worktree of the Repository you work in",
+                    "this machine's home",
+                ),
+                "new_worktree": new_worktree,
+            },
+            "required": MoveArguments::REQUIRED,
+            "additionalProperties": false,
+        }),
         BrokerRole::Sidekick => json!({
             "type": "object",
             "properties": {
@@ -89,18 +111,12 @@ pub(super) fn input_schema(role: BrokerRole) -> Value {
                         your own never Moves.",
                 },
                 "origin": origins::origin_property(),
-                "directory": {
-                    "type": "string",
-                    "description": "Where the Session is to work, on the server it lives on, \
-                        which reads and judges this: an absolute path written as that server \
-                        writes paths, one relative to where that Session works now, or one \
-                        beginning with ~ for that server's home.",
-                },
-                "new_worktree": {
-                    "type": "boolean",
-                    "description": "true to Move the Session instead into a new Worktree of the \
-                        directory's Repository, which that server makes as you call.",
-                },
+                "directory": directory_property(
+                    "on the server it lives on, which reads and judges this, written as that \
+                     server writes paths",
+                    "that server's home",
+                ),
+                "new_worktree": new_worktree,
             },
             "required": MoveArguments::SIDEKICK_REQUIRED,
             "additionalProperties": false,
@@ -108,30 +124,15 @@ pub(super) fn input_schema(role: BrokerRole) -> Value {
     }
 }
 
-/// The JSON Schema of `move_session`'s arguments as any other Agent gives them.
-fn agents_input_schema() -> Value {
+/// The JSON Schema of `directory`, as what the caller reaches, `within`, and
+/// whose `home` a `~` is, makes it.
+fn directory_property(within: &str, home: &str) -> Value {
     json!({
-        "type": "object",
-        "properties": {
-            "session_id": {
-                "type": "string",
-                "description": "The Session to Move: left out for your own, or the id of a \
-                    Subagent spawned with spawn_subagent by you or by a Subagent beneath you.",
-            },
-            "directory": {
-                "type": "string",
-                "description": "Where the Session is to work, within a Worktree of the \
-                    Repository you work in: an absolute path, one relative to where that Session \
-                    works now, or one beginning with ~ for this machine's home.",
-            },
-            "new_worktree": {
-                "type": "boolean",
-                "description": "true to Move the Session instead into a new Worktree of the \
-                    directory's Repository, which Suru makes as you call.",
-            },
-        },
-        "required": MoveArguments::REQUIRED,
-        "additionalProperties": false,
+        "type": "string",
+        "description": format!(
+            "Where the Session is to work, {within}: an absolute path, one relative to where \
+             that Session works now, or one beginning with ~ for {home}."
+        ),
     })
 }
 
@@ -147,17 +148,17 @@ impl BrokerTools {
         let role = call.caller.role();
         let moving = MoveArguments::read(role, &call.arguments)?;
         let origin = origins::origin(BrokerTool::MoveSession, &call.arguments)?;
+        let remote = origins::row_origin(origin.clone());
         let caller = call.caller.session_id();
         let session_id = moving.session_id.unwrap_or(caller);
         let new_worktree = moving.new_worktree;
         let destination = moving.destination();
         let author = (role == BrokerRole::Sidekick).then(|| self.sidekick_author(&call));
         let operations = self.operations.clone();
-        let reaching = origin.clone();
         let outcome = tokio::spawn(async move {
             match author {
                 Some(author) => operations
-                    .move_session_at(&reaching, session_id, destination, author)
+                    .move_session_at(&origin, session_id, destination, author)
                     .await
                     .map_err(|refusal| origins::act_refusal_on(refusal, session_id)),
                 None => operations
@@ -174,14 +175,11 @@ impl BrokerTools {
                  Suru's Log says why.",
             )
         })??;
-        Ok(serde_json::to_value(MoveAnswer::of(
-            &outcome,
-            session_id,
-            caller,
-            origin,
-            new_worktree,
-        ))
-        .expect("a Move's answer always serializes"))
+        let speaker = Speaker::of(session_id, caller, remote.as_deref());
+        Ok(
+            serde_json::to_value(MoveAnswer::of(&outcome, speaker, new_worktree))
+                .expect("a Move's answer always serializes"),
+        )
     }
 }
 
@@ -199,17 +197,10 @@ struct MoveAnswer {
 }
 
 impl MoveAnswer {
-    /// The answer to `caller` of `outcome`, of a Move of `session_id` at
-    /// `origin`, into a Worktree made for it where `new_worktree`.
-    fn of(
-        outcome: &MoveOutcome,
-        session_id: SessionId,
-        caller: SessionId,
-        origin: Outlook,
-        new_worktree: bool,
-    ) -> Self {
-        let origin = origins::row_origin(origin);
-        let speaker = Speaker::of(session_id, caller, origin.as_deref());
+    /// The answer of `outcome` to the caller `speaker` speaks to, of a Move of
+    /// the Session it speaks of, into a Worktree made for it where
+    /// `new_worktree`.
+    fn of(outcome: &MoveOutcome, speaker: Speaker<'_>, new_worktree: bool) -> Self {
         let (outcome, directory, message) = match outcome {
             MoveOutcome::Moved { session } => {
                 let directory = &session.session.execution_directory.path;
@@ -254,8 +245,8 @@ impl MoveAnswer {
             }
         };
         Self {
-            session_id,
-            origin,
+            session_id: speaker.session_id(),
+            origin: speaker.remote().map(str::to_owned),
             outcome,
             directory: directory.to_owned(),
             message,
@@ -268,7 +259,7 @@ impl MoveAnswer {
 /// lives on one, whose directories those it names are.
 #[derive(Clone, Copy)]
 enum Speaker<'a> {
-    Own,
+    Own(SessionId),
     Other {
         session_id: SessionId,
         remote: Option<&'a str>,
@@ -279,27 +270,37 @@ impl<'a> Speaker<'a> {
     /// A Session at a Remote is never the caller's own, whatever id it shares.
     fn of(session_id: SessionId, caller: SessionId, remote: Option<&'a str>) -> Self {
         if session_id == caller && remote.is_none() {
-            Self::Own
+            Self::Own(session_id)
         } else {
             Self::Other { session_id, remote }
         }
     }
 
+    fn session_id(self) -> SessionId {
+        match self {
+            Self::Own(session_id) | Self::Other { session_id, .. } => session_id,
+        }
+    }
+
+    fn remote(self) -> Option<&'a str> {
+        match self {
+            Self::Own(_) => None,
+            Self::Other { remote, .. } => remote,
+        }
+    }
+
     fn subject(self) -> String {
         match self {
-            Self::Own => "Your Session".to_owned(),
+            Self::Own(_) => "Your Session".to_owned(),
             Self::Other { session_id, .. } => format!("Session {session_id}"),
         }
     }
 
     /// `directory`, as the Agent reading is to take it: at the Remote it lies on.
     fn place(self, directory: &Path) -> String {
-        match self {
-            Self::Other {
-                remote: Some(remote),
-                ..
-            } => format!("{} on the Remote `{remote}`", directory.display()),
-            Self::Own | Self::Other { remote: None, .. } => directory.display().to_string(),
+        match self.remote() {
+            Some(remote) => format!("{} on the Remote `{remote}`", directory.display()),
+            None => directory.display().to_string(),
         }
     }
 
@@ -308,7 +309,7 @@ impl<'a> Speaker<'a> {
     fn moved(self, directory: &Path, new_worktree: bool) -> String {
         let session = self.subject();
         let next = match self {
-            Self::Own => "your",
+            Self::Own(_) => "your",
             Self::Other { .. } => "its",
         };
         let directory = self.place(directory);
@@ -326,17 +327,17 @@ impl<'a> Speaker<'a> {
     /// What is said of a Move still waiting on what holds it, from where the
     /// Session works, `from`, to `to`.
     fn pending(self, to: &Path, from: &Path, new_worktree: bool) -> String {
-        let (to, from) = (self.place(to), from.display());
+        let (to, from) = (self.place(to), self.place(from));
         let made =
             format!("Suru made a new Worktree at {to} from the commit HEAD stands at now, and");
         let (bound, turn, next, until) = match (self, new_worktree) {
-            (Self::Own, false) => (
+            (Self::Own(_), false) => (
                 format!("Your Session's Move to {to}"),
                 "this Turn and any native Subagents you have running",
                 "your",
                 format!("Finish what you are doing and stop working in {from}."),
             ),
-            (Self::Own, true) => (
+            (Self::Own(_), true) => (
                 format!("{made} your Session's Move there"),
                 "this Turn and any native Subagents you have running",
                 "your",
@@ -398,15 +399,13 @@ impl MoveArguments {
     /// written, a relative path among them: only the Session it is read from,
     /// on its own Server, can say what it names.
     fn read(role: BrokerRole, arguments: &Map<String, Value>) -> Result<Self, ToolRefusal> {
-        let sidekick = role == BrokerRole::Sidekick;
-        let takes: &[&str] = if sidekick {
-            &Self::SIDEKICK_TAKES
-        } else {
-            &Self::TAKES
+        let takes: &[&str] = match role {
+            BrokerRole::Agent => &Self::TAKES,
+            BrokerRole::Sidekick => &Self::SIDEKICK_TAKES,
         };
         takes_only(BrokerTool::MoveSession, arguments, takes)?;
         let session_id = match arguments.get("session_id") {
-            None | Some(Value::Null) if sidekick => {
+            None | Some(Value::Null) if role == BrokerRole::Sidekick => {
                 return Err(ToolRefusal::new(
                     "move_session needs `session_id`, the id of a Session as list_sessions gives \
                      it: your own is a Sidekick's, and never Moves.",
@@ -414,17 +413,9 @@ impl MoveArguments {
             }
             None | Some(Value::Null) => None,
             Some(named) => Some(serde_json::from_value(named.clone()).map_err(|_| {
-                ToolRefusal::new(if sidekick {
-                    format!(
-                        "move_session's `session_id` must be the id of a Session as list_sessions \
-                         gives it; {named} is not one."
-                    )
-                } else {
-                    format!(
-                        "move_session's `session_id` must be a Session's id, or left out for your \
-                         own; {named} is not one."
-                    )
-                })
+                ToolRefusal::new(format!(
+                    "move_session's `session_id` must be a Session's id; {named} is not one."
+                ))
             })?),
         };
         let directory = match arguments.get("directory") {
@@ -561,8 +552,7 @@ mod tests {
             ),
             (
                 json!({ "directory": "here", "session_id": "mine" }),
-                "move_session's `session_id` must be a Session's id, or left out for your own; \
-                 \"mine\" is not one.",
+                "move_session's `session_id` must be a Session's id; \"mine\" is not one.",
             ),
             (
                 json!({ "directory": "here", "origin": "workstation" }),
@@ -616,8 +606,7 @@ mod tests {
             ),
             (
                 json!({ "session_id": "theirs", "directory": "here" }),
-                "move_session's `session_id` must be the id of a Session as list_sessions gives \
-                 it; \"theirs\" is not one.",
+                "move_session's `session_id` must be a Session's id; \"theirs\" is not one.",
             ),
             (
                 json!({ "session_id": session_id, "directory": "here", "root": "/" }),
@@ -762,18 +751,19 @@ mod tests {
     fn a_pending_moves_answer_says_what_the_session_is_waiting_for_and_what_to_do() {
         let (to, from) = (Path::new("to"), Path::new("from"));
         let subagent = SessionId::new();
+        let own = Speaker::Own(SessionId::new());
         let other = Speaker::Other {
             session_id: subagent,
             remote: None,
         };
         assert_eq!(
-            Speaker::Own.pending(to, from, false),
+            own.pending(to, from, false),
             "Your Session's Move to to is pending: it applies once this Turn and any native \
              Subagents you have running settle, and your next Turn works there. Finish what you \
              are doing and stop working in from."
         );
         assert_eq!(
-            Speaker::Own.pending(to, from, true),
+            own.pending(to, from, true),
             "Suru made a new Worktree at to from the commit HEAD stands at now, and your \
              Session's Move there is pending: it applies once this Turn and any native Subagents \
              you have running settle, and your next Turn works there. Finish what you are doing \
@@ -816,7 +806,8 @@ mod tests {
             format!(
                 "Session {session_id}'s Move to to on the Remote `workstation` is pending: it \
                  applies once its Turn and any native Subagents it has running settle, and its \
-                 next Turn works there. It keeps working in from until then."
+                 next Turn works there. It keeps working in from on the Remote `workstation` \
+                 until then."
             )
         );
         assert_eq!(
@@ -825,9 +816,9 @@ mod tests {
                 "Suru made a new Worktree at to on the Remote `workstation` from the commit HEAD \
                  stands at now, and Session {session_id}'s Move there is pending: it applies once \
                  its Turn and any native Subagents it has running settle, and its next Turn works \
-                 there. It keeps working in from until then. Commits made there after this call, \
-                 and changes left uncommitted, stay on the old branch and never reach the new \
-                 Worktree."
+                 there. It keeps working in from on the Remote `workstation` until then. Commits \
+                 made there after this call, and changes left uncommitted, stay on the old branch \
+                 and never reach the new Worktree."
             )
         );
         assert_eq!(
@@ -846,7 +837,7 @@ mod tests {
         );
         assert!(matches!(
             Speaker::of(session_id, session_id, None),
-            Speaker::Own
+            Speaker::Own(_)
         ));
     }
 
@@ -855,7 +846,7 @@ mod tests {
         let there = Path::new("there");
         let subagent = SessionId::new();
         assert_eq!(
-            Speaker::Own.moved(there, false),
+            Speaker::Own(subagent).moved(there, false),
             "Your Session now works in there; your next Turn works there."
         );
         assert_eq!(

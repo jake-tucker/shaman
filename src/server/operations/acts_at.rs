@@ -98,14 +98,14 @@ impl SessionOperations {
         here: impl AsyncFnOnce(A) -> Result<T, R>,
         there: impl AsyncFnOnce(&str, ActId, A) -> Result<T, RemoteActRefusal>,
     ) -> Result<T, ActRefusal<R>> {
-        self.dispatch_recording(origin, act, acting, |_| true, here, there)
+        self.dispatch_recording_when(origin, act, acting, |_| true, here, there)
             .await
     }
 
-    /// [`Self::dispatch`] of an act that may answer it did nothing, which
-    /// `changed` says of what it answers: such an act a Remote took records
-    /// nothing, as it does here.
-    async fn dispatch_recording<A, T, R>(
+    /// [`Self::dispatch`] of an act that may answer it did nothing, recording
+    /// what a Remote took only when `changed` says so of what it answered, as
+    /// such an act records nothing here.
+    async fn dispatch_recording_when<A, T, R>(
         &self,
         origin: &Outlook,
         act: A,
@@ -324,7 +324,7 @@ impl SessionOperations {
         destination: MoveDestination,
         author: Author,
     ) -> Result<MoveOutcome, ActRefusal<MoveRefusal>> {
-        self.dispatch_recording(
+        self.dispatch_recording_when(
             origin,
             destination,
             Acting {

@@ -7,11 +7,12 @@
 //! ([`BrokerTool::is_sidekicks`]): every Agent is offered the Tools through
 //! which it reaches any Provider, a listing of its own Server's Workspaces,
 //! and a Move bounded by where it works, and a Sidekick those besides the Tools
-//! that work across Suru itself (ADR 0042, ADR 0051, ADR 0059). The transport lists and dispatches by
-//! [`BrokerTool::offered_to`], and the note an Agent is told names what it
-//! reads, so a Sidekick's Tool is declared here and nowhere else. A Tool
-//! every Agent is offered is described to each caller as it answers that
-//! caller ([`BrokerTool::description`]): only a Sidekick is told of Remotes.
+//! that work across Suru itself (ADR 0042, ADR 0051, ADR 0059). The transport
+//! lists and dispatches by [`BrokerTool::offered_to`], and the note an Agent is
+//! told names what it reads, so a Sidekick's Tool is declared here and nowhere
+//! else. A Tool every Agent is offered is described to each caller as it
+//! answers that caller ([`BrokerTool::description`]): only a Sidekick is told
+//! of Remotes.
 
 mod memories;
 mod origins;
@@ -196,7 +197,8 @@ impl BrokerTool {
     /// takes one only by saying so here, and the one place an `origin` is
     /// read refuses it to every other. Any other Agent is told of no Remote,
     /// so `list_workspaces` and `move_session`, the two such Tools it is
-    /// offered, are described to it without one and refuse one from it.
+    /// offered, are described to it without one, and refuse one from it by
+    /// what each lists itself as taking from that Agent.
     pub(super) const fn takes_origin(self) -> bool {
         match self {
             Self::ListSessions
