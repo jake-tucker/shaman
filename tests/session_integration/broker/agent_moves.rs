@@ -1620,6 +1620,170 @@ fn the_move(snapshot: &SessionSnapshot) -> (ActivityStatus, Option<String>) {
         .expect("a Move is recorded")
 }
 
+/// What a Repository made at a pending destination would otherwise bring: the
+/// Session standing in it at settlement, whose Worktrees may be added anywhere,
+/// and then reach, as being asked of it directly is refused. It fails the Move,
+/// out of source control and within it alike.
+#[tokio::test]
+async fn a_repository_made_at_a_pending_destination_fails_it_outside_source_control() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let root = tempfile::tempdir().expect("create the fixtures' root");
+    let plain = root.path().join("plain");
+    let apart = root.path().join("apart");
+    let scratch = plain.join("scratch");
+    std::fs::create_dir_all(&scratch).expect("create a directory");
+    std::fs::create_dir_all(&apart).expect("create a directory");
+    let (plain, apart, scratch) = (canonical(&plain), canonical(&apart), canonical(&scratch));
+    let mut agent = MovingAgent::begin_in(
+        state_dir.path(),
+        "agent-move-repository-made-plain",
+        root,
+        plain.clone(),
+        apart,
+    )
+    .await;
+    let answer = acted(
+        &mut agent.client,
+        "move_session",
+        json!({ "directory": "scratch" }),
+    )
+    .await;
+    assert_eq!(answer["outcome"], json!("pending"), "{answer}");
+
+    git(&scratch, &["init", "-b", "main"]);
+
+    let settled = agent.settle().await;
+    assert_eq!(settled.session.execution_directory.path, plain);
+    assert_eq!(settled.session.workspace.repository, None);
+    assert_eq!(
+        the_move(&settled),
+        (
+            ActivityStatus::Failed,
+            Some(format!(
+                "{} lies in another Worktree or Repository than when the Move was \
+                 asked{THE_SESSION_STAYS}",
+                scratch.display(),
+            ))
+        )
+    );
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A Worktree taken away and another Repository made at its path stands at the
+/// same path, but is not what was asked for.
+#[tokio::test]
+async fn another_repository_made_where_a_pending_worktree_stood_fails_the_move() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-repository-made").await;
+    let main = agent.main.clone();
+    let linked = linked_worktree(&main, "linked", &agent.root.path().join("linked"));
+    let answer = acted(
+        &mut agent.client,
+        "move_session",
+        json!({ "directory": linked }),
+    )
+    .await;
+    assert_eq!(answer["outcome"], json!("pending"), "{answer}");
+
+    git(
+        &main,
+        &[
+            "worktree",
+            "remove",
+            "--force",
+            linked.to_str().expect("a Unicode path"),
+        ],
+    );
+    repository(&linked);
+
+    let settled = agent.settle().await;
+    assert_eq!(settled.session.execution_directory.path, main);
+    assert_eq!(
+        the_move(&settled),
+        (
+            ActivityStatus::Failed,
+            Some(format!(
+                "{} lies in another Worktree or Repository than when the Move was \
+                 asked{THE_SESSION_STAYS}",
+                linked.display(),
+            ))
+        )
+    );
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A Worktree of the same Repository made again at its path is the one asked for,
+/// whatever branch it now stands on.
+#[tokio::test]
+async fn a_worktree_made_again_at_a_pending_destination_still_takes_the_move() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-worktree-again").await;
+    let main = agent.main.clone();
+    let linked = linked_worktree(&main, "linked", &agent.root.path().join("linked"));
+    let answer = acted(
+        &mut agent.client,
+        "move_session",
+        json!({ "directory": linked }),
+    )
+    .await;
+    assert_eq!(answer["outcome"], json!("pending"), "{answer}");
+
+    let spelled = linked.to_str().expect("a Unicode path");
+    git(&main, &["worktree", "remove", "--force", spelled]);
+    git(&main, &["worktree", "add", "-b", "again", spelled]);
+
+    let settled = agent.settle().await;
+    assert_eq!(settled.session.execution_directory.path, linked);
+    assert_eq!(the_move(&settled).0, ActivityStatus::Completed);
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A Worktree a Move made for itself, renamed while the Move waits as its Errand
+/// would rename it, is still the one asked for, as is a directory within a
+/// Worktree that has moved on to another commit.
+#[tokio::test]
+async fn a_new_worktree_whose_branch_was_renamed_while_pending_still_takes_the_move() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-renamed-branch").await;
+    let main = agent.main.clone();
+    let answer = acted(
+        &mut agent.client,
+        "move_session",
+        json!({ "directory": main, "new_worktree": true }),
+    )
+    .await;
+    assert_eq!(answer["outcome"], json!("pending"), "{answer}");
+    let worktree = PathBuf::from(answer["directory"].as_str().expect("names it"));
+
+    git(&worktree, &["branch", "-m", "a-better-name"]);
+    commit(&worktree, "moved on");
+
+    let settled = agent.settle().await;
+    assert_eq!(settled.session.execution_directory.path, worktree);
+    assert_eq!(the_move(&settled).0, ActivityStatus::Completed);
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
 /// A destination judged and stored stands for that directory and no other: one
 /// replaced by a symlink while the Move waits fails it, saying where it now leads,
 /// rather than taking the Session wherever that is and leaving the boundary to be
@@ -1761,7 +1925,8 @@ async fn a_workspace_directory_a_symlink_has_replaced_gives_no_boundary() {
         .assert_refused(
             json!({ "directory": apart }),
             format!(
-                "{} now leads to {}{THE_SESSION_STAYS}",
+                "{}, the directory of the Workspace you work in, now reads as {}, and only the \
+                 user may Move a Session from there, with /move{THE_SESSION_STAYS}",
                 plain.display(),
                 apart.display()
             ),

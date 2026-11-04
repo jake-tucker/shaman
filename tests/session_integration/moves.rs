@@ -1887,6 +1887,41 @@ async fn a_pending_moves_destination_gone_at_settlement_fails_it_and_the_session
     fixture.shutdown().await;
 }
 
+/// Whoever asked, a Repository made at a pending destination is not what was asked
+/// for, and fails the Move rather than regrouping the Session under it.
+#[tokio::test]
+async fn a_repository_made_at_a_pending_moves_destination_fails_it_and_the_session_stays() {
+    let mut fixture = IdleSession::begin("move-pending-repository-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let turn = fixture.working("Keep working").await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+
+    git(&destination, &["init", "-b", "main"]);
+    turn.succeed();
+    fixture.settle().await;
+    let settled = fixture
+        .session_where("the Move fails as the Turn settles", |snapshot| {
+            bound_for(snapshot).is_none()
+        })
+        .await;
+
+    assert_eq!(settled.session.execution_directory.path, fixture.origin);
+    let records = move_records(&settled);
+    let [(ActivityStatus::Failed, to, Some(reason))] = records.as_slice() else {
+        panic!("the row settles failed with a reason: {records:?}");
+    };
+    assert_eq!(*to, destination);
+    assert_eq!(
+        *reason,
+        format!(
+            "{} lies in another Worktree or Repository than when the Move was asked, so the \
+             Session stays where it is.",
+            destination.display()
+        )
+    );
+    fixture.shutdown().await;
+}
+
 /// A stored destination must be the destination, whoever asked: one a symlink has
 /// replaced by the time the Move applies fails it, naming where it now leads.
 #[cfg(unix)]

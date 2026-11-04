@@ -30,8 +30,9 @@
 //! judged, remembered and stored, so nothing is judged of one directory and done
 //! of another. A symlink standing where a directory did is caught however it came
 //! to: a reading that finds its directory now leads elsewhere is refused, and so
-//! is a pending Move whose stored destination has come to lead elsewhere by the
-//! time it applies, since a stored destination must be the destination.
+//! is a pending Move whose stored destination has come to lead elsewhere, or to
+//! lie in another Worktree or Repository or in one or none where it did not, by
+//! the time it applies, since a stored destination must be the destination.
 //!
 //! Once the Move stands, the Session's
 //! Provider actor is told, so the process it ran in the directory left behind
@@ -196,7 +197,12 @@ impl MoveBoundary {
         let stored = &agent.workspace.path;
         match crate::paths::canonical(stored) {
             Ok(read) if read == *stored => Ok(Self::Directory(read)),
-            Ok(read) => Err(led_elsewhere(stored, &read)),
+            Ok(read) => Err(MoveRefusal::Destination(format!(
+                "{}, the directory of the Workspace you work in, now reads as {}, and only the \
+                 user may Move a Session from there, with /move",
+                stored.display(),
+                read.display()
+            ))),
             Err(error) => Err(MoveRefusal::Destination(format!(
                 "{}, the directory of the Workspace you work in, cannot be read to judge how far \
                  you may Move a Session: {error}",
@@ -239,6 +245,36 @@ impl MoveBoundary {
             )))
         })
     }
+}
+
+/// Refuses `directory`, as `reading` read it, where it no longer stands as
+/// `pending` was asked: at another path, by a symlink standing there, or in
+/// another Worktree or Repository, or newly in one or none, by what has been made
+/// or taken away at that path. A Worktree stands for its Repository and root, so
+/// one made again at its path, or whose branch was renamed, is the same; and a
+/// reading in a Repository always names a Worktree where an Agent can work.
+fn stands_as_it_was_asked(
+    pending: &PendingMove,
+    directory: &Path,
+    reading: &ResolvedWorkspace,
+) -> Result<(), MoveRefusal> {
+    let judged = &pending.destination.path;
+    if directory != judged {
+        return Err(led_elsewhere(judged, directory));
+    }
+    let read = reading.checkout.as_ref().map(|checkout| &checkout.id);
+    if read == pending.checkout.as_ref() {
+        return Ok(());
+    }
+    Err(MoveRefusal::Destination(format!(
+        "{} {} than when the Move was asked",
+        judged.display(),
+        if read.is_some() {
+            "lies in another Worktree or Repository"
+        } else {
+            "no longer reads as lying in the Worktree it did, or any other"
+        }
+    )))
 }
 
 /// What a destination is refused with where `judged` no longer reads as itself.
@@ -584,19 +620,15 @@ impl SessionOperations {
     }
 
     /// Applies or fails `pending` as its destination reads now, which must be
-    /// as itself: what was judged and stored is what the Session may Move to,
-    /// not whatever has since come to stand there.
+    /// as it was asked: what was judged and stored is what the Session may Move
+    /// to, not whatever has since come to stand there.
     async fn apply_or_fail_move(
         &self,
         session_id: SessionId,
         pending: &PendingMove,
     ) -> Result<PendingMoveSettled, MoveSessionError> {
         let read = self
-            .read_destination(
-                session_id,
-                pending.destination.path.clone(),
-                Some(&pending.destination.path),
-            )
+            .read_destination(session_id, pending.destination.path.clone(), Some(pending))
             .await;
         match read {
             Ok((resolved, left)) => {
@@ -727,21 +759,19 @@ impl SessionOperations {
     }
 
     /// Reads a destination standing for a Move already taken: `destination`,
-    /// which must read as `judged` where it was judged, is refused as
-    /// [`Self::read_directory`] refuses and as
+    /// which must stand as `pending` was asked where it is one waiting, is
+    /// refused as [`Self::read_directory`] refuses and as
     /// [`Self::read_destination_left`] does. Answers the reading, beside what
     /// that names of the Repository left.
     async fn read_destination(
         &self,
         session_id: SessionId,
         destination: PathBuf,
-        judged: Option<&Path>,
+        pending: Option<&PendingMove>,
     ) -> Result<(ResolvedWorkspace, Vec<CheckoutSummary>), MoveRefusal> {
         let (directory, reading) = self.read_directory(destination).await?;
-        if let Some(judged) = judged
-            && directory != judged
-        {
-            return Err(led_elsewhere(judged, &directory));
+        if let Some(pending) = pending {
+            stands_as_it_was_asked(pending, &directory, &reading)?;
         }
         let resolved = self.source_control.resolve_read(reading).await;
         let left = self.read_destination_left(session_id, &resolved).await?;
