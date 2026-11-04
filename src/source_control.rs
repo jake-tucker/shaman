@@ -1145,7 +1145,27 @@ impl SourceControlService {
         if let Some(reading) = self.sidekick_reading(directory) {
             return reading;
         }
-        let mut resolved = batch.discover(self.adapter.as_ref(), directory).await;
+        let resolved = batch.discover(self.adapter.as_ref(), directory).await;
+        self.resolve_read_in_batch(batch, resolved, known).await
+    }
+
+    /// What [`Self::read_unremembered`] read, `read`, as [`Self::resolve`]
+    /// would have answered it, and remembered as that remembers: for a caller
+    /// that judged the reading before letting this Server learn anything of
+    /// it, and must act on the very reading it judged.
+    pub(crate) async fn resolve_read(&self, read: ResolvedWorkspace) -> ResolvedWorkspace {
+        self.resolve_read_in_batch(&mut DiscoveryBatch::default(), read, None)
+            .await
+    }
+
+    /// The reading `resolved`, of a directory read within `batch`, resolved
+    /// against the Workspace it is `known` by, and remembered.
+    async fn resolve_read_in_batch(
+        &self,
+        batch: &mut DiscoveryBatch,
+        mut resolved: ResolvedWorkspace,
+        known: Option<&Workspace>,
+    ) -> ResolvedWorkspace {
         if resolved.workspace.repository.is_none()
             && let Some(repository) = known.and_then(|known| known.repository.as_ref())
         {

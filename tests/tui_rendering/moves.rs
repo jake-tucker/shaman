@@ -181,8 +181,8 @@ fn slash_move_with_no_session_open_is_refused_on_the_landing() {
 fn a_refused_move_says_why_and_leaves_the_session_where_it_was() {
     for refusal in [
         "No directory is at ../nowhere, so the Session stays where it is.",
-        "The Session works in the Sidekick Workspace, which is what makes an Agent a Sidekick, \
-         so it never Moves.",
+        "The Session is a Sidekick's, and the Sidekick Workspace is what makes it one, so it \
+         never Moves.",
     ] {
         let directories = directories();
         let mut application = connected_application(&directories.alpha);

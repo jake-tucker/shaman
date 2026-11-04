@@ -4,13 +4,14 @@
 //! own knowledge of the call and never from its arguments, and the Server judges
 //! how far that caller reaches, so a refusal is in the words the operation gives
 //! it and a call is never Approved by anyone: each harness lifts Approvals from
-//! the Broker's server by its name (ADR 0035), and the boundary already holds
-//! the Agent where it works.
+//! the Broker's server by its name (ADR 0035), and the Tool goes no further than
+//! where the Agent works.
 //!
 //! The Tool is offered to every Agent alike. A Sidekick is held to the ordinary
-//! boundary as any Agent is, which leaves it nothing, since its own Session never
-//! Moves and no Session Moves into its Workspace; its wider reach is the
-//! Sidekick's form of this Tool.
+//! boundary as any Agent is until its wider reach is the Sidekick's form of this
+//! Tool: its own Session never Moves, and it may Move a brokered Subagent of its
+//! own no further than beneath the Sidekick Workspace's directory, where that
+//! Subagent stands no longer in the Sidekick Workspace, which takes no Session.
 //!
 //! An Agent is Working whenever it calls a Tool, so a Move of its own Session is
 //! by nature pending. Its answer is therefore the Agent's instruction as much as
@@ -26,33 +27,24 @@ use super::{BrokerTool, BrokerTools, ToolCall, ToolRefusal, takes_only};
 use crate::protocol::{MoveDestination, MoveOutcome, SessionId};
 
 pub(super) const DESCRIPTION: &str = "\
-Move a Session to another directory: the Session, its Transcript and its \
-conversation stay as they are, and it works in the new directory from its next \
-Turn. Use it when your work belongs elsewhere, such as in a Worktree of its \
-own. Takes \"session_id\", left out for your own Session, or the id of a \
-Subagent spawned with spawn_subagent by you or by a Subagent beneath you; \
-\"directory\", where it is to work: an absolute path, one relative to where \
-that Session works now, or one beginning with ~ for this machine's home; and \
-optionally \"new_worktree\": true to Move it instead into a new Worktree of \
-\"directory\"'s Repository, which Suru makes as you call, named from the \
-Session's Title and started from the commit HEAD stands at now, without any \
-uncommitted changes. You reach only so far: the directory must lie in a \
-Worktree of the Repository you work in, wherever that Worktree stands, or, \
-where you work outside source control, beneath your Workspace's directory, \
-judged where the path resolves and whichever Session you Move; only the user \
-may take a Session further. Another Agent's Session and any Session of the \
-Sidekick Workspace are refused saying so. So is a native Subagent's Session, \
-which works inside its parent's Provider process, and where a Provider does not \
-tell Suru which Agent is calling, a call from a native Subagent of yours acts \
-for your own Session. A directory that does not \
-exist is refused saying so too. A Session at work Moves once its Turn and any \
-native Subagents it has running settle, your own always among these, so finish \
-what you are doing and stop working in the old directory; calling again \
-replaces where it is bound, and naming where it works cancels that. Answers \
-with JSON of the shape {\"session_id\": \"...\", \"outcome\": \"...\", \
-\"directory\": \"...\", \"message\": \"...\"}: the Session, what came of it, \
-where it works or is bound, and what that means for you. \"outcome\" is \
-\"moved\", \"pending\", \"already_there\" or \"pending_cancelled\".";
+Move a Session to another directory: it keeps its conversation and works there \
+from its next Turn. Use it when your work belongs elsewhere, such as in a \
+Worktree of its own. Takes \"session_id\", left out for your own Session, or a \
+Subagent spawned with spawn_subagent by you or beneath you; \"directory\", an \
+absolute path, one relative to where that Session works, or one beginning with \
+~; and optionally \"new_worktree\": true to Move it into a new Worktree of that \
+directory's Repository, made now from the commit HEAD stands at, without \
+uncommitted changes. The directory must resolve into a Worktree of the \
+Repository you work in or, outside source control, beneath your Workspace's \
+directory; further is the user's to do. Another Agent's Session is refused, and \
+a native Subagent's, which works inside its parent's process; a native \
+Subagent's own call may act for its parent's Session. A Session at work, your \
+own included, Moves once its Turn and any native Subagents settle, so finish and \
+stop working in the old directory. Calling again replaces where it is bound; \
+naming where it works cancels that. Answers with JSON of the shape \
+{\"session_id\": \"...\", \"outcome\": \"...\", \"directory\": \"...\", \
+\"message\": \"...\"}: \"outcome\" is \"moved\", \"pending\", \"already_there\" or \
+\"pending_cancelled\", and \"message\" says what that means for you.";
 
 /// The JSON Schema of `move_session`'s arguments.
 pub(super) fn input_schema() -> Value {
@@ -100,7 +92,13 @@ impl BrokerTools {
                 .await
         })
         .await
-        .map_err(|_| ToolRefusal::new("Suru could not finish the Move; nothing more is known."))?
+        .map_err(|error| {
+            tracing::error!(%session_id, "a Session's Move did not run to its end: {error}");
+            ToolRefusal::new(
+                "Suru could not finish the Move, so the Session may or may not have Moved; \
+                 Suru's Log says why.",
+            )
+        })?
         .map_err(|refusal| ToolRefusal::new(refusal.to_string()))?;
         Ok(
             serde_json::to_value(MoveAnswer::of(&outcome, session_id, caller, new_worktree))
@@ -231,47 +229,41 @@ impl Speaker {
     /// Session works, `from`, to `to`.
     fn pending(self, to: &Path, from: &Path, new_worktree: bool) -> String {
         let (to, from) = (to.display(), from.display());
-        let (bound, turn, next) = match (self, new_worktree) {
+        let made =
+            format!("Suru made a new Worktree at {to} from the commit HEAD stands at now, and");
+        let (bound, turn, next, until) = match (self, new_worktree) {
             (Self::Own, false) => (
                 format!("Your Session's Move to {to}"),
                 "this Turn and any native Subagents you have running",
                 "your",
+                format!("Finish what you are doing and stop working in {from}."),
             ),
             (Self::Own, true) => (
-                format!(
-                    "Suru made a new Worktree at {to} from the commit HEAD stands at now, and \
-                     your Session's Move there"
-                ),
+                format!("{made} your Session's Move there"),
                 "this Turn and any native Subagents you have running",
                 "your",
+                format!(
+                    "Finish what you are doing and stop working in {from}. Commits you make after \
+                     this call, and changes you leave uncommitted, stay on the old branch and \
+                     never reach the new Worktree: commit first and call move_session again if \
+                     it needs them."
+                ),
             ),
             (Self::Other(session_id), false) => (
                 format!("Session {session_id}'s Move to {to}"),
                 "its Turn and any native Subagents it has running",
                 "its",
+                format!("It keeps working in {from} until then."),
             ),
             (Self::Other(session_id), true) => (
-                format!(
-                    "Suru made a new Worktree at {to} from the commit HEAD stands at now, and \
-                     Session {session_id}'s Move there"
-                ),
+                format!("{made} Session {session_id}'s Move there"),
                 "its Turn and any native Subagents it has running",
                 "its",
-            ),
-        };
-        let until = match (self, new_worktree) {
-            (Self::Own, false) => format!("Finish what you are doing and stop working in {from}."),
-            (Self::Own, true) => format!(
-                "Finish what you are doing and stop working in {from}. Commits you make after \
-                 this call, and changes you leave uncommitted, stay on the old branch and never \
-                 reach the new Worktree: commit first and call move_session again if it needs \
-                 them."
-            ),
-            (Self::Other(_), false) => format!("It keeps working in {from} until then."),
-            (Self::Other(_), true) => format!(
-                "It keeps working in {from} until then. Commits made there after this call, and \
-                 changes left uncommitted, stay on the old branch and never reach the new \
-                 Worktree."
+                format!(
+                    "It keeps working in {from} until then. Commits made there after this call, \
+                     and changes left uncommitted, stay on the old branch and never reach the \
+                     new Worktree."
+                ),
             ),
         };
         format!(
@@ -489,9 +481,11 @@ mod tests {
         ] {
             assert!(DESCRIPTION.contains(boundary), "{boundary}");
         }
-        for refused in ["native Subagent's Session", "Sidekick Workspace"] {
+        for refused in ["Another Agent's Session", "native Subagent's"] {
             assert!(DESCRIPTION.contains(refused), "{refused}");
         }
+        let words = DESCRIPTION.split_whitespace().count();
+        assert!(words <= 215, "the description runs to {words} words");
         assert!(
             !DESCRIPTION.contains("Remote"),
             "an Agent other than a Sidekick is told of no Remote"

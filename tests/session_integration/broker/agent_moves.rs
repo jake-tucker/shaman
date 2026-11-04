@@ -21,7 +21,7 @@ use suru::{
     provider::{MoveNote, ProviderResumeState, Report},
 };
 
-use super::attribution::spawn_native;
+use super::attribution::{NATIVE_THREAD, ROOT_THREAD, native_client, spawn_native};
 use super::sidekick::{ORDINARY_TOOLS, listed_tools, sidekick_directory, start_sidekick};
 use super::sidekick_acts::{acted, refused};
 use super::*;
@@ -90,6 +90,7 @@ struct MovingAgent {
     descriptor: RuntimeDescriptor,
     caller: SessionId,
     provider: ControlledProviderSession,
+    handoff: BrokerHandoff,
     client: McpClient,
     /// The caller's Repository's main Worktree, where the caller works.
     main: PathBuf,
@@ -149,6 +150,7 @@ impl MovingAgent {
             descriptor,
             caller: created.session.id,
             provider,
+            handoff,
             client,
             main,
             sibling,
@@ -176,6 +178,7 @@ impl MovingAgent {
             .succeed();
         self.client = McpClient::handed(&handoff);
         self.client.initialize().await;
+        self.handoff = handoff;
     }
 
     /// Settles the caller's Turn, and waits until nothing is pending.
@@ -879,14 +882,15 @@ async fn an_agent_moves_its_own_brokered_subagent_within_the_callers_own_boundar
         .expect("shut down server");
 }
 
-/// Another Agent's Session is beyond the caller, and so is a Subagent of it,
-/// however working; a Session of no one the caller knows of is simply not found.
+/// Another Agent's Session is beyond the caller, and so is a Subagent of it, a
+/// native one included, and an id naming nothing: each is answered alike, so a
+/// refusal tells an Agent nothing of what stands outside its own tree.
 #[tokio::test]
 async fn an_agent_is_refused_another_agents_session_and_its_subagents() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-another").await;
     let main = agent.main.clone();
-    let (other, other_handoff, _other_provider) = start_session(
+    let (other, other_handoff, other_provider) = start_session(
         &agent.descriptor,
         &mut agent.hosted.codex,
         &main,
@@ -904,7 +908,15 @@ async fn an_agent_is_refused_another_agents_session_and_its_subagents() {
         selection: default_selection(&claude_models()),
     });
 
-    for session in [other, others_child] {
+    let others_native = spawn_native(
+        &agent.descriptor,
+        other,
+        &other_provider,
+        "019a0e25-others-native",
+    )
+    .await;
+
+    for session in [other, others_child, others_native] {
         assert_eq!(
             refused(
                 &mut agent.client,
@@ -940,7 +952,7 @@ async fn an_agent_is_refused_another_agents_session_and_its_subagents() {
             json!({ "session_id": unknown, "directory": main }),
         )
         .await,
-        "The Session does not exist on this Suru server."
+        beyond_the_caller(unknown)
     );
     agent
         .hosted
@@ -950,10 +962,12 @@ async fn an_agent_is_refused_another_agents_session_and_its_subagents() {
         .expect("shut down server");
 }
 
-/// A native Subagent's Session is refused every caller, its parent's included, in
-/// words that say why. Claude and Copilot name no Agent in their calls, so one
-/// their native Subagent makes arrives as its parent's, and Moves its parent, held
-/// for as long as that Subagent works: which the answer says as it would.
+/// A native Subagent's Session is refused its parent, within whose tree it stands,
+/// in words that say why. Claude's calls name no Agent Suru knows: each carries
+/// only the id of its own `tool_use`, the same for a native Subagent's as its
+/// parent's (`docs/validation/0408-subagent-mcp-attribution.md`). So a call its
+/// native Subagent makes arrives as its parent's and Moves its parent, whose Move
+/// that Subagent then holds past the Turn's end, as the answer says it may.
 #[tokio::test]
 async fn a_native_subagents_session_is_refused_and_its_call_on_claude_is_its_parents() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
@@ -976,8 +990,11 @@ async fn a_native_subagents_session_is_refused_and_its_call_on_claude_is_its_par
         )
         .await;
 
+    let mut natives_call = McpClient::handed(&agent.handoff)
+        .with_call_meta(json!({ "claudecode/toolUseId": "toolu_natives_own_call" }));
+    natives_call.initialize().await;
     let answer = acted(
-        &mut agent.client,
+        &mut natives_call,
         "move_session",
         json!({ "directory": beside }),
     )
@@ -991,6 +1008,25 @@ async fn a_native_subagents_session_is_refused_and_its_call_on_claude_is_its_par
             .pending_move,
         None
     );
+
+    agent
+        .provider
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    read_until(
+        &agent.descriptor,
+        agent.caller,
+        "the parent's Turn settles",
+        |snapshot| snapshot.turns[0].status == TurnStatus::Completed,
+    )
+    .await;
+    let held = agent.read().await.session;
+    assert_eq!(held.execution_directory.path, main);
+    assert_eq!(
+        held.pending_move.map(|pending| pending.destination.path),
+        Some(beside),
+        "the Subagent's work holds the Move past the Turn it was asked in"
+    );
     agent
         .hosted
         .server
@@ -1000,14 +1036,19 @@ async fn a_native_subagents_session_is_refused_and_its_call_on_claude_is_its_par
 }
 
 /// Codex names the thread making each call, so a native Subagent's call is known
-/// for what it is: it cannot Move, nor reach the parent it rides.
+/// for what it is, under its parent's very token: it cannot Move, nor reach the
+/// parent it rides, while the parent's own thread, presenting the same token, can.
+/// What the native Subagent spawned through the Broker is its own to Move, within
+/// the boundary of where it works.
 #[tokio::test]
-async fn a_native_subagents_own_call_on_codex_is_refused_and_reaches_nothing_above_it() {
+async fn a_native_subagents_own_call_on_codex_is_known_and_reaches_only_beneath_it() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let mut hosted = host_providers(state_dir.path(), "agent-move-native-codex", None).await;
     let descriptor = hosted.server.descriptor().clone();
     let root = canonical(hosted.workspace.path());
     repository(&root);
+    let beside = root.join("beside");
+    std::fs::create_dir(&beside).expect("create a directory");
     let (parent, handoff, provider) = start_session(
         &descriptor,
         &mut hosted.codex,
@@ -1015,10 +1056,8 @@ async fn a_native_subagents_own_call_on_codex_is_refused_and_reaches_nothing_abo
         default_selection(&codex_models()),
     )
     .await;
-    const THREAD: &str = "019a0e25-8213-child-thread";
-    let native = spawn_native(&descriptor, parent, &provider, THREAD).await;
-    let mut client = McpClient::handed(&handoff).with_call_meta(json!({ "threadId": THREAD }));
-    client.initialize().await;
+    let native = spawn_native(&descriptor, parent, &provider, NATIVE_THREAD).await;
+    let mut client = native_client(&handoff, NATIVE_THREAD).await;
 
     assert_eq!(
         refused(&mut client, "move_session", json!({ "directory": root })).await,
@@ -1036,6 +1075,36 @@ async fn a_native_subagents_own_call_on_codex_is_refused_and_reaches_nothing_abo
         "and its parent is neither its own nor beneath it"
     );
     assert_eq!(
+        read_session(&descriptor, parent).await.session.pending_move,
+        None
+    );
+
+    let delegated = client
+        .spawn_subagent(researcher("claude", "haiku", json!({})))
+        .await;
+    let start = next_start(&mut hosted.claude).await;
+    let _delegated_provider = start.succeed(AgentIdentity {
+        agent: AgentId::new("claude-agent"),
+        selection: default_selection(&claude_models()),
+    });
+    let answer = acted(
+        &mut client,
+        "move_session",
+        json!({ "session_id": delegated, "directory": beside }),
+    )
+    .await;
+    assert_eq!(answer["session_id"], json!(delegated), "{answer}");
+
+    let mut own_thread = native_client(&handoff, ROOT_THREAD).await;
+    let answer = acted(
+        &mut own_thread,
+        "move_session",
+        json!({ "directory": beside }),
+    )
+    .await;
+    assert_eq!(answer["session_id"], json!(parent), "{answer}");
+    assert_eq!(answer["outcome"], json!("pending"), "{answer}");
+    assert_eq!(
         read_session(&descriptor, native)
             .await
             .session
@@ -1043,17 +1112,76 @@ async fn a_native_subagents_own_call_on_codex_is_refused_and_reaches_nothing_abo
             .path,
         root
     );
-    assert_eq!(
-        read_session(&descriptor, parent).await.session.pending_move,
-        None
-    );
     hosted.server.shutdown().await.expect("shut down server");
+}
+
+/// A brokered Subagent at any depth beneath the caller is the caller's to Move,
+/// as it is the Subagent's own between them, and nothing beneath a sibling is
+/// that Subagent's.
+#[tokio::test]
+async fn a_brokered_subagent_at_any_depth_beneath_the_caller_is_within_its_reach() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-grandchild").await;
+    let main = agent.main.clone();
+    let beside = main.join("beside");
+    std::fs::create_dir(&beside).expect("create a directory");
+    agent
+        .client
+        .spawn_subagent(researcher("codex", "gpt-5.5", json!({})))
+        .await;
+    let start = next_start(&mut agent.hosted.codex).await;
+    let child_handoff = start.broker().cloned().expect("the Broker is handed");
+    let mut child_provider = start.succeed(AgentIdentity {
+        agent: AgentId::new("codex-agent"),
+        selection: codex_selection("high"),
+    });
+    timeout(PROGRESS_DEADLINE, child_provider.next_turn())
+        .await
+        .expect("the Delegation reaches the Subagent")
+        .succeed();
+    let mut child_client = McpClient::handed(&child_handoff);
+    child_client.initialize().await;
+    let grandchild = child_client
+        .spawn_subagent(researcher("claude", "haiku", json!({})))
+        .await;
+    let start = next_start(&mut agent.hosted.claude).await;
+    let _grandchild_provider = start.succeed(AgentIdentity {
+        agent: AgentId::new("claude-agent"),
+        selection: default_selection(&claude_models()),
+    });
+
+    for client in [&mut agent.client, &mut child_client] {
+        let answer = acted(
+            client,
+            "move_session",
+            json!({ "session_id": grandchild, "directory": beside }),
+        )
+        .await;
+        assert_eq!(answer["session_id"], json!(grandchild), "{answer}");
+        assert_eq!(answer["directory"], json!(beside), "{answer}");
+    }
+    assert_eq!(
+        refused(
+            &mut child_client,
+            "move_session",
+            json!({ "session_id": agent.caller, "directory": main }),
+        )
+        .await,
+        beyond_the_caller(agent.caller),
+        "nor does its reach run up the tree"
+    );
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
 }
 
 /// Outside source control the Agent's reach is what the user showed it: beneath
 /// its Workspace's directory, and no new Worktree, since there is no Repository
-/// of its to make one of. A Repository beneath that directory is beneath it, but
-/// is another Repository for a Worktree to be asked of.
+/// of its to make one of. A Repository beneath that directory is refused as well,
+/// since a Session standing in one would reach wherever its Worktrees stand.
 #[tokio::test]
 async fn outside_source_control_an_agent_moves_only_beneath_its_workspaces_directory() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
@@ -1083,7 +1211,6 @@ async fn outside_source_control_an_agent_moves_only_beneath_its_workspaces_direc
     for (directory, resolved) in [
         (json!(beneath), beneath.clone()),
         (json!("beneath"), beneath.clone()),
-        (json!("repository"), repository_beneath.clone()),
     ] {
         let answer = acted(
             &mut agent.client,
@@ -1132,18 +1259,20 @@ async fn outside_source_control_an_agent_moves_only_beneath_its_workspaces_direc
             ),
         )
         .await;
-    agent
-        .assert_refused(
-            json!({ "directory": repository_beneath, "new_worktree": true }),
-            format!(
-                "{} lies in a Repository, and the Workspace you work in, {}, is in none, so no \
-                 new Worktree of it is yours to make; the user may make one with \
-                 /move{THE_SESSION_STAYS}",
-                repository_beneath.display(),
-                plain.display(),
-            ),
-        )
-        .await;
+    let in_a_repository = format!(
+        "{} lies in a Repository, and the Workspace you work in, {}, is in none, which is as far \
+         as you may Move a Session; the user may take one further with /move{THE_SESSION_STAYS}",
+        repository_beneath.display(),
+        plain.display(),
+    );
+    for arguments in [
+        json!({ "directory": "repository" }),
+        json!({ "directory": repository_beneath, "new_worktree": true }),
+    ] {
+        agent
+            .assert_refused(arguments, in_a_repository.clone())
+            .await;
+    }
     assert!(
         !repository_beneath
             .join(suru::protocol::MANAGED_WORKTREE_DIRECTORY)
@@ -1219,12 +1348,14 @@ async fn a_bare_root_of_the_callers_repository_makes_a_new_worktree_and_takes_no
         .expect("shut down server");
 }
 
-/// A Sidekick's own Session is refused, whoever asks; until it has a form of its
-/// own, a Sidekick reaches no further than any Agent, whose boundary leaves it
-/// nothing since no Session Moves into its Workspace. A Sidekick's brokered
-/// Subagent is offered the ordinary form, and is no further within reach.
+/// A Sidekick's own Session is refused, whoever asks. A Sidekick's brokered
+/// Subagent is no Sidekick and is offered the ordinary form, as it is to its
+/// Sidekick until that has one of its own: the boundary it gives is beneath the
+/// Sidekick Workspace's directory, which takes no Session itself, so such a
+/// Subagent Moves into a directory beneath it, and no further. It then stands in
+/// a Workspace of its own and is bounded by that.
 #[tokio::test]
-async fn a_sidekick_and_its_subagents_are_offered_the_ordinary_form_and_it_moves_none_of_them() {
+async fn a_sidekick_never_moves_and_its_subagent_moves_only_beneath_its_workspace() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let mut hosted = host_providers(state_dir.path(), "agent-move-sidekick", None).await;
     let descriptor = hosted.server.descriptor().clone();
@@ -1232,6 +1363,8 @@ async fn a_sidekick_and_its_subagents_are_offered_the_ordinary_form_and_it_moves
     let (sidekick, mut client, _sidekick_provider) =
         start_sidekick(&descriptor, &mut hosted.claude).await;
     let directory = sidekick_directory(&descriptor).await;
+    let notes = directory.join("notes");
+    std::fs::create_dir(&notes).expect("create a directory beneath the Sidekick Workspace");
     let (other, other_handoff, _other_provider) = start_session(
         &descriptor,
         &mut hosted.codex,
@@ -1239,8 +1372,11 @@ async fn a_sidekick_and_its_subagents_are_offered_the_ordinary_form_and_it_moves
         default_selection(&codex_models()),
     )
     .await;
-    const A_SIDEKICKS: &str = "The Session works in the Sidekick Workspace, which is what makes \
-                               an Agent a Sidekick, so it never Moves.";
+    const A_SIDEKICKS: &str = "The Session is a Sidekick's, and the Sidekick Workspace is what \
+                               makes it one, so it never Moves.";
+    const INTO_THE_SIDEKICK_WORKSPACE: &str = "The destination is in the Sidekick Workspace, \
+                                               where any Agent at work is a Sidekick, so no \
+                                               Session Moves there.";
 
     assert_eq!(
         refused(
@@ -1290,8 +1426,36 @@ async fn a_sidekick_and_its_subagents_are_offered_the_ordinary_form_and_it_moves
             json!({ "directory": elsewhere })
         )
         .await,
-        A_SIDEKICKS,
-        "the Subagent works in the Sidekick Workspace"
+        beyond_the_workspace(&elsewhere, &directory),
+        "its boundary is the directory it works in"
+    );
+    assert_eq!(
+        refused(
+            &mut child_client,
+            "move_session",
+            json!({ "directory": directory })
+        )
+        .await,
+        INTO_THE_SIDEKICK_WORKSPACE,
+    );
+    let answer = acted(
+        &mut child_client,
+        "move_session",
+        json!({ "directory": "notes" }),
+    )
+    .await;
+    assert_eq!(answer["outcome"], json!("pending"), "{answer}");
+    assert_eq!(answer["directory"], json!(notes));
+    let answer = acted(
+        &mut client,
+        "move_session",
+        json!({ "session_id": child, "directory": notes }),
+    )
+    .await;
+    assert_eq!(
+        answer["session_id"],
+        json!(child),
+        "and so may its Sidekick"
     );
     assert_eq!(
         refused(
@@ -1300,7 +1464,8 @@ async fn a_sidekick_and_its_subagents_are_offered_the_ordinary_form_and_it_moves
             json!({ "session_id": child, "directory": elsewhere }),
         )
         .await,
-        A_SIDEKICKS,
+        beyond_the_workspace(&elsewhere, &directory),
+        "no further than the ordinary form reaches, for now"
     );
 
     let mut other_client = McpClient::handed(&other_handoff);
@@ -1312,8 +1477,8 @@ async fn a_sidekick_and_its_subagents_are_offered_the_ordinary_form_and_it_moves
             json!({ "session_id": sidekick, "directory": elsewhere }),
         )
         .await,
-        A_SIDEKICKS,
-        "whoever asks"
+        beyond_the_caller(sidekick),
+        "and to any other Agent a Sidekick's Session is one more beyond it"
     );
     assert!(
         refused(
@@ -1441,4 +1606,223 @@ async fn a_move_whose_client_has_gone_still_lands_whole() {
     })
     .await;
     hosted.server.shutdown().await.expect("shut down server");
+}
+
+/// What a Session's Transcript says of its one Move: how it settled, and why.
+fn the_move(snapshot: &SessionSnapshot) -> (ActivityStatus, Option<String>) {
+    snapshot
+        .activities
+        .iter()
+        .find_map(|activity| match activity {
+            Activity::Move { status, error, .. } => Some((*status, error.clone())),
+            _ => None,
+        })
+        .expect("a Move is recorded")
+}
+
+/// A destination judged and stored stands for that directory and no other: one
+/// replaced by a symlink while the Move waits fails it, saying where it now leads,
+/// rather than taking the Session wherever that is and leaving the boundary to be
+/// read from there.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_pending_destination_a_symlink_has_replaced_fails_rather_than_following_it() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-swapped-pending").await;
+    let (main, sibling) = (agent.main.clone(), agent.sibling.clone());
+    let scratch = main.join("scratch");
+    std::fs::create_dir(&scratch).expect("create a directory");
+    let answer = acted(
+        &mut agent.client,
+        "move_session",
+        json!({ "directory": "scratch" }),
+    )
+    .await;
+    assert_eq!(answer["outcome"], json!("pending"), "{answer}");
+
+    std::fs::remove_dir(&scratch).expect("remove the directory");
+    std::os::unix::fs::symlink(&sibling, &scratch).expect("make a symlink");
+
+    let settled = agent.settle().await;
+    assert_eq!(settled.session.execution_directory.path, main);
+    assert_eq!(
+        the_move(&settled),
+        (
+            ActivityStatus::Failed,
+            Some(format!(
+                "{} now leads to {}{THE_SESSION_STAYS}",
+                scratch.display(),
+                sibling.display()
+            ))
+        )
+    );
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A destination that comes to lead elsewhere between being resolved and being
+/// read is refused, rather than judged as one directory and read as another.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_destination_replaced_as_it_is_read_is_refused() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let root = tempfile::tempdir().expect("create the fixtures' root");
+    let main = root.path().join("main");
+    let sibling = root.path().join("sibling");
+    repository(&main);
+    repository(&sibling);
+    let (main, sibling) = (canonical(&main), canonical(&sibling));
+    let beside = main.join("beside");
+    std::fs::create_dir(&beside).expect("create a directory");
+    let reached = Arc::new(tokio::sync::Notify::new());
+    let open = Arc::new(tokio::sync::Notify::new());
+    let mut hosted = host_providers_with_source_control(
+        state_dir.path(),
+        "agent-move-swapped-reading",
+        None,
+        ServerTimings::default(),
+        Arc::new(HoldsDestination {
+            git: suru::source_control::GitSourceControl::default(),
+            held: beside.clone(),
+            reached: reached.clone(),
+            open: open.clone(),
+            readings: std::sync::atomic::AtomicUsize::new(0),
+        }),
+    )
+    .await;
+    let descriptor = hosted.server.descriptor().clone();
+    let (caller, handoff, _provider) = start_session(
+        &descriptor,
+        &mut hosted.claude,
+        &main,
+        default_selection(&claude_models()),
+    )
+    .await;
+    let mut client = McpClient::handed(&handoff);
+    client.initialize().await;
+
+    let refusal = tokio::join!(
+        refused(&mut client, "move_session", json!({ "directory": beside })),
+        async {
+            timeout(PROGRESS_DEADLINE, reached.notified())
+                .await
+                .expect("the Move reads its destination");
+            std::fs::remove_dir(&beside).expect("remove the directory");
+            std::os::unix::fs::symlink(&sibling, &beside).expect("make a symlink");
+            open.notify_one();
+        }
+    )
+    .0;
+
+    assert_eq!(
+        refusal,
+        format!(
+            "{} now leads to {}{THE_SESSION_STAYS}",
+            beside.display(),
+            sibling.display()
+        )
+    );
+    assert_eq!(
+        read_session(&descriptor, caller).await.session.pending_move,
+        None
+    );
+    hosted.server.shutdown().await.expect("shut down server");
+}
+
+/// A Workspace directory that no longer reads as itself gives no boundary, rather
+/// than whatever it now leads to being taken for one.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_workspace_directory_a_symlink_has_replaced_gives_no_boundary() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let root = tempfile::tempdir().expect("create the fixtures' root");
+    let plain = root.path().join("plain");
+    let apart = root.path().join("apart");
+    std::fs::create_dir_all(&plain).expect("create a directory");
+    std::fs::create_dir_all(&apart).expect("create a directory");
+    let (plain, apart) = (canonical(&plain), canonical(&apart));
+    let mut agent = MovingAgent::begin_in(
+        state_dir.path(),
+        "agent-move-swapped-workspace",
+        root,
+        plain.clone(),
+        apart.clone(),
+    )
+    .await;
+
+    std::fs::remove_dir(&plain).expect("remove the directory");
+    std::os::unix::fs::symlink(&apart, &plain).expect("make a symlink");
+
+    agent
+        .assert_refused(
+            json!({ "directory": apart }),
+            format!(
+                "{} now leads to {}{THE_SESSION_STAYS}",
+                plain.display(),
+                apart.display()
+            ),
+        )
+        .await;
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A new Worktree starts from where the Session works, read afresh, so a Session
+/// whose directory has come to lead into another Repository could otherwise have
+/// a Worktree of that one made while asking of its own. Nothing is made.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_new_worktree_starting_from_another_repository_than_was_judged_is_refused() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let root = tempfile::tempdir().expect("create the fixtures' root");
+    let main = root.path().join("main");
+    let sibling = root.path().join("sibling");
+    repository(&main);
+    repository(&sibling);
+    let (main, sibling) = (canonical(&main), canonical(&sibling));
+    let within = main.join("within");
+    std::fs::create_dir(&within).expect("create a directory");
+    let mut agent = MovingAgent::begin_in(
+        state_dir.path(),
+        "agent-move-swapped-source",
+        root,
+        within.clone(),
+        sibling.clone(),
+    )
+    .await;
+
+    std::fs::remove_dir(&within).expect("remove the directory");
+    std::os::unix::fs::symlink(&sibling, &within).expect("make a symlink");
+
+    agent
+        .assert_refused(
+            json!({ "directory": main, "new_worktree": true }),
+            format!(
+                "No new Worktree could be made: {} now leads into another Repository than \
+                 {}{THE_SESSION_STAYS}",
+                sibling.display(),
+                main.display()
+            ),
+        )
+        .await;
+    assert!(
+        !sibling
+            .join(suru::protocol::MANAGED_WORKTREE_DIRECTORY)
+            .exists(),
+        "no Worktree of it was made"
+    );
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
 }

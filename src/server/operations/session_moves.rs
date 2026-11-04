@@ -10,18 +10,30 @@
 //! leaves the Session where it was.
 //!
 //! An ordinary Agent's asking is bounded besides, here where nothing can go
-//! round it and before anything is made (ADR 0042, ADR 0059). The Session must
-//! be the Agent's own or a brokered Subagent's beneath it, and the destination
-//! must lie within what the Agent's own Session works in now, whichever Session
-//! is Moved: the Worktrees of its Repository, or beneath its Workspace's
-//! directory outside source control. The destination is judged where it
-//! resolves, so no `..`, `~`, relative path or symlink reaches past it, and by
-//! the Repository source control says it lies in rather than by its path: a
+//! round it and before anything is read of the Session or made (ADR 0042, ADR
+//! 0059). The Session must be the Agent's own or stand beneath it, and anything
+//! else is answered alike, whether it exists or what it is, so being refused
+//! tells an Agent nothing of another's tree. The destination must lie within
+//! what the Agent's own Session works in now, whichever Session is Moved: the
+//! Worktrees of its Repository, or outside source control beneath its
+//! Workspace's directory and in no Repository. The destination is judged where
+//! it resolves, so no `..`, `~`, relative path or symlink reaches past it, and
+//! by the Repository source control says it lies in rather than by its path: a
 //! Worktree may stand anywhere, and a Repository within a Worktree is another
 //! Repository. That reading is taken without this Server remembering what it
-//! found, so being refused leaves it knowing nothing new. What the Agent may
-//! not reach it is told naming the boundary, and a destination naming no
-//! directory is refused for that, as it is for anyone. Once the Move stands, the Session's
+//! found, so being refused teaches it nothing either. What the Agent may not
+//! reach it is told naming the boundary, and a destination naming no directory
+//! is refused for that, as it is for anyone. All this bounds what the Tool will
+//! do and no more: an Agent's shell is not sandboxed by it.
+//!
+//! Whoever asks, a destination is read once, and that one reading is what is
+//! judged, remembered and stored, so nothing is judged of one directory and done
+//! of another. A symlink standing where a directory did is caught however it came
+//! to: a reading that finds its directory now leads elsewhere is refused, and so
+//! is a pending Move whose stored destination has come to lead elsewhere by the
+//! time it applies, since a stored destination must be the destination.
+//!
+//! Once the Move stands, the Session's
 //! Provider actor is told, so the process it ran in the directory left behind
 //! stops and the next Turn resumes the conversation in the new one; and once
 //! that process has gone, a Worktree the Move left is given the orphan check a
@@ -96,9 +108,9 @@ pub(crate) enum MoveRefusal {
     /// The Session is a native Subagent's, which runs inside its parent's
     /// Provider process.
     NativeSubagent,
-    /// The Session works in the Sidekick Workspace, which is a Sidekick's
-    /// identity and holds its Subagents: refused whoever asks, a Sidekick
-    /// included.
+    /// The Session is a Sidekick's, whose Workspace is its identity: refused
+    /// whoever asks, a Sidekick included. Its Subagents are no Sidekicks, and
+    /// are refused nothing by this.
     SidekickSession,
     /// The destination lies in the Sidekick Workspace, where any Agent at
     /// work is a Sidekick.
@@ -125,8 +137,8 @@ impl fmt::Display for MoveRefusal {
                  process, so it cannot Move on its own.",
             ),
             Self::SidekickSession => formatter.write_str(
-                "The Session works in the Sidekick Workspace, which is what makes an Agent a \
-                 Sidekick, so it never Moves.",
+                "The Session is a Sidekick's, and the Sidekick Workspace is what makes it one, so \
+                 it never Moves.",
             ),
             Self::SidekickDestination => formatter.write_str(
                 "The destination is in the Sidekick Workspace, where any Agent at work is a \
@@ -145,41 +157,59 @@ impl fmt::Display for MoveRefusal {
     }
 }
 
+/// Who asks for a Move, which is what bounds it.
+#[derive(Clone, Copy)]
+enum MoveAsker<'a> {
+    /// The user, or a Sidekick on their behalf, whose act names its author:
+    /// any Session, any directory of this Server.
+    Reaching { author: Option<&'a Author> },
+    /// The ordinary Agent of this Session, whom a [`MoveBoundary`] holds.
+    Agent(SessionId),
+}
+
 /// How far an ordinary Agent's Move reaches, read from where the Agent's own
 /// Session works now: a Move already applied has changed that, and one still
 /// pending has not. Any Session it Moves is held to this, not to where that
-/// Session works.
+/// Session works. It bounds what this Tool will do, not what the Agent's shell
+/// can: `git worktree add` makes a Worktree of its Repository anywhere, and that
+/// is then within it (ADR 0059).
 enum MoveBoundary {
     /// Every Worktree of this Repository, wherever one stands.
     Repository { id: RepositoryId, path: PathBuf },
-    /// Beneath this directory, of a Workspace outside source control.
+    /// Beneath this directory, of a Workspace outside source control, and in
+    /// no Repository: a Repository found there would widen the boundary to
+    /// wherever its Worktrees stand.
     Directory(PathBuf),
 }
 
 impl MoveBoundary {
-    fn of(agent: &Session) -> Self {
-        match &agent.workspace.repository {
-            Some(repository) => Self::Repository {
+    /// The boundary of the Agent of `agent`. Refused where its Workspace's
+    /// directory cannot be read as what is stored, which would otherwise make
+    /// whatever now stands there the boundary.
+    fn of(agent: &Session) -> Result<Self, MoveRefusal> {
+        if let Some(repository) = &agent.workspace.repository {
+            return Ok(Self::Repository {
                 id: repository.id.clone(),
                 path: repository.presentation_path().to_owned(),
-            },
-            None => Self::Directory(
-                crate::paths::canonical(&agent.workspace.path)
-                    .unwrap_or_else(|_| agent.workspace.path.clone()),
-            ),
+            });
+        }
+        let stored = &agent.workspace.path;
+        match crate::paths::canonical(stored) {
+            Ok(read) if read == *stored => Ok(Self::Directory(read)),
+            Ok(read) => Err(led_elsewhere(stored, &read)),
+            Err(error) => Err(MoveRefusal::Destination(format!(
+                "{}, the directory of the Workspace you work in, cannot be read to judge how far \
+                 you may Move a Session: {error}",
+                stored.display()
+            ))),
         }
     }
 
-    /// Refuses `directory`, canonical, where `reading` says it lies beyond the
-    /// boundary, or, where a new Worktree is asked, in no Repository the Agent
-    /// works in. A directory in no Repository at all is left to be refused for
-    /// that, as anyone's is.
-    fn admits(
-        &self,
-        directory: &Path,
-        reading: &ResolvedWorkspace,
-        new_worktree: bool,
-    ) -> Result<(), MoveRefusal> {
+    /// Refuses `directory`, canonical, where `reading` of it says it lies
+    /// beyond the boundary. Asking for a new Worktree changes nothing of this:
+    /// a directory in no Repository at all is left to be refused for that, as
+    /// anyone's is.
+    fn admits(&self, directory: &Path, reading: &ResolvedWorkspace) -> Result<(), MoveRefusal> {
         let found = reading.workspace.repository.as_deref();
         let beyond = match self {
             Self::Repository { id, .. } if found.is_some_and(|found| found.id == *id) => None,
@@ -195,9 +225,9 @@ impl MoveBoundary {
                 directory.display(),
                 root.display()
             )),
-            Self::Directory(root) if new_worktree && found.is_some() => Some(format!(
-                "{} lies in a Repository, and the Workspace you work in, {}, is in none, so no \
-                 new Worktree of it is yours to make; the user may make one with /move",
+            Self::Directory(root) if found.is_some() => Some(format!(
+                "{} lies in a Repository, and the Workspace you work in, {}, is in none, which is \
+                 as far as you may Move a Session; the user may take one further with /move",
                 directory.display(),
                 root.display()
             )),
@@ -209,6 +239,15 @@ impl MoveBoundary {
             )))
         })
     }
+}
+
+/// What a destination is refused with where `judged` no longer reads as itself.
+fn led_elsewhere(judged: &Path, found: &Path) -> MoveRefusal {
+    MoveRefusal::Destination(format!(
+        "{} now leads to {}",
+        judged.display(),
+        found.display()
+    ))
 }
 
 /// A new Managed Worktree made for a Move, under the locks that keep every
@@ -233,33 +272,35 @@ impl SessionOperations {
         destination: MoveDestination,
         author: Option<&Author>,
     ) -> Result<MoveOutcome, MoveRefusal> {
-        self.move_session_within(session_id, destination, author, None)
+        self.move_session_as(session_id, destination, MoveAsker::Reaching { author })
             .await
     }
 
     /// [`Self::move_session`] as the ordinary Agent of `agent` asks it: refused
-    /// besides for a Session neither `agent` nor a brokered Subagent's beneath
-    /// it, and for a destination beyond where `agent` works. Nothing is recorded
-    /// of who asked, since only a Sidekick's act places a Session in its tree.
+    /// besides, ahead of all else, for a Session neither `agent` nor beneath it,
+    /// and for a destination beyond where `agent` works. Nothing is recorded of
+    /// who asked, since only a Sidekick's act places a Session in its tree.
     pub(crate) async fn move_session_for_agent(
         &self,
         agent: SessionId,
         session_id: SessionId,
         destination: MoveDestination,
     ) -> Result<MoveOutcome, MoveRefusal> {
-        self.move_session_within(session_id, destination, None, Some(agent))
+        self.move_session_as(session_id, destination, MoveAsker::Agent(agent))
             .await
     }
 
-    /// Moves a Session as [`Self::move_session`] says, within what `agent`
-    /// reaches where an ordinary Agent asks.
-    async fn move_session_within(
+    /// Moves a Session as [`Self::move_session`] says, within what `asker`
+    /// reaches.
+    async fn move_session_as(
         &self,
         session_id: SessionId,
         destination: MoveDestination,
-        author: Option<&Author>,
-        agent: Option<SessionId>,
+        asker: MoveAsker<'_>,
     ) -> Result<MoveOutcome, MoveRefusal> {
+        if let MoveAsker::Agent(agent) = asker {
+            self.judge_agents_reach(agent, session_id)?;
+        }
         self.hydrate(session_id)
             .await
             .map_err(|_| MoveRefusal::Storage)?;
@@ -267,48 +308,54 @@ impl SessionOperations {
             .sessions
             .session(session_id)
             .ok_or(MoveRefusal::SessionNotFound)?;
-        if self.sidekick_workspace.holds(&session.workspace) {
+        if self.sidekick_workspace.is_sidekicks(&session) {
             return Err(MoveRefusal::SidekickSession);
         }
         self.sessions.may_move(session_id).map_err(store_refusal)?;
-        let boundary = agent
-            .map(|agent| self.agent_boundary(agent, session_id))
-            .transpose()?;
+        let boundary = match asker {
+            MoveAsker::Agent(agent) => {
+                let agent = self
+                    .sessions
+                    .session(agent)
+                    .ok_or(MoveRefusal::SessionNotFound)?;
+                Some(MoveBoundary::of(&agent)?)
+            }
+            MoveAsker::Reaching { .. } => None,
+        };
         // The path is read against where the Session works and this
         // Server's home as it is asked for; whether a directory stands there
         // is read now, and again if the Move waits.
-        let written = |path: &Path| {
-            crate::source_control::written_path(
-                path,
-                &session.execution_directory.path,
-                self.home.as_deref(),
-            )
-            .map_err(MoveRefusal::Destination)
+        let (path, new_worktree) = match &destination {
+            MoveDestination::Directory { path } => (path, false),
+            MoveDestination::NewWorktree { directory } => (directory, true),
         };
-        let destination = match boundary {
-            Some(boundary) => {
-                self.within_boundary(&boundary, destination, written)
-                    .await?
-            }
-            None => destination,
-        };
-        let (outcome, mut aftermath) = match destination {
-            MoveDestination::Directory { path } => {
-                let (resolved, left) = self.read_destination(session_id, written(&path)?).await?;
-                self.sessions
-                    .move_to(session_id, resolved, left)
-                    .map_err(|error| stored_refusal(session_id, error))?
-            }
-            MoveDestination::NewWorktree { directory } => {
-                let made = self
-                    .make_worktree(session_id, &session, written(&directory)?)
-                    .await?;
-                self.move_into_made_worktree(session_id, made).await?
-            }
+        let written = crate::source_control::written_path(
+            path,
+            &session.execution_directory.path,
+            self.home.as_deref(),
+        )
+        .map_err(MoveRefusal::Destination)?;
+        let (directory, reading) = self.read_directory(written).await?;
+        if let Some(boundary) = &boundary {
+            boundary.admits(&directory, &reading)?;
+        }
+        let resolved = self.source_control.resolve_read(reading).await;
+        let (outcome, mut aftermath) = if new_worktree {
+            let made = self
+                .make_worktree(session_id, &session, directory, resolved)
+                .await?;
+            self.move_into_made_worktree(session_id, made).await?
+        } else {
+            let left = self.read_destination_left(session_id, &resolved).await?;
+            self.sessions
+                .move_to(session_id, resolved, left)
+                .map_err(|error| stored_refusal(session_id, error))?
         };
         // A Move to where the Session stood with nothing pending changed
         // nothing, so nothing is stopped and no act recorded.
-        if !matches!(outcome, MoveOutcome::AlreadyThere { .. }) {
+        if let MoveAsker::Reaching { author } = asker
+            && !matches!(outcome, MoveOutcome::AlreadyThere { .. })
+        {
             self.record_act(session_id, author);
         }
         if let Some(abandoned) = aftermath.abandoned.take() {
@@ -320,67 +367,38 @@ impl SessionOperations {
         Ok(outcome)
     }
 
-    /// How far the Agent of `agent` may Move `session_id`: refused where it is
-    /// neither that Session nor a brokered Subagent's beneath it.
-    fn agent_boundary(
+    /// Refuses `session_id` where it is neither the Session of `agent` nor
+    /// beneath it, whether it exists or what it is, read from the store alone,
+    /// so no other tree is read back to answer. An Agent's own tree is held
+    /// while its Provider runs. Beneath it, a native Subagent's is left to be
+    /// refused for that, since it is the Agent's to know of.
+    fn judge_agents_reach(
         &self,
         agent: SessionId,
         session_id: SessionId,
-    ) -> Result<MoveBoundary, MoveRefusal> {
-        if session_id != agent
-            && !self
-                .sessions
-                .is_brokered_subagent_beneath(agent, session_id)
-        {
-            return Err(MoveRefusal::BeyondAgent(format!(
-                "You may Move only your own Session and those of the Subagents spawned with \
-                 spawn_subagent by you or by a Subagent beneath you; Session {session_id} is \
-                 neither, so it stays where it is."
-            )));
+    ) -> Result<(), MoveRefusal> {
+        if session_id == agent || self.sessions.stands_beneath(agent, session_id) {
+            return Ok(());
         }
-        let agent = self
-            .sessions
-            .session(agent)
-            .ok_or(MoveRefusal::SessionNotFound)?;
-        Ok(MoveBoundary::of(&agent))
-    }
-
-    /// `destination` with its path resolved, refused where that lies beyond
-    /// `boundary`: judged here, once, so nothing is made before it, and answered
-    /// resolved so nothing reads it differently after. A path naming no
-    /// directory is refused for that, wherever it points. The reading is left
-    /// unremembered, as being refused must teach this Server nothing.
-    async fn within_boundary(
-        &self,
-        boundary: &MoveBoundary,
-        destination: MoveDestination,
-        written: impl Fn(&Path) -> Result<PathBuf, MoveRefusal>,
-    ) -> Result<MoveDestination, MoveRefusal> {
-        let (path, new_worktree) = match &destination {
-            MoveDestination::Directory { path } => (path, false),
-            MoveDestination::NewWorktree { directory } => (directory, true),
-        };
-        let directory = readable_directory(written(path)?).await?;
-        let reading = self.source_control.read_unremembered(&directory).await;
-        boundary.admits(&directory, &reading, new_worktree)?;
-        Ok(if new_worktree {
-            MoveDestination::NewWorktree { directory }
-        } else {
-            MoveDestination::Directory { path: directory }
-        })
+        Err(MoveRefusal::BeyondAgent(format!(
+            "You may Move only your own Session and those of the Subagents spawned with \
+             spawn_subagent by you or by a Subagent beneath you; Session {session_id} is \
+             neither, so it stays where it is."
+        )))
     }
 
     /// Makes the new Managed Worktree a Move asks for of the Repository
-    /// `directory` lies in, and answers it with the locks it was made under
-    /// still held.
+    /// `directory` lies in, as `named` read it, and answers it with the locks
+    /// it was made under still held. What it starts from is read again by the
+    /// plan, so a plan found in another Repository than the one asked of is
+    /// refused with nothing made.
     async fn make_worktree(
         &self,
         session_id: SessionId,
         session: &Session,
         directory: PathBuf,
+        named: ResolvedWorkspace,
     ) -> Result<MadeWorktree<'_>, MoveRefusal> {
-        let directory = readable_directory(directory).await?;
-        let named = self.source_control.resolve(&directory, None).await;
         if self.sidekick_workspace.holds(&named.workspace) {
             return Err(MoveRefusal::SidekickDestination);
         }
@@ -410,6 +428,13 @@ impl SessionOperations {
             )
             .await
             .map_err(not_made)?;
+        if preparation.repository.id != repository.id {
+            return Err(not_made(format!(
+                "{} now leads into another Repository than {}",
+                source.display(),
+                repository.presentation_path().display()
+            )));
+        }
         preparation.for_move = true;
         let made = async {
             self.preparations.save(&preparation)?;
@@ -476,7 +501,7 @@ impl SessionOperations {
     ) -> Result<(MoveOutcome, MoveAftermath), MoveRefusal> {
         let preparation = &made.preparation;
         let moved = match self
-            .read_destination(session_id, preparation.destination.path.clone())
+            .read_destination(session_id, preparation.destination.path.clone(), None)
             .await
         {
             Ok((resolved, left)) => self
@@ -558,14 +583,20 @@ impl SessionOperations {
         }
     }
 
-    /// Applies or fails `pending` as its destination reads now.
+    /// Applies or fails `pending` as its destination reads now, which must be
+    /// as itself: what was judged and stored is what the Session may Move to,
+    /// not whatever has since come to stand there.
     async fn apply_or_fail_move(
         &self,
         session_id: SessionId,
         pending: &PendingMove,
     ) -> Result<PendingMoveSettled, MoveSessionError> {
         let read = self
-            .read_destination(session_id, pending.destination.path.clone())
+            .read_destination(
+                session_id,
+                pending.destination.path.clone(),
+                Some(&pending.destination.path),
+            )
             .await;
         match read {
             Ok((resolved, left)) => {
@@ -678,21 +709,54 @@ impl SessionOperations {
         bound
     }
 
-    /// Reads `destination`, a path already read against the Session's
-    /// Execution Directory and this Server's home: refuses one where no
-    /// directory this Server can read stands now, resolves where it lies,
-    /// refuses a bare Repository and the Sidekick Workspace. Answers the
-    /// reading, beside one of the Worktrees of the Repository the Session
-    /// would leave, which the Move's record names a branch from. Every Move —
-    /// asked now, or pending until a Turn settles, whose destination may be
-    /// gone by then — has its destination read here.
+    /// The directory at `written`, a path already read against the Session's
+    /// Execution Directory and this Server's home, beside the one reading of it
+    /// everything about the Move goes by, which this Server does not yet
+    /// remember. Refused where no directory it can read stands there, and where
+    /// that directory had come to lead elsewhere by the time it was read.
+    async fn read_directory(
+        &self,
+        written: PathBuf,
+    ) -> Result<(PathBuf, ResolvedWorkspace), MoveRefusal> {
+        let directory = readable_directory(written).await?;
+        let reading = self.source_control.read_unremembered(&directory).await;
+        match &reading.execution_directory {
+            Some(found) if found.path != directory => Err(led_elsewhere(&directory, &found.path)),
+            _ => Ok((directory, reading)),
+        }
+    }
+
+    /// Reads a destination standing for a Move already taken: `destination`,
+    /// which must read as `judged` where it was judged, is refused as
+    /// [`Self::read_directory`] refuses and as
+    /// [`Self::read_destination_left`] does. Answers the reading, beside what
+    /// that names of the Repository left.
     async fn read_destination(
         &self,
         session_id: SessionId,
         destination: PathBuf,
+        judged: Option<&Path>,
     ) -> Result<(ResolvedWorkspace, Vec<CheckoutSummary>), MoveRefusal> {
-        let directory = readable_directory(destination).await?;
-        let resolved = self.source_control.resolve(&directory, None).await;
+        let (directory, reading) = self.read_directory(destination).await?;
+        if let Some(judged) = judged
+            && directory != judged
+        {
+            return Err(led_elsewhere(judged, &directory));
+        }
+        let resolved = self.source_control.resolve_read(reading).await;
+        let left = self.read_destination_left(session_id, &resolved).await?;
+        Ok((resolved, left))
+    }
+
+    /// Refuses a destination read as `resolved` where it is the Sidekick
+    /// Workspace or a bare Repository, and otherwise answers one of the Worktrees
+    /// of the Repository the Session would leave, which the Move's record names
+    /// a branch from. Every Move's destination is held to this.
+    async fn read_destination_left(
+        &self,
+        session_id: SessionId,
+        resolved: &ResolvedWorkspace,
+    ) -> Result<Vec<CheckoutSummary>, MoveRefusal> {
         if self.sidekick_workspace.holds(&resolved.workspace) {
             return Err(MoveRefusal::SidekickDestination);
         }
@@ -706,7 +770,7 @@ impl SessionOperations {
             .sessions
             .session(session_id)
             .ok_or(MoveRefusal::SessionNotFound)?;
-        let left = match &session.checkout {
+        Ok(match &session.checkout {
             Some(checkout)
                 if !resolved
                     .checkouts
@@ -719,8 +783,7 @@ impl SessionOperations {
                     .checkouts
             }
             _ => Vec::new(),
-        };
-        Ok((resolved, left))
+        })
     }
 
     /// Tells the Session's Provider actor it Moved, runs the orphan check for

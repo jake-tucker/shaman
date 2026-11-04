@@ -1887,6 +1887,55 @@ async fn a_pending_moves_destination_gone_at_settlement_fails_it_and_the_session
     fixture.shutdown().await;
 }
 
+/// A stored destination must be the destination, whoever asked: one a symlink has
+/// replaced by the time the Move applies fails it, naming where it now leads.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_pending_moves_destination_a_symlink_has_replaced_fails_it_and_the_session_stays() {
+    let mut fixture = IdleSession::begin("move-pending-swapped-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let elsewhere = fixture.directory("elsewhere");
+    let turn = fixture.working("Keep working").await;
+    pending(
+        fixture
+            .ask_move(&destination)
+            .await
+            .expect("a Move of a Working Session is taken"),
+    );
+
+    std::fs::remove_dir(&destination).expect("remove the destination");
+    std::os::unix::fs::symlink(&elsewhere, &destination).expect("make a symlink");
+    turn.succeed();
+    fixture.settle().await;
+    let settled = fixture
+        .session_where("the Move fails as the Turn settles", |snapshot| {
+            bound_for(snapshot).is_none()
+        })
+        .await;
+
+    assert_eq!(settled.session.execution_directory.path, fixture.origin);
+    let error = settled
+        .activities
+        .iter()
+        .find_map(|activity| match activity {
+            Activity::Move { status, error, .. } => {
+                assert_eq!(*status, ActivityStatus::Failed);
+                error.clone()
+            }
+            _ => None,
+        })
+        .expect("the Move's row says why it failed");
+    assert_eq!(
+        error,
+        format!(
+            "{} now leads to {}, so the Session stays where it is.",
+            destination.display(),
+            elsewhere.display()
+        )
+    );
+    fixture.shutdown().await;
+}
+
 #[tokio::test]
 async fn a_pending_move_outlives_a_restart_and_applies_as_the_stopped_turn_settles() {
     let mut fixture = IdleSession::begin("move-restart-test", "origin").await;

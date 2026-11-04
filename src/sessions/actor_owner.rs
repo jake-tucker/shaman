@@ -74,6 +74,33 @@ impl SessionStore {
             .is_some_and(SessionRecord::is_brokered_subagent)
             && state.actor_owners_beneath(session_id).contains(&subagent)
     }
+
+    /// Whether `session_id` stands in the tree beneath `ancestor`, at any
+    /// depth, read up its own line of parents alone: no other tree is walked,
+    /// and a Session the store does not hold stands beneath nothing.
+    pub(crate) fn stands_beneath(&self, ancestor: SessionId, session_id: SessionId) -> bool {
+        let state = self
+            .state
+            .lock()
+            .expect("Session store lock is not poisoned");
+        let mut seen = vec![session_id];
+        let mut current = session_id;
+        while let Some(parent) = state
+            .sessions
+            .get(&current)
+            .and_then(|record| record.snapshot.session.parent)
+        {
+            if parent == ancestor {
+                return true;
+            }
+            if seen.contains(&parent) {
+                return false;
+            }
+            seen.push(parent);
+            current = parent;
+        }
+        false
+    }
 }
 
 impl SessionStoreState {

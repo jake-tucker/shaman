@@ -63,9 +63,9 @@ if your turn has ended, so once you have nothing left to do but wait on one, \
 end your turn. Call wait_subagents only when you must have a Subagent's result \
 before your turn ends. Call list_workspaces to learn where the user's other \
 work lives: the Workspaces they work in on this machine, each with what it is \
-for. Call move_session when your work belongs elsewhere: it Moves your Session, \
-or a Subagent's you spawned through Suru, into a Worktree of your Repository, a \
-new one included, or outside source control beneath your Workspace's directory.";
+for. Call move_session to Move your Session, or a Subagent you spawned through \
+Suru, into a Worktree of your Repository or, outside source control, beneath \
+your Workspace's directory.";
 
 type Transport = StreamableHttpService<BrokerServer, NeverSessionManager>;
 

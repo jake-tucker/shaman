@@ -351,6 +351,10 @@ async fn a_sidekicks_session_is_handed_its_own_tools_and_note_and_another_sessio
         tools.contains(&"list_workspaces".to_owned()),
         "though it is offered list_workspaces, as every Agent is: {tools:?}"
     );
+    assert!(
+        tools.contains(&"move_session".to_owned()) && other_note.contains("suru-move_session"),
+        "and move_session, named as Copilot names it: {tools:?} {other_note:?}"
+    );
 }
 
 /// The `session.create` parameters Copilot was sent for Sessions handed the Broker's note, once
@@ -488,6 +492,7 @@ async fn a_permission_request_for_the_broker_is_approved_without_reaching_the_us
     let requests = r#"      event p1 permission.requested '{"requestId":"managed","permissionRequest":{"kind":"mcp","serverName":"suru","toolName":"suru-list_providers","toolTitle":"list_providers","args":{},"readOnly":false,"toolCallId":"call-managed","managedApprovalRequired":true}}'
       event p2 permission.requested '{"requestId":"broker","permissionRequest":{"kind":"mcp","serverName":"suru","toolName":"suru-list_providers","toolTitle":"list_providers","args":{},"readOnly":false,"toolCallId":"call-broker"}}'
       event p4 permission.requested '{"requestId":"sidekick-act","permissionRequest":{"kind":"mcp","serverName":"suru","toolName":"suru-interrupt_session","toolTitle":"interrupt_session","args":{"session_id":"elsewhere"},"readOnly":false,"toolCallId":"call-sidekick-act"}}'
+      event p5 permission.requested '{"requestId":"move","permissionRequest":{"kind":"mcp","serverName":"suru","toolName":"suru-move_session","toolTitle":"move_session","args":{"directory":"."},"readOnly":false,"toolCallId":"call-move"}}'
       event p3 permission.requested '{"requestId":"linear","permissionRequest":{"kind":"mcp","serverName":"linear","toolName":"linear-list_issues","toolTitle":"list_issues","args":{},"readOnly":true,"toolCallId":"call-linear"}}'
 "#;
     let copilot = ScriptedCopilot::new(&format!("{}{}", conversation_arms(), send_arm(requests)));
@@ -512,6 +517,11 @@ async fn a_permission_request_for_the_broker_is_approved_without_reaching_the_us
     assert_eq!(
         decision["result"]["kind"], "approve-once",
         "a Sidekick's act on another Session asks no Approval either: {decision}"
+    );
+    let decision = native_decision(&copilot, "move").await;
+    assert_eq!(
+        decision["result"]["kind"], "approve-once",
+        "nor does an Agent's Move of its own Session: {decision}"
     );
     let asked = pending
         .activities

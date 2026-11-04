@@ -96,10 +96,9 @@ fn agent_note(tool_name: &impl Fn(&str) -> String) -> String {
          Subagents, end your turn rather than calling {wait_subagents}. Your own tools for \
          spawning Subagents remain available, and Suru never re-routes them. Call \
          {list_workspaces} to learn where the user's other work lives: the Workspaces they work \
-         in on this machine, each with what it is for. Call {move_session} when your work belongs \
-         elsewhere: it Moves your Session, or a Subagent's you spawned through Suru, into a \
-         Worktree of your Repository, a new one included, or outside source control beneath your \
-         Workspace's directory."
+         in on this machine, each with what it is for. Call {move_session} to Move your Session, or a Subagent you spawned \
+         through Suru, into a Worktree of your Repository or, outside source control, beneath \
+         your Workspace's directory."
     )
 }
 
@@ -297,7 +296,7 @@ mod tests {
             claude_named,
         );
         let words = note.split_whitespace().count();
-        assert!(words <= 185, "the note runs to {words} words: {note}");
+        assert!(words <= 175, "the note runs to {words} words: {note}");
         assert!(!note.contains('\n'), "the note is one line: {note:?}");
     }
 
@@ -309,10 +308,9 @@ mod tests {
             let note = instruction_note(role, &MemoryIndex::default(), &[], claude_named);
             assert!(
                 note.contains(
-                    " Call mcp__suru__move_session when your work belongs elsewhere: it Moves your \
-                     Session, or a Subagent's you spawned through Suru, into a Worktree of your \
-                     Repository, a new one included, or outside source control beneath your \
-                     Workspace's directory."
+                    " Call mcp__suru__move_session to Move your Session, or a Subagent you spawned \
+                     through Suru, into a Worktree of your Repository or, outside source control, \
+                     beneath your Workspace's directory."
                 ),
                 "{role:?} is told what move_session reaches: {note}"
             );

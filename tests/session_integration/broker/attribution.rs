@@ -26,11 +26,11 @@ use crate::support::provider::SubagentDelivery;
 
 /// The thread the Codex Session's own Agent runs on, which Codex names in
 /// every call's `_meta.sessionId` — its native Subagents' calls included.
-const ROOT_THREAD: &str = "019a0e25-60f7-root-thread";
+pub(super) const ROOT_THREAD: &str = "019a0e25-60f7-root-thread";
 
 /// The thread a native Subagent of the Codex Session runs on, and so the
 /// identity Suru knows it by.
-const NATIVE_THREAD: &str = "019a0e25-8213-child-thread";
+pub(super) const NATIVE_THREAD: &str = "019a0e25-8213-child-thread";
 
 /// A Codex Session whose first Turn is working, on a Server hosting it beside
 /// Claude and an unavailable Copilot, and the MCP client its own Agent is.
@@ -101,7 +101,7 @@ pub(super) async fn spawn_native(
 /// The MCP client the native Subagent known by `thread` is: its parent's
 /// token, with its own thread named in every call's metadata beside the
 /// parent's, as Codex names them.
-async fn native_client(handoff: &BrokerHandoff, thread: &str) -> McpClient {
+pub(super) async fn native_client(handoff: &BrokerHandoff, thread: &str) -> McpClient {
     let mut client = McpClient::handed(handoff).with_call_meta(json!({
         "threadId": thread,
         "sessionId": ROOT_THREAD,
