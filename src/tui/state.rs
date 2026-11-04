@@ -8611,8 +8611,11 @@ impl Application {
                         return ApplicationTransition::Continue;
                     }
                     if preview.pending_moves != 0 {
-                        picker.error =
-                            Some("A pending Move is bound here; removal is blocked".into());
+                        picker.error = Some(
+                            "A pending Move is bound here, so removal is blocked; cancel or \
+                                 replace it with /move"
+                                .into(),
+                        );
                         return ApplicationTransition::Continue;
                     }
                     let force = command == SemanticCommandId::WorktreeForceRemove;

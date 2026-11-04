@@ -1797,7 +1797,7 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         )));
         if preview.pending_moves != 0 {
             lines.push(Line::raw(format!(
-                "A pending Move is bound here for {} of them",
+                "A pending Move is bound here for {} of them; cancel or replace it with /move",
                 preview.pending_moves
             )));
         }

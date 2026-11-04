@@ -2944,6 +2944,10 @@ fn a_removal_preview_names_a_pending_move_bound_there_and_refuses_the_removal() 
         "{rendered}"
     );
     assert!(
+        rendered.contains("cancel or replace it with /move"),
+        "{rendered}"
+    );
+    assert!(
         rendered.contains("A pending Move blocks removal"),
         "{rendered}"
     );
@@ -2953,6 +2957,7 @@ fn a_removal_preview_names_a_pending_move_bound_there_and_refuses_the_removal() 
     );
     let rendered = text(&app);
     assert!(rendered.contains("removal is blocked"), "{rendered}");
+    assert!(rendered.contains("/move"), "{rendered}");
 }
 
 #[test]

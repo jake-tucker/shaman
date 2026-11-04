@@ -270,7 +270,12 @@ impl SessionOperations {
     /// threshold gives whoever made it time to say. Its caller holds the locks
     /// preparation holds.
     async fn retire_where_nothing_was_made(&self, preparation: &PreparedCheckout) {
-        if std::fs::symlink_metadata(&preparation.destination.path).is_ok() {
+        let destination = preparation.destination.path.clone();
+        let standing =
+            tokio::task::spawn_blocking(move || std::fs::symlink_metadata(destination).is_ok())
+                .await
+                .unwrap_or(true);
+        if standing {
             return;
         }
         let retired = async {
