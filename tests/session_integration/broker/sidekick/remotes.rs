@@ -42,6 +42,7 @@ use crate::support::observed_tcp_proxy::ObservedTcpProxy;
 mod acts;
 mod clones;
 mod kept_apart;
+mod moves;
 mod pairings;
 mod readings;
 mod references;
@@ -98,11 +99,36 @@ impl Serving {
         keep_alive: Duration,
         hosted: (ProviderId, Vec<ModelDescriptor>),
     ) -> Self {
+        Self::start_configured(channel, keep_alive, hosted, |config| config).await
+    }
+
+    /// A Server for `channel` whose home is `home`, as [`Self::start`] makes
+    /// one otherwise.
+    async fn start_homed(channel: &str, home: &Path) -> Self {
+        Self::start_configured(
+            channel,
+            ServerTimings::default().sse_keepalive_interval,
+            (ProviderId::new("claude"), claude_models()),
+            |config| config.with_home_dir(home),
+        )
+        .await
+    }
+
+    /// A Server for `channel` as [`Self::start_hosting`] makes one, whose
+    /// configuration `configured` has the last word on.
+    async fn start_configured(
+        channel: &str,
+        keep_alive: Duration,
+        hosted: (ProviderId, Vec<ModelDescriptor>),
+        configured: impl FnOnce(ServerConfig) -> ServerConfig,
+    ) -> Self {
         let state = tempfile::tempdir().expect("create the Remote's state directory");
         let config_root = tempfile::tempdir().expect("create the Remote's config directory");
-        let config = ServerConfig::new(state.path(), format!("{channel}-remote"))
-            .expect("configure the Remote")
-            .with_config_dir(config_root.path());
+        let config = configured(
+            ServerConfig::new(state.path(), format!("{channel}-remote"))
+                .expect("configure the Remote")
+                .with_config_dir(config_root.path()),
+        );
         let git = Arc::new(HeldGit::default());
         let (server, provider) =
             Self::spawn(&config, PROTOCOL_VERSION, keep_alive, &hosted, &git).await;
@@ -695,6 +721,20 @@ async fn posted<T: serde::de::DeserializeOwned>(
 async fn paired(channel: &str, timings: ServerTimings) -> Paired {
     let remote = Serving::start(channel).await;
     let (own, claude, directories) = own_server(channel, timings, None).await;
+    pair(own.descriptor(), &remote, REMOTE).await;
+    Paired {
+        own,
+        claude,
+        remote,
+        _directories: directories,
+    }
+}
+
+/// The Sidekick's own Server paired with a Remote whose home is `home`, as
+/// [`paired`] pairs them otherwise.
+async fn paired_homed(channel: &str, home: &Path) -> Paired {
+    let remote = Serving::start_homed(channel, home).await;
+    let (own, claude, directories) = own_server(channel, ServerTimings::default(), None).await;
     pair(own.descriptor(), &remote, REMOTE).await;
     Paired {
         own,

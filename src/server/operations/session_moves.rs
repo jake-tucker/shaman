@@ -9,6 +9,11 @@
 //! now or a Turn of its own holds the Move pending. A refusal at any step
 //! leaves the Session where it was.
 //!
+//! A Sidekick's asking, on this Server or carried here through the Pairing, may
+//! take any other Session to any directory, as the user's does, but for what no
+//! Sidekick may do in a Sidekick Workspace (ADR 0043): a Subagent working there
+//! is its own Sidekick's to Move, and no other's.
+//!
 //! An ordinary Agent's asking is bounded besides, here where nothing can go
 //! round it and before anything is read of the Session or made (ADR 0042, ADR
 //! 0059). The Session must be the Agent's own or stand beneath it, and anything
@@ -113,6 +118,10 @@ pub(crate) enum MoveRefusal {
     /// whoever asks, a Sidekick included. Its Subagents are no Sidekicks, and
     /// are refused nothing by this.
     SidekickSession,
+    /// A Sidekick, on this Server or a Peer, asked for a Subagent working in
+    /// the Sidekick Workspace beneath another Sidekick, in which no Sidekick
+    /// acts on a Session but to Move its own Subagents (ADR 0043).
+    AnotherSidekicksSubagent,
     /// The destination lies in the Sidekick Workspace, where any Agent at
     /// work is a Sidekick.
     SidekickDestination,
@@ -140,6 +149,10 @@ impl fmt::Display for MoveRefusal {
             Self::SidekickSession => formatter.write_str(
                 "The Session is a Sidekick's, and the Sidekick Workspace is what makes it one, so \
                  it never Moves.",
+            ),
+            Self::AnotherSidekicksSubagent => formatter.write_str(
+                "The Session is a Subagent working in the Sidekick Workspace beneath another \
+                 Sidekick, whose to Move it is, so it stays where it is.",
             ),
             Self::SidekickDestination => formatter.write_str(
                 "The destination is in the Sidekick Workspace, where any Agent at work is a \
@@ -297,8 +310,9 @@ struct MadeWorktree<'a> {
 impl SessionOperations {
     /// Moves a Session to `destination` for `author`, answering what came of
     /// it. Refused, leaving the Session where it was, for a Session this
-    /// Server does not hold, a native Subagent's or a Sidekick's, and for a
-    /// destination that names no directory an Agent can work in, one in the
+    /// Server does not hold, a native Subagent's or a Sidekick's, one a Sidekick
+    /// reaches into the Sidekick Workspace for beneath another Sidekick, and for
+    /// a destination that names no directory an Agent can work in, one in the
     /// Sidekick Workspace, or a new Worktree that could not be made. A Turn of
     /// the Session's own, or a native Subagent at work beneath it, holds the Move
     /// pending until it settles; a Session with neither Moves at once.
@@ -348,6 +362,14 @@ impl SessionOperations {
             return Err(MoveRefusal::SidekickSession);
         }
         self.sessions.may_move(session_id).map_err(store_refusal)?;
+        if let MoveAsker::Reaching { author } = asker
+            && self.refuses_author(session_id, author)
+            && !author
+                .and_then(Author::sidekick_session)
+                .is_some_and(|sidekick| self.sessions.stands_beneath(sidekick, session_id))
+        {
+            return Err(MoveRefusal::AnotherSidekicksSubagent);
+        }
         let boundary = match asker {
             MoveAsker::Agent(agent) => {
                 let agent = self

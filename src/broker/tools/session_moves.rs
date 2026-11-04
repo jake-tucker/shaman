@@ -7,11 +7,13 @@
 //! the Broker's server by its name (ADR 0035), and the Tool goes no further than
 //! where the Agent works.
 //!
-//! The Tool is offered to every Agent alike. A Sidekick is held to the ordinary
-//! boundary as any Agent is until its wider reach is the Sidekick's form of this
-//! Tool: its own Session never Moves, and it may Move a brokered Subagent of its
-//! own no further than beneath the Sidekick Workspace's directory, where that
-//! Subagent stands no longer in the Sidekick Workspace, which takes no Session.
+//! The Tool is offered to every Agent, in the form that answers the caller. A
+//! Sidekick's reaches any Session it may act on, on its own Server or on a Remote
+//! its `origin` names, and any directory there: at a Remote the very text given is
+//! carried through the Pairing, for the Remote to read and judge as it does a
+//! Client's. It names its own author, as its other acts do, and takes `session_id`
+//! always, since its own Session never Moves and could only be refused. A Sidekick's
+//! Subagent is no Sidekick, and is offered the ordinary form.
 //!
 //! An Agent is Working whenever it calls a Tool, so a Move of its own Session is
 //! by nature pending. Its answer is therefore the Agent's instruction as much as
@@ -23,8 +25,10 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
-use super::{BrokerTool, BrokerTools, ToolCall, ToolRefusal, takes_only};
-use crate::protocol::{MoveDestination, MoveOutcome, SessionId};
+use super::session_acts::origin_of_a_session_read_named;
+use super::{BrokerTool, BrokerTools, ToolCall, ToolRefusal, origins, takes_only};
+use crate::broker::BrokerRole;
+use crate::protocol::{MoveDestination, MoveOutcome, Outlook, SessionId};
 
 pub(super) const DESCRIPTION: &str = "\
 Move a Session to another directory: it keeps its conversation and works there \
@@ -46,8 +50,66 @@ naming where it works cancels that. Answers with JSON of the shape \
 \"message\": \"...\"}: \"outcome\" is \"moved\", \"pending\", \"already_there\" or \
 \"pending_cancelled\", and \"message\" says what that means for you.";
 
-/// The JSON Schema of `move_session`'s arguments.
-pub(super) fn input_schema() -> Value {
+pub(super) const SIDEKICK_DESCRIPTION: &str = concat!(
+    "\
+Move any other Session to another directory of the server it lives on: it keeps \
+its conversation and works there from its next Turn. Takes \"session_id\", a \
+Session's id as list_sessions gives it; \"origin\", the Remote it lives on as its \
+row gives it, left out for one on this Suru server; \"directory\", any directory \
+of that server, another Workspace's among them, which that server alone reads and \
+judges: an absolute path as it writes paths, one relative to where that Session \
+works, or one beginning with ~ for its home; and optionally \"new_worktree\": true \
+to Move it into a new Worktree of that directory's Repository, made now from the \
+commit HEAD stands at, the Session's own where it works in that Repository, \
+without uncommitted changes. Your own Session never Moves, nor does another \
+Sidekick's, a native Subagent's, or a Subagent in the Sidekick Workspace beneath \
+another Sidekick; a directory that is missing, a bare Repository, the Sidekick \
+Workspace and a Remote that does not answer are refused too. A Session at work \
+Moves once its Turn and any native Subagents settle, and works where it is until \
+then. Calling again replaces where it is bound; naming where it works cancels \
+that. Answers with JSON of the shape {\"session_id\": \"...\", \"origin\": \
+\"...\", \"outcome\": \"...\", \"directory\": \"...\", \"message\": \"...\"}, \
+\"origin\" left out for one on this server: \"outcome\" is \"moved\", \
+\"pending\", \"already_there\" or \"pending_cancelled\", and \"message\" says \
+what that means for you.",
+    origin_of_a_session_read_named!()
+);
+
+/// The JSON Schema of `move_session`'s arguments, as an Agent that is `role` to
+/// the Broker may give them.
+pub(super) fn input_schema(role: BrokerRole) -> Value {
+    match role {
+        BrokerRole::Agent => agents_input_schema(),
+        BrokerRole::Sidekick => json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The id of the Session to Move, as list_sessions gives it; \
+                        your own never Moves.",
+                },
+                "origin": origins::origin_property(),
+                "directory": {
+                    "type": "string",
+                    "description": "Where the Session is to work, on the server it lives on, \
+                        which reads and judges this: an absolute path written as that server \
+                        writes paths, one relative to where that Session works now, or one \
+                        beginning with ~ for that server's home.",
+                },
+                "new_worktree": {
+                    "type": "boolean",
+                    "description": "true to Move the Session instead into a new Worktree of the \
+                        directory's Repository, which that server makes as you call.",
+                },
+            },
+            "required": MoveArguments::SIDEKICK_REQUIRED,
+            "additionalProperties": false,
+        }),
+    }
+}
+
+/// The JSON Schema of `move_session`'s arguments as any other Agent gives them.
+fn agents_input_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
@@ -75,21 +137,34 @@ pub(super) fn input_schema() -> Value {
 
 impl BrokerTools {
     /// Answers `move_session`: Moves the Session the call names, or the
-    /// caller's own, within what the Server finds the caller reaches, and says
-    /// what came of it. It runs apart from the call, since a call whose client
-    /// has gone is dropped where it stands, and a Move stopped part of the way
-    /// would leave a Worktree it made unused, or a Session Moved without its
-    /// Provider being told.
+    /// caller's own, within what the Server finds the caller reaches — at the
+    /// Remote its `origin` names, for a Sidekick — and says what came of it. It
+    /// runs apart from the call, since a call whose client has gone is dropped
+    /// where it stands, and a Move stopped part of the way would leave a Worktree
+    /// it made unused, a Session Moved without its Provider being told, or an act
+    /// a Remote took unrecorded here.
     pub(super) async fn move_session(&self, call: ToolCall) -> Result<Value, ToolRefusal> {
-        let moving = MoveArguments::read(&call.arguments)?;
+        let role = call.caller.role();
+        let moving = MoveArguments::read(role, &call.arguments)?;
+        let origin = origins::origin(BrokerTool::MoveSession, &call.arguments)?;
         let caller = call.caller.session_id();
         let session_id = moving.session_id.unwrap_or(caller);
         let new_worktree = moving.new_worktree;
+        let destination = moving.destination();
+        let author = (role == BrokerRole::Sidekick).then(|| self.sidekick_author(&call));
         let operations = self.operations.clone();
+        let reaching = origin.clone();
         let outcome = tokio::spawn(async move {
-            operations
-                .move_session_for_agent(caller, session_id, moving.destination())
-                .await
+            match author {
+                Some(author) => operations
+                    .move_session_at(&reaching, session_id, destination, author)
+                    .await
+                    .map_err(|refusal| origins::act_refusal_on(refusal, session_id)),
+                None => operations
+                    .move_session_for_agent(caller, session_id, destination)
+                    .await
+                    .map_err(|refusal| ToolRefusal::new(refusal.to_string())),
+            }
         })
         .await
         .map_err(|error| {
@@ -98,35 +173,43 @@ impl BrokerTools {
                 "Suru could not finish the Move, so the Session may or may not have Moved; \
                  Suru's Log says why.",
             )
-        })?
-        .map_err(|refusal| ToolRefusal::new(refusal.to_string()))?;
-        Ok(
-            serde_json::to_value(MoveAnswer::of(&outcome, session_id, caller, new_worktree))
-                .expect("a Move's answer always serializes"),
-        )
+        })??;
+        Ok(serde_json::to_value(MoveAnswer::of(
+            &outcome,
+            session_id,
+            caller,
+            origin,
+            new_worktree,
+        ))
+        .expect("a Move's answer always serializes"))
     }
 }
 
-/// What `move_session` answers: the Session, what came of the Move, where the
-/// Session works or is bound, and what the Agent is to make of that.
+/// What `move_session` answers: the Session, by its Remote too where it lives on
+/// one, what came of the Move, where the Session works or is bound, and what the
+/// Agent is to make of that.
 #[derive(Debug, Eq, PartialEq, Serialize)]
 struct MoveAnswer {
     session_id: SessionId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    origin: Option<String>,
     outcome: &'static str,
     directory: PathBuf,
     message: String,
 }
 
 impl MoveAnswer {
-    /// The answer to `caller` of `outcome`, of a Move of `session_id`, into a
-    /// Worktree made for it where `new_worktree`.
+    /// The answer to `caller` of `outcome`, of a Move of `session_id` at
+    /// `origin`, into a Worktree made for it where `new_worktree`.
     fn of(
         outcome: &MoveOutcome,
         session_id: SessionId,
         caller: SessionId,
+        origin: Outlook,
         new_worktree: bool,
     ) -> Self {
-        let speaker = Speaker::of(session_id, caller);
+        let origin = origins::row_origin(origin);
+        let speaker = Speaker::of(session_id, caller, origin.as_deref());
         let (outcome, directory, message) = match outcome {
             MoveOutcome::Moved { session } => {
                 let directory = &session.session.execution_directory.path;
@@ -135,25 +218,23 @@ impl MoveAnswer {
             MoveOutcome::AlreadyThere { session } => {
                 let directory = &session.session.execution_directory.path;
                 let session = speaker.subject();
+                let there = speaker.place(directory);
                 (
                     "already_there",
                     directory,
-                    format!(
-                        "{session} already works in {}, so nothing changed.",
-                        directory.display()
-                    ),
+                    format!("{session} already works in {there}, so nothing changed."),
                 )
             }
             MoveOutcome::PendingCancelled { session } => {
                 let directory = &session.session.execution_directory.path;
                 let session = speaker.subject();
+                let there = speaker.place(directory);
                 (
                     "pending_cancelled",
                     directory,
                     format!(
-                        "{session} already works in {}, so the Move pending to elsewhere is \
-                         cancelled and it stays.",
-                        directory.display()
+                        "{session} already works in {there}, so the Move pending to elsewhere is \
+                         cancelled and it stays."
                     ),
                 )
             }
@@ -174,6 +255,7 @@ impl MoveAnswer {
         };
         Self {
             session_id,
+            origin,
             outcome,
             directory: directory.to_owned(),
             message,
@@ -182,26 +264,42 @@ impl MoveAnswer {
 }
 
 /// Whose Session an answer speaks of, as the Agent reading it knows that
-/// Session: its own, or another by its id.
+/// Session: its own, or another by its id and the Remote it lives on, where it
+/// lives on one, whose directories those it names are.
 #[derive(Clone, Copy)]
-enum Speaker {
+enum Speaker<'a> {
     Own,
-    Other(SessionId),
+    Other {
+        session_id: SessionId,
+        remote: Option<&'a str>,
+    },
 }
 
-impl Speaker {
-    fn of(session_id: SessionId, caller: SessionId) -> Self {
-        if session_id == caller {
+impl<'a> Speaker<'a> {
+    /// A Session at a Remote is never the caller's own, whatever id it shares.
+    fn of(session_id: SessionId, caller: SessionId, remote: Option<&'a str>) -> Self {
+        if session_id == caller && remote.is_none() {
             Self::Own
         } else {
-            Self::Other(session_id)
+            Self::Other { session_id, remote }
         }
     }
 
     fn subject(self) -> String {
         match self {
             Self::Own => "Your Session".to_owned(),
-            Self::Other(session_id) => format!("Session {session_id}"),
+            Self::Other { session_id, .. } => format!("Session {session_id}"),
+        }
+    }
+
+    /// `directory`, as the Agent reading is to take it: at the Remote it lies on.
+    fn place(self, directory: &Path) -> String {
+        match self {
+            Self::Other {
+                remote: Some(remote),
+                ..
+            } => format!("{} on the Remote `{remote}`", directory.display()),
+            Self::Own | Self::Other { remote: None, .. } => directory.display().to_string(),
         }
     }
 
@@ -211,9 +309,9 @@ impl Speaker {
         let session = self.subject();
         let next = match self {
             Self::Own => "your",
-            Self::Other(_) => "its",
+            Self::Other { .. } => "its",
         };
-        let directory = directory.display();
+        let directory = self.place(directory);
         if new_worktree {
             format!(
                 "{session} now works in the new Worktree Suru made at {directory}, from the \
@@ -228,7 +326,7 @@ impl Speaker {
     /// What is said of a Move still waiting on what holds it, from where the
     /// Session works, `from`, to `to`.
     fn pending(self, to: &Path, from: &Path, new_worktree: bool) -> String {
-        let (to, from) = (to.display(), from.display());
+        let (to, from) = (self.place(to), from.display());
         let made =
             format!("Suru made a new Worktree at {to} from the commit HEAD stands at now, and");
         let (bound, turn, next, until) = match (self, new_worktree) {
@@ -249,13 +347,13 @@ impl Speaker {
                      it needs them."
                 ),
             ),
-            (Self::Other(session_id), false) => (
+            (Self::Other { session_id, .. }, false) => (
                 format!("Session {session_id}'s Move to {to}"),
                 "its Turn and any native Subagents it has running",
                 "its",
                 format!("It keeps working in {from} until then."),
             ),
-            (Self::Other(session_id), true) => (
+            (Self::Other { session_id, .. }, true) => (
                 format!("{made} Session {session_id}'s Move there"),
                 "its Turn and any native Subagents it has running",
                 "its",
@@ -289,19 +387,44 @@ impl MoveArguments {
     /// a new Worktree still says which Repository it is of, as `begin_session`'s
     /// does.
     const REQUIRED: [&'static str; 1] = ["directory"];
+    /// Everything a Sidekick's call may name.
+    const SIDEKICK_TAKES: [&'static str; 4] = ["session_id", "origin", "directory", "new_worktree"];
+    /// What a Sidekick's call must name: its own Session could only be refused,
+    /// so none is taken to be meant.
+    const SIDEKICK_REQUIRED: [&'static str; 2] = ["session_id", "directory"];
 
-    /// The call's arguments, each checked for the shape its schema gives it.
-    /// The directory is taken as written, a relative path among them: only the
-    /// Session it is read from can say what it names.
-    fn read(arguments: &Map<String, Value>) -> Result<Self, ToolRefusal> {
-        takes_only(BrokerTool::MoveSession, arguments, &Self::TAKES)?;
+    /// The arguments of a call by an Agent that is `role` to the Broker, each
+    /// checked for the shape its schema gives it. The directory is taken as
+    /// written, a relative path among them: only the Session it is read from,
+    /// on its own Server, can say what it names.
+    fn read(role: BrokerRole, arguments: &Map<String, Value>) -> Result<Self, ToolRefusal> {
+        let sidekick = role == BrokerRole::Sidekick;
+        let takes: &[&str] = if sidekick {
+            &Self::SIDEKICK_TAKES
+        } else {
+            &Self::TAKES
+        };
+        takes_only(BrokerTool::MoveSession, arguments, takes)?;
         let session_id = match arguments.get("session_id") {
+            None | Some(Value::Null) if sidekick => {
+                return Err(ToolRefusal::new(
+                    "move_session needs `session_id`, the id of a Session as list_sessions gives \
+                     it: your own is a Sidekick's, and never Moves.",
+                ));
+            }
             None | Some(Value::Null) => None,
             Some(named) => Some(serde_json::from_value(named.clone()).map_err(|_| {
-                ToolRefusal::new(format!(
-                    "move_session's `session_id` must be a Session's id, or left out for your \
-                     own; {named} is not one."
-                ))
+                ToolRefusal::new(if sidekick {
+                    format!(
+                        "move_session's `session_id` must be the id of a Session as list_sessions \
+                         gives it; {named} is not one."
+                    )
+                } else {
+                    format!(
+                        "move_session's `session_id` must be a Session's id, or left out for your \
+                         own; {named} is not one."
+                    )
+                })
             })?),
         };
         let directory = match arguments.get("directory") {
@@ -355,7 +478,6 @@ impl MoveArguments {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::broker::BrokerRole;
 
     fn arguments(value: Value) -> Map<String, Value> {
         let Value::Object(arguments) = value else {
@@ -367,7 +489,10 @@ mod tests {
     #[test]
     fn move_arguments_leave_the_session_to_the_caller_and_take_a_directory_as_written() {
         assert_eq!(
-            MoveArguments::read(&arguments(json!({ "directory": "../elsewhere" }))),
+            MoveArguments::read(
+                BrokerRole::Agent,
+                &arguments(json!({ "directory": "../elsewhere" }))
+            ),
             Ok(MoveArguments {
                 session_id: None,
                 directory: PathBuf::from("../elsewhere"),
@@ -376,11 +501,14 @@ mod tests {
             "a relative path is for the Server to read from the Session it Moves"
         );
         let session_id = SessionId::new();
-        let read = MoveArguments::read(&arguments(json!({
-            "session_id": session_id,
-            "directory": "~/work",
-            "new_worktree": true,
-        })))
+        let read = MoveArguments::read(
+            BrokerRole::Agent,
+            &arguments(json!({
+                "session_id": session_id,
+                "directory": "~/work",
+                "new_worktree": true,
+            })),
+        )
         .expect("every argument");
         assert_eq!(read.session_id, Some(session_id));
         assert_eq!(
@@ -390,11 +518,14 @@ mod tests {
             }
         );
         assert_eq!(
-            MoveArguments::read(&arguments(json!({
-                "session_id": null,
-                "directory": "here",
-                "new_worktree": null,
-            })))
+            MoveArguments::read(
+                BrokerRole::Agent,
+                &arguments(json!({
+                    "session_id": null,
+                    "directory": "here",
+                    "new_worktree": null,
+                }))
+            )
             .map(MoveArguments::destination),
             Ok(MoveDestination::Directory {
                 path: PathBuf::from("here"),
@@ -440,16 +571,132 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                MoveArguments::read(&arguments(sent.clone())),
+                MoveArguments::read(BrokerRole::Agent, &arguments(sent.clone())),
                 Err(ToolRefusal::new(says)),
                 "{sent}"
             );
         }
     }
 
+    /// A Sidekick's call takes an `origin`, and must name a Session, since the
+    /// one it would otherwise mean is its own, which never Moves. The rest is
+    /// read as anyone's, and the directory taken as written, for the Session's
+    /// own Server to read.
+    #[test]
+    fn a_sidekicks_arguments_take_an_origin_and_must_name_a_session() {
+        let session_id = SessionId::new();
+        let read = MoveArguments::read(
+            BrokerRole::Sidekick,
+            &arguments(json!({
+                "session_id": session_id,
+                "origin": "workstation",
+                "directory": "~/work",
+                "new_worktree": true,
+            })),
+        )
+        .expect("every argument");
+        assert_eq!(read.session_id, Some(session_id));
+        assert_eq!(
+            read.destination(),
+            MoveDestination::NewWorktree {
+                directory: PathBuf::from("~/work"),
+            },
+            "read by no one here"
+        );
+        for (sent, says) in [
+            (
+                json!({ "directory": "here" }),
+                "move_session needs `session_id`, the id of a Session as list_sessions gives it: \
+                 your own is a Sidekick's, and never Moves.",
+            ),
+            (
+                json!({ "session_id": null, "directory": "here" }),
+                "move_session needs `session_id`, the id of a Session as list_sessions gives it: \
+                 your own is a Sidekick's, and never Moves.",
+            ),
+            (
+                json!({ "session_id": "theirs", "directory": "here" }),
+                "move_session's `session_id` must be the id of a Session as list_sessions gives \
+                 it; \"theirs\" is not one.",
+            ),
+            (
+                json!({ "session_id": session_id, "directory": "here", "root": "/" }),
+                "move_session takes no argument `root`; it takes `session_id`, `origin`, \
+                 `directory`, `new_worktree`.",
+            ),
+            (
+                json!({ "session_id": session_id }),
+                "move_session needs `directory`, where the Session is to work or, with \
+                 `new_worktree`, a directory of the Repository to make a new Worktree of.",
+            ),
+        ] {
+            assert_eq!(
+                MoveArguments::read(BrokerRole::Sidekick, &arguments(sent.clone())),
+                Err(ToolRefusal::new(says)),
+                "{sent}"
+            );
+        }
+        assert!(
+            origins::origin(
+                BrokerTool::MoveSession,
+                &arguments(json!({ "origin": 7, "session_id": session_id }))
+            )
+            .is_err(),
+            "and an `origin` is read as every Tool's is"
+        );
+    }
+
+    /// A Sidekick is told what its form reaches and what it does not, in a
+    /// schema that matches, and no ordinary Agent's words of a boundary.
+    #[test]
+    fn a_sidekicks_schema_requires_what_its_description_says_it_takes() {
+        let schema = input_schema(BrokerRole::Sidekick);
+        assert_eq!(schema["required"], json!(["session_id", "directory"]));
+        assert_eq!(schema["additionalProperties"], json!(false));
+        for argument in MoveArguments::SIDEKICK_TAKES {
+            assert!(
+                schema["properties"].get(argument).is_some()
+                    && SIDEKICK_DESCRIPTION.contains(&format!("\"{argument}\"")),
+                "{argument} is in the schema and the description"
+            );
+        }
+        assert_eq!(
+            schema["properties"].as_object().map(Map::len),
+            Some(MoveArguments::SIDEKICK_TAKES.len()),
+            "and nothing else is"
+        );
+        for said in [
+            "\"origin\" left out for one on this server",
+            "\"pending\"",
+            "\"already_there\"",
+            "\"pending_cancelled\"",
+            "Your own Session never Moves",
+            "another Sidekick's",
+            "a native Subagent's",
+            "bare Repository",
+            "the Sidekick Workspace",
+            "a Remote that does not answer",
+            "that server alone reads and judges",
+            "A Session at work Moves once its Turn and any native Subagents settle",
+            "the Session's own where it works in that Repository",
+        ] {
+            assert!(SIDEKICK_DESCRIPTION.contains(said), "{said}");
+        }
+        assert!(
+            SIDEKICK_DESCRIPTION.ends_with(origin_of_a_session_read_named!()),
+            "and which `origin` reaches a Session a read named: {SIDEKICK_DESCRIPTION}"
+        );
+        assert!(
+            !SIDEKICK_DESCRIPTION.contains("Repository you work in"),
+            "a Sidekick is held to no ordinary boundary"
+        );
+        let words = SIDEKICK_DESCRIPTION.split_whitespace().count();
+        assert!(words <= 300, "the description runs to {words} words");
+    }
+
     #[test]
     fn move_sessions_schema_requires_what_its_description_says_it_takes() {
-        let schema = input_schema();
+        let schema = input_schema(BrokerRole::Agent);
         assert_eq!(schema["required"], json!(["directory"]));
         assert_eq!(schema["additionalProperties"], json!(false));
         for argument in MoveArguments::TAKES {
@@ -502,7 +749,7 @@ mod tests {
         assert!(tool.is_offered_to(BrokerRole::Agent));
         assert!(tool.is_offered_to(BrokerRole::Sidekick));
         assert!(!tool.is_read_only());
-        assert!(!tool.takes_origin());
+        assert!(tool.takes_origin(), "from a Sidekick");
         assert!(!tool.is_recorded_by_its_row());
         let sent = json!({ "directory": "here" });
         assert_eq!(tool.recorded_arguments(&sent).as_ref(), &sent);
@@ -515,6 +762,10 @@ mod tests {
     fn a_pending_moves_answer_says_what_the_session_is_waiting_for_and_what_to_do() {
         let (to, from) = (Path::new("to"), Path::new("from"));
         let subagent = SessionId::new();
+        let other = Speaker::Other {
+            session_id: subagent,
+            remote: None,
+        };
         assert_eq!(
             Speaker::Own.pending(to, from, false),
             "Your Session's Move to to is pending: it applies once this Turn and any native \
@@ -531,7 +782,7 @@ mod tests {
              and call move_session again if it needs them."
         );
         assert_eq!(
-            Speaker::Other(subagent).pending(to, from, false),
+            other.pending(to, from, false),
             format!(
                 "Session {subagent}'s Move to to is pending: it applies once its Turn and any \
                  native Subagents it has running settle, and its next Turn works there. It keeps \
@@ -539,7 +790,7 @@ mod tests {
             )
         );
         assert_eq!(
-            Speaker::Other(subagent).pending(to, from, true),
+            other.pending(to, from, true),
             format!(
                 "Suru made a new Worktree at to from the commit HEAD stands at now, and Session \
                  {subagent}'s Move there is pending: it applies once its Turn and any native \
@@ -548,6 +799,55 @@ mod tests {
                  uncommitted, stay on the old branch and never reach the new Worktree."
             )
         );
+    }
+
+    /// What a Sidekick is told of a Session on a Remote says which Remote, since
+    /// the directories named are that Remote's own.
+    #[test]
+    fn a_remotes_sessions_answer_says_which_remote_its_directories_are_on() {
+        let (to, from) = (Path::new("to"), Path::new("from"));
+        let session_id = SessionId::new();
+        let remote = Speaker::Other {
+            session_id,
+            remote: Some("workstation"),
+        };
+        assert_eq!(
+            remote.pending(to, from, false),
+            format!(
+                "Session {session_id}'s Move to to on the Remote `workstation` is pending: it \
+                 applies once its Turn and any native Subagents it has running settle, and its \
+                 next Turn works there. It keeps working in from until then."
+            )
+        );
+        assert_eq!(
+            remote.pending(to, from, true),
+            format!(
+                "Suru made a new Worktree at to on the Remote `workstation` from the commit HEAD \
+                 stands at now, and Session {session_id}'s Move there is pending: it applies once \
+                 its Turn and any native Subagents it has running settle, and its next Turn works \
+                 there. It keeps working in from until then. Commits made there after this call, \
+                 and changes left uncommitted, stay on the old branch and never reach the new \
+                 Worktree."
+            )
+        );
+        assert_eq!(
+            remote.moved(to, false),
+            format!(
+                "Session {session_id} now works in to on the Remote `workstation`; its next Turn \
+                 works there."
+            )
+        );
+        assert!(
+            matches!(
+                Speaker::of(session_id, session_id, Some("workstation")),
+                Speaker::Other { .. }
+            ),
+            "a Session on a Remote is no caller's own, whatever id it shares"
+        );
+        assert!(matches!(
+            Speaker::of(session_id, session_id, None),
+            Speaker::Own
+        ));
     }
 
     #[test]
@@ -559,7 +859,11 @@ mod tests {
             "Your Session now works in there; your next Turn works there."
         );
         assert_eq!(
-            Speaker::Other(subagent).moved(there, true),
+            Speaker::Other {
+                session_id: subagent,
+                remote: None,
+            }
+            .moved(there, true),
             format!(
                 "Session {subagent} now works in the new Worktree Suru made at there, from the \
                  commit HEAD stood at; its next Turn works there. Changes left uncommitted where \

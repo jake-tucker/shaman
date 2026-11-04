@@ -4446,7 +4446,9 @@ fn move_refusal(refusal: &MoveRefusal) -> Response {
     let (status, code) = match refusal {
         MoveRefusal::SessionNotFound => (StatusCode::NOT_FOUND, SessionErrorCode::SessionNotFound),
         MoveRefusal::NativeSubagent => (StatusCode::CONFLICT, SessionErrorCode::SubagentSession),
-        MoveRefusal::SidekickSession | MoveRefusal::SidekickDestination => (
+        MoveRefusal::SidekickSession
+        | MoveRefusal::AnotherSidekicksSubagent
+        | MoveRefusal::SidekickDestination => (
             StatusCode::CONFLICT,
             SessionErrorCode::SidekickWorkspaceSession,
         ),

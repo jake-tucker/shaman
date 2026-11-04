@@ -897,9 +897,8 @@ async fn no_tool_a_sidekick_is_offered_decides_an_approval() {
             "move_session",
             vec![
                 json!({ "directory": workspace.path() }),
-                json!({ "session_id": approving, "directory": workspace.path() }),
                 json!({ "session_id": id, "directory": workspace.path() }),
-                json!({ "directory": workspace.path(), "approval_id": id }),
+                json!({ "session_id": approving, "directory": workspace.path(), "approval_id": id }),
             ],
         ),
         ("list_remotes", vec![json!({ "approval_id": id })]),

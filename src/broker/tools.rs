@@ -6,9 +6,8 @@
 //! Which caller is offered a Tool is part of the Tool's own description
 //! ([`BrokerTool::is_sidekicks`]): every Agent is offered the Tools through
 //! which it reaches any Provider, a listing of its own Server's Workspaces,
-//! and a Move of its own Session bounded by where it works, and a Sidekick
-//! those besides the Tools that work across Suru itself (ADR 0042, ADR 0051,
-//! ADR 0059). The transport lists and dispatches by
+//! and a Move bounded by where it works, and a Sidekick those besides the Tools
+//! that work across Suru itself (ADR 0042, ADR 0051, ADR 0059). The transport lists and dispatches by
 //! [`BrokerTool::offered_to`], and the note an Agent is told names what it
 //! reads, so a Sidekick's Tool is declared here and nowhere else. A Tool
 //! every Agent is offered is described to each caller as it answers that
@@ -69,7 +68,8 @@ pub(super) enum BrokerTool {
     /// for a Sidekick, those on a Remote, or Everywhere.
     ListWorkspaces,
     /// Every Agent's: its own Session, or a brokered Subagent's beneath it,
-    /// Moved no further than where it works.
+    /// Moved no further than where it works — and for a Sidekick, any other
+    /// Session, on its own Server or a Remote, anywhere there.
     MoveSession,
     /// A Sidekick's: the Sessions on its own Server, a Remote, or Everywhere,
     /// as compact rows.
@@ -195,8 +195,8 @@ impl BrokerTool {
     /// Remote shares its work, not its administration (ADR 0044) — so a Tool
     /// takes one only by saying so here, and the one place an `origin` is
     /// read refuses it to every other. Any other Agent is told of no Remote,
-    /// so `list_workspaces`, the one such Tool it is offered, is described to
-    /// it without one and refuses one from it.
+    /// so `list_workspaces` and `move_session`, the two such Tools it is
+    /// offered, are described to it without one and refuse one from it.
     pub(super) const fn takes_origin(self) -> bool {
         match self {
             Self::ListSessions
@@ -208,6 +208,7 @@ impl BrokerTool {
             | Self::BeginSession
             | Self::AnswerQuestionnaire
             | Self::ListWorkspaces
+            | Self::MoveSession
             | Self::SetWorkspaceDescription
             | Self::CloneWorkspace => true,
             Self::ListProviders
@@ -216,7 +217,6 @@ impl BrokerTool {
             | Self::SendToSubagent
             | Self::WaitSubagents
             | Self::StopSubagent
-            | Self::MoveSession
             | Self::ListRemotes
             | Self::ListSettings
             | Self::DescribeSetting
@@ -360,7 +360,10 @@ impl BrokerTool {
             Self::SendToSubagent => SEND_TO_SUBAGENT_DESCRIPTION,
             Self::WaitSubagents => WAIT_SUBAGENTS_DESCRIPTION,
             Self::StopSubagent => STOP_SUBAGENT_DESCRIPTION,
-            Self::MoveSession => session_moves::DESCRIPTION,
+            Self::MoveSession => match role {
+                BrokerRole::Sidekick => session_moves::SIDEKICK_DESCRIPTION,
+                BrokerRole::Agent => session_moves::DESCRIPTION,
+            },
             Self::ListSessions => session_listing::DESCRIPTION,
             Self::ReadSession => session_reading::DESCRIPTION,
             Self::SendPrompt => session_acts::SEND_PROMPT_DESCRIPTION,
@@ -488,7 +491,7 @@ impl BrokerTool {
                 },
                 "additionalProperties": false,
             }),
-            Self::MoveSession => session_moves::input_schema(),
+            Self::MoveSession => session_moves::input_schema(role),
             Self::ListSessions => session_listing::input_schema(),
             Self::ReadSession => session_reading::input_schema(),
             Self::SendPrompt => session_acts::send_prompt_schema(),

@@ -37,6 +37,7 @@ macro_rules! origin_of_a_session_read_named {
          it says is not reachable through the read is beyond your reach."
     };
 }
+pub(super) use origin_of_a_session_read_named;
 
 pub(super) const SEND_PROMPT_DESCRIPTION: &str = concat!(
     "\

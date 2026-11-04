@@ -26,6 +26,7 @@ use super::*;
 pub(super) mod answering;
 mod cloning;
 mod memories;
+mod moves;
 mod reading;
 mod remotes;
 mod reports;

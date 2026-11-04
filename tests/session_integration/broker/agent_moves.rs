@@ -29,19 +29,19 @@ use crate::session_integration::repositories::git;
 
 const THE_SESSION_STAYS: &str = ", so the Session stays where it is.";
 
-fn canonical(path: &Path) -> PathBuf {
+pub(super) fn canonical(path: &Path) -> PathBuf {
     suru::paths::canonical(path).expect("canonicalize a fixture")
 }
 
 /// A Repository at `root`, with a first commit, where a Move can make a Worktree
 /// from one.
-fn repository(root: &Path) {
+pub(super) fn repository(root: &Path) {
     std::fs::create_dir_all(root).expect("create a Repository");
     git(root, &["init", "-b", "main"]);
     commit(root, "initial");
 }
 
-fn commit(root: &Path, message: &str) {
+pub(super) fn commit(root: &Path, message: &str) {
     git(
         root,
         &[
@@ -55,7 +55,7 @@ fn commit(root: &Path, message: &str) {
     );
 }
 
-fn head(root: &Path) -> String {
+pub(super) fn head(root: &Path) -> String {
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(root)
@@ -1349,11 +1349,11 @@ async fn a_bare_root_of_the_callers_repository_makes_a_new_worktree_and_takes_no
 }
 
 /// A Sidekick's own Session is refused, whoever asks. A Sidekick's brokered
-/// Subagent is no Sidekick and is offered the ordinary form, as it is to its
-/// Sidekick until that has one of its own: the boundary it gives is beneath the
-/// Sidekick Workspace's directory, which takes no Session itself, so such a
-/// Subagent Moves into a directory beneath it, and no further. It then stands in
-/// a Workspace of its own and is bounded by that.
+/// Subagent is no Sidekick and is offered the ordinary form: the boundary it
+/// gives is beneath the Sidekick Workspace's directory, which takes no Session
+/// itself, so such a Subagent Moves into a directory beneath it, and no further.
+/// It then stands in a Workspace of its own and is bounded by that. Its Sidekick
+/// reaches further than it does, by the Sidekick's own form of the Tool.
 #[tokio::test]
 async fn a_sidekick_never_moves_and_its_subagent_moves_only_beneath_its_workspace() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
@@ -1365,7 +1365,7 @@ async fn a_sidekick_never_moves_and_its_subagent_moves_only_beneath_its_workspac
     let directory = sidekick_directory(&descriptor).await;
     let notes = directory.join("notes");
     std::fs::create_dir(&notes).expect("create a directory beneath the Sidekick Workspace");
-    let (other, other_handoff, _other_provider) = start_session(
+    let (_other, other_handoff, _other_provider) = start_session(
         &descriptor,
         &mut hosted.codex,
         &elsewhere,
@@ -1382,29 +1382,10 @@ async fn a_sidekick_never_moves_and_its_subagent_moves_only_beneath_its_workspac
         refused(
             &mut client,
             "move_session",
-            json!({ "directory": elsewhere })
+            json!({ "session_id": sidekick, "directory": elsewhere }),
         )
         .await,
         A_SIDEKICKS,
-    );
-    assert_eq!(
-        refused(
-            &mut client,
-            "move_session",
-            json!({ "session_id": other, "directory": elsewhere }),
-        )
-        .await,
-        beyond_the_caller(other),
-    );
-    assert!(
-        refused(
-            &mut client,
-            "move_session",
-            json!({ "directory": elsewhere, "origin": "workstation" }),
-        )
-        .await
-        .contains("takes no argument `origin`"),
-        "and reaches no Remote"
     );
 
     let child = client
@@ -1449,23 +1430,14 @@ async fn a_sidekick_never_moves_and_its_subagent_moves_only_beneath_its_workspac
     let answer = acted(
         &mut client,
         "move_session",
-        json!({ "session_id": child, "directory": notes }),
+        json!({ "session_id": child, "directory": elsewhere }),
     )
     .await;
+    assert_eq!(answer["session_id"], json!(child), "{answer}");
     assert_eq!(
-        answer["session_id"],
-        json!(child),
-        "and so may its Sidekick"
-    );
-    assert_eq!(
-        refused(
-            &mut client,
-            "move_session",
-            json!({ "session_id": child, "directory": elsewhere }),
-        )
-        .await,
-        beyond_the_workspace(&elsewhere, &directory),
-        "no further than the ordinary form reaches, for now"
+        answer["directory"],
+        json!(elsewhere),
+        "and its Sidekick takes it further than it may go itself"
     );
 
     let mut other_client = McpClient::handed(&other_handoff);

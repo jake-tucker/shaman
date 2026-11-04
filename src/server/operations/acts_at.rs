@@ -32,15 +32,16 @@ use std::path::PathBuf;
 use axum::http::Method;
 
 use super::{
-    AdmittedDelivery, AnswerRefusal, InterruptRefusal, PromptRefusal, SessionOperations,
-    SettleRefusal,
+    AdmittedDelivery, AnswerRefusal, InterruptRefusal, MoveRefusal, PromptRefusal,
+    SessionOperations, SettleRefusal,
     origins::{RemoteActRefusal, SESSIONS_PATH, WORKSPACES_PATH},
 };
 use crate::protocol::{
     ActId, AdmitPromptRequest, AgentSelection, Author, Health, InterruptOutcome, ModelCatalog,
-    Outlook, PROMPT_ADMISSION_HEADER, PromptId, QuestionnaireId, QuestionnaireSubmission,
-    ResolveWorkspaceRequest, ResolvedWorkspace, SessionId, SessionSummary,
-    SetWorkspaceDescriptionRequest, SettleSessionRequest, WorkspaceListing,
+    MoveDestination, MoveOutcome, MoveSessionRequest, Outlook, PROMPT_ADMISSION_HEADER, PromptId,
+    QuestionnaireId, QuestionnaireSubmission, ResolveWorkspaceRequest, ResolvedWorkspace,
+    SessionId, SessionSummary, SetWorkspaceDescriptionRequest, SettleSessionRequest,
+    WorkspaceListing,
 };
 use crate::sessions::{
     ConfirmedBeginning, Pairing, RemoteAct, RemoteContribution, RemoteOwing, StoreOutcome,
@@ -97,6 +98,22 @@ impl SessionOperations {
         here: impl AsyncFnOnce(A) -> Result<T, R>,
         there: impl AsyncFnOnce(&str, ActId, A) -> Result<T, RemoteActRefusal>,
     ) -> Result<T, ActRefusal<R>> {
+        self.dispatch_recording(origin, act, acting, |_| true, here, there)
+            .await
+    }
+
+    /// [`Self::dispatch`] of an act that may answer it did nothing, which
+    /// `changed` says of what it answers: such an act a Remote took records
+    /// nothing, as it does here.
+    async fn dispatch_recording<A, T, R>(
+        &self,
+        origin: &Outlook,
+        act: A,
+        acting: Acting<'_>,
+        changed: impl FnOnce(&T) -> bool,
+        here: impl AsyncFnOnce(A) -> Result<T, R>,
+        there: impl AsyncFnOnce(&str, ActId, A) -> Result<T, RemoteActRefusal>,
+    ) -> Result<T, ActRefusal<R>> {
         match origin {
             Outlook::Local => here(act).await.map_err(ActRefusal::Here),
             Outlook::Remote(name) => {
@@ -105,8 +122,16 @@ impl SessionOperations {
                 let act_id = ActId::new();
                 let outcome = there(name, act_id, act).await;
                 self.owe_remote_outcome(&outcome, &acting, name, &pairing, act_id);
-                self.record_remote_outcome(&outcome, &acting, name, &pairing.fingerprint, act_id)
+                if outcome.as_ref().map_or(true, changed) {
+                    self.record_remote_outcome(
+                        &outcome,
+                        &acting,
+                        name,
+                        &pairing.fingerprint,
+                        act_id,
+                    )
                     .await;
+                }
                 outcome.map_err(ActRefusal::There)
             }
         }
@@ -283,6 +308,47 @@ impl SessionOperations {
                     )
                     .await
                     .map(|_| ())
+            },
+        )
+        .await
+    }
+
+    /// Moves `session_id` at `origin` to `destination` for `author`, as
+    /// [`Self::move_session`] Moves one here. Carried to a Remote, the
+    /// destination is the very text given, for that Remote to read against its
+    /// own home and the Session's directory there.
+    pub(crate) async fn move_session_at(
+        &self,
+        origin: &Outlook,
+        session_id: SessionId,
+        destination: MoveDestination,
+        author: Author,
+    ) -> Result<MoveOutcome, ActRefusal<MoveRefusal>> {
+        self.dispatch_recording(
+            origin,
+            destination,
+            Acting {
+                session_id,
+                author: &author,
+                owes: None,
+            },
+            |outcome| !matches!(outcome, MoveOutcome::AlreadyThere { .. }),
+            async |destination| {
+                self.move_session(session_id, destination, Some(&author))
+                    .await
+            },
+            async |name, act, destination| {
+                self.remotes
+                    .act(
+                        name,
+                        Method::POST,
+                        &format!("{SESSIONS_PATH}/{session_id}/move"),
+                        Some(&MoveSessionRequest { destination }),
+                        &author,
+                        act,
+                    )
+                    .await
+                    .and_then(|answered| answered.read())
             },
         )
         .await
