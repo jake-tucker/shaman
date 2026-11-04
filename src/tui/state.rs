@@ -13567,6 +13567,7 @@ impl Application {
         match self.state.worktree_picker.purpose() {
             Some(DestinationPurpose::Move { session }) => {
                 let origin = session.origin.clone();
+                self.state.worktree_picker.await_move_reading();
                 self.read_move_picker(origin)
             }
             _ => ApplicationTransition::Continue,

@@ -3202,6 +3202,67 @@ fn a_session_that_moves_under_the_picker_is_read_again_keeping_the_readers_place
     assert!(drawn.contains("› Browse…"), "{drawn}");
 }
 
+/// While the picker reads a Session that Moved, its rows still say where it
+/// stood, so nothing can be chosen from them: the row marked current was the
+/// way back there, and choosing it would have meant staying.
+#[test]
+fn a_choice_waits_for_the_fresh_rows_of_a_session_that_moved_under_the_picker() {
+    let fixture = MoveFixture::new();
+    let mut application = connected_application(&named_workspace_path("elsewhere"));
+    let (session_id, snapshot) = enter_session(&mut application, &fixture.linked);
+    let snapshot = stand_session_in(&mut application, snapshot, &fixture.at(&fixture.linked));
+    let session = SessionReference::new(Outlook::Local, session_id);
+    open_move_picker(&mut application, fixture.at(&fixture.linked));
+    walk_to(&mut application, "* linked");
+
+    hear_moved(&mut application, &snapshot, &fixture.main);
+    let reading = application.take_move_picker_read();
+
+    let drawn = screen(&application);
+    assert!(drawn.contains("Loading Worktrees…"), "{drawn}");
+    assert!(!drawn.contains("* linked"), "{drawn}");
+    assert_eq!(
+        press_enter(&mut application),
+        ApplicationTransition::Continue,
+        "nothing is chosen from rows that are being read again"
+    );
+    assert!(screen(&application).contains(" Move Session "));
+
+    answer_with(&mut application, &reading, Ok(fixture.at(&fixture.main)));
+    let drawn = screen(&application);
+    assert!(drawn.contains("› linked"), "{drawn}");
+    assert_eq!(
+        press_enter(&mut application),
+        move_there(&session, &fixture.linked),
+        "the row the reader waited on goes back where the Session stood"
+    );
+}
+
+/// A reading that fails leaves the ways out rather than the rows of where the
+/// Session stood.
+#[test]
+fn a_failed_reading_of_a_session_that_moved_leaves_only_the_two_rows() {
+    let fixture = MoveFixture::new();
+    let mut application = connected_application(&named_workspace_path("elsewhere"));
+    let (_, snapshot) = enter_session(&mut application, &fixture.linked);
+    let snapshot = stand_session_in(&mut application, snapshot, &fixture.at(&fixture.linked));
+    open_move_picker(&mut application, fixture.at(&fixture.linked));
+    walk_to(&mut application, "* linked");
+
+    hear_moved(&mut application, &snapshot, &fixture.main);
+    let reading = application.take_move_picker_read();
+    answer_with(
+        &mut application,
+        &reading,
+        Err("The directory is gone".to_owned()),
+    );
+
+    let drawn = screen(&application);
+    assert!(drawn.contains("The directory is gone"), "{drawn}");
+    assert!(!drawn.contains("linked"), "{drawn}");
+    assert!(drawn.contains("› Another Workspace…"), "{drawn}");
+}
+
 /// Moved out of source control, the Worktrees it stood among are no longer on
 /// offer, so the reader starts over on what is.
 #[test]

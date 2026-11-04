@@ -118,24 +118,35 @@ impl WorktreePicker {
         self.loading = false;
         self.error = Some(error);
     }
+    /// Holds the Move picker's rows back from choosing while its Session is
+    /// read again, since they say where it stood: into the picker itself even
+    /// where a question of another Repository stands over it.
+    pub(super) fn await_move_reading(&mut self) {
+        if let Some(beneath) = &mut self.asked_over {
+            return beneath.await_move_reading();
+        }
+        self.loading = true;
+    }
     /// Takes a reading of the Session a Move picker was opened on, into the
     /// picker itself even where a question stands over it. The reader stays on
     /// the row they were on while the rows stand as they did, and otherwise
-    /// starts over on the first.
+    /// starts over on the first. A failed reading leaves no Worktrees on offer,
+    /// since what was read before no longer says where the Session stands.
     pub(super) fn take_move_reading(&mut self, reading: Result<ResolvedWorkspace, String>) {
         if let Some(beneath) = &mut self.asked_over {
             return beneath.take_move_reading(reading);
         }
+        let rows = self.rows();
         match reading {
-            Ok(context) => {
-                let rows = self.rows();
-                self.load(context);
-                if self.rows() != rows {
-                    self.selected = 0;
-                    self.window.open();
-                }
+            Ok(context) => self.load(context),
+            Err(error) => {
+                self.context = None;
+                self.fail(error);
             }
-            Err(error) => self.fail(error),
+        }
+        if self.rows() != rows {
+            self.selected = 0;
+            self.window.open();
         }
     }
     /// Says `refusal` inside the picker, leaving its rows and the one the
