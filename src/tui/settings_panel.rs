@@ -1566,12 +1566,17 @@ mod tests {
     /// from the Providers themselves, so a Provider Setting grouped elsewhere
     /// would vanish from under the Provider it configures, and a Setting
     /// configuring no Provider grouped there would surface under one it has
-    /// nothing to do with. Which of the remaining tabs a Setting lands on is
-    /// the schema's own call, which is what makes moving one a one-line
-    /// change.
+    /// nothing to do with. An Experimental Setting is the exception, kept on the
+    /// tab that tells a reader it is still finding its shape, and left out of
+    /// the Provider's own for the same reason. Which of the remaining tabs a
+    /// Setting lands on is the schema's own call, which is what makes moving one
+    /// a one-line change.
     #[test]
-    fn a_setting_is_grouped_with_the_providers_exactly_when_it_configures_one() {
+    fn a_settled_setting_is_grouped_with_the_providers_exactly_when_it_configures_one() {
         for descriptor in SCHEMA {
+            if descriptor.group == SettingGroup::Experimental {
+                continue;
+            }
             let configures_a_provider = descriptor.key.starts_with("provider.");
             assert_eq!(
                 descriptor.group == SettingGroup::Providers,
@@ -1586,5 +1591,17 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn an_experimental_setting_configuring_a_provider_is_not_among_the_providers_own() {
+        let copilot = crate::protocol::ProviderId::new("copilot");
+        assert_eq!(
+            provider_settings(&copilot)
+                .iter()
+                .map(|descriptor| descriptor.key)
+                .collect::<Vec<_>>(),
+            ["provider.copilot.permissions"]
+        );
     }
 }

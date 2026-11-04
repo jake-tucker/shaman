@@ -2,7 +2,7 @@
 
 use std::{
     ffi::{OsStr, OsString},
-    sync::{Arc, Mutex as StdMutex},
+    sync::Mutex as StdMutex,
 };
 
 use tokio::{sync::watch, time::Duration};
@@ -12,6 +12,7 @@ use super::{
     catalog::model_descriptors,
     copilot_error_context, copilot_fix,
     errand::run_copilot_errand,
+    fusion_tiers::fusion_tier_assignment,
     pricing::CopilotPricing,
     session::{INTERRUPT_REQUEST_TIMEOUT, start_copilot_session},
     skills::CopilotSkills,
@@ -20,7 +21,7 @@ use super::{
 use crate::{
     pricing::CacheRatesFuture,
     protocol::{
-        AgentSelection, CopilotPermissions, EffectiveSettings, ModelId, ModelOptionChoiceId,
+        AgentSelection, CopilotSettings, EffectiveSettings, ModelId, ModelOptionChoiceId,
         ModelOptionId, ModelOptionSelection, ModelOptionValue, ProviderId, ProviderUnavailability,
         SkillCatalog,
     },
@@ -51,7 +52,7 @@ pub struct CopilotRuntime {
     harness: SharedHarness<CopilotConnector>,
     skills: CopilotSkills,
     interrupt_request_timeout: Duration,
-    permissions: Arc<StdMutex<CopilotPermissions>>,
+    settings: StdMutex<CopilotSettings>,
     /// The prices the last harness Suru saw running published, kept so a
     /// cache saving can still be estimated at them while no harness runs or
     /// one is being launched.
@@ -72,7 +73,7 @@ impl CopilotRuntime {
             harness: SharedHarness::new(spec, CopilotConnector::new()),
             skills: CopilotSkills::default(),
             interrupt_request_timeout: INTERRUPT_REQUEST_TIMEOUT,
-            permissions: Arc::new(StdMutex::new(CopilotPermissions::default())),
+            settings: StdMutex::new(CopilotSettings::default()),
             last_pricing: StdMutex::new(None),
         }
     }
@@ -202,16 +203,17 @@ impl ProviderRuntime for CopilotRuntime {
             // Launches the shared process if this is the first demand, or the first since a crash,
             // which is how the Prompt after a harness crash recovers without a restart.
             let handle = self.harness.demand().await?;
-            let permissions = *self
-                .permissions
+            let settings = *self
+                .settings
                 .lock()
-                .expect("Copilot permissions Setting lock is not poisoned");
+                .expect("Copilot Settings lock is not poisoned");
             start_copilot_session(
                 handle,
                 request,
                 self.skills.clone(),
                 self.interrupt_request_timeout,
-                permissions,
+                settings.permissions,
+                settings.fusion_tiers.then(fusion_tier_assignment),
             )
             .await
         })
@@ -219,10 +221,9 @@ impl ProviderRuntime for CopilotRuntime {
 
     fn apply_settings(&self, settings: &EffectiveSettings) {
         *self
-            .permissions
+            .settings
             .lock()
-            .expect("Copilot permissions Setting lock is not poisoned") =
-            settings.provider.copilot.permissions;
+            .expect("Copilot Settings lock is not poisoned") = settings.provider.copilot;
     }
 
     fn run_errand(&self, errand: ProviderErrand) -> ErrandFuture<'_> {

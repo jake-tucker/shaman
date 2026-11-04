@@ -2460,6 +2460,38 @@ async fn codex_posture_defaults_pin_through_the_config_document_and_reset() {
 }
 
 #[tokio::test]
+async fn copilot_fusion_tiers_stay_off_until_pinned_through_the_config_document_and_reset() {
+    let state_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let server = server::spawn(
+        ServerConfig::new(state_dir.path(), "settings-copilot-fusion-tiers")
+            .unwrap()
+            .with_config_dir(config_dir.path()),
+    )
+    .await
+    .unwrap();
+    let (client, initial) = attach(state_dir.path(), "settings-copilot-fusion-tiers").await;
+    assert!(!initial.settings.provider.copilot.fusion_tiers);
+
+    let pinned = client
+        .mutate_setting(SettingMutation::ProviderCopilotFusionTiers { value: Some(true) })
+        .await
+        .unwrap();
+    assert!(pinned.settings.provider.copilot.fusion_tiers);
+    assert_eq!(pinned.pinned, ["provider.copilot.fusionTiers"]);
+    assert!(config_document(config_dir.path()).contains("\"fusionTiers\": true"));
+
+    let reset = client
+        .mutate_setting(SettingMutation::ProviderCopilotFusionTiers { value: None })
+        .await
+        .unwrap();
+    assert!(!reset.settings.provider.copilot.fusion_tiers);
+    assert_eq!(reset.pinned, [] as [String; 0]);
+    drop(client);
+    server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn copilot_permissions_default_pins_through_the_config_document_and_resets() {
     let state_dir = tempfile::tempdir().unwrap();
     let config_dir = tempfile::tempdir().unwrap();

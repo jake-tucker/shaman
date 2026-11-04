@@ -5473,6 +5473,17 @@ fn the_pane_scrolls_the_setting_the_keys_are_on_into_view_with_all_its_detail() 
     pane_row(&details, "The codex CLI holds no credentials");
 }
 
+/// Copilot's Fusion tiers configure a Provider but are still finding their
+/// shape, so the Experimental tab presents them, off until the reader says so.
+#[test]
+fn copilots_fusion_tiers_stand_on_the_experimental_tab_and_start_off() {
+    let workspace = workspace_dir();
+    let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
+    open_experimental_tab(&mut application);
+
+    assert_eq!(shown(&application, "Copilot Fusion tiers"), "false");
+}
+
 /// However much the pane has to lead with — a refused edit, a Provider's
 /// condition and its fix, a pin Suru ignored, each wrapped over rows of its
 /// own — the Setting the keys are on is never pushed out of it.

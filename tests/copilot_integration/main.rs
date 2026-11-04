@@ -17,6 +17,7 @@ mod compactions;
 mod context_breakdown;
 mod context_fill;
 mod errands;
+mod fusion_tiers;
 mod interruption;
 mod models;
 mod monitoring;

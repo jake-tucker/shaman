@@ -31,6 +31,7 @@ mod catalog;
 mod context;
 mod errand;
 mod event_drain;
+mod fusion_tiers;
 mod pricing;
 mod projection;
 mod questionnaire;

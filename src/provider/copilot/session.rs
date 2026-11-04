@@ -22,8 +22,8 @@ use std::{
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use github_copilot_sdk::{
-    Attachment, DeliveryMode, MessageOptions, ResumeSessionConfig, SessionConfig,
-    SessionId as CopilotSessionId, SetModelOptions, ToolSearchConfig,
+    Attachment, CopilotExpAssignmentResponse, DeliveryMode, MessageOptions, ResumeSessionConfig,
+    SessionConfig, SessionId as CopilotSessionId, SetModelOptions, ToolSearchConfig,
     rpc::{CurrentModel, HistoryCompactRequest, HistoryCompactRequestTrigger, TasksCancelRequest},
     session::Session as NativeSession,
     session_events::ContextTier,
@@ -94,13 +94,16 @@ const RESUME_CONTEXT: &str = "Copilot Session resume failed";
 /// hand the Session the Broker, when this start was handed it, in the server list Copilot takes on
 /// create and resume alike: a resume carries the token this start was handed, and a CLI process
 /// resuming the Session connects anew with the headers the resume names
-/// (docs/validation/0408-copilot-mcp-tool-timeout.md).
+/// (docs/validation/0408-copilot-mcp-tool-timeout.md). Both carry `exp_assignments`, which the CLI
+/// wants supplied again on every resume, so what a Session runs under is what this start was handed
+/// rather than what the Session was created with.
 pub(super) async fn start_copilot_session(
     handle: SharedHarnessHandle<CopilotConnection>,
     request: ProviderSessionRequest,
     skills: CopilotSkills,
     interrupt_request_timeout: Duration,
     permissions: CopilotPermissions,
+    exp_assignments: Option<CopilotExpAssignmentResponse>,
 ) -> Result<ProviderSessionConnection, ProviderError> {
     let permissions = match request.approval_posture.as_ref() {
         Some(crate::protocol::ApprovalPosture::Copilot { permissions }) => *permissions,
@@ -141,6 +144,7 @@ pub(super) async fn start_copilot_session(
                 .with_user_input_handler(questionnaires.clone());
             config.mcp_servers = broker;
             config.system_message = broker_note;
+            config.exp_assignments = exp_assignments;
             let native = until_crash(
                 &handle,
                 RESUME_CONTEXT,
@@ -168,6 +172,7 @@ pub(super) async fn start_copilot_session(
                 .with_user_input_handler(questionnaires.clone());
             config.mcp_servers = broker;
             config.system_message = broker_note;
+            config.exp_assignments = exp_assignments;
             let native = until_crash(
                 &handle,
                 STARTUP_CONTEXT,

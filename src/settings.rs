@@ -85,6 +85,7 @@ const PROVIDER_CODEX_APPROVAL_POLICY: &str = "provider.codex.approvalPolicy";
 const PROVIDER_CODEX_SANDBOX_MODE: &str = "provider.codex.sandboxMode";
 const PROVIDER_COPILOT_ENABLED: &str = "provider.copilot.enabled";
 const PROVIDER_COPILOT_PERMISSIONS: &str = "provider.copilot.permissions";
+const PROVIDER_COPILOT_FUSION_TIERS: &str = "provider.copilot.fusionTiers";
 const PROVIDER_CLAUDE_ENABLED: &str = "provider.claude.enabled";
 const PROVIDER_CLAUDE_PERMISSION_MODE: &str = "provider.claude.permissionMode";
 const SERVING_ENABLED: &str = "serving.enabled";
@@ -164,8 +165,9 @@ pub enum SidekickAccess {
     /// A Sidekick reads the Setting and changes it.
     ReadAndChange,
     /// A Sidekick reads the Setting but never changes it: one bounding what an
-    /// Agent may do, or one whose effect no later change can undo. `why` says
-    /// which, in words that follow "since".
+    /// Agent may do, one whose effect no later change can undo, or one that
+    /// asserts something to a Provider's service for the user. `why` says which,
+    /// in words that follow "since".
     ReadOnly { why: &'static str },
     /// A Sidekick is told nothing of the Setting, not even its value: one
     /// governing Serving or a Pairing.
@@ -974,6 +976,11 @@ fn in_force(mutation: &SettingMutation, settings: &EffectiveSettings) -> Setting
         SettingMutation::ProviderCopilotPermissions { .. } => {
             SettingMutation::ProviderCopilotPermissions {
                 value: Some(settings.provider.copilot.permissions),
+            }
+        }
+        SettingMutation::ProviderCopilotFusionTiers { .. } => {
+            SettingMutation::ProviderCopilotFusionTiers {
+                value: Some(settings.provider.copilot.fusion_tiers),
             }
         }
         SettingMutation::ProviderClaudeEnabled { .. } => SettingMutation::ProviderClaudeEnabled {
@@ -2141,6 +2148,37 @@ pub const SCHEMA: &[SettingDescriptor] = &[
             Applied::Whole
         },
     },
+    SettingDescriptor {
+        key: PROVIDER_COPILOT_FUSION_TIERS,
+        label: "Copilot Fusion tiers",
+        description: "Whether Copilot Sessions opened or resumed from now on are offered Fusion's routing tiers, by asserting an experiment assignment Copilot's service did not issue",
+        group: SettingGroup::Experimental,
+        scope: SettingScope::Server,
+        sidekick: SidekickAccess::ReadOnly {
+            why: "it asserts an experiment assignment to Copilot's service, which is the user's \
+                  to do",
+        },
+        values: SettingValues::Fixed(&[
+            SettingChoice {
+                value: "false",
+                build_mutation: || SettingMutation::ProviderCopilotFusionTiers {
+                    value: Some(false),
+                },
+            },
+            SettingChoice {
+                value: "true",
+                build_mutation: || SettingMutation::ProviderCopilotFusionTiers {
+                    value: Some(true),
+                },
+            },
+        ]),
+        reset: SettingMutation::ProviderCopilotFusionTiers { value: None },
+        apply: |settings, value| {
+            apply_value(value, |enabled| {
+                settings.provider.copilot.fusion_tiers = enabled;
+            })
+        },
+    },
 ];
 
 /// The Setting through which the user turns one Provider on or off, which is
@@ -2156,7 +2194,9 @@ pub fn provider_enablement(provider: &ProviderId) -> Option<&'static SettingDesc
 /// Settings a surface presenting the Provider lists as the Provider's own, its
 /// Enablement left out because the Provider itself is that Setting's surface. Keyed on the
 /// Provider's own identity like [`provider_enablement`], so a Setting joins the
-/// Provider it names by being written down once.
+/// Provider it names by being written down once. An Experimental Setting
+/// configuring the Provider is not among them: the tab of its group presents it,
+/// so a reader meets it knowing it is still finding its shape.
 pub fn provider_settings(provider: &ProviderId) -> Vec<&'static SettingDescriptor> {
     let prefix = format!("provider.{provider}.");
     // Read off `provider_enablement` rather than spelled again here, so the
@@ -2165,7 +2205,9 @@ pub fn provider_settings(provider: &ProviderId) -> Vec<&'static SettingDescripto
     SCHEMA
         .iter()
         .filter(|descriptor| {
-            descriptor.key.starts_with(&prefix) && Some(descriptor.key) != enablement
+            descriptor.group == SettingGroup::Providers
+                && descriptor.key.starts_with(&prefix)
+                && Some(descriptor.key) != enablement
         })
         .collect()
 }
@@ -2347,6 +2389,9 @@ fn pin_for(mutation: &SettingMutation) -> (&'static str, Option<Value>) {
         }
         SettingMutation::ProviderCopilotPermissions { value } => {
             (PROVIDER_COPILOT_PERMISSIONS, pinned(value))
+        }
+        SettingMutation::ProviderCopilotFusionTiers { value } => {
+            (PROVIDER_COPILOT_FUSION_TIERS, pinned(value))
         }
         SettingMutation::ProviderClaudeEnabled { value } => {
             (PROVIDER_CLAUDE_ENABLED, pinned(value))
@@ -3047,6 +3092,7 @@ mod tests {
                 // being the most the count it is kept in can hold.
                 "an integer from 1 to 4294967295".to_owned(),
                 "an integer from 1 to 4294967295".to_owned(),
+                "one of false or true".to_owned(),
             ]
         );
     }
@@ -3506,11 +3552,12 @@ mod tests {
                 "provider.codex.sandboxMode",
                 "provider.copilot.permissions",
                 "provider.claude.permissionMode",
+                "provider.copilot.fusionTiers",
             ]
         );
         assert_eq!(
             declaring(|access| access == SidekickAccess::ReadAndChange).len(),
-            SCHEMA.len() - 10
+            SCHEMA.len() - 11
         );
         for descriptor in SCHEMA {
             if let SidekickAccess::ReadOnly { why } = descriptor.sidekick {

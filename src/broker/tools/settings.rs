@@ -985,7 +985,8 @@ mod tests {
             [
                 "broker.enabled",
                 "broker.maxDepth",
-                "broker.maxConcurrentSubagents"
+                "broker.maxConcurrentSubagents",
+                "provider.copilot.fusionTiers"
             ],
             "the Serving Settings beside them are left out"
         );
