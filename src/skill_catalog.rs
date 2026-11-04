@@ -12,7 +12,7 @@ use crate::{
     protocol::{
         InitialPrompt, ProviderId, SettingsSnapshot, SkillCatalog, SkillCatalogCapabilities,
         SkillCatalogRequest, SkillCatalogStatus, SkillId, SkillInvocation, SkillPromptDelivery,
-        skill_marker_matches, skill_names_equal,
+        match_skills_by_name, skill_marker_matches,
     },
     provider::ProviderRuntime,
 };
@@ -281,67 +281,18 @@ impl SkillCatalogService {
             ));
         }
 
-        let mut destinations = Vec::with_capacity(prompt.skill_invocations.len());
-        let mut missing: Vec<String> = Vec::new();
-        let mut ambiguous: Vec<String> = Vec::new();
         for invocation in &prompt.skill_invocations {
             validate_skill_marker(prompt, invocation)?;
-            // A correction made from the destination autocomplete already
-            // carries destination authority. Preserve it so an ambiguous name
-            // can be resolved explicitly and the general stale-binding rule
-            // remains unchanged outside this managed-preparation exception.
-            if let Some(destination) = catalog.skills.iter().find(|skill| {
-                skill.id == invocation.skill_id
-                    && skill.name == invocation.name
-                    && skill.scope == invocation.scope
-            }) {
-                destinations.push(Some(destination));
-                continue;
-            }
-            let matches = catalog
-                .skills
-                .iter()
-                .filter(|skill| skill_names_equal(&skill.name, &invocation.name))
-                .collect::<Vec<_>>();
-            match matches.as_slice() {
-                [destination] => destinations.push(Some(*destination)),
-                [] => {
-                    destinations.push(None);
-                    if !missing
-                        .iter()
-                        .any(|name| skill_names_equal(name, &invocation.name))
-                    {
-                        missing.push(invocation.name.clone());
-                    }
-                }
-                _ => {
-                    destinations.push(None);
-                    if !ambiguous
-                        .iter()
-                        .any(|name| skill_names_equal(name, &invocation.name))
-                    {
-                        ambiguous.push(invocation.name.clone());
-                    }
-                }
-            }
         }
-        if !missing.is_empty() || !ambiguous.is_empty() {
-            let mut reasons = Vec::new();
-            if !missing.is_empty() {
-                reasons.push(format!("missing: {}", missing.join(", ")));
-            }
-            if !ambiguous.is_empty() {
-                reasons.push(format!("ambiguous: {}", ambiguous.join(", ")));
-            }
-            return Err(SkillCatalogError::InvalidInvocation(format!(
-                "destination Skills could not be matched by name ({})",
-                reasons.join("; ")
-            )));
-        }
+        let destinations = match_skills_by_name(&catalog.skills, &prompt.skill_invocations)
+            .map_err(|unmatched| {
+                SkillCatalogError::InvalidInvocation(format!(
+                    "destination Skills could not be matched by name ({unmatched})"
+                ))
+            })?;
 
         let mut rebound = prompt.clone();
         for (invocation, destination) in rebound.skill_invocations.iter_mut().zip(destinations) {
-            let destination = destination.expect("every destination match was validated");
             invocation.skill_id = destination.id.clone();
             invocation.name.clone_from(&destination.name);
             invocation.scope.clone_from(&destination.scope);

@@ -4,6 +4,7 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     ops::Range,
+    path::{Path, PathBuf},
 };
 
 use ratatui::layout::{Position, Rect};
@@ -77,6 +78,15 @@ struct ComposerState {
     /// label deleted is never reused before the draft is submitted or cleared.
     highest_image_number: u32,
     generation: DraftGeneration,
+    /// The Execution Directory of the Session this draft belongs to, as last
+    /// consulted: a draft is kept across Sessions being opened and left, so a
+    /// Move is known by the Session no longer standing here, however the
+    /// Client came to hear of it.
+    session_directory: Option<PathBuf>,
+    /// Whether that Session has Moved while this draft was kept. A Prompt
+    /// coming back may have been bound before the Move, so what it binds is
+    /// carried as the draft's own Skills were.
+    session_moved: bool,
 }
 
 /// Which content a draft holds: renewed whenever the draft is replaced or
@@ -370,6 +380,15 @@ impl ComposerMemory {
         self.composer_mut(key).insert_skill(range, skill)
     }
 
+    /// Notes where the Session a draft belongs to stands, carrying what the
+    /// draft binds when that is no longer where it stood.
+    pub(super) fn note_session_directory(&mut self, key: ComposerKey, directory: &Path) {
+        self.composers
+            .entry(key)
+            .or_default()
+            .note_session_directory(directory);
+    }
+
     pub(super) fn resolve_skills(
         &mut self,
         key: ComposerKey,
@@ -604,6 +623,7 @@ impl ComposerMemory {
                 bindings: landing.bindings,
             });
         }
+        recovered.leave_session();
         self.composers.insert(ComposerKey::Landing, recovered);
     }
 
@@ -642,6 +662,34 @@ impl ComposerMemory {
 }
 
 impl ComposerState {
+    fn note_session_directory(&mut self, directory: &Path) {
+        if self
+            .session_directory
+            .as_deref()
+            .is_some_and(|stood| stood != directory)
+        {
+            self.session_moved = true;
+            self.bindings.carry_skills();
+            for entry in self.history.iter_mut().chain(self.history_scratch.as_mut()) {
+                entry.bindings.carry_skills();
+            }
+        }
+        if self.session_directory.as_deref() != Some(directory) {
+            self.session_directory = Some(directory.to_owned());
+        }
+    }
+
+    /// Forgets the Session, for a draft handed to the Landing: there a binding
+    /// is judged by the Landing's rule alone.
+    fn leave_session(&mut self) {
+        self.session_directory = None;
+        self.session_moved = false;
+        self.bindings.settle_carried_skills();
+        for entry in self.history.iter_mut().chain(self.history_scratch.as_mut()) {
+            entry.bindings.settle_carried_skills();
+        }
+    }
+
     fn resolve_skills(&mut self, catalog: Option<&crate::protocol::SkillCatalog>) {
         self.bindings.retain_recognized(&self.text);
         self.skill_issues = self.bindings.resolve_skills(&self.text, catalog);
@@ -933,6 +981,9 @@ impl ComposerState {
         self.text.clone_from(&prompt.text);
         self.selection_anchor = None;
         self.bindings = TextBindings::from_prompt(prompt);
+        if self.session_moved {
+            self.bindings.carry_skills();
+        }
         self.highest_image_number = self.bindings.highest_image_number();
         self.skill_issues.clear();
         self.cursor = self.text.len();

@@ -1018,6 +1018,84 @@ pub(crate) fn skill_marker_matches(marker: &str, name: &str) -> bool {
         .is_some_and(|visible| skill_names_equal(visible, name))
 }
 
+/// The names that kept Skill Invocations from being matched by name in another
+/// directory's Catalog, each once.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct UnmatchedSkills {
+    missing: Vec<String>,
+    ambiguous: Vec<String>,
+}
+
+impl UnmatchedSkills {
+    pub(crate) fn names(&self, name: &str) -> bool {
+        self.missing
+            .iter()
+            .chain(&self.ambiguous)
+            .any(|unmatched| skill_names_equal(unmatched, name))
+    }
+}
+
+impl std::fmt::Display for UnmatchedSkills {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut reasons = Vec::new();
+        if !self.missing.is_empty() {
+            reasons.push(format!("missing: {}", self.missing.join(", ")));
+        }
+        if !self.ambiguous.is_empty() {
+            reasons.push(format!("ambiguous: {}", self.ambiguous.join(", ")));
+        }
+        formatter.write_str(&reasons.join("; "))
+    }
+}
+
+/// Resolves Skills bound in one directory against the fresh `skills` of the
+/// directory they are going to, answering each invocation's Skill in order.
+/// All match or none do, so callers never observe a partially retargeted set.
+pub(crate) fn match_skills_by_name<'a>(
+    skills: &'a [SkillDescriptor],
+    invocations: &[SkillInvocation],
+) -> Result<Vec<&'a SkillDescriptor>, UnmatchedSkills> {
+    let mut destinations = Vec::with_capacity(invocations.len());
+    let mut unmatched = UnmatchedSkills::default();
+    for invocation in invocations {
+        // A correction made from the destination autocomplete already
+        // carries destination authority. Preserve it so an ambiguous name
+        // can be resolved explicitly and the general stale-binding rule
+        // remains unchanged outside this exception.
+        if let Some(destination) = skills.iter().find(|skill| {
+            skill.id == invocation.skill_id
+                && skill.name == invocation.name
+                && skill.scope == invocation.scope
+        }) {
+            destinations.push(destination);
+            continue;
+        }
+        let matches = skills
+            .iter()
+            .filter(|skill| skill_names_equal(&skill.name, &invocation.name))
+            .collect::<Vec<_>>();
+        let names = match matches.as_slice() {
+            [destination] => {
+                destinations.push(*destination);
+                continue;
+            }
+            [] => &mut unmatched.missing,
+            _ => &mut unmatched.ambiguous,
+        };
+        if !names
+            .iter()
+            .any(|name| skill_names_equal(name, &invocation.name))
+        {
+            names.push(invocation.name.clone());
+        }
+    }
+    if unmatched == UnmatchedSkills::default() {
+        Ok(destinations)
+    } else {
+        Err(unmatched)
+    }
+}
+
 /// A safe binding between visible Prompt text and one Provider-owned Skill.
 /// It deliberately carries no Provider-native identifier. Repeated markers
 /// remain separate records so historical presentation preserves every marker;

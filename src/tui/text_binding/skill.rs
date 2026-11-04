@@ -6,7 +6,7 @@ use std::{collections::HashSet, ops::Range};
 
 use crate::protocol::{
     SkillCatalog, SkillCatalogStatus, SkillDescriptor, SkillId, SkillInvocation, TextSpan,
-    skill_marker_matches,
+    match_skills_by_name, skill_marker_matches, skill_names_equal,
 };
 
 use super::{BindingKind, TextBinding, TextBindings};
@@ -22,6 +22,10 @@ pub(in crate::tui) struct BoundSkill {
     /// binding is found again in the text each time the Skill Catalog is
     /// consulted.
     inferred: bool,
+    /// Whether the binding was made before its Session Moved, so its identity
+    /// answers for a directory the Session has left. It is found by name in
+    /// the destination's Catalog before anything may be sent.
+    carried: bool,
 }
 
 /// A span of a draft that keeps it from being submitted, because the Skill
@@ -39,6 +43,7 @@ impl BoundSkill {
             name: skill.name.clone(),
             scope: skill.scope.clone(),
             inferred,
+            carried: false,
         }
     }
 
@@ -51,6 +56,7 @@ impl BoundSkill {
                 name: invocation.name.clone(),
                 scope: invocation.scope.clone(),
                 inferred: false,
+                carried: false,
             }),
         }
     }
@@ -92,10 +98,27 @@ impl TextBindings {
         self.bind(span, BindingKind::Skill(BoundSkill::new(skill, false)));
     }
 
+    /// Takes every bound Skill as made before its Session Moved.
+    pub(in crate::tui) fn carry_skills(&mut self) {
+        for (_, skill) in self.skills_mut() {
+            skill.inferred = false;
+            skill.carried = true;
+        }
+    }
+
+    /// Takes every bound Skill as made where the draft now stands, for a
+    /// draft leaving the Session it was carried with.
+    pub(in crate::tui) fn settle_carried_skills(&mut self) {
+        for (_, skill) in self.skills_mut() {
+            skill.carried = false;
+        }
+    }
+
     /// Settles a draft's Skill Invocations against `catalog`: binding each
     /// exact, unambiguous `$skill-name` in `text` not already bound, and
     /// answering, in text order, every span that keeps the draft from being
-    /// submitted. Without a fresh Catalog every bound Skill is stale.
+    /// submitted. Without a fresh Catalog every bound Skill is stale, or
+    /// awaiting the destination's where it was carried over a Move.
     pub(in crate::tui) fn resolve_skills(
         &mut self,
         text: &str,
@@ -105,14 +128,26 @@ impl TextBindings {
         let fresh_catalog =
             catalog.filter(|catalog| matches!(catalog.status, SkillCatalogStatus::Fresh { .. }));
         let Some(catalog) = fresh_catalog else {
+            let carried = self.carried_skill_names();
             for (span, skill) in self.skills_mut() {
                 skill.inferred = false;
-                issues.push(skill.stale_issue(span));
+                issues.push(if skill.carried {
+                    SkillIssue {
+                        span: span.clone(),
+                        message: format!(
+                            "{carried}: waiting for the Skill Catalog of this Session's new \
+                             directory"
+                        ),
+                    }
+                } else {
+                    skill.stale_issue(span)
+                });
             }
             issues.sort_by_key(|issue| issue.span.start);
             return issues;
         };
 
+        issues.extend(self.rebind_carried_skills(catalog));
         for (_, skill) in self.skills_mut() {
             if skill.inferred && !skill.is_current_in(catalog) {
                 skill.inferred = false;
@@ -120,7 +155,7 @@ impl TextBindings {
         }
         self.retain_skills(|skill| !skill.inferred);
         for (span, skill) in self.skills() {
-            if !skill.is_current_in(catalog) {
+            if !skill.carried && !skill.is_current_in(catalog) {
                 issues.push(skill.stale_issue(span));
             }
         }
@@ -162,6 +197,57 @@ impl TextBindings {
         }
         issues.sort_by_key(|issue| issue.span.start);
         issues
+    }
+
+    /// Every carried Skill as written, each once and in text order.
+    fn carried_skill_names(&self) -> String {
+        let mut names: Vec<&str> = Vec::new();
+        for (_, skill) in self.skills().filter(|(_, skill)| skill.carried) {
+            if !names
+                .iter()
+                .any(|name| skill_names_equal(name, &skill.name))
+            {
+                names.push(&skill.name);
+            }
+        }
+        names
+            .iter()
+            .map(|name| format!("`${name}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// Finds the Skills carried over a Move in the destination's fresh
+    /// `catalog`, under the rule new-Worktree preparation binds by: all of them
+    /// or, answering the spans of those that kept it from happening, none.
+    fn rebind_carried_skills(&mut self, catalog: &SkillCatalog) -> Vec<SkillIssue> {
+        let carried = self
+            .skills()
+            .filter(|(_, skill)| skill.carried)
+            .map(|(span, skill)| skill.invocation(span))
+            .collect::<Vec<_>>();
+        match match_skills_by_name(&catalog.skills, &carried) {
+            Ok(destinations) => {
+                let bindings = self.skills_mut().filter(|(_, skill)| skill.carried);
+                for ((_, skill), destination) in bindings.zip(destinations) {
+                    *skill = BoundSkill::new(destination, false);
+                }
+                Vec::new()
+            }
+            Err(unmatched) => {
+                // The names lead, as the composer's error line keeps one row.
+                let message = format!(
+                    "Skills {unmatched} after this Session's Move; edit or choose them again"
+                );
+                self.skills()
+                    .filter(|(_, skill)| skill.carried && unmatched.names(&skill.name))
+                    .map(|(span, _)| SkillIssue {
+                        span: span.clone(),
+                        message: message.clone(),
+                    })
+                    .collect()
+            }
+        }
     }
 
     /// The Skills these bindings invoke with no issue standing against them.

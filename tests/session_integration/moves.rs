@@ -28,13 +28,14 @@ use suru::{
         MoveLocation, MoveOutcome, MoveSessionRequest, PromptDelivery, PromptId, ProviderId,
         SessionCatalogChange, SessionChange, SessionError, SessionErrorCode, SessionId,
         SessionSnapshot, SessionSummary, SkillCatalog, SkillCatalogCapabilities,
-        SkillCatalogStatus, SkillDescriptor, SkillId, SkillInvocation, SkillPromptDelivery,
-        TextSpan, TranscriptItem,
+        SkillCatalogRequest, SkillCatalogStatus, SkillDescriptor, SkillId, SkillInvocation,
+        SkillPromptDelivery, TextSpan, TranscriptItem,
     },
     provider::{
         MoveNote, ProviderEvent, ProviderResumeState, ProviderSubagentId, ProviderWatchId, Report,
     },
     server::{self, RunningServer, ServerConfig, ServerTimings},
+    tui::{Application, ApplicationEvent, ApplicationTransition, CommandId},
 };
 use tokio::time::timeout;
 
@@ -42,9 +43,13 @@ const PROVIDER: &str = "controlled";
 const MODEL: &str = "controlled-default";
 
 fn identity() -> AgentIdentity {
+    identity_on(PROVIDER)
+}
+
+fn identity_on(provider: &str) -> AgentIdentity {
     AgentIdentity {
         agent: AgentId::new("controlled-agent"),
-        selection: hosted_selection(PROVIDER, MODEL),
+        selection: hosted_selection(provider, MODEL),
     }
 }
 
@@ -111,14 +116,18 @@ impl IdleSession {
     /// Begins the Session in `origin`, a directory beneath the home the
     /// test makes, and settles its first Turn with a conversation to resume.
     async fn begin(channel: &'static str, origin: &str) -> Self {
+        Self::begin_on(PROVIDER, channel, origin).await
+    }
+
+    async fn begin_on(provider_name: &str, channel: &'static str, origin: &str) -> Self {
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let home = tempfile::tempdir().expect("create the Server's home");
         let origin = home.path().join(origin);
         std::fs::create_dir_all(&origin).expect("create the origin");
         let origin = canonical(&origin);
         let (runtime, mut provider) = ControlledProvider::with_provider(
-            ProviderId::new(PROVIDER),
-            vec![hosted_model(PROVIDER, MODEL)],
+            ProviderId::new(provider_name),
+            vec![hosted_model(provider_name, MODEL)],
         );
         let server = spawn(state_dir.path(), home.path(), channel, &runtime).await;
         let client = connected_client(state_dir.path(), channel).await;
@@ -126,7 +135,7 @@ impl IdleSession {
             .create_session(CreateSessionRequest {
                 session_id: None,
                 preparation_id: None,
-                agent_selection: Some(hosted_selection(PROVIDER, MODEL)),
+                agent_selection: Some(hosted_selection(provider_name, MODEL)),
                 execution_directory: ExecutionDirectory {
                     path: origin.clone(),
                 },
@@ -137,7 +146,8 @@ impl IdleSession {
         let start = timeout(PROGRESS_DEADLINE, provider.next_start())
             .await
             .expect("the Session reaches its Provider");
-        let mut provider_session = start.succeed_with_resume(identity(), Some(resume_state()));
+        let mut provider_session =
+            start.succeed_with_resume(identity_on(provider_name), Some(resume_state()));
         timeout(PROGRESS_DEADLINE, provider_session.next_turn())
             .await
             .expect("the first Turn reaches its Provider")
@@ -812,6 +822,161 @@ async fn the_skill_catalog_after_a_move_is_the_destinations() {
     assert_eq!(turn.skill_invocations()[0].skill_id, deploy.id);
     turn.succeed();
     fixture.shutdown().await;
+}
+
+/// What each Provider identifies a Skill by depends on the directory it was
+/// found in, so a draft's binding is only good where it was made. A Client
+/// holding one through a real Move sends the destination's, and the Provider
+/// resumed there is handed the destination's.
+#[tokio::test]
+async fn a_drafts_bound_skill_reaches_every_provider_as_the_destinations_skill() {
+    for provider_name in ["claude", "codex", "copilot"] {
+        let mut fixture =
+            IdleSession::begin_on(provider_name, "move-draft-skills-test", "origin").await;
+        let destination = fixture.directory("destination");
+        let explain_in = |directory: &str| SkillDescriptor {
+            id: SkillId::new(format!("{provider_name}-{directory}-explain")),
+            name: "explain".to_owned(),
+            description: format!("Explain from the {directory}"),
+            scope: Some("Workspace".to_owned()),
+        };
+        let provider = ProviderId::new(provider_name);
+        for (directory, skill) in [
+            (fixture.origin.clone(), explain_in("origin")),
+            (destination.clone(), explain_in("destination")),
+        ] {
+            fixture.runtime.offer_skills_in(SkillCatalog {
+                provider: provider.clone(),
+                execution_directory: ExecutionDirectory { path: directory },
+                skills: vec![skill],
+                capabilities: SkillCatalogCapabilities {
+                    max_distinct_invocations: None,
+                    supported_deliveries: vec![
+                        SkillPromptDelivery::Initial,
+                        SkillPromptDelivery::Queue,
+                        SkillPromptDelivery::Steer,
+                    ],
+                },
+                status: SkillCatalogStatus::Fresh { warning: None },
+            });
+        }
+
+        let (observer, mut stream) = following(&fixture).await;
+        let mut application = Application::new(&fixture.origin, Default::default());
+        application
+            .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
+                fixture.read().await,
+            )))
+            .expect("view the Session");
+        let origin = fixture.origin.clone();
+        offer_catalog_from_server(&fixture, &mut application, &provider, &origin).await;
+        application
+            .handle_event(ApplicationEvent::Command(CommandId::InsertText(
+                "Please $explain this".to_owned(),
+            )))
+            .expect("write the draft");
+
+        fixture
+            .move_to(&destination)
+            .await
+            .expect("Move the idle Session");
+        timeout(PROGRESS_DEADLINE, async {
+            loop {
+                let event = stream
+                    .next()
+                    .await
+                    .expect("the stream stays open")
+                    .expect("the stream stays readable");
+                let moved = matches!(
+                    &event,
+                    SessionEvent::Updated(update) if update
+                        .changes
+                        .iter()
+                        .any(|change| matches!(change, SessionChange::Moved { .. }))
+                );
+                application
+                    .handle_event(ApplicationEvent::Session(event))
+                    .expect("hear the Session");
+                if moved {
+                    return;
+                }
+            }
+        })
+        .await
+        .expect("the Move is heard");
+
+        assert_eq!(
+            application
+                .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
+                .expect("try the draft"),
+            ApplicationTransition::Continue,
+            "the old directory's binding is not sent"
+        );
+
+        offer_catalog_from_server(&fixture, &mut application, &provider, &destination).await;
+        let transition = application
+            .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
+            .expect("submit the draft");
+        let ApplicationTransition::AdmitPrompt { request, .. } = transition else {
+            panic!("the draft is sent, not {transition:?}");
+        };
+        fixture
+            .client
+            .admit_prompt(fixture.session_id, request)
+            .await
+            .expect("the Server takes the destination's binding");
+
+        let start = timeout(PROGRESS_DEADLINE, fixture.provider.next_start())
+            .await
+            .expect("the next Turn starts the Provider again");
+        assert_eq!(start.execution_directory(), destination);
+        let mut resumed = start.succeed(identity_on(provider_name));
+        let turn = timeout(PROGRESS_DEADLINE, resumed.next_turn())
+            .await
+            .expect("the Prompt reaches the Provider");
+        assert_eq!(
+            turn.skill_invocations()[0].skill_id,
+            explain_in("destination").id,
+            "{provider_name}"
+        );
+        turn.succeed();
+        drop(observer);
+        fixture.shutdown().await;
+    }
+}
+
+/// The Client taking the Skill Catalog its Server gives of `directory`, once
+/// discovery there has settled.
+async fn offer_catalog_from_server(
+    fixture: &IdleSession,
+    application: &mut Application,
+    provider: &ProviderId,
+    directory: &Path,
+) {
+    let request = SkillCatalogRequest {
+        provider: provider.clone(),
+        execution_directory: ExecutionDirectory {
+            path: directory.to_owned(),
+        },
+    };
+    let catalog = timeout(PROGRESS_DEADLINE, async {
+        loop {
+            let catalog = fixture
+                .client
+                .list_skills(request.clone())
+                .await
+                .expect("list Skills");
+            if matches!(catalog.status, SkillCatalogStatus::Fresh { .. }) {
+                return catalog;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the Skill Catalog settles");
+    application
+        .handle_event(ApplicationEvent::SkillsListed { request, catalog })
+        .expect("take the Skill Catalog");
 }
 
 #[tokio::test]

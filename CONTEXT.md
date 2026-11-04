@@ -284,7 +284,7 @@ A Provider-offered body of task-specific guidance that an Agent may use and a us
 _Avoid_: Command, prompt template
 
 **Skill Invocation**:
-A user's explicit selection of a Skill for one Prompt, written as `$skill-name` in that Prompt and carried as a typed binding beside the original text. It remains bound to that Provider's Skill even when Providers differ in how they receive it; an unbound `$token` is ordinary text. When creating a new Worktree, an explicit selection follows a unique matching Skill name into the destination Catalog automatically; a missing or ambiguous match prevents the Prompt from being admitted.
+A user's explicit selection of a Skill for one Prompt, written as `$skill-name` in that Prompt and carried as a typed binding beside the original text. It remains bound to that Provider's Skill even when Providers differ in how they receive it; an unbound `$token` is ordinary text. When creating a new Worktree, or when a draft's Session Moves, an explicit selection follows a unique matching Skill name into the destination Catalog automatically; a missing or ambiguous match prevents the Prompt from being admitted, and after a Move keeps the draft from being submitted until it is edited. Until the destination Catalog answers, a Moved draft's selections wait with it.
 _Avoid_: Skill mention, skill command
 
 **Skill Catalog**:

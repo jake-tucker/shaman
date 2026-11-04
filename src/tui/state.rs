@@ -1633,8 +1633,24 @@ impl TuiState {
 
     fn sync_composer_completion(&mut self) {
         let key = self.composer_key();
+        if let ComposerKey::Session(reference) = &key
+            && let Some(projection) = self
+                .session
+                .as_ref()
+                .filter(|open| open.session_id() == reference.session_id)
+        {
+            self.composers.note_session_directory(
+                key.clone(),
+                &projection.snapshot().session.execution_directory.path,
+            );
+        }
         let catalog = self.current_skill_catalog().cloned();
+        let issue_said = self.composers.skill_issue(key.clone()).map(str::to_owned);
         self.composers.resolve_skills(key.clone(), catalog.as_ref());
+        // A refusal to submit said of an issue goes as that issue does.
+        if issue_said.is_some() && self.submission_error == issue_said {
+            self.submission_error = self.composers.skill_issue(key.clone()).map(str::to_owned);
+        }
         let bound_skills = self.composers.valid_skill_ids(key.clone());
         self.composer_completion.sync(
             self.composers.text(key.clone()),
@@ -3074,6 +3090,7 @@ impl TuiState {
                     return Ok(false);
                 }
                 if let Some(left) = left {
+                    self.sync_composer_completion();
                     self.follow_move(&left);
                 }
             }
@@ -9666,10 +9683,13 @@ impl Application {
             return ApplicationTransition::Continue;
         }
         self.state.sync_composer_completion();
+        // New-Worktree preparation has the Server rebind what the Landing's
+        // draft binds. A Session's draft takes no preparation.
         if let Some(error) = self.state.composers.skill_issue(key.clone())
-            && self.state.new_worktree.as_ref().is_none_or(|intent| {
-                self.state.execution_directory.as_ref() == Some(&intent.source.path)
-            })
+            && (matches!(key, ComposerKey::Session(_))
+                || self.state.new_worktree.as_ref().is_none_or(|intent| {
+                    self.state.execution_directory.as_ref() == Some(&intent.source.path)
+                }))
         {
             self.state.submission_error = Some(error.to_owned());
             self.state.composer_completion.dismiss_active();

@@ -9,7 +9,7 @@ use crossterm::event::{
 };
 use std::path::{Path, PathBuf};
 use suru::{
-    managed_client::ManagedEvent,
+    managed_client::{ManagedEvent, SessionEvent},
     protocol::*,
     tui::{
         Application, ApplicationEvent, ApplicationTransition, ClipboardRead, CommandId,
@@ -1360,6 +1360,62 @@ fn source_skill_binding_is_not_retargeted_to_another_worktree() {
     );
     assert!(text(&app).contains("stale"));
     assert!(text(&app).contains("$review"));
+}
+
+/// The exception new-Worktree preparation makes for bindings the Server will
+/// rebind belongs to the Landing. A Session opened while that intent stands
+/// takes no preparation, so a Move taking the Client's current location away
+/// from the intent's source lets nothing through.
+#[test]
+fn a_new_worktree_intent_lets_no_stale_binding_through_a_moved_sessions_composer() {
+    let layout = Layout::new();
+    let mut app = layout.app();
+    choose_new(&mut app, &layout);
+    let mut snapshot = crate::tui_rendering::support::failed_session_snapshot(
+        SessionId::new(),
+        PromptId::new(),
+        "Earlier work",
+        &layout.nested,
+    );
+    snapshot.session.agent_selection = Some(AgentSelection {
+        provider: ProviderId::new("codex"),
+        model: ModelId::new("test"),
+        options: vec![],
+    });
+    app.handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
+        snapshot.clone(),
+    )))
+    .unwrap();
+    offer_review(&mut app, &layout.nested, "source-review");
+    app.handle_event(ApplicationEvent::Command(CommandId::InsertText(
+        "$review".to_owned(),
+    )))
+    .unwrap();
+
+    let destination = layout.main.clone();
+    app.handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+        SessionUpdate {
+            session_id: snapshot.session.id,
+            revision: SessionRevision(snapshot.revision.0 + 1),
+            changes: vec![SessionChange::Moved {
+                execution_directory: ExecutionDirectory {
+                    path: destination.clone(),
+                },
+                workspace: layout.at(&destination).workspace,
+                checkout: None,
+            }],
+        },
+    )))
+    .unwrap();
+    let transition = app.take_move_follow();
+    answer(&mut app, transition, layout.at(&destination));
+
+    assert_eq!(
+        app.handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
+            .unwrap(),
+        ApplicationTransition::Continue,
+        "the binding waits on the destination's Catalog"
+    );
 }
 
 #[test]
