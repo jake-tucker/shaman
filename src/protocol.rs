@@ -2240,10 +2240,22 @@ pub enum TextSelectionCopy {
     Manual,
 }
 
+/// What a Text Selection of more than one block offers a text-only paste.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextSelectionPlainText {
+    /// The words as the reader sees them.
+    #[default]
+    Visible,
+    /// The selected Markdown.
+    Markdown,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TextSelectionSettings {
     pub copy: TextSelectionCopy,
+    pub plain_text: TextSelectionPlainText,
 }
 
 /// The effective value of every defined Setting: what a Config Document
@@ -2432,6 +2444,9 @@ impl EffectiveSettings {
 pub enum SettingMutation {
     TextSelectionCopy {
         value: Option<TextSelectionCopy>,
+    },
+    TextSelectionPlainText {
+        value: Option<TextSelectionPlainText>,
     },
     AppearanceTheme {
         value: Option<String>,

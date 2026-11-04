@@ -694,11 +694,15 @@ impl TranscriptCache {
     pub(super) fn copy_selection(
         &self,
         selection: super::selection::TextSelection,
+        plain_text: crate::protocol::TextSelectionPlainText,
     ) -> Option<super::ClipboardContent> {
         if selection.epoch != self.selection_epoch() {
             return None;
         }
-        self.view.borrow().as_ref()?.copy_selection(selection)
+        self.view
+            .borrow()
+            .as_ref()?
+            .copy_selection(selection, plain_text)
     }
 
     pub(super) fn row_count(&self) -> usize {
@@ -948,6 +952,7 @@ impl TranscriptView {
     fn copy_selection(
         &self,
         selection: super::selection::TextSelection,
+        plain_text: crate::protocol::TextSelectionPlainText,
     ) -> Option<super::ClipboardContent> {
         let (start, end) = selection.ordered();
         let start = self.position_at(start.row, start.column)?;
@@ -1034,7 +1039,9 @@ impl TranscriptView {
             .into_iter()
             .map(|part| match part {
                 Part::Plain(text) => super::ClipboardContent::from(text),
-                Part::Markdown(document, ranges) => document.copy(&ranges, single_content),
+                Part::Markdown(document, ranges) => {
+                    document.copy(&ranges, single_content, plain_text)
+                }
             })
             .collect::<Vec<_>>();
         let html = copied.iter().any(|part| part.html.is_some()).then(|| {

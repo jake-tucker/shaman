@@ -1751,6 +1751,7 @@ fn transcript_and_composer_drags_that_cross_the_edge_never_resize_it() {
             sidebar: shown(AutoSettle::default()),
             text_selection: suru::protocol::TextSelectionSettings {
                 copy: TextSelectionCopy::Release,
+                ..Default::default()
             },
             ..EffectiveSettings::default()
         },
@@ -2082,6 +2083,7 @@ fn cells_beyond_the_grab_zone_keep_their_existing_pointer_behavior() {
             sidebar: shown(AutoSettle::default()),
             text_selection: suru::protocol::TextSelectionSettings {
                 copy: TextSelectionCopy::Release,
+                ..Default::default()
             },
             ..EffectiveSettings::default()
         },
@@ -9790,6 +9792,7 @@ fn sidebar_selection_copies_painted_titles_with_ellipsis_and_excludes_rails() {
         sidebar: shown(AutoSettle::default()),
         text_selection: suru::protocol::TextSelectionSettings {
             copy: suru::protocol::TextSelectionCopy::Release,
+            ..Default::default()
         },
         ..EffectiveSettings::default()
     };

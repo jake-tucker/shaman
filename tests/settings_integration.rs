@@ -3458,6 +3458,47 @@ async fn a_reset_on_a_fresh_install_leaves_the_config_root_empty() {
 }
 
 #[tokio::test]
+async fn text_selection_plain_text_defaults_to_visible_and_pins_markdown() {
+    use suru::protocol::TextSelectionPlainText;
+    let state_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let server = server::spawn(
+        ServerConfig::new(state_dir.path(), "selection-plain-text")
+            .unwrap()
+            .with_config_dir(config_dir.path()),
+    )
+    .await
+    .unwrap();
+    let (editor, opening) = attach(state_dir.path(), "selection-plain-text").await;
+    assert_eq!(
+        opening.settings.text_selection.plain_text,
+        TextSelectionPlainText::Visible
+    );
+    let pinned = editor
+        .mutate_setting(SettingMutation::TextSelectionPlainText {
+            value: Some(TextSelectionPlainText::Markdown),
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        pinned.settings.text_selection.plain_text,
+        TextSelectionPlainText::Markdown
+    );
+    assert_eq!(pinned.pinned, ["textSelection.plainText"]);
+    let reset = editor
+        .mutate_setting(SettingMutation::TextSelectionPlainText { value: None })
+        .await
+        .unwrap();
+    assert_eq!(
+        reset.settings.text_selection.plain_text,
+        TextSelectionPlainText::Visible
+    );
+    assert!(reset.pinned.is_empty());
+    drop(editor);
+    server.shutdown().await.expect("shut down server");
+}
+
+#[tokio::test]
 async fn text_selection_copy_pins_resets_and_reaches_every_client() {
     use suru::protocol::TextSelectionCopy;
     let state_dir = tempfile::tempdir().unwrap();

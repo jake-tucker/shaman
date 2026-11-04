@@ -43,7 +43,8 @@ use crate::protocol::{
     CopilotPermissions, DerivationErrand, EffectiveSettings, FoldPosture, GroupPosture,
     LandingPage, ProviderId, ReasoningSummaryDetail, ReasoningVisibility, SessionContentWidth,
     SettingMutation, SettingScope, SettingsDiagnostic, SettingsDiagnosticSeverity,
-    SettingsSnapshot, SidebarScope, SidebarVisibility, TextSelectionCopy, ToolCallVisibility,
+    SettingsSnapshot, SidebarScope, SidebarVisibility, TextSelectionCopy, TextSelectionPlainText,
+    ToolCallVisibility,
 };
 
 /// The Config Document Suru prefers when both accepted names exist.
@@ -58,6 +59,7 @@ const APPEARANCE_MODE: &str = "appearance.mode";
 const APPEARANCE_LANDING_PAGE: &str = "appearance.landingPage";
 const APPEARANCE_SHOW_ICONS: &str = "appearance.showIcons";
 const TEXT_SELECTION_COPY: &str = "textSelection.copy";
+const TEXT_SELECTION_PLAIN_TEXT: &str = "textSelection.plainText";
 const TRANSCRIPT_DEFAULT_FOLD_POSTURE: &str = "transcript.defaultFoldPosture";
 const TRANSCRIPT_GROUPS: &str = "transcript.groups";
 const TRANSCRIPT_REASONING_VISIBILITY: &str = "transcript.reasoningVisibility";
@@ -884,6 +886,9 @@ fn in_force(mutation: &SettingMutation, settings: &EffectiveSettings) -> Setting
         SettingMutation::TextSelectionCopy { .. } => SettingMutation::TextSelectionCopy {
             value: Some(settings.text_selection.copy),
         },
+        SettingMutation::TextSelectionPlainText { .. } => SettingMutation::TextSelectionPlainText {
+            value: Some(settings.text_selection.plain_text),
+        },
         SettingMutation::TranscriptDefaultFoldPosture { .. } => {
             SettingMutation::TranscriptDefaultFoldPosture {
                 value: Some(settings.transcript.default_fold_posture),
@@ -1618,6 +1623,34 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         apply: |settings, value| apply_value(value, |copy| settings.text_selection.copy = copy),
     },
     SettingDescriptor {
+        key: TEXT_SELECTION_PLAIN_TEXT,
+        label: "Copy as Plain Text",
+        description: "What a text-only paste of several blocks holds: the words shown, or Markdown",
+        group: SettingGroup::General,
+        scope: SettingScope::Client,
+        sidekick: SidekickAccess::ReadAndChange,
+        values: SettingValues::Fixed(&[
+            SettingChoice {
+                value: "visible",
+                build_mutation: || SettingMutation::TextSelectionPlainText {
+                    value: Some(TextSelectionPlainText::Visible),
+                },
+            },
+            SettingChoice {
+                value: "markdown",
+                build_mutation: || SettingMutation::TextSelectionPlainText {
+                    value: Some(TextSelectionPlainText::Markdown),
+                },
+            },
+        ]),
+        reset: SettingMutation::TextSelectionPlainText { value: None },
+        apply: |settings, value| {
+            apply_value(value, |plain_text| {
+                settings.text_selection.plain_text = plain_text
+            })
+        },
+    },
+    SettingDescriptor {
         key: WORKTREE_AUTO_RECLAIM,
         label: "Reclaim Managed Worktrees",
         description: "Reclaim unused Managed Worktrees automatically",
@@ -2332,6 +2365,9 @@ fn pin_for(mutation: &SettingMutation) -> (&'static str, Option<Value>) {
     }
     match mutation {
         SettingMutation::TextSelectionCopy { value } => (TEXT_SELECTION_COPY, pinned(value)),
+        SettingMutation::TextSelectionPlainText { value } => {
+            (TEXT_SELECTION_PLAIN_TEXT, pinned(value))
+        }
         SettingMutation::AppearanceTheme { value } => (APPEARANCE_THEME, pinned(value)),
         SettingMutation::AppearanceMode { value } => (APPEARANCE_MODE, pinned(value)),
         SettingMutation::AppearanceLandingPage { value } => {
@@ -3071,6 +3107,7 @@ mod tests {
                 // A boolean Setting is diagnosed as accepting `true` or
                 // `false`, unquoted, because that is what the reader must type.
                 "one of \"release\" or \"manual\"".to_owned(),
+                "one of \"visible\" or \"markdown\"".to_owned(),
                 "one of \"off\" or a whole number of days, at least 1".to_owned(),
                 "one of \"return\" or \"stay\"".to_owned(),
                 // A list names what each of its entries must be.

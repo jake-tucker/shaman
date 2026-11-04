@@ -6233,7 +6233,7 @@ mod tests {
                         turn_id,
                         role: MessageRole::Agent,
                         status: MessageStatus::Completed,
-                        content: "**chosen words**".into(),
+                        content: "Some **chosen** words".into(),
                         skill_invocations: vec![],
                         attachments: Vec::new(),
                         truncated: false,
@@ -6259,14 +6259,14 @@ mod tests {
             let start = (0..24)
                 .find_map(|y| {
                     let row = (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>();
-                    row.find("chosen words").map(|x| (x as u16, y))
+                    row.find("Some chosen").map(|x| (x as u16, y))
                 })
                 .expect("the Agent Message is painted");
             let mut released = ApplicationTransition::Continue;
             for (kind, column) in [
                 (MouseEventKind::Down(MouseButton::Left), start.0),
-                (MouseEventKind::Drag(MouseButton::Left), start.0 + 5),
-                (MouseEventKind::Up(MouseButton::Left), start.0 + 5),
+                (MouseEventKind::Drag(MouseButton::Left), start.0 + 16),
+                (MouseEventKind::Up(MouseButton::Left), start.0 + 16),
             ] {
                 released = application
                     .handle_terminal_event(Event::Mouse(MouseEvent {
@@ -6306,15 +6306,18 @@ mod tests {
                 (
                     super::NativeClipboardTarget::Clipboard,
                     ClipboardContent {
-                        text: "**chosen**".into(),
-                        html: Some("<p><strong>chosen</strong></p>\n".into())
+                        text: "Some chosen words".into(),
+                        html: Some("<p>Some <strong>chosen</strong> words</p>\n".into())
                     }
                 )
             );
             #[cfg(target_os = "linux")]
             assert_eq!(
                 offered[1],
-                (super::NativeClipboardTarget::Primary, "**chosen**".into())
+                (
+                    super::NativeClipboardTarget::Primary,
+                    "Some chosen words".into()
+                )
             );
             assert!(ansi.0.is_empty());
         }

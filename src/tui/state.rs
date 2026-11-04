@@ -11608,9 +11608,10 @@ impl Application {
                     .text_selection
                     .get()
                     .and_then(|selection| match selection.surface {
-                        SelectionSurface::Transcript => {
-                            self.state.transcript_cache.copy_selection(selection)
-                        }
+                        SelectionSurface::Transcript => self.state.transcript_cache.copy_selection(
+                            selection,
+                            self.state.settings.text_selection.plain_text,
+                        ),
                         _ => self
                             .state
                             .selection_frames

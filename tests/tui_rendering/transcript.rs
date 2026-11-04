@@ -9648,10 +9648,117 @@ fn select_transcript(application: &mut Application, start: (u16, u16), end: (u16
 }
 
 #[test]
-fn markdown_selection_balances_partial_inline_formatting_without_unselected_words() {
+fn a_word_from_any_block_copies_as_the_word_alone() {
+    let workspace = workspace_dir();
+    for (source, word) in [
+        ("Run `word` now", "word"),
+        ("A **word** here", "word"),
+        ("# Word", "Word"),
+        ("- first\n- word", "word"),
+        ("> word", "word"),
+        ("| a | b |\n| - | - |\n| one | word |", "word"),
+        ("```rust\nlet word = 1;\n```", "word"),
+        ("Set foo_bar here", "foo_bar"),
+    ] {
+        let mut application = connected_application(workspace.path());
+        pin_release_copy(&mut application);
+        application
+            .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
+                SessionId::new(),
+                workspace.path(),
+                &[RunEntry::AgentMessage(source)],
+            )))
+            .unwrap();
+        let buffer = rendered_application_buffer(&application, 80, 24);
+        let start = text_position(&buffer, word);
+        assert_eq!(
+            select_transcript_payload(
+                &mut application,
+                start,
+                (start.0 + word.len() as u16 - 1, start.1)
+            ),
+            suru::tui::ClipboardContent::from(word),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn a_selection_across_messages_offers_visible_words_and_their_formatting() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
     pin_release_copy(&mut application);
+    application
+        .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
+            SessionId::new(),
+            workspace.path(),
+            &[
+                RunEntry::AgentMessage("Run `first` now"),
+                RunEntry::AgentMessage("Then **second** word"),
+            ],
+        )))
+        .unwrap();
+    let buffer = rendered_application_buffer(&application, 80, 24);
+    let start = text_position(&buffer, "Run first");
+    let end = text_position(&buffer, "second word");
+    let content = select_transcript_payload(&mut application, start, (end.0 + 10, end.1));
+    assert_eq!(content.text, "Run first now\n\nThen second word");
+    let html = content
+        .html
+        .expect("formatting crosses to rich destinations");
+    assert!(html.contains("<code>first</code>"), "{html}");
+    assert!(html.contains("<strong>second</strong>"), "{html}");
+}
+
+#[test]
+fn the_plain_text_setting_decides_what_a_table_offers_a_text_only_paste() {
+    let workspace = workspace_dir();
+    let source = "| a | b |\n| - | - |\n| one | two |";
+    let html = "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody>\n<tr><td>one</td><td>two</td></tr>\n</tbody></table>\n";
+    for (plain_text, text) in [
+        (
+            suru::protocol::TextSelectionPlainText::Visible,
+            "a\tb\none\ttwo",
+        ),
+        (
+            suru::protocol::TextSelectionPlainText::Markdown,
+            "| a | b |\n| --- | --- |\n| one | two |",
+        ),
+    ] {
+        let mut application = connected_application(workspace.path());
+        let mut settings = EffectiveSettings::default();
+        settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+        settings.text_selection.plain_text = plain_text;
+        deliver_settings(
+            &mut application,
+            settings,
+            &["textSelection.copy", "textSelection.plainText"],
+        );
+        application
+            .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
+                SessionId::new(),
+                workspace.path(),
+                &[RunEntry::AgentMessage(source)],
+            )))
+            .unwrap();
+        let buffer = rendered_application_buffer(&application, 80, 24);
+        let start = text_position(&buffer, "a ");
+        let end = text_position(&buffer, "two");
+        assert_eq!(
+            select_transcript_payload(&mut application, start, (end.0 + 2, end.1)),
+            suru::tui::ClipboardContent {
+                text: text.into(),
+                html: Some(html.into()),
+            }
+        );
+    }
+}
+
+#[test]
+fn markdown_selection_balances_partial_inline_formatting_without_unselected_words() {
+    let workspace = workspace_dir();
+    let mut application = connected_application(workspace.path());
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -9664,10 +9771,10 @@ fn markdown_selection_balances_partial_inline_formatting_without_unselected_word
     let buffer = rendered_application_buffer(&application, 80, 24);
     let start = text_position(&buffer, "chosen words");
     assert_eq!(
-        select_transcript_payload(&mut application, start, (start.0 + 5, start.1)),
+        select_transcript_payload(&mut application, start, (start.0 + 18, start.1)),
         suru::tui::ClipboardContent {
-            text: "***chosen***".into(),
-            html: Some("<p><em><strong>chosen</strong></em></p>\n".into()),
+            text: "chosen words after".into(),
+            html: Some("<p><strong><em>chosen words</em> after</strong></p>\n".into()),
         }
     );
 }
@@ -10214,10 +10321,7 @@ fn manual_selection_waits_for_copy_and_explicit_copy_clears_in_both_modes() {
                 if mode == TextSelectionCopy::Manual {
                     ApplicationTransition::Continue
                 } else {
-                    ApplicationTransition::CopyToClipboard(suru::tui::ClipboardContent {
-                        text: "Selected words".into(),
-                        html: Some("<p>Selected words</p>\n".into()),
-                    })
+                    ApplicationTransition::CopyToClipboard("Selected words".into())
                 }
             );
             assert!(
@@ -10232,10 +10336,7 @@ fn manual_selection_waits_for_copy_and_explicit_copy_clears_in_both_modes() {
             };
             assert_eq!(
                 application.handle_terminal_event(event).unwrap(),
-                ApplicationTransition::CopyToClipboard(suru::tui::ClipboardContent {
-                    text: "Selected words".into(),
-                    html: Some("<p>Selected words</p>\n".into())
-                })
+                ApplicationTransition::CopyToClipboard("Selected words".into())
             );
             assert!(
                 !rendered_application_buffer(&application, 60, 24)[start]
@@ -10244,6 +10345,18 @@ fn manual_selection_waits_for_copy_and_explicit_copy_clears_in_both_modes() {
             );
         }
     }
+}
+
+/// Copies on release, offering a text-only paste the selected Markdown.
+fn pin_markdown_copy(application: &mut Application) {
+    let mut settings = EffectiveSettings::default();
+    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    settings.text_selection.plain_text = suru::protocol::TextSelectionPlainText::Markdown;
+    deliver_settings(
+        application,
+        settings,
+        &["textSelection.copy", "textSelection.plainText"],
+    );
 }
 
 fn pin_release_copy(application: &mut Application) {
@@ -10540,7 +10653,7 @@ fn markdown_selection_keeps_block_structure_and_partial_list_indentation() {
         ),
     ] {
         let mut application = connected_application(workspace.path());
-        pin_release_copy(&mut application);
+        pin_markdown_copy(&mut application);
         application
             .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
                 SessionId::new(),
@@ -10563,7 +10676,7 @@ fn markdown_selection_ignores_quote_chrome_across_blocks_and_tables() {
     let workspace = workspace_dir();
     let source = "> first\n>\n> second\n>\n> - alpha\n> - beta\n>\n> | Key | Value |\n> | --- | --- |\n> | one | two |";
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -10590,7 +10703,7 @@ fn markdown_selection_preserves_parenthesized_ordinal_shape_and_numbering() {
     let workspace = workspace_dir();
     let source = "9) nine\n10) ten";
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -10614,9 +10727,9 @@ fn markdown_selection_preserves_parenthesized_ordinal_shape_and_numbering() {
 #[test]
 fn markdown_selection_restores_a_heading_nested_in_a_quoted_list() {
     let workspace = workspace_dir();
-    let source = "> - ## Title";
+    let source = "> - ## Title\n\nend";
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -10627,13 +10740,14 @@ fn markdown_selection_restores_a_heading_nested_in_a_quoted_list() {
 
     let buffer = rendered_application_buffer(&application, 80, 24);
     let start = text_position(&buffer, "Title");
-    let content = select_transcript_payload(&mut application, start, (start.0 + 4, start.1));
+    let end = text_position(&buffer, "end");
+    let content = select_transcript_payload(&mut application, start, (end.0 + 2, end.1));
 
     assert_eq!(content.text, source);
     let html = content.html.expect("Markdown selection carries rich HTML");
     assert!(html.starts_with("<blockquote>\n<ul>"));
     assert!(html.contains("<h2>Title</h2>"));
-    assert!(html.ends_with("</ul>\n</blockquote>\n"));
+    assert!(html.ends_with("</ul>\n</blockquote>\n<p>end</p>\n"));
 }
 
 #[test]
@@ -10641,7 +10755,7 @@ fn markdown_selection_round_trips_task_items_and_strikethrough() {
     let workspace = workspace_dir();
     let source = "- [ ] pending\n  - [x] ~~done~~";
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -10669,7 +10783,7 @@ fn markdown_selection_keeps_task_state_from_loose_item_paragraphs() {
     let workspace = workspace_dir();
     let source = "- [x] one\n\n- [ ] two";
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -10698,26 +10812,26 @@ fn markdown_selection_preserves_full_and_partial_standalone_strikethrough() {
     for (first, last, last_width, expected, expected_html) in [
         (
             "whole",
-            "strike",
-            6,
-            "~~whole strike~~",
-            "<p><del>whole strike</del></p>\n",
+            "end",
+            3,
+            "~~whole strike~~ plain\n\nend",
+            "<p><del>whole strike</del> plain</p>\n<p>end</p>\n",
         ),
         (
             "strike",
-            "strike",
-            6,
-            "~~strike~~",
-            "<p><del>strike</del></p>\n",
+            "end",
+            3,
+            "~~strike~~ plain\n\nend",
+            "<p><del>strike</del> plain</p>\n<p>end</p>\n",
         ),
     ] {
         let mut application = connected_application(workspace.path());
-        pin_release_copy(&mut application);
+        pin_markdown_copy(&mut application);
         application
             .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
                 SessionId::new(),
                 workspace.path(),
-                &[RunEntry::AgentMessage("~~whole strike~~ plain")],
+                &[RunEntry::AgentMessage("~~whole strike~~ plain\n\nend")],
             )))
             .unwrap();
 
@@ -10735,9 +10849,9 @@ fn markdown_selection_preserves_full_and_partial_standalone_strikethrough() {
 #[test]
 fn markdown_selection_keeps_escaped_literal_tildes_literal_in_html() {
     let workspace = workspace_dir();
-    let source = "A \\~\\~literal\\~\\~";
+    let source = "A \\~\\~literal\\~\\~\n\nend";
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -10748,10 +10862,14 @@ fn markdown_selection_keeps_escaped_literal_tildes_literal_in_html() {
 
     let buffer = rendered_application_buffer(&application, 80, 24);
     let start = text_position(&buffer, "A ~~literal~~");
-    let content = select_transcript_payload(&mut application, start, (start.0 + 12, start.1));
+    let end = text_position(&buffer, "end");
+    let content = select_transcript_payload(&mut application, start, (end.0 + 2, end.1));
 
     assert_eq!(content.text, source);
-    assert_eq!(content.html.as_deref(), Some("<p>A ~~literal~~</p>\n"));
+    assert_eq!(
+        content.html.as_deref(),
+        Some("<p>A ~~literal~~</p>\n<p>end</p>\n")
+    );
 }
 
 #[test]
@@ -10774,15 +10892,15 @@ fn markdown_selection_copies_complete_and_partial_pipe_tables() {
             "<table><thead><tr><th style=\"text-align: left\"></th><th style=\"text-align: right\"></th><th style=\"text-align: center\"></th></tr></thead><tbody>\n<tr><td style=\"text-align: left\"><strong>alpha</strong></td><td style=\"text-align: right\"><code>a|b</code></td><td style=\"text-align: center\"></td></tr>\n<tr><td style=\"text-align: left\">beta</td><td style=\"text-align: right\">left</td><td style=\"text-align: center\"></td></tr>\n</tbody></table>\n",
         ),
         (
-            "left|right",
+            "beta",
             "left|right",
             4,
-            "|  |\n| ---: |\n| left |",
-            "<table><thead><tr><th style=\"text-align: right\"></th></tr></thead><tbody>\n<tr><td style=\"text-align: right\">left</td></tr>\n</tbody></table>\n",
+            "|  |  |\n| :--- | ---: |\n| beta | left |",
+            "<table><thead><tr><th style=\"text-align: left\"></th><th style=\"text-align: right\"></th></tr></thead><tbody>\n<tr><td style=\"text-align: left\">beta</td><td style=\"text-align: right\">left</td></tr>\n</tbody></table>\n",
         ),
     ] {
         let mut application = connected_application(workspace.path());
-        pin_release_copy(&mut application);
+        pin_markdown_copy(&mut application);
         application
             .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
                 SessionId::new(),
@@ -10806,7 +10924,7 @@ fn markdown_selection_rejoins_a_wrapped_bordered_table_as_pipe_markdown() {
     let source =
         "| Name | Value |\n| --- | --- |\n| alpha beta gamma epsilon zeta eta theta | delta |";
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -10850,7 +10968,7 @@ fn markdown_selection_keeps_code_raw_inside_a_block_and_fenced_across_prose() {
     ] {
         for reverse in [false, true] {
             let mut application = connected_application(workspace.path());
-            pin_release_copy(&mut application);
+            pin_markdown_copy(&mut application);
             application
                 .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
                     SessionId::new(),
@@ -10879,7 +10997,7 @@ fn markdown_selection_unwraps_formatted_unicode_across_messages_and_omits_hidden
         RunEntry::AgentMessage("## Last\n\n*final words*"),
     ];
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -10911,10 +11029,15 @@ fn markdown_selection_preserves_visible_reasoning_and_excludes_folded_body() {
     settings.transcript.reasoning_visibility = ReasoningVisibility::Shown;
     settings.sidebar.initial_visibility = suru::protocol::SidebarVisibility::Hidden;
     settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    settings.text_selection.plain_text = suru::protocol::TextSelectionPlainText::Markdown;
     deliver_settings(
         &mut application,
         settings,
-        &["textSelection.copy", "transcript.reasoningVisibility"],
+        &[
+            "textSelection.copy",
+            "textSelection.plainText",
+            "transcript.reasoningVisibility",
+        ],
     );
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
@@ -10947,7 +11070,7 @@ fn markdown_selection_preserves_visible_reasoning_and_excludes_folded_body() {
 fn markdown_selection_fences_a_code_only_message_when_other_selected_messages_are_prose() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -10975,20 +11098,20 @@ fn markdown_selection_fences_a_code_only_message_when_other_selected_messages_ar
 fn markdown_selection_preserves_hard_breaks_inside_inline_formatting() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
             workspace.path(),
-            &[RunEntry::AgentMessage("A **bold  \nnext** sentence")],
+            &[RunEntry::AgentMessage("A **bold  \nnext** sentence\n\nend")],
         )))
         .unwrap();
     let buffer = rendered_application_buffer(&application, 80, 24);
     let start = text_position(&buffer, "A bold");
-    let end = text_position(&buffer, "next sentence");
+    let end = text_position(&buffer, "end");
     assert_eq!(
-        select_transcript(&mut application, start, (end.0 + 12, end.1)),
-        "A **bold\\\nnext** sentence"
+        select_transcript(&mut application, start, (end.0 + 2, end.1)),
+        "A **bold\\\nnext** sentence\n\nend"
     );
 }
 
@@ -10996,7 +11119,7 @@ fn markdown_selection_preserves_hard_breaks_inside_inline_formatting() {
 fn markdown_selection_inside_a_nested_code_block_copies_only_code() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -11018,7 +11141,7 @@ fn markdown_selection_inside_a_nested_code_block_copies_only_code() {
 fn markdown_selection_keeps_code_as_a_separate_block_in_a_list_item() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -11040,19 +11163,22 @@ fn markdown_selection_keeps_code_as_a_separate_block_in_a_list_item() {
 #[test]
 fn markdown_selection_keeps_literal_entities_and_block_markers_as_selected_text() {
     let workspace = workspace_dir();
-    for (source, first, last, expected) in [
+    for (source, first, expected) in [
         (
-            "&amp;copy; remains",
+            "&amp;copy; remains\n\nend",
             "&copy;",
-            "remains",
-            "\\&copy; remains",
+            "\\&copy; remains\n\nend",
         ),
-        ("before - literal", "- literal", "literal", "\\- literal"),
-        ("before 1. literal", "1. literal", "literal", "1\\. literal"),
-        (r"\<tag> literal", "<tag>", "literal", r"\<tag\> literal"),
+        ("before - literal\n\nend", "- literal", "\\- literal\n\nend"),
+        (
+            "before 1. literal\n\nend",
+            "1. literal",
+            "1\\. literal\n\nend",
+        ),
+        ("\\<tag> literal\n\nend", "<tag>", "\\<tag> literal\n\nend"),
     ] {
         let mut application = connected_application(workspace.path());
-        pin_release_copy(&mut application);
+        pin_markdown_copy(&mut application);
         application
             .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
                 SessionId::new(),
@@ -11062,13 +11188,9 @@ fn markdown_selection_keeps_literal_entities_and_block_markers_as_selected_text(
             .unwrap();
         let buffer = rendered_application_buffer(&application, 80, 24);
         let start = text_position(&buffer, first);
-        let end = text_position(&buffer, last);
+        let end = text_position(&buffer, "end");
         assert_eq!(
-            select_transcript(
-                &mut application,
-                start,
-                (end.0 + last.len() as u16 - 1, end.1)
-            ),
+            select_transcript(&mut application, start, (end.0 + 2, end.1)),
             expected
         );
     }
@@ -11079,7 +11201,7 @@ fn markdown_selection_round_trips_html_and_reordered_footnotes() {
     let workspace = workspace_dir();
     let source = "[^word]: <b>detail</b>\n\nSee <a href='https://example.test/?a=1&amp;b=2'>source</a>[^word].";
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -11107,9 +11229,11 @@ fn markdown_selection_round_trips_html_and_reordered_footnotes() {
 #[test]
 fn markdown_selection_preserves_escaped_link_metadata() {
     let workspace = workspace_dir();
-    let source = r#"[link](https://example.test/a\\ "a&amp;copy;") and [next](https://example.test/a&amp;copy;)"#;
+    let source = r#"[link](https://example.test/a\\ "a&amp;copy;") and [next](https://example.test/a&amp;copy;)
+
+end"#;
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -11119,15 +11243,15 @@ fn markdown_selection_preserves_escaped_link_metadata() {
         .unwrap();
     let buffer = rendered_application_buffer(&application, 160, 24);
     let start = text_position(&buffer, "link");
-    let end = text_position(&buffer, "next");
+    let end = text_position(&buffer, "end");
     assert_eq!(
-        select_transcript(&mut application, start, (end.0 + 3, end.1)),
+        select_transcript(&mut application, start, (end.0 + 2, end.1)),
         source
     );
 }
 
 #[test]
-fn supported_markdown_link_clicks_open_semantically_and_copy_as_markdown() {
+fn supported_markdown_link_clicks_open_semantically_and_copy_their_words_and_destination() {
     let workspace = workspace_dir();
     let source = "Read [guide](https://example.test/path).";
     let facts = TerminalFacts::default().with_hyperlinks(true);
@@ -11164,12 +11288,15 @@ fn supported_markdown_link_clicks_open_semantically_and_copy_as_markdown() {
 
     pin_release_copy(&mut application);
     assert_eq!(
-        select_transcript(
+        select_transcript_payload(
             &mut application,
             position,
             (position.0 + "guide".len() as u16 - 1, position.1),
         ),
-        "[guide](https://example.test/path)"
+        suru::tui::ClipboardContent {
+            text: "guide".into(),
+            html: Some("<p><a href=\"https://example.test/path\">guide</a></p>\n".into()),
+        }
     );
 }
 
@@ -11297,7 +11424,7 @@ fn markdown_image_chrome_is_excluded_from_plain_and_rich_copy() {
             (end.0 + destination.len() as u16 - 1, end.1),
         ),
         suru::tui::ClipboardContent {
-            text: source.into(),
+            text: "diagram".into(),
             html: Some("<p><a href=\"https://example.test/diagram.png\">diagram</a></p>\n".into()),
         }
     );
@@ -11306,12 +11433,12 @@ fn markdown_image_chrome_is_excluded_from_plain_and_rich_copy() {
 #[test]
 fn supported_linked_image_copy_keeps_both_authored_destinations() {
     let workspace = workspace_dir();
-    let source = "[![diagram](image.png)](https://example.test/page)";
+    let source = "[![diagram](image.png)](https://example.test/page)\n\nend";
     let mut application = connected_application_with_terminal_facts(
         workspace.path(),
         TerminalFacts::default().with_hyperlinks(true),
     );
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -11321,14 +11448,10 @@ fn supported_linked_image_copy_keeps_both_authored_destinations() {
         .unwrap();
     let buffer = rendered_application_buffer(&application, 100, 24);
     let start = text_position(&buffer, "[image:");
-    let end = text_position(&buffer, "diagram");
+    let end = text_position(&buffer, "end");
 
     assert_eq!(
-        select_transcript(
-            &mut application,
-            start,
-            (end.0 + "diagram".len() as u16 - 1, end.1),
-        ),
+        select_transcript(&mut application, start, (end.0 + 2, end.1)),
         source
     );
 }
@@ -11337,7 +11460,7 @@ fn supported_linked_image_copy_keeps_both_authored_destinations() {
 fn markdown_selection_uses_valid_fences_for_backticks_in_language_metadata() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -11360,7 +11483,7 @@ fn markdown_selection_uses_valid_fences_for_backticks_in_language_metadata() {
 fn markdown_selection_keeps_a_leading_tilde_fence_inside_a_list() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -11384,12 +11507,12 @@ fn rich_selection_escapes_literal_markup_and_keeps_code_literal() {
     let workspace = workspace_dir();
     for (source, first, last, last_width, text, html) in [
         (
-            r"before \<script>alert(1)\</script> after",
+            "before \\<script>alert(1)\\</script> after\n\nend",
             "<script>",
-            "</script>",
-            9,
-            "\\<script\\>alert(1)\\</script\\>",
-            "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>\n",
+            "end",
+            3,
+            "\\<script>alert(1)\\</script> after\n\nend",
+            "<p>&lt;script&gt;alert(1)&lt;/script&gt; after</p>\n<p>end</p>\n",
         ),
         (
             "```html\n<b>**literal** & value</b>   \nlast\n```",
@@ -11404,12 +11527,12 @@ fn rich_selection_escapes_literal_markup_and_keeps_code_literal() {
             "chosen",
             "picture",
             7,
-            "[chosen](javascript:alert%281%29) ![picture](https://example.test/image.png)",
+            "chosen picture",
             "<p><a href=\"\">chosen</a> <a href=\"https://example.test/image.png\">picture</a></p>\n",
         ),
     ] {
         let mut application = connected_application(workspace.path());
-        pin_release_copy(&mut application);
+        pin_markdown_copy(&mut application);
         application
             .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
                 SessionId::new(),
@@ -11437,7 +11560,7 @@ fn word_click_application(content: &'static str) -> (Application, Arc<AtomicU64>
         .with_presentation_clock(move || {
             origin + Duration::from_millis(observed_elapsed_ms.load(Ordering::Relaxed))
         });
-    pin_release_copy(&mut application);
+    pin_markdown_copy(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(command_run_snapshot(
             SessionId::new(),
@@ -11999,15 +12122,15 @@ fn triple_click_copies_code_indentation_and_markdown_shape_without_chrome() {
             "let answer",
             0,
             "    let answer = 42;",
-            "<pre><code>    let answer = 42;</code></pre>\n",
+            None,
             (4, 20),
         ),
         (
             "Alpha **bravo** charlie",
             "bravo",
             0,
-            "Alpha **bravo** charlie",
-            "<p>Alpha <strong>bravo</strong> charlie</p>\n",
+            "Alpha bravo charlie",
+            Some("<p>Alpha <strong>bravo</strong> charlie</p>\n"),
             (6, 19),
         ),
     ] {
@@ -12019,7 +12142,7 @@ fn triple_click_copies_code_indentation_and_markdown_shape_without_chrome() {
         let ApplicationTransition::CopyToClipboard(content) = copied else {
             panic!("no copy")
         };
-        assert_eq!(content.html.as_deref(), Some(html));
+        assert_eq!(content.html.as_deref(), html);
         assert_eq!(
             reversed_cells(&rendered_application_buffer(&application, 60, 24)),
             word_cells((target.0 - highlight.0, target.1), highlight.1)

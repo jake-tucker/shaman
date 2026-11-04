@@ -1166,6 +1166,7 @@ pub(super) mod tests {
     use super::*;
     use ratatui::style::{Color, Modifier};
 
+    use crate::protocol::TextSelectionPlainText;
     use crate::tui::text_layout::StyledLayout;
 
     thread_local! {
@@ -2414,9 +2415,9 @@ pub(super) mod tests {
             .filter_map(|span| span.source.clone())
             .collect::<Vec<_>>();
         assert_eq!(
-            document.copy(&ranges, true),
+            document.copy(&ranges, true, TextSelectionPlainText::Markdown),
             crate::tui::ClipboardContent {
-                text: r"a \< b and c \> d; x \< 2 and it's **bold**".into(),
+                text: "a < b and c > d; x < 2 and it's bold".into(),
                 html: Some(
                     "<p>a &lt; b and c &gt; d; x &lt; 2 and it's <strong>bold</strong></p>\n"
                         .into(),
@@ -2448,7 +2449,7 @@ pub(super) mod tests {
             .filter_map(|span| span.source.clone())
             .collect::<Vec<_>>();
         assert_eq!(
-            document.copy(&ranges, true),
+            document.copy(&ranges, true, TextSelectionPlainText::Markdown),
             crate::tui::ClipboardContent {
                 text: "See `x[^n]y` and `k[^n]z`.\n\n[^n]: note".into(),
                 html: Some(
@@ -2503,7 +2504,7 @@ pub(super) mod tests {
             .flat_map(|line| &line.spans)
             .filter_map(|span| span.source.clone())
             .collect::<Vec<_>>();
-        let copied = document.copy(&ranges, true);
+        let copied = document.copy(&ranges, true, TextSelectionPlainText::Markdown);
 
         assert_eq!(
             copied.text,
@@ -2526,6 +2527,134 @@ pub(super) mod tests {
         assert_eq!(line_texts(&lines), ["$x^2$ and ^raised^, high/low"]);
     }
 
+    /// What selecting the first `wanted` painted in `source` copies.
+    fn copied(
+        source: &str,
+        wanted: &str,
+        plain_text: TextSelectionPlainText,
+    ) -> crate::tui::ClipboardContent {
+        let lines = super::render(source, &Theme::system(), 80);
+        let painted = lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .map(|span| span.content.as_str())
+            .collect::<String>();
+        let start = painted.find(wanted).expect("the words are painted");
+        let end = start + wanted.len();
+        let mut offset = 0;
+        let mut ranges = Vec::new();
+        for span in lines.iter().flat_map(|line| &line.spans) {
+            let (from, to) = (offset, offset + span.content.len());
+            offset = to;
+            if let Some(source) = &span.source
+                && start.max(from) < end.min(to)
+            {
+                ranges.push(source.slice(start.max(from) - from..end.min(to) - from));
+            }
+        }
+        lines
+            .iter()
+            .find_map(|line| line.markdown.clone())
+            .unwrap()
+            .copy(&ranges, true, plain_text)
+    }
+
+    #[test]
+    fn inside_one_block_both_plain_text_forms_copy_the_words_alone() {
+        for (source, wanted, text, html) in [
+            ("Run `word` now", "word", "word", None),
+            ("Run `cargo test --all` now", "test", "test", None),
+            ("Run `word` now", "now", "now", None),
+            ("A **really bold** word", "bold", "bold", None),
+            ("An *airy* word", "airy", "airy", None),
+            ("Set foo_bar here", "foo_bar", "foo_bar", None),
+            ("Fixes #123 today", "#123", "#123", None),
+            ("when a < b holds", "a < b", "a < b", None),
+            ("use --flag here", "--flag", "--flag", None),
+            ("# My Title", "Title", "Title", None),
+            ("- first\n- second item", "second", "second", None),
+            ("- [x] done item", "done", "done", None),
+            ("> quoted words", "words", "words", None),
+            ("| a | b |\n| - | - |\n| c | two |", "two", "two", None),
+            ("| a | b |\n| - | - |\n| c | d |", "b", "b", None),
+            ("```rust\nlet alpha = 1;\n```", "alpha", "alpha", None),
+            (
+                "Run `cargo test` then **stop** now.",
+                "Run cargo test then stop now.",
+                "Run cargo test then stop now.",
+                Some("<p>Run <code>cargo test</code> then <strong>stop</strong> now.</p>\n"),
+            ),
+            (
+                "See [the site](https://example.test/a) now",
+                "the site",
+                "the site",
+                Some("<p><a href=\"https://example.test/a\">the site</a></p>\n"),
+            ),
+            (
+                "- Run `tool` first",
+                "Run tool",
+                "Run tool",
+                Some("<p>Run <code>tool</code></p>\n"),
+            ),
+        ] {
+            for plain_text in [
+                TextSelectionPlainText::Visible,
+                TextSelectionPlainText::Markdown,
+            ] {
+                let content = copied(source, wanted, plain_text);
+                assert_eq!(content.text, text, "{source}");
+                assert_eq!(content.html.as_deref(), html, "{source}");
+            }
+        }
+    }
+
+    #[test]
+    fn across_blocks_the_setting_chooses_visible_words_or_markdown() {
+        let source = "# Title\n\nSet foo_bar and `code`\n\n- one\n- [x] two\n  - nested\n\n3. third\n4. fourth\n\n> quoted\n\n```rust\nlet a = 1;\n```\n\nlast";
+        let visible = copied(source, "Title", TextSelectionPlainText::Visible);
+        assert_eq!(visible.text, "Title");
+        let lines = super::render(source, &Theme::system(), 80);
+        let ranges = lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .filter_map(|span| span.source.clone())
+            .collect::<Vec<_>>();
+        let document = lines[0].markdown.clone().unwrap();
+        let visible = document.copy(&ranges, true, TextSelectionPlainText::Visible);
+        let markdown = document.copy(&ranges, true, TextSelectionPlainText::Markdown);
+
+        assert_eq!(
+            visible.text,
+            "Title\n\nSet foo_bar and code\n\none\n[x] two\n  nested\n\n3. third\n4. fourth\n\nquoted\n\nlet a = 1;\n\nlast"
+        );
+        assert_eq!(
+            markdown.text,
+            "# Title\n\nSet foo_bar and `code`\n\n- one\n- [x] two\n  - nested\n\n3. third\n4. fourth\n\n> quoted\n\n```rust\nlet a = 1;\n```\n\nlast"
+        );
+        assert_eq!(visible.html, markdown.html);
+        assert!(visible.html.unwrap().contains("<h1>Title</h1>"));
+    }
+
+    #[test]
+    fn a_selected_footnote_definition_keeps_its_number_among_visible_words() {
+        let source = "See this[^note].\n\n[^note]: the note";
+        let lines = super::render(source, &Theme::system(), 80);
+        let ranges = lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .filter_map(|span| span.source.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            lines[0]
+                .markdown
+                .clone()
+                .unwrap()
+                .copy(&ranges, true, TextSelectionPlainText::Visible)
+                .text,
+            "See this[1].\n\n[1] the note"
+        );
+    }
+
     #[test]
     fn selected_rule_round_trips_as_markdown() {
         let lines = super::render("---", &Theme::system(), 80);
@@ -2540,7 +2669,7 @@ pub(super) mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(
-            document.copy(&ranges, true),
+            document.copy(&ranges, true, TextSelectionPlainText::Markdown),
             crate::tui::ClipboardContent {
                 text: "---".into(),
                 html: Some("<hr />\n".into()),
@@ -2630,7 +2759,12 @@ pub(super) mod tests {
                 .filter_map(|span| span.source.clone())
                 .collect::<Vec<_>>();
 
-            assert_eq!(document.copy(&ranges, true).text, source);
+            assert_eq!(
+                document
+                    .copy(&ranges, true, TextSelectionPlainText::Markdown)
+                    .text,
+                source
+            );
         }
     }
 

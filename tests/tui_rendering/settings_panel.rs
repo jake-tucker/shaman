@@ -4721,6 +4721,28 @@ fn copy_text_selection_cycles_on_the_general_tab() {
 }
 
 #[test]
+fn copy_as_plain_text_cycles_on_the_general_tab() {
+    use suru::protocol::TextSelectionPlainText::{Markdown, Visible};
+    let workspace = workspace_dir();
+    let mut application = connected_application(workspace.path());
+    open_panel(&mut application);
+    for (current, shows, next) in [
+        (Visible, "visible ●", Markdown),
+        (Markdown, "markdown ●", Visible),
+    ] {
+        let mut settings = EffectiveSettings::default();
+        settings.text_selection.plain_text = current;
+        deliver_snapshot(&mut application, settings, &["textSelection.plainText"]);
+        focus_setting(&mut application, "textSelection.plainText");
+        assert_eq!(shown(&application, "Copy as Plain Text"), shows);
+        assert_eq!(
+            press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
+            MutatesSetting(SettingMutation::TextSelectionPlainText { value: Some(next) })
+        );
+    }
+}
+
+#[test]
 fn numeric_editor_selection_is_modal_over_the_settings_panel() {
     use super::selection::{drag, mouse};
     let workspace = workspace_dir();
