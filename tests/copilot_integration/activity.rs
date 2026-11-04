@@ -353,8 +353,79 @@ async fn a_shell_streams_each_chunk_once_whatever_snapshots_copilot_repeats_besi
     assert_eq!(*status, ActivityStatus::Completed);
     assert_eq!(*exit_status, Some(0));
     assert_eq!(
-        output, "one\ntwo\nthree\n<shellId: 0 completed with exit code 0>",
-        "the output is what Copilot reported the shell producing, streamed once"
+        output, "one\ntwo\nthree\n",
+        "the output is what the shell printed, streamed once"
+    );
+}
+
+/// How Copilot CLI 1.0.105 reports shells ending, each result closing on the marker it addresses
+/// to the Model — on a line of its own, breaking the line itself after output that left it open —
+/// and each naming the same exit in a `shell_exit` part: one printing no final line break, one
+/// printing nothing, one exiting 3 beside what it printed, one printing the words of a marker
+/// itself, one whose stream never arrived, and a `read_bash` waiting a background shell out. Beside
+/// them a Tool whose result merely reads like a marker, with no shell's exit behind it.
+const ENDED_SHELLS_TURN: &str = r#"      event e1 tool.execution_start '{"toolCallId":"t-open","toolName":"bash","arguments":{"command":"printf open"}}'
+      event e2 tool.shell_output '{"toolCallId":"t-open","text":"open","sequence":0}'
+      event e3 tool.execution_complete '{"toolCallId":"t-open","success":true,"result":{"content":"open\n<shellId: 0 completed with exit code 0>","contents":[{"type":"shell_exit","shellId":"0","exitCode":0}]}}'
+      event e4 tool.execution_start '{"toolCallId":"t-silent","toolName":"bash","arguments":{"command":"true"}}'
+      event e5 tool.execution_complete '{"toolCallId":"t-silent","success":true,"result":{"content":"\n<shellId: 1 completed with exit code 0>","contents":[{"type":"shell_exit","shellId":"1","exitCode":0}]}}'
+      event e6 tool.execution_start '{"toolCallId":"t-exit","toolName":"bash","arguments":{"command":"echo failing; exit 3"}}'
+      event e7 tool.shell_output '{"toolCallId":"t-exit","text":"failing\n","sequence":0}'
+      event e8 tool.execution_complete '{"toolCallId":"t-exit","success":true,"result":{"content":"failing\n<shellId: 2 completed with exit code 3>","contents":[{"type":"shell_exit","shellId":"2","exitCode":3}]}}'
+      event e9 tool.execution_start '{"toolCallId":"t-echo","toolName":"bash","arguments":{"command":"cat marker.txt"}}'
+      event e10 tool.shell_output '{"toolCallId":"t-echo","text":"<shellId: 3 completed with exit code 0>\n","sequence":0}'
+      event e11 tool.execution_complete '{"toolCallId":"t-echo","success":true,"result":{"content":"<shellId: 3 completed with exit code 0>\n<shellId: 3 completed with exit code 0>","contents":[{"type":"shell_exit","shellId":"3","exitCode":0}]}}'
+      event e12 tool.execution_start '{"toolCallId":"t-lost","toolName":"bash","arguments":{"command":"echo unstreamed"}}'
+      event e13 tool.execution_complete '{"toolCallId":"t-lost","success":true,"result":{"content":"unstreamed\n<shellId: 4 completed with exit code 0>","contents":[{"type":"shell_exit","shellId":"4","exitCode":0}]}}'
+      event e14 tool.execution_start '{"toolCallId":"t-read","toolName":"read_bash","arguments":{"shellId":"5","delay":8}}'
+      event e15 tool.execution_complete '{"toolCallId":"t-read","success":true,"result":{"content":"BG-DONE\n<shellId: 5 completed with exit code 0>","contents":[{"type":"shell_exit","shellId":"5","exitCode":0}]}}'
+      event e16 tool.execution_start '{"toolCallId":"t-view","toolName":"view","arguments":{"path":"notes.md"}}'
+      event e17 tool.execution_complete '{"toolCallId":"t-view","success":true,"result":{"content":"Notes\n<shellId: 6 completed with exit code 0>"}}'
+      event e18 assistant.message '{"messageId":"m1","content":"Done."}'
+      event e19 session.idle '{}'
+"#;
+
+/// The marker closing an ended shell's result is addressed to the Model, so it stands nowhere in
+/// the output a reader sees, while the exit it reports stays the Command's exit status. Only the
+/// marker Copilot's own report of the exit spells out goes: anything else reading like one is
+/// output.
+#[tokio::test]
+async fn the_marker_closing_an_ended_shells_result_stays_out_of_its_output() {
+    let settled = worked_session("copilot-shell-exit-marker", ENDED_SHELLS_TURN, "Run them").await;
+
+    let ended: Vec<_> = settled
+        .activities
+        .iter()
+        .map(|activity| match activity {
+            Activity::Command {
+                command,
+                output,
+                exit_status,
+                ..
+            } => (command.as_str(), output.as_str(), *exit_status),
+            Activity::ToolCall { name, output, .. } => (name.as_str(), output.as_str(), None),
+            other => panic!("the shells and Tools are all the Turn did, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        ended,
+        [
+            ("printf open", "open", Some(0)),
+            ("true", "", Some(0)),
+            ("echo failing; exit 3", "failing\n", Some(3)),
+            (
+                "cat marker.txt",
+                "<shellId: 3 completed with exit code 0>\n",
+                Some(0)
+            ),
+            ("echo unstreamed", "unstreamed\n", Some(0)),
+            ("read_bash", "BG-DONE\n", None),
+            (
+                "view",
+                "Notes\n<shellId: 6 completed with exit code 0>",
+                None
+            ),
+        ]
     );
 }
 

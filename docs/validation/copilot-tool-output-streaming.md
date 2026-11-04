@@ -43,5 +43,27 @@ The Copilot projection streams a running Command's output from `tool.shell_outpu
 nothing from `tool.execution_partial_result`. Its completion still adds whatever the result
 reports beyond what streamed.
 
+## The marker closing a shell's result
+
+A shell's result ends with a marker addressed to the Model, which reached the output a reader
+sees until Suru took it out. A second capture on the same CLI ran shells ending in each way:
+
+| Shell | `success` | Result | `shell_exit` |
+| --- | --- | --- | --- |
+| `printf 'no-newline'` | true | `"no-newline\n<shellId: 0 completed with exit code 0>"` | shell 0, exit 0 |
+| `true` | true | `"\n<shellId: 1 completed with exit code 0>"` | shell 1, exit 0 |
+| `echo failing; exit 3` | true | `"failing\n<shellId: 2 completed with exit code 3>"` | shell 2, exit 3 |
+| `read_bash` on a finished shell | true | `"bg-out\n<shellId: 4 completed with exit code 0>"` | shell 4, exit 0 |
+
+- The marker stands on a line of its own: Copilot breaks the line itself after output that left it
+  open, including output that was empty.
+- The `shell_exit` part names the same shell and exit, so Suru spells the marker from it and takes
+  off exactly that, along with a line break the stream never carried. A result with no such part,
+  or one ending in anything else, is output, even if it reads like a marker.
+- A Command keeps the exit as its exit status. A `read_bash` is a Tool Call, which has no exit
+  status, so what it read shows without the exit.
+- The other markers are still output: `<command started in background with shellId: 4>` and
+  `<command with id: 5 stopped>`, which are all such a Tool's result says.
+
 Not verified: whether an MCP Tool's execution sends either event. No MCP server was configured
 for the capture, and the SDK describes both events as shell output only.

@@ -3375,6 +3375,7 @@ fn trailing_output(completed: &ToolExecutionCompleteData, streamed: &str) -> Opt
             .detailed_content
             .as_deref()
             .unwrap_or(result.content.as_str());
+        let reported = without_shell_exit_marker(completed, reported, streamed);
         match reported.strip_prefix(streamed) {
             Some(rest) => trailing.push_str(rest),
             None if !completed.success && !reported.is_empty() => {
@@ -3395,6 +3396,40 @@ fn trailing_output(completed: &ToolExecutionCompleteData, streamed: &str) -> Opt
         push_below(streamed, &mut trailing, error);
     }
     (!trailing.is_empty()).then_some(trailing)
+}
+
+/// `reported` without the marker closing an ended shell's result, which tells the Model how the
+/// shell exited and is no output of the shell's.
+///
+/// The `shell_exit` part reporting the same exit spells the marker out, so anything else reading
+/// like one stays output, whatever printed it. Copilot sets the marker on a line of its own,
+/// breaking the line itself after output that left it open, so a line break the stream never
+/// carried goes with the marker (docs/validation/copilot-tool-output-streaming.md).
+fn without_shell_exit_marker<'a>(
+    completed: &ToolExecutionCompleteData,
+    reported: &'a str,
+    streamed: &str,
+) -> &'a str {
+    let marker = completed
+        .result
+        .as_ref()
+        .and_then(|result| result.contents.as_deref())
+        .unwrap_or_default()
+        .iter()
+        .find_map(|part| match part {
+            ToolExecutionCompleteContent::ShellExit(exit) => Some(format!(
+                "<shellId: {} completed with exit code {}>",
+                exit.shell_id, exit.exit_code
+            )),
+            _ => None,
+        });
+    let Some(output) = marker.and_then(|marker| reported.strip_suffix(marker.as_str())) else {
+        return reported;
+    };
+    match output.strip_suffix('\n') {
+        Some(unbroken) if unbroken == streamed => unbroken,
+        _ => output,
+    }
 }
 
 /// Adds `text` to `trailing` on a line of its own below everything the output holds so far — what
