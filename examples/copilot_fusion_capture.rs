@@ -30,6 +30,7 @@
 //! - `unassigned` creates and resumes Sessions on `hydrafusion` without the assignment.
 //! - `resume-empty` resumes, with the assignment, a Session that never ran a Turn.
 //! - `discover <count>` opens that many Sessions only to list Models, deleting each, and times it.
+//! - `delete <id>...` deletes Sessions a run left behind: a refused create leaves its directory.
 //!
 //! `interrupt`, `steer` and `crash` act on a staged phase, which a `single` route may not have: on
 //! one, they abort as soon as the route resolves and exit with status 3, unless `PROBE_ALLOW_SINGLE`
@@ -101,6 +102,7 @@ async fn main() -> Result<(), Failure> {
         ["unassigned"] => unassigned(&run).await,
         ["resume-empty"] => resume_empty(&run).await,
         ["discover", count] => discover(&run, count.parse()?).await,
+        ["delete", ids @ ..] => delete(&run, ids).await,
         _ => Err("name a mode; the file's head describes them".into()),
     }
 }
@@ -1052,6 +1054,15 @@ async fn resume_without(
             live.close(&client).await;
         }
         None => run.delete(&client, id).await,
+    }
+    stop_cli(&client, child).await;
+    Ok(())
+}
+
+async fn delete(run: &Run, ids: &[&str]) -> Result<(), Failure> {
+    let (client, child) = start_cli(run).await?;
+    for id in ids {
+        run.delete(&client, &SessionId::new(*id)).await;
     }
     stop_cli(&client, child).await;
     Ok(())
