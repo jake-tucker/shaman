@@ -40,6 +40,10 @@ _Avoid_: Model notice, model warning
 A Provider-advertised, Model-specific configuration dimension such as reasoning effort or speed. Model Options compose independently within an Agent Selection.
 _Avoid_: Variant, trait, model setting
 
+**Routing Tier**:
+A Model Option by which a Provider that routes on the user's behalf is told how to weigh capability against cost.
+_Avoid_: Auto preference, routing profile, Fusion tier
+
 **Session**:
 A workspace for conversation between a user and an agent. A Session is independently addressable, may be viewed from multiple clients, and may exist before an agent is selected. Its first Turn binds it to that Agent's Provider; later Agent Selections may change the Model and Model Options, but not the Provider. A Subagent's Session is a child of the Session whose Turn spawned it: viewed, streamed, and stored like any other, to any depth of children of its own, but reachable only from within the tree its top-level Session heads — never listed where Sessions are listed, never offered a Prompt, and deleted along with the parent whose deletion it shares.
 _Avoid_: Chat, thread, conversation
@@ -131,6 +135,10 @@ _Avoid_: Request, exchange
 The one kind of Turn that begins with nothing asked of the Agent — no Prompt, no Delegation, no requested Compaction: the Provider does more work after a prior Turn Settled, including work provoked by a Watch, a Subagent, or a Subagent Report, or Suru receives output owed to an earlier Turn's Subagents while no Turn is active. A settled Subagent woken by its own Watch works on in a Continuation of its own Session rather than as a new Subagent. A Continuation settles like any Turn; one still open when the next Prompt or Delegation is delivered to begin a Turn settles first, interrupting any Provider work it owns before that Turn begins.
 _Avoid_: Synthetic turn, background turn, ghost turn
 
+**Route**:
+The plan by which a Provider that routes on the user's behalf works a Turn: which Models act, in what order, and which reviews another's work. A Turn on a Routing Tier holds one or more; each Route's decisions stand in the Transcript where they were made.
+_Avoid_: Cascade, critique, phase
+
 **Settle**:
 The transition of a Turn or Activity into a terminal state — completed, failed, or interrupted — after which it accepts no further Provider output. A Turn still open when Suru stops Settles as failed at the next start, at the moment of its last output, because nothing survives a stop to finish it; a Subagent's row in its parent's Transcript Settles with it. An Activity still running when its Turn Settles Settles with it: interrupted if the Turn was interrupted, since someone asked the work to stop, and failed otherwise. An Activity is failed on its own only when its Provider reports that it failed; an exit status is only a Command's exit code, never the evidence for how it settled. A Session Settles in its own, reversible sense: set aside as done for now, by the user's say-so or on its own after long enough idle, and active again the moment it is prompted or the user unsettles it. Only the say-so is stored, as a marker stamped with the moment it was set. Settling on its own — **auto-settle**, governed by one Setting holding either how long being left alone has to be or the word that suspends it — is instead derived wherever Sessions are listed, from the Session's last activity: nothing is written down for it, no clock fires for it, and moving that Setting reclassifies every Session at once. A Session that is Working or Monitoring never auto-settles, since it is not yet done. Neither a Session nothing has moved since it was made nor one Suru cannot read auto-settles: the first has set nothing aside and the second has no activity Suru can see. Unsettling moves a Session's last activity to the moment the user reached for it, so auto-settle cannot put back what they just took off the shelf. Wherever Sessions are listed by liveness, the settled ones stand apart from the active ones.
 _Avoid_: Finish, close, resolve; archive (for a settled Session)
@@ -210,6 +218,10 @@ _Avoid_: Small model, cheap model, title model
 **Message**:
 User-visible content in a session attributed to the user or agent — or, for a Delegation, to the Agent that delegated it.
 _Avoid_: Event, item
+
+**Superseded Message**:
+An agent Message a Route passed over for another Model's work. It stays where it was written, marked as passed over, and is never its Turn's final Message.
+_Avoid_: Draft, rejected Message
 
 **Activity**:
 User-visible progress, operational detail, or failure associated with a turn but not authored by the user or agent. A Move's Activity is the one that belongs to no Turn, since a Move happens between them.
