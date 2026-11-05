@@ -798,6 +798,13 @@ async fn tools_are_tallied_from_the_stored_activities_of_the_interval_s_turns() 
         spawned(last, Failed, true),
         // No use of a Tool.
         reasoned(first),
+        Activity::Route {
+            id: ActivityId::new(),
+            turn_id: first,
+            decision: crate::protocol::RouteDecision::Handoff {
+                to: crate::protocol::ModelId::new("claude-fixture"),
+            },
+        },
         // Uses by Turns the interval does not hold.
         command(before, Failed),
         command(untimed, Failed),

@@ -92,6 +92,8 @@ struct Route {
     stage: Stage,
     /// Whether a phase began, without which nothing was done to discard.
     worked: bool,
+    /// Whether a row has already said what failed, which a degraded completion need not repeat.
+    failure_told: bool,
     /// The Messages this Route has carried, in the order they arrived.
     messages: Vec<RoutedMessage>,
     /// The tool executions this Route has opened, settled or not.
@@ -104,6 +106,7 @@ impl Route {
             stretch,
             stage,
             worked: false,
+            failure_told: false,
             messages: Vec::new(),
             tools: HashSet::new(),
         }
@@ -245,39 +248,31 @@ impl Routes {
             }
             SessionEventType::AssistantFusionPhaseFailed => {
                 reported::<AssistantFusionPhaseFailedData>(event)
-                    .filter(|failed| {
-                        // An interrupt cancels the phase it stops, and the idle that follows says
-                        // what became of the Route.
-                        failed.status != FusionPhaseStatus::Cancelled
-                            && self.routes.contains_key(&failed.fusion_id)
-                    })
-                    .map(|failed| {
-                        decided(RouteDecision::Fallback {
+                    // An interrupt cancels the phase it stops, and the idle that follows says what
+                    // became of the Route.
+                    .filter(|failed| failed.status != FusionPhaseStatus::Cancelled)
+                    .and_then(|failed| {
+                        self.routes.get_mut(&failed.fusion_id)?.failure_told = true;
+                        Some(decided(RouteDecision::Fallback {
                             failed: Some(ModelId::new(failed.model)),
                             stand_in: None,
                             reason: failed.error_message.or(Some(failed.reason)),
-                        })
+                        }))
                     })
                     .into_iter()
                     .collect()
             }
             SessionEventType::SessionFusionCompleted => {
                 reported::<SessionFusionCompletedData>(event)
-                    .filter(|completed| {
-                        let known = self.routes.get_mut(&completed.fusion_id);
-                        known.is_some_and(|route| {
-                            route.stage = Stage::Committed;
-                            true
-                        })
-                    })
                     .and_then(|completed| {
-                        completed.degraded_reason.map(|reason| {
-                            decided(RouteDecision::Fallback {
-                                failed: None,
-                                stand_in: completed.final_source_model.map(ModelId::new),
-                                reason: Some(reason),
-                            })
-                        })
+                        let route = self.routes.get_mut(&completed.fusion_id)?;
+                        route.stage = Stage::Committed;
+                        let reason = completed.degraded_reason.filter(|_| !route.failure_told)?;
+                        Some(decided(RouteDecision::Fallback {
+                            failed: None,
+                            stand_in: completed.final_source_model.map(ModelId::new),
+                            reason: Some(reason),
+                        }))
                     })
                     .into_iter()
                     .collect()
@@ -351,18 +346,21 @@ impl Routes {
             .insert(tool_call_id.to_owned())
     }
 
-    /// The Route `fusion` names. One Suru never saw begin, as when it attached to a Session part
-    /// way through, is known from here on as a staging Route like any other.
+    /// The Route `fusion` names, whose phase is at work. One Suru never saw begin, as when it could
+    /// not read its beginning, is known from here on as a staging Route like any other.
     fn route_of(&mut self, fusion: &FusionAttribution, stretch: u64) -> &mut Route {
-        self.routes
+        let route = self
+            .routes
             .entry(fusion.fusion_id.clone())
-            .or_insert_with(|| Route::new(stretch, Stage::Staging))
+            .or_insert_with(|| Route::new(stretch, Stage::Staging));
+        route.worked = true;
+        route
     }
 
-    /// Ends every Route with the stretch `stretch` settling. The conversation of one that was still
-    /// staging, on the Provider's say-so that `discarded` the stretch ended short, is gone, which is
-    /// the row this answers for it. One that ended any other way ended unexplained, with its rows
-    /// left as they stand. Routes of a stretch cut off before it go with it.
+    /// Ends every Route with the stretch `stretch` settling, answering a row for each still staging
+    /// whose conversation is gone, which `discarded` says the way the stretch ended means. One that
+    /// ended any other way ended unexplained, with its rows left as they stand. Routes of a stretch
+    /// cut off before this one go with it.
     pub(super) fn settle(&mut self, stretch: u64, discarded: bool) -> Vec<ProviderEvent> {
         self.routing = false;
         let mut lost = Vec::new();
@@ -383,7 +381,6 @@ impl Routes {
     /// Forgets the Routes of stretches before `stretch`, one of which has just idled unowed.
     pub(super) fn forget_before(&mut self, stretch: u64) {
         self.routes.retain(|_, route| route.stretch == stretch);
-        self.routing = !self.routes.is_empty() && self.routing;
     }
 }
 

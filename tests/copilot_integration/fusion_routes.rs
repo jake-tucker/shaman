@@ -9,15 +9,15 @@ use crate::copilot_integration::{
     server_support::PROGRESS_DEADLINE,
     support::{
         LiveTurn, Opened, ScriptedCopilot, abort_arm, conversation_arms, conversation_fixture,
-        opened_session, opened_session_on, replay_capture, send_arm, settled_session,
-        silent_abort_arm, transcript_outline as outline,
+        opened_session, opened_session_on, permission_decision_arm, replay_capture, send_arm,
+        settled_session, silent_abort_arm, transcript_outline as outline,
     },
 };
 use serde_json::Value;
 use suru::{
     protocol::{
-        Activity, ActivityStatus, Message, MessageRole, MessageStatus, ModelId, RouteAction,
-        RouteDecision, RouteStep, RouteVerdict, SessionSnapshot, TurnStatus,
+        Activity, ActivityStatus, Decision, Message, MessageRole, MessageStatus, ModelId,
+        RouteAction, RouteDecision, RouteStep, RouteVerdict, SessionSnapshot, TurnStatus,
     },
     provider::CopilotRuntime,
     server::{self, ServerConfig},
@@ -725,4 +725,192 @@ async fn the_turn_after_a_route_begins_again_and_settles_on_its_own_idle() {
     let Opened { server, client, .. } = opened;
     drop(client);
     server.shutdown().await.expect("shut the server down");
+}
+
+/// A judge reads with Tools no Tool event reports, whose approvals alone surface: durable,
+/// attributed to no phase, and matching no Tool row. Captured live under the Ask posture.
+const REVIEW_ACCEPTED: &str = include_str!("fixtures/fusion-review-accepted.jsonl");
+/// The same, where the person denied the judge's first read: it failed for want of it, and the
+/// Route went on to its repair (docs/validation/copilot-fusion-routes.md).
+const REVIEW_DENIED: &str = include_str!("fixtures/fusion-review-denied.jsonl");
+
+const ASKING: &str = r#"{"provider":{"copilot":{"permissions":"ask"}}}"#;
+
+/// A Route's capture around the first Approval a review asks: what ran up to it, the request itself,
+/// and what the decision let run after it.
+fn around_the_review_approval(capture: &'static str) -> (String, String, String) {
+    let lines = capture.lines().collect::<Vec<_>>();
+    let asked = lines
+        .iter()
+        .position(|line| {
+            line.contains(r#""type":"permission.requested""#) && !line.contains(r#""fusion":{"#)
+        })
+        .expect("the capture holds a review's request");
+    (
+        replay_capture(&lines[..asked].join("\n"), |_| true),
+        format!("      raw_event '{}'\n", lines[asked]),
+        replay_capture(&lines[asked + 1..].join("\n"), |_| true),
+    )
+}
+
+/// A fixture that plays `capture` up to its review's Approval, and the rest once it is decided.
+fn asked_in_review(capture: &'static str) -> ScriptedCopilot {
+    let (before, asked, after) = around_the_review_approval(capture);
+    let answered = format!(
+        r#"    *'"method":"session.permissions.handlePendingPermissionRequest"'*)
+      reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"success":true}}}}'
+{after}      ;;
+"#
+    );
+    ScriptedCopilot::new(&format!(
+        "{}{}",
+        conversation_arms().replace(&permission_decision_arm(), &answered),
+        send_arm(&format!("{before}{asked}")),
+    ))
+}
+
+/// The Approval a review asked, which stands in no Tool row and is the user's to decide.
+fn review_approval(snapshot: &SessionSnapshot) -> (suru::protocol::ApprovalId, Option<&str>) {
+    snapshot
+        .activities
+        .iter()
+        .find_map(|activity| match activity {
+            Activity::Approval {
+                approval,
+                tool_activity_id: None,
+                ..
+            } => Some((approval.id, approval.reason.as_deref())),
+            _ => None,
+        })
+        .expect("the review's Approval stands in the Transcript")
+}
+
+/// The last decision Copilot was handed, which is what the user's Decision came to on the wire.
+fn delivered_decision(copilot: &ScriptedCopilot) -> Value {
+    copilot
+        .requests()
+        .iter()
+        .rfind(|request| request["method"] == "session.permissions.handlePendingPermissionRequest")
+        .expect("the Decision reached Copilot")["params"]["result"]
+        .clone()
+}
+
+#[tokio::test]
+async fn a_reviews_approval_is_an_ordinary_approval_and_accepting_it_lets_the_review_finish() {
+    let copilot = asked_in_review(REVIEW_ACCEPTED);
+    let mut live = LiveTurn::start_configured(
+        CopilotRuntime::new(copilot.executable()),
+        "fusion-review-accepted",
+        "Check it",
+        ASKING,
+    )
+    .await;
+    let asking = live
+        .wait_for("the review asks", |snapshot| {
+            !snapshot.pending_approvals.is_empty()
+        })
+        .await;
+    let (id, reason) = review_approval(&asking);
+    assert_eq!(reason, Some("List directory: /tmp/fusion-scratch"));
+    assert_eq!(asking.turns[0].status, TurnStatus::Active);
+
+    live.client
+        .submit_decision(live.session_id, id, Decision::Accept)
+        .await
+        .expect("the Decision is taken");
+    let settled = live
+        .wait_for("the Route commits", |snapshot| {
+            snapshot.turns[0].status != TurnStatus::Active
+        })
+        .await;
+
+    assert_eq!(delivered_decision(&copilot)["kind"], "approve-once");
+    assert_eq!(settled.turns[0].status, TurnStatus::Completed);
+    assert_eq!(superseded(&settled), Vec::<&str>::new());
+    assert_eq!(
+        route_rows(&settled).last().map(|row| row.sentence()),
+        Some("gpt-6-luna accepted the work".to_owned())
+    );
+    live.shutdown().await;
+}
+
+/// A denied review reaches no verdict, which the row says, and the repair it fell through to is
+/// explained by the handoff beside it. The Approval stands where it was asked, between the work
+/// reviewed and what became of the review.
+#[tokio::test]
+async fn denying_a_reviews_approval_is_a_decision_copilot_takes_and_the_route_says_what_followed() {
+    let copilot = asked_in_review(REVIEW_DENIED);
+    let mut live = LiveTurn::start_configured(
+        CopilotRuntime::new(copilot.executable()),
+        "fusion-review-denied",
+        "Check it",
+        ASKING,
+    )
+    .await;
+    let asking = live
+        .wait_for("the review asks", |snapshot| {
+            !snapshot.pending_approvals.is_empty()
+        })
+        .await;
+    let (id, _) = review_approval(&asking);
+
+    live.client
+        .submit_decision(live.session_id, id, Decision::Decline)
+        .await
+        .expect("the Decision is taken");
+    let settled = live
+        .wait_for("the Route commits its repair", |snapshot| {
+            snapshot.turns[0].status != TurnStatus::Active
+        })
+        .await;
+
+    assert_eq!(delivered_decision(&copilot)["kind"], "reject");
+    assert_eq!(settled.turns[0].status, TurnStatus::Completed);
+    assert_eq!(
+        route_rows(&settled),
+        [
+            &RouteDecision::Chosen {
+                steps: vec![
+                    step("gpt-6.1-sol", RouteAction::Works),
+                    step("gpt-6-luna", RouteAction::Reviews),
+                    step("claude-opus-5.5", RouteAction::Revises),
+                ],
+            },
+            &RouteDecision::Fallback {
+                failed: Some(ModelId::new("gpt-6-luna")),
+                stand_in: None,
+                reason: Some(
+                    "cascade judge output is not valid JSON: EOF while parsing a value at line 1 \
+                     column 0"
+                        .to_owned()
+                ),
+            },
+            &RouteDecision::Handoff {
+                to: ModelId::new("claude-opus-5.5"),
+            },
+        ],
+        "the failed phase says it once, and the degraded completion repeats nothing"
+    );
+    assert_eq!(
+        superseded(&settled),
+        messages_of_phase(REVIEW_DENIED, "primary")
+    );
+    assert_eq!(
+        standing(&settled),
+        messages_of_phase(REVIEW_DENIED, "repair")
+    );
+    let lines = outline(&settled, None);
+    let asked = lines
+        .iter()
+        .position(|line| line.contains("List directory"))
+        .expect("the Approval stands in the Transcript");
+    let failed = lines
+        .iter()
+        .position(|line| line.contains("gpt-6-luna failed"))
+        .expect("the failure stands in the Transcript");
+    assert!(
+        lines[asked - 1].contains("passed over") && asked + 1 == failed,
+        "{lines:#?}"
+    );
+    live.shutdown().await;
 }

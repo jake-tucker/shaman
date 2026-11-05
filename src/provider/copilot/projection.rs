@@ -113,6 +113,10 @@
 //! request as cancelled: that is the stop Suru asked for, and settles both as interrupted. It is
 //! no background compaction, so neither the background cancel nor the loop's abort ever reaches
 //! it.
+//!
+//! On a Routing Tier the conversation's work arrives staged, and [`routes`] says what stands of it:
+//! the first copy of each item, with the Messages of a Route's other phases passed over at its
+//! commit (ADR 0062).
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -9103,10 +9107,10 @@ mod tests {
         );
     }
 
-    /// Never seen live: built from what the SDK types say a phase failing on its own, and a Route
-    /// finishing degraded, would report.
+    /// A phase failing on its own says what failed, and the degraded completion that follows it
+    /// repeats nothing. A completion is left to say so only where nothing else has.
     #[test]
-    fn a_phase_failing_on_its_own_and_a_degraded_completion_stand_as_fallbacks() {
+    fn a_phase_failing_on_its_own_stands_as_a_fallback_and_a_degraded_completion_adds_nothing() {
         let mut correlation = in_route("r");
         let failed = project(
             &mut correlation,
@@ -9134,16 +9138,14 @@ mod tests {
                 },
             }]
         );
-        let completed = project(
-            &mut correlation,
-            "session.fusion_completed",
+        let degraded = |route: &str| {
             json!({
-                "fusionId": "r",
-                "commitId": "r:commit",
-                "turnId": "r:turn",
+                "fusionId": route,
+                "commitId": format!("{route}:commit"),
+                "turnId": format!("{route}:turn"),
                 "syntheticModel": "hydrafusion",
                 "pattern": "cascade",
-                "outcome": "completed",
+                "outcome": "degraded",
                 "finalSourceModel": "gpt-primary",
                 "followUpModel": "gpt-primary",
                 "degradedReason": "review_unavailable",
@@ -9154,10 +9156,20 @@ mod tests {
                 "cachedTokens": 0,
                 "totalNanoAiu": 1,
                 "durationMs": 1.0,
-            }),
-        );
+            })
+        };
         assert_eq!(
-            completed,
+            project(&mut correlation, "session.fusion_completed", degraded("r")),
+            []
+        );
+
+        let mut correlation = in_route("quiet");
+        assert_eq!(
+            project(
+                &mut correlation,
+                "session.fusion_completed",
+                degraded("quiet")
+            ),
             [ProviderEvent::RouteDecided {
                 decision: RouteDecision::Fallback {
                     failed: None,
