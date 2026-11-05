@@ -2496,14 +2496,14 @@ async fn no_sweep_takes_a_worktree_a_move_waiting_on_a_native_subagent_is_bound_
     let made = new_worktree_bound_behind_a_native_subagent(&mut fixture, &repository).await;
 
     for witness in ["first-witness", "second-witness"] {
-        let witness_path = repository.join(".suru-worktrees").join(witness);
+        let witness_path = repository.join(".worktrees").join(witness);
         git(
             &repository,
             &[
                 "worktree",
                 "add",
                 "-b",
-                &format!("suru/{witness}"),
+                &format!("feature/{witness}"),
                 witness_path.to_str().unwrap(),
             ],
         );

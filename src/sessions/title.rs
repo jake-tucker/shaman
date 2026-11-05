@@ -42,7 +42,7 @@
 //! words describing the requested work, carried by the same reply as the Title
 //! and Icon. The Model reads the Prompt exactly as the Title is asked about
 //! it, Skill names included, but is asked not to make a Skill the subject.
-//! A proposal Suru can use is stripped of any `refs/heads/` or `suru/` it was
+//! A proposal Suru can use is stripped of any `refs/heads/` or `feature/` it was
 //! spelled with, shaped by the one name-shaping function every Managed
 //! Worktree name goes through, and handed to source control, which renames
 //! the branch on the owning Server — see
@@ -1364,7 +1364,7 @@ mod tests {
                 .branch
         };
         assert_eq!(
-            branch(json!("suru/Fix reasoning flicker")),
+            branch(json!("feature/Fix reasoning flicker")),
             Some("fix-reasoning-flicker".to_owned())
         );
         assert_eq!(branch(json!("")), None);

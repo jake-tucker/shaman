@@ -661,7 +661,7 @@ impl SourceControl for GitSourceControl {
         }
         let branches = self.branch_names(source_path).await?;
         for name in super::naming::numbered(name) {
-            let branch = format!("{}{name}", super::naming::BRANCH_PREFIX);
+            let branch = branches::managed_branch(&branches, &name);
             let destination = root.join(MANAGED_WORKTREE_DIRECTORY).join(&name);
             // Whatever holds a name keeps it: an occupied location (even a
             // dangling link), a branch Git would refuse this one beside, or

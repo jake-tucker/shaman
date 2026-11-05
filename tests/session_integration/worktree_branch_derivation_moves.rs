@@ -154,7 +154,7 @@ async fn a_move_makes_a_worktree_named_from_the_title_and_started_where_the_sess
     let linked = fixture.root.join("linked");
     git(
         &fixture.main,
-        &["worktree", "add", "-b", "feature", linked.to_str().unwrap()],
+        &["worktree", "add", "-b", "topic", linked.to_str().unwrap()],
     );
     let linked = suru::paths::canonical(&linked).unwrap();
     std::fs::write(linked.join("committed"), "kept").unwrap();
@@ -185,10 +185,10 @@ async fn a_move_makes_a_worktree_named_from_the_title_and_started_where_the_sess
         moved.session.checkout.as_ref().map(|c| c.kind),
         Some(CheckoutKind::Linked)
     );
-    assert_on_branch(&worktree, "suru/tune-parser");
+    assert_on_branch(&worktree, "feature/tune-parser");
     assert_eq!(head_commit(&worktree), source_commit);
     assert_eq!(
-        suru_base(&fixture.main, "suru/tune-parser").as_deref(),
+        suru_base(&fixture.main, "feature/tune-parser").as_deref(),
         Some(source_commit.as_str()),
         "provenance is recorded as it is for a new Session"
     );
@@ -198,11 +198,11 @@ async fn a_move_makes_a_worktree_named_from_the_title_and_started_where_the_sess
             &[
                 "config",
                 "--local",
-                "branch.suru/tune-parser.suru-base-branch"
+                "branch.feature/tune-parser.suru-base-branch"
             ]
         )
         .as_deref(),
-        Some("feature")
+        Some("topic")
     );
     assert!(worktree.join("committed").is_file());
     assert!(!worktree.join("uncommitted").exists());
@@ -218,14 +218,14 @@ async fn a_move_makes_a_worktree_named_from_the_title_and_started_where_the_sess
         "the Errand reads the Session's Prompts so far: {}",
         errand.prompt
     );
-    errand.succeed(json!({ "branch": "suru/Parser tables" }));
+    errand.succeed(json!({ "branch": "feature/Parser tables" }));
     assert_eq!(
         fixture.rename_attempted().await,
         Ok(BranchRename::Renamed {
-            branch: "suru/parser-tables".to_owned()
+            branch: "feature/parser-tables".to_owned()
         })
     );
-    assert_on_branch(&worktree, "suru/parser-tables");
+    assert_on_branch(&worktree, "feature/parser-tables");
     assert_eq!(fixture.title_of(session_id).await, "Tune the parser");
     assert_eq!(
         fixture
@@ -288,7 +288,7 @@ async fn a_title_shaping_to_nothing_names_the_worktree_as_any_empty_name_is() {
         moved.session.execution_directory.path,
         fixture.managed("work")
     );
-    assert_on_branch(&fixture.managed("work"), "suru/work");
+    assert_on_branch(&fixture.managed("work"), "feature/work");
     fixture.server.shutdown().await.expect("shut down server");
 }
 
@@ -298,7 +298,7 @@ async fn a_title_shaping_to_nothing_names_the_worktree_as_any_empty_name_is() {
 async fn a_name_already_taken_gains_a_number_and_displaces_nothing() {
     let mut fixture = Fixture::start("move-new-worktree-collision").await;
     let main = fixture.main.clone();
-    git(&main, &["branch", "suru/tune-parser"]);
+    git(&main, &["branch", "feature/tune-parser"]);
     let taken_at = head_commit(&main);
     std::fs::create_dir_all(fixture.managed("tune-parser-2")).unwrap();
     std::fs::write(fixture.managed("tune-parser-2").join("personal"), "mine").unwrap();
@@ -317,9 +317,9 @@ async fn a_name_already_taken_gains_a_number_and_displaces_nothing() {
         moved.session.execution_directory.path,
         fixture.managed("tune-parser-3")
     );
-    assert_on_branch(&fixture.managed("tune-parser-3"), "suru/tune-parser-3");
+    assert_on_branch(&fixture.managed("tune-parser-3"), "feature/tune-parser-3");
     assert_eq!(
-        read_git(&main, &["rev-parse", "refs/heads/suru/tune-parser"]).as_deref(),
+        read_git(&main, &["rev-parse", "refs/heads/feature/tune-parser"]).as_deref(),
         Some(taken_at.as_str())
     );
     assert!(fixture.managed("tune-parser-2").join("personal").is_file());
@@ -374,7 +374,7 @@ async fn a_pending_move_makes_its_worktree_at_once_and_renames_its_branch_once_i
     assert_eq!(
         fixture.rename_attempted().await,
         Ok(BranchRename::Renamed {
-            branch: "suru/parser-tables".to_owned()
+            branch: "feature/parser-tables".to_owned()
         })
     );
     assert_eq!(fixture.title_of(session_id).await, "Tune the parser");
@@ -442,7 +442,7 @@ async fn a_restart_finds_a_pending_moves_worktree_standing_and_still_renames_its
             .expect("the rename reaches source control")
             .expect("the Server is still running"),
         Ok(BranchRename::Renamed {
-            branch: "suru/parser-tables".to_owned()
+            branch: "feature/parser-tables".to_owned()
         })
     );
     server.shutdown().await.expect("shut down server");
@@ -511,10 +511,10 @@ async fn an_errand_that_fails_or_names_nothing_leaves_the_first_name_standing() 
     assert_eq!(
         fixture.rename_attempted().await,
         Ok(BranchRename::Renamed {
-            branch: "suru/parser-tables".to_owned()
+            branch: "feature/parser-tables".to_owned()
         })
     );
-    assert!(branches(&main).contains(&"suru/parser-tables".to_owned()));
+    assert!(branches(&main).contains(&"feature/parser-tables".to_owned()));
     fixture.server.shutdown().await.expect("shut down server");
 }
 
@@ -536,7 +536,7 @@ async fn a_moved_worktree_no_longer_on_its_created_branch_is_not_renamed() {
 
     assert!(fixture.rename_attempted().await.is_err());
     assert_on_branch(&fixture.managed("tune-parser"), "mine");
-    assert!(branches(&main).contains(&"suru/tune-parser".to_owned()));
+    assert!(branches(&main).contains(&"feature/tune-parser".to_owned()));
     fixture.server.shutdown().await.expect("shut down server");
 }
 
@@ -590,7 +590,7 @@ async fn a_bare_repository_starts_the_worktree_from_its_own_head_beneath_its_roo
     let worktree = bare.join(MANAGED_WORKTREE_DIRECTORY).join("tune-parser");
     assert_eq!(moved.session.execution_directory.path, worktree);
     assert_eq!(head_commit(&worktree), bare_head);
-    assert_on_branch(&worktree, "suru/tune-parser");
+    assert_on_branch(&worktree, "feature/tune-parser");
     fixture.server.shutdown().await.expect("shut down server");
 }
 
@@ -608,7 +608,7 @@ async fn a_session_in_a_bare_repositorys_worktree_starts_from_its_own_commit() {
     let linked = fixture.root.join("feature");
     git(
         &bare,
-        &["worktree", "add", "-b", "feature", linked.to_str().unwrap()],
+        &["worktree", "add", "-b", "topic", linked.to_str().unwrap()],
     );
     let linked = suru::paths::canonical(&linked).unwrap();
     std::fs::write(linked.join("ahead"), "ahead").unwrap();
@@ -684,7 +684,7 @@ async fn a_session_whose_own_worktree_has_gone_is_refused_rather_than_started_el
     let linked = fixture.root.join("linked");
     git(
         &main,
-        &["worktree", "add", "-b", "feature", linked.to_str().unwrap()],
+        &["worktree", "add", "-b", "topic", linked.to_str().unwrap()],
     );
     let linked = suru::paths::canonical(&linked).unwrap();
     let (session_id, _session) = fixture.idle_session(&linked, "Tune the parser").await;
@@ -819,7 +819,7 @@ async fn asked_again_after_a_failed_preparation_left_nothing_takes_the_first_nam
         .await
         .expect_err("the first preparation fails");
     assert!(!fixture.managed("tune-parser").exists());
-    assert!(!branches(&main).contains(&"suru/tune-parser".to_owned()));
+    assert!(!branches(&main).contains(&"feature/tune-parser".to_owned()));
 
     let moved = moved_summary(
         fixture
@@ -927,7 +927,7 @@ async fn an_intent_a_crash_left_behind_a_landed_move_is_retired_as_the_server_st
             .expect("the rename reaches source control")
             .expect("the Server is still running"),
         Ok(BranchRename::Renamed {
-            branch: "suru/parser-tables".to_owned()
+            branch: "feature/parser-tables".to_owned()
         })
     );
     server.shutdown().await.expect("shut down server");

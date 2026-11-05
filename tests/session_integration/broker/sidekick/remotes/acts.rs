@@ -1458,7 +1458,7 @@ async fn a_session_begun_on_a_remote_in_a_new_worktree_works_in_one_made_there()
     );
     assert_eq!(
         (directory.parent(), &begun["origin"]),
-        (Some(main.join(".suru-worktrees").as_path()), &json!(REMOTE)),
+        (Some(main.join(".worktrees").as_path()), &json!(REMOTE)),
         "a new Worktree is made in the Remote's Repository: {begun}"
     );
     let start = next_start(&mut pair.remote.provider).await;

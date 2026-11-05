@@ -78,7 +78,7 @@ impl ReclaimLayout {
         let temp = tempfile::tempdir().unwrap();
         let root = suru::paths::canonical(temp.path()).unwrap();
         let main = root.join("main");
-        let managed = main.join(".suru-worktrees").join(name);
+        let managed = main.join(".worktrees").join(name);
         let external = root.join("external");
         let config = root.join("config");
         std::fs::create_dir(&main).unwrap();
@@ -93,7 +93,7 @@ impl ReclaimLayout {
                 "worktree",
                 "add",
                 "-b",
-                &format!("suru/{name}"),
+                &format!("feature/{name}"),
                 managed.to_str().unwrap(),
             ],
         );
@@ -666,7 +666,7 @@ async fn an_unsettled_session_idle_past_the_threshold_is_reclaimed() {
     let _resumed = restarted(&mut provider, &layout.managed).await;
     assert_eq!(
         read_git(&layout.managed, &["branch", "--show-current"]),
-        "suru/idle-unsettled"
+        "feature/idle-unsettled"
     );
     let history = support::read_session_until(
         &crate::support::loopback_client(),
@@ -887,17 +887,21 @@ async fn an_observation_started_during_idle_reclaim_cannot_replace_detached_reco
     let base = read_git(&layout.main, &["rev-parse", "main"]);
     git(
         &layout.main,
-        &["config", "branch.suru/idle-merged.suru-base", &base],
+        &["config", "branch.feature/idle-merged.suru-base", &base],
     );
     git(
         &layout.main,
-        &["config", "branch.suru/idle-merged.suru-base-branch", "main"],
+        &[
+            "config",
+            "branch.feature/idle-merged.suru-base-branch",
+            "main",
+        ],
     );
     std::fs::write(layout.managed.join("tracked"), "merged managed work").unwrap();
     git(&layout.managed, &["add", "."]);
     commit(&layout.managed, "managed work merged into base");
     let merged_commit = read_git(&layout.managed, &["rev-parse", "HEAD"]);
-    git(&layout.main, &["merge", "--ff-only", "suru/idle-merged"]);
+    git(&layout.main, &["merge", "--ff-only", "feature/idle-merged"]);
     let config = layout.server_config("reclaim-idle-merged");
     let (runtime, mut provider) = ControlledProvider::new();
     let server = server::spawn_with_provider_and_timings(config.clone(), runtime, timings())
@@ -925,7 +929,7 @@ async fn an_observation_started_during_idle_reclaim_cannot_replace_detached_reco
     .unwrap();
     let (_ids, _catalog) = support::open_catalog_stream_with_snapshot(running.descriptor()).await;
     wait_for_path(&layout.managed, false).await;
-    wait_for_branch(&layout.main, "refs/heads/suru/idle-merged", false).await;
+    wait_for_branch(&layout.main, "refs/heads/feature/idle-merged", false).await;
     wait_for_reclaim_phase(
         running.descriptor(),
         session.session.id,
@@ -1464,7 +1468,7 @@ async fn deleting_the_last_session_starts_reclaim_without_delaying_the_response(
     assert!(
         !read_git(
             &layout.main,
-            &["rev-parse", "refs/heads/suru/eager-last-session"]
+            &["rev-parse", "refs/heads/feature/eager-last-session"]
         )
         .is_empty(),
         "the eager path applies the ordinary branch-retention rule"
@@ -1820,7 +1824,7 @@ async fn startup_discovers_and_reclaims_a_prepared_worktree_after_its_last_sessi
 #[tokio::test]
 async fn restart_reclaims_an_orphan_whose_repository_only_its_registry_entry_names() {
     let layout = ReclaimLayout::new("registry-orphan");
-    let branch = "refs/heads/suru/registry-orphan";
+    let branch = "refs/heads/feature/registry-orphan";
     // The same again, but for the Registry entry it is about to lose.
     let unregistered = ReclaimLayout::new("unregistered-orphan");
     layout.pin(r#""off""#);
@@ -2109,7 +2113,7 @@ async fn a_registry_entry_that_does_not_answer_holds_up_no_other_reclaim() {
 #[tokio::test]
 async fn startup_reclaims_an_orphan_without_an_attached_client_and_retains_an_unproven_branch() {
     let layout = ReclaimLayout::new("startup-orphan");
-    let branch = "refs/heads/suru/startup-orphan";
+    let branch = "refs/heads/feature/startup-orphan";
     let server = spawn(&layout, "reclaim-startup-orphan").await;
 
     wait_for_path(&layout.managed, false).await;
@@ -2322,15 +2326,15 @@ async fn a_fully_merged_recorded_branch_is_deleted() {
     let base = read_git(&layout.main, &["rev-parse", "main"]);
     git(
         &layout.main,
-        &["config", "branch.suru/merged.suru-base", &base],
+        &["config", "branch.feature/merged.suru-base", &base],
     );
     git(
         &layout.main,
-        &["config", "branch.suru/merged.suru-base-branch", "main"],
+        &["config", "branch.feature/merged.suru-base-branch", "main"],
     );
     let server = spawn(&layout, "reclaim-merged-branch").await;
     wait_for_path(&layout.managed, false).await;
-    wait_for_branch(&layout.main, "refs/heads/suru/merged", false).await;
+    wait_for_branch(&layout.main, "refs/heads/feature/merged", false).await;
     server.shutdown().await.unwrap();
 }
 
@@ -2340,11 +2344,11 @@ async fn an_unmerged_recorded_branch_is_retained() {
     let base = read_git(&layout.main, &["rev-parse", "main"]);
     git(
         &layout.main,
-        &["config", "branch.suru/unmerged.suru-base", &base],
+        &["config", "branch.feature/unmerged.suru-base", &base],
     );
     git(
         &layout.main,
-        &["config", "branch.suru/unmerged.suru-base-branch", "main"],
+        &["config", "branch.feature/unmerged.suru-base-branch", "main"],
     );
     std::fs::write(layout.managed.join("tracked"), "committed divergence").unwrap();
     git(&layout.managed, &["add", "."]);
@@ -2353,7 +2357,7 @@ async fn an_unmerged_recorded_branch_is_retained() {
     let server = spawn(&layout, "reclaim-unmerged-branch").await;
     wait_for_path(&layout.managed, false).await;
     assert_eq!(
-        read_git(&layout.main, &["rev-parse", "refs/heads/suru/unmerged"]),
+        read_git(&layout.main, &["rev-parse", "refs/heads/feature/unmerged"]),
         tip
     );
 
@@ -2387,13 +2391,13 @@ async fn an_unmerged_recorded_branch_is_retained() {
         .unwrap();
     assert_eq!(result.error, None);
     let CheckoutPreparationPlan::Git { branch, .. } = &result.preparation.plan;
-    assert_eq!(branch, "suru/unmerged-2");
+    assert_eq!(branch, "feature/unmerged-2");
     assert_eq!(
         result.preparation.destination.path,
         layout.managed.with_file_name("unmerged-2")
     );
     assert_eq!(
-        read_git(&layout.main, &["rev-parse", "refs/heads/suru/unmerged"]),
+        read_git(&layout.main, &["rev-parse", "refs/heads/feature/unmerged"]),
         tip
     );
     server.shutdown().await.unwrap();

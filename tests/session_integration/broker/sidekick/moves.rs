@@ -224,7 +224,7 @@ async fn a_sidekick_moves_a_session_into_a_new_managed_worktree_of_any_repositor
     let own = PathBuf::from(answer["directory"].as_str().expect("names it"));
     assert_eq!(
         own.parent(),
-        Some(main.join(".suru-worktrees").as_path()),
+        Some(main.join(".worktrees").as_path()),
         "{answer}"
     );
     assert_eq!(
@@ -255,7 +255,7 @@ async fn a_sidekick_moves_a_session_into_a_new_managed_worktree_of_any_repositor
     let other = PathBuf::from(answer["directory"].as_str().expect("names it"));
     assert_eq!(
         other.parent(),
-        Some(sibling.join(".suru-worktrees").as_path()),
+        Some(sibling.join(".worktrees").as_path()),
         "{answer}"
     );
     assert_eq!(

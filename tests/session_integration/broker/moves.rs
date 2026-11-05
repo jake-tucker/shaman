@@ -75,7 +75,7 @@ async fn a_brokered_subagents_session_holds_the_worktree_its_parent_moves_out_of
     // No Session stands in this one, so the parent's check takes it, and has
     // been at work by the time it has gone.
     let witness = container.join("witness");
-    for (branch, path) in [("suru/held", &worktree), ("suru/witness", &witness)] {
+    for (branch, path) in [("feature/held", &worktree), ("feature/witness", &witness)] {
         git(
             &main,
             &[

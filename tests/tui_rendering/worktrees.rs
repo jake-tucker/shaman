@@ -539,7 +539,7 @@ fn turning_to_a_remote_leaves_the_local_checkout_state_behind() {
 }
 
 /// A Worktree Suru made is known by the name it was given, at whatever depth
-/// under `.suru-worktrees` the Server that made it chose to put it: what the
+/// under `.worktrees` the Server that made it chose to put it: what the
 /// managed directory holds beneath itself is Suru's own business rather than
 /// the reader's. Both a Worktree standing directly beneath it and one standing
 /// a level further down are offered by their leaf name alone.
@@ -550,8 +550,8 @@ fn managed_worktrees_are_offered_by_their_leaf_name() {
     let mut context = layout.context.clone();
     let repository = context.workspace.repository.clone().unwrap();
     for managed in [
-        layout.main.join(".suru-worktrees/review-landing"),
-        layout.main.join(".suru-worktrees/nested/review-selector"),
+        layout.main.join(".worktrees/review-landing"),
+        layout.main.join(".worktrees/nested/review-selector"),
     ] {
         context.checkouts.push(CheckoutSummary {
             association: CheckoutAssociation {
@@ -563,7 +563,7 @@ fn managed_worktrees_are_offered_by_their_leaf_name() {
                 kind: CheckoutKind::Linked,
             },
             revision: Some(CheckoutRevision::Branch {
-                name: "suru/review".to_owned(),
+                name: "feature/review".to_owned(),
                 commit: Some("1234567890abcdef".to_owned()),
             }),
             availability: SourceControlAvailability::Available,
@@ -572,14 +572,14 @@ fn managed_worktrees_are_offered_by_their_leaf_name() {
     open(&mut app, context);
     let rendered = text(&app);
     assert!(
-        rendered.contains("suru/review (worktree) · review-landing"),
+        rendered.contains("feature/review (worktree) · review-landing"),
         "{rendered}"
     );
     assert!(
-        rendered.contains("suru/review (worktree) · review-selector"),
+        rendered.contains("feature/review (worktree) · review-selector"),
         "{rendered}"
     );
-    assert!(!rendered.contains(".suru-worktrees"), "{rendered}");
+    assert!(!rendered.contains(".worktrees"), "{rendered}");
 }
 
 /// A Workspace whose Server answers with a directory below one of its
@@ -1610,7 +1610,7 @@ fn choose_new(app: &mut Application, layout: &Layout) {
     assert_eq!(key(app, KeyCode::Enter), ApplicationTransition::Continue);
 }
 fn prepared(layout: &Layout, request: &PrepareCheckoutRequest) -> PrepareCheckoutResult {
-    let destination = layout.main.join(".suru-worktrees/prepared");
+    let destination = layout.main.join(".worktrees/prepared");
     std::fs::create_dir_all(&destination).unwrap();
     let mut location = layout.at(&destination);
     let repository = *location.workspace.repository.clone().unwrap();
@@ -1625,7 +1625,7 @@ fn prepared(layout: &Layout, request: &PrepareCheckoutRequest) -> PrepareCheckou
     location.checkouts.push(CheckoutSummary {
         association: location.checkout.clone().unwrap(),
         revision: Some(CheckoutRevision::Branch {
-            name: "suru/prepared".to_owned(),
+            name: "feature/prepared".to_owned(),
             commit: Some("abc".to_owned()),
         }),
         availability: SourceControlAvailability::Available,
@@ -1638,7 +1638,7 @@ fn prepared(layout: &Layout, request: &PrepareCheckoutRequest) -> PrepareCheckou
             repository,
             destination: ExecutionDirectory { path: destination },
             plan: CheckoutPreparationPlan::Git {
-                branch: "suru/prepared".to_owned(),
+                branch: "feature/prepared".to_owned(),
                 source_commit: "abc".to_owned(),
                 source_branch: Some("main".to_owned()),
             },
@@ -1660,7 +1660,7 @@ fn new_worktree_intent_is_deferred_cancelable_and_first_prompt_automatically_adm
     let mut app = layout.app();
     choose_new(&mut app, &layout);
     assert!(text(&app).contains("New Worktree on submit"));
-    assert!(!layout.main.join(".suru-worktrees").exists());
+    assert!(!layout.main.join(".worktrees").exists());
     open(&mut app, layout.context.clone());
     // Choosing the Worktree already in use cancels the intention.
     key(&mut app, KeyCode::Down);

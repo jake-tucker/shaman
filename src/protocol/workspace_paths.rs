@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// so a Worktree standing anywhere under it presents as its leaf name alone.
 /// The Server that makes those Worktrees and the surfaces that present them
 /// both answer for the same directory, so both name it from here.
-pub const MANAGED_WORKTREE_DIRECTORY: &str = ".suru-worktrees";
+pub const MANAGED_WORKTREE_DIRECTORY: &str = ".worktrees";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -312,28 +312,28 @@ mod tests {
     fn managed_worktrees_present_as_their_leaf_name_in_either_syntax() {
         assert_eq!(
             paths(PathStyle::Unix, "/home/reader").worktree_location(
-                Path::new("/home/reader/suru/.suru-worktrees/review-landing"),
+                Path::new("/home/reader/suru/.worktrees/review-landing"),
                 Some(Path::new("/home/reader/suru")),
             ),
             "review-landing"
         );
         assert_eq!(
             paths(PathStyle::Unix, "/home/reader").worktree_location(
-                Path::new("/home/reader/suru/.suru-worktrees/nested/deeper/review-landing"),
+                Path::new("/home/reader/suru/.worktrees/nested/deeper/review-landing"),
                 Some(Path::new("/home/reader/suru")),
             ),
             "review-landing"
         );
         assert_eq!(
             paths(PathStyle::Windows, r"C:\Users\reader").worktree_location(
-                Path::new(r"C:\Users\reader\suru\.suru-worktrees\review-landing"),
+                Path::new(r"C:\Users\reader\suru\.worktrees\review-landing"),
                 Some(Path::new(r"C:\Users\reader\suru")),
             ),
             "review-landing"
         );
         assert_eq!(
             paths(PathStyle::Windows, r"C:\Users\reader").worktree_location(
-                Path::new(r"C:\Users\reader\suru\.suru-worktrees\nested\review-landing"),
+                Path::new(r"C:\Users\reader\suru\.worktrees\nested\review-landing"),
                 Some(Path::new(r"C:\Users\reader\suru")),
             ),
             "review-landing"

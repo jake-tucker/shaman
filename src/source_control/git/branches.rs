@@ -86,7 +86,7 @@ impl GitSourceControl {
             .filter(|name| name != &created.branch)
             .collect::<Vec<_>>();
         for name in naming::numbered(proposal) {
-            let branch = format!("{}{name}", naming::BRANCH_PREFIX);
+            let branch = managed_branch(&others, &name);
             if branch == created.branch {
                 return Ok(BranchRename::Unchanged);
             }
@@ -105,10 +105,26 @@ impl GitSourceControl {
     }
 }
 
+/// The branch a Managed Worktree called `name` asks for beside the `existing`
+/// branches: `name` behind [`naming::BRANCH_PREFIX`]. A branch named as the
+/// prefix itself stands where Git would need a directory and would refuse every
+/// name behind it, so there the prefix is joined on with `-` instead.
+pub(super) fn managed_branch(existing: &[String], name: &str) -> String {
+    let directory = naming::BRANCH_PREFIX.trim_end_matches('/');
+    if existing
+        .iter()
+        .any(|branch| branch.eq_ignore_ascii_case(directory))
+    {
+        format!("{directory}-{name}")
+    } else {
+        format!("{}{name}", naming::BRANCH_PREFIX)
+    }
+}
+
 /// Whether `branch` may be created beside the `existing` branches. Git refuses
-/// a branch whose name another uses as a directory (`suru/fix` beside
-/// `suru/fix/old`) or that needs an existing branch to be one (`suru/fix/old`
-/// beside `suru/fix`), and on a case-insensitive filesystem a loose ref that
+/// a branch whose name another uses as a directory (`feature/fix` beside
+/// `feature/fix/old`) or that needs an existing branch to be one (`feature/fix/old`
+/// beside `feature/fix`), and on a case-insensitive filesystem a loose ref that
 /// differs only in case is the same file. All of them count as taken on every
 /// platform, so a name never depends on where its Repository happens to live.
 pub(super) fn branch_available(existing: &[String], branch: &str) -> bool {
@@ -126,28 +142,41 @@ pub(super) fn branch_available(existing: &[String], branch: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::branch_available;
+    use super::{branch_available, managed_branch};
 
     #[test]
     fn a_name_is_taken_by_its_case_variants_and_by_directory_conflicts() {
         let existing = [
             "main".to_owned(),
-            "suru/Fix-Flicker".to_owned(),
-            "suru/ship-picker/old".to_owned(),
-            "suru/notes".to_owned(),
+            "feature/Fix-Flicker".to_owned(),
+            "feature/ship-picker/old".to_owned(),
+            "feature/notes".to_owned(),
         ];
         for (branch, available) in [
-            ("suru/fix-flicker", false),
-            ("SURU/FIX-FLICKER", false),
-            ("suru/ship-picker", false),
-            ("suru/notes/today", false),
+            ("feature/fix-flicker", false),
+            ("FEATURE/FIX-FLICKER", false),
+            ("feature/ship-picker", false),
+            ("feature/notes/today", false),
             ("MAIN", false),
-            ("suru/fix-flicker-2", true),
-            ("suru/ship", true),
-            ("suru/ship-picker-2", true),
-            ("suru/note", true),
+            ("feature/fix-flicker-2", true),
+            ("feature/ship", true),
+            ("feature/ship-picker-2", true),
+            ("feature/note", true),
         ] {
             assert_eq!(branch_available(&existing, branch), available, "{branch}");
         }
+    }
+
+    #[test]
+    fn a_branch_named_as_the_prefix_moves_the_name_out_from_under_it() {
+        let named = |existing: &[&str]| {
+            let existing = existing.iter().map(|&b| b.to_owned()).collect::<Vec<_>>();
+            managed_branch(&existing, "fix-parser")
+        };
+        assert_eq!(named(&["main"]), "feature/fix-parser");
+        assert_eq!(named(&["main", "features"]), "feature/fix-parser");
+        assert_eq!(named(&["main", "feature/other"]), "feature/fix-parser");
+        assert_eq!(named(&["main", "feature"]), "feature-fix-parser");
+        assert_eq!(named(&["main", "Feature"]), "feature-fix-parser");
     }
 }

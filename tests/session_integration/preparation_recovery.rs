@@ -225,7 +225,7 @@ async fn an_unfinished_intention_keeps_its_name_from_a_later_preparation() {
     let first = request(&main, "Fix the parser");
     let interrupted = prepare(server.descriptor(), &first).await;
     assert!(interrupted.error.is_some());
-    let container = main.join(".suru-worktrees");
+    let container = main.join(".worktrees");
     assert_eq!(
         interrupted.preparation.destination.path,
         container.join("fix-parser")
@@ -234,7 +234,7 @@ async fn an_unfinished_intention_keeps_its_name_from_a_later_preparation() {
 
     let later = prepare(server.descriptor(), &request(&main, "Fix the parser")).await;
     assert_eq!(later.error, None);
-    assert_eq!(branch(&later.preparation), "suru/fix-parser-2");
+    assert_eq!(branch(&later.preparation), "feature/fix-parser-2");
     assert_eq!(
         later.preparation.destination.path,
         container.join("fix-parser-2")
@@ -243,13 +243,13 @@ async fn an_unfinished_intention_keeps_its_name_from_a_later_preparation() {
     let retried = prepare(server.descriptor(), &first).await;
     assert_eq!(retried.error, None);
     assert_eq!(retried.preparation.plan, interrupted.preparation.plan);
-    assert_eq!(branch(&retried.preparation), "suru/fix-parser");
+    assert_eq!(branch(&retried.preparation), "feature/fix-parser");
     assert_eq!(
         read_git(
             &retried.preparation.destination.path,
             &["symbolic-ref", "--short", "HEAD"]
         ),
-        "suru/fix-parser"
+        "feature/fix-parser"
     );
     server.shutdown().await.unwrap();
 }

@@ -573,7 +573,7 @@ async fn a_derived_branch_renames_the_fresh_worktree_its_session_was_admitted_fr
     let mut fixture = Fixture::start("derived-branch-rename").await;
     let preparation = fixture.prepare("Please fix the reasoning flicker").await;
     let created_branch = branch_of(&preparation);
-    assert_eq!(created_branch, "suru/fix-reasoning-flicker");
+    assert_eq!(created_branch, "feature/fix-reasoning-flicker");
     let destination = preparation.destination.path.clone();
     let base = suru_base(&fixture.main, &created_branch).expect("Reclaim's base is recorded");
     let descriptor = fixture.server.descriptor().clone();
@@ -605,7 +605,7 @@ async fn a_derived_branch_renames_the_fresh_worktree_its_session_was_admitted_fr
     errand.succeed(json!({
         "title": "Fix reasoning group flicker",
         "icon": "md-bug",
-        "branch": "suru/Reasoning group flicker",
+        "branch": "feature/Reasoning group flicker",
     }));
     assert_eq!(
         next_derived_title(&mut fixture.client).await,
@@ -628,7 +628,7 @@ async fn a_derived_branch_renames_the_fresh_worktree_its_session_was_admitted_fr
     // The Title has landed and the rename is due, yet the first Turn starts
     // regardless: neither the Errand nor the rename stands in front of it.
     fixture.work_the_first_turn().await;
-    let renamed = "suru/reasoning-group-flicker";
+    let renamed = "feature/reasoning-group-flicker";
     assert_eq!(
         fixture.rename_attempted().await,
         Ok(BranchRename::Renamed {
@@ -662,7 +662,7 @@ async fn a_derived_branch_renames_the_fresh_worktree_its_session_was_admitted_fr
         "the branch keeps its reflog"
     );
     assert!(
-        destination.ends_with(".suru-worktrees/fix-reasoning-flicker") && destination.is_dir(),
+        destination.ends_with(".worktrees/fix-reasoning-flicker") && destination.is_dir(),
         "the Worktree's location never moves: {}",
         destination.display()
     );
@@ -706,7 +706,7 @@ async fn a_session_in_an_existing_worktree_is_asked_for_no_branch_and_renames_no
             "worktree",
             "add",
             "-b",
-            "suru/existing",
+            "feature/existing",
             existing.to_str().unwrap(),
         ],
     );
@@ -730,7 +730,7 @@ async fn a_session_in_an_existing_worktree_is_asked_for_no_branch_and_renames_no
     assert_eq!(branches(&fixture.main), before);
     assert_eq!(
         read_git(&existing, &["symbolic-ref", "--short", "HEAD"]).as_deref(),
-        Some("suru/existing")
+        Some("feature/existing")
     );
 
     fixture.server.shutdown().await.expect("shut down server");
@@ -764,7 +764,7 @@ async fn a_worktree_no_longer_on_its_created_branch_is_not_renamed() {
             branches.contains(&created_branch)
                 && !branches
                     .iter()
-                    .any(|branch| branch.starts_with("suru/renamed")),
+                    .any(|branch| branch.starts_with("feature/renamed")),
             "{move_head:?}: {branches:?}"
         );
     }
@@ -778,9 +778,9 @@ async fn a_taken_derived_name_is_numbered_and_the_current_name_is_left_alone() {
     // Git would refuse the bare name and `-2` beside these on some platform,
     // and `-3` beside the last on every one.
     for taken in [
-        "suru/reasoning-flicker",
-        "suru/Reasoning-Flicker-2",
-        "suru/reasoning-flicker-3/old",
+        "feature/reasoning-flicker",
+        "feature/Reasoning-Flicker-2",
+        "feature/reasoning-flicker-3/old",
     ] {
         git(&fixture.main, &["branch", taken]);
     }
@@ -796,7 +796,7 @@ async fn a_taken_derived_name_is_numbered_and_the_current_name_is_left_alone() {
     assert_eq!(
         fixture.rename_attempted().await,
         Ok(BranchRename::Renamed {
-            branch: "suru/reasoning-flicker-4".to_owned()
+            branch: "feature/reasoning-flicker-4".to_owned()
         })
     );
     assert_eq!(
@@ -805,15 +805,19 @@ async fn a_taken_derived_name_is_numbered_and_the_current_name_is_left_alone() {
             &["symbolic-ref", "--short", "HEAD"]
         )
         .as_deref(),
-        Some("suru/reasoning-flicker-4")
+        Some("feature/reasoning-flicker-4")
     );
     assert!(!branches(&main).contains(&branch_of(&preparation)));
 
     // Proposing the name a Worktree already has, whether it was the first
     // name tried or the first free one, changes nothing.
     for (repository, taken, created) in [
-        ("first", None, "suru/ship-picker"),
-        ("numbered", Some("suru/ship-picker"), "suru/ship-picker-2"),
+        ("first", None, "feature/ship-picker"),
+        (
+            "numbered",
+            Some("feature/ship-picker"),
+            "feature/ship-picker-2",
+        ),
     ] {
         let source = fixture.repository(repository);
         if let Some(taken) = taken {
@@ -876,7 +880,7 @@ async fn derivation_turned_off_leaves_the_first_name_standing() {
             &["symbolic-ref", "--short", "HEAD"]
         )
         .as_deref(),
-        Some("suru/fix-parser")
+        Some("feature/fix-parser")
     );
 
     fixture.server.shutdown().await.expect("shut down server");
@@ -909,7 +913,7 @@ async fn a_pinned_selection_derives_the_branch() {
     assert_eq!(
         fixture.rename_attempted().await,
         Ok(BranchRename::Renamed {
-            branch: "suru/repair-config-parser".to_owned()
+            branch: "feature/repair-config-parser".to_owned()
         })
     );
 
@@ -919,7 +923,7 @@ async fn a_pinned_selection_derives_the_branch() {
             &["symbolic-ref", "--short", "HEAD"]
         )
         .as_deref(),
-        Some("suru/repair-config-parser")
+        Some("feature/repair-config-parser")
     );
 
     fixture.server.shutdown().await.expect("shut down server");
@@ -974,7 +978,7 @@ async fn an_errand_without_a_usable_branch_leaves_the_first_name_standing() {
         fixture.no_rename_attempted();
         assert_eq!(
             branches(&source),
-            ["main", "suru/fix-parser"],
+            ["feature/fix-parser", "main"],
             "{repository}"
         );
     }
@@ -998,14 +1002,14 @@ async fn an_errand_that_never_answers_leaves_the_first_name_standing() {
     let _workspace_errand = fixture.next_errand().await;
     fixture.no_rename_attempted();
 
-    assert_eq!(branches(&main), ["main", "suru/fix-parser"]);
+    assert_eq!(branches(&main), ["feature/fix-parser", "main"]);
     assert_eq!(
         read_git(
             &preparation.destination.path,
             &["symbolic-ref", "--short", "HEAD"]
         )
         .as_deref(),
-        Some("suru/fix-parser")
+        Some("feature/fix-parser")
     );
 
     fixture.server.shutdown().await.expect("shut down server");
@@ -1079,7 +1083,7 @@ async fn a_restart_after_admission_attempts_no_rename() {
             &["symbolic-ref", "--short", "HEAD"]
         )
         .as_deref(),
-        Some("suru/fix-parser")
+        Some("feature/fix-parser")
     );
 
     server.shutdown().await.expect("shut down server");
@@ -1159,7 +1163,7 @@ async fn a_branch_with_an_upstream_keeps_its_name() {
         head(&preparation.destination.path).as_deref(),
         Some(created.as_str())
     );
-    assert_eq!(branches(&main), ["main", created.as_str()]);
+    assert_eq!(branches(&main), [created.as_str(), "main"]);
     assert_eq!(
         read_git(&main, &["config", &format!("branch.{created}.remote")]).as_deref(),
         Some("origin")
@@ -1225,9 +1229,9 @@ async fn a_retained_preparation_intent_naming_the_branch_prevents_the_rename() {
     );
     assert_eq!(
         head(&preparation.destination.path).as_deref(),
-        Some("suru/fix-parser")
+        Some("feature/fix-parser")
     );
-    assert!(branches(&main).contains(&"suru/fix-parser".to_owned()));
+    assert!(branches(&main).contains(&"feature/fix-parser".to_owned()));
 
     fixture.server.shutdown().await.expect("shut down server");
 }
@@ -1246,7 +1250,7 @@ async fn a_worktree_removed_right_after_its_rename_recovers_on_the_new_branch() 
     }));
     let _first = fixture.work_the_first_turn().await;
     fixture.workspace_errand().await;
-    let renamed = "suru/repair-config-parser";
+    let renamed = "feature/repair-config-parser";
     assert_eq!(
         fixture.rename_attempted().await,
         Ok(BranchRename::Renamed {
@@ -1260,7 +1264,7 @@ async fn a_worktree_removed_right_after_its_rename_recovers_on_the_new_branch() 
         .remove_and_prompt(created.session.id, &destination)
         .await;
     assert_eq!(head(&destination).as_deref(), Some(renamed));
-    assert!(!branches(&main).contains(&"suru/fix-parser".to_owned()));
+    assert!(!branches(&main).contains(&"feature/fix-parser".to_owned()));
     assert!(
         suru_base(&main, renamed).is_some(),
         "Reclaim still finds the branch's recorded base"
@@ -1285,7 +1289,7 @@ async fn an_observation_read_before_the_rename_cannot_undo_its_recording() {
     assert!(
         matches!(
             &stale.revision,
-            Some(CheckoutRevision::Branch { name, .. }) if name == "suru/fix-parser"
+            Some(CheckoutRevision::Branch { name, .. }) if name == "feature/fix-parser"
         ),
         "{:?}",
         stale.revision
@@ -1299,7 +1303,7 @@ async fn an_observation_read_before_the_rename_cannot_undo_its_recording() {
     }));
     let _first = fixture.work_the_first_turn().await;
     fixture.workspace_errand().await;
-    let renamed = "suru/repair-config-parser";
+    let renamed = "feature/repair-config-parser";
     assert_eq!(
         fixture.rename_attempted().await,
         Ok(BranchRename::Renamed {
@@ -1398,7 +1402,7 @@ async fn every_session_sharing_the_worktree_reports_the_new_branch() {
         "branch": "repair config parser",
     }));
     fixture.workspace_errand().await;
-    let renamed = "suru/repair-config-parser";
+    let renamed = "feature/repair-config-parser";
     assert_eq!(
         fixture.rename_attempted().await,
         Ok(BranchRename::Renamed {

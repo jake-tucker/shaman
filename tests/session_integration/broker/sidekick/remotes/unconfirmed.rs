@@ -349,11 +349,11 @@ async fn a_prepared_beginning_whose_answer_was_lost_resumes_the_same_preparation
         (&begun["session_id"], directory.parent()),
         (
             &json!(session_id),
-            Some(repository.join(".suru-worktrees").as_path())
+            Some(repository.join(".worktrees").as_path())
         ),
         "the Session named begins in the Worktree prepared for it: {begun}"
     );
-    let worktrees = std::fs::read_dir(repository.join(".suru-worktrees"))
+    let worktrees = std::fs::read_dir(repository.join(".worktrees"))
         .expect("read the Remote's Worktrees")
         .count();
     assert_eq!(worktrees, 1, "and no second Worktree was made");

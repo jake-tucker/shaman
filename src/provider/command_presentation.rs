@@ -403,9 +403,9 @@ mod tests {
             ),
             (format!("cd {root}/app; ls"), "ls", format!("{root}/app")),
             (
-                format!("cd {root}/.suru-worktrees/x; ls; cat CONTEXT.md"),
+                format!("cd {root}/.worktrees/x; ls; cat CONTEXT.md"),
                 "ls; cat CONTEXT.md",
-                format!("{root}/.suru-worktrees/x"),
+                format!("{root}/.worktrees/x"),
             ),
             (
                 format!("cd {root}/a; cd {root}/b && ls"),

@@ -73,14 +73,14 @@ async fn spawn_eager(
 /// One more Managed Worktree of the layout's Repository, which no Session
 /// works in: gone once an orphan check runs, and standing until one does.
 fn orphan_beside(layout: &ReclaimLayout, name: &str) -> PathBuf {
-    let orphan = layout.main.join(".suru-worktrees").join(name);
+    let orphan = layout.main.join(".worktrees").join(name);
     git(
         &layout.main,
         &[
             "worktree",
             "add",
             "-b",
-            &format!("suru/{name}"),
+            &format!("feature/{name}"),
             orphan.to_str().unwrap(),
         ],
     );
@@ -94,7 +94,7 @@ const WITNESS: &str = "zz-witness";
 /// Waits for the witness of `layout`'s Repository to come up for Reclaim, by
 /// which time the pass has dealt with every Worktree before it whole.
 async fn the_pass_reaches_its_witness(adapter: &CountReclaimCandidates, layout: &ReclaimLayout) {
-    let witness = layout.main.join(".suru-worktrees").join(WITNESS);
+    let witness = layout.main.join(".worktrees").join(WITNESS);
     timeout(PROGRESS_DEADLINE, async {
         while !adapter.has_observed(&witness) {
             tokio::time::sleep(Duration::from_millis(1)).await;
@@ -110,13 +110,13 @@ fn record_branch_base(layout: &ReclaimLayout, name: &str) {
     let base = read_git(&layout.main, &["rev-parse", "main"]);
     git(
         &layout.main,
-        &["config", &format!("branch.suru/{name}.suru-base"), &base],
+        &["config", &format!("branch.feature/{name}.suru-base"), &base],
     );
     git(
         &layout.main,
         &[
             "config",
-            &format!("branch.suru/{name}.suru-base-branch"),
+            &format!("branch.feature/{name}.suru-base-branch"),
             "main",
         ],
     );
@@ -343,7 +343,7 @@ async fn a_worktree_another_session_still_works_in_is_not_reclaimed_until_that_o
 
     // The pass lets go of the Repository as it says what it did, and a second
     // check finding it held would be left to the sweep.
-    let witness = layout.main.join(".suru-worktrees").join(WITNESS);
+    let witness = layout.main.join(".worktrees").join(WITNESS);
     let witness = witness.display().to_string();
     wait_for_log(mark, "the witness's Reclaim", |log| {
         log.lines()
@@ -620,7 +620,7 @@ async fn a_fully_merged_branch_is_deleted_with_the_worktree_a_move_left() {
     move_session(&server, session.session.id, &layout.main).await;
 
     wait_for_path(&layout.managed, false).await;
-    wait_for_branch(&layout.main, "refs/heads/suru/move-merged", false).await;
+    wait_for_branch(&layout.main, "refs/heads/feature/move-merged", false).await;
     server.shutdown().await.unwrap();
 }
 
@@ -641,7 +641,7 @@ async fn an_unmerged_branch_outlives_the_worktree_a_move_left() {
     assert_eq!(
         read_git(
             &layout.main,
-            &["rev-parse", "refs/heads/suru/move-unmerged"]
+            &["rev-parse", "refs/heads/feature/move-unmerged"]
         ),
         tip
     );
@@ -931,7 +931,7 @@ async fn working_in(
 
 /// The Title a Session [`working_in`] begins with names its Move's Worktree.
 fn made_for_move(layout: &ReclaimLayout) -> PathBuf {
-    layout.main.join(".suru-worktrees").join("original-history")
+    layout.main.join(".worktrees").join("original-history")
 }
 
 /// The trap of a pending Move: nothing stands in its Worktree, and any orphan
@@ -1041,7 +1041,7 @@ async fn a_pending_move_replaced_leaves_its_empty_worktree_to_reclaim() {
         .path;
     assert_ne!(bound, replaced);
     wait_for_path(&replaced, false).await;
-    wait_for_branch(&layout.main, "refs/heads/suru/original-history", false).await;
+    wait_for_branch(&layout.main, "refs/heads/feature/original-history", false).await;
     assert!(bound.is_dir(), "the newer Move's Worktree stands");
     server.shutdown().await.unwrap();
 }
@@ -1303,7 +1303,7 @@ async fn a_failed_moves_worktree_goes_past_the_threshold_and_withholds_no_prompt
     assert_eq!(refused.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
 
     wait_for_path(&made_for_move(&layout), false).await;
-    wait_for_branch(&layout.main, "refs/heads/suru/original-history", false).await;
+    wait_for_branch(&layout.main, "refs/heads/feature/original-history", false).await;
     let read = support::read_session(server.descriptor(), session_id).await;
     assert_eq!(read.session.execution_directory.path, layout.main);
     assert!(

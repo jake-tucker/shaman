@@ -148,7 +148,7 @@ async fn managed_preparation_captures_local_commit_once_and_reuses_checkout_and_
     .unwrap();
     let mut request = request(&subdir, "Fix a locally described change");
     // Intent is just a request value; no branch or container exists yet.
-    assert!(!main.join(".suru-worktrees").exists());
+    assert!(!main.join(".worktrees").exists());
     git(
         &linked,
         &[
@@ -164,7 +164,7 @@ async fn managed_preparation_captures_local_commit_once_and_reuses_checkout_and_
     let result = prepare(server.descriptor(), &request).await;
     assert_eq!(result.error, None);
     let destination = result.preparation.destination.path.clone();
-    assert!(destination.starts_with(main.join(".suru-worktrees")));
+    assert!(destination.starts_with(main.join(".worktrees")));
     assert_eq!(read_git(&destination, &["rev-parse", "HEAD"]), source);
     assert_eq!(
         std::fs::read_to_string(destination.join("tracked")).unwrap(),
@@ -173,7 +173,7 @@ async fn managed_preparation_captures_local_commit_once_and_reuses_checkout_and_
     assert!(!destination.join("local-only").exists());
     assert_eq!(
         std::fs::read_to_string(main.join(".git/info/exclude")).unwrap(),
-        "existing-no-newline\n/.suru-worktrees/\n"
+        "existing-no-newline\n/.worktrees/\n"
     );
     assert_eq!(read_git(&main, &["status", "--porcelain"]), "");
     std::fs::write(destination.join("new-file"), "visible").unwrap();
@@ -301,7 +301,7 @@ async fn naming_bare_storage_and_destination_validation_preserve_existing_resour
     )
     .await
     .unwrap();
-    let container = bare.join(".suru-worktrees");
+    let container = bare.join(".worktrees");
     for (text, expected) in [
         ("👩🏽‍💻 / ... ~ @{}", "work"),
         (
@@ -314,7 +314,7 @@ async fn naming_bare_storage_and_destination_validation_preserve_existing_resour
         let result = prepare(server.descriptor(), &request(&bare, text)).await;
         assert_eq!(result.error, None);
         let (branch, destination) = planned(&result, &container);
-        assert_eq!(branch, format!("suru/{expected}"));
+        assert_eq!(branch, format!("feature/{expected}"));
         assert_eq!(destination, container.join(expected));
     }
     let intent = request(&main, "validation");
@@ -349,7 +349,7 @@ async fn local_names_leave_out_filler_and_bound_skills_but_keep_unbound_tokens_a
     )
     .await
     .unwrap();
-    let container = main.join(".suru-worktrees");
+    let container = main.join(".worktrees");
 
     let mut invoking = request(
         &main,
@@ -359,7 +359,7 @@ async fn local_names_leave_out_filler_and_bound_skills_but_keep_unbound_tokens_a
     let invoked = prepare(server.descriptor(), &invoking).await;
     assert_eq!(invoked.error, None);
     let (branch, destination) = planned(&invoked, &container);
-    assert_eq!(branch, "suru/create-new-worktree-get");
+    assert_eq!(branch, "feature/create-new-worktree-get");
     assert_eq!(destination, container.join("create-new-worktree-get"));
     assert_eq!(
         read_git(&destination, &["symbolic-ref", "--short", "HEAD"]),
@@ -374,7 +374,7 @@ async fn local_names_leave_out_filler_and_bound_skills_but_keep_unbound_tokens_a
     .await;
     assert_eq!(unbound.error, None);
     let (branch, destination) = planned(&unbound, &container);
-    assert_eq!(branch, "suru/grill-docs-tidy-parser");
+    assert_eq!(branch, "feature/grill-docs-tidy-parser");
     assert_eq!(destination, container.join("grill-docs-tidy-parser"));
 
     // Retrying under the same identity keeps its plan, however the Prompt
@@ -417,7 +417,7 @@ async fn local_names_leave_out_bound_attachment_labels_but_keep_unbound_ones_as_
     )
     .await
     .unwrap();
-    let container = main.join(".suru-worktrees");
+    let container = main.join(".worktrees");
     let label = |start: u32| AttachmentBinding {
         attachment_id: AttachmentId::new("flicker-hash"),
         label: "[Image 1]".to_owned(),
@@ -432,7 +432,7 @@ async fn local_names_leave_out_bound_attachment_labels_but_keep_unbound_ones_as_
     let named = prepare(server.descriptor(), &labelled).await;
     assert_eq!(named.error, None);
     let (branch, destination) = planned(&named, &container);
-    assert_eq!(branch, "suru/fix-flicker");
+    assert_eq!(branch, "feature/fix-flicker");
     assert_eq!(destination, container.join("fix-flicker"));
 
     // The same label left unbound is ordinary text.
@@ -443,7 +443,7 @@ async fn local_names_leave_out_bound_attachment_labels_but_keep_unbound_ones_as_
     .await;
     assert_eq!(unbound.error, None);
     let (branch, _) = planned(&unbound, &container);
-    assert_eq!(branch, "suru/image-1-tidy-parser");
+    assert_eq!(branch, "feature/image-1-tidy-parser");
 
     // A label its span does not read is refused before anything is made.
     let mut misbound = request(&main, "Fix [Image 1] naming");
@@ -477,8 +477,8 @@ async fn a_taken_name_is_numbered_and_whatever_holds_it_is_left_untouched() {
     let source = read_git(&main, &["rev-parse", "HEAD"]);
     // A branch holding the name, as one retained after its Worktree was
     // Reclaimed would, and a location holding another with no branch at all.
-    git(&main, &["branch", "suru/fix-parser", &retained]);
-    let container = main.join(".suru-worktrees");
+    git(&main, &["branch", "feature/fix-parser", &retained]);
+    let container = main.join(".worktrees");
     std::fs::create_dir_all(container.join("tidy-docs")).unwrap();
     std::fs::write(container.join("tidy-docs/keep"), "unrelated").unwrap();
     let (runtime, _provider) = ControlledProvider::new();
@@ -498,16 +498,19 @@ async fn a_taken_name_is_numbered_and_whatever_holds_it_is_left_untouched() {
         let result = prepare(server.descriptor(), &request(&main, text)).await;
         assert_eq!(result.error, None, "{text}");
         let (branch, destination) = planned(&result, &container);
-        assert_eq!(branch, format!("suru/{expected}"));
+        assert_eq!(branch, format!("feature/{expected}"));
         assert_eq!(destination, container.join(expected));
         assert_eq!(read_git(&destination, &["rev-parse", "HEAD"]), source);
     }
     assert_eq!(
-        read_git(&main, &["rev-parse", "refs/heads/suru/fix-parser"]),
+        read_git(&main, &["rev-parse", "refs/heads/feature/fix-parser"]),
         retained
     );
     assert_eq!(
-        read_git(&main, &["reflog", "show", "--format=%H", "suru/fix-parser"]),
+        read_git(
+            &main,
+            &["reflog", "show", "--format=%H", "feature/fix-parser"]
+        ),
         retained,
         "the colliding branch was never moved"
     );
@@ -522,7 +525,7 @@ async fn a_taken_name_is_numbered_and_whatever_holds_it_is_left_untouched() {
             "rev-parse",
             "--verify",
             "--quiet",
-            "refs/heads/suru/tidy-docs",
+            "refs/heads/feature/tidy-docs",
         ])
         .output()
         .unwrap();
@@ -543,8 +546,8 @@ async fn a_name_clashing_by_case_or_as_a_directory_is_taken() {
     let root = suru::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
-    git(&main, &["branch", "suru/Fix-Parser"]);
-    git(&main, &["branch", "suru/fix-parser-2/old"]);
+    git(&main, &["branch", "feature/Fix-Parser"]);
+    git(&main, &["branch", "feature/fix-parser-2/old"]);
     let (runtime, _provider) = ControlledProvider::new();
     let server = server::spawn_with_provider(
         ServerConfig::new(root.join("state"), "clashing-names").unwrap(),
@@ -555,10 +558,36 @@ async fn a_name_clashing_by_case_or_as_a_directory_is_taken() {
 
     let result = prepare(server.descriptor(), &request(&main, "Fix the parser")).await;
     assert_eq!(result.error, None);
-    let container = main.join(".suru-worktrees");
+    let container = main.join(".worktrees");
     let (branch, destination) = planned(&result, &container);
-    assert_eq!(branch, "suru/fix-parser-3");
+    assert_eq!(branch, "feature/fix-parser-3");
     assert_eq!(destination, container.join("fix-parser-3"));
+    server.shutdown().await.unwrap();
+}
+
+/// Git cannot hold `feature/fix-parser` beside a branch named `feature`, which
+/// would otherwise refuse every Managed Worktree in the Repository.
+#[tokio::test]
+async fn a_branch_named_as_the_prefix_does_not_refuse_every_name() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = suru::paths::canonical(temp.path()).unwrap();
+    let main = root.join("main");
+    committed(&main);
+    git(&main, &["branch", "feature"]);
+    let (runtime, _provider) = ControlledProvider::new();
+    let server = server::spawn_with_provider(
+        ServerConfig::new(root.join("state"), "prefix-named-branch").unwrap(),
+        runtime,
+    )
+    .await
+    .unwrap();
+
+    let result = prepare(server.descriptor(), &request(&main, "Fix the parser")).await;
+    assert_eq!(result.error, None);
+    let container = main.join(".worktrees");
+    let (branch, destination) = planned(&result, &container);
+    assert_eq!(branch, "feature-fix-parser");
+    assert_eq!(destination, container.join("fix-parser"));
     server.shutdown().await.unwrap();
 }
 
@@ -699,9 +728,9 @@ async fn the_tui_prepares_a_worktree_named_from_its_prompt_and_starts_its_sessio
 
     let result = prepare(descriptor, &request).await;
     assert_eq!(result.error, None);
-    let container = main.join(".suru-worktrees");
+    let container = main.join(".worktrees");
     let (branch, destination) = planned(&result, &container);
-    assert_eq!(branch, "suru/keep-parser-slow");
+    assert_eq!(branch, "feature/keep-parser-slow");
     assert_eq!(destination, container.join("keep-parser-slow"));
     let ApplicationTransition::CreateSession(create) = app
         .handle_event(ApplicationEvent::CheckoutPrepared {
@@ -1011,7 +1040,7 @@ async fn preparation_is_durable_and_unborn_creation_returns_reason_without_mutat
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
     assert!(response.text().await.unwrap().contains("unborn"));
-    assert!(!unborn.join(".suru-worktrees").exists());
+    assert!(!unborn.join(".worktrees").exists());
     server.shutdown().await.unwrap();
 }
 
@@ -1139,7 +1168,7 @@ async fn branch_collision_does_not_reset_or_duplicate_intention_and_unknown_main
             .unwrap()
             .contains("main checkout location")
     );
-    assert!(!metadata.join(".suru-worktrees").exists());
+    assert!(!metadata.join(".worktrees").exists());
     server.shutdown().await.unwrap();
 }
 

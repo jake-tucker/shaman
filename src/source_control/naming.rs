@@ -5,7 +5,7 @@
 use crate::protocol::{AttachmentBinding, SkillInvocation, skill_marker_matches};
 
 /// The fixed prefix of every branch Suru creates for a Managed Worktree.
-pub const BRANCH_PREFIX: &str = "suru/";
+pub const BRANCH_PREFIX: &str = "feature/";
 /// How many names uniqueness tries — the fragment, then `-2` onwards — before
 /// giving up rather than displacing whatever holds them.
 pub const NAME_ATTEMPTS: usize = 32;
@@ -241,15 +241,18 @@ mod tests {
         for (proposal, expected) in [
             ("fix-reasoning-flicker", Some("fix-reasoning-flicker")),
             ("Fix reasoning flicker", Some("fix-reasoning-flicker")),
-            ("suru/fix-reasoning-flicker", Some("fix-reasoning-flicker")),
-            ("SURU/Fix Flicker", Some("fix-flicker")),
             (
-                "refs/heads/suru/fix-reasoning-flicker",
+                "feature/fix-reasoning-flicker",
+                Some("fix-reasoning-flicker"),
+            ),
+            ("FEATURE/Fix Flicker", Some("fix-flicker")),
+            (
+                "refs/heads/feature/fix-reasoning-flicker",
                 Some("fix-reasoning-flicker"),
             ),
             ("  refs/heads/ship picker  ", Some("ship-picker")),
             // Only a leading prefix is Suru's own; one further in is words.
-            ("fix suru/prefix", Some("fix-suru-prefix")),
+            ("fix feature/prefix", Some("fix-feature-prefix")),
             (
                 "one two three four five six seven",
                 Some("one-two-three-four-five"),
@@ -258,8 +261,8 @@ mod tests {
             // Nothing meaningful is no proposal, never the `work` fallback.
             ("", None),
             ("   ", None),
-            ("suru/", None),
-            ("refs/heads/suru/", None),
+            ("feature/", None),
+            ("refs/heads/feature/", None),
             ("please do it for me", None),
             ("修正", None),
         ] {

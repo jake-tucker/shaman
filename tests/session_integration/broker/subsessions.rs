@@ -212,7 +212,7 @@ pub(super) async fn resolve(descriptor: &RuntimeDescriptor, path: &Path) -> Reso
 /// The directories a Repository's managed container holds: one for each
 /// Managed Worktree Suru made there.
 fn managed_worktrees(repository: &Path) -> Vec<PathBuf> {
-    let mut worktrees = std::fs::read_dir(repository.join(".suru-worktrees"))
+    let mut worktrees = std::fs::read_dir(repository.join(".worktrees"))
         .map(|entries| {
             entries
                 .map(|entry| entry.expect("read the managed container").path())
@@ -728,7 +728,7 @@ async fn a_new_worktree_is_prepared_for_a_subsession_and_a_bare_root_takes_one_o
     );
     assert_eq!(
         directory.parent(),
-        Some(main.join(".suru-worktrees").as_path()),
+        Some(main.join(".worktrees").as_path()),
         "a new Worktree is made in the Repository's managed container: {answer}"
     );
     let snapshot = read_session(&descriptor, subsession).await;
@@ -756,7 +756,7 @@ async fn a_new_worktree_is_prepared_for_a_subsession_and_a_bare_root_takes_one_o
         .output()
         .expect("read the Worktree's branch");
     assert!(
-        String::from_utf8_lossy(&branch.stdout).starts_with("suru/"),
+        String::from_utf8_lossy(&branch.stdout).starts_with("feature/"),
         "on a branch Suru named: {}",
         String::from_utf8_lossy(&branch.stdout)
     );
@@ -773,7 +773,7 @@ async fn a_new_worktree_is_prepared_for_a_subsession_and_a_bare_root_takes_one_o
     .await;
     assert_eq!(
         PathBuf::from(answer["directory"].as_str().expect("the answer says where")).parent(),
-        Some(bare.join(".suru-worktrees").as_path()),
+        Some(bare.join(".worktrees").as_path()),
         "but a new Worktree of it is: {answer}"
     );
 

@@ -1171,10 +1171,10 @@ mod tests {
         fixture.git(&main, &["tag", "-a", "-m", "tag", "v1"]);
         fixture.git(&main, &["pack-refs", "--all"]);
         assert_eq!(fixture.agreed_revision(&on_disk, &main).await, moved);
-        fixture.git(&main, &["checkout", "-q", "-b", "suru/nested-name"]);
+        fixture.git(&main, &["checkout", "-q", "-b", "feature/nested-name"]);
         assert_eq!(
             fixture.agreed_revision(&on_disk, &main).await,
-            branch("suru/nested-name", Some(commit_of(&moved)))
+            branch("feature/nested-name", Some(commit_of(&moved)))
         );
         fixture.git(&main, &["checkout", "-q", "--detach"]);
         assert_eq!(

@@ -178,7 +178,7 @@ async fn a_new_worktree_of_a_remotes_repository_is_made_there() {
     let worktree = std::path::PathBuf::from(answer["directory"].as_str().expect("names it"));
     assert_eq!(
         worktree.parent(),
-        Some(repository.join(".suru-worktrees").as_path()),
+        Some(repository.join(".worktrees").as_path()),
         "{answer}"
     );
     assert_eq!(
