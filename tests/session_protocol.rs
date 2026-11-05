@@ -3680,3 +3680,65 @@ fn a_compaction_request_and_the_turn_it_begins_travel_on_the_wire() {
         assert_eq!(code.wire_name(), name, "{code:?} travels as {name}");
     }
 }
+
+#[test]
+fn a_superseded_message_and_a_route_row_keep_their_wire_shape() {
+    let session_id = SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f"));
+    let turn_id = TurnId::from_uuid(fixture_id("0198b27e-2dc4-76ba-9895-f43db821fe3d"));
+    let message_id = MessageId::from_uuid(fixture_id("0198b27e-310d-763a-9825-51cc8b2bef81"));
+    let activity_id = ActivityId::from_uuid(fixture_id("0198b27e-345a-700e-ae3b-d971c57fbe87"));
+    let update = SessionUpdate {
+        session_id,
+        revision: SessionRevision(8),
+        changes: vec![
+            SessionChange::MessageSuperseded { message_id },
+            SessionChange::ActivityAdded {
+                activity: Activity::Route {
+                    id: activity_id,
+                    turn_id,
+                    decision: suru::protocol::RouteDecision::Chosen {
+                        steps: vec![suru::protocol::RouteStep {
+                            model: ModelId::new("gpt-sol"),
+                            action: suru::protocol::RouteAction::Works,
+                        }],
+                    },
+                },
+            },
+        ],
+    };
+    let expected = json!({
+        "session_id": "0198b27e-26ec-7c4c-a83b-a83a4787453f",
+        "revision": 8,
+        "changes": [
+            {
+                "type": "message_superseded",
+                "message_id": "0198b27e-310d-763a-9825-51cc8b2bef81",
+            },
+            {
+                "type": "activity_added",
+                "activity": {
+                    "id": "0198b27e-345a-700e-ae3b-d971c57fbe87",
+                    "turn_id": "0198b27e-2dc4-76ba-9895-f43db821fe3d",
+                    "kind": "route",
+                    "decision": {
+                        "type": "chosen",
+                        "steps": [{ "model": "gpt-sol", "action": "works" }],
+                    },
+                },
+            },
+        ],
+    });
+
+    assert_eq!(
+        serde_json::to_value(&update).expect("encode a Route's marks"),
+        expected
+    );
+    assert_eq!(
+        serde_json::from_value::<SessionUpdate>(expected).expect("decode a Route's marks"),
+        update
+    );
+    assert_eq!(
+        serde_json::to_value(MessageStatus::Superseded).expect("encode the status"),
+        json!("superseded")
+    );
+}

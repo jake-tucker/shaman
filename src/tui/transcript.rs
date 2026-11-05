@@ -46,9 +46,9 @@ use crate::{
     ansi::{AnsiScanner, FragmentRole, sgr_parameter_code, sgr_parameters},
     protocol::{
         Activity, ActivityId, AttachmentDescriptor, Author, Delegator, FileChange, FoldPosture,
-        GroupPosture, InitialPrompt, Message, MessageId, MessageRole, PromptId,
-        ReasoningVisibility, SessionId, SessionRevision, SessionSnapshot, ToolCallVisibility,
-        TranscriptItem, TranscriptSettings, Turn, TurnId, TurnStatus,
+        GroupPosture, InitialPrompt, Message, MessageId, MessageRole, MessageStatus, PromptId,
+        ReasoningVisibility, RouteDecision, SessionId, SessionRevision, SessionSnapshot,
+        ToolCallVisibility, TranscriptItem, TranscriptSettings, Turn, TurnId, TurnStatus,
     },
     theme::Theme,
 };
@@ -105,6 +105,9 @@ const DELEGATION_GUTTER: &str = "│ ";
 
 /// Paths a folded FileChange Activity lists before its fold marker.
 const FOLDED_FILE_CHANGE_PATHS: usize = 4;
+
+/// What a Superseded Message is labelled with where it stands.
+const SUPERSEDED_LABEL: &str = "Passed over";
 
 /// What a Reasoning Activity's header calls the block in each of its states.
 /// Suru's own word for the concept is Reasoning, but the Transcript speaks the
@@ -2106,9 +2109,10 @@ enum TurnEntryRole {
     /// the same terms as a user Message, because it is the question that
     /// Turn's marker answers.
     Delegation,
-    /// A Message the agent authored. Only the Turn's last one survives its
-    /// fold: that is the answer the Turn arrived at, and the ones before it
-    /// are work.
+    /// A Message the agent authored that can answer its Turn. Only the Turn's
+    /// last one survives its fold: that is the answer the Turn arrived at, and
+    /// the ones before it are work. A Superseded Message is work wherever it
+    /// stands, and one with nothing in it is no entry of a fold's at all.
     AgentMessage,
     /// An Error Activity. The last one a failed Turn recorded is its
     /// outcome and stays outside the fold; the ones it worked past are work.
@@ -2121,6 +2125,10 @@ enum TurnEntryRole {
     /// user's own work from then on rather than the Turn's, so it stays
     /// outside the fold as the way into that Session from where it began.
     Subsession,
+    /// A Route's decision. Every one stays outside the fold, because it says
+    /// which Model answered and why it changed, which the work beneath it
+    /// does not.
+    Route,
     /// Everything else, which is the work a Turn Fold hides.
     Work,
 }
@@ -2264,12 +2272,21 @@ impl TranscriptEntry<'_> {
     /// belongs to no Turn, so no fold covers it.
     fn in_turn(self) -> Option<TurnEntry> {
         Some(match self {
+            Self::Message(message) if message.role == MessageRole::Agent => TurnEntry {
+                turn_id: message.turn_id,
+                role: if message.may_answer_its_turn() {
+                    TurnEntryRole::AgentMessage
+                } else if message.content.is_empty() {
+                    return None;
+                } else {
+                    TurnEntryRole::Work
+                },
+            },
             Self::Message(message) => TurnEntry {
                 turn_id: message.turn_id,
                 role: match message.role {
-                    MessageRole::User => TurnEntryRole::UserMessage,
-                    MessageRole::Agent => TurnEntryRole::AgentMessage,
                     MessageRole::Delegation(_) => TurnEntryRole::Delegation,
+                    _ => TurnEntryRole::UserMessage,
                 },
             },
             Self::Activity(activity) => TurnEntry {
@@ -2278,6 +2295,7 @@ impl TranscriptEntry<'_> {
                     Activity::Error { .. } => TurnEntryRole::Error,
                     Activity::Compaction { .. } => TurnEntryRole::Compaction,
                     Activity::Subsession { .. } => TurnEntryRole::Subsession,
+                    Activity::Route { .. } => TurnEntryRole::Route,
                     _ => TurnEntryRole::Work,
                 },
             },
@@ -2377,6 +2395,7 @@ impl TurnFolding {
                             | TurnEntryRole::Delegation
                             | TurnEntryRole::Compaction
                             | TurnEntryRole::Subsession
+                            | TurnEntryRole::Route
                     )
                 ) || Some(position) == final_agent_message
                     || Some(position) == terminal_error
@@ -3141,6 +3160,7 @@ fn message_fingerprint(message: &Message, attachments: &AttachmentRows) -> u64 {
     let mut hasher = std::hash::DefaultHasher::new();
     message.content.len().hash(&mut hasher);
     message.truncated.hash(&mut hasher);
+    (message.status == MessageStatus::Superseded).hash(&mut hasher);
     attachments.hash(&mut hasher);
     TextBindings::from_message(message).hash(&mut hasher);
     hasher.finish()
@@ -3235,6 +3255,7 @@ fn activity_fingerprint(activity: &Activity, step: FoldStep) -> u64 {
             author.hash(&mut hasher);
         }
         Activity::Status { .. } | Activity::Error { .. } => {}
+        Activity::Route { decision, .. } => decision.sentence().hash(&mut hasher),
         Activity::Command {
             status,
             output,
@@ -3483,6 +3504,10 @@ fn render_message(
                 theme,
                 width,
             );
+            None
+        }
+        (MessageRole::Agent, _) if message.status == MessageStatus::Superseded => {
+            push_superseded_message(lines, message, theme, width, hyperlinks);
             None
         }
         (MessageRole::Agent, _) => {
@@ -3766,6 +3791,29 @@ fn render_activity(
                 },
                 text,
                 theme.text.subdued,
+                theme,
+            );
+            None
+        }
+        Activity::Route { decision, .. } => {
+            let style = match decision {
+                RouteDecision::Fallback { .. } | RouteDecision::Discarded { .. } => {
+                    theme.feedback.warning
+                }
+                _ => theme.text.subdued,
+            };
+            let row = match decision.detail() {
+                Some(detail) => format!("{}\n{detail}", decision.sentence()),
+                None => decision.sentence(),
+            };
+            push_styled_prefixed_lines(
+                projection,
+                ContentGutter {
+                    lead: "  ",
+                    indent: "  ",
+                },
+                &row,
+                style,
                 theme,
             );
             None
@@ -5884,6 +5932,34 @@ fn push_agent_message(
     }
 }
 
+/// Projects a Superseded Message where it was written: labelled as passed over
+/// and dimmed, so it is not taken for the answer, its words still as readable
+/// and as selectable as any.
+fn push_superseded_message(
+    lines: &mut Vec<StyledLine>,
+    message: &Message,
+    theme: &Theme,
+    width: u16,
+    hyperlinks: bool,
+) {
+    lines.push(StyledLine::from(vec![
+        StyledSpan::chrome("  ", theme.text.subdued),
+        StyledSpan::text(SUPERSEDED_LABEL, theme.text.subdued),
+    ]));
+    let content = lines.len();
+    push_agent_message(
+        lines,
+        &message.content,
+        message.truncated,
+        theme,
+        width,
+        hyperlinks,
+    );
+    for span in lines[content..].iter_mut().flat_map(|line| &mut line.spans) {
+        span.style = span.style.patch(theme.text.subdued);
+    }
+}
+
 /// Projects `content` one line per source line, each opening with chrome:
 /// `prefix` — a Marker or a gutter — on the first and `indent` on the rest.
 fn push_prefixed_lines(lines: &mut Vec<StyledLine>, prefix: &str, content: &str, style: Style) {
@@ -6318,9 +6394,10 @@ mod tests {
     use crate::{
         protocol::{
             Activity, ActivityId, ActivityStatus, Cost, FileChange, Message, MessageId,
-            MessageRole, MessageStatus, ModelAvailability, PromptId, ReasoningVisibility, Session,
-            SessionRevision, SessionSnapshot, SessionStatus, SessionTimestamp, ToolCallVisibility,
-            TranscriptItem, Turn, TurnId, TurnStatus, Usage, Workspace,
+            MessageRole, MessageStatus, ModelAvailability, PromptId, ReasoningVisibility,
+            RouteDecision, Session, SessionRevision, SessionSnapshot, SessionStatus,
+            SessionTimestamp, ToolCallVisibility, TranscriptItem, Turn, TurnId, TurnStatus, Usage,
+            Workspace,
         },
         theme::Theme,
     };
@@ -6330,7 +6407,8 @@ mod tests {
         FoldStep, Grouping, MAX_TRANSCRIPT_SOURCE_LINE_ROWS, StyledLine, StyledSpan, TextBindings,
         TextPosition, TranscriptCache, TranscriptDisclosure, TranscriptFolds, TranscriptGroups,
         TranscriptTurnFolds, TranscriptView, UnitAnchor, UnitKey, UnitStart, layout_line,
-        push_user_message, render_activity, render_message, split_oversized_line,
+        message_fingerprint, push_superseded_message, push_user_message, render_activity,
+        render_message, split_oversized_line,
     };
 
     thread_local! {
@@ -7579,6 +7657,7 @@ mod tests {
             | Activity::Subagent { turn_id: id, .. }
             | Activity::WatchOutcome { turn_id: id, .. }
             | Activity::Compaction { turn_id: id, .. }
+            | Activity::Route { turn_id: id, .. }
             | Activity::Subsession { turn_id: id, .. } => *id = turn_id,
             Activity::Move { .. } => {}
         }
@@ -7687,6 +7766,154 @@ mod tests {
             rows,
             ["┃ run the tests", "", "  ✓ Worked", "", "  All green.",],
             "a settled Turn reads as question, marker, answer"
+        );
+    }
+
+    fn superseded_message(content: &str) -> Message {
+        Message {
+            status: MessageStatus::Superseded,
+            ..agent_message(content)
+        }
+    }
+
+    fn route_row(decision: RouteDecision) -> Activity {
+        Activity::Route {
+            id: ActivityId::new(),
+            turn_id: TurnId::new(),
+            decision,
+        }
+    }
+
+    /// The fold never mistakes a passed-over attempt for its Turn's answer, however late it stands,
+    /// nor a Message with nothing in it, and the Route's decisions stay out of it, saying which
+    /// Model answered and why.
+    #[test]
+    fn a_turn_fold_answers_with_what_no_route_passed_over_and_keeps_its_decisions_outside() {
+        let chosen = RouteDecision::Chosen {
+            steps: vec![crate::protocol::RouteStep {
+                model: crate::protocol::ModelId::new("gpt-sol"),
+                action: crate::protocol::RouteAction::Works,
+            }],
+        };
+        let verdict = RouteDecision::Verdict {
+            reviewer: crate::protocol::ModelId::new("gpt-judge"),
+            verdict: crate::protocol::RouteVerdict::Rejected,
+            detail: None,
+        };
+        let mut entries = vec![
+            Entry::Message(user_message("run the tests")),
+            Entry::Activity(route_row(chosen)),
+        ];
+        entries.extend(hidden_work());
+        entries.extend([
+            Entry::Message(agent_message("All green.")),
+            Entry::Message(superseded_message("All red.")),
+            Entry::Message(agent_message("")),
+            Entry::Activity(route_row(verdict)),
+        ]);
+        let (snapshot, _) = turn_snapshot(vec![(TurnStatus::Completed, entries)]);
+
+        let rows = projected_rows(
+            &snapshot,
+            &TranscriptFolds::default(),
+            &TranscriptGroups::default(),
+        );
+
+        assert_eq!(
+            rows.into_iter()
+                .filter(|row| !row.trim().is_empty())
+                .collect::<Vec<_>>(),
+            [
+                "┃ run the tests",
+                "  Route: gpt-sol",
+                "  ✓ Worked",
+                "  All green.",
+                "  gpt-judge rejected the work",
+            ]
+        );
+    }
+
+    #[test]
+    fn an_open_turn_shows_a_superseded_message_labelled_and_dimmed_where_it_stands() {
+        let theme = Theme::system();
+        let mut lines = Vec::new();
+
+        push_superseded_message(
+            &mut lines,
+            &superseded_message("All red."),
+            &theme,
+            80,
+            false,
+        );
+
+        assert_eq!(
+            lines.iter().map(projected_text).collect::<Vec<_>>(),
+            ["  Passed over", "  All red."]
+        );
+        assert!(
+            lines
+                .iter()
+                .flat_map(|line| &line.spans)
+                .all(|span| span.style.fg == theme.text.subdued.fg),
+            "the whole of it reads as set aside: {lines:?}"
+        );
+        assert_eq!(
+            lines[1].written_text().trim(),
+            "All red.",
+            "its words stay the words a selection copies"
+        );
+    }
+
+    #[test]
+    fn superseding_a_message_changes_its_fingerprint() {
+        let standing = agent_message("All green.");
+        let passed_over = Message {
+            status: MessageStatus::Superseded,
+            ..standing.clone()
+        };
+
+        assert_ne!(
+            message_fingerprint(&standing, &no_attachments()),
+            message_fingerprint(&passed_over, &no_attachments()),
+            "a Transcript already drawn draws it again"
+        );
+    }
+
+    #[test]
+    fn a_route_row_says_its_decision_and_what_the_provider_said_of_it() {
+        let render = |decision| {
+            let mut lines = Vec::new();
+            render_activity(
+                &mut ActivityProjection {
+                    lines: &mut lines,
+                    strips: &mut Vec::new(),
+                },
+                &route_row(decision),
+                FoldStep::Expanded,
+                &Theme::system(),
+                80,
+                false,
+                std::path::Path::new(""),
+            );
+            lines.iter().map(projected_text).collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            render(RouteDecision::Fallback {
+                failed: None,
+                stand_in: Some(crate::protocol::ModelId::new("gpt-luna")),
+                reason: Some("no such model".to_owned()),
+            }),
+            ["  Route failed; gpt-luna stood in", "  no such model"]
+        );
+        assert_eq!(
+            render(RouteDecision::Discarded {
+                by: "Copilot".to_owned(),
+            }),
+            [
+                "  Copilot discarded this Route's conversation: its file changes remain, and the \
+                 Agent won't remember this work"
+            ]
         );
     }
 

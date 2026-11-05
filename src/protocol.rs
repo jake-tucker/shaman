@@ -13,7 +13,7 @@ use uuid::Uuid;
 mod workspace_paths;
 pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths};
 
-pub const PROTOCOL_VERSION: u32 = 110;
+pub const PROTOCOL_VERSION: u32 = 111;
 mod attachment;
 mod pair_back;
 mod reading;
@@ -3009,6 +3009,10 @@ pub const PROMPT_ADMISSION_HEADER: &str = "x-suru-prompt-admission";
 pub enum MessageStatus {
     Streaming,
     Completed,
+    /// A completed Message a Route passed over for another Model's work: it
+    /// stays where it was written, marked as passed over, and is never its
+    /// Turn's final Message.
+    Superseded,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -3283,6 +3287,15 @@ pub enum Activity {
         /// `summary`.
         summary_truncated: bool,
     },
+    /// One decision of a Route, standing where it was made: the Route chosen,
+    /// a verdict, a handoff, a fallback, or its conversation being discarded.
+    /// It reports a moment rather than work in progress, so it has no status
+    /// to settle.
+    Route {
+        id: ActivityId,
+        turn_id: TurnId,
+        decision: RouteDecision,
+    },
     /// One Session the Turn's Agent — a Sidekick — began: a Subsession. This
     /// row is the way into it from where it was begun, and all the Sidekick's
     /// Transcript carries of it: the Subsession is a top-level Session of its
@@ -3389,6 +3402,7 @@ impl Activity {
             | Self::Subagent { id, .. }
             | Self::WatchOutcome { id, .. }
             | Self::Compaction { id, .. }
+            | Self::Route { id, .. }
             | Self::Subsession { id, .. }
             | Self::Move { id, .. } => *id,
         }
@@ -3409,6 +3423,7 @@ impl Activity {
             | Self::Subagent { turn_id, .. }
             | Self::WatchOutcome { turn_id, .. }
             | Self::Compaction { turn_id, .. }
+            | Self::Route { turn_id, .. }
             | Self::Subsession { turn_id, .. } => Some(*turn_id),
             Self::Move { .. } => None,
         }
@@ -3448,7 +3463,10 @@ impl Activity {
                 }
                 _ => ActivityStatus::Failed,
             }),
-            Self::Status { .. } | Self::Error { .. } | Self::Subsession { .. } => None,
+            Self::Status { .. }
+            | Self::Error { .. }
+            | Self::Route { .. }
+            | Self::Subsession { .. } => None,
             Self::Command { status, .. }
             | Self::FileChange { status, .. }
             | Self::ToolCall { status, .. }
@@ -3461,6 +3479,116 @@ impl Activity {
                 WatchOutcomeStatus::Failed => ActivityStatus::Failed,
                 WatchOutcomeStatus::Stopped => ActivityStatus::Interrupted,
             }),
+        }
+    }
+}
+
+/// One decision of a Route, in Provider-neutral terms: what a Transcript says
+/// of it wherever it reads one.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RouteDecision {
+    /// The plan the Route set out on, in the order its Models act. A Route of
+    /// one step is one Model answering alone.
+    Chosen { steps: Vec<RouteStep> },
+    /// A review of another Model's work reached its verdict. `detail` is the
+    /// reviewer's own account: display text, never parsed.
+    Verdict {
+        reviewer: ModelId,
+        verdict: RouteVerdict,
+        detail: Option<String>,
+    },
+    /// The Route passed the work to another Model.
+    Handoff { to: ModelId },
+    /// Part or all of the Route failed. `failed` names the Model that did,
+    /// where one did rather than the routing; `stand_in` the Model running in
+    /// its place, where the Provider said; `reason` is the Provider's account,
+    /// as display text.
+    Fallback {
+        failed: Option<ModelId>,
+        stand_in: Option<ModelId>,
+        reason: Option<String>,
+    },
+    /// The Route ended without a commit, by an interrupt or a crash: the
+    /// Provider `by` names kept none of its conversation, though its file
+    /// changes remain.
+    Discarded { by: String },
+}
+
+/// One Model's part in a Route's plan.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RouteStep {
+    pub model: ModelId,
+    pub action: RouteAction,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteAction {
+    /// Does the work the Prompt asked for.
+    Works,
+    /// Reviews another Model's work.
+    Reviews,
+    /// Takes the work over if a review finds it wanting.
+    Revises,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteVerdict {
+    Accepted,
+    Rejected,
+    /// The review ended with a verdict Suru cannot read.
+    Unread,
+}
+
+impl RouteDecision {
+    /// The decision in the one line every reader of a Transcript meets it in.
+    pub fn sentence(&self) -> String {
+        match self {
+            Self::Chosen { steps } => {
+                let plan = steps
+                    .iter()
+                    .enumerate()
+                    .map(|(index, step)| match step.action {
+                        RouteAction::Works if index == 0 => step.model.to_string(),
+                        RouteAction::Works => format!("then {}", step.model),
+                        RouteAction::Reviews => format!("reviewed by {}", step.model),
+                        RouteAction::Revises => format!("revised by {} if needed", step.model),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("Route: {plan}")
+            }
+            Self::Verdict {
+                reviewer, verdict, ..
+            } => match verdict {
+                RouteVerdict::Accepted => format!("{reviewer} accepted the work"),
+                RouteVerdict::Rejected => format!("{reviewer} rejected the work"),
+                RouteVerdict::Unread => format!("{reviewer} finished reviewing the work"),
+            },
+            Self::Handoff { to } => format!("Handed off to {to}"),
+            Self::Fallback {
+                failed, stand_in, ..
+            } => match (failed, stand_in) {
+                (None, Some(stand_in)) => format!("Route failed; {stand_in} stood in"),
+                (None, None) => "Route failed".to_owned(),
+                (Some(failed), Some(stand_in)) => format!("{failed} failed; {stand_in} stood in"),
+                (Some(failed), None) => format!("{failed} failed"),
+            },
+            Self::Discarded { by } => format!(
+                "{by} discarded this Route's conversation: its file changes remain, and the Agent \
+                 won't remember this work"
+            ),
+        }
+    }
+
+    /// What the Provider said of the decision beyond [`Self::sentence`], where it said anything.
+    pub fn detail(&self) -> Option<&str> {
+        match self {
+            Self::Verdict { detail, .. } => detail.as_deref(),
+            Self::Fallback { reason, .. } => reason.as_deref(),
+            Self::Chosen { .. } | Self::Handoff { .. } | Self::Discarded { .. } => None,
         }
     }
 }
@@ -5046,6 +5174,17 @@ pub struct Message {
     pub author: Option<Author>,
 }
 
+impl Message {
+    /// Whether this Message can be what its Agent answered its Turn with: one
+    /// the Agent wrote, with something in it, that no Route passed over. The
+    /// last such Message is the Turn's final Message wherever one is read.
+    pub fn may_answer_its_turn(&self) -> bool {
+        self.role == MessageRole::Agent
+            && self.status != MessageStatus::Superseded
+            && !self.content.is_empty()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TranscriptItem {
@@ -5464,6 +5603,10 @@ pub enum SessionChange {
         message_id: MessageId,
     },
     MessageCompleted {
+        message_id: MessageId,
+    },
+    /// A Route passed a completed Agent Message over for another Model's work.
+    MessageSuperseded {
         message_id: MessageId,
     },
     QuestionnaireAccepted {

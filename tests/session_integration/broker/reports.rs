@@ -274,6 +274,80 @@ async fn a_subagent_settling_while_its_parent_is_idle_wakes_the_parent_into_a_co
         .expect("shut down server");
 }
 
+/// A Route's rejected attempt is no answer: the Report excerpts the Message that won, however the
+/// two stand in the Subagent's Transcript.
+#[tokio::test]
+async fn a_report_never_excerpts_a_superseded_message() {
+    use suru::provider::ProviderMessageId;
+
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut delegating = delegating(state_dir.path(), "broker-report-superseded", None).await;
+    let descriptor = delegating.descriptor.clone();
+    let child_id = delegating
+        .client
+        .spawn_subagent(researcher("codex", "gpt-5.5", json!({})))
+        .await;
+    let (child_provider, _) =
+        run_child(&mut delegating.hosted.codex, codex_selection("high")).await;
+    settle_callers_turn(
+        &delegating,
+        "the caller's Turn settles while its Subagent works",
+    )
+    .await;
+
+    let written = |content: &str, name: &str| {
+        [
+            ProviderEvent::AgentMessageStarted,
+            ProviderEvent::AgentMessageIdentified {
+                message: ProviderMessageId::new(name),
+            },
+            ProviderEvent::AgentMessageDelta {
+                content: content.to_owned(),
+            },
+            ProviderEvent::AgentMessageCompleted,
+        ]
+    };
+    for event in written(ANSWER, "winner") {
+        child_provider.emit(event);
+    }
+    for event in written(
+        "A rejected attempt, which the Route passed over.",
+        "attempt",
+    ) {
+        child_provider.emit(event);
+    }
+    child_provider.emit(ProviderEvent::AgentMessageSuperseded {
+        message: ProviderMessageId::new("attempt"),
+    });
+    child_provider
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+
+    let woken = next_turn(
+        &mut delegating.caller_provider,
+        "the Report wakes the idle parent's Provider into a Turn",
+    )
+    .await;
+    let caller = row_settles(&descriptor, delegating.caller, child_id).await;
+    assert_eq!(
+        woken.reports(),
+        [report_of(
+            &caller,
+            child_id,
+            SubagentReportOutcome::Completed,
+            Some(ANSWER)
+        )]
+    );
+    woken.succeed();
+
+    delegating
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
 #[tokio::test]
 async fn a_report_reaching_a_parent_whose_turn_still_works_steers_that_turn() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");

@@ -442,7 +442,8 @@ fn moved_row(change: &SessionChange) -> Option<Table> {
         | SessionChange::TurnStatusChanged { .. } => Some(Table::Turns),
         SessionChange::MessageContentAppended { .. }
         | SessionChange::MessageTruncated { .. }
-        | SessionChange::MessageCompleted { .. } => Some(Table::Messages),
+        | SessionChange::MessageCompleted { .. }
+        | SessionChange::MessageSuperseded { .. } => Some(Table::Messages),
         SessionChange::QuestionnaireAccepted { .. }
         | SessionChange::QuestionnaireSettled { .. }
         | SessionChange::DecisionAccepted { .. }

@@ -35,6 +35,7 @@ mod fusion_tiers;
 mod pricing;
 mod projection;
 mod questionnaire;
+mod routes;
 mod runtime;
 mod session;
 mod skills;

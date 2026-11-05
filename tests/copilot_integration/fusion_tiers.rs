@@ -52,7 +52,7 @@ fn assignments_on(requests: &[Value], method: &str) -> Vec<Option<Value>> {
         .collect()
 }
 
-fn on(setting: bool) -> SettingMutation {
+fn fusion_tiers_pinned(setting: bool) -> SettingMutation {
     SettingMutation::ProviderCopilotFusionTiers {
         value: Some(setting),
     }
@@ -117,7 +117,7 @@ impl Home {
 async fn pin(client: &ManagedClient, setting: Option<bool>) {
     if let Some(setting) = setting {
         client
-            .mutate_setting(on(setting))
+            .mutate_setting(fusion_tiers_pinned(setting))
             .await
             .expect("pin the Setting");
     }

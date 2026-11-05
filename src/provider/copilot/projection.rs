@@ -145,6 +145,7 @@ use super::{
     COPILOT_FAILURE_FALLBACK, COPILOT_HARNESS_NAME, copilot_error,
     event_drain::EventDrainCheckpoint,
     pricing::CopilotPricing,
+    routes::{self, Conversation, Routes},
     session::until_crash,
     skills::CopilotSkills,
     tools::{PresentedToolCall, ToolDisposition, presented_tool_call, tool_activity_id},
@@ -154,9 +155,9 @@ use crate::protocol::{AgentSelection, ContextFill, Cost, NativeMeter, TurnId, Us
 use crate::provider::{
     AttributedProviderEvent, ContextFillReport, ProviderActivityId, ProviderCommandStatus,
     ProviderError, ProviderEvent, ProviderEventAttribution, ProviderEventStream,
-    ProviderFileChangeStatus, ProviderSubagentId, ProviderSubagentStatus, ProviderToolCallStatus,
-    ProviderWatchId, ProviderWatchOutcome, ReportedMetering, concise_remote_message,
-    exclusive_count, first_line,
+    ProviderFileChangeStatus, ProviderMessageId, ProviderSubagentId, ProviderSubagentStatus,
+    ProviderToolCallStatus, ProviderWatchId, ProviderWatchOutcome, ReportedMetering,
+    concise_remote_message, exclusive_count, first_line,
     harness::SharedHarnessHandle,
     reasoning::{ReasoningSegment, ReasoningSummarySplitter},
     reported_count,
@@ -250,6 +251,8 @@ pub(super) struct CopilotCorrelation {
     /// are in — or until a stretch of the loop has run to its idle since, which every report
     /// Copilot wrote before that answer has reached Suru ahead of.
     manual_reports_owed: bool,
+    /// The Routes of the stretch running, and of any stretch a Prompt cut off under them.
+    routes: Routes,
 }
 
 /// Where Copilot is with compacting one conversation's context. It compacts in the background of
@@ -649,6 +652,7 @@ impl CopilotCorrelation {
             owes_aborted_idle: false,
             selection,
             manual_reports_owed: false,
+            routes: Routes::default(),
         }
     }
 
@@ -989,6 +993,46 @@ impl CopilotCorrelation {
     /// the start of another Turn, and what there is for an interrupt to stop.
     pub(super) fn is_turn_running(&self) -> bool {
         self.turn.is_some()
+    }
+
+    /// Whether a Route is running, whose phase Copilot carries on with after a Session disconnects
+    /// and only an abort stops (docs/validation/copilot-fusion-routes.md).
+    pub(super) fn is_route_running(&self) -> bool {
+        self.turn.is_some() && self.routes.is_running()
+    }
+
+    /// Projects one of Copilot's reports on a Route, in the stretch it stands in. Only a report
+    /// beginning a Route opens one: the rest find their Route there, or stand nowhere.
+    fn project_route_lifecycle(&mut self, event: &SessionEvent) -> Vec<AttributedProviderEvent> {
+        let open = if routes::begins_route(event) {
+            self.open_main_turn().is_some()
+        } else {
+            self.turn.is_some()
+        };
+        if !open {
+            return Vec::new();
+        }
+        let decided = self.routes.read(event, self.stretches);
+        if !decided.is_empty() && self.open_main_streams().is_none() {
+            return Vec::new();
+        }
+        decided
+            .into_iter()
+            .map(|decided| attributed(None, decided))
+            .collect()
+    }
+
+    /// The process hosting the Session is gone, and a staged phase's conversation with it. What
+    /// the crash takes from the running stretch is the Turn's to settle, as it fails.
+    fn project_routes_lost(&mut self) -> Vec<AttributedProviderEvent> {
+        if self.turn.is_none() {
+            return Vec::new();
+        }
+        self.routes
+            .settle(self.stretches, true)
+            .into_iter()
+            .map(|lost| attributed(None, lost))
+            .collect()
     }
 
     /// Whether main output arriving with no Turn active is owed a Continuation rather than being
@@ -1384,11 +1428,15 @@ async fn end_with_crash(events: &mut CopilotEvents, crashed: ProviderError) {
             Err(error) => events.pending.push_back(Err(error)),
         }
     }
-    let lost = events
-        .correlation
-        .lock()
-        .expect("Copilot correlation lock is not poisoned")
-        .project_watches_lost();
+    let lost = {
+        let mut correlation = events
+            .correlation
+            .lock()
+            .expect("Copilot correlation lock is not poisoned");
+        let mut lost = correlation.project_routes_lost();
+        lost.extend(correlation.project_watches_lost());
+        lost
+    };
     events.pending.extend(lost.into_iter().map(Ok));
     events.pending.push_back(Err(crashed));
     events.ended = true;
@@ -1637,6 +1685,7 @@ fn project_session_event(
             working.stretch.answer(no_tools);
         }
         let streams = &mut working.streams;
+        let stretch = correlation.stretches;
         if event.parsed_type() == SessionEventType::AssistantUsage {
             let model = reported::<AssistantUsageData>(&event)
                 .and_then(|usage| (!usage.model.is_empty()).then_some(usage.model));
@@ -1663,11 +1712,16 @@ fn project_session_event(
             streams,
             &mut correlation.delegations,
             &correlation.execution_directory,
+            &mut correlation.routes,
+            (Conversation::Subagent, stretch),
             &event,
         )?
         .into_iter()
         .map(|projected| attributed(Some(&subagent), projected))
         .collect());
+    }
+    if routes::is_lifecycle(&event) {
+        return Ok(correlation.project_route_lifecycle(&event));
     }
     match event.parsed_type() {
         // A transient error is one Copilot's own loop recovers from by retrying, so it is not the
@@ -1738,6 +1792,7 @@ fn project_session_event(
             if correlation.open_main_streams().is_none() {
                 return Ok(Vec::new());
             }
+            let stretch = correlation.stretches;
             let turn = correlation
                 .turn
                 .as_mut()
@@ -1746,6 +1801,8 @@ fn project_session_event(
                 &mut turn.streams,
                 &mut correlation.delegations,
                 &correlation.execution_directory,
+                &mut correlation.routes,
+                (Conversation::Main, stretch),
                 &event,
             )?
             .into_iter()
@@ -1906,20 +1963,32 @@ fn is_conversation_content(event_type: &SessionEventType) -> bool {
 /// for as long as it runs — onto the Provider events that carry it. `delegations` is the roster
 /// of spawning tool calls whose Subagent row already answers for them, which is what tells a
 /// withheld spawn's settle apart from a delegation that never happened; `execution_directory` is
-/// where the Session works, which every conversation in it shares.
+/// where the Session works, which every conversation in it shares. `routes` and `place` — which
+/// conversation this is, and the stretch of the loop it falls in — tell the first copy of a Route's
+/// staged item from its committed twin.
 fn project_conversation_event(
     streams: &mut ConversationStreams,
     delegations: &mut HashSet<String>,
     execution_directory: &Path,
+    routes: &mut Routes,
+    place: (Conversation, u64),
     event: &SessionEvent,
 ) -> Result<Vec<ProviderEvent>, ProviderError> {
+    let (conversation, stretch) = place;
+    let fusion = routes::attribution(event);
     match event.parsed_type() {
         SessionEventType::AssistantMessageStart => {
             let started: AssistantMessageStartData = decode(event)?;
+            if routes.holds_message(&started.message_id) {
+                return Ok(Vec::new());
+            }
             project_message_started(streams, started.message_id)
         }
         SessionEventType::AssistantMessageDelta => {
             let delta: AssistantMessageDeltaData = decode(event)?;
+            if routes.holds_message(&delta.message_id) {
+                return Ok(Vec::new());
+            }
             Ok(project_message_delta(
                 streams,
                 &delta.message_id,
@@ -1928,11 +1997,28 @@ fn project_conversation_event(
         }
         SessionEventType::AssistantMessage => {
             let message: AssistantMessageData = decode(event)?;
-            project_message_completed(streams, &message.message_id, &message.content)
+            let Some(fusion) = fusion else {
+                return project_message_completed(streams, &message.message_id, &message.content);
+            };
+            if !routes.admit_message(
+                &fusion,
+                &message.message_id,
+                !message.content.is_empty(),
+                conversation,
+                stretch,
+            ) {
+                return Ok(Vec::new());
+            }
+            project_routed_message(streams, &message)
         }
         SessionEventType::ToolExecutionStart => Ok(reported(event).map_or_else(
             Vec::new,
             |started: ToolExecutionStartData| {
+                if fusion.is_some_and(|fusion| {
+                    !routes.admit_tool(&fusion, &started.tool_call_id, stretch)
+                }) {
+                    return Vec::new();
+                }
                 project_tool_started(streams, &started, execution_directory)
             },
         )),
@@ -2929,6 +3015,7 @@ impl CopilotCorrelation {
         self.manual_reports_owed = false;
         if self.stale_stretches > 0 {
             self.stale_stretches -= 1;
+            self.routes.forget_before(self.stretches);
             return Vec::new();
         }
         if self.compaction.holds_stretch()
@@ -2971,6 +3058,10 @@ impl CopilotCorrelation {
             &mut turn.streams,
             &self.delegations,
             reasoning,
+        ));
+        projected.extend(self.routes.settle(
+            self.stretches,
+            !matches!(outcome, ProviderEvent::TurnCompleted),
         ));
         projected.push(outcome);
         projected
@@ -3073,6 +3164,59 @@ fn project_message_completed(
     }
     projected.push(ProviderEvent::AgentMessageCompleted);
     streams.message = None;
+    Ok(projected)
+}
+
+/// Projects a Message a Route's phase staged, or its commit carried first: it arrives whole, with
+/// the Reasoning that led to it inside, which a Route's phases report no other way. A Model call
+/// that only asked for Tools has nothing in it for the Transcript, though it may have reasoned. It
+/// is named, for the commit that may pass it over to speak of.
+fn project_routed_message(
+    streams: &mut ConversationStreams,
+    message: &AssistantMessageData,
+) -> Result<Vec<ProviderEvent>, ProviderError> {
+    let mut projected = Vec::new();
+    if let Some(reasoning) = message
+        .reasoning_text
+        .as_deref()
+        .filter(|reasoning| !reasoning.trim().is_empty())
+    {
+        projected.extend(project_reasoning_completed(
+            streams,
+            &message.message_id,
+            reasoning,
+        ));
+    }
+    if message.content.is_empty() {
+        return Ok(projected);
+    }
+    // A Message that streamed after all is completed as any streamed Message is. Any other left
+    // open will never finish now: this one is whole, and the Transcript holds one open at a time.
+    match streams.message.as_ref() {
+        Some(open) if open.message_id == message.message_id => {
+            projected.extend(project_message_completed(
+                streams,
+                &message.message_id,
+                &message.content,
+            )?);
+            return Ok(projected);
+        }
+        Some(_) => {
+            streams.message = None;
+            projected.push(ProviderEvent::AgentMessageCompleted);
+        }
+        None => {}
+    }
+    projected.extend([
+        ProviderEvent::AgentMessageStarted,
+        ProviderEvent::AgentMessageIdentified {
+            message: ProviderMessageId::new(message.message_id.clone()),
+        },
+        ProviderEvent::AgentMessageDelta {
+            content: message.content.clone(),
+        },
+        ProviderEvent::AgentMessageCompleted,
+    ]);
     Ok(projected)
 }
 
@@ -3607,7 +3751,7 @@ fn reasoning_segment_events(reasoning_id: &str, segment: ReasoningSegment) -> Ve
 /// cannot read. The Turn keeps going without it: the reader loses that report, which is what an
 /// unreadable report costs, rather than the Turn it belongs to. The Log says one went, without the
 /// conversation content it was carrying.
-fn reported<T: serde::de::DeserializeOwned>(event: &SessionEvent) -> Option<T> {
+pub(super) fn reported<T: serde::de::DeserializeOwned>(event: &SessionEvent) -> Option<T> {
     let decoded = event.typed_data();
     if decoded.is_none() {
         tracing::warn!(
@@ -3630,6 +3774,7 @@ fn decode<T: serde::de::DeserializeOwned>(event: &SessionEvent) -> Result<T, Pro
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::{RouteAction, RouteDecision, RouteStep, RouteVerdict};
     use crate::provider::ToolCallInput;
     use serde_json::json;
 
@@ -8118,5 +8263,973 @@ mod tests {
             },
         );
         assert_eq!(correlation.served_window(), None);
+    }
+
+    /// The attribution a Route's phase puts on what it stages, and on what its commit re-sends.
+    fn fusion(route: &str, phase: &str, commit: bool) -> serde_json::Value {
+        let mut attribution = json!({
+            "fusionId": route,
+            "syntheticModel": "hydrafusion",
+            "policy": "standard",
+            "pattern": "cascade",
+            "phaseId": format!("{route}:{phase}"),
+            "phaseKind": phase,
+            "role": "solver",
+        });
+        if commit {
+            attribution["commitId"] = json!(format!("{route}:commit"));
+        }
+        attribution
+    }
+
+    fn staged_message(id: &str, content: &str, fusion: serde_json::Value) -> serde_json::Value {
+        json!({ "messageId": id, "content": content, "fusion": fusion })
+    }
+
+    fn staged_start(
+        id: &str,
+        tool: &str,
+        args: serde_json::Value,
+        fusion: serde_json::Value,
+    ) -> serde_json::Value {
+        json!({ "toolCallId": id, "toolName": tool, "arguments": args, "fusion": fusion })
+    }
+
+    fn staged_complete(id: &str, result: &str, fusion: serde_json::Value) -> serde_json::Value {
+        json!({
+            "toolCallId": id,
+            "success": true,
+            "result": { "content": result },
+            "fusion": fusion,
+        })
+    }
+
+    fn commit_of(route: &str, phase: &str) -> serde_json::Value {
+        json!({
+            "fusionId": route,
+            "commitId": format!("{route}:commit"),
+            "sourcePhaseId": format!("{route}:{phase}"),
+            "sourceModel": "gpt-fixture",
+            "kind": "text",
+            "toolCallId": null,
+        })
+    }
+
+    fn phase_started(route: &str, phase: &str) -> serde_json::Value {
+        json!({
+            "fusionId": route,
+            "phaseId": format!("{route}:{phase}"),
+            "phaseKind": phase,
+            "role": "solver",
+            "conversationScope": "root",
+            "pattern": "cascade",
+            "model": "gpt-fixture",
+        })
+    }
+
+    fn resolved(route: &str, plan: &[&str]) -> serde_json::Value {
+        json!({
+            "contractVersion": 1,
+            "fusionId": route,
+            "turnId": format!("{route}:turn"),
+            "syntheticModel": "hydrafusion",
+            "policy": "standard",
+            "pattern": if plan.len() > 1 { "cascade" } else { "single" },
+            "phasePlan": plan.iter().map(|kind| json!({
+                "kind": kind, "role": "solver", "scope": "root", "conditional": false,
+            })).collect::<Vec<_>>(),
+            "primaryModel": "gpt-primary",
+            "judgeModel": "gpt-judge",
+            "repairModel": "claude-repair",
+            "fallbackModel": "gpt-fallback",
+            "followUpModel": "gpt-primary",
+        })
+    }
+
+    /// A Turn whose Route has begun a phase, which is what there is to discard.
+    fn in_route(route: &str) -> CopilotCorrelation {
+        let mut correlation = in_turn();
+        project(
+            &mut correlation,
+            "session.fusion_resolved",
+            resolved(route, &["primary"]),
+        );
+        project(
+            &mut correlation,
+            "assistant.fusion_phase_started",
+            phase_started(route, "primary"),
+        );
+        correlation
+    }
+
+    fn superseded_messages(events: &[ProviderEvent]) -> Vec<ProviderMessageId> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                ProviderEvent::AgentMessageSuperseded { message } => Some(message.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_committed_resend_of_a_settled_command_adds_nothing() {
+        let mut correlation = in_route("r");
+        let staged = fusion("r", "primary", false);
+        let committed = fusion("r", "primary", true);
+        let args = json!({ "command": "ls" });
+
+        assert!(matches!(
+            project(
+                &mut correlation,
+                "tool.execution_start",
+                staged_start("t1", "bash", args.clone(), staged.clone())
+            )[..],
+            [ProviderEvent::CommandStarted { .. }]
+        ));
+        let output = project(
+            &mut correlation,
+            "tool.execution_complete",
+            staged_complete("t1", "a.txt\n", staged),
+        );
+        assert!(
+            matches!(
+                &output[..],
+                [
+                    ProviderEvent::CommandOutputDelta { content, .. },
+                    ProviderEvent::CommandCompleted { .. },
+                ] if content == "a.txt\n"
+            ),
+            "a Command that streamed nothing takes its whole result, once: {output:?}"
+        );
+
+        project(
+            &mut correlation,
+            "session.fusion_commit_started",
+            commit_of("r", "primary"),
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "tool.execution_start",
+                staged_start("t1", "bash", args, committed.clone())
+            ),
+            [],
+            "the re-send opens no second row"
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "tool.execution_complete",
+                staged_complete("t1", "a.txt\n", committed)
+            ),
+            [],
+            "and appends no second copy of its output"
+        );
+    }
+
+    #[test]
+    fn a_committed_resend_of_a_settled_tool_call_or_file_change_adds_nothing() {
+        for (tool, args) in [
+            ("web_search", json!({ "query": "suru" })),
+            (
+                "edit",
+                json!({ "path": "src/main.rs", "old_str": "a", "new_str": "b" }),
+            ),
+        ] {
+            let mut correlation = in_route("r");
+            let staged = fusion("r", "primary", false);
+            let committed = fusion("r", "primary", true);
+
+            assert_eq!(
+                project(
+                    &mut correlation,
+                    "tool.execution_start",
+                    staged_start("t1", tool, args.clone(), staged.clone())
+                )
+                .len(),
+                1,
+                "{tool} opens its row"
+            );
+            assert!(
+                !project(
+                    &mut correlation,
+                    "tool.execution_complete",
+                    staged_complete("t1", "done", staged)
+                )
+                .is_empty()
+            );
+            project(
+                &mut correlation,
+                "session.fusion_commit_started",
+                commit_of("r", "primary"),
+            );
+            assert_eq!(
+                project(
+                    &mut correlation,
+                    "tool.execution_start",
+                    staged_start("t1", tool, args, committed.clone())
+                ),
+                []
+            );
+            assert_eq!(
+                project(
+                    &mut correlation,
+                    "tool.execution_complete",
+                    staged_complete("t1", "done", committed)
+                ),
+                []
+            );
+        }
+    }
+
+    /// Shell output streams once and has no durable copy. A Tool still running when its phase ends
+    /// settles on its committed twin, carrying only what the stream had not reached.
+    #[test]
+    fn a_staged_tool_still_running_at_its_commit_settles_on_its_twin_without_doubling_its_output() {
+        let mut correlation = in_route("r");
+        let staged = fusion("r", "primary", false);
+        let committed = fusion("r", "primary", true);
+        let args = json!({ "command": "ls" });
+        project(
+            &mut correlation,
+            "tool.execution_start",
+            staged_start("t1", "bash", args.clone(), staged.clone()),
+        );
+        project(
+            &mut correlation,
+            "tool.shell_output",
+            json!({ "toolCallId": "t1", "stream": "stdout", "text": "a\n", "sequence": 0, "fusion": staged }),
+        );
+
+        project(
+            &mut correlation,
+            "session.fusion_commit_started",
+            commit_of("r", "primary"),
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "tool.execution_start",
+                staged_start("t1", "bash", args, committed.clone())
+            ),
+            []
+        );
+        let settled = project(
+            &mut correlation,
+            "tool.execution_complete",
+            staged_complete("t1", "a\nb\n", committed),
+        );
+
+        assert!(
+            matches!(
+                &settled[..],
+                [
+                    ProviderEvent::CommandOutputDelta { content, .. },
+                    ProviderEvent::CommandCompleted { .. },
+                ] if content == "b\n"
+            ),
+            "{settled:?}"
+        );
+    }
+
+    /// Nothing will ever report a Tool its losing phase left running, so it is left for the store to
+    /// settle with the Turn, as any Activity a Turn leaves open is (ADR 0039).
+    #[test]
+    fn a_tool_a_rejected_phase_left_running_is_left_to_the_turns_settle() {
+        let mut correlation = in_route("r");
+        let staged = fusion("r", "primary", false);
+        project(
+            &mut correlation,
+            "tool.execution_start",
+            staged_start("t1", "bash", json!({ "command": "ls" }), staged),
+        );
+
+        let committed = project(
+            &mut correlation,
+            "session.fusion_commit_started",
+            commit_of("r", "repair"),
+        );
+        assert_eq!(committed, []);
+        assert_eq!(
+            project(&mut correlation, "assistant.idle", json!({})),
+            [ProviderEvent::TurnCompleted]
+        );
+    }
+
+    #[test]
+    fn whichever_copy_comes_first_stands_and_the_other_adds_nothing() {
+        let mut correlation = in_route("r");
+        let staged = fusion("r", "primary", false);
+        let committed = fusion("r", "primary", true);
+        let args = json!({ "command": "ls" });
+
+        assert_eq!(
+            project(
+                &mut correlation,
+                "assistant.message",
+                staged_message("m1", "Done", committed.clone())
+            )
+            .len(),
+            4
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "assistant.message",
+                staged_message("m1", "Done", staged.clone())
+            ),
+            []
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "tool.execution_start",
+                staged_start("t1", "bash", args.clone(), committed.clone())
+            )
+            .len(),
+            1
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "tool.execution_complete",
+                staged_complete("t1", "x", committed)
+            )
+            .len(),
+            2
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "tool.execution_start",
+                staged_start("t1", "bash", args, staged.clone())
+            ),
+            []
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "tool.execution_complete",
+                staged_complete("t1", "x", staged)
+            ),
+            []
+        );
+    }
+
+    /// Messages arrive whole here, and both copies share one `messageId`, so no copy leaves a Message
+    /// open for the next to trip on.
+    #[test]
+    fn a_routes_messages_arrive_whole_and_leave_none_open() {
+        let mut correlation = in_route("r");
+        let staged = fusion("r", "primary", false);
+
+        let first = project(
+            &mut correlation,
+            "assistant.message",
+            staged_message("m1", "One", staged.clone()),
+        );
+        assert_eq!(
+            first,
+            [
+                ProviderEvent::AgentMessageStarted,
+                ProviderEvent::AgentMessageIdentified {
+                    message: ProviderMessageId::new("m1")
+                },
+                ProviderEvent::AgentMessageDelta {
+                    content: "One".to_owned()
+                },
+                ProviderEvent::AgentMessageCompleted,
+            ]
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "assistant.message_start",
+                json!({ "messageId": "m1" })
+            ),
+            [],
+            "a start for a Message a Route already carried opens nothing"
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "assistant.message",
+                staged_message("m2", "Two", staged)
+            )
+            .len(),
+            4
+        );
+    }
+
+    #[test]
+    fn a_message_a_route_streamed_after_all_is_completed_rather_than_repeated() {
+        let mut correlation = in_route("r");
+        project(
+            &mut correlation,
+            "assistant.message_start",
+            json!({ "messageId": "m1" }),
+        );
+        project(
+            &mut correlation,
+            "assistant.message_delta",
+            json!({ "messageId": "m1", "deltaContent": "Do" }),
+        );
+
+        assert_eq!(
+            project(
+                &mut correlation,
+                "assistant.message",
+                staged_message("m1", "Done", fusion("r", "primary", false))
+            ),
+            [
+                ProviderEvent::AgentMessageDelta {
+                    content: "ne".to_owned()
+                },
+                ProviderEvent::AgentMessageCompleted,
+            ]
+        );
+    }
+
+    #[test]
+    fn reasoning_inside_a_routes_message_stands_once_and_an_empty_message_adds_nothing_else() {
+        let mut correlation = in_route("r");
+        let mut with_reasoning = staged_message("m1", "", fusion("r", "primary", false));
+        with_reasoning["reasoningText"] = json!("**Thinking**\n\nAbout it");
+        let mut committed = staged_message("m1", "", fusion("r", "primary", true));
+        committed["reasoningText"] = json!("**Thinking**\n\nAbout it");
+
+        let shown = project(&mut correlation, "assistant.message", with_reasoning);
+        assert!(matches!(
+            shown.first(),
+            Some(ProviderEvent::ReasoningStarted { .. })
+        ));
+        assert!(matches!(
+            shown.last(),
+            Some(ProviderEvent::ReasoningCompleted { .. })
+        ));
+        assert!(
+            !shown
+                .iter()
+                .any(|event| matches!(event, ProviderEvent::AgentMessageStarted)),
+            "{shown:?}"
+        );
+        assert_eq!(
+            project(&mut correlation, "assistant.message", committed),
+            []
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "assistant.message",
+                staged_message("m2", "", fusion("r", "primary", false))
+            ),
+            [],
+            "a Model call with nothing to say and no reasoning adds nothing"
+        );
+    }
+
+    /// Reasoning a Turn with no Route reports on its own events stays the only copy of it.
+    #[test]
+    fn a_message_with_no_route_keeps_ignoring_the_reasoning_inside_it() {
+        let mut correlation = in_turn();
+
+        let shown = project(
+            &mut correlation,
+            "assistant.message",
+            json!({ "messageId": "m1", "content": "Done", "reasoningText": "Thinking" }),
+        );
+
+        assert_eq!(
+            shown,
+            [
+                ProviderEvent::AgentMessageStarted,
+                ProviderEvent::AgentMessageDelta {
+                    content: "Done".to_owned()
+                },
+                ProviderEvent::AgentMessageCompleted,
+            ]
+        );
+    }
+
+    /// Superseding is only ever within its own Route: a second Route's commit reaches nothing of the
+    /// first's, whose `turnId`s it may well share.
+    #[test]
+    fn a_commit_supersedes_only_the_other_phases_of_its_own_route() {
+        let mut correlation = in_route("first");
+        project(
+            &mut correlation,
+            "assistant.message",
+            staged_message("a", "Attempt", fusion("first", "primary", false)),
+        );
+        project(
+            &mut correlation,
+            "assistant.message",
+            staged_message("empty", "", fusion("first", "primary", false)),
+        );
+        project(
+            &mut correlation,
+            "assistant.message",
+            staged_message("b", "Repair", fusion("first", "repair", false)),
+        );
+        let first = project(
+            &mut correlation,
+            "session.fusion_commit_started",
+            commit_of("first", "repair"),
+        );
+        assert_eq!(
+            superseded_messages(&first),
+            [ProviderMessageId::new("a")],
+            "the winner stands, and a Message that never showed is nothing to mark"
+        );
+
+        project(
+            &mut correlation,
+            "session.fusion_resolved",
+            resolved("second", &["primary"]),
+        );
+        project(
+            &mut correlation,
+            "assistant.message",
+            staged_message("c", "Second", fusion("second", "primary", false)),
+        );
+        let second = project(
+            &mut correlation,
+            "session.fusion_commit_started",
+            commit_of("second", "primary"),
+        );
+
+        assert_eq!(superseded_messages(&second), []);
+    }
+
+    #[test]
+    fn a_commit_naming_the_first_phase_supersedes_nothing_of_it() {
+        let mut correlation = in_route("r");
+        project(
+            &mut correlation,
+            "assistant.message",
+            staged_message("a", "Answer", fusion("r", "phase:0", false)),
+        );
+
+        let committed = project(
+            &mut correlation,
+            "session.fusion_commit_started",
+            commit_of("r", "phase:0"),
+        );
+
+        assert_eq!(superseded_messages(&committed), []);
+    }
+
+    /// A Subagent's work is its own Transcript's. A Route that staged it dedupes its copies, and
+    /// leaves its Messages unmarked.
+    #[test]
+    fn a_subagents_routed_work_is_shown_once_and_never_superseded() {
+        let mut correlation = in_route("r");
+        project_attributed(&mut correlation, spawn_started("agent-1", "spawn-1"));
+        let staged = fusion("r", "primary", false);
+
+        let shown = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "assistant.message",
+                staged_message("m1", "Sub", staged.clone()),
+            ),
+        );
+        assert_eq!(shown.len(), 4);
+        assert!(
+            shown
+                .iter()
+                .all(|event| event.attribution == subagent("agent-1"))
+        );
+        assert_eq!(
+            project_attributed(
+                &mut correlation,
+                agent_event(
+                    "agent-1",
+                    "assistant.message",
+                    staged_message("m1", "Sub", fusion("r", "primary", true))
+                ),
+            ),
+            []
+        );
+
+        let committed = project(
+            &mut correlation,
+            "session.fusion_commit_started",
+            commit_of("r", "repair"),
+        );
+        assert_eq!(superseded_messages(&committed), []);
+    }
+
+    #[test]
+    fn a_route_reported_with_no_turn_and_nothing_owed_lands_nowhere() {
+        let mut correlation = CopilotCorrelation::new();
+        for (kind, data) in [
+            (
+                "session.fusion_route_started",
+                json!({
+                    "attemptId": "r:route", "turnKind": "user", "syntheticModel": "hydrafusion", "policy": "standard",
+                }),
+            ),
+            ("session.fusion_resolved", resolved("r", &["primary"])),
+            ("session.fusion_commit_started", commit_of("r", "primary")),
+        ] {
+            assert_eq!(project(&mut correlation, kind, data), [], "{kind}");
+        }
+        assert!(!correlation.is_route_running());
+        assert!(!correlation.is_turn_running());
+    }
+
+    #[test]
+    fn a_route_begun_while_a_continuation_is_owed_opens_it() {
+        let mut correlation = CopilotCorrelation::new();
+        correlation.late_settle_owes_continuation = true;
+
+        let shown = project(
+            &mut correlation,
+            "session.fusion_resolved",
+            resolved("r", &["primary"]),
+        );
+
+        assert_eq!(
+            shown,
+            [ProviderEvent::RouteDecided {
+                decision: RouteDecision::Chosen {
+                    steps: vec![RouteStep {
+                        model: crate::protocol::ModelId::new("gpt-primary"),
+                        action: RouteAction::Works,
+                    }],
+                },
+            }]
+        );
+        assert!(correlation.is_turn_running());
+    }
+
+    #[test]
+    fn a_route_is_running_from_its_routing_until_its_commit_or_its_turns_settle() {
+        let mut correlation = in_turn();
+        assert!(!correlation.is_route_running(), "a Turn alone is no Route");
+
+        project(
+            &mut correlation,
+            "session.fusion_route_started",
+            json!({
+                "attemptId": "r:route", "turnKind": "user", "syntheticModel": "hydrafusion", "policy": "standard",
+            }),
+        );
+        assert!(correlation.is_route_running(), "routing is running already");
+        project(
+            &mut correlation,
+            "session.fusion_resolved",
+            resolved("r", &["primary"]),
+        );
+        assert!(correlation.is_route_running());
+        project(
+            &mut correlation,
+            "session.fusion_commit_started",
+            commit_of("r", "primary"),
+        );
+        assert!(
+            !correlation.is_route_running(),
+            "its commit names the winner, in milliseconds"
+        );
+
+        project(
+            &mut correlation,
+            "session.fusion_resolved",
+            resolved("again", &["primary"]),
+        );
+        assert!(
+            correlation.is_route_running(),
+            "a second Route runs in the same Turn"
+        );
+        project(&mut correlation, "assistant.idle", json!({}));
+        assert!(!correlation.is_route_running());
+    }
+
+    fn discarded() -> ProviderEvent {
+        ProviderEvent::RouteDecided {
+            decision: RouteDecision::Discarded {
+                by: "Copilot".to_owned(),
+            },
+        }
+    }
+
+    #[test]
+    fn an_interrupted_route_says_its_conversation_is_gone_and_a_committed_one_does_not() {
+        let mut interrupted = in_route("r");
+        assert_eq!(
+            project(
+                &mut interrupted,
+                "assistant.idle",
+                json!({ "aborted": true })
+            ),
+            [discarded(), ProviderEvent::TurnInterrupted]
+        );
+
+        let mut committed = in_route("r");
+        project(
+            &mut committed,
+            "session.fusion_commit_started",
+            commit_of("r", "primary"),
+        );
+        assert_eq!(
+            project(&mut committed, "assistant.idle", json!({ "aborted": true })),
+            [ProviderEvent::TurnInterrupted]
+        );
+    }
+
+    /// Stopped while it was still choosing, a Route has done nothing to lose.
+    #[test]
+    fn a_route_interrupted_before_any_phase_says_nothing_of_a_conversation() {
+        let mut correlation = in_turn();
+        project(
+            &mut correlation,
+            "session.fusion_route_started",
+            json!({
+                "attemptId": "r:route", "turnKind": "user", "syntheticModel": "hydrafusion", "policy": "standard",
+            }),
+        );
+        project(
+            &mut correlation,
+            "session.fusion_resolved",
+            resolved("r", &["primary"]),
+        );
+
+        assert_eq!(
+            project(
+                &mut correlation,
+                "assistant.idle",
+                json!({ "aborted": true })
+            ),
+            [ProviderEvent::TurnInterrupted]
+        );
+    }
+
+    #[test]
+    fn a_route_a_failure_ended_says_its_conversation_is_gone() {
+        let mut correlation = in_route("r");
+        project(
+            &mut correlation,
+            "session.error",
+            json!({
+                "errorType": "query", "message": "Execution failed",
+            }),
+        );
+
+        let settled = project(&mut correlation, "assistant.idle", json!({}));
+
+        assert_eq!(settled[0], discarded());
+        assert!(matches!(settled[1], ProviderEvent::TurnFailed { .. }));
+    }
+
+    /// A Route ending unexplained leaves its rows as they stand.
+    #[test]
+    fn a_route_that_idles_with_no_commit_or_interruption_marks_nothing() {
+        let mut correlation = in_route("r");
+        project(
+            &mut correlation,
+            "assistant.message",
+            staged_message("a", "Answer", fusion("r", "primary", false)),
+        );
+
+        assert_eq!(
+            project(&mut correlation, "assistant.idle", json!({})),
+            [ProviderEvent::TurnCompleted]
+        );
+    }
+
+    #[test]
+    fn a_crash_takes_a_staging_route_with_it_and_says_so_once() {
+        let mut correlation = in_route("r");
+
+        let lost = correlation.project_routes_lost();
+        assert_eq!(
+            lost.iter()
+                .map(|lost| lost.event.clone())
+                .collect::<Vec<_>>(),
+            [discarded()]
+        );
+        assert_eq!(correlation.project_routes_lost(), []);
+    }
+
+    #[test]
+    fn a_fallback_runs_live_so_nothing_of_it_is_discarded() {
+        let mut correlation = in_turn();
+        let shown = project(
+            &mut correlation,
+            "session.fusion_route_failed",
+            json!({
+                "attemptId": "r:route",
+                "fusionId": "r",
+                "syntheticModel": "hydrafusion",
+                "policy": "standard",
+                "reason": "invalid_response",
+                "errorMessage": "no such model",
+                "fallbackModel": "gpt-fallback",
+            }),
+        );
+        assert_eq!(
+            shown,
+            [ProviderEvent::RouteDecided {
+                decision: RouteDecision::Fallback {
+                    failed: None,
+                    stand_in: Some(crate::protocol::ModelId::new("gpt-fallback")),
+                    reason: Some("no such model".to_owned()),
+                },
+            }]
+        );
+        project(
+            &mut correlation,
+            "assistant.fusion_phase_started",
+            phase_started("r", "primary"),
+        );
+        project(
+            &mut correlation,
+            "assistant.message_start",
+            json!({ "messageId": "m1" }),
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "assistant.idle",
+                json!({ "aborted": true })
+            ),
+            [
+                ProviderEvent::AgentMessageCompleted,
+                ProviderEvent::TurnInterrupted
+            ]
+        );
+    }
+
+    /// Never seen live: built from what the SDK types say a phase failing on its own, and a Route
+    /// finishing degraded, would report.
+    #[test]
+    fn a_phase_failing_on_its_own_and_a_degraded_completion_stand_as_fallbacks() {
+        let mut correlation = in_route("r");
+        let failed = project(
+            &mut correlation,
+            "assistant.fusion_phase_failed",
+            json!({
+                "fusionId": "r",
+                "phaseId": "r:judge",
+                "phaseKind": "judge",
+                "role": "judge",
+                "conversationScope": "review",
+                "model": "gpt-judge",
+                "status": "failed",
+                "reason": "review_unavailable",
+                "durationMs": 1.0,
+                "usage": { "requestCount": 0, "inputTokens": 0, "outputTokens": 0, "cachedTokens": 0, "totalNanoAiu": 0 },
+            }),
+        );
+        assert_eq!(
+            failed,
+            [ProviderEvent::RouteDecided {
+                decision: RouteDecision::Fallback {
+                    failed: Some(crate::protocol::ModelId::new("gpt-judge")),
+                    stand_in: None,
+                    reason: Some("review_unavailable".to_owned()),
+                },
+            }]
+        );
+        let completed = project(
+            &mut correlation,
+            "session.fusion_completed",
+            json!({
+                "fusionId": "r",
+                "commitId": "r:commit",
+                "turnId": "r:turn",
+                "syntheticModel": "hydrafusion",
+                "pattern": "cascade",
+                "outcome": "completed",
+                "finalSourceModel": "gpt-primary",
+                "followUpModel": "gpt-primary",
+                "degradedReason": "review_unavailable",
+                "phaseCount": 2,
+                "requestCount": 1,
+                "inputTokens": 1,
+                "outputTokens": 1,
+                "cachedTokens": 0,
+                "totalNanoAiu": 1,
+                "durationMs": 1.0,
+            }),
+        );
+        assert_eq!(
+            completed,
+            [ProviderEvent::RouteDecided {
+                decision: RouteDecision::Fallback {
+                    failed: None,
+                    stand_in: Some(crate::protocol::ModelId::new("gpt-primary")),
+                    reason: Some("review_unavailable".to_owned()),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn a_review_it_cannot_read_still_stands_with_no_account_of_itself() {
+        let mut correlation = in_route("r");
+        let shown = project(
+            &mut correlation,
+            "assistant.fusion_phase_completed",
+            json!({
+                "fusionId": "r",
+                "phaseId": "r:critic",
+                "phaseKind": "critic",
+                "role": "critic",
+                "conversationScope": "review",
+                "model": "gpt-critic",
+                "status": "succeeded",
+                "content": "not json",
+                "durationMs": 1.0,
+                "verdict": null,
+                "usage": { "requestCount": 0, "inputTokens": 0, "outputTokens": 0, "cachedTokens": 0, "totalNanoAiu": 0 },
+            }),
+        );
+        assert_eq!(
+            shown,
+            [ProviderEvent::RouteDecided {
+                decision: RouteDecision::Verdict {
+                    reviewer: crate::protocol::ModelId::new("gpt-critic"),
+                    verdict: RouteVerdict::Unread,
+                    detail: None,
+                },
+            }]
+        );
+    }
+
+    /// A Route's fan of activity reports, and a solver's finishing, say nothing in the Transcript.
+    #[test]
+    fn a_routes_progress_reports_add_nothing() {
+        let mut correlation = in_route("r");
+        assert_eq!(
+            project(
+                &mut correlation,
+                "assistant.fusion_phase_activity",
+                json!({
+                    "activity": "model_output", "fusionId": "r", "phaseId": "r:primary", "phaseKind": "primary",
+                    "conversationScope": "root", "pattern": "cascade", "model": "gpt", "role": "solver",
+                })
+            ),
+            []
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "assistant.turn_start",
+                json!({ "turnId": "0" })
+            ),
+            []
+        );
+        assert_eq!(
+            project(
+                &mut correlation,
+                "assistant.turn_end",
+                json!({ "turnId": "0" })
+            ),
+            []
+        );
     }
 }

@@ -1036,6 +1036,18 @@ impl ProviderActivityId {
     }
 }
 
+/// The Provider's own name for an Agent Message. Only a Provider whose later
+/// events speak of a Message it has already sent names one, and only
+/// orchestration resolves it, to the Message that was open when it was named.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ProviderMessageId(String);
+
+impl ProviderMessageId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProviderCommandStatus {
     Completed,
@@ -1120,6 +1132,21 @@ pub enum ProviderEvent {
         content: String,
     },
     AgentMessageCompleted,
+    /// Names the Agent Message just started, for a later event of the same
+    /// Turn to speak of it.
+    AgentMessageIdentified {
+        message: ProviderMessageId,
+    },
+    /// A Route passed the Message `message` names over for another Model's
+    /// work, which makes it a Superseded Message. One no longer known, or
+    /// never named in this Turn, is owed nothing.
+    AgentMessageSuperseded {
+        message: ProviderMessageId,
+    },
+    /// A Route's decision, recorded where the event falls in its Turn.
+    RouteDecided {
+        decision: crate::protocol::RouteDecision,
+    },
     CommandStarted {
         activity_id: ProviderActivityId,
         command: String,

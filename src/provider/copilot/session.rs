@@ -1174,6 +1174,31 @@ impl ProviderSession for CopilotSession {
             // running. Copilot keeps its own Session on disk, which is what a later resume of the
             // Suru Session picks back up.
             self.questionnaires.cancel();
+            // A Route's phase carries on after its Session disconnects, spending as it goes, so
+            // one still running is stopped first. A Session with none has nothing to wait for.
+            let route_running = {
+                let mut correlation = self
+                    .correlation
+                    .lock()
+                    .expect("Copilot correlation lock is not poisoned");
+                let running = correlation.is_route_running();
+                if running {
+                    correlation.sending_abort();
+                }
+                running
+            };
+            if route_running
+                && let Err(error) = Self::abort_native_loop(
+                    &self.native,
+                    &self.handle,
+                    &self.approvals,
+                    self.interrupt_request_timeout,
+                    "Copilot Route stop failed",
+                )
+                .await
+            {
+                tracing::warn!("{error}");
+            }
             self.native.stop_event_loop().await;
             Ok(())
         })

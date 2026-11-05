@@ -11,8 +11,8 @@ use suru::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionSubscription},
     protocol::{
         Activity, CreateSessionRequest, Delegator, DerivationErrand, InitialPrompt, Message,
-        MessageRole, ModelCatalog, PromptId, ProviderId, ProviderModelCatalog, SessionId,
-        SessionSnapshot, TranscriptItem, TurnId, TurnStatus,
+        MessageRole, MessageStatus, ModelCatalog, PromptId, ProviderId, ProviderModelCatalog,
+        SessionId, SessionSnapshot, TranscriptItem, TurnId, TurnStatus,
     },
     provider::CopilotRuntime,
     server::{self, RunningServer, ServerConfig},
@@ -1001,6 +1001,9 @@ pub fn transcript_outline(snapshot: &SessionSnapshot, parent: Option<SessionId>)
                             format!("delegation from {}", name.as_deref().unwrap_or("?"))
                         }
                     }
+                    role if message.status == MessageStatus::Superseded => {
+                        format!("{role:?}, passed over")
+                    }
                     role => format!("{role:?}"),
                 };
                 format!(
@@ -1033,6 +1036,7 @@ pub fn transcript_outline(snapshot: &SessionSnapshot, parent: Option<SessionId>)
                         ..
                     } => format!("subagent {name} ({description}) {status:?}"),
                     Activity::Reasoning { .. } => "reasoning".to_owned(),
+                    Activity::Route { decision, .. } => decision.sentence(),
                     other => format!("{other:?}"),
                 };
                 format!(

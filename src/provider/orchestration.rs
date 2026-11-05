@@ -90,6 +90,10 @@ const MAX_STORED_MESSAGE_CHARS: usize = 512 * 1024;
 /// to any real block of Reasoning, and low enough that a Provider reasoning
 /// without end cannot grow one Activity without bound.
 const MAX_STORED_REASONING_CHARS: usize = 64 * 1024;
+/// The most of a Provider's account of a Route's decision kept with it: a
+/// review's rationale or a failure's reason runs to a few sentences, and the
+/// row stands for the decision rather than holding the review itself.
+const MAX_STORED_ROUTE_DETAIL_CHARS: usize = 4 * 1024;
 
 /// The failure a routed Subagent Turn settles with when the Provider
 /// connection is torn down under it. The connection is those Turns' only
@@ -564,6 +568,9 @@ struct ActiveProviderTurn {
     /// either fails the Turn instead.
     prompt_begun: bool,
     streaming_message: Option<ActiveProviderMessage>,
+    /// The Agent Messages of this Turn the Provider named, by the name a later
+    /// event speaks of them by.
+    identified_messages: HashMap<super::ProviderMessageId, MessageId>,
     interruption_acknowledged: bool,
     command_activities: HashMap<super::ProviderActivityId, ActiveProviderCommand>,
     file_change_activities: HashMap<super::ProviderActivityId, ActivityId>,
@@ -616,6 +623,7 @@ impl ActiveProviderTurn {
             continuation: None,
             prompt_begun: true,
             streaming_message: None,
+            identified_messages: HashMap::new(),
             interruption_acknowledged: false,
             command_activities: HashMap::new(),
             file_change_activities: HashMap::new(),
@@ -3114,6 +3122,10 @@ async fn run_provider_session(
                                         Some(tokio::time::Instant::now());
                                 }
                             }
+                            // A Route's mark on a Message of a Turn that has
+                            // settled reaches nothing, and is no output.
+                            ProviderEvent::AgentMessageIdentified { .. }
+                            | ProviderEvent::AgentMessageSuperseded { .. } => {}
                             // Anything else is late output. Owed to Subagents
                             // still working past their Turn's settle — or to
                             // one that just settled, whose provoked output
@@ -6241,6 +6253,35 @@ fn project_provider_event(
                     )
                     .map(|_| ProviderEventProjection::Continue)
             }
+            ProviderEvent::AgentMessageIdentified { message } => {
+                if let Some(open) = active.streaming_message.as_ref() {
+                    active.identified_messages.insert(message, open.id);
+                }
+                Ok(ProviderEventProjection::Continue)
+            }
+            ProviderEvent::AgentMessageSuperseded { message } => {
+                match active.identified_messages.remove(&message) {
+                    Some(message_id) => sessions
+                        .publish_agent_output(
+                            session_id,
+                            SessionChange::MessageSuperseded { message_id },
+                        )
+                        .map(|_| ProviderEventProjection::Continue),
+                    None => Ok(ProviderEventProjection::Continue),
+                }
+            }
+            ProviderEvent::RouteDecided { decision } => sessions
+                .publish_agent_output(
+                    session_id,
+                    SessionChange::ActivityAdded {
+                        activity: Activity::Route {
+                            id: ActivityId::new(),
+                            turn_id: active.turn_id,
+                            decision: stored_route_decision(decision),
+                        },
+                    },
+                )
+                .map(|_| ProviderEventProjection::Continue),
             ProviderEvent::CommandStarted {
                 activity_id,
                 command,
@@ -6995,6 +7036,25 @@ fn fail_invalid_provider_event(
 
 /// A Tool Call's rendered input as Suru stores it: normalized like any
 /// Provider text and cut to [`MAX_STORED_TOOL_CALL_INPUT_CHARS`].
+/// `decision` as it is stored: what the Provider said of it normalized like any
+/// of its text, and cut to the cap.
+fn stored_route_decision(
+    mut decision: crate::protocol::RouteDecision,
+) -> crate::protocol::RouteDecision {
+    use crate::protocol::RouteDecision;
+    if let RouteDecision::Verdict { detail: said, .. }
+    | RouteDecision::Fallback { reason: said, .. } = &mut decision
+    {
+        *said = said.take().map(|said| {
+            normalize_provider_text(&said)
+                .chars()
+                .take(MAX_STORED_ROUTE_DETAIL_CHARS)
+                .collect()
+        });
+    }
+    decision
+}
+
 fn stored_tool_call_input(input: &str) -> NormalizedText {
     ProviderTextNormalizer::with_max_chars(MAX_STORED_TOOL_CALL_INPUT_CHARS).push(input)
 }

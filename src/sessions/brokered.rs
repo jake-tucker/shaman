@@ -1002,18 +1002,18 @@ impl SessionRecord {
 
 /// The latest Message the Agent of `snapshot`'s Session wrote in Turn
 /// `turn_id` — its final one there, once the Turn has settled — as the Session
-/// holds it, whole. A Message begun but still empty says nothing yet, so the
-/// one before it stands. This is what `read_subagent` answers with, and what a
-/// Subagent Report excerpts.
+/// holds it, whole. A Message begun but still empty says nothing yet, and a
+/// Superseded Message is no answer, so the one before it stands. This is what
+/// `read_subagent` answers with, and what a Subagent Report excerpts.
 pub(crate) fn latest_agent_message(
     snapshot: &SessionSnapshot,
     turn_id: TurnId,
 ) -> Option<&Message> {
-    snapshot.messages.iter().rev().find(|message| {
-        message.turn_id == turn_id
-            && message.role == MessageRole::Agent
-            && !message.content.is_empty()
-    })
+    snapshot
+        .messages
+        .iter()
+        .rev()
+        .find(|message| message.turn_id == turn_id && message.may_answer_its_turn())
 }
 
 /// What `turn` failed with, as its Transcript says: the text of the last

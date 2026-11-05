@@ -250,6 +250,9 @@ impl ValidatedChanges {
                 SessionChange::MessageCompleted { .. } => {
                     next.messages[resolved()].status = MessageStatus::Completed;
                 }
+                SessionChange::MessageSuperseded { .. } => {
+                    next.messages[resolved()].status = MessageStatus::Superseded;
+                }
                 SessionChange::DecisionAccepted { .. } => {
                     let Activity::Approval { outcome, .. } = &mut next.activities[resolved()]
                     else {
@@ -945,6 +948,18 @@ impl<'a> Validation<'a> {
                     bail!("Session update can only complete a streaming Agent Message");
                 }
                 message.status = MessageStatus::Completed;
+                Some(index)
+            }
+            SessionChange::MessageSuperseded { message_id } => {
+                let Some((index, message)) =
+                    self.messages.find(|message| message.id == *message_id)
+                else {
+                    bail!("Session update referenced an unknown Message");
+                };
+                if !message.from_agent || message.status != MessageStatus::Completed {
+                    bail!("Session update can only supersede a completed Agent Message");
+                }
+                message.status = MessageStatus::Superseded;
                 Some(index)
             }
             SessionChange::DecisionAccepted { activity_id } => {
@@ -1775,9 +1790,10 @@ impl From<&Activity> for ActivityStanding {
             },
             Activity::Subsession { .. } => Self::Subsession,
             Activity::Move { status, .. } => Self::Move { status: *status },
-            Activity::Status { .. } | Activity::Error { .. } | Activity::WatchOutcome { .. } => {
-                Self::Other
-            }
+            Activity::Status { .. }
+            | Activity::Error { .. }
+            | Activity::WatchOutcome { .. }
+            | Activity::Route { .. } => Self::Other,
         }
     }
 }
@@ -1975,6 +1991,66 @@ mod tests {
             },
             SessionChange::MessageCompleted { message_id },
         ]
+    }
+
+    #[test]
+    fn only_a_completed_agent_message_can_be_superseded() {
+        let session_id = SessionId::new();
+        let turn_id = TurnId::new();
+        let message_id = MessageId::new();
+        let mut snapshot = empty_snapshot(session_id);
+        apply_update(
+            &mut snapshot,
+            &SessionUpdate {
+                session_id,
+                revision: SessionRevision(SessionRevision::INITIAL.0 + 1),
+                changes: vec![
+                    SessionChange::TurnAdded {
+                        turn: active_continuation(turn_id),
+                    },
+                    SessionChange::MessageAdded {
+                        message: Message {
+                            id: message_id,
+                            turn_id,
+                            role: MessageRole::Agent,
+                            status: MessageStatus::Streaming,
+                            content: String::new(),
+                            skill_invocations: Vec::new(),
+                            attachments: Vec::new(),
+                            truncated: false,
+                            author: None,
+                        },
+                    },
+                ],
+            },
+        )
+        .expect("a Message opens");
+        let superseding = |revision: u64| SessionUpdate {
+            session_id,
+            revision: SessionRevision(revision),
+            changes: vec![SessionChange::MessageSuperseded { message_id }],
+        };
+        assert!(
+            apply_update(&mut snapshot, &superseding(SessionRevision::INITIAL.0 + 2)).is_err(),
+            "a Message still streaming has not been written to pass over"
+        );
+
+        apply_update(
+            &mut snapshot,
+            &SessionUpdate {
+                session_id,
+                revision: SessionRevision(SessionRevision::INITIAL.0 + 2),
+                changes: vec![SessionChange::MessageCompleted { message_id }],
+            },
+        )
+        .expect("the Message completes");
+        apply_update(&mut snapshot, &superseding(SessionRevision::INITIAL.0 + 3))
+            .expect("a completed Message may be passed over");
+        assert_eq!(snapshot.messages[0].status, MessageStatus::Superseded);
+        assert!(
+            apply_update(&mut snapshot, &superseding(SessionRevision::INITIAL.0 + 4)).is_err(),
+            "and only the once"
+        );
     }
 
     #[test]

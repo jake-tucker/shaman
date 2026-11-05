@@ -478,9 +478,7 @@ impl<'a> Transcript<'a> {
                 .and_then(|turn_id| turn_of.get(&turn_id))
                 .map(|index| &mut turns[*index])
             {
-                if matches!(entry, Entry::Message(message)
-                    if message.role == MessageRole::Agent && !message.content.is_empty())
-                {
+                if matches!(entry, Entry::Message(message) if message.may_answer_its_turn()) {
                     turn.final_message = Some(turn.entries.len());
                 }
                 turn.entries.push(entry);
@@ -799,6 +797,9 @@ impl<'a> Transcript<'a> {
                 MessageRole::Agent if message.status == MessageStatus::Streaming => {
                     Spans::text("agent, still writing")
                 }
+                MessageRole::Agent if message.status == MessageStatus::Superseded => {
+                    Spans::text("agent, passed over")
+                }
                 MessageRole::Agent => Spans::text("agent"),
                 MessageRole::Delegation(delegator)
                     if Some(delegator.session_id) == self.session.session.parent =>
@@ -886,6 +887,7 @@ impl<'a> Transcript<'a> {
                 parts.join(" — ")
             }
             Activity::Reasoning { .. } => String::new(),
+            Activity::Route { decision, .. } => route_summary(decision),
             Activity::Subsession { title, prompt, .. } => {
                 format!("\"{title}\", first asked: {prompt}")
             }
@@ -1034,6 +1036,13 @@ impl<'a> Transcript<'a> {
             }
             Activity::Status { text, .. } | Activity::Error { text, .. } => {
                 whole.push_str(text);
+            }
+            Activity::Route { decision, .. } => {
+                whole.push_str(&decision.sentence());
+                if let Some(detail) = decision.detail() {
+                    whole.push('\n');
+                    whole.push_str(detail);
+                }
             }
             Activity::WatchOutcome {
                 description,
@@ -1286,6 +1295,7 @@ fn activity_label(activity: &Activity) -> Spans {
             CompactionTrigger::Automatic => format!("compaction [{}, automatic]", stood(*status)),
         },
         Activity::Reasoning { .. } => "reasoning".to_owned(),
+        Activity::Route { .. } => "route".to_owned(),
         Activity::Move { status, .. } => format!("move [{}]", stood(*status)),
         Activity::Subsession {
             session_id,
@@ -1303,6 +1313,14 @@ fn activity_label(activity: &Activity) -> Spans {
         }
     };
     Spans::text(label)
+}
+
+/// A Route's decision on one line, with what the Provider said of it.
+fn route_summary(decision: &crate::protocol::RouteDecision) -> String {
+    match decision.detail() {
+        Some(detail) => format!("{} — {detail}", decision.sentence()),
+        None => decision.sentence(),
+    }
 }
 
 /// How a Compaction changed the context's size, where either side is known.
@@ -1906,6 +1924,62 @@ mod tests {
         });
         fixture.agent(third, "Fixed the race in sync; the tests pass.");
         fixture
+    }
+
+    /// A Superseded Message is no answer, and a Message with nothing in it says nothing, so neither
+    /// is what a default read shows of a Turn, nor what a Sidekick Report takes for its final word.
+    /// Read Activity by Activity it stands where it was written, saying what it is.
+    #[test]
+    fn a_superseded_or_empty_message_is_no_turns_final_message() {
+        let mut fixture = Fixture::new();
+        let turn = fixture.turn(TurnStatus::Completed);
+        fixture.message(turn, MessageRole::User, "Fix it.");
+        let passed_over = fixture.message(turn, MessageRole::Agent, "It is fixed, I think.");
+        fixture.message(turn, MessageRole::Agent, "It is fixed.");
+        let last_attempt = fixture.message(turn, MessageRole::Agent, "Perhaps not.");
+        fixture.message(turn, MessageRole::Agent, "");
+        for message in &mut fixture.0.messages {
+            if message.id == passed_over || message.id == last_attempt {
+                message.status = MessageStatus::Superseded;
+            }
+        }
+        fixture.activity(Activity::Route {
+            id: ActivityId::new(),
+            turn_id: turn,
+            decision: crate::protocol::RouteDecision::Verdict {
+                reviewer: crate::protocol::ModelId::new("gpt-judge"),
+                verdict: crate::protocol::RouteVerdict::Rejected,
+                detail: Some("It is not.".to_owned()),
+            },
+        });
+
+        let (number, text) = final_message(&fixture.0, turn).expect("the Turn holds an answer");
+        assert_eq!(text, "It is fixed.");
+        assert_eq!(number.entry, 3);
+        let reading = fixture.read(ReadRequest::Window(Window::default()));
+        assert!(reading.transcript.contains("It is fixed."));
+        assert!(
+            !reading.transcript.contains("I think"),
+            "{}",
+            reading.transcript
+        );
+        assert!(
+            !reading.transcript.contains("Perhaps"),
+            "{}",
+            reading.transcript
+        );
+
+        let whole = fixture.read(entry("1.2"));
+        assert!(
+            whole.transcript.starts_with("1.2 agent, passed over:"),
+            "{}",
+            whole.transcript
+        );
+        let row = fixture.read(entry("1.6"));
+        assert_eq!(
+            row.transcript,
+            "1.6 route: gpt-judge rejected the work\nIt is not."
+        );
     }
 
     #[test]

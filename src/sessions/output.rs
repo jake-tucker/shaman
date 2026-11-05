@@ -250,7 +250,8 @@ fn agent_output_turn_id(
         }
         SessionChange::MessageContentAppended { message_id, .. }
         | SessionChange::MessageTruncated { message_id }
-        | SessionChange::MessageCompleted { message_id } => snapshot
+        | SessionChange::MessageCompleted { message_id }
+        | SessionChange::MessageSuperseded { message_id } => snapshot
             .messages
             .iter()
             .find(|message| message.id == *message_id && message.role == MessageRole::Agent)

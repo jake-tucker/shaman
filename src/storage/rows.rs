@@ -1543,6 +1543,9 @@ enum StoredActivityPayload<'a> {
         summary: Option<Cow<'a, str>>,
         summary_truncated: bool,
     },
+    Route {
+        decision: Cow<'a, crate::protocol::RouteDecision>,
+    },
     Subsession {
         session_id: SessionId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1612,6 +1615,11 @@ impl StoredActivityPayload<'_> {
                 id,
                 turn_id: turn_id?,
                 text: text.into_owned(),
+            },
+            Self::Route { decision } => Activity::Route {
+                id,
+                turn_id: turn_id?,
+                decision: decision.into_owned(),
             },
             Self::Error { text } => Activity::Error {
                 id,
@@ -1806,6 +1814,9 @@ impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
             },
             Activity::Status { text, .. } => Self::Status {
                 text: Cow::Borrowed(text),
+            },
+            Activity::Route { decision, .. } => Self::Route {
+                decision: Cow::Borrowed(decision),
             },
             Activity::Error { text, .. } => Self::Error {
                 text: Cow::Borrowed(text),
