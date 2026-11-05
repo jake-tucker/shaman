@@ -2799,9 +2799,9 @@ struct SessionCatalogEventStreamState {
     model_changes: watch::Receiver<u64>,
     pushed_models: ModelCatalog,
     operations: SessionOperations,
-    workspace_moves: operations::WorkspaceListingMoves,
+    workspace_changes: operations::WorkspaceListingChanges,
     /// The revision of the Workspace listing this stream last pushed, so a
-    /// move that leaves the listing at it is not pushed again.
+    /// change that leaves the listing at it is not pushed again.
     pushed_workspaces: WorkspaceListingRevision,
 }
 
@@ -2837,9 +2837,9 @@ fn session_catalog_event_stream(
     model_changes.mark_unchanged();
     let pushed_models = models.current();
     let model_snapshot = model_catalog_event(&pushed_models);
-    // The Workspace listing follows, its moves heard of from before it is
+    // The Workspace listing follows, its changes heard of from before it is
     // read, so none landing meanwhile is lost.
-    let workspace_moves = operations.workspace_listing_moves();
+    let workspace_changes = operations.workspace_listing_changes();
     let listing = operations.workspace_listing_now();
     let pushed_workspaces = listing.revision;
     let workspace_snapshot = workspace_listing_event(&listing);
@@ -2856,7 +2856,7 @@ fn session_catalog_event_stream(
         model_changes,
         pushed_models,
         operations,
-        workspace_moves,
+        workspace_changes,
         pushed_workspaces,
     };
     let updates = stream::unfold(state, |mut state| async move {
@@ -2910,8 +2910,8 @@ fn session_catalog_event_stream(
                     state.pushed_models = catalog;
                     event
                 }
-                moved = state.workspace_moves.changed() => {
-                    if moved.is_err() {
+                changed = state.workspace_changes.changed() => {
+                    if changed.is_err() {
                         return None;
                     }
                     // A move that leaves the listing as this client already

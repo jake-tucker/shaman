@@ -950,7 +950,7 @@ mod tests {
     }
 
     /// What is remembered announces each change of it, so the listing a
-    /// Server pushes moves with it, and nothing where a reading finds what
+    /// Server pushes follows it, and nothing where a reading finds what
     /// was found before.
     #[tokio::test]
     async fn what_is_remembered_announces_each_change_of_it() {
@@ -975,7 +975,7 @@ mod tests {
                 }
             }),
         );
-        let mut moves = registry.sessions.registry_moves().follow();
+        let mut changes = registry.sessions.registry_changes().follow();
         let unreadable = [(
             WorkspaceId::directory(&atlas),
             WorkspaceUnavailability::HolderUnreadable,
@@ -984,20 +984,26 @@ mod tests {
         .collect::<HashMap<_, _>>();
 
         standing.check().await;
-        assert!(moves.has_changed().unwrap(), "finding it unreadable moves");
-        moves.mark_unchanged();
+        assert!(
+            changes.has_changed().unwrap(),
+            "finding it unreadable is a change"
+        );
+        changes.mark_unchanged();
         assert_eq!(standing.remembered(), unreadable);
 
         standing.check().await;
         assert_eq!(readings.load(Ordering::SeqCst), 2);
         assert!(
-            !moves.has_changed().unwrap(),
-            "finding it as it was found before moves nothing"
+            !changes.has_changed().unwrap(),
+            "finding it as it was found before changes nothing"
         );
 
         readable.store(true, Ordering::SeqCst);
         standing.check().await;
-        assert!(moves.has_changed().unwrap(), "finding it readable moves");
+        assert!(
+            changes.has_changed().unwrap(),
+            "finding it readable is a change"
+        );
         assert_eq!(standing.remembered(), HashMap::new());
     }
 

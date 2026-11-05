@@ -474,7 +474,7 @@ pub(crate) struct SourceControlService {
     repositories: Arc<Mutex<HashMap<RepositoryId, Repository>>>,
     /// Counts each change of what [`Self::repositories`] answers, while
     /// `repositories` is held as the change left it.
-    repository_moves: crate::moves::Moves,
+    repository_changes: crate::change_count::ChangeCount,
     mutations: Arc<Mutex<HashMap<RepositoryId, Arc<tokio::sync::Mutex<()>>>>>,
     incarnations: Arc<Mutex<HashMap<crate::protocol::CheckoutId, u64>>>,
     /// The directory Suru owns outside source control, which is a directory
@@ -496,7 +496,7 @@ impl SourceControlService {
         Self {
             adapter,
             repositories: Default::default(),
-            repository_moves: Default::default(),
+            repository_changes: Default::default(),
             mutations: Default::default(),
             incarnations: Default::default(),
             sidekick: None,
@@ -872,7 +872,7 @@ impl SourceControlService {
                     repository.clone()
                 });
             if moved {
-                self.repository_moves.moved();
+                self.repository_changes.changed();
             }
         }
     }
@@ -880,8 +880,8 @@ impl SourceControlService {
     /// Counts every change of what [`Self::repositories`] answers, which
     /// presents each Workspace a listing names, so the listing a Server
     /// pushes moves with it.
-    pub(crate) fn repository_moves(&self) -> crate::moves::Moves {
-        self.repository_moves.clone()
+    pub(crate) fn repository_changes(&self) -> crate::change_count::ChangeCount {
+        self.repository_changes.clone()
     }
     /// Every Repository this Server has grouped a Workspace for, however it came
     /// to know it — through a Session at startup, or through a Workspace
@@ -1128,7 +1128,7 @@ impl SourceControlService {
             && matches!(known.location, RepositoryLocation::UnknownMain)
         {
             known.location = read.location.clone();
-            self.repository_moves.moved();
+            self.repository_changes.changed();
         }
     }
     /// Resolve within one discovery batch, so that several directories which
@@ -1276,7 +1276,7 @@ impl SourceControlService {
                 .as_ref()
                 != Some(&*repository)
             {
-                self.repository_moves.moved();
+                self.repository_changes.changed();
             }
             drop(repositories);
             resolved.workspace = repository_workspace(repository);

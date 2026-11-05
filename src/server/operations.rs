@@ -92,7 +92,7 @@ pub(crate) use beginnings::BeginningRefusal;
 pub(crate) use clones::{CloneRefusal, CloneRoots, DetachedClones, WorkspaceCloning};
 pub(crate) use origins::{
     Gathered, OriginRefusal, Origins, Refusal, RemoteActRefusal, RemoteReach, SessionReadRefusal,
-    SilentRemote, WorkspaceListingMoves,
+    SilentRemote, WorkspaceListingChanges,
 };
 pub(crate) use remote_entries::RemoteWatches;
 pub(crate) use session_moves::{MoveRefusal, retire_landed_move_intents};

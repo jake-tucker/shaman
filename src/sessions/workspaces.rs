@@ -187,7 +187,7 @@ impl SessionStoreState {
         let dropped = self.workspaces.remove(workspace_id)?;
         self.sightings.forget(workspace_id);
         self.standings.remove(workspace_id);
-        self.registry_moved();
+        self.registry_changed();
         Some(dropped)
     }
 }
@@ -221,11 +221,11 @@ impl SessionStore {
     }
     /// Counts every change of what [`Self::listed_workspaces`] lists: an
     /// entry made, presented anew, or dropped, its Icon or Description
-    /// changed, what was last found of its directory, or work that moves
-    /// a Workspace ahead of another — so the listing a Server pushes moves
-    /// with it.
-    pub(crate) fn registry_moves(&self) -> crate::moves::Moves {
-        self.state.lock().unwrap().registry_moves.clone()
+    /// changed, what was last found of its directory, or work that puts
+    /// a Workspace ahead of another — so the listing a Server pushes follows
+    /// it.
+    pub(crate) fn registry_changes(&self) -> crate::change_count::ChangeCount {
+        self.state.lock().unwrap().registry_changes.clone()
     }
 
     /// Every Workspace this server knows, as its Workspace Registry lists
@@ -308,12 +308,12 @@ impl SessionStore {
         provenance: WorkspaceProvenance,
     ) -> &'state mut StoredWorkspace {
         state.sightings.see(workspace_id);
-        let mut moved = false;
+        let mut changed = false;
         let stored = state
             .workspaces
             .entry(workspace_id.clone())
             .or_insert_with(|| {
-                moved = true;
+                changed = true;
                 StoredWorkspace::known_by(provenance)
             });
         if let Some(workspace) = presented {
@@ -329,11 +329,11 @@ impl SessionStore {
                     presentation,
                     stored.provenance.clone(),
                 );
-                moved = true;
+                changed = true;
             }
         }
-        if moved {
-            state.registry_moves.moved();
+        if changed {
+            state.registry_changes.changed();
         }
         stored
     }
@@ -572,7 +572,7 @@ impl SessionStore {
             None => state.standings.remove(workspace_id),
         };
         if before != why {
-            state.registry_moved();
+            state.registry_changed();
         }
     }
 

@@ -1043,18 +1043,18 @@ impl SessionOperations {
     /// Every Workspace this Server knows, as [`Self::workspace_listing`]
     /// lists them, reading nothing afresh, at the revision this Server gives
     /// it (see [`super::workspace_listings`]): what is pushed whenever it
-    /// moves (see [`Self::workspace_listing_moves`]).
+    /// moves (see [`Self::workspace_listing_changes`]).
     pub(crate) fn workspace_listing_now(&self) -> WorkspaceListing {
         self.workspace_listings
             .give(|| self.workspaces_of_registry(self.registry_standing.remembered()))
     }
 
-    /// Announces whatever may move what [`Self::workspace_listing_now`]
+    /// Announces whatever may change what [`Self::workspace_listing_now`]
     /// answers from now on.
-    pub(crate) fn workspace_listing_moves(&self) -> WorkspaceListingMoves {
-        WorkspaceListingMoves {
-            registry: self.sessions.registry_moves().follow(),
-            repositories: self.source_control.repository_moves().follow(),
+    pub(crate) fn workspace_listing_changes(&self) -> WorkspaceListingChanges {
+        WorkspaceListingChanges {
+            registry: self.sessions.registry_changes().follow(),
+            repositories: self.source_control.repository_changes().follow(),
             given: self.workspace_listings.follow(),
         }
     }
@@ -1266,16 +1266,16 @@ impl SessionOperations {
 /// Registry's entries, the Sessions that order them, and what was last found
 /// of each entry's directory; the Repositories source control has read,
 /// which present them; and a listing given at a revision of its own to
-/// anyone, an answer included. A move may leave the listing as it was, so
+/// anyone, an answer included. A change may leave the listing as it was, so
 /// whatever pushes it pushes only a listing at a revision it has not.
-pub(crate) struct WorkspaceListingMoves {
+pub(crate) struct WorkspaceListingChanges {
     registry: watch::Receiver<u64>,
     repositories: watch::Receiver<u64>,
     given: watch::Receiver<WorkspaceListing>,
 }
 
-impl WorkspaceListingMoves {
-    /// Waits for the next move; an error once nothing is left to move it.
+impl WorkspaceListingChanges {
+    /// Waits for the next change; an error once nothing is left to change it.
     pub(crate) async fn changed(&mut self) -> Result<(), watch::error::RecvError> {
         tokio::select! {
             changed = self.registry.changed() => changed,

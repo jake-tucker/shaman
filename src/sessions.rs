@@ -206,8 +206,8 @@ struct SessionStoreState {
     /// entry not yet read, or last found readable, is not here.
     standings: HashMap<WorkspaceId, crate::protocol::WorkspaceUnavailability>,
     /// Counts each change of what the Workspace listing reads of this
-    /// store (see [`SessionStore::registry_moves`]).
-    registry_moves: crate::moves::Moves,
+    /// store (see [`SessionStore::registry_changes`]).
+    registry_changes: crate::change_count::ChangeCount,
     /// The Workspaces the listing stood first, by which held work most
     /// recently, as a change of the Session catalog last found them (see
     /// [`SessionStoreState::worked_order`]), so a change that moves them
@@ -470,7 +470,7 @@ impl SessionStore {
             workspaces,
             sightings: Default::default(),
             standings: HashMap::new(),
-            registry_moves: Default::default(),
+            registry_changes: Default::default(),
             worked_order: Vec::new(),
             report_notices: None,
             continuations_awaited: Default::default(),
@@ -966,14 +966,14 @@ impl SessionStoreState {
             }
         };
         if moved {
-            self.registry_moved();
+            self.registry_changed();
         }
         self.catalog.publish(change);
     }
 
-    /// Announces that what the Workspace listing reads of this store moved.
-    fn registry_moved(&self) {
-        self.registry_moves.moved();
+    /// Announces that what the Workspace listing reads of this store changed.
+    fn registry_changed(&self) {
+        self.registry_changes.changed();
     }
 
     fn next_timestamp(&mut self) -> SessionTimestamp {
