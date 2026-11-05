@@ -964,6 +964,15 @@ impl SourceControl for GitSourceControl {
         self.observe_checkout(checkout, false).await
     }
 
+    /// A registration that cannot be read proves nothing, and the next pass
+    /// asks again.
+    async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
+        self.recovery_registration(repository, checkout)
+            .is_ok_and(|metadata| {
+                metadata.is_some_and(|metadata| metadata.join(MANAGED_MARKER).is_file())
+            })
+    }
+
     /// The Repository's metadata names its Worktrees, read from disk where it
     /// can be and by one `worktree list` where it cannot; nothing here reads
     /// or validates them, because the caller observes each in turn and that
@@ -1493,6 +1502,16 @@ fn path_from_bytes(bytes: &[u8]) -> PathBuf {
     {
         PathBuf::from(String::from_utf8_lossy(bytes).into_owned())
     }
+}
+
+/// The file in a linked Worktree's registration saying Suru made it. It stands
+/// beside Git's own files there, so it never shows in the checkout and Git
+/// removes it with the registration; recovery writes it again on recreating one.
+const MANAGED_MARKER: &str = "suru-managed";
+
+fn mark_managed(metadata: &Path) -> Result<(), String> {
+    std::fs::write(metadata.join(MANAGED_MARKER), "")
+        .map_err(|e| format!("Cannot mark the Worktree as Suru's own: {e}"))
 }
 
 /// An unfinished recovery must not replace the durable revision it is restoring.

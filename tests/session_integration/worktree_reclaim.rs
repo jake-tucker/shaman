@@ -97,6 +97,7 @@ impl ReclaimLayout {
                 managed.to_str().unwrap(),
             ],
         );
+        crate::support::mark_managed(&managed);
         Self {
             _temp: temp,
             root,
@@ -425,6 +426,9 @@ struct DelayedAvailableObservation {
 
 #[async_trait::async_trait]
 impl SourceControl for DelayedAvailableObservation {
+    async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
+        self.git.made_checkout(repository, checkout).await
+    }
     fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
@@ -499,6 +503,9 @@ struct ObservationDuringRemoval {
 
 #[async_trait::async_trait]
 impl SourceControl for ObservationDuringRemoval {
+    async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
+        self.git.made_checkout(repository, checkout).await
+    }
     fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
@@ -998,6 +1005,9 @@ struct PauseEagerRemoval {
 
 #[async_trait::async_trait]
 impl SourceControl for PauseEagerRemoval {
+    async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
+        self.git.made_checkout(repository, checkout).await
+    }
     fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
@@ -1096,6 +1106,9 @@ impl CountReclaimCandidates {
 
 #[async_trait::async_trait]
 impl SourceControl for CountReclaimCandidates {
+    async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
+        self.git.made_checkout(repository, checkout).await
+    }
     fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
@@ -1185,6 +1198,9 @@ impl SourceControl for CountReclaimCandidates {
 
 #[async_trait::async_trait]
 impl SourceControl for PauseAfterCandidateObservation {
+    async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
+        self.git.made_checkout(repository, checkout).await
+    }
     fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
@@ -1972,6 +1988,9 @@ impl SilentDirectory {
 
 #[async_trait::async_trait]
 impl SourceControl for SilentDirectory {
+    async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
+        self.git.made_checkout(repository, checkout).await
+    }
     fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
@@ -2217,6 +2236,29 @@ async fn an_initialized_submodule_excludes_reclaim() {
     server.shutdown().await.unwrap();
 }
 
+/// `.worktrees` is a name people give directories of their own Worktrees too, and
+/// Reclaim takes a Worktree's ignored files with it. Only what Suru made goes.
+#[tokio::test]
+async fn a_worktree_someone_made_themselves_in_the_managed_directory_is_left_alone() {
+    let layout = ReclaimLayout::new("made-by-suru");
+    let theirs = layout.main.join(".worktrees").join("made-by-hand");
+    git(
+        &layout.main,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "their-topic",
+            theirs.to_str().unwrap(),
+        ],
+    );
+    let server = spawn(&layout, "reclaim-made-by-hand").await;
+    wait_for_path(&layout.managed, false).await;
+    tokio::time::sleep(RECLAIM_INTERVAL * 2).await;
+    assert!(theirs.join("tracked").is_file());
+    server.shutdown().await.unwrap();
+}
+
 #[tokio::test]
 async fn an_external_git_lock_excludes_reclaim_and_release_allows_a_later_pass() {
     let layout = ReclaimLayout::new("external-lock");
@@ -2417,6 +2459,9 @@ struct FailFirstPreparationRetirement {
 
 #[async_trait::async_trait]
 impl SourceControl for FailFirstPreparationRetirement {
+    async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
+        self.git.made_checkout(repository, checkout).await
+    }
     fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
@@ -2487,6 +2532,9 @@ impl SourceControl for FailFirstPreparationRetirement {
 
 #[async_trait::async_trait]
 impl SourceControl for FailFirstReclaim {
+    async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
+        self.git.made_checkout(repository, checkout).await
+    }
     fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
         self.git.clone_capability()
     }

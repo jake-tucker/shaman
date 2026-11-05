@@ -448,6 +448,13 @@ impl SourceControl for HeldGit {
             .remove_checkout(target, inspection, force, branch_outcome)
             .await
     }
+    async fn made_checkout(
+        &self,
+        repository: &suru::protocol::Repository,
+        checkout: &suru::protocol::CheckoutAssociation,
+    ) -> bool {
+        self.git.made_checkout(repository, checkout).await
+    }
     async fn reclaim_checkout(
         &self,
         target: &CheckoutRemovalTarget,

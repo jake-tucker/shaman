@@ -2507,6 +2507,7 @@ async fn no_sweep_takes_a_worktree_a_move_waiting_on_a_native_subagent_is_bound_
                 witness_path.to_str().unwrap(),
             ],
         );
+        crate::support::mark_managed(&witness_path);
         until_gone(&witness_path).await;
     }
 

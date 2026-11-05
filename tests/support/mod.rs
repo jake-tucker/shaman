@@ -37,6 +37,18 @@ pub fn loopback_client() -> reqwest::Client {
         .expect("a loopback HTTP client needs nothing that can fail")
 }
 
+/// Marks the linked Worktree at `root` as one Suru made, for a test that stands
+/// one up with Git rather than by preparing it.
+pub fn mark_managed(root: &std::path::Path) {
+    let pointer = std::fs::read_to_string(root.join(".git")).expect("a linked Worktree's pointer");
+    let metadata = pointer
+        .trim_end()
+        .strip_prefix("gitdir: ")
+        .expect("a linked Worktree's pointer names its registration");
+    std::fs::write(std::path::Path::new(metadata).join("suru-managed"), "")
+        .expect("mark the registration");
+}
+
 pub fn write_runtime_descriptor(path: impl AsRef<std::path::Path>, descriptor: &RuntimeDescriptor) {
     let path = path.as_ref();
     serde_json::to_writer(

@@ -84,6 +84,7 @@ fn orphan_beside(layout: &ReclaimLayout, name: &str) -> PathBuf {
             orphan.to_str().unwrap(),
         ],
     );
+    crate::support::mark_managed(&orphan);
     orphan
 }
 

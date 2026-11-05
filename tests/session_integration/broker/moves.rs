@@ -86,6 +86,7 @@ async fn a_brokered_subagents_session_holds_the_worktree_its_parent_moves_out_of
                 path.to_str().expect("a Unicode path"),
             ],
         );
+        crate::support::mark_managed(path);
     }
 
     let (caller, handoff, mut caller_provider) = start_session(

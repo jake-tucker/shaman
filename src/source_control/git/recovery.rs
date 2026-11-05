@@ -171,6 +171,10 @@ impl GitSourceControl {
             materialized = false;
         }
         let metadata = registration.ok_or("Recovery registration was not created")?;
+        // Git took the last marker with the registration a Reclaim removed. A
+        // Worktree recreated here is Suru's own making from now on, whoever made
+        // the first, and only one in the managed directory is ever taken for it.
+        mark_managed(&metadata)?;
         let branch = self
             .text(
                 &checkout.root,

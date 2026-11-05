@@ -101,6 +101,47 @@ async fn reclaim_accepts_a_preparation_lock_only_with_git_owned_marker_and_ref_e
     assert!(!plan.destination.path.exists());
 }
 
+/// Only what Suru made counts as made, and one Suru recreated keeps counting
+/// although the marker went with the registration a removal took.
+#[tokio::test]
+async fn a_checkout_is_made_by_preparing_it_or_recovering_it_and_not_by_where_it_stands() {
+    let (_temporary, root) = root();
+    let main = root.join("main");
+    init(&main);
+    commit(&main);
+    let adapter = GitSourceControl::default();
+    let source = adapter.discover(&main).await;
+    let plan = adapter
+        .plan_checkout(Default::default(), &source, "prepared", &[])
+        .await
+        .unwrap();
+    adapter.prepare_checkout(&plan).await.unwrap();
+    let prepared = removal_target(&adapter, &plan.destination.path).await;
+    let repository = &prepared.repository;
+    assert!(adapter.made_checkout(repository, &prepared.checkout).await);
+
+    let theirs = main.join(".worktrees").join("by-hand");
+    linked(&main, &theirs, "by-hand");
+    let theirs = removal_target(&adapter, &theirs).await;
+    assert!(!adapter.made_checkout(repository, &theirs.checkout).await);
+
+    git(
+        &main,
+        &[
+            "worktree",
+            "remove",
+            plan.destination.path.to_str().unwrap(),
+        ],
+    );
+    assert!(!adapter.made_checkout(repository, &prepared.checkout).await);
+    let recovery = adapter
+        .recover_checkout(repository, &prepared.checkout)
+        .await
+        .unwrap();
+    assert!(recovery.recreated);
+    assert!(adapter.made_checkout(repository, &prepared.checkout).await);
+}
+
 fn read_git(directory: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .arg("-C")

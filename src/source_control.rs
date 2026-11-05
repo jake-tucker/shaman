@@ -308,6 +308,17 @@ pub trait SourceControl: Send + Sync {
     ) -> Result<crate::protocol::CheckoutBranchOutcome, String> {
         Err("Preparation ownership retirement is unsupported".into())
     }
+    /// Whether this system made `checkout` for Suru, rather than someone having
+    /// made it themselves where Suru keeps its own. Reclaim removes only what
+    /// this answers for, so a system that cannot tell keeps the default and has
+    /// nothing removed unattended.
+    async fn made_checkout(
+        &self,
+        _repository: &Repository,
+        _checkout: &crate::protocol::CheckoutAssociation,
+    ) -> bool {
+        false
+    }
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace;
     /// Whether this system Clones a Repository URL into a new directory, as
     /// [`SourceControl::clone_repository`] does. Every system says, as every
@@ -949,6 +960,13 @@ impl SourceControlService {
         repository: &Repository,
     ) -> Result<Vec<crate::protocol::CheckoutAssociation>, String> {
         self.adapter.list_checkouts(repository).await
+    }
+    pub(crate) async fn made_checkout(
+        &self,
+        repository: &Repository,
+        checkout: &crate::protocol::CheckoutAssociation,
+    ) -> bool {
+        self.adapter.made_checkout(repository, checkout).await
     }
     pub(crate) fn workspaces(&self) -> Vec<Workspace> {
         self.repositories

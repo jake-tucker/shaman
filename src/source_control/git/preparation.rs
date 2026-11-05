@@ -308,6 +308,13 @@ impl GitSourceControl {
             )
             .await?;
         }
+        // Ahead of anything that can fail, so a Worktree this preparation leaves
+        // behind is one Reclaim may take.
+        mark_managed(
+            &self
+                .owned_registration(plan)?
+                .ok_or("Prepared checkout registration is unavailable")?,
+        )?;
         self.checkpoint(
             super::super::PreparationCheckpoint::RegistrationCreated,
             plan,

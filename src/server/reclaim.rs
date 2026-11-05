@@ -281,7 +281,14 @@ impl Reclaimer {
             .map(|checkout| checkout.root.clone())
             .collect::<HashSet<_>>();
         for checkout in checkouts {
-            if !is_managed(repository, &checkout) {
+            // Standing in the managed directory proves nothing on its own: it
+            // is a name people use for Worktrees of their own too.
+            if !is_managed(repository, &checkout)
+                || !self
+                    .source_control
+                    .made_checkout(repository, &checkout)
+                    .await
+            {
                 continue;
             }
             let unfinished = preparations
