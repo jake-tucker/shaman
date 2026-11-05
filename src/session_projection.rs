@@ -589,17 +589,20 @@ impl ValidatedChanges {
                     to,
                     error,
                 } => {
+                    let reached = next.transcript.len();
                     let Activity::Move {
                         status: current_status,
                         from: current_from,
                         to: current_to,
                         error: current_error,
+                        settled_at,
                         ..
                     } = &mut next.activities[resolved()]
                     else {
                         unreachable!("{RESOLVED}");
                     };
                     *current_status = *status;
+                    *settled_at = Some(reached);
                     current_from.clone_from(from);
                     current_to.clone_from(to);
                     current_error.clone_from(error);

@@ -94,7 +94,8 @@ pub(super) fn input_schema(role: BrokerRole) -> Value {
                         Subagent spawned with spawn_subagent by you or by a Subagent beneath you.",
                 },
                 "directory": directory_property(
-                    "within a Worktree of the Repository you work in",
+                    "within a Worktree of the Repository you work in or, outside source control, \
+                     beneath your Workspace's directory",
                     "this machine's home",
                 ),
                 "new_worktree": new_worktree,

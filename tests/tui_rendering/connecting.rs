@@ -70,7 +70,10 @@ fn choosing_a_remote_names_it_beside_the_workspace_on_landing_and_in_the_session
     assert!(!rows.last().unwrap().contains("studio"));
     type_terminal_text(&mut application, "draft");
     application
-        .handle_event(ApplicationEvent::SessionOperationFailed("refused".into()))
+        .handle_event(ApplicationEvent::SessionOperationFailed {
+            asked_from: None,
+            error: "refused".into(),
+        })
         .unwrap();
     for width in [28, 43, 80] {
         let compact = rendered_application_rows_at(&application, width, 5);

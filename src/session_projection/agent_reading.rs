@@ -458,9 +458,10 @@ impl<'a> Transcript<'a> {
             .collect::<HashMap<_, _>>();
         // A Move belongs to no Turn, so it is read with the Turn the
         // Transcript reached before it, or the first Turn where it reached
-        // none, which is the one that follows it.
+        // none, which is the one that follows it. One that waited is read where
+        // it settled, after what the Turn holding it went on to do there.
         let mut reached = session.turns.first().map(|turn| turn.id);
-        for item in &session.transcript {
+        for (_, item) in session.transcript_in_reading_order() {
             let (turn_id, entry) = match item {
                 TranscriptItem::Message { message_id } => match messages.get(message_id) {
                     Some(message) => (Some(message.turn_id), Entry::Message(message)),
@@ -2298,6 +2299,47 @@ mod tests {
         );
     }
 
+    /// A Move that waited on its Turn is read where it settled, after what
+    /// that Turn went on to do, and not where it was asked.
+    #[test]
+    fn a_move_that_waited_is_read_where_it_settled() {
+        let location = |directory: &str| MoveLocation {
+            execution_directory: ExecutionDirectory {
+                path: PathBuf::from(ROOT).join(directory),
+            },
+            branch: None,
+        };
+        let mut fixture = Fixture::new();
+        let turn = fixture.turn(TurnStatus::Completed);
+        fixture.user(turn, "Asked before the Move was");
+        fixture.activity(Activity::Move {
+            id: ActivityId::new(),
+            status: ActivityStatus::Completed,
+            from: location("first"),
+            to: location("second"),
+            error: None,
+            new_worktree: false,
+            to_checkout: None,
+            settled_at: Some(3),
+        });
+        fixture.user(turn, "Said while the Move waited");
+
+        let reading = fixture.window(Window {
+            detail: Detail::Activities,
+            ..Window::default()
+        });
+
+        let said = reading
+            .transcript
+            .find("Said while the Move waited")
+            .expect("what the Turn went on to do is read");
+        let moved = reading
+            .transcript
+            .find("move [completed]")
+            .expect("the Move is read");
+        assert!(said < moved, "{}", reading.transcript);
+    }
+
     /// A Move belongs to no Turn, so it is read with the Turn the Transcript
     /// reached before it, or with the one that follows where it reached none,
     /// saying each end's branch as every surface does.
@@ -2317,6 +2359,7 @@ mod tests {
             error: None,
             new_worktree: false,
             to_checkout: None,
+            settled_at: None,
         };
         let (first, second, third) = (
             location("first", Some("main")),

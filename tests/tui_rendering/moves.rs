@@ -4,13 +4,15 @@
 //! where it now works, and the Client's current Workspace goes with it.
 
 use crate::tui_rendering::support::{
-    answer_workspace_resolution, application_looking_at_studio, connected_application,
+    answer_workspace_resolution, application_looking_at_studio, click_mouse, connected_application,
     deliver_settings, drawn_in_sidebar, enter_active_session, enter_session, fixture_instance_id,
-    invoke, key, listed_session, named_workspace_path, ready_health, rendered_application_rows,
-    rendered_application_rows_at, selector_label, studio_stops_answering, type_terminal_text,
-    workspace_dir, workspace_resolution,
+    invoke, key, listed_session, named_workspace_path, ready_health, rendered_application_buffer,
+    rendered_application_rows, rendered_application_rows_at, selector_label,
+    studio_stops_answering, text_position, type_terminal_text, workspace_dir, workspace_resolution,
 };
-use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{
+    Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -194,7 +196,10 @@ fn a_refused_move_says_why_and_leaves_the_session_where_it_was() {
         );
 
         application
-            .handle_event(ApplicationEvent::SessionOperationFailed(refusal.to_owned()))
+            .handle_event(ApplicationEvent::SessionOperationFailed {
+                asked_from: Some(SessionReference::new(Outlook::Local, session_id)),
+                error: refusal.to_owned(),
+            })
             .expect("hear the Move refused");
 
         let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
@@ -470,6 +475,7 @@ fn hear_recorded_move(
                             from: location(&snapshot.session.execution_directory.path, from),
                             to: location(destination, to),
                             error: error.map(str::to_owned),
+                            settled_at: None,
                             new_worktree: false,
                             to_checkout: None,
                         },
@@ -1570,6 +1576,7 @@ fn hear_move_pending(
                         from: from.clone(),
                         to: to.clone(),
                         error: None,
+                        settled_at: None,
                         new_worktree: false,
                         to_checkout: None,
                     },
@@ -3422,4 +3429,194 @@ fn a_late_outlook_answer_does_not_undo_a_landed_follow() {
     let landing = screen(&application);
     assert!(landing.contains("beta-work"), "{landing}");
     assert!(!landing.contains("alpha-work"), "{landing}");
+}
+
+/// A refusal is said beneath the composer of the Session it was asked from, if
+/// that is still the one open: a reader who has gone to another Session finds
+/// nothing of it there.
+#[test]
+fn a_refusal_of_a_session_since_left_says_nothing_beneath_another() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (session_id, _) = enter_session(&mut application, &directories.alpha);
+    let refused = |asked_from| ApplicationEvent::SessionOperationFailed {
+        asked_from,
+        error: "No directory is at ../nowhere".to_owned(),
+    };
+
+    application
+        .handle_event(refused(Some(SessionReference::new(
+            Outlook::Local,
+            SessionId::new(),
+        ))))
+        .expect("hear another Session's refusal");
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(!screen.contains("No directory is at"), "{screen}");
+
+    application
+        .handle_event(refused(Some(SessionReference::new(
+            Outlook::Local,
+            session_id,
+        ))))
+        .expect("hear this Session's refusal");
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(screen.contains("No directory is at"), "{screen}");
+}
+
+/// A Move that waited reads where it settled: what its Turn went on to do in the
+/// directory it left stands above the row saying the Session Moved.
+#[test]
+fn a_move_that_waited_reads_after_what_its_turn_went_on_to_do() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (session_id, snapshot, turn_id) =
+        enter_active_session(&mut application, &directories.alpha);
+    let (activity_id, from, to) = hear_move_pending(&mut application, &snapshot, &directories.beta);
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(snapshot.revision.0 + 2),
+                changes: vec![SessionChange::ActivityAdded {
+                    activity: Activity::Error {
+                        id: ActivityId::new(),
+                        turn_id,
+                        text: "Still working where it was".to_owned(),
+                    },
+                }],
+            },
+        )))
+        .expect("hear the Turn go on");
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(snapshot.revision.0 + 3),
+                changes: vec![SessionChange::MoveSettled {
+                    activity_id,
+                    status: ActivityStatus::Completed,
+                    from,
+                    to,
+                    error: None,
+                }],
+            },
+        )))
+        .expect("hear the Move settle");
+
+    let rows = rendered_application_rows_at(&application, WIDE, 40);
+    let at = |needle: &str| {
+        rows.iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("{needle}: {}", rows.join("\n")))
+    };
+    assert!(
+        at("Still working where it was") < at("✓ Moved from"),
+        "{}",
+        rows.join("\n")
+    );
+}
+
+/// While a question the browser's choice led to stands in its place, the browser
+/// is not drawn, and the question holds the pointer's input ahead of it, so
+/// neither a press nor the wheel where its rows stood reaches it: going back
+/// finds it as the reader left it.
+#[test]
+fn neither_a_press_nor_the_wheel_reaches_the_hidden_browser() {
+    let fixture = MoveFixture::new();
+    let (bare, _) = bare_repository("vault");
+    let (mut application, _, _) = fixture.viewing(&fixture.nested);
+    open_move_picker(&mut application, fixture.at(&fixture.nested));
+    walk_to(&mut application, "Browse…");
+    let ApplicationTransition::ListDirectory { listing_id, .. } = press_enter(&mut application)
+    else {
+        panic!("the browser lists the Session's directory");
+    };
+    let child = |name: String, source_control| ChildDirectory {
+        path: fixture.nested.join(&name),
+        name,
+        source_control,
+        hidden: false,
+    };
+    application
+        .handle_event(ApplicationEvent::DirectoryListed {
+            listing_id,
+            result: Ok(DirectoryListing {
+                root: fixture.nested.clone(),
+                parent: fixture.nested.parent().map(Path::to_owned),
+                source_control: DirectorySourceControl::Plain,
+                children: std::iter::once(child(
+                    "vault.git".to_owned(),
+                    DirectorySourceControl::BareRepository,
+                ))
+                .chain(
+                    (0..40).map(|at| child(format!("row-{at:02}"), DirectorySourceControl::Plain)),
+                )
+                .collect(),
+            }),
+        })
+        .expect("list the directory");
+    key(&mut application, KeyCode::Down);
+    let browsed = rendered_application_rows_at(&application, WIDE, HEIGHT);
+    let resolution = press_enter(&mut application);
+    answer_with(&mut application, &resolution, Ok(bare));
+    assert!(screen(&application).contains("Which Worktree"));
+    // The question's own row is inside its box, where a click stays with it.
+    let buffer = rendered_application_buffer(&application, WIDE, HEIGHT);
+    let (column, row) = text_position(&buffer, "Which Worktree");
+    assert!(
+        browsed[usize::from(row)].contains("row-"),
+        "the question stands where a row of the browser stood: {browsed:#?}"
+    );
+
+    let pressed = click_mouse(
+        &mut application,
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+    )
+    .expect("press the left button");
+    assert_eq!(pressed, ApplicationTransition::Continue);
+    for _ in 0..3 {
+        application
+            .handle_terminal_event(InputEvent::Mouse(MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            }))
+            .expect("turn the wheel");
+    }
+    assert!(screen(&application).contains("Which Worktree"));
+
+    key(&mut application, KeyCode::Esc);
+    assert_eq!(
+        rendered_application_rows_at(&application, WIDE, HEIGHT),
+        browsed,
+        "going back finds the browser as the reader left it"
+    );
+}
+
+/// The Move picker's Browse row is the command the Workspace Picker's is, and is
+/// refused on the same terms while its Server does not answer.
+#[test]
+fn the_browse_row_is_refused_as_its_command_is_while_the_server_is_unreachable() {
+    let fixture = MoveFixture::new();
+    let mut application = application_looking_at_studio();
+    enter_active_session(&mut application, &fixture.nested);
+    open_move_picker(&mut application, fixture.at(&fixture.nested));
+    walk_to(&mut application, "Browse…");
+    studio_stops_answering(&mut application, 1, Duration::from_secs(5));
+
+    assert_eq!(
+        press_enter(&mut application),
+        ApplicationTransition::Continue,
+        "the browser reads the Server, which is not answering"
+    );
+
+    let drawn = screen(&application);
+    assert!(drawn.contains("studio is unreachable"), "{drawn}");
+    assert!(!drawn.contains(" Directory Browser "), "{drawn}");
 }

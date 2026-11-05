@@ -874,6 +874,7 @@ impl SessionStore {
                                 error: None,
                                 new_worktree: moved.new_worktree,
                                 to_checkout: checkout.as_ref().map(|entered| entered.id.clone()),
+                                settled_at: Some(record.snapshot.transcript.len()),
                             },
                         )?);
                         next.pending_move = None;

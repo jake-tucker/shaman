@@ -262,7 +262,7 @@ pub enum SemanticCommandId {
     SessionRename,
     /// Moves the open Session to another directory of its Server: the one
     /// `/move <path>` names, read there as the Directory Browser's path
-    /// field reads one.
+    /// field reads one, or the one chosen from the picker bare `/move` opens.
     SessionMove,
     RenameInsert,
     RenameDeleteBackward,

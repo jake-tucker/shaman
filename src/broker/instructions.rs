@@ -168,8 +168,8 @@ fn sidekick_note(roots: &[String], tool_name: &impl Fn(&str) -> String) -> Strin
          answer a Questionnaire, which asks for input, and the user sees your Answer as given by \
          you; but an Approval asks for the user's consent, so tell them of one rather than \
          deciding it. The Subagents you spawn are \
-         offered none of these Tools, so do such work \
-         yourself rather than delegating it. When the work you set going in a Session you \
+         offered none of these Tools but {move_session}, bounded to their own Workspace, so do \
+         such work yourself rather than delegating it. When the work you set going in a Session you \
          began, sent a Prompt or answered settles, or that Session comes to owe a Questionnaire \
          or an Approval, Suru tells you as a new message that wakes you if your turn has ended, \
          so end your turn rather than polling it with {read_session}. Where that work settles \
@@ -488,7 +488,8 @@ mod tests {
             "add, log in to or remove a Relay",
             "may not act on any Session of the Sidekick Workspace, your own included, except to \
              Move a Subagent you spawned out of it, nor begin one there",
-            "The Subagents you spawn are offered none of these Tools",
+            "The Subagents you spawn are offered none of these Tools but",
+            "bounded to their own Workspace",
         ] {
             assert!(
                 note.contains(exclusion),

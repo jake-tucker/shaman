@@ -2,8 +2,9 @@
 //! this Server while everything else about it stays (ADR 0059).
 //!
 //! The store applies a Move in one step, under its own lock, so no Prompt can
-//! be admitted between finding the Session idle and its new directory
-//! standing: the Session's directory, the Workspace holding it and the
+//! be admitted between finding nothing holding it and its new directory
+//! standing, whether it was asked just now or has waited (see below): the
+//! Session's directory, the Workspace holding it and the
 //! Worktree it lies in change together, storage takes them before the Session
 //! does, and every reader of the Session and its listings hears of it. Once
 //! storage has taken the Move — and not before, so a refused Move changes
@@ -38,7 +39,10 @@
 //! once the actor comes to it: the Move applies first, and the Turn begins in the
 //! destination. A newer Move replaces a pending one, a Move to where the Session
 //! works cancels it, each settling the older Activity Interrupted in words saying
-//! why; and a pending Move owes its Agent no note until it applies.
+//! why; and a pending Move owes its Agent no note until it applies. The Activity
+//! keeps its place in the Transcript, which only ever grows at its end, but says
+//! how far that had reached as it settled, and is read from there, after what the
+//! Turn that held it went on to do in the directory it left.
 //!
 //! A new Managed Worktree a Move made for itself says so in the Move's Activity,
 //! which outlives a restart with the rest of its record, so that whichever
@@ -119,6 +123,7 @@ impl MoveTarget<'_> {
             error: None,
             new_worktree: self.new_worktree,
             to_checkout: checkout.map(|entered| entered.id.clone()),
+            settled_at: None,
         }
     }
 
@@ -905,6 +910,7 @@ fn settling_of_pending(
                 error: error.clone(),
                 new_worktree,
                 to_checkout,
+                settled_at: Some(record.snapshot.transcript.len()),
             },
         )?,
         change: SessionChange::MoveSettled {

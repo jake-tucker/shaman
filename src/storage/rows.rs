@@ -1562,6 +1562,8 @@ enum StoredActivityPayload<'a> {
         new_worktree: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         to_checkout: Option<Cow<'a, crate::protocol::CheckoutId>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        settled_at: Option<usize>,
     },
 }
 
@@ -1750,6 +1752,7 @@ impl StoredActivityPayload<'_> {
                 error,
                 new_worktree,
                 to_checkout,
+                settled_at,
             } => Activity::Move {
                 id,
                 status,
@@ -1758,6 +1761,7 @@ impl StoredActivityPayload<'_> {
                 error: owned(error),
                 new_worktree,
                 to_checkout: to_checkout.map(Cow::into_owned),
+                settled_at,
             },
         })
     }
@@ -1933,6 +1937,7 @@ impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
                 error,
                 new_worktree,
                 to_checkout,
+                settled_at,
                 ..
             } => Self::Move {
                 status: *status,
@@ -1941,6 +1946,7 @@ impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
                 error: borrowed(error),
                 new_worktree: *new_worktree,
                 to_checkout: to_checkout.as_ref().map(Cow::Borrowed),
+                settled_at: *settled_at,
             },
         }
     }

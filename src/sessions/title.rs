@@ -274,15 +274,10 @@ impl Derivation {
         let source_control = self.source_control.clone();
         let preparations = self.preparations.clone();
         tokio::spawn(async move {
-            let (provider, pinned) = match &errand_at {
-                ErrandAt::Provider(provider) => (provider, None),
-                ErrandAt::Selection(selection) => (&selection.provider, Some(selection)),
-            };
-            let Some(selection) = models.resolved_errand_selection(provider, pinned).await else {
-                tracing::info!(
-                    %session_id,
-                    "no Errand: `{provider}` offers no Model to run one at"
-                );
+            let Some(selection) = errand_at
+                .selection(&models, &session_id.to_string(), "Errand")
+                .await
+            else {
                 return;
             };
             // The Title Errand runs first, to completion, before the
@@ -401,15 +396,10 @@ impl Derivation {
             else {
                 return;
             };
-            let (provider, pinned) = match &errand_at {
-                ErrandAt::Provider(provider) => (provider, None),
-                ErrandAt::Selection(selection) => (&selection.provider, Some(selection)),
-            };
-            let Some(selection) = models.resolved_errand_selection(provider, pinned).await else {
-                tracing::info!(
-                    ?workspace_id,
-                    "no Workspace Errand: `{provider}` offers no Model to run one at"
-                );
+            let Some(selection) = errand_at
+                .selection(&models, &format!("{workspace_id:?}"), "Workspace Errand")
+                .await
+            else {
                 return;
             };
             derive_workspace(
@@ -468,15 +458,10 @@ impl Derivation {
         let source_control = self.source_control.clone();
         let preparations = self.preparations.clone();
         tokio::spawn(async move {
-            let (provider, pinned) = match &errand_at {
-                ErrandAt::Provider(provider) => (provider, None),
-                ErrandAt::Selection(selection) => (&selection.provider, Some(selection)),
-            };
-            let Some(selection) = models.resolved_errand_selection(provider, pinned).await else {
-                tracing::info!(
-                    %session_id,
-                    "no Errand: `{provider}` offers no Model to run one at"
-                );
+            let Some(selection) = errand_at
+                .selection(&models, &session_id.to_string(), "Errand")
+                .await
+            else {
                 return;
             };
             let errand = ProviderErrand {
@@ -722,6 +707,31 @@ async fn rename_branch(
 enum ErrandAt {
     Provider(ProviderId),
     Selection(AgentSelection),
+}
+
+impl ErrandAt {
+    /// The Selection `errand`, run for `on_behalf_of`, runs at as the catalog
+    /// stands now; `None`, saying so in the Log, where its Provider offers no
+    /// Model to run one at.
+    async fn selection(
+        &self,
+        models: &ModelCatalogService,
+        on_behalf_of: &str,
+        errand: &str,
+    ) -> Option<AgentSelection> {
+        let (provider, pinned) = match self {
+            Self::Provider(provider) => (provider, None),
+            Self::Selection(selection) => (&selection.provider, Some(selection)),
+        };
+        let selection = models.resolved_errand_selection(provider, pinned).await;
+        if selection.is_none() {
+            tracing::info!(
+                on_behalf_of,
+                "no {errand}: `{provider}` offers no Model to run one at"
+            );
+        }
+        selection
+    }
 }
 
 /// A Title as a derivation finds it: what it reads, and how many times the

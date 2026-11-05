@@ -5455,7 +5455,12 @@ pub enum ApplicationEvent {
         error: String,
     },
     SessionCreated(SessionSnapshot),
-    SessionOperationFailed(String),
+    SessionOperationFailed {
+        /// The Session open when it was asked for: its failure is said beneath
+        /// that Session's composer, and no other's.
+        asked_from: Option<SessionReference>,
+        error: String,
+    },
     /// What a Session's Server made of a Move this Client asked of it. The
     /// Move itself reaches every Client viewing the Session on its stream.
     SessionMoved {
@@ -6824,7 +6829,10 @@ impl Application {
                 }
                 Ok(ApplicationTransition::Continue)
             }
-            ApplicationEvent::SessionOperationFailed(error) => {
+            ApplicationEvent::SessionOperationFailed { asked_from, error } => {
+                if self.state.session_reference != asked_from {
+                    return Ok(ApplicationTransition::Continue);
+                }
                 // A Watch stop that failed stopped nothing, so the gesture is
                 // offered again.
                 self.state.watch_stop = None;
@@ -8738,8 +8746,8 @@ impl Application {
                             self.state.workspace_picker.open(purpose),
                         );
                     }
-                    Some(WorktreePickerRow::Browse) => return self.open_directory_browser(),
-                    None => {}
+                    // Reached through its command, ahead of this one.
+                    Some(WorktreePickerRow::Browse) | None => {}
                 }
             }
             _ => {}
@@ -12237,6 +12245,18 @@ impl Application {
                     });
                 }
                 Ok(ApplicationTransition::Continue)
+            }
+            // The Move picker's Browse row is the very command the Workspace
+            // Picker's is, and is refused on the same terms.
+            SemanticCommandId::WorktreeSelect
+                if self.state.worktree_picker.removal.is_none()
+                    && self.state.worktree_picker.purpose().is_some()
+                    && matches!(
+                        self.state.worktree_picker.selected_row(),
+                        Some(WorktreePickerRow::Browse)
+                    ) =>
+            {
+                self.invoke_semantic(SemanticCommandId::WorkspaceBrowse)
             }
             SemanticCommandId::WorktreeList
             | SemanticCommandId::WorktreeRemove

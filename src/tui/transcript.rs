@@ -2546,7 +2546,7 @@ fn plan_units<'a>(
     // rather than a gap, so it does not end a run either: the entries around
     // it are still adjacent as presented. An entry a Turn Fold hides projects
     // nothing for the same reason and is read the same way.
-    for (position, item) in snapshot.transcript.iter().enumerate() {
+    for (position, item) in snapshot.transcript_in_reading_order() {
         if let Some(marker) = folding.marker_at(position) {
             close_run(&mut units, &mut run, groups);
             units.push(RenderUnit::TurnFold(marker));

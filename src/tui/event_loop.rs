@@ -1562,6 +1562,7 @@ impl RunLoop {
                 spawn_approval_posture_update(
                     self.client.session_commands_for(session.origin.clone()),
                     session,
+                    self.application.session_reference(),
                     request,
                     self.channels.submissions.clone(),
                 );
@@ -1812,6 +1813,7 @@ impl RunLoop {
         spawn_session_operation(
             self.client.session_commands_for(session.origin.clone()),
             session,
+            self.application.session_reference(),
             operation,
             self.channels.submissions.clone(),
         );
@@ -2348,12 +2350,16 @@ impl RunLoop {
                     return Ok(self.dispatch_transition(transition));
                 }
             }
-            SubmissionResult::OperationFailed { session, error } => {
+            SubmissionResult::OperationFailed {
+                session,
+                asked_from,
+                error,
+            } => {
                 if self.application.outlook() != &session.origin {
                     return Ok(ControlFlow::Continue(()));
                 }
                 self.application
-                    .handle_event(ApplicationEvent::SessionOperationFailed(error))?;
+                    .handle_event(ApplicationEvent::SessionOperationFailed { asked_from, error })?;
             }
             SubmissionResult::SessionMoved { session, outcome } => {
                 if self.application.outlook() != &session.origin {
@@ -2437,8 +2443,10 @@ impl RunLoop {
                 if self.application.outlook() != &origin {
                     return Ok(ControlFlow::Continue(()));
                 }
+                // A Workspace's Icon is no Session's, so whichever is open says so.
+                let asked_from = self.application.session_reference();
                 self.application
-                    .handle_event(ApplicationEvent::SessionOperationFailed(error))?;
+                    .handle_event(ApplicationEvent::SessionOperationFailed { asked_from, error })?;
             }
             SubmissionResult::WorkspaceDescriptionSaved {
                 origin,
@@ -3708,6 +3716,9 @@ enum SubmissionResult {
     SessionSettled(SessionReference),
     OperationFailed {
         session: SessionReference,
+        /// The Session open when it was asked for, whose composer its failure
+        /// is said beneath, if that is still the one open.
+        asked_from: Option<SessionReference>,
         error: String,
     },
     SessionDeletionFailed {
@@ -3913,6 +3924,7 @@ fn spawn_agent_selection_update(
 fn spawn_approval_posture_update(
     commands: SessionCommandClient,
     session: SessionReference,
+    asked_from: Option<SessionReference>,
     request: UpdateApprovalPostureRequest,
     results: UnboundedSender<SubmissionResult>,
 ) {
@@ -3924,6 +3936,7 @@ fn spawn_approval_posture_update(
             Ok(_) => SubmissionResult::OperationSucceeded(session),
             Err(error) => SubmissionResult::OperationFailed {
                 session,
+                asked_from,
                 error: error.to_string(),
             },
         };
@@ -4264,6 +4277,7 @@ impl SessionOperation {
                 Ok(()) => SubmissionResult::OperationSucceeded(session),
                 Err(error) => SubmissionResult::OperationFailed {
                     session,
+                    asked_from: None,
                     error: compaction_refusal(&error),
                 },
             },
@@ -4275,6 +4289,7 @@ impl SessionOperation {
                 Ok(outcome) => SubmissionResult::SessionMoved { session, outcome },
                 Err(error) => SubmissionResult::OperationFailed {
                     session,
+                    asked_from: None,
                     error: error.to_string(),
                 },
             },
@@ -4333,6 +4348,7 @@ fn operation_result(session: SessionReference, result: anyhow::Result<()>) -> Su
         Ok(()) => SubmissionResult::OperationSucceeded(session),
         Err(error) => SubmissionResult::OperationFailed {
             session,
+            asked_from: None,
             error: error.to_string(),
         },
     }
@@ -4489,11 +4505,21 @@ fn spawn_onboarded_mark(commands: SessionCommandClient) {
 fn spawn_session_operation(
     commands: SessionCommandClient,
     session: SessionReference,
+    asked_from: Option<SessionReference>,
     operation: SessionOperation,
     results: UnboundedSender<SubmissionResult>,
 ) {
     tokio::spawn(async move {
-        let result = operation.run(commands, session).await;
+        let result = match operation.run(commands, session).await {
+            SubmissionResult::OperationFailed { session, error, .. } => {
+                SubmissionResult::OperationFailed {
+                    session,
+                    asked_from,
+                    error,
+                }
+            }
+            result => result,
+        };
         let _ = results.send(result);
     });
 }

@@ -85,7 +85,8 @@ impl fmt::Display for MoveNote {
             formatter,
             "Note from Suru: this Session Moved, and its Execution Directory changed from {from} to \
              {to}. Work in {to} from now on, not in {from}. Subagents spawned before the Move still \
-             work where they were, so spawn new ones for work here rather than continuing those."
+             work where they were, so for work here spawn new ones, or Move those with \
+             move_session, rather than continuing them there."
         )
     }
 }
@@ -271,7 +272,10 @@ mod tests {
             "{text}"
         );
         assert!(
-            text.ends_with("spawn new ones for work here rather than continuing those."),
+            text.ends_with(
+                "so for work here spawn new ones, or Move those with move_session, rather than \
+                 continuing them there."
+            ),
             "the note says nothing more: {text}"
         );
         assert_eq!(

@@ -238,18 +238,21 @@ fn escape_arms_and_then_requests_stopping_the_watches() {
 #[test]
 fn a_watch_stop_that_fails_offers_the_gesture_again() {
     let workspace = workspace_dir();
-    let mut application = attached(
-        workspace.path(),
-        monitoring_snapshot(workspace.path(), SessionTimestamp::now(), &["cargo test"]),
-    );
+    let snapshot = monitoring_snapshot(workspace.path(), SessionTimestamp::now(), &["cargo test"]);
+    let session_id = snapshot.session.id;
+    let mut application = attached(workspace.path(), snapshot);
     press_escape(&mut application);
     press_escape(&mut application);
     assert!(drawn(&application).contains("stopping…"));
 
     application
-        .handle_event(ApplicationEvent::SessionOperationFailed(
-            "Provider Watch stop failed".to_owned(),
-        ))
+        .handle_event(ApplicationEvent::SessionOperationFailed {
+            asked_from: Some(suru::protocol::SessionReference::new(
+                suru::protocol::Outlook::Local,
+                session_id,
+            )),
+            error: "Provider Watch stop failed".to_owned(),
+        })
         .expect("report the refused stop");
     let screen = drawn(&application);
     assert!(

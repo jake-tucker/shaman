@@ -2809,3 +2809,137 @@ async fn prompts_waiting_behind_a_move_begin_in_the_order_they_were_admitted() {
     }
     fixture.shutdown().await;
 }
+
+/// A native Subagent holds a Move asked while it works, but its Provider can
+/// begin one as the Move applies, before its Provider actor hears of that. Such
+/// a Subagent ends with the process, in words that say its parent Moved.
+#[tokio::test]
+async fn a_subagent_begun_as_a_move_applied_ends_saying_its_parent_moved() {
+    let mut fixture = IdleSession::begin("move-subagent-caught-test", "origin").await;
+    let destination = fixture.directory("destination");
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::WatchStarted {
+            watch_id: ProviderWatchId::new("task-tests"),
+            description: "cargo test".to_owned(),
+        })
+        .await;
+    fixture
+        .session_where("the Session is Monitoring", |snapshot| {
+            snapshot.session.monitoring_since.is_some()
+        })
+        .await;
+
+    // The actor is held waiting on its Provider to stop the Watch, so the Move
+    // stands before it hears of it, and what the Provider then says comes first.
+    let (acknowledged, ()) = tokio::join!(
+        fixture.client.interrupt_session(fixture.session_id),
+        async {
+            let stop = timeout(
+                PROGRESS_DEADLINE,
+                fixture.provider_session.next_watches_stop(),
+            )
+            .await
+            .expect("the interrupt reaches the Provider");
+            moved(
+                fixture
+                    .client
+                    .move_session(fixture.session_id, &to(&destination))
+                    .await
+                    .expect("Monitoring, the Session Moves at once"),
+            );
+            fixture
+                .provider_session
+                .emit(ProviderEvent::ContinuationStarted {
+                    selection: hosted_selection(PROVIDER, MODEL),
+                });
+            fixture
+                .provider_session
+                .emit(ProviderEvent::SubagentStarted {
+                    subagent_id: ProviderSubagentId::new("task-1"),
+                    name: "Explore".to_owned(),
+                    description: "Map the provider seams".to_owned(),
+                    delegation: None,
+                });
+            fixture.provider_session.emit(ProviderEvent::TurnCompleted);
+            stop.succeed();
+        }
+    );
+    acknowledged.expect("the Provider stops the Watch");
+
+    let parent = fixture
+        .session_where("the Subagent's row settles", |snapshot| {
+            snapshot.activities.iter().any(|activity| {
+                matches!(
+                    activity,
+                    Activity::Subagent {
+                        status: ActivityStatus::Failed,
+                        ..
+                    }
+                )
+            })
+        })
+        .await;
+    let child = parent
+        .activities
+        .iter()
+        .find_map(|activity| match activity {
+            Activity::Subagent { session_id, .. } => Some(*session_id),
+            _ => None,
+        })
+        .expect("a Subagent row");
+    let child = fixture
+        .client
+        .read_session(child)
+        .await
+        .expect("read the Subagent's Session");
+    assert!(
+        child.activities.iter().any(|activity| matches!(
+            activity,
+            Activity::Error { text, .. } if text.contains("the parent Session Moved")
+        )),
+        "{:?}",
+        child.activities
+    );
+    fixture.shutdown().await;
+}
+
+/// A Move that waited keeps its one row, and says where it settled, across a
+/// restart: what the Turn holding it went on to do stands ahead of it.
+#[tokio::test]
+async fn a_move_that_waited_reads_where_it_settled_after_a_restart() {
+    let mut fixture = IdleSession::begin("move-reading-order-test", "origin").await;
+    let destination = fixture.directory("destination");
+    let turn = fixture.working("Keep working").await;
+    pending(fixture.ask_move(&destination).await.expect("take the Move"));
+    turn.succeed();
+    fixture
+        .provider_session
+        .emit(ProviderEvent::AgentMessageStarted);
+    fixture
+        .provider_session
+        .emit(ProviderEvent::AgentMessageDelta {
+            content: "Still in the origin.".to_owned(),
+        });
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    fixture
+        .session_where("the Move applies", |snapshot| {
+            snapshot.session.execution_directory.path == destination
+        })
+        .await;
+
+    let reads_last = |snapshot: &SessionSnapshot| {
+        let read = snapshot.transcript_in_reading_order();
+        let (_, last) = read.last().expect("the Transcript holds entries");
+        matches!(last, TranscriptItem::Activity { activity_id }
+            if snapshot.activities.iter().any(|activity| activity.id() == *activity_id
+                && matches!(activity, Activity::Move { .. })))
+    };
+    assert!(reads_last(&fixture.read().await));
+    let fixture = fixture.restarted().await;
+    assert!(reads_last(&fixture.read().await), "and after a restart");
+    fixture.shutdown().await;
+}

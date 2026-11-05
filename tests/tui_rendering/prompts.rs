@@ -348,9 +348,10 @@ fn queued_prompt_docks_immediately_and_scoped_mode_preserves_the_draft() {
     };
     assert_eq!((promoted_in.session_id, promoted), (session_id, prompt_id));
     application
-        .handle_event(ApplicationEvent::SessionOperationFailed(
-            "competing mutation lost".to_owned(),
-        ))
+        .handle_event(ApplicationEvent::SessionOperationFailed {
+            asked_from: Some(promoted_in.clone()),
+            error: "competing mutation lost".to_owned(),
+        })
         .expect("report failed mutation");
     assert!(
         rendered_application_rows(&application)

@@ -3046,7 +3046,8 @@ pub enum Activity {
     /// where the Tool Calls before it touched files. It belongs to no Turn,
     /// since a Move happens between them. It settles `Completed` once the
     /// Move applies, and `Failed`, with why, where it cannot; a Move pending
-    /// until a Working Session settles stands `Active` until then.
+    /// until what its Session's process is running settles stands `Active`
+    /// until then.
     Move {
         id: ActivityId,
         status: ActivityStatus,
@@ -3066,6 +3067,13 @@ pub enum Activity {
         /// is pending that Worktree is what it is bound for.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         to_checkout: Option<CheckoutId>,
+        /// How long the Transcript was when a Move that waited settled, which
+        /// is where it is read from then on rather than where it was asked, so
+        /// what the Turn that held it went on to do reads before it. The
+        /// Transcript itself only ever grows at its end; see
+        /// [`SessionSnapshot::transcript_in_reading_order`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        settled_at: Option<usize>,
     },
 }
 
@@ -3256,8 +3264,9 @@ pub struct Session {
     pub id: SessionId,
     pub workspace: Workspace,
     pub execution_directory: ExecutionDirectory,
-    /// Where a Move asked while the Session's own Turn runs will take it once
-    /// that Turn settles (ADR 0059); absent where none is pending.
+    /// Where a Move asked while the Session's Provider process is at work will
+    /// take it once that settles: a Turn of its own, run or owed, a native
+    /// Subagent, or a Continuation owed (ADR 0059). Absent where none is pending.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_move: Option<PendingMove>,
     pub checkout: Option<CheckoutAssociation>,
@@ -4870,6 +4879,50 @@ pub struct SessionSnapshot {
 }
 
 impl SessionSnapshot {
+    /// The Transcript as it is read, each entry beside its position in
+    /// [`Self::transcript`]: in order, but for a Move that waited, which stands
+    /// where it settled.
+    pub fn transcript_in_reading_order(&self) -> Vec<(usize, &TranscriptItem)> {
+        let settled = self
+            .activities
+            .iter()
+            .filter_map(|activity| match activity {
+                Activity::Move {
+                    id,
+                    settled_at: Some(settled_at),
+                    ..
+                } => Some((*id, *settled_at)),
+                _ => None,
+            })
+            .collect::<HashMap<_, _>>();
+        let settled_at = |item: &TranscriptItem| match item {
+            TranscriptItem::Activity { activity_id } => settled.get(activity_id).copied(),
+            TranscriptItem::Message { .. } => None,
+        };
+        let mut read = Vec::with_capacity(self.transcript.len());
+        let mut in_place = self.transcript.iter().enumerate();
+        let mut moves = self
+            .transcript
+            .iter()
+            .enumerate()
+            .filter_map(|(position, item)| Some((settled_at(item)?, position, item)))
+            .collect::<Vec<_>>();
+        moves.sort_by_key(|(settled_at, position, _)| (*settled_at, *position));
+        let mut moves = moves.into_iter().peekable();
+        for (position, item) in &mut in_place {
+            while let Some((_, moved, moved_item)) =
+                moves.next_if(|(settled_at, _, _)| *settled_at <= position)
+            {
+                read.push((moved, moved_item));
+            }
+            if settled_at(item).is_none() {
+                read.push((position, item));
+            }
+        }
+        read.extend(moves.map(|(_, moved, moved_item)| (moved, moved_item)));
+        read
+    }
+
     /// The descriptor of the Attachment stored under `id`, where this
     /// Session binds it and the server has described it.
     pub fn attachment(&self, id: &AttachmentId) -> Option<&AttachmentDescriptor> {
@@ -5379,8 +5432,9 @@ pub enum MoveOutcome {
     Moved { session: SessionSummary },
     /// The Session already works in its destination, and nothing changed.
     AlreadyThere { session: SessionSummary },
-    /// The Session's own Turn is at work, so the Move waits for it to settle:
-    /// its summary names the destination, and its Transcript the Move's
+    /// The Session's Provider process is at work, on a Turn of its own, a
+    /// native Subagent or a Continuation owed, so the Move waits for that to
+    /// settle: its summary names the destination, and its Transcript the Move's
     /// Activity, Active until the Move applies or fails.
     Pending { session: SessionSummary },
     /// The Session already works in its destination, and the Move pending
@@ -5388,8 +5442,8 @@ pub enum MoveOutcome {
     PendingCancelled { session: SessionSummary },
 }
 
-/// A Move waiting for the Session's own Turn to settle: the Activity
-/// recording it, and where it will take the Session (ADR 0059).
+/// A Move waiting for what the Session's Provider process is running to settle:
+/// the Activity recording it, and where it will take the Session (ADR 0059).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PendingMove {
@@ -5606,8 +5660,8 @@ pub enum SessionErrorCode {
     /// own, or a native Subagent's, which no Move reaches since it runs in
     /// its parent's Provider process.
     SubagentSession,
-    /// The request needs the Session idle — deleting it, compacting its
-    /// context, or Moving it — and it or a Subagent below it is still Working: running a
+    /// The request needs the Session idle — deleting it, or compacting its
+    /// context — and it or a Subagent below it is still Working: running a
     /// Turn, owing one to a Prompt it admitted, or waiting on Subagents.
     WorkingSession,
     /// A Compaction was requested of a Session that owes its reader an
