@@ -31,7 +31,7 @@ use zeroize::Zeroizing;
 use crate::protocol::{
     DeliveredInvite, FetchShortInviteRequest, InvitePreview, Outlook, RedeemInviteRequest,
     RelayLogin, RelayLoginOutcome, Remote, RemoteHealth, RemoteStatus, ShortCode,
-    UnreachableReason, Way,
+    UnreachableReason, Way, opens_as_an_invite,
 };
 
 use super::{
@@ -96,10 +96,14 @@ enum ConnectOverlayState {
     },
     /// A machine chosen, its code being typed.
     CodeEntry(CodeEntry),
-    /// That code asked for the machine's Invite under `request`.
+    /// That code asked for the machine's Invite under `request`. Its one try is
+    /// under way and ends within a bound, so the reader stays to hear how: it
+    /// says whether the code is dead, or brings the preview. Should they press
+    /// to leave, `asked_to_leave` has it say so.
     Fetching {
         entry: CodeEntry,
         request: ConnectRequest,
+        asked_to_leave: bool,
     },
     Inspecting {
         request: ConnectRequest,
@@ -388,7 +392,11 @@ impl ConnectOverlay {
             return None;
         };
         let request = self.issue();
-        self.state = ConnectOverlayState::Fetching { entry, request };
+        self.state = ConnectOverlayState::Fetching {
+            entry,
+            request,
+            asked_to_leave: false,
+        };
         Some((request, fetch))
     }
 
@@ -413,13 +421,13 @@ impl ConnectOverlay {
     }
 
     /// Returns to the machine's code saying why it delivered nothing. A code
-    /// `spent` is taken from the field: it will not work again, and nothing
-    /// here tries it again.
+    /// `code_gone` is taken from the field: it will not work again, and left
+    /// there one Enter would spend the next code on it.
     pub(super) fn short_invite_failed(
         &mut self,
         request: ConnectRequest,
         error: String,
-        spent: bool,
+        code_gone: bool,
     ) {
         if !self.awaits_fetch(request) {
             return;
@@ -428,7 +436,7 @@ impl ConnectOverlay {
         else {
             return;
         };
-        if spent {
+        if code_gone {
             entry.typed = TypedCode::default();
         }
         entry.error = Some(error);
@@ -463,7 +471,14 @@ impl ConnectOverlay {
     pub(super) fn loading_label(&self) -> Option<&'static str> {
         match &self.state {
             ConnectOverlayState::Loading => Some("Loading Remotes…"),
-            ConnectOverlayState::Fetching { .. } => Some("Asking for the Invite…"),
+            ConnectOverlayState::Fetching {
+                asked_to_leave: false,
+                ..
+            } => Some("Asking for the Invite…"),
+            ConnectOverlayState::Fetching { .. } => Some(
+                "Asking for the Invite… The code's one try is under way, and this says how it \
+                 went in a moment",
+            ),
             ConnectOverlayState::Inspecting { .. } => Some("Inspecting Invite…"),
             ConnectOverlayState::Redeeming { .. } => Some("Pairing Remote…"),
             ConnectOverlayState::Removing { .. } => Some("Removing Remote…"),
@@ -565,9 +580,14 @@ impl ConnectOverlay {
                 typed.extend(text.chars().filter(|character| !character.is_whitespace()));
                 // A whole Invite pasted, or typed, is the Invite it is: it
                 // goes where it would have gone, and spends no code.
-                if typed.starts_with("suru-v") {
+                let invite = if opens_as_an_invite(text) {
+                    Some(text.chars().filter(|c| !c.is_whitespace()).collect())
+                } else {
+                    opens_as_an_invite(&typed).then(|| typed.to_string())
+                };
+                if let Some(invite) = invite {
                     self.state = ConnectOverlayState::InviteEntry {
-                        invite: typed.to_string(),
+                        invite,
                         error: None,
                     };
                     self.machines.focus_invite();
@@ -618,6 +638,15 @@ impl ConnectOverlay {
         let invite = invite.trim().to_owned();
         if invite.is_empty() {
             *error = Some("Paste an Invite first".to_owned());
+            return None;
+        }
+        // A code goes to a machine, and this field would only call it malformed.
+        if ShortCode::parse(&invite).is_ok() {
+            *error = Some(
+                "That looks like a short code: choose the machine showing it from those found, \
+                 and type it there"
+                    .to_owned(),
+            );
             return None;
         }
         let request = self.issue();
@@ -1209,6 +1238,11 @@ impl ConnectOverlay {
             ConnectOverlayState::CodeEntry(entry) => ConnectOverlayState::InviteEntry {
                 invite: entry.invite,
                 error: None,
+            },
+            ConnectOverlayState::Fetching { entry, request, .. } => ConnectOverlayState::Fetching {
+                entry,
+                request,
+                asked_to_leave: true,
             },
             _ => ConnectOverlayState::Closed,
         };

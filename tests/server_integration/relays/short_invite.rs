@@ -12,10 +12,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use base64::{
-    Engine as _,
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_util::{SinkExt, StreamExt};
 use rcgen::{KeyPair, PublicKeyData};
 use ring::{aead, digest, hkdf, hmac};
@@ -37,7 +34,11 @@ use super::{
 };
 use crate::{
     server_integration::relays::pairing::{REMOTE, error_message, serving_through},
-    support::{PROGRESS_DEADLINE, relay_voice::carried},
+    support::{
+        PROGRESS_DEADLINE,
+        relay_voice::carried,
+        short_code_forms::{form_held, forms_of},
+    },
 };
 
 const PREAMBLE: &[u8] = b"suru-short-invite";
@@ -169,6 +170,7 @@ fn keys(
     let mut hash = digest::Context::new(&digest::SHA256);
     for part in [
         b"suru short invite v1".as_slice(),
+        &[VERSION],
         way.as_bytes(),
         redeeming,
         serving,
@@ -356,8 +358,7 @@ async fn a_machine_chosen_and_its_code_typed_reach_the_preview_and_the_usual_red
     );
     laptop.wait_for_remote(RemoteStatus::Available).await;
     assert_eq!(workstation.client.list_peers().await.unwrap().len(), 1);
-    let ended = workstation.told_code(ShortCodeState::Ended).await;
-    assert!(!ended.invite_stands, "spent with its Invite");
+    workstation.told_code(ShortCodeState::Spent).await;
 
     laptop.shutdown().await;
     workstation.shutdown().await;
@@ -427,10 +428,13 @@ async fn a_wrong_code_forms_nothing_ends_the_code_leaves_the_long_string_and_tel
         .expect_err("a wrong code delivers nothing");
     assert_eq!(error_code(&refused), SessionErrorCode::ShortCodeDead);
     let told = error_message(&refused);
-    assert!(told.contains("dead") && told.contains("new one"), "{told}");
-    assert!(!told.contains("again"), "no retype is invited: {told}");
-    let standing = workstation.told_code(ShortCodeState::WrongCodeTried).await;
-    assert!(standing.invite_stands);
+    assert!(told.contains("dead"), "{told}");
+    assert!(
+        told.contains("Do not type it again") && told.contains("new one"),
+        "a Relay standing in gets a guess at each retype, which this machine never sees: {told}"
+    );
+    assert!(told.contains("Relay may be at fault"), "{told}");
+    workstation.told_code(ShortCodeState::WrongCodeTried).await;
     assert!(laptop.client.list_remotes().await.unwrap().is_empty());
     assert!(workstation.client.list_peers().await.unwrap().is_empty());
 
@@ -445,6 +449,63 @@ async fn a_wrong_code_forms_nothing_ends_the_code_leaves_the_long_string_and_tel
         .await
         .expect("the long string stays good");
 
+    laptop.shutdown().await;
+    workstation.shutdown().await;
+}
+
+/// What locked out a code's holder before: each of these has yet to finish its
+/// opening, so none has anything the holder needs, and the code stands as it
+/// did with nothing to report of them.
+#[tokio::test]
+async fn parties_saying_one_byte_and_stopping_keep_out_no_one_who_holds_the_code() {
+    let relay = TestRelay::start().await;
+    let timings = relay_timings().with_short_invite_reading_timeout(Duration::from_millis(400));
+    let (mut workstation, laptop) = serving_through(&relay, "short-invite-stalling", timings).await;
+    let (issued, code) = workstation
+        .invite_with_code(vec![Way::Relay(relay.address())])
+        .await;
+    let serving_key = workstation.identity().subject_public_key_info();
+    let asker = KeyPair::generate().unwrap();
+    relay
+        .voice()
+        .log_in(&relay.provider, &asker, "583231", "octocat")
+        .await;
+    let mut stalling = Vec::new();
+    for _ in 0..8 {
+        let mut stream = relay.voice().joined(&asker, &serving_key).await;
+        stream.write_all(&PREAMBLE[..1]).await.unwrap();
+        stalling.push(stream);
+    }
+    let delivered = laptop
+        .fetch(&workstation, &[relay.address()], &code)
+        .await
+        .expect("nothing stands between the right code and its Invite");
+    assert_eq!(delivered.invite, issued.invite);
+    workstation.told_code(ShortCodeState::Delivered).await;
+    laptop.shutdown().await;
+    workstation.shutdown().await;
+}
+
+/// With no code live one byte is all it takes to be refused, so nothing is held
+/// open for what it might go on to say.
+#[tokio::test]
+async fn one_byte_with_no_code_live_is_refused_with_no_wait() {
+    let relay = TestRelay::start().await;
+    let (workstation, laptop) = pair_of(&relay, "short-invite-one-byte").await;
+    let asker = KeyPair::generate().unwrap();
+    relay
+        .voice()
+        .log_in(&relay.provider, &asker, "583231", "octocat")
+        .await;
+    let mut stream = relay
+        .voice()
+        .joined(&asker, &workstation.identity().subject_public_key_info())
+        .await;
+    stream.write_all(&PREAMBLE[..1]).await.unwrap();
+    assert_eq!(said(&mut stream).await.unwrap(), [SAYS_REFUSED, NO_CODE]);
+    let mut rest = Vec::new();
+    stream.read_to_end(&mut rest).await.unwrap();
+    assert!(rest.is_empty());
     laptop.shutdown().await;
     workstation.shutdown().await;
 }
@@ -486,8 +547,7 @@ async fn a_code_expires_with_its_invite_and_a_new_one_is_not_had_for_it() {
     let (_, code) = workstation
         .invite_with_code(vec![Way::Relay(relay.address())])
         .await;
-    let ended = workstation.told_code(ShortCodeState::Ended).await;
-    assert!(!ended.invite_stands);
+    workstation.told_code(ShortCodeState::Ended).await;
     let refused = laptop
         .fetch(&workstation, &[relay.address()], &code)
         .await
@@ -661,8 +721,7 @@ async fn a_stalled_exchange_is_closed_within_its_bound_and_counts_as_its_guess()
         .await
         .expect("the Serving side lets it go at its bound")
         .unwrap();
-    let standing = workstation.told_code(ShortCodeState::LeftUnfinished).await;
-    assert!(standing.invite_stands);
+    workstation.told_code(ShortCodeState::LeftUnfinished).await;
     laptop
         .redeem_as(issued.invite, REMOTE)
         .await
@@ -1081,46 +1140,20 @@ async fn a_relay_the_invite_does_not_offer_carries_no_attempt_and_the_next_one_d
     workstation.shutdown().await;
 }
 
-/// Everything a code could be seen as, were anything to let it out.
-fn forms_of(code: &ShortCode) -> Vec<Vec<u8>> {
-    let grouped = code.grouped();
-    let canonical = grouped.replace('-', "");
-    let mut forms: Vec<Vec<u8>> = [
-        canonical.clone(),
-        grouped.clone(),
-        canonical.to_lowercase(),
-        grouped.to_lowercase(),
-        URL_SAFE_NO_PAD.encode(&canonical),
-        STANDARD.encode(&canonical),
-        STANDARD.encode(&grouped),
-    ]
-    .into_iter()
-    .map(String::into_bytes)
-    .collect();
-    let sha256 = digest::digest(&digest::SHA256, canonical.as_bytes());
-    let blake3 = blake3::hash(canonical.as_bytes());
-    for hash in [sha256.as_ref(), blake3.as_bytes().as_slice()] {
-        forms.push(hash.to_vec());
-        forms.push(URL_SAFE_NO_PAD.encode(hash).into_bytes());
-        forms.push(STANDARD.encode(hash).into_bytes());
-        forms.push(
-            hash.iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-                .into_bytes(),
-        );
-    }
-    forms
-}
-
 fn assert_holds_nothing_of(seen: &[u8], code: &ShortCode) {
     assert!(!seen.is_empty(), "something was there to look at");
-    for form in forms_of(code) {
-        assert!(
-            !seen.windows(form.len()).any(|at| at == form),
-            "{form:?} is among what was seen"
-        );
+    let forms = forms_of(code);
+    if let Some(form) = form_held(seen, &forms) {
+        panic!("{form:?} is among what was seen");
     }
+}
+
+/// What one connection through the Relay carried once it was joined: what the
+/// Server on it said, and what it was told.
+#[derive(Default)]
+struct Carried {
+    said: Vec<u8>,
+    told: Vec<u8>,
 }
 
 /// Records every message a Server and the Relay say to each other, as a Relay
@@ -1128,6 +1161,7 @@ fn assert_holds_nothing_of(seen: &[u8], code: &ShortCode) {
 async fn recording_relay(
     relay: std::net::SocketAddr,
     seen: Arc<Mutex<Vec<u8>>>,
+    carried: Arc<Mutex<Vec<Arc<Mutex<Carried>>>>>,
 ) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
         .await
@@ -1136,6 +1170,8 @@ async fn recording_relay(
     let answering = tokio::spawn(async move {
         while let Ok((server, _)) = listener.accept().await {
             let seen = seen.clone();
+            let this_one = Arc::new(Mutex::new(Carried::default()));
+            carried.lock().unwrap().push(this_one.clone());
             tokio::spawn(async move {
                 let Ok(mut server) = tokio_tungstenite::accept_async(server).await else {
                     return;
@@ -1160,11 +1196,17 @@ async fn recording_relay(
                         said = server.next() => {
                             let Some(Ok(message)) = said else { return };
                             note(&message);
+                            if let Message::Binary(bytes) = &message {
+                                this_one.lock().unwrap().said.extend_from_slice(bytes);
+                            }
                             if relay.send(message).await.is_err() { return; }
                         }
                         answered = relay.next() => {
                             let Some(Ok(message)) = answered else { return };
                             note(&message);
+                            if let Message::Binary(bytes) = &message {
+                                this_one.lock().unwrap().told.extend_from_slice(bytes);
+                            }
                             if server.send(message).await.is_err() { return; }
                         }
                     }
@@ -1173,6 +1215,47 @@ async fn recording_relay(
         }
     });
     (address, answering)
+}
+
+/// Each thing said in the exchanges carried is exactly as long as the exchange
+/// says, and the key claimed is the redeemer's own: nothing derived from the
+/// code has room to travel in any of it. The one attempt that delivered and the
+/// one that failed are all there were, and each side was told what the other
+/// said, unaltered.
+fn assert_exactly_what_the_exchange_says(
+    carried: &[Arc<Mutex<Carried>>],
+    redeemers_key: &[u8],
+    invite: usize,
+) {
+    let carried = carried
+        .iter()
+        .map(|carried| carried.lock().unwrap())
+        .collect::<Vec<_>>();
+    let redeemers = carried
+        .iter()
+        .filter(|carried| carried.said.starts_with(PREAMBLE))
+        .collect::<Vec<_>>();
+    assert_eq!(redeemers.len(), 2, "one right, one wrong");
+    let key_at = PREAMBLE.len() + 1 + 2 + 2;
+    let opening = key_at + redeemers_key.len() + 33;
+    let share = 2 + 1 + 33;
+    let delivery = 2 + 1 + 32 + invite + 16;
+    let failed = 2 + 1;
+    for (redeemer, told) in redeemers.iter().zip([share + delivery, share + failed]) {
+        assert_eq!(redeemer.said.len(), opening + 2 + 32, "what it said");
+        assert_eq!(redeemer.told.len(), told, "what it was told");
+        assert_eq!(
+            &redeemer.said[key_at..key_at + redeemers_key.len()],
+            redeemers_key,
+            "the key it claims is its own"
+        );
+        assert!(
+            carried
+                .iter()
+                .any(|serving| serving.said == redeemer.told && serving.told == redeemer.said),
+            "and the Relay passed it through as it was"
+        );
+    }
 }
 
 /// A right code and a wrong one, carried by a real Relay with every message
@@ -1192,9 +1275,12 @@ async fn no_code_or_anything_derived_from_one_reaches_a_relay_message_or_a_log()
     );
     let relay = TestRelay::start().await;
     let seen = Arc::new(Mutex::new(Vec::new()));
-    let (recording_at, _recording) = recording_relay(relay.running().address(), seen.clone()).await;
+    let recorded = Arc::new(Mutex::new(Vec::new()));
+    let (recording_at, _recording) =
+        recording_relay(relay.running().address(), seen.clone(), recorded.clone()).await;
     relay.route.retarget(recording_at);
     let (workstation, laptop) = pair_of(&relay, "short-invite-no-leak").await;
+    let laptop_key = laptop.identity().subject_public_key_info();
     let way = || vec![Way::Relay(relay.address())];
 
     let (_, right) = workstation.invite_with_code(way()).await;
@@ -1222,6 +1308,11 @@ async fn no_code_or_anything_derived_from_one_reaches_a_relay_message_or_a_log()
     laptop.shutdown().await;
     workstation.shutdown().await;
     let connection_log = joins_logged(&relay, 3).await.into_bytes();
+    assert_exactly_what_the_exchange_says(
+        &recorded.lock().unwrap(),
+        &laptop_key,
+        delivered.invite.len(),
+    );
     let told = refused.to_string().into_bytes();
     let log = captured.0.lock().unwrap().clone();
     let seen = seen.lock().unwrap().clone();

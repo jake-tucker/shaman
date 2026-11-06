@@ -2381,6 +2381,19 @@ impl TuiState {
         self.sidebar.set_logins_needed(waiting);
     }
 
+    /// Takes how the Server's latest short code stands, raising a Notice of an
+    /// attempt that used it up, which its reader did not necessarily make and
+    /// may be anywhere in this Client to hear of. The Server stops saying so
+    /// once the Invite has ended, so a Client attaching later hears nothing of
+    /// what can no longer be put right, and a Client hears of each code once.
+    fn receive_short_code(&mut self, standing: crate::protocol::ShortCodeStanding) {
+        if standing.state.burned() {
+            self.application_notice
+                .receive_short_code_burned(standing.serial, standing.state);
+        }
+        self.short_code = standing;
+    }
+
     /// Takes the Client's own Server's Relays as it pushed them. The `/relay`
     /// list follows them, open or not, and each lapse of a Relay's Login the
     /// Server asks a Notice of — one that stood and has come to be refused —
@@ -2391,17 +2404,6 @@ impl TuiState {
     /// was given. Relays pushed before what the list holds say nothing of a
     /// lapse now, and claim nothing. A later lapse is another, whether or not
     /// this Client heard the earlier one end.
-    /// Takes how the Server's latest short code stands, raising a Notice of an
-    /// attempt that used it up, which its reader did not necessarily make and
-    /// may be anywhere in this Client to hear of.
-    fn receive_short_code(&mut self, standing: crate::protocol::ShortCodeStanding) {
-        if standing.state.burned() {
-            self.application_notice
-                .receive_short_code_burned(standing.serial, standing.state);
-        }
-        self.short_code = standing;
-    }
-
     fn receive_relays(&mut self, listing: crate::protocol::RelayListing) {
         if self.relay_overlay.takes_pushed(&listing) {
             for relay in &listing.relays {
@@ -5626,18 +5628,17 @@ pub enum ApplicationEvent {
         request: ConnectRequest,
         machines: crate::protocol::RelayMachines,
     },
-    /// What the preview `request` asked for found the Invite to offer.
     /// What a machine's code delivered.
     ShortInviteDelivered {
         request: ConnectRequest,
         delivered: crate::protocol::DeliveredInvite,
     },
-    /// Why a machine's code delivered nothing, and whether its one try was
-    /// `spent`.
+    /// Why a machine's code delivered nothing, and whether no use is left in
+    /// the code typed: `code_gone`, its one try used or no such code live.
     ShortInviteFailed {
         request: ConnectRequest,
         error: String,
-        spent: bool,
+        code_gone: bool,
     },
     /// The new short code for the Invite shown.
     ShortCodeIssued {
@@ -5648,6 +5649,7 @@ pub enum ApplicationEvent {
         request: ServeRequest,
         error: String,
     },
+    /// What the preview `request` asked for found the Invite to offer.
     InvitePreviewed {
         request: ConnectRequest,
         invite: String,
@@ -7146,11 +7148,11 @@ impl Application {
             ApplicationEvent::ShortInviteFailed {
                 request,
                 error,
-                spent,
+                code_gone,
             } => {
                 self.state
                     .connect_overlay
-                    .short_invite_failed(request, error, spent);
+                    .short_invite_failed(request, error, code_gone);
                 Ok(ApplicationTransition::Continue)
             }
             ApplicationEvent::ShortCodeIssued { request, code } => {
@@ -13654,9 +13656,20 @@ impl Application {
         let mut changed = self.note_interaction(&event);
         let interaction = is_reader_interaction(&event);
         let command = self.command_for_terminal_input(event);
+        // A new short code leaves nothing to take back, so the key that puts
+        // down an armed removal does that alone rather than replace the code
+        // as well.
+        let removal_armed = self.state.serve_overlay.removal_armed();
         if interaction {
             changed |= self.settle_armed_removals(command.as_ref());
         }
+        let command = command.filter(|command| {
+            !(removal_armed
+                && matches!(
+                    command,
+                    CommandId::InvokeSemantic(SemanticCommandId::ServeNewShortCode)
+                ))
+        });
         let Some(command) = command else {
             return Ok(TerminalEventTaken {
                 changed,

@@ -71,7 +71,12 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["preserve_order"] }
 shlex = "2"
 socket2 = "0.6.5"
-# The balanced PAKE a short Invite is delivered by: RustCrypto's SPAKE2, on the last stable release (ADR-0065).
+# Holds a peer's SPAKE2 message to one point written the one way, which spake2 itself does not check (ADR-0065). The
+# same curve25519-dalek spake2 builds.
+curve25519-dalek = { version = "4.1.3", default-features = false }
+# The balanced PAKE a short Invite is delivered by: RustCrypto's SPAKE2, on the last stable release (ADR-0065). It
+# newly compiles curve25519-dalek and fiat-crypto, and second copies of hkdf 0.12, hmac 0.12 and sha2 0.10, beside the
+# newer ones already built here for secret-service and others.
 spake2 = "0.4.0"
 subtle = "2.6.1"
 tempfile = "3.21.0"
@@ -104,6 +109,8 @@ object = { version = "0.37", default-features = false, features = ["read_core", 
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
 
 [dev-dependencies]
+# Holds SPAKE2's randomness still, to show a short Invite's exchange differs by a code nowhere it should not.
+rand_core = "0.6.4"
 # A real Relay in-process, which the Relay tests drive a Server against.
 suru-relay = { path = "crates/suru-relay" }
 # Marks the test binaries the way `src/main.rs` marks Suru's, so a Server a test starts in-process identifies its

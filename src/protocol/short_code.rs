@@ -46,12 +46,19 @@ impl ShortCode {
     /// with whatever whitespace a paste brought with it. Anything else is
     /// refused here, before it could spend the one guess a code gets.
     pub fn parse(typed: &str) -> Result<Self, ShortCodeProblem> {
+        let characters = || {
+            typed
+                .chars()
+                .filter(|character| !character.is_whitespace() && *character != '-')
+                .map(|character| character.to_ascii_uppercase())
+        };
+        // Its length first: what is far too long is no code with a character
+        // wrong, and looking at that character again would not help.
+        if characters().count() != LENGTH {
+            return Err(ShortCodeProblem::WrongLength);
+        }
         let mut code = Zeroizing::new(String::with_capacity(LENGTH));
-        for character in typed
-            .chars()
-            .filter(|character| !character.is_whitespace() && *character != '-')
-        {
-            let character = character.to_ascii_uppercase();
+        for character in characters() {
             if !u8::try_from(character).is_ok_and(|byte| ALPHABET.contains(&byte)) {
                 return Err(if matches!(character, '0' | 'O' | '1' | 'I') {
                     ShortCodeProblem::LookAlike
@@ -60,9 +67,6 @@ impl ShortCode {
                 });
             }
             code.push(character);
-        }
-        if code.len() != LENGTH {
-            return Err(ShortCodeProblem::WrongLength);
         }
         Ok(Self(code))
     }
@@ -137,8 +141,6 @@ pub struct ShortCodeStanding {
     /// The code this says of; `0` before any was issued.
     pub serial: u64,
     pub state: ShortCodeState,
-    /// Whether the Invite it came with can still be redeemed.
-    pub invite_stands: bool,
 }
 
 /// Where a short code has got to. A code is tried once, so of these only
@@ -156,7 +158,9 @@ pub enum ShortCodeState {
     /// An exchange took it and never finished, which uses it up as a wrong
     /// guess does. The Invite stands.
     LeftUnfinished,
-    /// It ended with its Invite: expired, superseded, or spent.
+    /// Its Invite was redeemed, by this code's delivery or by the long string.
+    Spent,
+    /// It ended with its Invite, which expired or was superseded.
     #[default]
     Ended,
 }
@@ -167,7 +171,22 @@ impl ShortCodeState {
     pub fn burned(self) -> bool {
         matches!(self, Self::WrongCodeTried | Self::LeftUnfinished)
     }
+
+    /// Whether the Invite it came with can still be redeemed.
+    pub fn invite_stands(self) -> bool {
+        !matches!(self, Self::Spent | Self::Ended)
+    }
 }
+
+/// Whether `text` is, by how it opens, a whole Invite rather than a code. No code
+/// reads so unless it is typed in lower case with its separator and opens `SURU-V`,
+/// which one in some millions do and which is then only taken for the Invite field.
+pub fn opens_as_an_invite(text: &str) -> bool {
+    text.trim_start().starts_with(INVITE_OPENING)
+}
+
+/// How every Invite's string opens, a version following.
+const INVITE_OPENING: &str = "suru-v";
 
 /// A code typed for a machine chosen from those a Relay listed: ask for that
 /// machine's Invite over one of the Relays said to carry it.
@@ -185,11 +204,21 @@ pub struct FetchShortInviteRequest {
 
 /// The ordinary Invite a short code delivered, and its preview. Nothing is
 /// trusted yet: it is redeemed as any other is.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeliveredInvite {
     pub invite: String,
     pub preview: InvitePreview,
+}
+
+impl std::fmt::Debug for DeliveredInvite {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DeliveredInvite")
+            .field("invite", &"..")
+            .field("preview", &self.preview)
+            .finish()
+    }
 }
 
 #[cfg(test)]
@@ -225,7 +254,9 @@ mod tests {
             ("H4RW-9TN1", ShortCodeProblem::LookAlike),
             ("H4RW-9TNI", ShortCodeProblem::LookAlike),
             ("h4rw-9tni", ShortCodeProblem::LookAlike),
-            ("H4RW_9TNP", ShortCodeProblem::NotInAlphabet),
+            ("H4RW_9TN", ShortCodeProblem::NotInAlphabet),
+            // Far too long to be a code with a character wrong.
+            ("k7suru-v1-eyJ3IjpbXX0", ShortCodeProblem::WrongLength),
             ("H4RW-9TNé", ShortCodeProblem::NotInAlphabet),
             ("H4RW-9TNß", ShortCodeProblem::NotInAlphabet),
         ] {
@@ -255,6 +286,14 @@ mod tests {
             assert!(character.is_ascii_uppercase() || character.is_ascii_digit());
             assert!(seen.insert(character));
         }
+    }
+
+    #[test]
+    fn a_whole_invite_is_told_from_a_code_by_how_it_opens() {
+        assert!(opens_as_an_invite("suru-v1-eyJ3IjpbXX0"));
+        assert!(opens_as_an_invite("\n  suru-v2-anything"));
+        assert!(!opens_as_an_invite("K7QF-2MXP"));
+        assert!(!opens_as_an_invite("k7suru-v1-eyJ3IjpbXX0"));
     }
 
     #[test]

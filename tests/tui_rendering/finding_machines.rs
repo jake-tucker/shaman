@@ -903,7 +903,7 @@ fn what_is_no_code_is_refused_here_with_nothing_asked_of_any_server() {
         ("k7qf-2mxo", "no 0, O, 1 or I"),
         ("K7QF-2MX1", "no 0, O, 1 or I"),
         ("K7QF-2MXI", "no 0, O, 1 or I"),
-        ("K7QF_2MXP", "letters and digits"),
+        ("K7QF_2MX", "letters and digits"),
     ] {
         let (mut application, _) = showing_the_three();
         press(&mut application, KeyCode::Enter);
@@ -992,7 +992,7 @@ fn a_failed_code_is_said_to_be_dead_and_taken_away_and_nothing_tries_it_again() 
             error: "That code did not work, and a code gets one try, so it is dead now. Get a \
                     new one from /serve on the other machine"
                 .to_owned(),
-            spent: true,
+            code_gone: true,
         })
         .expect("take the failure");
     assert_eq!(transition, ApplicationTransition::Continue);
@@ -1017,10 +1017,10 @@ fn a_failed_code_is_said_to_be_dead_and_taken_away_and_nothing_tries_it_again() 
     assert_eq!(fetch.code, ShortCode::parse("H4RW9TNB").unwrap());
 }
 
-/// Where nothing was spent — no code live there, or no Relay carrying it — the
-/// code stays for the reader to ask again once they have done what it says.
+/// Whatever gets a code live there gives a different one, so one Enter on what
+/// stayed in the field would burn it.
 #[test]
-fn no_code_live_says_to_issue_an_invite_there_and_leaves_what_was_typed() {
+fn no_code_live_says_to_issue_an_invite_there_and_takes_what_was_typed_away() {
     let (mut application, _) = showing_the_three();
     let (request, _) = asking_with(&mut application, "K7QF-2MXP");
     application
@@ -1029,26 +1029,141 @@ fn no_code_live_says_to_issue_an_invite_there_and_leaves_what_was_typed() {
             error: "No code is live on that machine for this Relay. Issue an Invite there with \
                     /serve"
                 .to_owned(),
-            spent: false,
+            code_gone: true,
         })
         .expect("take the failure");
     let text = shown_text(&application);
     assert!(text.contains("Issue an Invite there"), "{text}");
+    assert!(!text.contains("K7QF"), "{text}");
+    assert_eq!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::Continue,
+        "Enter asks for nothing"
+    );
+}
+
+/// Where nothing could be tried, the code is still good for when it can be.
+#[test]
+fn a_relay_that_would_not_join_them_leaves_what_was_typed() {
+    let (mut application, _) = showing_the_three();
+    let (request, _) = asking_with(&mut application, "K7QF-2MXP");
+    application
+        .handle_event(ApplicationEvent::ShortInviteFailed {
+            request,
+            error: "Could not reach that machine through its Relays, so the code was not tried"
+                .to_owned(),
+            code_gone: false,
+        })
+        .expect("take the failure");
+    let text = shown_text(&application);
+    assert!(text.contains("not tried"), "{text}");
     assert!(text.contains("K7QF"), "{text}");
 }
 
+/// The code's one try is under way and will not be taken back, so the reader
+/// stays to hear how it went, whichever way that is: leaving now, they would
+/// never learn the code was dead, nor be shown what it delivered.
 #[test]
-fn an_answer_left_over_from_a_code_the_reader_moved_past_lands_nowhere() {
+fn escape_during_the_one_try_says_so_and_stays_to_show_how_it_went() {
+    for delivered in [true, false] {
+        let (mut application, _) = showing_the_three();
+        let (request, _) = asking_with(&mut application, "K7QF-2MXP");
+        assert_eq!(
+            press(&mut application, KeyCode::Esc),
+            ApplicationTransition::Continue
+        );
+        let text = shown_text(&application);
+        assert!(text.contains("one try is under way"), "{text}");
+        let answer = if delivered {
+            ApplicationEvent::ShortInviteDelivered {
+                request,
+                delivered: delivered_invite(),
+            }
+        } else {
+            ApplicationEvent::ShortInviteFailed {
+                request,
+                error: "That code did not work, so it is dead".to_owned(),
+                code_gone: true,
+            }
+        };
+        application.handle_event(answer).expect("take the answer");
+        let text = shown_text(&application);
+        if delivered {
+            assert!(text.contains("Confirm Serving Server"), "{text}");
+        } else {
+            assert!(text.contains("so it is dead"), "{text}");
+        }
+    }
+}
+
+/// The field, why the last try failed and the keys are what a reader cannot do
+/// without, however small the terminal.
+#[test]
+fn a_small_terminal_keeps_the_codes_field_its_refusal_and_its_keys() {
     let (mut application, _) = showing_the_three();
     let (request, _) = asking_with(&mut application, "K7QF-2MXP");
-    press(&mut application, KeyCode::Esc);
     application
-        .handle_event(ApplicationEvent::ShortInviteDelivered {
+        .handle_event(ApplicationEvent::ShortInviteFailed {
             request,
-            delivered: delivered_invite(),
+            error: "That code did not work, so it is dead. Do not type it again: get a new one \
+                    from /serve there. If the other machine still shows this code as waiting, \
+                    nothing tried it there, so the Relay may be at fault"
+                .to_owned(),
+            code_gone: true,
         })
-        .expect("take the Invite");
-    assert!(!shown_text(&application).contains("Confirm Serving Server"));
+        .expect("take the failure");
+    paste(&mut application, "H4RW");
+    let rows = rendered_application_rows_at(&application, 30, 12).join("\n");
+    assert!(rows.contains("H4RW"), "the field: {rows}");
+    assert!(rows.contains("Esc back"), "the keys: {rows}");
+    paste(&mut application, "9TNB");
+    press(&mut application, KeyCode::Backspace);
+    for _ in 0..7 {
+        press(&mut application, KeyCode::Backspace);
+    }
+    let (mut application, _) = showing_the_three();
+    let (request, _) = asking_with(&mut application, "K7QF-2MXP");
+    application
+        .handle_event(ApplicationEvent::ShortInviteFailed {
+            request,
+            error: "That code did not work, so it is dead".to_owned(),
+            code_gone: true,
+        })
+        .expect("take the failure");
+    let rows = rendered_application_rows_at(&application, 30, 12).join("\n");
+    assert!(rows.contains("dead"), "why: {rows}");
+    assert!(rows.contains("Esc back"), "the keys: {rows}");
+    let roomy = shown_text(&application);
+    assert!(
+        roomy.contains(WORKSTATION),
+        "its whole fingerprint where there is room: {roomy}"
+    );
+}
+
+#[test]
+fn a_whole_invite_pasted_over_what_was_begun_is_taken_for_the_invite_it_is() {
+    let (mut application, _) = showing_the_three();
+    press(&mut application, KeyCode::Enter);
+    type_terminal_text(&mut application, "k7");
+    paste(&mut application, "suru-v1-the-long-string");
+    let text = shown_text(&application);
+    assert!(text.contains("Paste Invite"), "{text}");
+    assert!(text.contains("suru-v1-the-long-string"), "{text}");
+    assert!(!text.contains("no 0, O, 1 or I"), "{text}");
+}
+
+#[test]
+fn a_code_pasted_where_an_invite_goes_says_to_choose_its_machine() {
+    let (mut application, _) = showing_the_three();
+    paste(&mut application, "K7QF-2MXP");
+    assert_eq!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::Continue,
+        "it is not inspected as an Invite"
+    );
+    let text = shown_text(&application);
+    assert!(text.contains("looks like a short code"), "{text}");
+    assert!(text.contains("choose the machine"), "{text}");
 }
 
 /// A machine that is not Serving, or a Remote already, has no code to ask for.

@@ -269,9 +269,12 @@ pub struct ServerTimings {
     /// this Server opens to a Remote, through a Relay among them — so a
     /// dialer, a Serving Server or a Relay that never does holds nothing up.
     pub serving_handshake_timeout: Duration,
-    /// How long an exchange delivering an Invite by its short code may take,
-    /// on either side of it, before it is closed. One that took the code before
-    /// that has had its guess.
+    /// How long a connection opening with the exchange that delivers an Invite
+    /// by its short code may take to say the rest of its opening, spending
+    /// nothing. A redeemer sends it in one write, so this is a moment.
+    pub short_invite_reading_timeout: Duration,
+    /// How long such an exchange may then take a step of, on either side of it,
+    /// before it is closed. One that took the code has had its guess.
     pub short_invite_timeout: Duration,
     /// How long, on each new dial of a Remote, its direct ways are tried
     /// alone before its Relay ways are started beside them, where no direct
@@ -415,6 +418,7 @@ impl Default for ServerTimings {
             remote_watch_limits: RemoteWatchLimits::default(),
             remote_requests_at_once: crate::serving::AWAITED_AT_ONCE,
             serving_handshake_timeout: Duration::from_secs(10),
+            short_invite_reading_timeout: Duration::from_secs(2),
             short_invite_timeout: Duration::from_secs(10),
             direct_head_start: Duration::from_millis(250),
             direct_idle_timeout: Duration::from_secs(90),
@@ -529,9 +533,17 @@ impl ServerTimings {
         self
     }
 
-    /// Bounds how long a short Invite's exchange may take before it is closed.
+    /// Bounds how long a short Invite's exchange may take a step of before it is
+    /// closed.
     pub fn with_short_invite_timeout(mut self, timeout: Duration) -> Self {
         self.short_invite_timeout = timeout;
+        self
+    }
+
+    /// Bounds how long a connection opening with a short Invite's exchange may
+    /// take to say the rest of its opening.
+    pub fn with_short_invite_reading_timeout(mut self, timeout: Duration) -> Self {
+        self.short_invite_reading_timeout = timeout;
         self
     }
 
@@ -1620,7 +1632,10 @@ async fn start(
     )?
     .with_withdrawal_timeout(timings.remote_withdrawal_timeout)
     .with_handshake_timeout(timings.serving_handshake_timeout)
-    .with_short_invite_timeout(timings.short_invite_timeout)
+    .with_short_invite_timeouts(
+        timings.short_invite_reading_timeout,
+        timings.short_invite_timeout,
+    )
     .with_direct_head_start(timings.direct_head_start)
     .with_awaited_at_once(timings.remote_requests_at_once)
     .with_direct_idle_timeout(timings.direct_idle_timeout)

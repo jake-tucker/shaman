@@ -12,6 +12,7 @@ pub mod provider;
 pub mod relay_voice;
 #[cfg(unix)]
 pub mod scripted_binary;
+pub mod short_code_forms;
 
 pub use deadlines::PROGRESS_DEADLINE;
 

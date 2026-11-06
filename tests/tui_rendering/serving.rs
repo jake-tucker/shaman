@@ -346,6 +346,11 @@ fn serve_lists_scroll_to_keep_the_focused_candidate_and_peer_fully_visible() {
 /// `/serve` showing an Invite offering a Relay and direct way, its code the one
 /// given.
 fn showing_a_code(code: &str, serial: u64) -> Application {
+    showing_a_code_beside(code, serial, Vec::new())
+}
+
+/// The same, with `peers` enrolled.
+fn showing_a_code_beside(code: &str, serial: u64, peers: Vec<Peer>) -> Application {
     let mut application = Application::default();
     let mut settings = EffectiveSettings::default();
     settings.serving.enabled = true;
@@ -384,26 +389,17 @@ fn showing_a_code(code: &str, serial: u64) -> Application {
                     serial,
                 }),
             },
-            peers: Vec::new(),
+            peers,
         })
         .expect("show the Invite");
-    told_code(&mut application, serial, ShortCodeState::Live, true);
+    told_code(&mut application, serial, ShortCodeState::Live);
     application
 }
 
-fn told_code(
-    application: &mut Application,
-    serial: u64,
-    state: ShortCodeState,
-    invite_stands: bool,
-) {
+fn told_code(application: &mut Application, serial: u64, state: ShortCodeState) {
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::ShortCode(
-            ShortCodeStanding {
-                serial,
-                state,
-                invite_stands,
-            },
+            ShortCodeStanding { serial, state },
         )))
         .expect("take how the code stands");
 }
@@ -444,7 +440,7 @@ fn each_of_the_long_string_and_the_code_is_copied_by_its_own_key() {
 #[test]
 fn a_wrong_code_tried_is_told_where_it_is_shown_and_one_key_gets_a_new_one() {
     let mut application = showing_a_code("K7QF-2MXP", 1);
-    told_code(&mut application, 1, ShortCodeState::WrongCodeTried, true);
+    told_code(&mut application, 1, ShortCodeState::WrongCodeTried);
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("A wrong code was tried"), "{text}");
     assert!(text.contains("stays good"), "{text}");
@@ -464,7 +460,7 @@ fn a_wrong_code_tried_is_told_where_it_is_shown_and_one_key_gets_a_new_one() {
             },
         })
         .expect("show the new code");
-    told_code(&mut application, 2, ShortCodeState::Live, true);
+    told_code(&mut application, 2, ShortCodeState::Live);
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("H4RW-9TNB"), "{text}");
     assert!(
@@ -477,7 +473,7 @@ fn a_wrong_code_tried_is_told_where_it_is_shown_and_one_key_gets_a_new_one() {
 #[test]
 fn an_attempt_left_unfinished_is_told_as_it_is_rather_than_as_a_wrong_code() {
     let mut application = showing_a_code("K7QF-2MXP", 1);
-    told_code(&mut application, 1, ShortCodeState::LeftUnfinished, true);
+    told_code(&mut application, 1, ShortCodeState::LeftUnfinished);
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("never finished"), "{text}");
     assert!(!text.contains("wrong code"), "{text}");
@@ -486,13 +482,13 @@ fn an_attempt_left_unfinished_is_told_as_it_is_rather_than_as_a_wrong_code() {
 #[test]
 fn a_code_delivered_expired_or_replaced_says_so_in_place_of_the_code() {
     let mut application = showing_a_code("K7QF-2MXP", 1);
-    told_code(&mut application, 1, ShortCodeState::Delivered, true);
+    told_code(&mut application, 1, ShortCodeState::Delivered);
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("was used"), "{text}");
     assert!(!text.contains("K7QF-2MXP"), "{text}");
 
     let mut application = showing_a_code("K7QF-2MXP", 1);
-    told_code(&mut application, 1, ShortCodeState::Ended, false);
+    told_code(&mut application, 1, ShortCodeState::Ended);
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("ended with its Invite"), "{text}");
     assert!(!text.contains("K7QF-2MXP"), "{text}");
@@ -504,7 +500,7 @@ fn a_code_delivered_expired_or_replaced_says_so_in_place_of_the_code() {
 
     // Another Client issued an Invite since.
     let mut application = showing_a_code("K7QF-2MXP", 1);
-    told_code(&mut application, 2, ShortCodeState::Live, true);
+    told_code(&mut application, 2, ShortCodeState::Live);
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("replaced"), "{text}");
     assert!(!text.contains("K7QF-2MXP"), "{text}");
@@ -513,6 +509,104 @@ fn a_code_delivered_expired_or_replaced_says_so_in_place_of_the_code() {
         ApplicationTransition::Continue,
         "a new code would be for that Invite, which this reader was not shown"
     );
+}
+
+/// What came of the code stays legible: a delivered Invite redeemed is not an
+/// Invite that lapsed.
+#[test]
+fn a_code_whose_invite_was_redeemed_says_so_rather_than_that_it_ended() {
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    told_code(&mut application, 1, ShortCodeState::Delivered);
+    told_code(&mut application, 1, ShortCodeState::Spent);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("was redeemed"), "{text}");
+    assert!(!text.contains("ended with its Invite"), "{text}");
+    assert_eq!(
+        press(&mut application, KeyCode::Char('n')),
+        ApplicationTransition::Continue
+    );
+}
+
+#[test]
+fn no_new_code_is_offered_while_the_last_is_being_tried() {
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    told_code(&mut application, 1, ShortCodeState::UnderWay);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("being tried now"), "{text}");
+    assert!(!text.contains("n new code"), "{text}");
+    assert_eq!(
+        press(&mut application, KeyCode::Char('n')),
+        ApplicationTransition::Continue
+    );
+}
+
+/// A key that puts down an armed removal does only that.
+#[test]
+fn n_with_a_removal_armed_cancels_the_removal_and_keeps_the_code() {
+    let mut application = showing_a_code_beside(
+        "K7QF-2MXP",
+        1,
+        vec![Peer {
+            id: "peer-laptop".to_owned(),
+            fingerprint: "laptop-fingerprint".to_owned(),
+            name: "laptop".to_owned(),
+        }],
+    );
+    press(&mut application, KeyCode::Char('x'));
+    assert!(
+        rendered_application_rows(&application)
+            .join("\n")
+            .contains("x confirm removal")
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Char('n')),
+        ApplicationTransition::Continue
+    );
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(!text.contains("x confirm removal"), "{text}");
+    assert!(text.contains("K7QF-2MXP"), "{text}");
+}
+
+/// Enter in the picker replaces what stands, so it says so before that is done.
+#[test]
+fn reopening_serve_with_an_invite_standing_says_enter_replaces_it() {
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    press(&mut application, KeyCode::Esc);
+    type_terminal_text(&mut application, "/serve");
+    let ApplicationTransition::BeginServing { request, .. } =
+        press(&mut application, KeyCode::Enter)
+    else {
+        panic!("/serve prepares Serving");
+    };
+    application
+        .handle_event(ApplicationEvent::ServingPrepared {
+            request,
+            settings: None,
+            candidates: vec![Way::Direct(SocketAddr::from((
+                Ipv4Addr::new(10, 0, 0, 8),
+                7777,
+            )))],
+        })
+        .expect("load Serving candidates");
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("still stands"), "{text}");
+
+    told_code(&mut application, 1, ShortCodeState::Ended);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(
+        !text.contains("Enter replaces it"),
+        "nothing stands: {text}"
+    );
+}
+
+/// A burn is told while something can be done about it: a Client attaching once
+/// the Invite has ended hears only that it ended.
+#[test]
+fn a_client_attaching_after_a_burns_invite_ended_is_told_nothing_of_it() {
+    let mut application = Application::default();
+    told_code(&mut application, 3, ShortCodeState::Ended);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(!text.contains("A wrong code was tried"), "{text}");
 }
 
 #[test]
@@ -539,10 +633,10 @@ fn a_new_code_refused_says_why_where_the_code_is_shown() {
 fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_they_reopen() {
     let mut application = showing_a_code("K7QF-2MXP", 1);
     press(&mut application, KeyCode::Esc);
-    told_code(&mut application, 1, ShortCodeState::WrongCodeTried, true);
+    told_code(&mut application, 1, ShortCodeState::WrongCodeTried);
     let text = rendered_application_rows(&application).join("\n");
     assert!(
-        text.contains("Wrong short code tried"),
+        text.contains("A wrong code was tried"),
         "a Notice, with no overlay open: {text}"
     );
     assert!(text.contains("/serve for a new one"), "{text}");
@@ -568,6 +662,11 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
         text.contains("A wrong code was tried on the last short code"),
         "{text}"
     );
+    let wide = rendered_application_rows_at(&application, 120, 30).join("\n");
+    assert!(
+        wide.contains("a new one offering a Relay"),
+        "since with no Relay ticked it would not: {wide}"
+    );
 
     let ApplicationTransition::IssueInvite { request, .. } =
         press(&mut application, KeyCode::Enter)
@@ -588,7 +687,7 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
             peers: Vec::new(),
         })
         .expect("show the Invite");
-    told_code(&mut application, 2, ShortCodeState::Live, true);
+    told_code(&mut application, 2, ShortCodeState::Live);
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("H4RW-9TNB"), "{text}");
     assert!(!text.contains("A wrong code was tried"), "{text}");
@@ -599,9 +698,9 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
 #[test]
 fn a_client_that_issued_nothing_is_told_of_an_attempt_too() {
     let mut application = Application::default();
-    told_code(&mut application, 3, ShortCodeState::WrongCodeTried, true);
+    told_code(&mut application, 3, ShortCodeState::WrongCodeTried);
     let text = rendered_application_rows(&application).join("\n");
-    assert!(text.contains("Wrong short code tried"), "{text}");
+    assert!(text.contains("A wrong code was tried"), "{text}");
 }
 
 /// A code is held in memory alone, so a Server replaced has none: the reader is

@@ -27,7 +27,7 @@ use crate::{
     theme::{Theme, ThemeDiagnostic},
 };
 
-use super::{clipboard::PasteId, slots::truncate_to_width};
+use super::{clipboard::PasteId, serve_overlay::attempt_said, slots::truncate_to_width};
 
 /// Leads the Notice so severity reads before the words do.
 const ERROR_GLYPH: &str = "×";
@@ -148,14 +148,13 @@ impl ApplicationNotice {
     /// code is its own condition, and it says so whichever Client's reader
     /// issued it, since an attempt they did not make is worth their seeing.
     pub(super) fn receive_short_code_burned(&mut self, serial: u64, state: ShortCodeState) {
-        let summary = match state {
-            ShortCodeState::LeftUnfinished => "A short code attempt never finished; code dead",
-            _ => "Wrong short code tried; code dead",
+        let Some(attempt) = attempt_said(state) else {
+            return;
         };
         self.raise(
             NoticeIdentity::ShortCodeBurned(serial),
             SettingsDiagnosticSeverity::Warning,
-            summary.to_owned(),
+            format!("{attempt}; short code dead"),
         );
     }
 

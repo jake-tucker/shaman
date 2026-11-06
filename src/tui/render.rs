@@ -22,6 +22,7 @@ use crate::{
         MAX_WORKSPACE_DESCRIPTION_CHARS, ModelAvailability, RelayState, ServerIdentity,
         SessionContentWidth, SessionSnapshot, SessionStatus, SessionTimestamp, WatchSummary, Way,
     },
+    shown_text::short_fingerprint,
     theme::Theme,
 };
 
@@ -621,35 +622,7 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         return;
     }
     if let Some((machine, typed, error)) = overlay.code_entry() {
-        let width = area.width.saturating_sub(2);
-        let mut lines = wrapped_lines(
-            &format!("Pair with {}", machine.shown_name()),
-            width,
-            theme.text.primary.add_modifier(Modifier::BOLD),
-        );
-        lines.extend(wrapped_lines(
-            &format!("Fingerprint {}", machine.fingerprint),
-            width,
-            theme.text.subdued,
-        ));
-        lines.extend(wrapped_lines(
-            "Type the code /serve shows on that machine. It gets one try",
-            width,
-            theme.text.primary,
-        ));
-        lines.push(if typed.is_empty() {
-            Line::styled("▏", theme.text.primary)
-        } else {
-            Line::styled(typed, theme.text.primary)
-        });
-        if let Some(error) = error {
-            lines.extend(wrapped_lines(error, width, theme.feedback.error));
-        }
-        lines.extend(wrapped_lines(
-            "Enter ask for its Invite · Esc back",
-            width,
-            theme.text.subdued,
-        ));
+        let lines = code_entry_lines(machine, typed, error, area, theme);
         render_overlay_box(
             frame,
             state,
@@ -1082,6 +1055,77 @@ fn invite_entry_lines(
         lines.extend(found);
     }
     lines.extend(below);
+    lines
+}
+
+/// The code being typed for a machine chosen, in the box at `area`. The field,
+/// why the last try failed and the keys come first, since a reader cannot do
+/// without them, and what names the machine has what Rows are left: its whole
+/// fingerprint comes at the preview in any case.
+fn code_entry_lines(
+    machine: &FoundMachine,
+    typed: String,
+    error: Option<&str>,
+    area: Rect,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let width = area.width.saturating_sub(2);
+    let mut room = usize::from(area.height.saturating_sub(2));
+    let field = Line::styled(
+        if typed.is_empty() {
+            "▏".to_owned()
+        } else {
+            typed
+        },
+        theme.text.primary,
+    );
+    let keys = wrapped_lines(
+        "Enter ask for its Invite · Esc back",
+        width,
+        theme.text.subdued,
+    );
+    room = room.saturating_sub(1 + keys.len());
+    let mut said = error.map_or_else(Vec::new, |error| {
+        wrapped_lines(error, width, theme.feedback.error)
+    });
+    said.truncate(room);
+    room -= said.len();
+    let mut whole = |lines: Vec<Line<'static>>| {
+        if lines.len() <= room {
+            room -= lines.len();
+            lines
+        } else {
+            Vec::new()
+        }
+    };
+    let asked = whole(wrapped_lines(
+        "Type the code /serve shows on that machine. It gets one try",
+        width,
+        theme.text.primary,
+    ));
+    let heading = whole(wrapped_lines(
+        &format!("Pair with {}", machine.shown_name()),
+        width,
+        theme.text.primary.add_modifier(Modifier::BOLD),
+    ));
+    let mut fingerprint = whole(wrapped_lines(
+        &format!("Fingerprint {}", machine.fingerprint),
+        width,
+        theme.text.subdued,
+    ));
+    if fingerprint.is_empty() {
+        fingerprint = whole(wrapped_lines(
+            &format!("Fingerprint {}…", short_fingerprint(&machine.fingerprint)),
+            width,
+            theme.text.subdued,
+        ));
+    }
+    let mut lines = heading;
+    lines.extend(fingerprint);
+    lines.extend(asked);
+    lines.push(field);
+    lines.extend(said);
+    lines.extend(keys);
     lines
 }
 
@@ -1652,7 +1696,7 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
                 ));
             }
             lines.extend(wrapped_lines(
-                shown_code.said,
+                &shown_code.said,
                 content_width,
                 if shown_code.attempt_failed {
                     theme.feedback.error
@@ -1795,11 +1839,12 @@ fn serve_picker_lines(state: &TuiState, area: Rect, theme: &Theme) -> Vec<Line<'
         said.extend(wrapped_lines(error, content_width, theme.feedback.error));
     }
     if let Some(last_code) = overlay.last_code_said(&state.short_code) {
-        said.extend(wrapped_lines(
-            last_code,
-            content_width,
-            theme.feedback.error,
-        ));
+        let style = if state.short_code.state.burned() {
+            theme.feedback.error
+        } else {
+            theme.text.subdued
+        };
+        said.extend(wrapped_lines(&last_code, content_width, style));
     }
     let too_small = if statement_fits {
         Vec::new()

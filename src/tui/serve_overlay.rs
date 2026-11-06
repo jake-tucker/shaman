@@ -150,15 +150,28 @@ enum ServeOverlayState {
 
 /// What is said of the short code of the Invite shown, as the Server says it
 /// stands.
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ShownCode {
     /// The code, in its two groups, for as long as it can be tried.
     pub(super) code: Option<String>,
-    pub(super) said: &'static str,
+    pub(super) said: String,
     /// Whether it is said as something to take note of.
     pub(super) attempt_failed: bool,
     /// Whether a new code can be had for the Invite shown.
     pub(super) renewable: bool,
+}
+
+/// What came of an attempt on a short code, in the words every surface says it
+/// in, where one used it up.
+pub(super) fn attempt_said(state: ShortCodeState) -> Option<&'static str> {
+    match state {
+        ShortCodeState::WrongCodeTried => Some("A wrong code was tried"),
+        ShortCodeState::LeftUnfinished => Some("An attempt never finished"),
+        ShortCodeState::Live
+        | ShortCodeState::UnderWay
+        | ShortCodeState::Delivered
+        | ShortCodeState::Spent
+        | ShortCodeState::Ended => None,
+    }
 }
 
 /// What the reader has chosen of the ways an Invite may offer. Every way is
@@ -888,90 +901,67 @@ impl ServeOverlay {
     /// it was issued, so what it says of an earlier code says nothing of it.
     pub(super) fn shown_code(&self, standing: &ShortCodeStanding) -> Option<ShownCode> {
         let issued = self.invite()?.short_code.as_ref()?;
-        let shown = |code: Option<String>, said, attempt_failed, renewable| ShownCode {
-            code,
-            said,
-            attempt_failed,
-            renewable,
+        let said = |said: &str| ShownCode {
+            code: None,
+            said: said.to_owned(),
+            attempt_failed: false,
+            renewable: false,
         };
         if standing.serial > issued.serial {
-            return Some(shown(
-                None,
-                "This code was replaced by a newer one, issued since",
-                false,
-                false,
-            ));
+            return Some(said("This code was replaced by a newer one, issued since"));
         }
         let state = if standing.serial == issued.serial {
             standing.state
         } else {
             ShortCodeState::Live
         };
-        let stands = standing.serial < issued.serial || standing.invite_stands;
+        if let Some(attempt) = attempt_said(state) {
+            return Some(ShownCode {
+                attempt_failed: true,
+                renewable: true,
+                ..said(&format!(
+                    "{attempt}, so this code is dead. The Invite stays good, and a new code can \
+                     be had for it"
+                ))
+            });
+        }
         Some(match state {
-            ShortCodeState::Live => shown(
-                Some(issued.code.grouped()),
-                "Type it in /pair on the other machine. It gets one try",
-                false,
-                true,
-            ),
-            ShortCodeState::UnderWay => shown(None, "This code is being tried now", false, true),
-            ShortCodeState::Delivered => shown(
-                None,
-                "This code was used: the machine that typed it holds the Invite, and is not \
-                 paired until it trusts it there",
-                false,
-                stands,
-            ),
-            ShortCodeState::WrongCodeTried if stands => shown(
-                None,
-                "A wrong code was tried, so this one is dead. The Invite stays good, and a new \
-                 code can be had for it",
-                true,
-                true,
-            ),
-            ShortCodeState::WrongCodeTried => shown(
-                None,
-                "A wrong code was tried, so this one is dead, and its Invite has ended since",
-                true,
-                false,
-            ),
-            ShortCodeState::LeftUnfinished if stands => shown(
-                None,
-                "An attempt on this code never finished, so it is dead. The Invite stays good, \
-                 and a new code can be had for it",
-                true,
-                true,
-            ),
-            ShortCodeState::LeftUnfinished => shown(
-                None,
-                "An attempt on this code never finished, so it is dead, and its Invite has ended \
-                 since",
-                true,
-                false,
-            ),
-            ShortCodeState::Ended => shown(None, "This code ended with its Invite", false, false),
+            ShortCodeState::Live => ShownCode {
+                code: Some(issued.code.grouped()),
+                renewable: true,
+                ..said("Type it in /pair on the other machine. It gets one try")
+            },
+            ShortCodeState::UnderWay => said("This code is being tried now"),
+            ShortCodeState::Delivered => ShownCode {
+                renewable: true,
+                ..said(
+                    "This code was used: the machine that typed it was sent the Invite, and is \
+                     not paired until it trusts it there",
+                )
+            },
+            ShortCodeState::Spent => said("The Invite was redeemed, so this code is finished"),
+            ShortCodeState::WrongCodeTried
+            | ShortCodeState::LeftUnfinished
+            | ShortCodeState::Ended => said("This code ended with its Invite"),
         })
     }
 
-    /// What the picker says of the last short code, where an attempt used it
-    /// up: the reader may have closed `/serve`, or be in another Client, and it
-    /// stands until another code replaces it.
-    pub(super) fn last_code_said(&self, standing: &ShortCodeStanding) -> Option<&'static str> {
-        if !self.is_choosing() {
+    /// What the picker says of the last Invite with a short code, while it
+    /// stands. Enter would replace it, and the reader may have closed `/serve`
+    /// or be in another Client, so what became of its code is said as well until
+    /// that goes.
+    pub(super) fn last_code_said(&self, standing: &ShortCodeStanding) -> Option<String> {
+        if !self.is_choosing() || !standing.state.invite_stands() {
             return None;
         }
-        match standing.state {
-            ShortCodeState::WrongCodeTried => Some(
-                "A wrong code was tried on the last short code, which is dead. Enter issues a new \
-                 Invite, and a new code with it",
+        Some(match attempt_said(standing.state) {
+            Some(attempt) => format!(
+                "{attempt} on the last short code, which is dead. The Invite it came with stands \
+                 until Enter replaces it; a new one offering a Relay comes with a new code"
             ),
-            ShortCodeState::LeftUnfinished => Some(
-                "An attempt on the last short code never finished, so it is dead. Enter issues a \
-                 new Invite, and a new code with it",
-            ),
-            _ => None,
-        }
+            None => "The Invite issued last still stands, until Enter replaces it and its code"
+                .to_owned(),
+        })
     }
 
     /// Asks for a new short code for the Invite shown, where one can be had,

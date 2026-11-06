@@ -12,10 +12,7 @@ use std::{
     time::Duration,
 };
 
-use base64::{
-    Engine as _,
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rcgen::PublicKeyData as _;
 use suru::{
     logging::{self, Role},
@@ -40,8 +37,11 @@ mod build_id;
 mod support;
 
 use support::{
-    PROGRESS_DEADLINE, observed_tcp_proxy::ObservedTcpProxy, receive_initial_state,
+    PROGRESS_DEADLINE,
+    observed_tcp_proxy::ObservedTcpProxy,
+    receive_initial_state,
     relay_voice::RelayVoice,
+    short_code_forms::{form_held, forms_of},
 };
 
 /// A name nothing resolves, so a Server can reach the Relay by it only
@@ -513,29 +513,9 @@ async fn reach_the_relays(proxy: std::net::TcpListener, trust: TrustedCertificat
         .map(|entry| std::fs::read_to_string(entry.unwrap().path()).unwrap())
         .collect::<String>();
     for code in [&live, &burned, &attempted] {
-        let grouped = code.grouped();
-        let canonical = grouped.replace('-', "");
-        let hash = ring::digest::digest(&ring::digest::SHA256, canonical.as_bytes());
-        let blake3 = blake3::hash(canonical.as_bytes());
-        for form in [
-            canonical.clone(),
-            grouped.clone(),
-            canonical.to_lowercase(),
-            grouped.to_lowercase(),
-            URL_SAFE_NO_PAD.encode(&canonical),
-            STANDARD.encode(&canonical),
-            URL_SAFE_NO_PAD.encode(hash.as_ref()),
-            STANDARD.encode(hash.as_ref()),
-            hash.as_ref()
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect(),
-            blake3.to_hex().to_string(),
-        ] {
-            assert!(
-                !logs.contains(&form),
-                "the Server's Log holds nothing of a short code, yet it holds {form:?}"
-            );
+        let forms = forms_of(code);
+        if let Some(form) = form_held(logs.as_bytes(), &forms) {
+            panic!("the Server's Log holds nothing of a short code, yet it holds {form:?}");
         }
     }
     for material in [

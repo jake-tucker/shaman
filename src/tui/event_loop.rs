@@ -2766,11 +2766,11 @@ impl RunLoop {
             PairingResult::ShortInviteFailed {
                 request,
                 error,
-                spent,
+                code_gone,
             } => ApplicationEvent::ShortInviteFailed {
                 request,
                 error,
-                spent,
+                code_gone,
             },
             PairingResult::ShortCodeIssued { request, code } => {
                 ApplicationEvent::ShortCodeIssued { request, code }
@@ -2981,7 +2981,7 @@ enum PairingResult {
     ShortInviteFailed {
         request: crate::tui::ConnectRequest,
         error: String,
-        spent: bool,
+        code_gone: bool,
     },
     ShortCodeIssued {
         request: crate::tui::ServeRequest,
@@ -3067,13 +3067,17 @@ fn spawn_short_invite_fetch(
             Ok(delivered) => PairingResult::ShortInviteDelivered { request, delivered },
             Err(error) => PairingResult::ShortInviteFailed {
                 request,
-                spent: error
+                // Its one try used, or no such code live, which every remedy
+                // answers with a different code: typed again, this one could
+                // only burn that. Where nothing was tried, it is still good.
+                code_gone: error
                     .downcast_ref::<crate::protocol::SessionError>()
                     .is_some_and(|error| {
                         matches!(
                             error.code,
                             crate::protocol::SessionErrorCode::ShortCodeDead
                                 | crate::protocol::SessionErrorCode::ShortCodeKeyMismatch
+                                | crate::protocol::SessionErrorCode::ShortCodeNotLive
                         )
                     }),
                 error: error.to_string(),
