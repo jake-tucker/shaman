@@ -2993,12 +2993,12 @@ enum PairingResult {
     },
     InvitePreviewed {
         request: crate::tui::ConnectRequest,
-        invite: String,
+        invite: crate::protocol::InviteText,
         preview: crate::protocol::InvitePreview,
     },
     InvitePreviewFailed {
         request: crate::tui::ConnectRequest,
-        invite: String,
+        invite: crate::protocol::InviteText,
         error: String,
     },
     RemoteRedeemed {
@@ -3107,11 +3107,11 @@ fn spawn_short_code_issuance(
 fn spawn_invite_preview(
     commands: SessionCommandClient,
     request: crate::tui::ConnectRequest,
-    invite: String,
+    invite: crate::protocol::InviteText,
     results: UnboundedSender<PairingResult>,
 ) {
     tokio::spawn(async move {
-        let result = match commands.preview_invite(invite.clone()).await {
+        let result = match commands.preview_invite(invite.0.clone()).await {
             Ok(preview) => PairingResult::InvitePreviewed {
                 request,
                 invite,

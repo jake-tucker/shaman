@@ -752,7 +752,7 @@ fn a_refused_preview_returns_to_the_invite_with_the_machines_beside_it() {
     application
         .handle_event(ApplicationEvent::InvitePreviewFailed {
             request,
-            invite: INVITE.to_owned(),
+            invite: INVITE.to_owned().into(),
             error: "the Invite has lapsed".to_owned(),
         })
         .expect("take the refusal");
@@ -783,7 +783,7 @@ fn an_answer_landing_behind_an_invites_preview_moves_nothing() {
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: INVITE.to_owned(),
+            invite: INVITE.to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: WORKSTATION.to_owned(),

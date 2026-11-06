@@ -1572,7 +1572,7 @@ fn a_late_preview_lands_nowhere() {
     application
         .handle_event(ApplicationEvent::InvitePreviewFailed {
             request: first,
-            invite: "suru-v1-first".to_owned(),
+            invite: "suru-v1-first".to_owned().into(),
             error: "Invite is malformed".to_owned(),
         })
         .expect("take the late refusal");
@@ -3546,7 +3546,7 @@ fn previewed(
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: invite.to_owned(),
+            invite: invite.into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: fingerprint.to_owned(),

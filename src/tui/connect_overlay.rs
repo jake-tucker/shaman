@@ -29,9 +29,9 @@ use std::collections::HashMap;
 use zeroize::Zeroizing;
 
 use crate::protocol::{
-    DeliveredInvite, FetchShortInviteRequest, InvitePreview, Outlook, RedeemInviteRequest,
-    RelayLogin, RelayLoginOutcome, Remote, RemoteHealth, RemoteStatus, ShortCode,
-    UnreachableReason, Way, opens_as_an_invite,
+    DeliveredInvite, FetchShortInviteRequest, InvitePreview, InviteText, Outlook,
+    RedeemInviteRequest, RelayLogin, RelayLoginOutcome, Remote, RemoteHealth, RemoteStatus,
+    ShortCode, UnreachableReason, Way, opens_as_an_invite,
 };
 
 use super::{
@@ -91,7 +91,7 @@ enum ConnectOverlayState {
     Closed,
     Loading,
     InviteEntry {
-        invite: String,
+        invite: InviteText,
         error: Option<String>,
     },
     /// A machine chosen, its code being typed.
@@ -109,7 +109,7 @@ enum ConnectOverlayState {
         request: ConnectRequest,
     },
     Confirming {
-        invite: String,
+        invite: InviteText,
         preview: InvitePreview,
     },
     Details(ConnectDraft),
@@ -145,7 +145,7 @@ enum ConnectOverlayState {
 struct CodeEntry {
     machine: FoundMachine,
     /// What stands in the Invite field, for going back to.
-    invite: String,
+    invite: InviteText,
     typed: TypedCode,
     error: Option<String>,
 }
@@ -221,7 +221,7 @@ enum ConnectFocus {
 
 #[derive(Clone, Debug)]
 struct ConnectDraft {
-    invite: String,
+    invite: InviteText,
     name: String,
     ways: Vec<Way>,
     selected: usize,
@@ -306,7 +306,7 @@ impl ConnectOverlay {
     pub(super) fn open_invite_entry(&mut self) -> ConnectRequest {
         self.leave_login();
         self.state = ConnectOverlayState::InviteEntry {
-            invite: String::new(),
+            invite: InviteText::default(),
             error: None,
         };
         let asked = self.issue();
@@ -413,7 +413,7 @@ impl ConnectOverlay {
     ) {
         if self.awaits_fetch(request) {
             self.state = ConnectOverlayState::Confirming {
-                invite: delivered.invite,
+                invite: delivered.invite.into(),
                 preview: delivered.preview,
             };
             self.preview_window.scroll_to(0);
@@ -558,7 +558,7 @@ impl ConnectOverlay {
     pub(super) fn fail_invite_entry(&mut self, message: String) {
         let invite = match &mut self.state {
             ConnectOverlayState::InviteEntry { invite, .. } => std::mem::take(invite),
-            _ => String::new(),
+            _ => InviteText::default(),
         };
         self.state = ConnectOverlayState::InviteEntry {
             invite,
@@ -571,7 +571,9 @@ impl ConnectOverlay {
             ConnectOverlayState::InviteEntry { invite, error } => {
                 // An Invite holds no whitespace, and one copied from where it
                 // was displayed wrapped has line breaks wherever it wrapped.
-                invite.extend(text.chars().filter(|character| !character.is_whitespace()));
+                invite
+                    .0
+                    .extend(text.chars().filter(|character| !character.is_whitespace()));
                 *error = None;
                 self.machines.focus_invite();
             }
@@ -581,9 +583,11 @@ impl ConnectOverlay {
                 // A whole Invite pasted, or typed, is the Invite it is: it
                 // goes where it would have gone, and spends no code.
                 let invite = if opens_as_an_invite(text) {
-                    Some(text.chars().filter(|c| !c.is_whitespace()).collect())
+                    Some(InviteText(
+                        text.chars().filter(|c| !c.is_whitespace()).collect(),
+                    ))
                 } else {
-                    opens_as_an_invite(&typed).then(|| typed.to_string())
+                    opens_as_an_invite(&typed).then(|| InviteText(typed.to_string()))
                 };
                 if let Some(invite) = invite {
                     self.state = ConnectOverlayState::InviteEntry {
@@ -613,7 +617,7 @@ impl ConnectOverlay {
     pub(super) fn delete_backward(&mut self) {
         match &mut self.state {
             ConnectOverlayState::InviteEntry { invite, error } => {
-                invite.pop();
+                invite.0.pop();
                 *error = None;
                 self.machines.focus_invite();
             }
@@ -630,7 +634,7 @@ impl ConnectOverlay {
     }
 
     /// Inspects the Invite pasted, answering the request that asks.
-    pub(super) fn begin_preview(&mut self) -> Option<(ConnectRequest, String)> {
+    pub(super) fn begin_preview(&mut self) -> Option<(ConnectRequest, InviteText)> {
         let ConnectOverlayState::InviteEntry { invite, error } = &mut self.state else {
             return None;
         };
@@ -651,7 +655,7 @@ impl ConnectOverlay {
         }
         let request = self.issue();
         self.state = ConnectOverlayState::Inspecting { request };
-        Some((request, invite))
+        Some((request, InviteText(invite)))
     }
 
     fn awaits_preview(&self, request: ConnectRequest) -> bool {
@@ -663,7 +667,7 @@ impl ConnectOverlay {
     pub(super) fn show_preview(
         &mut self,
         request: ConnectRequest,
-        invite: String,
+        invite: InviteText,
         preview: InvitePreview,
     ) {
         if self.awaits_preview(request) {
@@ -672,7 +676,12 @@ impl ConnectOverlay {
         }
     }
 
-    pub(super) fn fail_preview(&mut self, request: ConnectRequest, invite: String, error: String) {
+    pub(super) fn fail_preview(
+        &mut self,
+        request: ConnectRequest,
+        invite: InviteText,
+        error: String,
+    ) {
         if self.awaits_preview(request) {
             self.state = ConnectOverlayState::InviteEntry {
                 invite,
@@ -843,7 +852,7 @@ impl ConnectOverlay {
     ) -> (ConnectRequest, RedeemInviteRequest) {
         let request = self.issue();
         let redemption = RedeemInviteRequest {
-            invite: draft.invite.clone(),
+            invite: draft.invite.0.clone(),
             name: Some(draft.name.trim().to_owned()),
             ways: draft.ways.clone(),
         };

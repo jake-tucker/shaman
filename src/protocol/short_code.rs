@@ -188,6 +188,49 @@ pub fn opens_as_an_invite(text: &str) -> bool {
 /// How every Invite's string opens, a version following.
 const INVITE_OPENING: &str = "suru-v";
 
+/// The whole string of an Invite, as a Client holds it while the reader decides.
+/// Its token redeems the Invite for whoever has it, so it says nothing of itself
+/// in `Debug`, whatever holds it comes to be printed by.
+#[derive(Clone, Default, Eq, PartialEq)]
+pub struct InviteText(pub String);
+
+impl InviteText {
+    /// What stands in `Debug` for the string of an Invite.
+    pub(crate) const REDACTED: Self = Self(String::new());
+}
+
+impl std::fmt::Debug for InviteText {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("InviteText(..)")
+    }
+}
+
+impl From<String> for InviteText {
+    fn from(invite: String) -> Self {
+        Self(invite)
+    }
+}
+
+impl From<&str> for InviteText {
+    fn from(invite: &str) -> Self {
+        Self(invite.to_owned())
+    }
+}
+
+impl std::ops::Deref for InviteText {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq<&str> for InviteText {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
 /// A code typed for a machine chosen from those a Relay listed: ask for that
 /// machine's Invite over one of the Relays said to carry it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -215,7 +258,7 @@ impl std::fmt::Debug for DeliveredInvite {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("DeliveredInvite")
-            .field("invite", &"..")
+            .field("invite", &InviteText::REDACTED)
             .field("preview", &self.preview)
             .finish()
     }
@@ -319,6 +362,50 @@ mod tests {
         ] {
             assert!(!said.contains("K7QF"), "{said}");
             assert!(!said.contains("2MXP"), "{said}");
+        }
+    }
+
+    #[test]
+    fn nothing_says_an_invites_token_by_accident() {
+        const INVITE: &str = "suru-v1-the-token-in-its-string";
+        let preview = InvitePreview {
+            hostname: "workstation".to_owned(),
+            fingerprint: "aaaa".to_owned(),
+            ways: Vec::new(),
+        };
+        for said in [
+            format!("{:?}", InviteText::from(INVITE)),
+            format!(
+                "{:?}",
+                DeliveredInvite {
+                    invite: INVITE.to_owned(),
+                    preview,
+                }
+            ),
+            format!(
+                "{:?}",
+                crate::protocol::IssuedInvite {
+                    invite: INVITE.to_owned(),
+                    ways: Vec::new(),
+                    short_code: None,
+                }
+            ),
+            format!(
+                "{:?}",
+                crate::protocol::PreviewInviteRequest {
+                    invite: INVITE.to_owned(),
+                }
+            ),
+            format!(
+                "{:?}",
+                crate::protocol::RedeemInviteRequest {
+                    invite: INVITE.to_owned(),
+                    name: None,
+                    ways: Vec::new(),
+                }
+            ),
+        ] {
+            assert!(!said.contains("the-token"), "{said}");
         }
     }
 

@@ -1145,7 +1145,7 @@ fn pairing_another_remote_refuses_a_duplicate_prefilled_name_in_the_draft() {
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-another".to_owned(),
+            invite: "suru-v1-another".to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: "new".to_owned(),
@@ -1260,7 +1260,7 @@ fn redemption_in_flight() -> (Application, ConnectRequest) {
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-example".to_owned(),
+            invite: "suru-v1-example".to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: "fingerprint".to_owned(),
@@ -1311,7 +1311,7 @@ fn every_invite_refusal_is_precise_and_visible_on_the_step_that_failed() {
         application
             .handle_event(ApplicationEvent::InvitePreviewFailed {
                 request,
-                invite: invite.to_owned(),
+                invite: invite.into(),
                 error: error.to_owned(),
             })
             .unwrap();
@@ -1378,7 +1378,7 @@ fn pairing_another_remote_keeps_every_paired_remote_in_the_picker() {
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-another".to_owned(),
+            invite: "suru-v1-another".to_owned().into(),
             preview: InvitePreview {
                 hostname: "laptop".to_owned(),
                 fingerprint: "laptop-fingerprint".to_owned(),
@@ -1428,7 +1428,7 @@ fn pasted_invite_shows_its_fingerprint_before_pairing_can_advance() {
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-example".to_owned(),
+            invite: "suru-v1-example".to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: "0123456789abcdef".repeat(4),
@@ -1470,7 +1470,7 @@ fn remote_name_is_editable_and_ways_are_redeemed_in_the_visible_priority_order()
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-example".to_owned(),
+            invite: "suru-v1-example".to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: "fingerprint".to_owned(),
@@ -1859,7 +1859,7 @@ fn configure_remote_draft() -> Application {
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-example".to_owned(),
+            invite: "suru-v1-example".to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: "fingerprint".to_owned(),

@@ -5652,12 +5652,12 @@ pub enum ApplicationEvent {
     /// What the preview `request` asked for found the Invite to offer.
     InvitePreviewed {
         request: ConnectRequest,
-        invite: String,
+        invite: crate::protocol::InviteText,
         preview: crate::protocol::InvitePreview,
     },
     InvitePreviewFailed {
         request: ConnectRequest,
-        invite: String,
+        invite: crate::protocol::InviteText,
         error: String,
     },
     /// The Remote the redemption `request` asked for paired with.
@@ -6290,7 +6290,7 @@ pub enum ApplicationTransition {
     /// [`ApplicationEvent::InvitePreviewFailed`], either naming `request`.
     PreviewInvite {
         request: ConnectRequest,
-        invite: String,
+        invite: crate::protocol::InviteText,
     },
     /// Redeem an Invite as the reader configured it, and answer with
     /// [`ApplicationEvent::RemoteRedeemed`] or
