@@ -16,7 +16,8 @@ use std::{
 
 use suru::{
     login_start::{KeeperArguments, ServiceManagerStandIn},
-    protocol::RuntimeDescriptor,
+    managed_client::{ManagedClient, ManagedEvent},
+    protocol::{RuntimeDescriptor, ShutdownReason},
 };
 use tokio::{
     process::{Child, Command},
@@ -165,7 +166,7 @@ impl Machine {
             },
             look_interval_ms: Some(look_interval_ms),
         };
-        let mut command = self.sparse(executable);
+        let mut command = self.sparse(env!("CARGO_BIN_EXE_suru"));
         command
             .args(arguments.words().expect("spell the Keeper's command line"))
             .stdout(Stdio::null())
@@ -854,5 +855,211 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
             }
         ),
         "with nothing carried no Provider should be found: {unaided:?}"
+    );
+}
+
+/// `kill -9`, then `suru server stop` at once: the Server is gone but its
+/// descriptor is not, and the stop is still the user's word. It leaves a record,
+/// with the stale descriptor gone, and exits as a stop that took.
+#[tokio::test]
+async fn a_stop_after_a_crash_is_recorded_and_says_none_was_running() {
+    let machine = Machine::new();
+    let channel = "stop-after-crash";
+    machine.succeed(channel, &["start"]).await;
+    let crashed = machine.server_other_than(channel, None).await;
+    machine.crash(&crashed).await;
+    assert!(machine.descriptor_path(channel).exists());
+    assert!(!machine.last_stop_path(channel).exists());
+
+    let said = machine.succeed(channel, &["stop"]).await;
+    assert!(said.contains("No Suru server was running"), "{said}");
+    assert!(machine.last_stop_path(channel).exists());
+    assert!(
+        !machine.descriptor_path(channel).exists(),
+        "a stopped Channel names no Server"
+    );
+
+    machine.succeed(channel, &["start"]).await;
+    machine.server_other_than(channel, None).await;
+}
+
+/// What the stop is for: a Keeper that would have answered the crash does not.
+/// Whichever of the two gets there first, the stop stands: recorded with no
+/// Server there, or stopping the one the Keeper just launched.
+#[tokio::test]
+async fn a_stop_racing_a_keeper_answering_a_crash_stands() {
+    let machine = Machine::new();
+    let channel = "stop-racing-keeper";
+    machine.succeed(channel, &["install"]).await;
+    // Slow enough that the stop usually lands in the gap the review found, and
+    // the outcome is the same if it does not.
+    let mut keeper =
+        machine.keeper_looking_every(channel, Path::new(env!("CARGO_BIN_EXE_suru")), 100);
+    let crashed = machine.server_other_than(channel, None).await;
+
+    machine.crash(&crashed).await;
+    machine.succeed(channel, &["stop"]).await;
+
+    tokio::time::sleep(LONG_ENOUGH_TO_HAVE_ACTED * 2).await;
+    assert_eq!(machine.servers.servers_running(), 0, "a stop was undone");
+    assert!(
+        keeper.try_wait().expect("look at the Keeper").is_none(),
+        "the Keeper goes on looking, for the Server someone starts next"
+    );
+
+    machine.succeed(channel, &["start"]).await;
+    machine
+        .server_other_than(channel, Some(crashed.instance_id))
+        .await;
+}
+
+/// A Server launched before such a stop and still on its way to the election is
+/// held to it, as to any Manual stop, which is what settles the race with a
+/// launch under way.
+#[tokio::test]
+async fn a_server_launched_before_a_stop_with_no_server_there_stands_down() {
+    let machine = Machine::new();
+    let channel = "stop-overtaking-launch";
+    machine.succeed(channel, &["start"]).await;
+    let crashed = machine.server_other_than(channel, None).await;
+    let followed = std::fs::read_to_string(machine.last_stop_path(channel)).ok();
+    assert_eq!(followed, None);
+    machine.crash(&crashed).await;
+    machine.succeed(channel, &["stop"]).await;
+
+    let launched = machine
+        .sparse(env!("CARGO_BIN_EXE_suru"))
+        .arg("__server")
+        .arg("--state-dir")
+        .arg(machine.servers.state_dir())
+        .arg("--data-dir")
+        .arg(machine.servers.state_dir())
+        .arg("--channel")
+        .arg(channel)
+        .arg("--last-stop")
+        .arg("none")
+        .envs(machine.servers.isolated_environment())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let status = timeout(PROGRESS_DEADLINE, launched)
+        .await
+        .expect("the Server stands down at once")
+        .expect("run the Server");
+    assert!(!status.success());
+    assert!(!machine.descriptor_path(channel).exists());
+}
+
+/// A client recovering from the crash hears the stop as it hears any.
+#[tokio::test]
+async fn a_client_recovering_from_a_crash_leaves_on_a_stop() {
+    let machine = Machine::new();
+    let channel = "stop-recovering-client";
+    let mut client = ManagedClient::connect(
+        machine
+            .servers
+            .client_config(channel)
+            .with_recovery_backoff(Duration::from_millis(100), Duration::from_millis(200)),
+    )
+    .await
+    .expect("attach a client");
+    let crashed = machine.server_other_than(channel, None).await;
+
+    machine.crash(&crashed).await;
+    machine.succeed(channel, &["stop"]).await;
+
+    timeout(PROGRESS_DEADLINE, async {
+        loop {
+            match client.next().await {
+                Some(ManagedEvent::ServerShutdown(shutdown)) => {
+                    assert_eq!(shutdown.reason, ShutdownReason::Manual);
+                    return;
+                }
+                Some(_) => {}
+                None => panic!("the client ended without hearing the stop"),
+            }
+        }
+    })
+    .await
+    .expect("the recovering client hears the stop");
+}
+
+/// A Server that does not answer yet holds the election is no crash: nothing
+/// can be recorded past the lock it holds, and it may wake. That stays as it was.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_stop_of_a_hung_server_says_so_and_records_nothing() {
+    let machine = Machine::new();
+    let channel = "stop-hung";
+    machine.succeed(channel, &["start"]).await;
+    let hung = machine.server_other_than(channel, None).await;
+    let signal = |signal| {
+        // SAFETY: `kill` takes plain integers, and the pid is the Server's own.
+        assert_eq!(unsafe { libc::kill(hung.pid as libc::pid_t, signal) }, 0);
+    };
+    signal(libc::SIGSTOP);
+
+    let stopped = suru::managed_client::stop_server(
+        &machine
+            .servers
+            .client_config(channel)
+            .with_health_check_timeout(Duration::from_millis(100))
+            .with_stop_timeout(Duration::from_millis(300)),
+    )
+    .await;
+    signal(libc::SIGCONT);
+
+    let error = stopped.expect_err("a hung Server is not stopped");
+    assert!(error.to_string().contains("cannot stop"), "{error:#}");
+    assert!(!machine.last_stop_path(channel).exists());
+    assert!(machine.responds(&hung).await, "the Server woke as it was");
+}
+
+/// A Server that dies each time it is launched never comes to publish anything,
+/// and `suru server stop` still ends the loop.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_stop_ends_a_crash_loop() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let machine = Machine::new();
+    let channel = "stop-crash-loop";
+    machine.succeed(channel, &["install"]).await;
+    let launches = machine.home.path().join("launches");
+    let crashing = machine.home.path().join("crashing-server");
+    std::fs::write(
+        &crashing,
+        format!(
+            "#!/bin/sh\necho launched >> '{}'\nexit 1\n",
+            launches.display()
+        ),
+    )
+    .expect("write a Server that crashes");
+    std::fs::set_permissions(&crashing, std::fs::Permissions::from_mode(0o700))
+        .expect("make it runnable");
+    let launch_count = || {
+        std::fs::read_to_string(&launches)
+            .map(|launched| launched.lines().count())
+            .unwrap_or(0)
+    };
+    let _keeper = machine.keeper(channel, &crashing);
+    timeout(PROGRESS_DEADLINE, async {
+        while launch_count() < 2 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the Keeper goes on launching");
+
+    let said = machine.succeed(channel, &["stop"]).await;
+    assert!(said.contains("No Suru server was running"), "{said}");
+    // One launch may have been under way as the stop landed.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let settled = launch_count();
+    tokio::time::sleep(LONG_ENOUGH_TO_HAVE_ACTED * 2).await;
+    assert_eq!(
+        launch_count(),
+        settled,
+        "the stop did not end the crash loop"
     );
 }

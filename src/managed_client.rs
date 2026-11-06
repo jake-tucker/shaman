@@ -2436,28 +2436,58 @@ pub async fn server_status(config: &ManagedClientConfig) -> Result<ServerStatus>
     })
 }
 
-pub async fn stop_server(config: &ManagedClientConfig) -> Result<Health> {
-    let registration = match lifecycle::inspect_registration(config).await? {
-        lifecycle::RegistrationInspection::Missing => {
-            bail!("cannot stop missing Suru server")
+/// What came of a `suru server stop`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ServerStop {
+    /// This Server was running, and has stopped.
+    Stopped(Health),
+    /// No Server was running: it had crashed, say. The stop is recorded all the
+    /// same, so nothing launched before it serves the Channel in its place.
+    NoneRunning,
+}
+
+/// Stops the Channel's Server. Where none answers and none holds the election
+/// the stop still stands, recorded as a stopping Server would record it, so a
+/// Keeper or a recovering client ready to launch another does not (ADR 0002).
+/// One holding the election without answering may be on its way up, so it is
+/// given until the stop's deadline to answer; one that never does is hung, and
+/// no stop is recorded past the lock it holds.
+pub async fn stop_server(config: &ManagedClientConfig) -> Result<ServerStop> {
+    let held_until = tokio::time::Instant::now() + config.stop_timeout;
+    loop {
+        let not_stoppable = match lifecycle::inspect_registration(config).await? {
+            lifecycle::RegistrationInspection::Live(registration) => {
+                lifecycle::shutdown_registered_instance(
+                    config,
+                    &registration,
+                    ShutdownReason::Manual,
+                    tokio::time::Instant::now() + config.stop_timeout,
+                )
+                .await?;
+                return Ok(ServerStop::Stopped(registration.health));
+            }
+            lifecycle::RegistrationInspection::Missing => {
+                "cannot stop missing Suru server".to_owned()
+            }
+            lifecycle::RegistrationInspection::Stale(reason) => {
+                format!("cannot stop stale Suru server registration: {reason}")
+            }
+            lifecycle::RegistrationInspection::Unreachable(reason) => {
+                format!("cannot stop unreachable Suru server: {reason}")
+            }
+        };
+        let now = tokio::time::Instant::now();
+        match crate::server::stop_with_no_server(&config.runtime)? {
+            crate::server::StopWithNoServer::Recorded => return Ok(ServerStop::NoneRunning),
+            crate::server::StopWithNoServer::NoChannel => bail!(not_stoppable),
+            crate::server::StopWithNoServer::ServerHolds if now >= held_until => {
+                bail!(not_stoppable)
+            }
+            crate::server::StopWithNoServer::ServerHolds => {
+                tokio::time::sleep_until((now + Duration::from_millis(25)).min(held_until)).await;
+            }
         }
-        lifecycle::RegistrationInspection::Live(registration) => registration,
-        lifecycle::RegistrationInspection::Stale(reason) => {
-            bail!("cannot stop stale Suru server registration: {reason}")
-        }
-        lifecycle::RegistrationInspection::Unreachable(reason) => {
-            bail!("cannot stop unreachable Suru server: {reason}")
-        }
-    };
-    let deadline = tokio::time::Instant::now() + config.stop_timeout;
-    lifecycle::shutdown_registered_instance(
-        config,
-        &registration,
-        ShutdownReason::Manual,
-        deadline,
-    )
-    .await?;
-    Ok(registration.health)
+    }
 }
 
 fn remote_probe_url(base_url: &str, name: &str) -> Result<reqwest::Url> {

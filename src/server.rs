@@ -91,6 +91,7 @@ use operations::{
 pub use crate::clock::{ManualClock, ServerClock};
 pub use crate::serving::DirectProxies;
 pub use cutoff::{CUT_OFF_EXIT_STATUS, CUTOFF_MARGIN, ProcessCutoff};
+pub(crate) use election::{StopWithNoServer, stop_with_no_server};
 pub use signals::ShutdownSignals;
 
 pub type ServerConfig = RuntimeConfig;

@@ -271,8 +271,11 @@ impl RuntimeConfig {
 /// build hands the Channel to whichever waiting Server takes it, and one
 /// that no longer stands for its Channel speaks for no Channel at all.
 ///
-/// On a launch's command line it is written `none`, or as the instance id of
-/// the stopped Server.
+/// A stop asked for with no Server there to answer it, one having just crashed
+/// say, names an id of its own instead (`server::election`). So the id is what
+/// tells one stop from another, and need not name a Server that ever ran.
+///
+/// On a launch's command line it is written `none`, or as the id the stop names.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LastStop(Option<Uuid>);
 

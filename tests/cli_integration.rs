@@ -785,12 +785,18 @@ async fn stale_descriptor_pid_is_never_used_to_terminate_an_unrelated_process() 
         },
     );
 
+    // Nothing answers there and nothing holds the Channel's election, so the
+    // stop takes as a stop of no Server does, naming no process to end.
     let stop = run_server_cli(&servers, channel, "stop").await;
-    assert!(!stop.status.success());
+    assert!(stop.status.success(), "{stop:?}");
+    assert!(
+        String::from_utf8_lossy(&stop.stdout).contains("No Suru server was running"),
+        "{stop:?}"
+    );
     assert!(
         unrelated
             .try_wait()
-            .expect("inspect unrelated process after refused stop")
+            .expect("inspect unrelated process after the stop")
             .is_none(),
         "server stop terminated a process based only on stale metadata"
     );

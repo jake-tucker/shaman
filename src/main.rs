@@ -6,7 +6,8 @@ use suru::{
     IdentityStoreChoice, LastStop, logging,
     login_start::{self, KeeperArguments, LoginStart, ServiceManagerStandIn},
     managed_client::{
-        ManagedClient, ManagedClientConfig, ServerStatus, server_status, start_server, stop_server,
+        ManagedClient, ManagedClientConfig, ServerStatus, ServerStop, server_status, start_server,
+        stop_server,
     },
     server::{self, ServerConfig},
     tui,
@@ -168,11 +169,17 @@ async fn main() -> Result<()> {
                 config =
                     config.with_health_check_timeout(std::time::Duration::from_millis(timeout_ms));
             }
-            let health = stop_server(&config).await?;
-            println!(
-                "Suru server stopped (pid {}, instance {})",
-                health.identity.pid, health.identity.instance_id
-            );
+            match stop_server(&config).await? {
+                ServerStop::Stopped(health) => println!(
+                    "Suru server stopped (pid {}, instance {})",
+                    health.identity.pid, health.identity.instance_id
+                ),
+                ServerStop::NoneRunning => println!(
+                    "No Suru server was running on the `{}` Channel. A stop is recorded, so none \
+                     is restarted until the next login or `suru server start`.",
+                    config.channel()
+                ),
+            }
             Ok(())
         }
         Some(CliCommand::Server {

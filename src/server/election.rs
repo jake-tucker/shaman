@@ -64,6 +64,18 @@
 //! made after the stop reads that stop, so nothing it launches is ended by
 //! it.
 //!
+//! A stop may also be asked for with no Server there to answer it: one that has
+//! just crashed, or that is crashing each time it is launched, while a Keeper
+//! (ADR 0063) or a recovering client stands ready to launch another. Whoever
+//! asks then does what a stopping Server does ([`stop_with_no_server`]): takes
+//! the election, so it writes only what its holder may, clears the descriptor
+//! the crash left, records the stop, and lets the election go. The record names
+//! an id of its own, there being no instance to name, and every launch that read
+//! an earlier stop is held to it as to any other. A Server launched before it
+//! and still waiting is ended once elected; one already holding the election is
+//! a Server to be stopped, and is. So there is no window in which a launch and
+//! such a stop both go through: the election puts them in an order.
+//!
 //! A stop that cannot be recorded — a full disk, a record that cannot be
 //! replaced — is reported to the client that asked for it as a failed stop,
 //! though the Server stops all the same, as it was asked to. Its lock is let
@@ -209,6 +221,50 @@ pub(super) fn record_stop(path: &Path, instance_id: Uuid) -> Result<()> {
         serde_json::to_vec(&StopRecord { instance_id }).context("encode the manual stop")?;
     contents.push(b'\n');
     super::publish_runtime_file(path, "manual stop record", &contents)
+}
+
+/// What came of a stop asked for with no Server answering.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum StopWithNoServer {
+    /// Nobody held the election, and the stop is recorded.
+    Recorded,
+    /// Something holds the election, so no stop may be recorded past it: a
+    /// Server on its way up, a hung one, or something only looking.
+    ServerHolds,
+    /// The Channel has no state directory, so no Server has run here to be
+    /// stopped, and nothing is on its way.
+    NoChannel,
+}
+
+/// Records a Manual stop of a Channel with no Server answering, as the module
+/// describes. The descriptor is removed before the stop is recorded, so that
+/// nothing reading the record while this holds the election finds a descriptor
+/// naming some other Server: to a Keeper, that would be a Server standing since
+/// the stop.
+pub(crate) fn stop_with_no_server(config: &ServerConfig) -> Result<StopWithNoServer> {
+    if !config
+        .state_dir()
+        .try_exists()
+        .context("inspect the channel's state directory")?
+    {
+        return Ok(StopWithNoServer::NoChannel);
+    }
+    let lock = ElectionLock::open(&config.lock_path()).context("open the server election lock")?;
+    match lock.file.try_lock_exclusive() {
+        Ok(()) => {}
+        Err(error) if error.raw_os_error() == fs2::lock_contended_error().raw_os_error() => {
+            return Ok(StopWithNoServer::ServerHolds);
+        }
+        Err(error) => return Err(error).context("take the server election lock"),
+    }
+    match std::fs::remove_file(config.descriptor_path()) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error).context("remove the stale runtime descriptor"),
+    }
+    record_stop(&config.last_stop_path(), Uuid::new_v4())?;
+    FileExt::unlock(&lock.file).context("let the server election lock go")?;
+    Ok(StopWithNoServer::Recorded)
 }
 
 /// The Channel's election, held by a Server for as long as this lives: the
@@ -484,6 +540,68 @@ fn is_named(file: &File) -> io::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn channel_with_directories(state: &Path) -> ServerConfig {
+        let config = ServerConfig::new(state, "stop-with-no-server").unwrap();
+        config.create_private_runtime_dir().unwrap();
+        config
+    }
+
+    #[test]
+    fn a_stop_with_no_server_is_recorded_and_clears_what_the_crash_left() {
+        let state = tempfile::tempdir().unwrap();
+        let config = channel_with_directories(state.path());
+        std::fs::write(config.descriptor_path(), "a crashed server's").unwrap();
+        let before = config.last_stop().unwrap();
+
+        assert_eq!(
+            stop_with_no_server(&config).unwrap(),
+            StopWithNoServer::Recorded
+        );
+        assert!(!config.descriptor_path().exists());
+        let recorded = config.last_stop().unwrap();
+        assert!(before.superseded_by(recorded).is_some());
+    }
+
+    /// Asked twice, the second is a stop of its own: a launch made between the
+    /// two read the first, and must be held to the second.
+    #[test]
+    fn each_stop_with_no_server_is_later_than_the_last() {
+        let state = tempfile::tempdir().unwrap();
+        let config = channel_with_directories(state.path());
+        stop_with_no_server(&config).unwrap();
+        let first = config.last_stop().unwrap();
+        stop_with_no_server(&config).unwrap();
+        assert!(first.superseded_by(config.last_stop().unwrap()).is_some());
+    }
+
+    /// A Server holding the election writes the Channel's record itself.
+    #[test]
+    fn no_stop_is_recorded_past_an_election_held() {
+        let state = tempfile::tempdir().unwrap();
+        let config = channel_with_directories(state.path());
+        let holder = ElectionLock::open(&config.lock_path()).unwrap();
+        holder.file.try_lock_exclusive().unwrap();
+        std::fs::write(config.descriptor_path(), "the holder's").unwrap();
+
+        assert_eq!(
+            stop_with_no_server(&config).unwrap(),
+            StopWithNoServer::ServerHolds
+        );
+        assert!(config.descriptor_path().exists());
+        assert_eq!(config.last_stop().unwrap(), crate::LastStop::default());
+    }
+
+    #[test]
+    fn a_channel_with_no_directory_has_nothing_to_stop_and_is_not_made() {
+        let state = tempfile::tempdir().unwrap();
+        let config = ServerConfig::new(state.path(), "never-run").unwrap();
+        assert_eq!(
+            stop_with_no_server(&config).unwrap(),
+            StopWithNoServer::NoChannel
+        );
+        assert!(!config.state_dir().exists());
+    }
 
     fn descriptor_naming(instance_id: Uuid) -> RuntimeDescriptor {
         RuntimeDescriptor::new(
