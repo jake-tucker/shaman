@@ -4,8 +4,10 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use suru::{
     IdentityStoreChoice, LastStop, logging,
+    login_start::{self, LoginStart},
     managed_client::{
-        ManagedClient, ManagedClientConfig, ServerStatus, server_status, start_server, stop_server,
+        KeeperTimings, ManagedClient, ManagedClientConfig, ServerStatus, keep_server,
+        server_status, start_server, stop_server,
     },
     server::{self, ServerConfig},
     tui,
@@ -74,6 +76,38 @@ enum CliCommand {
         #[arg(long, hide = true)]
         shutdown_cutoff_margin_ms: Option<u64>,
     },
+    /// A Channel's Keeper, as a Login start runs it: every path and all that
+    /// its Server's environment is to carry on its command line, since a
+    /// service manager gives a process almost none of what a shell does.
+    #[command(name = "__keep-server", hide = true)]
+    Keeper {
+        /// The binary each Server is launched from, which is the path the
+        /// registration names rather than what this process resolves to, so
+        /// an upgrade at that path is what the next Server runs.
+        #[arg(long)]
+        executable: PathBuf,
+        #[arg(long = "state-dir")]
+        state_base_dir: PathBuf,
+        #[arg(long = "data-dir")]
+        data_base_dir: PathBuf,
+        #[arg(long = "config-dir")]
+        config_dir: Option<PathBuf>,
+        #[arg(long)]
+        channel: String,
+        #[arg(long)]
+        identity_store: Option<IdentityStoreChoice>,
+        /// A variable each Server is launched with, as `NAME=value`.
+        #[arg(long = "env", value_parser = carried_variable)]
+        carried: Vec<(String, String)>,
+        /// A stand-in for the machine's service manager, for tests that must
+        /// not reach the real one.
+        #[arg(long, hide = true)]
+        service_manager: Option<PathBuf>,
+        /// How often this Keeper looks at its Channel, for tests that cannot
+        /// wait out the default.
+        #[arg(long, hide = true)]
+        look_interval_ms: Option<u64>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -84,12 +118,31 @@ enum ServerCommand {
         #[arg(long, hide = true)]
         election_handoff_ms: Option<u64>,
     },
-    Status,
+    Status {
+        /// A stand-in for the machine's service manager, for tests that must
+        /// not reach the real one.
+        #[arg(long, hide = true)]
+        service_manager: Option<PathBuf>,
+    },
     Stop {
         #[arg(long, hide = true)]
         stop_timeout_ms: Option<u64>,
         #[arg(long, hide = true)]
         health_check_timeout_ms: Option<u64>,
+    },
+    /// Start this Channel's Server whenever this user logs in.
+    Install {
+        /// A stand-in for the machine's service manager, for tests that must
+        /// not reach the real one.
+        #[arg(long, hide = true)]
+        service_manager: Option<PathBuf>,
+    },
+    /// Stop starting this Channel's Server at login. A Server running now is left running.
+    Uninstall {
+        /// A stand-in for the machine's service manager, for tests that must
+        /// not reach the real one.
+        #[arg(long, hide = true)]
+        service_manager: Option<PathBuf>,
     },
 }
 
@@ -119,13 +172,20 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Some(CliCommand::Server {
-            command: ServerCommand::Status,
+            command: ServerCommand::Status { service_manager },
         }) => {
-            let status = server_status(&default_client_config()?).await?;
+            let config = default_client_config()?;
+            let status = server_status(&config).await?;
+            let login_start = match LoginStart::for_this_user(config.channel(), service_manager) {
+                Ok(login_start) => login_start.standing(),
+                Err(error) => login_start::Standing::Unknown(format!("{error:#}")),
+            };
             if matches!(status, ServerStatus::Ready(_)) {
                 println!("{status}");
+                println!("{login_start}");
                 Ok(())
             } else {
+                println!("{login_start}");
                 anyhow::bail!(status)
             }
         }
@@ -150,6 +210,66 @@ async fn main() -> Result<()> {
                 health.identity.pid, health.identity.instance_id
             );
             Ok(())
+        }
+        Some(CliCommand::Server {
+            command: ServerCommand::Install { service_manager },
+        }) => {
+            print!(
+                "{}",
+                login_start::install(&default_client_config()?, service_manager)?
+            );
+            Ok(())
+        }
+        Some(CliCommand::Server {
+            command: ServerCommand::Uninstall { service_manager },
+        }) => {
+            print!(
+                "{}",
+                login_start::uninstall(default_client_config()?.channel(), service_manager)?
+            );
+            Ok(())
+        }
+        Some(CliCommand::Keeper {
+            executable,
+            state_base_dir,
+            data_base_dir,
+            config_dir,
+            channel,
+            identity_store,
+            carried,
+            service_manager,
+            look_interval_ms,
+        }) => {
+            // A Task at logon comes with a console of its own, showing for
+            // this moment; the Server is launched with none.
+            #[cfg(windows)]
+            // SAFETY: FreeConsole takes nothing, and failing changes nothing.
+            unsafe {
+                windows_sys::Win32::System::Console::FreeConsole();
+            }
+            let mut config = ManagedClientConfig::new(state_base_dir, channel)?
+                .with_data_dir(data_base_dir)
+                .with_server_executable(executable);
+            if let Some(config_dir) = config_dir {
+                config = config.with_config_dir(config_dir);
+            }
+            if let Some(identity_store) = identity_store {
+                config = config.with_identity_store(identity_store);
+            }
+            for (name, value) in carried {
+                config = config.with_server_env(name, value);
+            }
+            let mut timings = KeeperTimings::default();
+            if let Some(interval_ms) = look_interval_ms {
+                timings.look_interval = std::time::Duration::from_millis(interval_ms);
+            }
+            // A home that is not back yet at login holds no Log for a while,
+            // which is no reason to give up keeping a Server.
+            let _log_guard = logging::init(config.runtime(), logging::Role::Keeper)
+                .inspect_err(|error| eprintln!("Could not open a Log: {error:#}"))
+                .ok();
+            let login_start = LoginStart::for_this_user(config.channel(), service_manager)?;
+            keep_server(&config, timings, || login_start.standing()).await
         }
         Some(CliCommand::InternalServer {
             state_base_dir,
@@ -239,6 +359,13 @@ async fn main() -> Result<()> {
             tui::run(client).await
         }
     }
+}
+
+fn carried_variable(value: &str) -> Result<(String, String), String> {
+    value
+        .split_once('=')
+        .map(|(name, value)| (name.to_owned(), value.to_owned()))
+        .ok_or_else(|| format!("{value:?} is not NAME=value"))
 }
 
 fn default_client_config() -> Result<ManagedClientConfig> {

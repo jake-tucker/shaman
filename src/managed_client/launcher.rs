@@ -49,6 +49,11 @@ impl StopBaseline {
         )
     }
 
+    /// The stop this baseline holds to, where the record could be read.
+    pub(super) fn followed(self) -> Option<LastStop> {
+        self.0
+    }
+
     /// The instance whose Manual stop has been recorded since this
     /// baseline, if one has; a record that cannot be read now says nothing.
     pub(super) fn stopped_since(self, config: &ManagedClientConfig) -> Option<uuid::Uuid> {
@@ -243,7 +248,7 @@ impl std::error::Error for StoppedDuringLaunch {}
 /// that waits for it, so a server that exits while its client runs on —
 /// stopped, replaced or crashed — is not left a zombie for as long as the
 /// client lives. Windows keeps no exited process waiting on its parent.
-struct LaunchedServer(Option<Child>);
+pub(super) struct LaunchedServer(Option<Child>);
 
 impl LaunchedServer {
     fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
@@ -269,7 +274,7 @@ impl Drop for LaunchedServer {
     }
 }
 
-fn spawn_detached(
+pub(super) fn spawn_detached(
     config: &ManagedClientConfig,
     launched_after: Option<LastStop>,
 ) -> Result<LaunchedServer> {

@@ -37,6 +37,9 @@ mod codex_integration;
 #[path = "copilot_integration/main.rs"]
 mod copilot_integration;
 
+#[path = "login_start.rs"]
+mod login_start;
+
 #[path = "server_integration.rs"]
 mod server_integration;
 

@@ -1,7 +1,7 @@
 //! Operator-facing Log files: one per process run, under the state dir.
 //!
-//! The TUI client and the detached server initialize the same pipeline: a
-//! `tracing` subscriber writing structured lines to `<state>/log/`, one file
+//! The TUI client, the detached server and a Keeper initialize the same pipeline:
+//! a `tracing` subscriber writing structured lines to `<state>/log/`, one file
 //! per process run, pruned to the newest few so the directory stays bounded.
 //! The launcher's `server.log` stdio redirect is deliberately separate: it is
 //! the crash net that catches output no in-process subscriber can (panics,
@@ -67,6 +67,7 @@ const PAYLOAD_BEARING_TARGETS: [(&str, LevelFilter); 7] = [
 pub enum Role {
     Client,
     Server,
+    Keeper,
 }
 
 impl Role {
@@ -74,6 +75,7 @@ impl Role {
         match self {
             Self::Client => "client",
             Self::Server => "server",
+            Self::Keeper => "keeper",
         }
     }
 }

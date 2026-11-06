@@ -8,6 +8,7 @@ mod clock;
 mod errands;
 mod icon_catalog;
 pub mod logging;
+pub mod login_start;
 pub mod managed_client;
 mod memories;
 mod model_catalog;

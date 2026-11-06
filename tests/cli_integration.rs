@@ -2263,6 +2263,8 @@ fn server_cli(servers: &DetachedServers, channel: &str, command: &str) -> tokio:
     // than the stop deadline allowed — and the CLI then reported a settled
     // shutdown as a failure.
     let settle_ms = PROGRESS_DEADLINE.as_millis().to_string();
+    let absent_service_manager = servers.state_dir().join("absent-service-manager");
+    let absent_service_manager = absent_service_manager.to_string_lossy();
     // The health probe is the opposite case. It is spent in full on every
     // iteration that finds the endpoint still reachable, so it keeps a short
     // literal: deciding "unreachable" quickly is what makes the wait above end
@@ -2275,6 +2277,10 @@ fn server_cli(servers: &DetachedServers, channel: &str, command: &str) -> tokio:
             "--health-check-timeout-ms",
             "100",
         ],
+        // Status says whether a start at login is registered, which this
+        // leaves the real user's service manager out of: no stand-in is there
+        // to run, and the home it reads a registration from is the test's.
+        "status" => vec!["--service-manager", &absent_service_manager],
         _ => vec![],
     };
     let mut process = tokio::process::Command::new(env!("CARGO_BIN_EXE_suru"));
@@ -2288,6 +2294,11 @@ fn server_cli(servers: &DetachedServers, channel: &str, command: &str) -> tokio:
         .env("SURU_CHANNEL", channel)
         .envs(servers.isolated_environment())
         .kill_on_drop(true);
+    if command == "status" {
+        process
+            .env("HOME", servers.state_dir())
+            .env("XDG_CONFIG_HOME", servers.state_dir());
+    }
     process
 }
 

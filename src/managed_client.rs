@@ -36,6 +36,7 @@ use crate::{
 };
 
 mod event_stream;
+mod keeper;
 mod launcher;
 mod lifecycle;
 mod recovery;
@@ -45,6 +46,7 @@ mod session_projection;
 mod session_stream;
 mod subagent_tree_stream;
 
+pub use keeper::{KeeperTimings, keep_server};
 pub use launcher::StoppedDuringLaunch;
 #[doc(hidden)]
 pub use launcher::launch_detached;

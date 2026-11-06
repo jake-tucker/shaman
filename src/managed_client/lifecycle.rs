@@ -188,6 +188,14 @@ pub(super) fn channel_is_owned(config: &ManagedClientConfig) -> Result<bool> {
     Ok(lock.try_lock_exclusive().is_err())
 }
 
+/// The instance the Channel's runtime descriptor names, where it can be read
+/// whole and decoded.
+pub(super) fn published_instance(config: &ManagedClientConfig) -> Option<uuid::Uuid> {
+    read_descriptor(&config.descriptor_path())
+        .ok()
+        .map(|descriptor| descriptor.instance_id)
+}
+
 struct ShutdownPolicy {
     request_deadline: tokio::time::Instant,
     transition_races_are_expected: bool,
