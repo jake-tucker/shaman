@@ -1,5 +1,7 @@
 # Hold the Relay to compatibility the rest of Suru is not held to
 
+_Amended by ADR-0064: the promise also covers a Server asking which Logins stand under its Account. That asking joined `unstable-1` with no new version, because Relays speaking `unstable-1` were already released ahead of the freeze (#505) and a new number would have refused them: versions must still match exactly to speak at all, but until the freeze a matching unstable version does not say the two sides know all the same messages._
+
 Suru breaks freely: nothing in it accounts for an earlier version of itself, and a Pairing between Servers of different protocol versions is refused (ADR-0017). A Relay is the exception. Whoever runs one sets it up once and should be able to forget it; it is upgraded on a schedule of its own, apart from the Suru installs that use it, and it has to go on working while they change. So from the Relay's first release:
 
 - a newer Suru works with an older Relay, and an upgraded Relay with an older Suru: Server and Relay agree a version of the protocol between them as they connect, and that protocol changes by addition and is kept small;
@@ -8,7 +10,7 @@ Suru breaks freely: nothing in it accounts for an earlier version of itself, and
 
 The Relay carries a version number of its own and is released only when it changes. Until its first release the protocol is marked unstable, must match exactly, and changes as freely as anything else; the first release freezes it as version 1.
 
-ADR-0045 is what makes the promise affordable. A Relay never parses what Servers say to each other, so everything Suru breaks in the Pairing protocol passes through it untouched, and the promise covers only how a Server logs in, proves itself, waits to be reached, and asks to be joined.
+ADR-0045 is what makes the promise affordable. A Relay never parses what Servers say to each other, so everything Suru breaks in the Pairing protocol passes through it untouched, and the promise covers only how a Server logs in, proves itself, waits to be reached, asks to be joined, and asks which Logins stand under its Account.
 
 ## Considered Options
 

@@ -728,7 +728,7 @@ hostnames, it goes by the one its group's Relay was told, and the selected row's
 name show the first characters of each fingerprint, and the selected row shows its whole fingerprint.
 
 Each Relay is asked on its own as `/pair` opens, and its group fills in as it answers: **looking…** until then,
-**Unreachable** if it does not answer within the Server's budget for that, **needs a login** if the Server's Login
+**Unreachable** if it does not answer within the Server's budget for that, **login needed** if the Server's Login
 there does not stand, and **no other machines** if there are none. `Ctrl+R` asks them all again. Nothing is asked
 except when a Client asks.
 
