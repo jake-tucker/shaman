@@ -1429,3 +1429,63 @@ async fn a_removed_accounts_joined_connections_count_against_no_later_account() 
     assert_eq!(serving.ended().await, None);
     relay.running.shutdown().await.unwrap();
 }
+
+/// The operator's command line changes the records from a process apart, and
+/// what a Server hears asked for the list is read from them afresh, however
+/// long before its connection proved itself and whether or not the running
+/// Relay has yet looked for removals.
+#[tokio::test]
+async fn a_login_removed_is_gone_from_the_list_and_refused_it_from_the_moment_it_is_removed() {
+    let relay = Relay::start(NOT_YET).await;
+    let (asker, gone, other) = (key(), key(), key());
+    Client::logged_in(&relay, &asker, OCTOCAT, "asker").await;
+    Client::logged_in(&relay, &gone, OCTOCAT, "gone").await;
+    Client::logged_in(&relay, &other, OCTOCAT, "other").await;
+    let hostnames = |answer: RelayMessage| match answer {
+        RelayMessage::Logins { logins, .. } => logins
+            .into_iter()
+            .map(|login| login.hostname)
+            .collect::<std::collections::BTreeSet<_>>(),
+        other => panic!("a list, not {other:?}"),
+    };
+
+    let mut asking = Client::connect(&relay).await;
+    assert!(matches!(
+        asking.prove(&asker).await,
+        RelayMessage::Proven { login: Some(_) }
+    ));
+    asking.say(&ServerMessage::ListLogins).await;
+    assert_eq!(
+        hostnames(asking.hear().await),
+        ["gone".to_owned(), "other".to_owned()].into()
+    );
+
+    unconfirmed(
+        &operate(
+            &relay.database(),
+            &["logins", "remove", &fingerprint(&gone), "--wait", "0"],
+        )
+        .await,
+    );
+    asking.say(&ServerMessage::ListLogins).await;
+    assert_eq!(
+        hostnames(asking.hear().await),
+        ["other".to_owned()].into(),
+        "a Login removed is gone from the list"
+    );
+
+    unconfirmed(
+        &operate(
+            &relay.database(),
+            &["logins", "remove", &fingerprint(&asker), "--wait", "0"],
+        )
+        .await,
+    );
+    asking.say(&ServerMessage::ListLogins).await;
+    assert_eq!(
+        refusal(&asking.hear().await),
+        Some(&Refusal::LoginNeeded),
+        "the connection proved itself on a Login that has since been removed"
+    );
+    relay.running.shutdown().await.unwrap();
+}

@@ -5114,3 +5114,430 @@ async fn the_relay_binary_caps_each_account_as_its_operator_says_and_refuses_a_c
     assert_eq!(refusal(&asked[1].hear().await), Some(&joins_capped(1)));
     binary.kill().await.unwrap();
 }
+
+// Listing the Logins under an Account (ADR-0064).
+
+impl Client {
+    /// Asks on this connection, whose Server has proven its key, which other
+    /// Logins stand under its Account: what the Relay answers.
+    async fn asked_to_list(&mut self) -> RelayMessage {
+        self.say(&ServerMessage::ListLogins).await;
+        self.hear().await
+    }
+
+    /// What the Relay answers `key` asking which other Logins stand under its
+    /// Account, on a connection of its own.
+    async fn listed(relay: &Relay, key: &KeyPair) -> RelayMessage {
+        let mut client = Self::connect(relay).await;
+        assert!(matches!(
+            client.prove(key).await,
+            RelayMessage::Proven { .. }
+        ));
+        client.asked_to_list().await
+    }
+}
+
+/// The Logins a Relay's answer lists, each by its hostname and whether it
+/// waits, in the order it lists them.
+fn named(answer: &RelayMessage) -> Vec<(String, bool)> {
+    match answer {
+        RelayMessage::Logins { logins, .. } => logins
+            .iter()
+            .map(|login| (login.hostname.clone(), login.waiting))
+            .collect(),
+        other => panic!("a list, not {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_server_hears_every_other_login_under_its_account_and_whether_each_waits() {
+    let relay = relay().await;
+    let (asker, serving, stopped, never_served) = (key(), key(), key(), key());
+    Client::logged_in_from(&relay, &asker, "17", "octo", "asker").await;
+    Client::logged_in_from(&relay, &never_served, "17", "octo", "never-served").await;
+    Client::logged_in_from(&relay, &serving, "17", "octo", "serving").await;
+    Client::logged_in_from(&relay, &stopped, "17", "octo", "stopped").await;
+    let _waiting = Client::waiting(&relay, &serving).await;
+    let mut also_waiting = Client::waiting(&relay, &stopped).await;
+
+    let answer = Client::listed(&relay, &asker).await;
+    let RelayMessage::Logins { logins, cut_short } = &answer else {
+        panic!("a Server whose Login stands is told, not {answer:?}");
+    };
+    assert!(!cut_short);
+    let of = |key: &KeyPair| {
+        logins
+            .iter()
+            .find(|login| login.key == Bytes(key.subject_public_key_info()))
+            .map(|login| (login.hostname.as_str(), login.waiting))
+    };
+    assert_eq!(of(&serving), Some(("serving", true)));
+    assert_eq!(of(&stopped), Some(("stopped", true)));
+    assert_eq!(
+        of(&never_served),
+        Some(("never-served", false)),
+        "a Login is listed whether or not its Server Serves"
+    );
+    assert_eq!(of(&asker), None, "the asker's own Login is left out");
+    assert_eq!(logins.len(), 3);
+
+    // A connection gone from waiting is no longer said to wait.
+    also_waiting.socket.close(None).await.ok();
+    let stopped_waiting = timeout(DEADLINE, async {
+        loop {
+            let answer = Client::listed(&relay, &asker).await;
+            if named(&answer).contains(&("stopped".to_owned(), false)) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    stopped_waiting.expect("a Server stops waiting once its connection ends");
+    relay.running.shutdown().await.unwrap();
+}
+
+/// The property a Relay exists to keep: one Account never learns of another's
+/// Servers, and an Account is known by the identity that logs in as it, never
+/// its name, so two identities sharing a username are still two Accounts.
+#[tokio::test]
+async fn no_server_of_another_account_is_ever_listed_whatever_it_is_named() {
+    let relay = relay().await;
+    let (mine, mine_too, theirs, theirs_too, same_name) = (key(), key(), key(), key(), key());
+    Client::logged_in_from(&relay, &mine, "17", "octo", "mine").await;
+    Client::logged_in_from(&relay, &mine_too, "17", "octo", "mine-too").await;
+    Client::logged_in_from(&relay, &theirs, "99", "someone-else", "theirs").await;
+    Client::logged_in_from(&relay, &theirs_too, "99", "someone-else", "theirs-too").await;
+    Client::logged_in_from(&relay, &same_name, "1234", "octo", "same-name").await;
+    let _waiting = Client::waiting(&relay, &theirs_too).await;
+
+    assert_eq!(
+        named(&Client::listed(&relay, &mine).await),
+        [("mine-too".to_owned(), false)]
+    );
+    assert_eq!(
+        named(&Client::listed(&relay, &theirs).await),
+        [("theirs-too".to_owned(), true)]
+    );
+    assert_eq!(
+        named(&Client::listed(&relay, &same_name).await),
+        [],
+        "one sharing a name shares no Account, and its own Login is left out"
+    );
+    relay.running.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_server_with_no_login_is_refused_the_list_and_the_connection_goes_on() {
+    let relay = relay().await;
+    let (stranger, other) = (key(), key());
+    Client::logged_in(&relay, &other, "17", "octo").await;
+
+    let mut client = Client::connect(&relay).await;
+    assert_eq!(
+        client.prove(&stranger).await,
+        RelayMessage::Proven { login: None }
+    );
+    assert_eq!(
+        refusal(&client.asked_to_list().await),
+        Some(&Refusal::LoginNeeded)
+    );
+    client.say(&ServerMessage::Forget).await;
+    assert_eq!(client.hear().await, RelayMessage::Forgotten);
+    relay.running.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_server_is_refused_the_list_before_it_has_proven_its_key() {
+    let relay = relay().await;
+    let (asker, other) = (key(), key());
+    Client::logged_in(&relay, &asker, "17", "octo").await;
+    Client::logged_in(&relay, &other, "17", "octo").await;
+
+    let mut client = Client::connect(&relay).await;
+    client.say(&ServerMessage::ListLogins).await;
+    assert_eq!(refusal(&client.hear().await), Some(&Refusal::Unexpected));
+    assert!(client.ended().await);
+
+    let mut client = Client::connect(&relay).await;
+    client
+        .say(&ServerMessage::Hello {
+            versions: SPOKEN.to_vec(),
+            key: Bytes(asker.subject_public_key_info()),
+        })
+        .await;
+    assert!(matches!(
+        client.hear().await,
+        RelayMessage::Challenge { .. }
+    ));
+    client.say(&ServerMessage::ListLogins).await;
+    assert_eq!(refusal(&client.hear().await), Some(&Refusal::Unexpected));
+    assert!(client.ended().await);
+    relay.running.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_lapsed_account_is_refused_the_list_until_one_fresh_login_restores_it() {
+    let relay = checking_relay(|config| config).await;
+    let (asker, other, stranger) = (key(), key(), key());
+    Client::logged_in_from(&relay, &asker, "17", "octo", "asker").await;
+    Client::logged_in_from(&relay, &other, "17", "octo", "other").await;
+    Client::logged_in_from(&relay, &stranger, "99", "someone-else", "stranger").await;
+
+    let (mut kept, _) = Client::kept(&relay, &asker).await;
+    relay.provider.set_admitted("17", false);
+    assert!(
+        kept.cut_for_login_needed().await,
+        "what stands on the Login is cut as its Account lapses"
+    );
+    assert_eq!(
+        refusal(&Client::listed(&relay, &asker).await),
+        Some(&Refusal::LoginNeeded)
+    );
+    assert_eq!(
+        named(&Client::listed(&relay, &stranger).await),
+        [],
+        "another Account's list holds nothing of the one that lapsed"
+    );
+
+    relay.provider.set_admitted("17", true);
+    Client::logged_in_from(&relay, &other, "17", "octo", "other").await;
+    assert_eq!(
+        named(&Client::listed(&relay, &asker).await),
+        [("other".to_owned(), false)]
+    );
+    relay.running.shutdown().await.unwrap();
+}
+
+/// A connection is told of its Login as it proves itself, and that goes out of
+/// date: what it may hear is read afresh each time it asks.
+#[tokio::test]
+async fn the_account_a_list_answers_for_is_read_as_it_is_asked_not_as_the_connection_opened() {
+    let relay = relay().await;
+    let (asker, mine, theirs) = (key(), key(), key());
+    Client::logged_in_from(&relay, &mine, "17", "octo", "mine").await;
+    Client::logged_in_from(&relay, &theirs, "99", "someone-else", "theirs").await;
+
+    // Proven with no Login, and logged in later on the same connection.
+    let mut client = Client::connect(&relay).await;
+    client
+        .log_in_from(&relay, &asker, "17", "octo", "asker")
+        .await;
+    assert_eq!(
+        named(&client.asked_to_list().await),
+        [("mine".to_owned(), false)]
+    );
+
+    // Moved to another Account from another connection, which cuts this one
+    // saying nothing: it lists neither Account's Servers from here on.
+    Client::logged_in_from(&relay, &asker, "99", "someone-else", "asker").await;
+    assert!(client.ended().await);
+    assert_eq!(
+        named(&Client::listed(&relay, &asker).await),
+        [("theirs".to_owned(), false)],
+        "the Login moved lists the Account it stands under now"
+    );
+
+    // Forgotten from another connection, as its Server's user removing the
+    // Relay does, between proving itself and asking.
+    let (mut idle, _) = Client::kept(&relay, &asker).await;
+    forget(&relay, &asker).await;
+    assert!(
+        idle.cut_for_login_needed().await,
+        "what stands on a Login forgotten is cut"
+    );
+    assert_eq!(
+        refusal(&Client::listed(&relay, &asker).await),
+        Some(&Refusal::LoginNeeded)
+    );
+    relay.running.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn asking_for_the_list_disturbs_no_one_waiting_and_a_waiting_connection_does_not_take_it() {
+    let relay = relay().await;
+    let (serving, joining) = (key(), key());
+    Client::logged_in_from(&relay, &serving, "17", "octo", "serving").await;
+    Client::logged_in_from(&relay, &joining, "17", "octo", "joining").await;
+    let mut waiting = Client::waiting(&relay, &serving).await;
+
+    // The Server that waits asks on another connection of its own, and goes on
+    // waiting.
+    assert_eq!(
+        named(&Client::listed(&relay, &serving).await),
+        [("joining".to_owned(), false)]
+    );
+    assert_eq!(
+        named(&Client::listed(&relay, &joining).await),
+        [("serving".to_owned(), true)]
+    );
+
+    // A connection waiting to be reached asks nothing, and goes on waiting.
+    waiting.say(&ServerMessage::ListLogins).await;
+    assert_eq!(refusal(&waiting.hear().await), Some(&Refusal::Unexpected));
+    assert_eq!(
+        named(&Client::listed(&relay, &joining).await),
+        [("serving".to_owned(), true)]
+    );
+    let mut asking = Client::ask_to_join(&relay, &joining, &serving).await;
+    let join = waiting.reached().await;
+    let (_taken_up, answer) = Client::take_up(&relay, &serving, join).await;
+    assert_eq!(answer, RelayMessage::Joined);
+    assert_eq!(asking.hear().await, RelayMessage::Joined);
+    relay.running.shutdown().await.unwrap();
+}
+
+/// A connection asking may go on asking, as an idle one goes on being idle.
+#[tokio::test]
+async fn a_list_may_be_asked_for_again_on_one_connection_and_each_answer_is_of_that_moment() {
+    let relay = relay().await;
+    let (asker, serving) = (key(), key());
+    Client::logged_in_from(&relay, &asker, "17", "octo", "asker").await;
+    Client::logged_in_from(&relay, &serving, "17", "octo", "serving").await;
+
+    let (mut client, _) = Client::kept(&relay, &asker).await;
+    assert_eq!(
+        named(&client.asked_to_list().await),
+        [("serving".to_owned(), false)]
+    );
+    let _waiting = Client::waiting(&relay, &serving).await;
+    assert_eq!(
+        named(&client.asked_to_list().await),
+        [("serving".to_owned(), true)]
+    );
+    relay.running.shutdown().await.unwrap();
+}
+
+/// How many Logins these tests raise the cap past: more than one message
+/// holds of the longest hostnames a Relay lists, however they are spelled.
+const PAST_ONE_MESSAGE: u32 = 180;
+
+#[tokio::test]
+async fn a_list_stays_within_one_message_with_the_cap_raised_and_says_it_was_cut_short() {
+    let relay = relay_with(ScriptedProvider::new(), |config| {
+        config.with_logins_per_account(NonZeroU32::new(PAST_ONE_MESSAGE + 1).unwrap())
+    })
+    .await;
+    let asker = key();
+    Client::logged_in_from(&relay, &asker, "17", "octo", "asker").await;
+    // The hostname that comes to the most on the wire, as the Relay takes it,
+    // well past what it lists.
+    let hostname = "🦀".repeat(255);
+    let others: Vec<KeyPair> = (0..PAST_ONE_MESSAGE).map(|_| key()).collect();
+    for other in &others {
+        Client::logged_in_from(&relay, other, "17", "octo", &hostname).await;
+    }
+    let _waiting = Client::waiting(&relay, &others[0]).await;
+
+    let mut client = Client::connect(&relay).await;
+    assert!(matches!(
+        client.prove(&asker).await,
+        RelayMessage::Proven { login: Some(_) }
+    ));
+    client.say(&ServerMessage::ListLogins).await;
+    let text = loop {
+        match timeout(DEADLINE, client.socket.next())
+            .await
+            .expect("the Relay answers in time")
+            .expect("the Relay keeps the connection open")
+            .expect("read the Relay's answer")
+        {
+            Message::Text(text) => break text,
+            Message::Ping(_) | Message::Pong(_) => {}
+            other => panic!("the Relay answered {other:?}"),
+        }
+    };
+    assert!(
+        text.len() <= suru_relay_protocol::MAX_MESSAGE_LEN,
+        "{} bytes",
+        text.len()
+    );
+    let answer: RelayMessage = serde_json::from_str(text.as_str()).unwrap();
+    let RelayMessage::Logins { logins, cut_short } = answer else {
+        panic!("a list");
+    };
+    assert!(cut_short, "{} listed", logins.len());
+    assert!(logins.len() < PAST_ONE_MESSAGE as usize);
+    assert!(
+        logins[0].waiting && logins[0].key == Bytes(others[0].subject_public_key_info()),
+        "a Login that waits is kept ahead of those that do not, however long ago it was formed"
+    );
+    assert!(logins.iter().all(|login| {
+        login.hostname.chars().count() == suru_relay_protocol::MAX_LISTED_HOSTNAME_CHARS
+    }));
+    assert_eq!(
+        client.asked_to_list().await,
+        RelayMessage::Logins {
+            logins,
+            cut_short: true
+        },
+        "asked again of the same Logins, it is cut in the same place"
+    );
+    relay.running.shutdown().await.unwrap();
+}
+
+/// What a Relay of a release from before the list says of it is what this one
+/// says of any message it does not recognize: `suru-relay` v0.1.1 answers its
+/// `list_logins` with exactly these bytes, which a Server's tests replay.
+#[tokio::test]
+async fn a_message_a_relay_does_not_recognize_is_refused_in_the_words_a_server_replays() {
+    let relay = relay().await;
+    let mut client = Client::connect(&relay).await;
+    client.prove(&key()).await;
+    client
+        .say_raw(r#"{"type":"list_logins_of_a_later_release"}"#.to_owned())
+        .await;
+    let text = loop {
+        match timeout(DEADLINE, client.socket.next())
+            .await
+            .expect("the Relay answers in time")
+            .expect("the Relay keeps the connection open")
+            .expect("read the Relay's answer")
+        {
+            Message::Text(text) => break text,
+            Message::Ping(_) | Message::Pong(_) => {}
+            other => panic!("the Relay answered {other:?}"),
+        }
+    };
+    assert_eq!(
+        text.as_str(),
+        r#"{"type":"refused","refusal":{"reason":"unexpected"},"message":"the Relay does not recognize what the Server asked"}"#
+    );
+    relay.running.shutdown().await.unwrap();
+}
+
+/// A list is not a join, so the connection log has no line of it, and neither
+/// log holds what it lists.
+#[tokio::test]
+async fn neither_log_holds_anything_of_a_list() {
+    let diagnostics = Diagnostics::default();
+    let diagnostic_writer = diagnostics.clone();
+    let _logging = tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(
+        suru_relay::log_layer(Some("trace"), move || diagnostic_writer.clone()),
+    ));
+    let (writer, mut log) = ConnectionLog::new();
+    let relay = relay_with(ScriptedProvider::new(), |config| {
+        config.with_connection_log(writer)
+    })
+    .await;
+    let (asker, other) = (key(), key());
+    Client::logged_in_from(&relay, &asker, "17", "octo", "asker").await;
+    Client::logged_in_from(&relay, &other, "17", "octo", "HOSTNAME-LISTED-5c21").await;
+    let _waiting = Client::waiting(&relay, &other).await;
+
+    assert_eq!(
+        named(&Client::listed(&relay, &asker).await),
+        [("HOSTNAME-LISTED-5c21".to_owned(), true)]
+    );
+
+    relay.running.shutdown().await.unwrap();
+    assert_eq!(log.remaining(), Vec::<serde_json::Value>::new());
+    let diagnostics = String::from_utf8(diagnostics.0.lock().unwrap().clone()).unwrap();
+    for secret in [
+        "HOSTNAME-LISTED-5c21".to_owned(),
+        fingerprint(&other),
+        fingerprint(&asker),
+    ] {
+        assert!(!diagnostics.contains(&secret), "{diagnostics}");
+    }
+}

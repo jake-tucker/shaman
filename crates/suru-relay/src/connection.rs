@@ -1,7 +1,8 @@
 //! One Server's connection to the Relay: agreeing a version, proving its
 //! identity key, and then whatever it asks — to log in, to be forgotten, to
-//! wait to be reached, to be joined to a Server that waits, or to take up a
-//! join asked of it. Whatever it does on the strength of its Login is cut the
+//! wait to be reached, to be joined to a Server that waits, to take up a join
+//! asked of it, or to hear which other Logins stand under its Account.
+//! Whatever it does on the strength of its Login is cut the
 //! moment that Login stops standing.
 
 use std::{
@@ -36,6 +37,7 @@ use crate::{
     forwarded::{self, TrustedProxy},
     identity::{IdentityProvider, LoginRefusal},
     joiner::{Asking, Joiner, NotAsked, Waiting},
+    listing::{self, LOGINS_READ_AT_ONCE},
     standing::{Cut, Held, Holdings, Released},
     store::{Parties, Recorded, Store},
 };
@@ -428,6 +430,11 @@ async fn serve(channel: &mut Channel, relay: &Relay) -> Result<Option<Handover>,
                 }
                 Err(error) => return unreadable(channel, error).await,
             },
+            ServerMessage::ListLogins => match logins_listed(relay, &key).await {
+                Ok(Some(listed)) => channel.send(&listed).await?,
+                Ok(None) => channel.send(&login_needed()).await?,
+                Err(error) => return unreadable(channel, error).await,
+            },
             ServerMessage::Hello { .. } | ServerMessage::Proof { .. } => {
                 channel
                     .send(&refused(
@@ -446,6 +453,33 @@ async fn serve(channel: &mut Channel, relay: &Relay) -> Result<Option<Handover>,
             }
         }
     }
+}
+
+/// What the Relay answers the Server whose key is `key` asking which other
+/// Logins stand under its Account, where its Login stands as it asks: the
+/// Account is read afresh for each asking, under the standing lock, so nothing
+/// the connection was told as it proved itself, and no Login that has lapsed,
+/// moved or been removed since, answers for it.
+async fn logins_listed(relay: &Relay, key: &[u8]) -> anyhow::Result<Option<RelayMessage>> {
+    let standing = relay.standing.lock().await;
+    let Some(account) = relay
+        .store
+        .account_of(key, relay.fresh_since())
+        .await?
+        .filter(|account| standing.stands(*account))
+    else {
+        return Ok(None);
+    };
+    // One more than is read at once says there are more than that.
+    let mut logins = relay
+        .store
+        .logins_under(account, key, LOGINS_READ_AT_ONCE + 1)
+        .await?;
+    let more = logins.len() > LOGINS_READ_AT_ONCE;
+    logins.truncate(LOGINS_READ_AT_ONCE);
+    Ok(Some(listing::answer(logins, more, |key| {
+        relay.joiner.waits(key)
+    })))
 }
 
 /// A place for the connection of the Server whose key is `key` among its
@@ -1205,14 +1239,7 @@ fn mismatch(offered: &[Version], spoken: &[Version], behind: Side) -> String {
 /// The hostname a Server reported, as the label its Login keeps: what a
 /// reader can see of it, within [`MAX_HOSTNAME_CHARS`].
 fn label(hostname: &str) -> String {
-    hostname
-        .chars()
-        .filter(|character| !character.is_control())
-        .collect::<String>()
-        .trim()
-        .chars()
-        .take(MAX_HOSTNAME_CHARS)
-        .collect()
+    listing::shown(hostname, MAX_HOSTNAME_CHARS)
 }
 
 fn fresh_nonce() -> [u8; NONCE_LEN] {

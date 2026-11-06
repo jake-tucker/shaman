@@ -10,7 +10,9 @@
 //! admission rules, until one fresh login from any of its Servers restores
 //! it. A Server that Serves through the Relay waits there to be reached, and
 //! the Relay joins it to another Server under the same Account that asks for
-//! it, carrying the bytes between them unread. Its operator caps how many
+//! it, carrying the bytes between them unread. Asked by a Server whose Login
+//! stands, it lists the other Logins under that Server's Account, as a hint
+//! to find them by that opens nothing (ADR-0064). Its operator caps how many
 //! Logins may stand under each Account and how many connections it joins for
 //! each at once, so no one Account can exhaust it. The Relay holds no
 //! Provider or Session of Suru's, and none of the trust a Pairing holds. What
@@ -60,6 +62,7 @@ mod github;
 mod identity;
 mod joiner;
 mod listener;
+mod listing;
 mod operator;
 mod private_file;
 mod running;

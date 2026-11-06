@@ -280,6 +280,31 @@ impl Store {
         .await
     }
 
+    /// The Logins under the Account whose id is `account`, by the identity key
+    /// each is tied to and the hostname it reported, all but the one tied to
+    /// `except`: the latest formed first, then by fingerprint, so one Login
+    /// is always listed in one place among them, and no more than `at_most`
+    /// of them, however many there are.
+    pub(crate) async fn logins_under(
+        &self,
+        account: i64,
+        except: &[u8],
+        at_most: usize,
+    ) -> Result<Vec<(Vec<u8>, String)>> {
+        let except = except.to_vec();
+        self.run(move |connection| {
+            logins::table
+                .filter(logins::account_id.eq(account))
+                .filter(logins::server_key.ne(except))
+                .order((logins::formed_at.desc(), logins::fingerprint))
+                .limit(i64::try_from(at_most).unwrap_or(i64::MAX))
+                .select((logins::server_key, logins::hostname))
+                .load::<(Vec<u8>, String)>(connection)
+                .context("read the Logins under an Account")
+        })
+        .await
+    }
+
     /// The Logins tied to `joining` and to `serving`, with the Account
     /// whose id is `account`, where both stand under it — fresh enough
     /// where a login is required since `fresh_since`.
@@ -1111,6 +1136,46 @@ mod tests {
         assert!(!account(&store, "17").await.lapsed);
         assert!(store.forget(b"workstation").await.unwrap());
         assert!(record("17", b"tablet", later).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn the_logins_under_an_account_are_read_latest_formed_first_and_within_a_bound() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(&directory.path().join("relay.db")).unwrap();
+        let now = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+        for (key, subject, formed) in [
+            (&b"first"[..], "17", 0),
+            (b"second", "17", 1),
+            (b"third", "17", 2),
+            (b"asker", "17", 3),
+            (b"stranger", "99", 4),
+        ] {
+            store
+                .record_login(
+                    "github",
+                    identity(subject, "octo"),
+                    key,
+                    String::from_utf8(key.to_vec()).unwrap(),
+                    now + Duration::from_secs(formed),
+                    crate::LOGINS_PER_ACCOUNT,
+                )
+                .await
+                .unwrap();
+        }
+        let octo = account(&store, "17").await;
+        let names = |logins: Vec<(Vec<u8>, String)>| {
+            logins.into_iter().map(|(_, name)| name).collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            names(store.logins_under(octo.id, b"asker", 16).await.unwrap()),
+            ["third", "second", "first"],
+            "the asker's own Login and another Account's stand apart"
+        );
+        assert_eq!(
+            names(store.logins_under(octo.id, b"asker", 2).await.unwrap()),
+            ["third", "second"]
+        );
     }
 
     #[tokio::test]

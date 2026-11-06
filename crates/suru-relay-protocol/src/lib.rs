@@ -14,6 +14,19 @@
 //! then on the Relay carries the bytes of the two joined connections between
 //! them as binary frames, reading none of them (ADR-0045).
 //!
+//! A Server whose Login stands may also ask the Relay which other Logins stand
+//! under its Account ([`ServerMessage::ListLogins`]), for its user to find
+//! their machines by. The answer ([`RelayMessage::Logins`]) names each by its
+//! identity key and the hostname it reported, and says whether it waits to be
+//! reached just now, and every Login is listed whether or not its Server
+//! Serves. All of it is a hint: a hostname is whatever that Server said, a key
+//! is the Relay's word, and a Pairing is still formed only by redeeming an
+//! Invite (ADR-0064). The answer stays within [`MAX_MESSAGE_LEN`] however many
+//! Logins there are, saying where it was cut short. A Relay of a release from
+//! before this was added refuses the asking with [`Refusal::Unexpected`], as it
+//! does whatever it does not recognize, and that is how a Server asking on a
+//! connection of its own tells such a Relay from one that failed.
+//!
 //! This is the one piece of Suru held to compatibility on the wire
 //! (ADR-0047). Once released it changes by addition, so everything here
 //! tolerates fields and messages it does not recognize, where the Pairing's
@@ -36,6 +49,10 @@ pub const ENDPOINT_PATH: &str = "/connect";
 /// The most bytes one message of this protocol runs to, and so the most
 /// either side reads of one, or holds of what it has yet to send.
 pub const MAX_MESSAGE_LEN: usize = 64 * 1024;
+
+/// The most characters of the hostname a Login reported that a Relay lists it
+/// by, and a Server reads of what a Relay lists.
+pub const MAX_LISTED_HOSTNAME_CHARS: usize = 64;
 
 /// The one way a Relay's address is written, by which a Server names the
 /// Relay it proves its key to and a Relay knows its own: an `http` or `https`
@@ -229,6 +246,10 @@ pub enum ServerMessage {
     /// Takes up the join the Relay named `join` as it told this Server of it:
     /// this connection carries that join from then on.
     Accept { join: Bytes },
+    /// Asks which other Logins stand under the Account this Server's Login
+    /// stands under. It opens nothing and disturbs nothing, and a connection
+    /// waiting to be reached does not take it.
+    ListLogins,
     /// A message of a later version this build does not know.
     #[serde(other)]
     Unrecognized,
@@ -273,12 +294,62 @@ pub enum RelayMessage {
     /// each binary frame passed to the other Server as it was sent, until
     /// either side closes.
     Joined,
+    /// The other Logins standing under the Account the Server's Login stands
+    /// under, the Server's own left out. `cut_short` says there are more than
+    /// one message holds, or than the Relay reads at once.
+    Logins {
+        #[serde(deserialize_with = "recognized_logins")]
+        logins: Vec<ListedLogin>,
+        #[serde(default)]
+        cut_short: bool,
+    },
     /// What the Server asked is refused, for `refusal`; `message` says so to
     /// a reader.
     Refused { refusal: Refusal, message: String },
     /// A message of a later version this build does not know.
     #[serde(other)]
     Unrecognized,
+}
+
+/// A Login a Relay lists. None of it is to be believed: it says where to look,
+/// and nothing listed changes what is believed of any key.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ListedLogin {
+    /// The identity key the Login is tied to, by the Relay's word: the DER
+    /// SubjectPublicKeyInfo a join names a Server by.
+    pub key: Bytes,
+    /// The hostname its Server reported as it logged in, within
+    /// [`MAX_LISTED_HOSTNAME_CHARS`]. It is whatever that Server said, so it
+    /// is made safe before a reader is shown it.
+    #[serde(default)]
+    pub hostname: String,
+    /// Whether its Server waits to be reached at the Relay now. A connection
+    /// that has died unannounced waits until the Relay finds that out.
+    #[serde(default)]
+    pub waiting: bool,
+}
+
+/// A Login a Relay lists, or something in its place this build cannot read: a
+/// later release's, or a Relay's mistake.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ListedEntry {
+    Login(ListedLogin),
+    Unreadable(serde::de::IgnoredAny),
+}
+
+/// The Logins named in a list, what this build cannot read of it left out, so
+/// one entry no Login could be costs a Server no more than that entry.
+fn recognized_logins<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<ListedLogin>, D::Error> {
+    Ok(Vec::<ListedEntry>::deserialize(deserializer)?
+        .into_iter()
+        .filter_map(|entry| match entry {
+            ListedEntry::Login(login) => Some(login),
+            ListedEntry::Unreadable(_) => None,
+        })
+        .collect())
 }
 
 /// The Account a Login stands under, as a Relay names it to the Server: by
@@ -321,8 +392,8 @@ pub enum Refusal {
     NotAdmitted,
     /// The Server holds no Login at the Relay that stands — it has not
     /// logged in there, or the Account its Login stands under has lapsed —
-    /// so it can neither wait to be reached nor ask to be joined until its
-    /// user logs in.
+    /// so it can neither wait to be reached, nor ask to be joined, nor ask
+    /// which Logins stand under its Account until its user logs in.
     LoginNeeded,
     /// The Server asked to be joined to one whose Login stands under another
     /// Account: the Relay joins only Servers of one Account (ADR-0046).
@@ -555,6 +626,75 @@ mod tests {
         );
     }
 
+    /// What a Relay from before the list says of it, word for word as
+    /// `suru-relay` v0.1.1 writes it, is a refusal a Server can tell.
+    #[test]
+    fn a_relay_that_does_not_know_the_list_refuses_it_as_unexpected() {
+        assert_eq!(
+            serde_json::to_string(&ServerMessage::ListLogins).unwrap(),
+            r#"{"type":"list_logins"}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<RelayMessage>(
+                r#"{"type":"refused","refusal":{"reason":"unexpected"},"message":"the Relay does not recognize what the Server asked"}"#
+            )
+            .unwrap(),
+            RelayMessage::Refused {
+                refusal: Refusal::Unexpected,
+                message: "the Relay does not recognize what the Server asked".to_owned(),
+            }
+        );
+    }
+
+    /// A Server of a release from before the list is never told of it, and
+    /// passes it over all the same were a Relay to say it.
+    #[test]
+    fn a_list_an_earlier_server_cannot_read_is_a_message_it_does_not_recognize() {
+        #[derive(Debug, Deserialize, Eq, PartialEq)]
+        #[serde(tag = "type", rename_all = "snake_case")]
+        enum Earlier {
+            Joined,
+            #[serde(other)]
+            Unrecognized,
+        }
+        assert_eq!(
+            serde_json::from_str::<Earlier>(r#"{"type":"logins","logins":[]}"#).unwrap(),
+            Earlier::Unrecognized
+        );
+    }
+
+    #[test]
+    fn a_list_tolerates_what_it_does_not_recognize_entry_by_entry() {
+        let answer: RelayMessage = serde_json::from_str(
+            r#"{"type":"logins","later":1,"logins":[
+                {"key":"AAEC","hostname":"workstation","waiting":true,"seen":"never"},
+                {"key":"not base64!","hostname":"broken","waiting":true},
+                {"hostname":"no key"},
+                7,
+                {"key":"AwQF"}
+            ]}"#,
+        )
+        .expect("what cannot be read of a list costs only that");
+        assert_eq!(
+            answer,
+            RelayMessage::Logins {
+                logins: vec![
+                    ListedLogin {
+                        key: Bytes(vec![0, 1, 2]),
+                        hostname: "workstation".to_owned(),
+                        waiting: true,
+                    },
+                    ListedLogin {
+                        key: Bytes(vec![3, 4, 5]),
+                        hostname: String::new(),
+                        waiting: false,
+                    },
+                ],
+                cut_short: false,
+            }
+        );
+    }
+
     #[test]
     fn a_cap_reached_is_named_on_the_wire_with_its_limit() {
         for (cap, name) in [
@@ -641,6 +781,7 @@ mod tests {
             ServerMessage::Accept {
                 join: Bytes(vec![5; 32]),
             },
+            ServerMessage::ListLogins,
         ] {
             let wire = serde_json::to_string(&message).unwrap();
             assert_eq!(
@@ -672,6 +813,14 @@ mod tests {
                 join: Bytes(vec![5; 32]),
             },
             RelayMessage::Joined,
+            RelayMessage::Logins {
+                logins: vec![ListedLogin {
+                    key: Bytes(vec![6; 91]),
+                    hostname: "workstation".to_owned(),
+                    waiting: true,
+                }],
+                cut_short: true,
+            },
             RelayMessage::Refused {
                 refusal: Refusal::DifferentAccounts,
                 message: "another Account".to_owned(),

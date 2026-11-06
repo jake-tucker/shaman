@@ -126,6 +126,13 @@ impl<T> Joiner<T> {
         }
     }
 
+    /// Whether the Server whose identity key is `server_key` waits to be
+    /// reached, on any connection. A connection counts until it is let go,
+    /// so one that died unannounced waits until the Relay finds that out.
+    pub(crate) fn waits(&self, server_key: &[u8]) -> bool {
+        lock(&self.state).waiting.contains_key(server_key)
+    }
+
     /// Asks the Server whose identity key is `server_key`, for the one whose
     /// key is `asker_key`, to take up a join between their Logins under
     /// `account`, telling the connection it last began to wait on.
