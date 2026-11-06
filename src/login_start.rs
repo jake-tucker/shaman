@@ -489,27 +489,66 @@ fn short_lived(path: &Path, temporary: &Path) -> Option<ShortLived> {
     if built {
         return Some(ShortLived::Build);
     }
-    let temporary_spellings = [
-        Some(temporary.to_path_buf()),
-        crate::paths::canonical(temporary).ok(),
-    ];
-    if temporary_spellings
-        .iter()
-        .flatten()
-        .any(|temporary| path.starts_with(temporary))
-    {
+    if is_temporary(path, temporary) {
         return Some(ShortLived::Temporary);
     }
-    let versioned = path.components().any(|component| {
-        component.as_os_str().to_str().is_some_and(|name| {
-            let digits = name.strip_prefix('v').unwrap_or(name);
-            digits.starts_with(|first: char| first.is_ascii_digit()) && digits.contains('.')
-        })
-    });
+    let versioned = path
+        .components()
+        .any(|component| component.as_os_str().to_str().is_some_and(names_a_version));
     if versioned || is_named(&["Cellar", "Caskroom", "nix"]) {
         return Some(ShortLived::Versioned);
     }
     None
+}
+
+/// Directories whose contents do not last, wherever the platform keeps its own
+/// temporary directory. On macOS that is under `/var/folders`, and `/tmp` is
+/// still a place an archive is unpacked to.
+const TEMPORARY_DIRECTORIES: [&str; 3] = ["/tmp", "/private/tmp", "/var/tmp"];
+
+fn is_temporary(path: &Path, temporary: &Path) -> bool {
+    TEMPORARY_DIRECTORIES
+        .iter()
+        .any(|directory| path.starts_with(directory))
+        || [
+            Some(temporary.to_path_buf()),
+            crate::paths::canonical(temporary).ok(),
+        ]
+        .iter()
+        .flatten()
+        .any(|temporary| path.starts_with(temporary))
+}
+
+/// Whether a path's `component` names a version anywhere in it: digits and a dot
+/// and digits, standing apart from what is around them, so that `suru-v0.4.1-x`
+/// and `app-1.2.3` do and `python3.12`, `jake2` and `x86_64` do not.
+fn names_a_version(component: &str) -> bool {
+    let is_number = |part: Option<&str>| {
+        part.is_some_and(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+    };
+    component
+        .split(|character: char| !(character.is_ascii_alphanumeric() || character == '.'))
+        .any(|token| {
+            let mut parts = token.strip_prefix(['v', 'V']).unwrap_or(token).split('.');
+            is_number(parts.next()) && is_number(parts.next())
+        })
+}
+
+/// The entries of the `PATH` in `path_variable` that a reboot takes away: those
+/// under a temporary directory or under `/run/user`, and the per-shell directories
+/// fnm makes wherever it makes them. A Provider found only through one is found
+/// by the shell that made it, and not by a Server started at the next login.
+fn fleeting_path_entries(path_variable: &OsStr, temporary: &Path) -> Vec<String> {
+    std::env::split_paths(path_variable)
+        .filter(|entry| {
+            is_temporary(entry, temporary)
+                || entry.starts_with("/run/user")
+                || entry
+                    .components()
+                    .any(|component| component.as_os_str() == "fnm_multishells")
+        })
+        .map(|entry| entry.display().to_string())
+        .collect()
 }
 
 /// The path a registration names for the binary at `current`, and why it may
@@ -593,41 +632,75 @@ pub fn install(config: &ManagedClientConfig, stand_in: ServiceManagerStandIn) ->
     Ok(install_report(
         &login_start,
         &location,
-        &executable,
-        short_lived,
-        &uncarried_variables(&providers, std::env::vars_os().map(|(name, _)| name)),
+        &InstallFindings {
+            executable: &executable,
+            short_lived,
+            uncarried: uncarried_variables(&providers, std::env::vars_os().map(|(name, _)| name)),
+            fleeting_path_entries: path_variable.as_deref().map_or_else(Vec::new, |path| {
+                fleeting_path_entries(path, &std::env::temp_dir())
+            }),
+        },
     ))
 }
 
+/// The shapes of variable names, upper-cased, that a Server started from a shell
+/// would use and that any Provider or Relay may read, beyond what each Provider
+/// declares of its own.
+const UNCARRIED_SUFFIXES: [&str; 4] = ["_API_KEY", "_TOKEN", "_SECRET", "_PROXY"];
+const UNCARRIED_PREFIXES: [&str; 1] = ["SSL_CERT_"];
+const UNCARRIED_NAMES: [&str; 3] = [
+    "NODE_EXTRA_CA_CERTS",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+];
+
+/// Which of the variables `names` a registration will not carry, because they may
+/// hold a secret or belong to this shell, and which would make a Server started
+/// from it behave differently from one started at login: their names only, so
+/// that a Provider signing in by one, or a Relay reached through a proxy, does
+/// not fail unexplained. By shape rather than by name, since no list keeps up
+/// with what a Provider reads.
 fn uncarried_variables(
-    _providers: &[crate::provider::ProviderEnvironment],
+    providers: &[crate::provider::ProviderEnvironment],
     names: impl Iterator<Item = OsString>,
 ) -> Vec<String> {
-    const UNCARRIED: [&str; 10] = [
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_AUTH_TOKEN",
-        "OPENAI_API_KEY",
-        "CODEX_API_KEY",
-        "COPILOT_GITHUB_TOKEN",
-        "GH_TOKEN",
-        "GITHUB_TOKEN",
-        "HTTPS_PROXY",
-        "HTTP_PROXY",
-        "ALL_PROXY",
-    ];
-    names
+    let carried = CARRIED_FOR_EVERY_PROVIDER
+        .iter()
+        .chain(providers.iter().flat_map(|provider| provider.carried));
+    let carried = carried.copied().collect::<Vec<_>>();
+    let mut uncarried = names
         .map(|name| name.to_string_lossy().into_owned())
-        .filter(|name| UNCARRIED.contains(&name.as_str()))
-        .collect()
+        .filter(|name| {
+            let upper = name.to_ascii_uppercase();
+            !carried.contains(&upper.as_str())
+                && (UNCARRIED_SUFFIXES
+                    .iter()
+                    .any(|suffix| upper.ends_with(suffix))
+                    || UNCARRIED_NAMES.contains(&upper.as_str())
+                    || UNCARRIED_PREFIXES
+                        .iter()
+                        .chain(
+                            providers
+                                .iter()
+                                .flat_map(|provider| provider.uncarried_prefixes),
+                        )
+                        .any(|prefix| upper.starts_with(prefix)))
+        })
+        .collect::<Vec<_>>();
+    uncarried.sort();
+    uncarried.dedup();
+    uncarried
 }
 
-fn install_report(
-    login_start: &LoginStart,
-    location: &str,
-    executable: &Path,
+/// What `suru server install` found worth telling its user.
+struct InstallFindings<'a> {
+    executable: &'a Path,
     short_lived: Option<ShortLived>,
-    uncarried: &[String],
-) -> String {
+    uncarried: Vec<String>,
+    fleeting_path_entries: Vec<String>,
+}
+
+fn install_report(login_start: &LoginStart, location: &str, findings: &InstallFindings) -> String {
     let channel = &login_start.channel;
     let mut report = format!(
         "Registered a Login start for the `{channel}` Channel's Server: {location}\n\n\
@@ -635,23 +708,33 @@ fn install_report(
          running now is left running, and `suru server start` starts one where none is.\n\
          At each login a Keeper starts the Server and restarts it if it crashes. A Server \
          stopped by `suru server stop` stays stopped until the next login or `suru server \
-         start`.\n\n{}\n\n\
+         start`. So does one ended by a plain `kill`, which a Server takes as a stop.\n\n{}\n\n\
+         `suru server status` reads the registration alone, and cannot see it turned off \
+         in the service manager itself.\n\n\
          Providers are found on the PATH this command ran with, which the registration \
          keeps. Run `suru server install` again after it changes.\n",
         login_start.manager.covers()
     );
-    if !uncarried.is_empty() {
+    if !findings.fleeting_path_entries.is_empty() {
         report.push_str(&format!(
-            "Not carried, because they may hold secrets: {}. A Server started at login does \
-             not have them, so a Provider or Relay relying on one needs another way in.\n",
-            uncarried.join(", ")
+            "These PATH entries may not be there after a reboot, so a Provider found only \
+             through one will not be found: {}\n",
+            findings.fleeting_path_entries.join(", ")
         ));
     }
-    if let Some(short_lived) = short_lived {
+    if !findings.uncarried.is_empty() {
+        report.push_str(&format!(
+            "Not carried, because they may hold secrets or belong to this shell: {}. A Server \
+             started at login does not have them, so a Provider or Relay relying on one needs \
+             another way in.\n",
+            findings.uncarried.join(", ")
+        ));
+    }
+    if let Some(short_lived) = findings.short_lived {
         report.push_str(&format!(
             "\nWarning: this registration names {}, which may not survive an upgrade: {}. \
              Run `suru server install` again from wherever Suru is kept for good.\n",
-            executable.display(),
+            findings.executable.display(),
             short_lived.says()
         ));
     }
@@ -975,8 +1058,137 @@ mod tests {
             ),
             ("/nix/store/abc-suru/bin/suru", Some(ShortLived::Versioned)),
             ("/scratch/tmp/unpacked/suru", Some(ShortLived::Temporary)),
+            (
+                "/Users/jo/Downloads/suru-v0.4.1-aarch64-apple-darwin/suru",
+                Some(ShortLived::Versioned),
+            ),
+            ("/opt/app-1.2.3/suru", Some(ShortLived::Versioned)),
+            ("/opt/suru@1.2/bin/suru", Some(ShortLived::Versioned)),
+            ("/opt/suru_0.4.1-rc1/suru", Some(ShortLived::Versioned)),
+            ("/home/jo/bin/suru-0.4.1", Some(ShortLived::Versioned)),
+            ("/home/jake2/bin/suru", None),
+            ("/home/jo/.cargo/bin/suru", None),
+            ("/usr/local/lib/python3.12/suru", None),
+            ("/home/jo/v2/suru", None),
+            ("/home/jo/x86_64/suru", None),
+            ("/home/jo/1.notes/suru", None),
         ] {
             assert_eq!(short_lived(&rooted(path), &temporary), expected, "{path}");
+        }
+    }
+
+    /// `$TMPDIR` on a Mac is under `/var/folders`, and `/tmp` is no less temporary
+    /// for not being it.
+    #[test]
+    fn the_usual_temporary_directories_count_whatever_the_temporary_directory_is() {
+        let temporary = rooted("/scratch/tmp");
+        for path in ["/tmp/suru", "/private/tmp/x/suru", "/var/tmp/suru"] {
+            assert_eq!(
+                short_lived(Path::new(path), &temporary),
+                Some(ShortLived::Temporary),
+                "{path}"
+            );
+        }
+        assert_eq!(short_lived(Path::new("/tmpfiles/suru"), &temporary), None);
+    }
+
+    #[test]
+    fn path_entries_that_a_reboot_takes_away_are_named() {
+        let temporary = rooted("/scratch/tmp");
+        let path_variable = std::env::join_paths([
+            rooted("/usr/bin"),
+            PathBuf::from("/run/user/1000/fnm_multishells/123_456/bin"),
+            rooted("/home/jo/.local/state/fnm_multishells/9_8/bin"),
+            PathBuf::from("/tmp/scratch/bin"),
+            rooted("/scratch/tmp/node/bin"),
+            rooted("/home/jo/.local/bin"),
+        ])
+        .unwrap();
+        assert_eq!(
+            fleeting_path_entries(&path_variable, &temporary),
+            [
+                "/run/user/1000/fnm_multishells/123_456/bin".to_owned(),
+                rooted("/home/jo/.local/state/fnm_multishells/9_8/bin")
+                    .display()
+                    .to_string(),
+                "/tmp/scratch/bin".to_owned(),
+                rooted("/scratch/tmp/node/bin").display().to_string(),
+            ]
+        );
+    }
+
+    /// A list of exact names is what let `https_proxy`, `CLAUDE_CODE_OAUTH_TOKEN`
+    /// and the rest slip through: by shape they cannot, in either case, and only
+    /// their names ever go anywhere.
+    #[test]
+    fn variables_are_named_by_their_shape_and_those_carried_are_not_among_them() {
+        let names = [
+            "PATH",
+            "HOME",
+            "TERM",
+            "SSH_AUTH_SOCK",
+            "XDG_CONFIG_HOME",
+            "CODEX_HOME",
+            "SURU_CODEX_PATH",
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+            "CODEX_API_KEY",
+            "SOME_API_KEY",
+            "SOME_TOKEN",
+            "some_token",
+            "https_proxy",
+            "NO_PROXY",
+            "NODE_EXTRA_CA_CERTS",
+            "SSL_CERT_FILE",
+        ];
+        assert_eq!(
+            uncarried_variables(&[CODEX_LIKE], names.into_iter().map(OsString::from)),
+            [
+                "CODEX_API_KEY",
+                "NODE_EXTRA_CA_CERTS",
+                "NO_PROXY",
+                "OPENAI_API_KEY",
+                "OPENAI_BASE_URL",
+                "SOME_API_KEY",
+                "SOME_TOKEN",
+                "SSL_CERT_FILE",
+                "https_proxy",
+                "some_token",
+            ]
+        );
+    }
+
+    /// What the review found slipping through the list of names, against the
+    /// Providers' own declarations.
+    #[test]
+    fn what_the_built_in_providers_read_is_named_when_set() {
+        let providers = crate::provider::built_in_environments();
+        for name in [
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "ANTHROPIC_BASE_URL",
+            "AWS_PROFILE",
+            "OPENAI_ORG_ID",
+            "GH_ENTERPRISE_HOST",
+            "GITHUB_ENTERPRISE",
+            "COPILOT_MODEL",
+        ] {
+            assert_eq!(
+                uncarried_variables(&providers, std::iter::once(OsString::from(name))),
+                [name]
+            );
+        }
+        for carried in [
+            "SURU_CLAUDE_PATH",
+            "CLAUDE_CONFIG_DIR",
+            "COPILOT_HOME",
+            "CODEX_HOME",
+        ] {
+            assert!(
+                uncarried_variables(&providers, std::iter::once(OsString::from(carried)))
+                    .is_empty(),
+                "{carried}"
+            );
         }
     }
 
@@ -1054,21 +1266,36 @@ mod tests {
         let report = install_report(
             &login_start,
             "somewhere",
-            &executable,
-            Some(ShortLived::Build),
-            &["ANTHROPIC_API_KEY".to_owned()],
+            &InstallFindings {
+                executable: &executable,
+                short_lived: Some(ShortLived::Build),
+                uncarried: vec!["ANTHROPIC_API_KEY".to_owned()],
+                fleeting_path_entries: vec!["/run/user/1000/fnm/bin".to_owned()],
+            },
         );
         assert!(
             report.contains("`beta` Channel's Server: somewhere"),
             "{report}"
         );
         assert!(report.contains("ANTHROPIC_API_KEY"), "{report}");
+        assert!(report.contains("/run/user/1000/fnm/bin"), "{report}");
+        assert!(report.contains("after a reboot"), "{report}");
         assert!(report.contains("Warning"), "{report}");
         assert!(report.contains("build directory"), "{report}");
 
-        let report = install_report(&login_start, "somewhere", &executable, None, &[]);
+        let report = install_report(
+            &login_start,
+            "somewhere",
+            &InstallFindings {
+                executable: &executable,
+                short_lived: None,
+                uncarried: Vec::new(),
+                fleeting_path_entries: Vec::new(),
+            },
+        );
         assert!(!report.contains("Warning"), "{report}");
         assert!(!report.contains("Not carried"), "{report}");
+        assert!(!report.contains("after a reboot"), "{report}");
     }
 
     /// A file missing says nothing while the home it would be under is missing

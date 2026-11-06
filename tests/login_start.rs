@@ -281,10 +281,13 @@ exit 0
             .expect("make the stand-in runnable");
         path
     }
+    // One definition per Task, named for it, as `/TN` names it: `%~3` for each
+    // of `/Create`, `/Query` and `/Delete`. A listing shows nothing, which is only
+    // ever asked for once a query has found no such Task.
     #[cfg(windows)]
     {
         let path = home.join("stand-in-service-manager.cmd");
-        let definition = home.join(WINDOWS_TASK_DEFINITION);
+        let definition = home.join(format!("{WINDOWS_TASK_PREFIX}%~3.xml"));
         std::fs::write(
             &path,
             format!(
@@ -308,16 +311,21 @@ exit 0
     }
 }
 
-/// Where the Windows stand-in keeps the definition of the Task it was given.
+/// How the Windows stand-in names what it was given to keep.
 #[cfg(windows)]
-const WINDOWS_TASK_DEFINITION: &str = "stand-in-task.xml";
+const WINDOWS_TASK_PREFIX: &str = "stand-in-task-";
 
 /// What the Task the stand-in was given runs, read back as Windows would: UTF-16,
-/// XML, then a command line as a program splits it. One Task at a time is all a
-/// stand-in keeps, so `channel` is only checked.
+/// XML, then a command line as a program splits it.
 #[cfg(windows)]
 fn registered_words(home: &Path, channel: &str) -> Vec<String> {
-    let bytes = std::fs::read(home.join(WINDOWS_TASK_DEFINITION)).expect("read the Task");
+    let prefix = format!("{WINDOWS_TASK_PREFIX}suru-server-{channel} (");
+    let definition = std::fs::read_dir(home)
+        .expect("read the home")
+        .flatten()
+        .find(|entry| entry.file_name().to_string_lossy().starts_with(&prefix))
+        .expect("the Task was given to the stand-in");
+    let bytes = std::fs::read(definition.path()).expect("read the Task");
     let units = bytes[2..]
         .as_chunks::<2>()
         .0
@@ -365,7 +373,6 @@ fn registered_words(home: &Path, channel: &str) -> Vec<String> {
         words.push(word);
         characters.next();
     }
-    assert!(words.iter().any(|word| word == channel), "{words:?}");
     words
 }
 
@@ -437,6 +444,35 @@ fn write_scripted_claude(bin: &Path) {
     std::fs::write(&claude, "#!/bin/sh\necho '0.0.1 (Claude Code)'\n").expect("write the CLI");
     std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o700))
         .expect("make the CLI runnable");
+}
+
+/// On Windows a Provider is found on `PATH` only as an `.exe`, so a batch file will
+/// not do: the stand-in for a CLI is a small program of the system's own, under
+/// the name Claude's goes by.
+#[cfg(windows)]
+fn write_scripted_claude(bin: &Path) {
+    std::fs::create_dir_all(bin).expect("make the directory Claude is installed in");
+    std::fs::copy(
+        windows_system_directory().join("hostname.exe"),
+        bin.join("claude.exe"),
+    )
+    .expect("copy a program to stand in for the CLI");
+}
+
+#[cfg(windows)]
+fn windows_system_directory() -> PathBuf {
+    PathBuf::from(std::env::var_os("SystemRoot").expect("Windows names its directory"))
+        .join("System32")
+}
+
+/// The `PATH` of a shell that has `bin` on it.
+fn shell_path(bin: &Path) -> std::ffi::OsString {
+    #[cfg(unix)]
+    let rest = [PathBuf::from("/usr/bin"), PathBuf::from("/bin")];
+    #[cfg(windows)]
+    let rest = [windows_system_directory()];
+    std::env::join_paths(std::iter::once(bin.to_path_buf()).chain(rest))
+        .expect("join the shell's PATH")
 }
 
 #[tokio::test]
@@ -735,7 +771,6 @@ async fn a_keeper_leaves_a_server_of_another_build_to_the_clients_that_replace_t
 /// what the registration names — a Server finds the Provider a Server started
 /// from the shell finds, while what the shell held that should go no further
 /// does not reach the registration.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does() {
     let machine = Machine::new();
@@ -743,9 +778,7 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
     write_scripted_claude(&bin);
     let empty = machine.home.path().join("nothing here");
     std::fs::create_dir(&empty).expect("make an empty directory");
-    let shell_path =
-        std::env::join_paths([bin.as_path(), Path::new("/usr/bin"), Path::new("/bin")])
-            .expect("join the shell's PATH");
+    let shell_path = shell_path(&bin);
     let (from_shell, from_registration, unassisted) = (
         "provider-from-shell",
         "provider-from-registration",
