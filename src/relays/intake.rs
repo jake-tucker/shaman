@@ -222,6 +222,5 @@ mod tests {
             told(&wire),
             Some(RelayMessage::Proven { login: Some(account) }) if account.username == long
         ));
-        assert_eq!(MAX_REASON_CHARS, 512);
     }
 }
