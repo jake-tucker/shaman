@@ -46,7 +46,7 @@ pub(super) fn read_clipboard(source: &mut (impl NativeClipboardSource + ?Sized))
         Err(error) => Some(error),
     };
     match source.text() {
-        Ok(Some(text)) => ClipboardRead::Text(text),
+        Ok(Some(text)) => ClipboardRead::Text(crate::terminal::with_newlines(text)),
         Ok(None) => image_error.map_or(ClipboardRead::Empty, |reason| ClipboardRead::Failed {
             reason,
         }),
@@ -879,6 +879,14 @@ pub(super) mod tests {
             ClipboardRead::Text("hello".to_owned())
         );
         assert_eq!(read_clipboard(&mut Scripted::empty()), ClipboardRead::Empty);
+    }
+
+    #[test]
+    fn clipboard_text_pastes_with_every_line_ending_a_newline() {
+        assert_eq!(
+            read_clipboard(&mut Scripted::text("one\r\ntwo\rthree\nfour")),
+            ClipboardRead::Text("one\ntwo\nthree\nfour".to_owned())
+        );
     }
 
     #[test]

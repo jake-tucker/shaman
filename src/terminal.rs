@@ -893,7 +893,7 @@ fn terminal_input_from_termina(event: termina::Event) -> Option<TerminalInput> {
                 modifiers: key_modifiers_from_termina(mouse.modifiers),
             })
         }
-        termina::Event::Paste(text) => crossterm::event::Event::Paste(text),
+        termina::Event::Paste(text) => crossterm::event::Event::Paste(with_newlines(text)),
         termina::Event::WindowResized(size) => {
             crossterm::event::Event::Resize(size.cols, size.rows)
         }
@@ -905,6 +905,17 @@ fn terminal_input_from_termina(event: termina::Event) -> Option<TerminalInput> {
         _ => return None,
     };
     Some(TerminalInput::Event(event))
+}
+
+/// Pasted text with every line ending a newline, the only one the rest of Suru
+/// breaks a line on: Windows Terminal pastes a lone carriage return for each, and
+/// a Windows clipboard holds a carriage return and a newline.
+pub(crate) fn with_newlines(text: String) -> String {
+    if text.contains('\r') {
+        text.replace("\r\n", "\n").replace('\r', "\n")
+    } else {
+        text
+    }
 }
 
 fn key_code_from_termina(code: termina::event::KeyCode) -> crossterm::event::KeyCode {
@@ -1920,6 +1931,22 @@ mod tests {
         assert_eq!(
             observed,
             vec![TerminalInput::Event(InputEvent::Paste(text.to_owned()))]
+        );
+    }
+
+    #[test]
+    fn every_line_ending_a_terminal_pastes_arrives_as_a_newline() {
+        let mut parser = TerminalInputParser::default();
+
+        // Windows Terminal turns each line ending into a lone carriage return.
+        assert_eq!(
+            parser.parse(
+                b"\x1b[200~one\rtwo\r\nthree\nfour\r\r\nfive\x1b[201~",
+                false
+            ),
+            vec![TerminalInput::Event(InputEvent::Paste(
+                "one\ntwo\nthree\nfour\n\nfive".to_owned()
+            ))]
         );
     }
 

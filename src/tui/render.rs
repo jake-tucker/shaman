@@ -72,7 +72,7 @@ use super::{
         TranscriptViewport, TuiState,
     },
     subagent_picker::working_subagents,
-    text_layout::{TextLayout, draw_row},
+    text_layout::{TextLayout, draw_row, drawn_character},
     theme_picker::ThemePickerRow,
     transcript::{TranscriptView, client_error_lines},
     unreachable_reason,
@@ -7488,6 +7488,9 @@ fn wrapped_composer_lines(
         .map(|row| {
             let mut line = Vec::<(Style, String)>::new();
             for (offset, character) in row.text.char_indices() {
+                let Some(character) = drawn_character(character) else {
+                    continue;
+                };
                 let offset = row.start + offset;
                 let style = if bindings.invalid.iter().any(|range| range.contains(&offset)) {
                     theme.feedback.error

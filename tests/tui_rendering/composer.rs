@@ -1840,6 +1840,44 @@ fn composer_clicks_resolve_unicode_and_blank_cells_to_insertion_boundaries() {
 }
 
 #[test]
+fn control_characters_in_a_draft_never_reach_a_screen_cell() {
+    let mut application = Application::default();
+    application
+        .handle_terminal_event(InputEvent::Paste(
+            "alpha\rbravo\tcharlie\x07delta".to_owned(),
+        ))
+        .unwrap();
+
+    let buffer = rendered_application_buffer(&application, 80, 30);
+
+    // A cell's symbol goes to the terminal as it is, so a carriage return in one
+    // would send the text after it to the left edge, out of the composer.
+    assert!(
+        !buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol().contains(char::is_control)),
+        "no cell draws a control character"
+    );
+    let block = prompt_block(&buffer_rows(&buffer));
+    let (x, y) = text_position(&buffer, "alphabravo charliedelta");
+    assert!(
+        usize::from(y) > block.top,
+        "the text stands in the composer"
+    );
+
+    // The tab draws as one column, and a click past it lands where it is drawn.
+    let charlie = x + u16::try_from("alphabravo ".len()).unwrap();
+    click_composer(&mut application, charlie + 3, y);
+    type_terminal_text(&mut application, "!");
+    assert!(
+        rendered_application_rows_at(&application, 80, 30)
+            .join("\n")
+            .contains("alphabravo cha!rliedelta")
+    );
+}
+
+#[test]
 fn composer_clicks_follow_word_wrapping_and_internal_scrolling_after_resize() {
     let mut application = Application::default();
     application

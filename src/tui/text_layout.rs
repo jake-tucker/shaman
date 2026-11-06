@@ -912,7 +912,22 @@ fn word_at(text: &str, offset: usize) -> Range<usize> {
 }
 
 fn display_width(character: char) -> usize {
+    if character == '\t' {
+        return 1;
+    }
     UnicodeWidthChar::width(character).unwrap_or(0)
+}
+
+/// What a laid-out character draws as, so its columns are the ones
+/// [`display_width`] counted: a tab is one blank, and any other control character
+/// draws nothing. A cell's symbol reaches the terminal as it is, where a control
+/// character would act on the cursor instead of showing.
+pub(super) fn drawn_character(character: char) -> Option<char> {
+    match character {
+        '\t' => Some(' '),
+        character if character.is_control() => None,
+        character => Some(character),
+    }
 }
 
 #[cfg(test)]
