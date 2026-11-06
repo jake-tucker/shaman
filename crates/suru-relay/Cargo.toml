@@ -1,7 +1,7 @@
 [package]
 name = "suru-relay"
 # The Relay's own version, apart from Suru's: it is released only when it changes (ADR-0047).
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 publish = false
 
