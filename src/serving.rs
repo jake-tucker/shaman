@@ -5609,7 +5609,7 @@ fn parse_invite(invite: &str) -> std::result::Result<ParsedInvite, PairingFailur
     let Some(rest) = invite.strip_prefix("suru-") else {
         return Err(PairingFailure::new(
             SessionErrorCode::InvalidInvite,
-            "Invite is malformed",
+            "Invite must start with `suru-`; was all of it copied?",
         ));
     };
     let Some((version, encoded)) = rest.split_once('-') else {
@@ -6934,6 +6934,22 @@ mod tests {
             );
             assert!(!takes_an_author(&method, path), "{method} {path}");
         }
+    }
+
+    /// An Invite without its start was most likely copied without its first
+    /// characters, which is said rather than calling the whole of it malformed.
+    #[test]
+    fn an_invite_without_its_start_says_what_is_missing() {
+        let refused = parse_invite("eyJ3IjpbXX0")
+            .err()
+            .map(|refused| (refused.code, refused.message));
+        assert_eq!(
+            refused,
+            Some((
+                SessionErrorCode::InvalidInvite,
+                "Invite must start with `suru-`; was all of it copied?".to_owned()
+            ))
+        );
     }
 
     /// An Invite names a Relay it offers by the one way a Relay's address is

@@ -1278,9 +1278,29 @@ fn redemption_in_flight() -> (Application, ConnectRequest) {
 }
 
 #[test]
+fn an_invite_copied_across_wrapped_rows_is_inspected_whole() {
+    let mut application = invite_entry();
+    application
+        .handle_terminal_event(InputEvent::Paste(
+            "  suru-v1-exa\nmple\r\n  wrap\tped \n".to_owned(),
+        ))
+        .unwrap();
+
+    let ApplicationTransition::PreviewInvite { invite, .. } =
+        press(&mut application, KeyCode::Enter)
+    else {
+        panic!("Enter inspects the Invite pasted");
+    };
+    assert_eq!(invite, "suru-v1-examplewrapped");
+}
+
+#[test]
 fn every_invite_refusal_is_precise_and_visible_on_the_step_that_failed() {
     for (invite, error) in [
-        ("not-an-invite", "Invite is malformed"),
+        (
+            "not-an-invite",
+            "Invite must start with `suru-`; was all of it copied?",
+        ),
         ("suru-v2-e30", "Invite version `v2` is not supported"),
     ] {
         let mut application = invite_entry();

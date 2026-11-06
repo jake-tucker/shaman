@@ -344,7 +344,9 @@ impl ConnectOverlay {
     pub(super) fn insert(&mut self, text: &str) {
         match &mut self.state {
             ConnectOverlayState::InviteEntry { invite, error } => {
-                invite.push_str(text.trim());
+                // An Invite holds no whitespace, and one copied from where it
+                // was displayed wrapped has line breaks wherever it wrapped.
+                invite.extend(text.chars().filter(|character| !character.is_whitespace()));
                 *error = None;
             }
             ConnectOverlayState::Details(draft) if draft.focus == ConnectFocus::Name => {
