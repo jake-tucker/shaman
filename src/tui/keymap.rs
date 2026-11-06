@@ -703,6 +703,9 @@ pub(super) fn command_for_relay_overlay_event(
 /// The Connect overlay owns the keys while it is visible. The login a
 /// redemption waits on copies where to go and the code to enter with the
 /// Relay login's own keys, and Enter there tries a stopped redemption again.
+/// At Invite entry the arrows walk the machines found, and whatever is typed or
+/// pasted goes to the Invite wherever Row Focus stands, so nothing the reader
+/// sends is lost to a list that landed under their hands.
 pub(super) fn command_for_connect_overlay_event(
     event: InputEvent,
     mode: ConnectInputMode,
@@ -752,6 +755,20 @@ pub(super) fn command_for_connect_overlay_event(
         (ConnectInputMode::Login, KeyCode::Char('c'), KeyModifiers::NONE) => {
             Some(CommandId::InvokeSemantic(SemanticCommandId::RelayCopyCode))
         }
+        (ConnectInputMode::Invite, KeyCode::Up, KeyModifiers::NONE)
+        | (ConnectInputMode::Invite, KeyCode::Char('p'), KeyModifiers::CONTROL) => Some(
+            CommandId::InvokeSemantic(SemanticCommandId::ConnectPrevious),
+        ),
+        (ConnectInputMode::Invite, KeyCode::Down, KeyModifiers::NONE)
+        | (ConnectInputMode::Invite, KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+            Some(CommandId::InvokeSemantic(SemanticCommandId::ConnectNext))
+        }
+        (ConnectInputMode::Invite, KeyCode::Tab, KeyModifiers::NONE) => Some(
+            CommandId::InvokeSemantic(SemanticCommandId::ConnectFocusNext),
+        ),
+        (ConnectInputMode::Invite, KeyCode::Char('r'), KeyModifiers::CONTROL) => Some(
+            CommandId::InvokeSemantic(SemanticCommandId::ConnectLookAgain),
+        ),
         (ConnectInputMode::Picker, KeyCode::Char('a'), KeyModifiers::NONE) => Some(
             CommandId::InvokeSemantic(SemanticCommandId::ConnectPairAnother),
         ),

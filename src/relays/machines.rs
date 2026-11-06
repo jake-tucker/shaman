@@ -155,7 +155,10 @@ mod tests {
             ("\u{202e}noitatskrow", "noitatskrow"),
             ("work\u{2066}station\u{2069}\u{200f}", "workstation"),
             // What takes no width at all.
-            ("work\u{200b}\u{200c}\u{200d}\u{2060}\u{feff}station", "workstation"),
+            (
+                "work\u{200b}\u{200c}\u{200d}\u{2060}\u{feff}station",
+                "workstation",
+            ),
             ("work\u{ad}\u{e0001}\u{fe0f}station", "workstation"),
             // Another way to break a line is a space, not a break.
             ("work\u{2028}station\u{2029}", "work station"),

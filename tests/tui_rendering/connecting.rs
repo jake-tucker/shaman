@@ -1129,10 +1129,10 @@ fn pairing_another_remote_refuses_a_duplicate_prefilled_name_in_the_draft() {
         }]))
         .unwrap();
 
-    assert_eq!(
+    assert!(matches!(
         press(&mut application, KeyCode::Char('a')),
-        ApplicationTransition::Continue
-    );
+        ApplicationTransition::FindMachines(_)
+    ));
     assert!(
         rendered_application_rows(&application)
             .join("\n")
@@ -1554,10 +1554,10 @@ fn pair_opens_invite_entry_without_waiting_for_the_remote_listing() {
     assert!(completion.contains("/pair"), "{completion}");
     assert!(completion.contains("Pair with a Remote"), "{completion}");
     assert_eq!(SemanticCommandId::PairOpen.as_str(), "pair.open");
-    assert_eq!(
+    assert!(matches!(
         press(&mut application, KeyCode::Enter),
-        ApplicationTransition::BeginConnecting
-    );
+        ApplicationTransition::BeginPairing(_)
+    ));
 
     let entry = rendered_application_rows(&application).join("\n");
     assert!(entry.contains("Paste Invite"), "{entry}");

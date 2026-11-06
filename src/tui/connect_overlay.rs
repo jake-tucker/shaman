@@ -13,6 +13,10 @@
 //! Every way an Invite offers is the reader's to read whole before trusting
 //! it, so the preview and a refusal too long for the box scroll rather than
 //! lose anything.
+//!
+//! `/pair` opens on Invite entry and on the machines found at the Server's
+//! Relays together ([`FoundMachines`]), so whatever the Relays answer, and
+//! however late, an Invite pasted or typed goes where it always did.
 
 use std::collections::HashMap;
 
@@ -21,13 +25,23 @@ use crate::protocol::{
     RemoteHealth, RemoteStatus, UnreachableReason, Way,
 };
 
-use super::{list_window::ListWindow, relay_overlay::RelayRequest, unreachable_reason};
+use super::{
+    found_machines::FoundMachines, list_window::ListWindow, relay_overlay::RelayRequest,
+    unreachable_reason,
+};
 
 /// One request the Connect overlay sent the Client's own Server — an
 /// Invite's preview, or its redemption — told apart from every other so its
 /// answer reaches only what asked for it.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ConnectRequest(u64);
+
+impl ConnectRequest {
+    #[cfg(test)]
+    pub(super) fn numbered(number: u64) -> Self {
+        Self(number)
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct ConnectOverlay {
@@ -51,6 +65,8 @@ pub(super) struct ConnectOverlay {
     /// The Relay a login the reader left came to stand at since, for Invite
     /// entry and the Remote's details to say the Invite now pairs.
     logged_in_at: Option<String>,
+    /// The machines found at the Server's Relays, beside Invite entry.
+    machines: FoundMachines,
     last_request: u64,
 }
 
@@ -229,23 +245,65 @@ pub(super) enum ConnectInputMode {
 impl ConnectOverlay {
     pub(super) fn open(&mut self) {
         self.leave_login();
+        self.machines.end();
         self.state = ConnectOverlayState::Loading;
     }
 
-    /// Opens straight on Invite entry, as `/pair` asks. The Remote listing is
-    /// still asked for behind it, so a duplicate name is refused and a
-    /// successful redemption has a picker to land on.
-    pub(super) fn open_invite_entry(&mut self) {
+    /// Opens straight on Invite entry, as `/pair` asks, answering the request
+    /// the machines at the Server's Relays are looked for under. The Remote
+    /// listing is still asked for behind it, so a duplicate name is refused
+    /// and a successful redemption has a picker to land on.
+    pub(super) fn open_invite_entry(&mut self) -> ConnectRequest {
         self.leave_login();
         self.state = ConnectOverlayState::InviteEntry {
             invite: String::new(),
             error: None,
         };
+        let asked = self.issue();
+        self.machines.begin(asked);
+        asked
     }
 
     pub(super) fn close(&mut self) {
         self.leave_login();
+        self.machines.end();
         self.state = ConnectOverlayState::Closed;
+    }
+
+    /// The machines found at the Server's Relays.
+    pub(super) fn machines(&self) -> &FoundMachines {
+        &self.machines
+    }
+
+    /// Takes the Relays the asking `asked` goes to.
+    pub(super) fn machine_relays_known(&mut self, asked: ConnectRequest, relays: Vec<String>) {
+        self.machines.relays_known(asked, relays);
+    }
+
+    /// Takes what a Relay answered the asking `asked`.
+    pub(super) fn machines_answered(
+        &mut self,
+        asked: ConnectRequest,
+        machines: crate::protocol::RelayMachines,
+    ) {
+        self.machines.answered(asked, machines);
+    }
+
+    /// Asks the Server's Relays again where the machines are shown, answering
+    /// the request it is asked under.
+    pub(super) fn look_again(&mut self) -> Option<ConnectRequest> {
+        if !matches!(self.state, ConnectOverlayState::InviteEntry { .. }) {
+            return None;
+        }
+        let asked = self.issue();
+        self.machines.look_again(asked);
+        Some(asked)
+    }
+
+    /// Chooses the machine Row Focus stands on at Invite entry, answering
+    /// whether one was chosen. It forms no Pairing.
+    pub(super) fn choose_machine(&mut self) -> bool {
+        matches!(self.state, ConnectOverlayState::InviteEntry { .. }) && self.machines.choose()
     }
 
     /// Remembers the login on display as one the reader left while it was
@@ -325,18 +383,25 @@ impl ConnectOverlay {
         }
     }
 
-    pub(super) fn pair_another(&mut self) {
-        if matches!(self.state, ConnectOverlayState::RemotePicker { .. }) {
-            self.state = ConnectOverlayState::InviteEntry {
-                invite: String::new(),
-                error: None,
-            };
+    /// Opens Invite entry from the picker, as `/pair` opens it, answering the
+    /// request the machines are looked for under.
+    pub(super) fn pair_another(&mut self) -> Option<ConnectRequest> {
+        if !matches!(self.state, ConnectOverlayState::RemotePicker { .. }) {
+            return None;
         }
+        Some(self.open_invite_entry())
     }
 
+    /// Says why the Remotes could not be listed on Invite entry, keeping
+    /// whatever the reader has already put there: this lands as it lands, and
+    /// never takes a paste with it.
     pub(super) fn fail_invite_entry(&mut self, message: String) {
+        let invite = match &mut self.state {
+            ConnectOverlayState::InviteEntry { invite, .. } => std::mem::take(invite),
+            _ => String::new(),
+        };
         self.state = ConnectOverlayState::InviteEntry {
-            invite: String::new(),
+            invite,
             error: Some(message),
         };
     }
@@ -348,6 +413,7 @@ impl ConnectOverlay {
                 // was displayed wrapped has line breaks wherever it wrapped.
                 invite.extend(text.chars().filter(|character| !character.is_whitespace()));
                 *error = None;
+                self.machines.focus_invite();
             }
             ConnectOverlayState::Details(draft) if draft.focus == ConnectFocus::Name => {
                 draft
@@ -364,6 +430,7 @@ impl ConnectOverlay {
             ConnectOverlayState::InviteEntry { invite, error } => {
                 invite.pop();
                 *error = None;
+                self.machines.focus_invite();
             }
             ConnectOverlayState::Details(draft) if draft.focus == ConnectFocus::Name => {
                 draft.name.pop();
@@ -378,6 +445,7 @@ impl ConnectOverlay {
         let ConnectOverlayState::InviteEntry { invite, error } = &mut self.state else {
             return None;
         };
+        self.machines.focus_invite();
         let invite = invite.trim().to_owned();
         if invite.is_empty() {
             *error = Some("Paste an Invite first".to_owned());
@@ -469,16 +537,21 @@ impl ConnectOverlay {
     }
 
     pub(super) fn focus_next(&mut self) {
-        if let ConnectOverlayState::Details(draft) = &mut self.state {
-            draft.focus = match draft.focus {
-                ConnectFocus::Name => ConnectFocus::Ways,
-                ConnectFocus::Ways => ConnectFocus::Name,
-            };
+        match &mut self.state {
+            ConnectOverlayState::Details(draft) => {
+                draft.focus = match draft.focus {
+                    ConnectFocus::Name => ConnectFocus::Ways,
+                    ConnectFocus::Ways => ConnectFocus::Name,
+                };
+            }
+            ConnectOverlayState::InviteEntry { .. } => self.machines.focus_next(),
+            _ => {}
         }
     }
 
     pub(super) fn select_previous(&mut self) {
         match &mut self.state {
+            ConnectOverlayState::InviteEntry { .. } => self.machines.walk(false),
             ConnectOverlayState::Details(draft) => {
                 draft.select_previous();
                 self.ways_window.reveal();
@@ -493,6 +566,7 @@ impl ConnectOverlay {
 
     pub(super) fn select_next(&mut self) {
         match &mut self.state {
+            ConnectOverlayState::InviteEntry { .. } => self.machines.walk(true),
             ConnectOverlayState::Details(draft) => {
                 draft.select_next();
                 self.ways_window.reveal();

@@ -350,12 +350,9 @@ impl RelayController {
             .map(|held| held.stored.logged_in)
             .ok_or_else(relay_not_found)?;
         let answer = if logged_in {
-            tokio::time::timeout(
-                self.timings.answer_timeout,
-                self.ask_for_machines(&address),
-            )
-            .await
-            .unwrap_or_else(|_| machines::unreachable("the Relay did not answer in time"))
+            tokio::time::timeout(self.timings.answer_timeout, self.ask_for_machines(&address))
+                .await
+                .unwrap_or_else(|_| machines::unreachable("the Relay did not answer in time"))
         } else {
             RelayMachinesAnswer::LoginNeeded
         };

@@ -33,9 +33,10 @@ use super::{
     commands::{SemanticCommandId, SemanticInvocation},
     completion::CompletionRow,
     composer::{ComposerBindings, ComposerKey, ComposerMemory},
-    connect_overlay::LoginStep,
+    connect_overlay::{ConnectOverlay, LoginStep},
     context_overlay::{ContextOverlayView, ContextRow},
     directory_browser::{DirectoryBrowserRow, DirectoryBrowserRowKind},
+    found_machines::{FoundMachine, FoundMachines, GroupStanding, MachineGroup, MachineStanding},
     icon_picker,
     keymap::binding_label,
     list_window::WindowEntry,
@@ -607,33 +608,7 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         return;
     }
     if let Some((invite, error)) = overlay.invite_entry() {
-        let mut lines = vec![Line::styled(
-            "Paste Invite",
-            theme.text.primary.add_modifier(Modifier::BOLD),
-        )];
-        lines.push(Line::styled(
-            if invite.is_empty() {
-                "▏".to_owned()
-            } else {
-                invite.to_owned()
-            },
-            theme.text.primary,
-        ));
-        if let Some(error) = error {
-            lines.push(Line::styled(error.to_owned(), theme.feedback.error));
-        }
-        // A login the reader left came to stand since: the Invite now pairs.
-        if let Some(relay) = overlay.logged_in_at() {
-            lines.extend(wrapped_lines(
-                &format!("Logged in at {relay}; paste the Invite again to pair through it"),
-                area.width.saturating_sub(2),
-                theme.text.subdued,
-            ));
-        }
-        lines.push(Line::styled(
-            "Enter inspect · Esc close",
-            theme.text.subdued,
-        ));
+        let lines = invite_entry_lines(overlay, invite, error, area, theme);
         render_overlay_box(
             frame,
             state,
@@ -993,6 +968,234 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         " Connect ",
         theme,
     );
+}
+
+/// `/pair`: the Invite field, and the machines found at the Server's Relays,
+/// grouped by Relay. The machines come first once there are any, unless the
+/// reader has begun on the Invite, so it stays where they began; with none,
+/// pasting an Invite is the first thing shown. Whichever comes first, an Invite
+/// pasted or typed lands in the field.
+fn invite_entry_lines(
+    overlay: &ConnectOverlay,
+    invite: &str,
+    error: Option<&str>,
+    area: Rect,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let width = area.width.saturating_sub(2);
+    let machines = overlay.machines();
+    let on_the_field = machines.selected_fingerprint().is_none();
+    let mut field = vec![Line::styled(
+        "Paste Invite",
+        theme.text.primary.add_modifier(Modifier::BOLD),
+    )];
+    field.push(if invite.is_empty() {
+        Line::styled(if on_the_field { "▏" } else { "" }, theme.text.primary)
+    } else {
+        Line::styled(invite.to_owned(), theme.text.primary)
+    });
+    if let Some(error) = error {
+        field.push(Line::styled(error.to_owned(), theme.feedback.error));
+    }
+    // A login the reader left came to stand since: the Invite now pairs.
+    if let Some(relay) = overlay.logged_in_at() {
+        field.extend(wrapped_lines(
+            &format!("Logged in at {relay}; paste the Invite again to pair through it"),
+            width,
+            theme.text.subdued,
+        ));
+    }
+    let mut below = Vec::new();
+    if let Some(machine) = machines.selected() {
+        below.extend(found_machine_detail(machine, width, theme));
+    }
+    if let Some(note) = machines.note() {
+        below.extend(wrapped_lines(note, width, theme.text.primary));
+    }
+    let keys = match (on_the_field, machines.any_relays()) {
+        (false, _) => "↑↓ choose · Enter choose · Tab Invite · Ctrl+R look again · Esc close",
+        (true, true) => "↑↓ machines · Enter inspect · Ctrl+R look again · Esc close",
+        (true, false) => "Enter inspect · Esc close",
+    };
+    below.extend(wrapped_lines(keys, width, theme.text.subdued));
+
+    let room = usize::from(area.height.saturating_sub(2));
+    let capacity = room.saturating_sub(field.len() + below.len());
+    let found = found_machine_lines(machines, capacity, width, theme);
+    let begun_on_the_invite = !invite.is_empty() || error.is_some();
+    let mut lines = Vec::new();
+    if machines.any() && !begun_on_the_invite {
+        lines.extend(found);
+        lines.extend(field);
+    } else {
+        lines.extend(field);
+        lines.extend(found);
+    }
+    lines.extend(below);
+    lines
+}
+
+/// A Relay's address as a group is headed by: without the scheme a bare address
+/// is taken to have.
+fn relay_heading(address: &str) -> &str {
+    address.strip_prefix("https://").unwrap_or(address)
+}
+
+/// What the window of `capacity` Rows shows of the machines found, each group
+/// headed by its Relay and how it stands.
+fn found_machine_lines(
+    machines: &FoundMachines,
+    capacity: usize,
+    width: u16,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let selected = machines.selected_fingerprint();
+    let row_width = usize::from(width);
+    let name_width = machines
+        .groups()
+        .iter()
+        .flat_map(|group| &group.machines)
+        .map(|machine| machine.shown_name().width())
+        .max()
+        .unwrap_or(0)
+        .min(row_width / 2);
+    let mut entries = Vec::new();
+    let mut lines: Vec<Vec<Line<'static>>> = Vec::new();
+    let mut focus = None;
+    for group in machines.groups() {
+        let host = relay_heading(&group.address);
+        let saying = match &group.standing {
+            GroupStanding::Asking => Some("looking…".to_owned()),
+            GroupStanding::Listed { .. } if !group.machines.is_empty() => None,
+            GroupStanding::Listed { elsewhere: 0 } => Some("no other machines".to_owned()),
+            GroupStanding::Listed { .. } => Some("none but those under another Relay".to_owned()),
+            GroupStanding::NotListed => Some("cannot list machines; paste an Invite".to_owned()),
+            GroupStanding::LoginNeeded => Some("needs a login; log in from /relay".to_owned()),
+            GroupStanding::Unreachable(why) => Some(format!("Unreachable · {why}")),
+        };
+        let heading = match saying {
+            Some(saying) => format!("On {host}: {saying}"),
+            None => format!("On {host}"),
+        };
+        let heading = wrapped_lines(&heading, width, theme.text.subdued);
+        entries.push(WindowEntry::passive(heading.len()));
+        lines.push(heading);
+        for machine in &group.machines {
+            let chosen = selected == Some(machine.fingerprint.as_str());
+            if chosen {
+                focus = Some(entries.len());
+            }
+            entries.push(WindowEntry::ROW);
+            lines.push(vec![found_machine_row(
+                machine, group, chosen, name_width, row_width, theme,
+            )]);
+        }
+        if group.cut_short {
+            let more = wrapped_lines(
+                "…and more this Relay did not list",
+                width,
+                theme.text.subdued,
+            );
+            entries.push(WindowEntry::passive(more.len()));
+            lines.push(more);
+        }
+    }
+    let shown = machines.window().settle(&entries, capacity, focus);
+    lines
+        .into_iter()
+        .skip(shown.start)
+        .take(shown.len())
+        .flatten()
+        .take(capacity)
+        .collect()
+}
+
+/// One machine's row: its name, told apart where it must be, how it stands, and
+/// any other Relay that lists it.
+fn found_machine_row(
+    machine: &FoundMachine,
+    group: &MachineGroup,
+    chosen: bool,
+    name_width: usize,
+    width: usize,
+    theme: &Theme,
+) -> Line<'static> {
+    let marker = if chosen { "› " } else { "  " };
+    let name = match &machine.told_apart {
+        Some(told_apart) => {
+            let told_apart = format!(" ({told_apart})");
+            let kept = name_width.saturating_sub(told_apart.width());
+            format!("{}{told_apart}", truncate_to_width(&machine.name, kept))
+        }
+        None => machine.name.clone(),
+    };
+    let name = truncate_to_width(&name, name_width);
+    let padding = " ".repeat(name_width.saturating_sub(name.width()));
+    let standing = match &machine.standing {
+        MachineStanding::Serving => "Serving",
+        MachineStanding::RemoteAlready(_) => "Remote already",
+        MachineStanding::NotServing => "not Serving (run /serve there)",
+    };
+    let others = machine
+        .waiting_at
+        .iter()
+        .chain(&machine.also_at)
+        .filter(|relay| **relay != group.address)
+        .map(|relay| relay_heading(relay))
+        .collect::<Vec<_>>();
+    let also = if others.is_empty() {
+        String::new()
+    } else {
+        format!(" · also on {}", others.join(", "))
+    };
+    Line::styled(
+        truncate_to_width(&format!("{marker}{name}{padding}  {standing}{also}"), width),
+        if chosen {
+            theme.selection.focused
+        } else if machine.standing == MachineStanding::NotServing {
+            theme.text.subdued
+        } else {
+            theme.text.primary
+        },
+    )
+}
+
+/// What the selected machine's row has no room for: the fingerprint it is
+/// known by, the Relays it stands at where there are several, and what else it
+/// is called.
+fn found_machine_detail(machine: &FoundMachine, width: u16, theme: &Theme) -> Vec<Line<'static>> {
+    let mut detail = wrapped_lines(
+        &format!("Fingerprint {}", machine.fingerprint),
+        width,
+        theme.text.subdued,
+    );
+    if machine.waiting_at.len() + machine.also_at.len() > 1 {
+        let hosts = |relays: &[String]| {
+            relays
+                .iter()
+                .map(|relay| relay_heading(relay))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let saying = match (machine.waiting_at.is_empty(), machine.also_at.is_empty()) {
+            (false, false) => format!(
+                "Waiting at {}; logged in and not waiting at {}",
+                hosts(&machine.waiting_at),
+                hosts(&machine.also_at)
+            ),
+            (false, true) => format!("Waiting at {}", hosts(&machine.waiting_at)),
+            (true, _) => format!("Logged in and not waiting at {}", hosts(&machine.also_at)),
+        };
+        detail.extend(wrapped_lines(&saying, width, theme.text.subdued));
+    }
+    if !machine.also_named.is_empty() {
+        detail.extend(wrapped_lines(
+            &format!("It also calls itself {}", machine.also_named.join(", ")),
+            width,
+            theme.text.subdued,
+        ));
+    }
+    detail
 }
 
 /// The Client's own Server's Relays, the entry a Relay is added from, and the

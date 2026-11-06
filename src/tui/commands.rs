@@ -315,6 +315,8 @@ pub enum SemanticCommandId {
     ConnectMoveAddressUp,
     ConnectMoveAddressDown,
     ConnectPairAnother,
+    /// Asks the Server's Relays again which machines are logged in there.
+    ConnectLookAgain,
     /// Arms the selected Remote's removal, and removes it when it is already
     /// armed: ending a Pairing is asked for twice.
     ConnectRemoveRemote,
@@ -908,6 +910,7 @@ impl SemanticCommandId {
             Self::ConnectMoveAddressUp => "connect.address.move-up",
             Self::ConnectMoveAddressDown => "connect.address.move-down",
             Self::ConnectPairAnother => "connect.pair-another",
+            Self::ConnectLookAgain => "connect.look-again",
             Self::ConnectRemoveRemote => "connect.remove",
             Self::ConnectScrollUp => "connect.scroll.up",
             Self::ConnectScrollDown => "connect.scroll.down",
@@ -2641,7 +2644,7 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         id: SemanticCommandId::PairOpen,
         title: "Pair with a Remote",
         reach: SemanticReach::Client,
-        description: "Redeem an Invite from another machine",
+        description: "Find your machines at your Relays, or redeem an Invite from another",
         slash: Some(SlashCommand {
             name: "pair",
             aliases: &[],
@@ -2653,7 +2656,7 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         id: SemanticCommandId::ConnectConfirm,
         title: "Confirm Connect Step",
         reach: SemanticReach::Client,
-        description: "Inspect the Invite, trust its fingerprint, or try again a pairing a Relay login stopped",
+        description: "Inspect the Invite, choose a machine found, trust its fingerprint, or try again a pairing a Relay login stopped",
         slash: None,
         keybinding: None,
     },
@@ -2718,6 +2721,14 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         title: "Pair Another Remote",
         reach: SemanticReach::Client,
         description: "Open Invite entry from the paired Remotes picker",
+        slash: None,
+        keybinding: None,
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::ConnectLookAgain,
+        title: "Look for Machines Again",
+        reach: SemanticReach::Client,
+        description: "Ask the Server's Relays again which machines are logged in there",
         slash: None,
         keybinding: None,
     },

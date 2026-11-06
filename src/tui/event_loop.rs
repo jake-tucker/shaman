@@ -1687,6 +1687,24 @@ impl RunLoop {
                     self.channels.pairing.clone(),
                 );
             }
+            ApplicationTransition::BeginPairing(request) => {
+                spawn_remote_listing(
+                    self.client.session_commands(),
+                    self.channels.pairing.clone(),
+                );
+                spawn_machine_finding(
+                    self.client.session_commands(),
+                    request,
+                    self.channels.pairing.clone(),
+                );
+            }
+            ApplicationTransition::FindMachines(request) => {
+                spawn_machine_finding(
+                    self.client.session_commands(),
+                    request,
+                    self.channels.pairing.clone(),
+                );
+            }
             ApplicationTransition::ListEverywhereRemotes(request_id) => {
                 spawn_everywhere_remote_listing(
                     self.client.session_commands(),
@@ -1989,6 +2007,8 @@ impl RunLoop {
             | ApplicationTransition::RemoveRelay { .. }
             | ApplicationTransition::SetRelayServeThrough { .. }
             | ApplicationTransition::BeginConnecting
+            | ApplicationTransition::BeginPairing(_)
+            | ApplicationTransition::FindMachines(_)
             | ApplicationTransition::PreviewInvite { .. }
             | ApplicationTransition::RedeemInvite { .. }
             | ApplicationTransition::TurnOutlook { .. }
@@ -2711,6 +2731,12 @@ impl RunLoop {
             PairingResult::RemoteListingFailed(error) => {
                 ApplicationEvent::RemoteListingFailed(error)
             }
+            PairingResult::MachineRelaysKnown { request, relays } => {
+                ApplicationEvent::MachineRelaysKnown { request, relays }
+            }
+            PairingResult::RelayMachinesAnswered { request, machines } => {
+                ApplicationEvent::RelayMachinesAnswered { request, machines }
+            }
             PairingResult::EverywhereRemotesListed { request, remotes } => {
                 ApplicationEvent::EverywhereRemotesListed { request, remotes }
             }
@@ -2897,6 +2923,14 @@ enum PairingResult {
     PeerRemoved(String),
     RemotesListed(Vec<crate::protocol::Remote>),
     RemoteListingFailed(String),
+    MachineRelaysKnown {
+        request: crate::tui::ConnectRequest,
+        relays: Vec<String>,
+    },
+    RelayMachinesAnswered {
+        request: crate::tui::ConnectRequest,
+        machines: crate::protocol::RelayMachines,
+    },
     EverywhereRemotesListed {
         request: EverywhereListRequest,
         remotes: Vec<crate::protocol::Remote>,
@@ -2988,6 +3022,49 @@ fn spawn_invite_preview(
             },
         };
         let _ = results.send(result);
+    });
+}
+
+/// Asks the Client's own Server which Relays it holds, then each of them on
+/// its own which machines are logged in there, so none is held up by another.
+/// The Server holds each to its answer budget, and says how each answered. A
+/// Server that cannot say which it holds leaves `/pair` to the Invite alone.
+fn spawn_machine_finding(
+    commands: SessionCommandClient,
+    request: crate::tui::ConnectRequest,
+    results: UnboundedSender<PairingResult>,
+) {
+    tokio::spawn(async move {
+        let relays: Vec<String> = commands.list_relays().await.map_or_else(
+            |_| Vec::new(),
+            |listing| {
+                listing
+                    .relays
+                    .into_iter()
+                    .map(|relay| relay.address)
+                    .collect()
+            },
+        );
+        let _ = results.send(PairingResult::MachineRelaysKnown {
+            request,
+            relays: relays.clone(),
+        });
+        for address in relays {
+            let commands = commands.clone();
+            let results = results.clone();
+            tokio::spawn(async move {
+                let machines = match commands.list_relay_machines(&address).await {
+                    Ok(machines) => machines,
+                    Err(error) => crate::protocol::RelayMachines {
+                        address,
+                        answer: crate::protocol::RelayMachinesAnswer::Unreachable {
+                            message: error.to_string(),
+                        },
+                    },
+                };
+                let _ = results.send(PairingResult::RelayMachinesAnswered { request, machines });
+            });
+        }
     });
 }
 

@@ -17,6 +17,7 @@ mod destination;
 mod directory_browser;
 mod drawn_pane;
 mod event_loop;
+mod found_machines;
 mod fuzzy;
 mod hyperlink;
 mod icon_picker;

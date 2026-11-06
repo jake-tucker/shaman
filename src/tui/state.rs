@@ -5597,6 +5597,16 @@ pub enum ApplicationEvent {
         request: EverywhereListRequest,
         error: String,
     },
+    /// The Relays the asking `request` goes to, as the Server holds them.
+    MachineRelaysKnown {
+        request: ConnectRequest,
+        relays: Vec<String>,
+    },
+    /// What one Relay answered the asking `request`.
+    RelayMachinesAnswered {
+        request: ConnectRequest,
+        machines: crate::protocol::RelayMachines,
+    },
     /// What the preview `request` asked for found the Invite to offer.
     InvitePreviewed {
         request: ConnectRequest,
@@ -6211,6 +6221,14 @@ pub enum ApplicationTransition {
         serve_through: bool,
     },
     BeginConnecting,
+    /// Ask the local Server for paired Remotes, as [`Self::BeginConnecting`]
+    /// does, and look for machines as [`Self::FindMachines`] does.
+    BeginPairing(ConnectRequest),
+    /// Ask the local Server which Relays it holds, answering with
+    /// [`ApplicationEvent::MachineRelaysKnown`], and ask each which machines are
+    /// logged in there, each answering by itself with
+    /// [`ApplicationEvent::RelayMachinesAnswered`], all naming the request.
+    FindMachines(ConnectRequest),
     /// Ask the local Server for paired Remotes without opening or refreshing
     /// the Connect overlay.
     ListEverywhereRemotes(EverywhereListRequest),
@@ -7020,6 +7038,18 @@ impl Application {
             }
             ApplicationEvent::RemoteListingFailed(error) => {
                 self.state.connect_overlay.fail_invite_entry(error);
+                Ok(ApplicationTransition::Continue)
+            }
+            ApplicationEvent::MachineRelaysKnown { request, relays } => {
+                self.state
+                    .connect_overlay
+                    .machine_relays_known(request, relays);
+                Ok(ApplicationTransition::Continue)
+            }
+            ApplicationEvent::RelayMachinesAnswered { request, machines } => {
+                self.state
+                    .connect_overlay
+                    .machines_answered(request, machines);
                 Ok(ApplicationTransition::Continue)
             }
             ApplicationEvent::EverywhereRemotesListed { request, remotes } => {
@@ -11696,12 +11726,14 @@ impl Application {
                 Ok(ApplicationTransition::BeginConnecting)
             }
             SemanticCommandId::PairOpen => {
-                self.state.connect_overlay.open_invite_entry();
+                let machines = self.state.connect_overlay.open_invite_entry();
                 self.state.command_mode = CommandMode::Composer;
-                Ok(ApplicationTransition::BeginConnecting)
+                Ok(ApplicationTransition::BeginPairing(machines))
             }
             SemanticCommandId::ConnectConfirm => {
-                if self.state.connect_overlay.confirm() {
+                if self.state.connect_overlay.confirm()
+                    || self.state.connect_overlay.choose_machine()
+                {
                     return Ok(ApplicationTransition::Continue);
                 }
                 if let Some((request, redemption)) = self
@@ -11759,8 +11791,16 @@ impl Application {
                 Ok(ApplicationTransition::Continue)
             }
             SemanticCommandId::ConnectPairAnother => {
-                self.state.connect_overlay.pair_another();
-                Ok(ApplicationTransition::Continue)
+                Ok(self.state.connect_overlay.pair_another().map_or(
+                    ApplicationTransition::Continue,
+                    ApplicationTransition::FindMachines,
+                ))
+            }
+            SemanticCommandId::ConnectLookAgain => {
+                Ok(self.state.connect_overlay.look_again().map_or(
+                    ApplicationTransition::Continue,
+                    ApplicationTransition::FindMachines,
+                ))
             }
             SemanticCommandId::ConnectRemoveRemote => {
                 Ok(self.state.connect_overlay.remove_remote().map_or(

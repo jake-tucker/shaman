@@ -6,9 +6,7 @@
 
 use futures_util::{SinkExt, StreamExt};
 use rcgen::PublicKeyData;
-use suru::protocol::{
-    RelayMachine, RelayMachinesAnswer, RemoteStatus, SessionErrorCode, Way,
-};
+use suru::protocol::{RelayMachine, RelayMachinesAnswer, RemoteStatus, SessionErrorCode, Way};
 use suru_relay_protocol::{Bytes, ListedLogin, RelayMessage, ServerMessage};
 use tokio::time::{Duration, timeout};
 use tokio_tungstenite::tungstenite::Message;
@@ -114,6 +112,15 @@ where
     address
 }
 
+/// Whether `character` reorders or hides what is drawn: a bidirectional
+/// control, or one that takes no width.
+fn invisible(character: char) -> bool {
+    matches!(
+        character,
+        '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2069}' | '\u{feff}'
+    )
+}
+
 enum Asked {
     Login,
     List,
@@ -167,7 +174,10 @@ async fn a_server_lists_the_other_machines_under_its_account_and_whether_each_wa
     assert_eq!(machines.len(), 1, "{machines:?}");
     let machine = &machines[0];
     assert_eq!(machine.hostname, super::machine_hostname());
-    assert!(!machine.waiting, "it holds a Login and does not Serve through");
+    assert!(
+        !machine.waiting,
+        "it holds a Login and does not Serve through"
+    );
     assert_eq!(machine.remote, None);
     assert_eq!(machine.fingerprint, fingerprint(&workstation.key()));
 
@@ -238,10 +248,9 @@ async fn a_relay_not_logged_in_at_is_asked_nothing_and_one_not_held_is_not_found
 
 #[tokio::test]
 async fn a_lapsed_account_reads_login_needed_and_lists_nothing() {
-    let relay = TestRelay::configured(|config| {
-        config.with_admission_interval(super::ADMISSION_INTERVAL)
-    })
-    .await;
+    let relay =
+        TestRelay::configured(|config| config.with_admission_interval(super::ADMISSION_INTERVAL))
+            .await;
     let laptop = TestServer::start("find-lapsed-laptop").await;
     let workstation = TestServer::start("find-lapsed-workstation").await;
     laptop.log_in(&relay, "583231", "octocat").await;
@@ -462,7 +471,11 @@ async fn a_lying_relay_can_only_mislabel_a_machine() {
     let paired_key = workstation.key();
     let own_key = laptop.key();
     let not_the_machines = some_key();
-    let script = (paired_key.clone(), own_key.clone(), not_the_machines.clone());
+    let script = (
+        paired_key.clone(),
+        own_key.clone(),
+        not_the_machines.clone(),
+    );
     let lying = listing_relay(move |mut socket| {
         let (paired_key, own_key, not_the_machines) = script.clone();
         async move {
@@ -571,9 +584,44 @@ async fn an_absurd_list_is_bounded_by_what_one_message_holds() {
     laptop.shutdown().await;
 }
 
-/// What a machine reported reaches a Client safe to draw, whatever it was.
+/// A Relay may fill all of one message, which the Server reads whole.
 #[tokio::test]
-async fn a_hostname_carrying_terminal_escapes_reaches_the_client_safe_to_draw() {
+async fn an_answer_filling_one_message_exactly_is_read_whole() {
+    let key = some_key();
+    let listed_key = key.clone();
+    let filling = listing_relay(move |mut socket| {
+        let key = listed_key.clone();
+        async move {
+            let answer = |padding: usize| {
+                format!(
+                    r#"{{"type":"logins","logins":[{{"key":{},"hostname":"box","waiting":true}}],"later":"{}"}}"#,
+                    serde_json::to_string(&Bytes(key.clone())).unwrap(),
+                    "x".repeat(padding)
+                )
+            };
+            let padding = suru_relay_protocol::MAX_MESSAGE_LEN - answer(0).len();
+            let answer = answer(padding);
+            assert_eq!(answer.len(), suru_relay_protocol::MAX_MESSAGE_LEN);
+            let _ = socket.send(Message::Text(answer.into())).await;
+            while heard(&mut socket).await.is_some() {}
+        }
+    })
+    .await;
+    let laptop = TestServer::start("find-filling").await;
+    laptop.logged_in_at_scripted(&filling).await;
+
+    let (machines, _) = laptop.listed_at(&filling).await;
+    assert_eq!(named(&machines), [("box", true)]);
+    assert_eq!(machines[0].fingerprint, fingerprint(&key));
+    laptop.shutdown().await;
+}
+
+/// What a machine reported reaches a terminal safe to draw, whatever it was,
+/// from the Relay that carried it through this Server to the rows `/pair` draws.
+/// The cells a Client draws hold whatever they are given, so this is where a
+/// hostname is held to what can be shown, as a Peer's name is at enrollment.
+#[tokio::test]
+async fn a_hostname_carrying_terminal_escapes_is_drawn_safely() {
     let (one, two) = (some_key(), some_key());
     let script = (one.clone(), two.clone());
     let lying = listing_relay(move |mut socket| {
@@ -605,12 +653,59 @@ async fn a_hostname_carrying_terminal_escapes_reaches_the_client_safe_to_draw() 
     let laptop = TestServer::start("find-hostile-name").await;
     laptop.logged_in_at_scripted(&lying).await;
 
-    let (machines, _) = laptop.listed_at(&lying).await;
-    assert_eq!(machines[0].hostname, "workstation");
+    let machines = laptop
+        .client
+        .list_relay_machines(&lying)
+        .await
+        .expect("the Server says how the Relay answered");
+    let RelayMachinesAnswer::Listed {
+        machines: ref listed,
+        ..
+    } = machines.answer
+    else {
+        panic!("the Relay lists machines, not {:?}", machines.answer);
+    };
+    assert_eq!(listed[0].hostname, "workstation");
     assert_eq!(
-        machines[1].hostname,
+        listed[1].hostname,
         format!("machine {}", &fingerprint(&two)[..8]),
         "nothing left of a name, it is named by its fingerprint"
     );
+
+    let mut application = suru::tui::Application::default();
+    crate::tui_rendering::support::type_terminal_text(&mut application, "/pair");
+    let request = match application
+        .take_terminal_event(crossterm::event::Event::Key(
+            crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Enter,
+                crossterm::event::KeyModifiers::NONE,
+            ),
+        ))
+        .expect("open /pair")
+        .transition
+    {
+        suru::tui::ApplicationTransition::BeginPairing(request) => request,
+        other => panic!("/pair looks for machines, not {other:?}"),
+    };
+    application
+        .handle_event(suru::tui::ApplicationEvent::MachineRelaysKnown {
+            request,
+            relays: vec![lying.clone()],
+        })
+        .unwrap();
+    application
+        .handle_event(suru::tui::ApplicationEvent::RelayMachinesAnswered { request, machines })
+        .unwrap();
+    let drawn = crate::tui_rendering::support::rendered_application_rows_at(&application, 100, 40)
+        .join("\n");
+    assert!(drawn.contains("workstation"), "{drawn}");
+    assert!(
+        !drawn.chars().any(|character| {
+            character != '\n' && (character.is_control() || invisible(character))
+        }),
+        "{drawn:?}"
+    );
+    assert!(!drawn.contains("title"), "{drawn}");
+    assert!(!drawn.contains("[31m"), "{drawn}");
     laptop.shutdown().await;
 }
