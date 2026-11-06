@@ -12,6 +12,14 @@
 //! was asked to, the picker says why it lists no address, and with nothing at
 //! all to offer, what would give it something.
 //!
+//! A Relay shown with why is put right from its row: Space logs in there or
+//! Serves through it, each its own key on a row naming the Relay, and `a` adds
+//! one. The Relay list does the work, over the picker and back again (see
+//! [`super::relay_overlay`]), so only what the keys are on and what the reader
+//! has left out is held here. Putting a Relay right from its row says the
+//! reader wants it offered, whatever they left out of it before; one put right
+//! by anything else leaves what they chose as it stands.
+//!
 //! Preparing the picker and the Invite asked for each name themselves with a
 //! [`ServeRequest`], and only the answer to the one awaited is taken: one the
 //! reader has since moved past — the picker closed and opened again — lands
@@ -24,7 +32,10 @@ use crate::protocol::{
     IssueInviteRequest, IssuedInvite, ListenerState, Peer, Relay, RelayState, Way,
 };
 
-use super::list_window::ListWindow;
+use super::{
+    list_window::ListWindow,
+    relay_overlay::{RelayOverlay, logging_in, login_refused},
+};
 
 /// What the picker says in place of the machine's addresses while the
 /// Serving listener is off.
@@ -39,12 +50,21 @@ pub(super) const LISTENER_FAILED: &str = "The Serving listener is not listening,
 /// What the picker says where the Serving listener is off and no Relay can be
 /// offered either, so an Invite has no way at all to offer.
 pub(super) const NO_WAY: &str = "An Invite has no way to offer: turn the Serving listener on in \
-                                 the settings panel, or Serve through a Relay from /relay";
+                                 the settings panel, or have this Server Serve through a Relay \
+                                 from here";
 
 /// What the picker says where the Serving listener is not listening and no
 /// Relay can be offered either.
 pub(super) const NO_WAY_UNTIL_LISTENING: &str = "An Invite has no way to offer until the Serving listener listens, or this Server Serves \
-     through a Relay from /relay";
+     through a Relay from here";
+
+/// What the picker says where the Server holds no Relay, for the reader to
+/// begin there.
+pub(super) const NO_RELAY: &str = "This Server holds no Relay; press a to add one";
+
+/// What a row not Served through says before its key is pressed: the one thing
+/// the key opens the machine to.
+const REACHABLE: &str = "Serving through it makes this machine reachable through this Relay";
 
 /// What the ways an Invite may offer stand on, followed while the picker
 /// stands: how the Serving listener stands and the Client's own Server's
@@ -187,6 +207,73 @@ pub(super) struct CandidateWay {
     pub(super) withheld: Option<Withheld>,
 }
 
+/// What a row says beneath the way it names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct WayNote {
+    pub(super) text: String,
+    pub(super) failed: bool,
+}
+
+impl CandidateWay {
+    /// What Space does on this row.
+    pub(super) fn space(&self) -> ServeSpace {
+        match self.withheld {
+            None => ServeSpace::Toggle,
+            Some(Withheld::LoginNeeded) => ServeSpace::LogIn,
+            Some(Withheld::NotServedThrough) => ServeSpace::ServeThrough,
+        }
+    }
+
+    /// What its row says beneath it of a Relay, as `relays` hold it: what was
+    /// last done for the picker there, and then how it stands where that
+    /// bears on what its key does — the login under way there or refused
+    /// there, or what Serving through it would open.
+    pub(super) fn notes(&self, relays: &RelayOverlay) -> Vec<WayNote> {
+        let Way::Relay(address) = &self.way else {
+            return Vec::new();
+        };
+        let standing = match self.withheld {
+            Some(Withheld::LoginNeeded) => relays
+                .under_way(address)
+                .map(|login| WayNote {
+                    text: logging_in(&login),
+                    failed: false,
+                })
+                .or_else(|| {
+                    let login = relays.held(address)?.login.as_ref()?;
+                    Some(WayNote {
+                        text: login_refused(address, &login.outcome)?,
+                        failed: true,
+                    })
+                }),
+            Some(Withheld::NotServedThrough) => Some(WayNote {
+                text: REACHABLE.to_owned(),
+                failed: false,
+            }),
+            None => None,
+        };
+        let left = relays
+            .picker_note(address)
+            .filter(|(text, _)| standing.as_ref().is_none_or(|said| said.text != *text))
+            .map(|(text, failed)| WayNote {
+                text: text.to_owned(),
+                failed,
+            });
+        left.into_iter().chain(standing).collect()
+    }
+}
+
+/// What Space does on the row the keys are on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ServeSpace {
+    /// Offers a way left out, and leaves out one offered.
+    Toggle,
+    /// Logs in at the Relay.
+    LogIn,
+    /// Serves through the Relay.
+    ServeThrough,
+}
+
 /// Why an Invite cannot offer a Relay.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Withheld {
@@ -212,20 +299,6 @@ impl Withheld {
         match self {
             Self::LoginNeeded => "login needed",
             Self::NotServedThrough => "not Served through",
-        }
-    }
-
-    /// What would have an Invite offer the Relay at `address`.
-    fn in_full(self, address: &str) -> String {
-        match self {
-            Self::LoginNeeded => format!(
-                "An Invite offers the Relay at {address} only once this Server is logged in \
-                 there; log in from /relay"
-            ),
-            Self::NotServedThrough => format!(
-                "An Invite offers the Relay at {address} only once this Server Serves through \
-                 it; choose that from /relay"
-            ),
         }
     }
 }
@@ -319,6 +392,62 @@ impl ServeOverlay {
         }
     }
 
+    /// What the picker says where the Server, as `ways` stand now, holds no
+    /// Relay.
+    pub(super) fn no_relay(&self, ways: ServeWays<'_>) -> Option<&'static str> {
+        (self.is_choosing() && ways.relays.is_empty()).then_some(NO_RELAY)
+    }
+
+    /// Whether the reader is choosing among the ways.
+    pub(super) fn is_choosing(&self) -> bool {
+        matches!(self.state, ServeOverlayState::Choosing(_))
+    }
+
+    /// What Space does on the row the keys are on, as `ways` stand now.
+    pub(super) fn space(&self, ways: ServeWays<'_>) -> ServeSpace {
+        let ServeOverlayState::Choosing(choice) = &self.state else {
+            return ServeSpace::Toggle;
+        };
+        let candidates = choice.candidates(ways);
+        candidates
+            .get(choice.focused(&candidates))
+            .map_or(ServeSpace::Toggle, CandidateWay::space)
+    }
+
+    /// The address of the Relay the keys are on, where it is withheld as
+    /// `withheld` says, for it to be put right. Having asked for that, the
+    /// reader wants it offered, whatever they left out before.
+    pub(super) fn put_right(&mut self, ways: ServeWays<'_>, withheld: Withheld) -> Option<String> {
+        let ServeOverlayState::Choosing(choice) = &mut self.state else {
+            return None;
+        };
+        let candidates = choice.candidates(ways);
+        let index = choice.focused(&candidates);
+        choice.focus_on(&candidates, index);
+        let candidate = candidates.get(index)?;
+        let Way::Relay(address) = &candidate.way else {
+            return None;
+        };
+        if candidate.withheld != Some(withheld) {
+            return None;
+        }
+        choice.left_out.remove(&candidate.way);
+        choice.error = None;
+        self.window.reveal();
+        Some(address.clone())
+    }
+
+    /// Puts the keys on the Relay at `address`, just added from the picker
+    /// and offered once it can be, for when a picture shows it.
+    pub(super) fn focus_on_relay(&mut self, address: &str) {
+        if let ServeOverlayState::Choosing(choice) = &mut self.state {
+            let way = Way::Relay(address.to_owned());
+            choice.left_out.remove(&way);
+            choice.focus = Some(way);
+            self.window.reveal();
+        }
+    }
+
     /// Where among `candidates` — the ways listed — the keys stand.
     pub(super) fn focused(&self, candidates: &[CandidateWay]) -> usize {
         match &self.state {
@@ -397,8 +526,8 @@ impl ServeOverlay {
     }
 
     /// Offers the way the keys are on where it is left out, and leaves it
-    /// out where it is offered. A Relay an Invite cannot offer says instead
-    /// what would have one offer it.
+    /// out where it is offered. A Relay an Invite cannot offer has no choice
+    /// to make until it is put right.
     pub(super) fn toggle_selected(&mut self, ways: ServeWays<'_>) {
         let ServeOverlayState::Choosing(choice) = &mut self.state else {
             return;
@@ -409,8 +538,7 @@ impl ServeOverlay {
         let Some(candidate) = candidates.get(index) else {
             return;
         };
-        if let (Some(withheld), Way::Relay(address)) = (candidate.withheld, &candidate.way) {
-            choice.error = Some(withheld.in_full(address));
+        if candidate.withheld.is_some() {
             return;
         }
         if !choice.left_out.remove(&candidate.way) {

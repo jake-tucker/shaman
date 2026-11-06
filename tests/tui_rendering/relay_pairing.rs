@@ -4,7 +4,8 @@
 //! the Invite preview the Relay an Invite travels through, and redeeming an
 //! Invite through a Relay this Server is not logged in at — which begins that
 //! login and carries on with the same redemption once it is done, so pairing
-//! a new machine comes to one login and one paste.
+//! a new machine comes to one login and one paste. A Relay `/serve` cannot
+//! offer is put right from its row there, without leaving for `/relay`.
 //!
 //! Keys are taken the whole way the run loop takes them, and every request
 //! names itself, so an answer is delivered here to the request it answers —
@@ -47,7 +48,7 @@ const LISTENER_OFF: &str =
     "The Serving listener is off, so an Invite offers none of this machine's addresses";
 /// What `/serve` says where the listener is off and no Relay can be offered.
 const NO_WAY: &str = "An Invite has no way to offer: turn the Serving listener on in the \
-                      settings panel, or Serve through a Relay from /relay";
+                      settings panel, or have this Server Serve through a Relay from here";
 /// What `/serve` says in place of the machine's addresses where the Serving
 /// listener is asked to listen and does not, before why.
 const LISTENER_FAILED: &str =
@@ -58,7 +59,7 @@ const BIND_FAILURE: &str =
 /// What `/serve` says where the listener does not listen and no Relay can be
 /// offered.
 const NO_WAY_UNTIL_LISTENING: &str = "An Invite has no way to offer until the Serving listener \
-                                      listens, or this Server Serves through a Relay from /relay";
+                                      listens, or this Server Serves through a Relay from here";
 const NO_LOGIN: &str = "this Server holds no Login at the Relay at https://relay.company.example; \
                         log in there, then try again";
 const DIFFERENT_ACCOUNTS: &str = "this Server is logged in at the Relay at \
@@ -345,31 +346,7 @@ fn serve_offers_each_relay_served_through_and_logged_in_at_and_the_invite_carrie
         "{ways}"
     );
 
-    // A Relay that cannot be offered says what would offer it.
-    press(&mut application, KeyCode::Down);
-    press(&mut application, KeyCode::Down);
-    press(&mut application, KeyCode::Char(' '));
-    assert!(
-        prose(&application).contains(&format!(
-            "An Invite offers the Relay at {HOME} only once this Server is logged in there; log \
-             in from /relay"
-        )),
-        "{}",
-        prose(&application)
-    );
-    press(&mut application, KeyCode::Down);
-    press(&mut application, KeyCode::Char(' '));
-    assert!(
-        prose(&application).contains(&format!(
-            "An Invite offers the Relay at {OTHER} only once this Server Serves through it; \
-             choose that from /relay"
-        )),
-        "{}",
-        prose(&application)
-    );
-
     // The address left out, the Invite offers the Relay alone.
-    press(&mut application, KeyCode::Down);
     press(&mut application, KeyCode::Char(' '));
     let (request, issuance) = issuance(press(&mut application, KeyCode::Enter));
     assert_eq!(
@@ -1763,6 +1740,1144 @@ fn a_login_done_once_the_reader_left_it_says_the_invite_now_pairs() {
         )),
         "{shown}"
     );
+}
+
+// Putting a Relay right from `/serve`.
+
+/// A Client Serving at the machine's address, with `/serve` open on `relays`
+/// and the keys on the first of them.
+fn serve_on(relays: Vec<Relay>) -> Application {
+    let mut application = serving_application(true);
+    push(&mut application, 1, relays);
+    open_serve(&mut application, vec![direct()]);
+    press(&mut application, KeyCode::Down);
+    application
+}
+
+/// Has the listing `transition` asks for land at `revision`, showing `relays`.
+fn relisted(
+    application: &mut Application,
+    transition: ApplicationTransition,
+    revision: u64,
+    relays: Vec<Relay>,
+) {
+    let ApplicationTransition::ListRelays(request) = transition else {
+        panic!("expected the Relays listed afresh, got {transition:?}");
+    };
+    list(application, request, revision, relays);
+}
+
+/// Has the login `follower` follows end as `login`, answering what that asks
+/// of the Server.
+fn settled(
+    application: &mut Application,
+    follower: RelayRequest,
+    login: RelayLogin,
+) -> ApplicationTransition {
+    application
+        .handle_event(ApplicationEvent::RelayLoginSettled {
+            request: follower,
+            login,
+        })
+        .expect("take how the login ended")
+}
+
+/// Presses Space on the Relay the keys are on, at `address`, and has the
+/// Server begin `login` there, answering what follows it.
+fn log_in_from_serve(
+    application: &mut Application,
+    address: &str,
+    login: RelayLogin,
+) -> RelayRequest {
+    let request = beginning(press(application, KeyCode::Char(' ')), address);
+    followed_at(begun(application, request, login), address)
+}
+
+/// The addition `transition` asks for, of the Relay at `address`.
+fn addition(transition: ApplicationTransition, address: &str) -> RelayRequest {
+    match transition {
+        ApplicationTransition::AddRelay {
+            request,
+            address: asked,
+        } if asked == address => request,
+        other => panic!("expected the Relay at {address} added, got {other:?}"),
+    }
+}
+
+fn refused(login: RelayLogin, reason: RelayLoginRefusal) -> RelayLogin {
+    RelayLogin {
+        outcome: RelayLoginOutcome::Refused {
+            reason,
+            message: "the Relay does not admit this Account".to_owned(),
+        },
+        ..login
+    }
+}
+
+const NOT_ADMITTED: &str =
+    "You are not admitted to https://relay.company.example; ask the Relay's operator to admit you";
+const REACHABLE: &str = "Serving through it makes this machine reachable through this Relay";
+const NO_RELAY: &str = "This Server holds no Relay; press a to add one";
+
+#[test]
+fn space_on_a_row_needing_a_login_begins_it_in_place_and_the_row_is_offered_once_it_is_done() {
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    assert!(
+        prose(&application).contains("Space log in"),
+        "the keys say what Space does on this row: {}",
+        prose(&application)
+    );
+
+    let request = beginning(press(&mut application, KeyCode::Char(' ')), COMPANY);
+    let waiting = prose(&application);
+    assert!(waiting.contains("Beginning login"), "{waiting}");
+    assert!(
+        rendered_application_rows(&application)
+            .iter()
+            .any(|row| row.contains("┌ Serve ")),
+        "the reader is still in /serve"
+    );
+
+    // The login is followed by what follows every other.
+    followed_at(begun(&mut application, request, pending()), COMPANY);
+    let shown = prose(&application);
+    assert!(shown.contains(&format!("Log in at {COMPANY}")), "{shown}");
+    assert!(shown.contains(VISIT) && shown.contains(CODE), "{shown}");
+    assert!(shown.contains("a copy address · c copy code"), "{shown}");
+
+    // `a` copies the address here: adding a Relay is the picker's key.
+    assert_eq!(
+        press(&mut application, KeyCode::Char('a')),
+        ApplicationTransition::CopyToClipboard(VISIT.to_owned().into())
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Char('c')),
+        ApplicationTransition::CopyToClipboard(CODE.to_owned().into())
+    );
+    assert!(prose(&application).contains(CODE));
+}
+
+#[test]
+fn a_login_done_in_place_ticks_the_relay_and_the_next_invite_offers_it_without_reopening() {
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    let follower = log_in_from_serve(&mut application, COMPANY, pending());
+
+    let asked = settled(&mut application, follower, done(pending()));
+    relisted(
+        &mut application,
+        asked,
+        2,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+
+    let shown = prose(&application);
+    assert!(shown.contains("Choose Invite addresses"), "{shown}");
+    assert!(shown.contains(&format!("[x] Relay {COMPANY}")), "{shown}");
+    assert!(
+        shown.contains(&format!("Logged in at {COMPANY} as octocat")),
+        "{shown}"
+    );
+    let (_, asked) = issuance(press(&mut application, KeyCode::Enter));
+    assert_eq!(
+        asked.ways,
+        vec![direct(), Way::Relay(COMPANY.to_owned())],
+        "the Relay put right is offered with the rest"
+    );
+}
+
+/// What was begun from the picker goes back to the picker, never to the list
+/// the reader did not open — and the list opened afterwards is the list.
+#[test]
+fn relay_opened_after_a_relay_was_put_right_from_serve_is_the_list_as_ever() {
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    let follower = log_in_from_serve(&mut application, COMPANY, pending());
+    let asked = settled(&mut application, follower, done(pending()));
+    relisted(
+        &mut application,
+        asked,
+        2,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    press(&mut application, KeyCode::Esc);
+    assert!(!prose(&application).contains("Choose Invite addresses"));
+
+    let request = open_relays(&mut application);
+    list(
+        &mut application,
+        request,
+        3,
+        vec![serving_through(relay(COMPANY))],
+    );
+    assert!(prose(&application).contains("Relays"));
+    let beginning_request = beginning(press(&mut application, KeyCode::Enter), COMPANY);
+    let follower = followed_at(
+        begun(&mut application, beginning_request, pending()),
+        COMPANY,
+    );
+    settled(&mut application, follower, done(pending()));
+    let shown = prose(&application);
+    assert!(
+        shown.contains(&format!("Logged in at {COMPANY} as octocat")) && shown.contains("x remove"),
+        "a login begun in /relay returns to the list: {shown}"
+    );
+}
+
+#[test]
+fn leaving_serve_during_a_login_leaves_it_under_way_and_reopening_serve_finds_it() {
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    let follower = log_in_from_serve(&mut application, COMPANY, pending());
+    push(
+        &mut application,
+        2,
+        vec![with_login(serving_through(relay(COMPANY)), pending())],
+    );
+
+    // Esc steps back to the picker, whose row says where the login stands.
+    press(&mut application, KeyCode::Esc);
+    let shown = prose(&application);
+    assert!(shown.contains("Choose Invite addresses"), "{shown}");
+    assert!(
+        shown.contains(&format!("Logging in · enter {CODE}")),
+        "{shown}"
+    );
+    assert!(shown.contains("Space show login"), "{shown}");
+
+    // Esc again closes /serve, and reopening finds the same login: shown
+    // again, and neither begun afresh nor followed twice.
+    press(&mut application, KeyCode::Esc);
+    open_serve(&mut application, vec![direct()]);
+    press(&mut application, KeyCode::Down);
+    assert!(
+        prose(&application).contains(&format!("Logging in · enter {CODE}")),
+        "{}",
+        prose(&application)
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Char(' ')),
+        ApplicationTransition::Continue,
+        "the login already followed is not begun or followed again"
+    );
+    assert!(prose(&application).contains(CODE));
+    assert_eq!(
+        press(&mut application, KeyCode::Char('c')),
+        ApplicationTransition::CopyToClipboard(CODE.to_owned().into())
+    );
+
+    // It ends as ever, and the row is put right.
+    let asked = settled(&mut application, follower, done(pending()));
+    relisted(
+        &mut application,
+        asked,
+        3,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    assert!(
+        prose(&application).contains(&format!("[x] Relay {COMPANY}")),
+        "{}",
+        prose(&application)
+    );
+}
+
+#[test]
+fn a_login_left_in_serve_is_found_by_relay() {
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    log_in_from_serve(&mut application, COMPANY, pending());
+    press(&mut application, KeyCode::Esc);
+    press(&mut application, KeyCode::Esc);
+
+    let request = open_relays(&mut application);
+    let landed = application
+        .handle_event(ApplicationEvent::RelaysListed {
+            request,
+            listing: RelayListing {
+                instance: SERVER,
+                revision: 2,
+                relays: vec![with_login(serving_through(relay(COMPANY)), pending())],
+            },
+        })
+        .expect("list the Relays");
+    assert_eq!(
+        landed,
+        ApplicationTransition::Continue,
+        "/relay does not follow again the login /serve follows"
+    );
+    assert!(
+        prose(&application).contains(&format!("Logging in · enter {CODE}")),
+        "{}",
+        prose(&application)
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::Continue
+    );
+    assert!(prose(&application).contains(CODE));
+}
+
+#[test]
+fn a_login_left_in_relay_is_found_by_serve() {
+    let mut application = serving_application(true);
+    let request = open_relays(&mut application);
+    list(
+        &mut application,
+        request,
+        1,
+        vec![serving_through(relay(COMPANY))],
+    );
+    let request = beginning(press(&mut application, KeyCode::Enter), COMPANY);
+    followed_at(begun(&mut application, request, pending()), COMPANY);
+    press(&mut application, KeyCode::Esc);
+    press(&mut application, KeyCode::Esc);
+
+    open_serve(&mut application, vec![direct()]);
+    press(&mut application, KeyCode::Down);
+    let shown = prose(&application);
+    assert!(
+        shown.contains(&format!("Logging in · enter {CODE}")),
+        "{shown}"
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Char(' ')),
+        ApplicationTransition::Continue,
+        "the login /relay began is shown, not begun again"
+    );
+    assert!(prose(&application).contains(CODE));
+}
+
+/// A login begun by another Client, which nothing here follows yet, is
+/// followed once the reader is shown it.
+#[test]
+fn a_login_another_client_began_is_shown_and_followed_from_serve() {
+    let mut application = serve_on(vec![with_login(serving_through(relay(COMPANY)), pending())]);
+    let follower = followed_at(press(&mut application, KeyCode::Char(' ')), COMPANY);
+    assert!(prose(&application).contains(CODE));
+
+    let asked = settled(&mut application, follower, done(pending()));
+    relisted(
+        &mut application,
+        asked,
+        2,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    assert!(
+        prose(&application).contains(&format!("[x] Relay {COMPANY}")),
+        "{}",
+        prose(&application)
+    );
+}
+
+/// A picture showing the login done ends the display as the follower's answer
+/// would: pictures and followers cross either way.
+#[test]
+fn a_picture_showing_the_login_done_returns_the_display_to_the_picker() {
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    let follower = log_in_from_serve(&mut application, COMPANY, pending());
+    push(
+        &mut application,
+        2,
+        vec![with_login(serving_through(relay(COMPANY)), pending())],
+    );
+    assert!(
+        prose(&application).contains(&format!("Log in at {COMPANY}")),
+        "a picture of the login still under way leaves it on display"
+    );
+
+    push(
+        &mut application,
+        3,
+        vec![with_login(
+            serving_through(logged_in(COMPANY)),
+            done(pending()),
+        )],
+    );
+    let shown = prose(&application);
+    assert!(shown.contains(&format!("[x] Relay {COMPANY}")), "{shown}");
+
+    // The follower's answer, arriving after, moves nothing on screen.
+    assert_eq!(
+        settled(&mut application, follower, done(pending())),
+        ApplicationTransition::Continue
+    );
+    assert!(prose(&application).contains(&format!("[x] Relay {COMPANY}")));
+}
+
+#[test]
+fn space_on_a_row_not_served_through_turns_it_on_having_said_what_that_does() {
+    let mut application = serve_on(vec![logged_in(COMPANY)]);
+    let before = prose(&application);
+    assert!(
+        before.contains(&format!("[-] Relay {COMPANY} · not Served through")),
+        "{before}"
+    );
+    assert!(
+        before.contains(REACHABLE),
+        "the row says what the key does before it is pressed: {before}"
+    );
+    assert!(before.contains("Space Serve through"), "{before}");
+
+    let request = serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+    assert!(
+        prose(&application).contains("Turning Serve through on"),
+        "{}",
+        prose(&application)
+    );
+    let asked = chosen(
+        &mut application,
+        request,
+        serving_through(logged_in(COMPANY)),
+    );
+    relisted(
+        &mut application,
+        asked,
+        2,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+
+    let shown = prose(&application);
+    assert!(shown.contains(&format!("[x] Relay {COMPANY}")), "{shown}");
+    assert!(
+        !shown.contains(REACHABLE),
+        "a Relay Served through is no longer offered that: {shown}"
+    );
+    let (_, asked) = issuance(press(&mut application, KeyCode::Enter));
+    assert_eq!(asked.ways, vec![direct(), Way::Relay(COMPANY.to_owned())]);
+}
+
+#[test]
+fn what_serving_through_does_is_said_whole_however_narrow_the_box() {
+    let application = serve_on(vec![logged_in(COMPANY)]);
+    for width in [80, 48, 30] {
+        assert!(
+            prose_at(&application, width).contains(REACHABLE),
+            "at {width} columns: {}",
+            prose_at(&application, width)
+        );
+    }
+}
+
+/// Each step is its own press: the login ending asks nothing of Serving
+/// through, and the row then says what the second press does before it is
+/// made.
+#[test]
+fn a_relay_needing_both_takes_a_key_for_the_login_and_another_to_serve_through_it() {
+    let mut application = serve_on(vec![relay(COMPANY)]);
+    assert!(
+        prose(&application).contains(&format!("[-] Relay {COMPANY} · login needed")),
+        "{}",
+        prose(&application)
+    );
+    let follower = log_in_from_serve(&mut application, COMPANY, pending());
+
+    let asked = settled(&mut application, follower, done(pending()));
+    assert!(
+        matches!(asked, ApplicationTransition::ListRelays(_)),
+        "the login ending asks only for the Relays afresh: {asked:?}"
+    );
+    relisted(&mut application, asked, 2, vec![logged_in(COMPANY)]);
+
+    let shown = prose(&application);
+    assert!(
+        shown.contains(&format!("[-] Relay {COMPANY} · not Served through"))
+            && shown.contains(REACHABLE),
+        "{shown}"
+    );
+    let (_, asked) = issuance(press(&mut application, KeyCode::Enter));
+    assert_eq!(
+        asked.ways,
+        vec![direct()],
+        "a login alone offers nothing through the Relay"
+    );
+}
+
+#[test]
+fn a_relay_needing_both_serves_through_only_on_the_second_press() {
+    let mut application = serve_on(vec![relay(COMPANY)]);
+    let follower = log_in_from_serve(&mut application, COMPANY, pending());
+    let asked = settled(&mut application, follower, done(pending()));
+    relisted(&mut application, asked, 2, vec![logged_in(COMPANY)]);
+
+    let request = serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+    let asked = chosen(
+        &mut application,
+        request,
+        serving_through(logged_in(COMPANY)),
+    );
+    relisted(
+        &mut application,
+        asked,
+        3,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    assert!(
+        prose(&application).contains(&format!("[x] Relay {COMPANY}")),
+        "{}",
+        prose(&application)
+    );
+}
+
+/// Serving through is a key on a row naming the Relay and nothing else: the
+/// command acts only on the row it is aimed at, and only where that row wants
+/// it.
+#[test]
+fn the_commands_act_only_on_a_row_that_wants_them() {
+    let mut application = serve_on(vec![
+        serving_through(logged_in(COMPANY)),
+        relay(HOME),
+        logged_in(OTHER),
+    ]);
+    // On a Relay offered already.
+    for command in [
+        SemanticCommandId::ServeRelayServeThrough,
+        SemanticCommandId::ServeRelayLogin,
+    ] {
+        assert_eq!(
+            invoke(&mut application, command),
+            ApplicationTransition::Continue,
+            "{command:?} on a Relay offered already"
+        );
+    }
+    // On one needing a login, Serving through is not what is wanted first.
+    press(&mut application, KeyCode::Down);
+    assert_eq!(
+        invoke(&mut application, SemanticCommandId::ServeRelayServeThrough),
+        ApplicationTransition::Continue
+    );
+    beginning(
+        invoke(&mut application, SemanticCommandId::ServeRelayLogin),
+        HOME,
+    );
+    press(&mut application, KeyCode::Esc);
+    // And on one logged in at, no login is wanted.
+    let mut application = serve_on(vec![logged_in(OTHER)]);
+    assert_eq!(
+        invoke(&mut application, SemanticCommandId::ServeRelayLogin),
+        ApplicationTransition::Continue
+    );
+    serve_through(
+        invoke(&mut application, SemanticCommandId::ServeRelayServeThrough),
+        OTHER,
+        true,
+    );
+}
+
+#[test]
+fn the_serve_rows_actions_are_semantic_commands() {
+    assert_eq!(
+        SemanticCommandId::ServeRelayLogin.as_str(),
+        "serve.relay.login"
+    );
+    assert_eq!(
+        SemanticCommandId::ServeRelayServeThrough.as_str(),
+        "serve.relay.serve-through"
+    );
+    assert_eq!(SemanticCommandId::ServeRelayAdd.as_str(), "serve.relay.add");
+
+    let mut application = serve_on(vec![serving_through(logged_in(COMPANY))]);
+    invoke(&mut application, SemanticCommandId::ServeRelayAdd);
+    assert!(prose(&application).contains("Add a Relay"));
+}
+
+/// A way the reader left out is theirs to have left out, until they put that
+/// very Relay right: pressing the key on its row says they want it offered.
+#[test]
+fn a_relay_put_right_is_ticked_even_where_the_reader_had_left_it_out() {
+    let mut application = serve_on(vec![serving_through(logged_in(COMPANY))]);
+    press(&mut application, KeyCode::Char(' '));
+    assert!(
+        prose(&application).contains(&format!("[ ] Relay {COMPANY}")),
+        "{}",
+        prose(&application)
+    );
+
+    // Its Login lapses, and the reader logs in there again from its row.
+    push(
+        &mut application,
+        2,
+        vec![serving_through(Relay {
+            state: RelayState::LoginNeeded,
+            ..logged_in(COMPANY)
+        })],
+    );
+    let follower = log_in_from_serve(&mut application, COMPANY, pending());
+    let asked = settled(&mut application, follower, done(pending()));
+    relisted(
+        &mut application,
+        asked,
+        3,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    assert!(
+        prose(&application).contains(&format!("[x] Relay {COMPANY}")),
+        "{}",
+        prose(&application)
+    );
+    let (_, asked) = issuance(press(&mut application, KeyCode::Enter));
+    assert_eq!(asked.ways, vec![direct(), Way::Relay(COMPANY.to_owned())]);
+}
+
+/// Only the Relay put right: what else the reader left out stays left out, and
+/// the keys stay on the row they were on.
+#[test]
+fn putting_a_relay_right_leaves_every_other_choice_as_the_reader_made_it() {
+    let mut application = serving_application(true);
+    push(
+        &mut application,
+        1,
+        vec![serving_through(logged_in(COMPANY)), logged_in(HOME)],
+    );
+    open_serve(&mut application, vec![direct()]);
+    press(&mut application, KeyCode::Char(' '));
+    press(&mut application, KeyCode::Down);
+    press(&mut application, KeyCode::Char(' '));
+    press(&mut application, KeyCode::Down);
+
+    let request = serve_through(press(&mut application, KeyCode::Char(' ')), HOME, true);
+    let served = vec![
+        serving_through(logged_in(COMPANY)),
+        serving_through(logged_in(HOME)),
+    ];
+    let asked = chosen(&mut application, request, served[1].clone());
+    relisted(&mut application, asked, 2, served);
+
+    let shown = prose(&application);
+    assert!(shown.contains("[ ] 10.0.0.8:7777"), "{shown}");
+    assert!(shown.contains(&format!("[ ] Relay {COMPANY}")), "{shown}");
+    assert!(shown.contains(&format!("[x] Relay {HOME}")), "{shown}");
+    press(&mut application, KeyCode::Char(' '));
+    assert!(
+        prose(&application).contains(&format!("[ ] Relay {HOME}")),
+        "Space now toggles the row the keys stayed on: {}",
+        prose(&application)
+    );
+}
+
+/// The same for the Serve-through key.
+#[test]
+fn a_relay_served_through_from_its_row_is_ticked_even_where_the_reader_had_left_it_out() {
+    let mut application = serve_on(vec![serving_through(logged_in(COMPANY))]);
+    press(&mut application, KeyCode::Char(' '));
+    push(&mut application, 2, vec![logged_in(COMPANY)]);
+
+    let request = serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+    let asked = chosen(
+        &mut application,
+        request,
+        serving_through(logged_in(COMPANY)),
+    );
+    relisted(
+        &mut application,
+        asked,
+        3,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    assert!(
+        prose(&application).contains(&format!("[x] Relay {COMPANY}")),
+        "{}",
+        prose(&application)
+    );
+}
+
+/// A Relay put right by anything but its row in the picker — another Client,
+/// another Server of the Account — says nothing of whether the reader wants
+/// it offered, so what they left out stays left out.
+#[test]
+fn a_relay_put_right_elsewhere_stays_left_out_where_the_reader_left_it_out() {
+    let mut application = serve_on(vec![serving_through(logged_in(COMPANY))]);
+    press(&mut application, KeyCode::Char(' '));
+    push(
+        &mut application,
+        2,
+        vec![serving_through(Relay {
+            state: RelayState::LoginNeeded,
+            ..logged_in(COMPANY)
+        })],
+    );
+    push(
+        &mut application,
+        3,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    assert!(
+        prose(&application).contains(&format!("[ ] Relay {COMPANY}")),
+        "{}",
+        prose(&application)
+    );
+    let (_, asked) = issuance(press(&mut application, KeyCode::Enter));
+    assert_eq!(asked.ways, vec![direct()]);
+}
+
+/// The row is never shown as it was before what was just done, so no Invite
+/// is asked for on a picture from before it: the keys wait for the picture
+/// the answer asked for, whatever else lands meanwhile.
+#[test]
+fn nothing_can_be_issued_on_a_picture_from_before_the_relay_was_put_right() {
+    let mut application = serve_on(vec![logged_in(COMPANY)]);
+    let request = serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+    let asked = chosen(
+        &mut application,
+        request,
+        serving_through(logged_in(COMPANY)),
+    );
+
+    assert_eq!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::Continue,
+        "the picture asked for has yet to land"
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Char(' ')),
+        ApplicationTransition::Continue
+    );
+
+    // A picture from before lands as any other does, and the picker waits on.
+    push(&mut application, 1, vec![logged_in(COMPANY)]);
+    assert_eq!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::Continue
+    );
+
+    relisted(
+        &mut application,
+        asked,
+        2,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    let (_, asked) = issuance(press(&mut application, KeyCode::Enter));
+    assert_eq!(asked.ways, vec![direct(), Way::Relay(COMPANY.to_owned())]);
+}
+
+/// A listing superseded while the picker waits lands nowhere, as any does, so
+/// the wait ends only with the latest asked for: the one that can show what
+/// was done, whichever else crossed it.
+#[test]
+fn a_listing_superseded_while_the_picker_waits_does_not_end_the_wait() {
+    let mut application = serve_on(vec![relay(HOME), logged_in(COMPANY)]);
+    let follower = log_in_from_serve(&mut application, HOME, pending());
+    press(&mut application, KeyCode::Esc);
+    press(&mut application, KeyCode::Down);
+
+    let request = serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+    let superseded = chosen(
+        &mut application,
+        request,
+        serving_through(logged_in(COMPANY)),
+    );
+    // The login left at the other Relay ends, which asks for the Relays afresh.
+    let latest = settled(&mut application, follower, done(pending()));
+
+    relisted(
+        &mut application,
+        superseded,
+        2,
+        vec![logged_in(HOME), logged_in(COMPANY)],
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::Continue,
+        "the picker waits on the latest"
+    );
+    assert!(prose(&application).contains("Updating the Relays"));
+
+    relisted(
+        &mut application,
+        latest,
+        3,
+        vec![logged_in(HOME), serving_through(logged_in(COMPANY))],
+    );
+    assert!(
+        prose(&application).contains(&format!("[x] Relay {COMPANY}")),
+        "{}",
+        prose(&application)
+    );
+}
+
+#[test]
+fn a_picture_that_cannot_be_asked_for_returns_to_the_picker_saying_why() {
+    let mut application = serve_on(vec![logged_in(COMPANY)]);
+    let request = serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+    let ApplicationTransition::ListRelays(request) = chosen(
+        &mut application,
+        request,
+        serving_through(logged_in(COMPANY)),
+    ) else {
+        panic!("expected the Relays listed afresh");
+    };
+    application
+        .handle_event(ApplicationEvent::RelayListingFailed {
+            request,
+            error: "the Server stopped answering".to_owned(),
+        })
+        .expect("take the failed listing");
+    let shown = prose(&application);
+    assert!(shown.contains("Choose Invite addresses"), "{shown}");
+    assert!(shown.contains("the Server stopped answering"), "{shown}");
+
+    // Pushed afresh, the row is put right all the same.
+    push(
+        &mut application,
+        2,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    assert!(prose(&application).contains(&format!("[x] Relay {COMPANY}")));
+}
+
+#[test]
+fn esc_while_waiting_on_a_picture_steps_back_to_the_picker_as_it_stands() {
+    let mut application = serve_on(vec![logged_in(COMPANY)]);
+    let request = serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+    let asked = chosen(
+        &mut application,
+        request,
+        serving_through(logged_in(COMPANY)),
+    );
+    press(&mut application, KeyCode::Esc);
+    assert!(prose(&application).contains("Choose Invite addresses"));
+    relisted(
+        &mut application,
+        asked,
+        2,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    assert!(prose(&application).contains(&format!("[x] Relay {COMPANY}")));
+}
+
+#[test]
+fn a_login_refused_says_so_on_the_row_where_the_reader_is() {
+    for width in [80, 48] {
+        let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+        let follower = log_in_from_serve(&mut application, COMPANY, pending());
+        let ended = refused(pending(), RelayLoginRefusal::NotAdmitted);
+        let asked = settled(&mut application, follower, ended.clone());
+        relisted(
+            &mut application,
+            asked,
+            2,
+            vec![with_login(serving_through(relay(COMPANY)), ended)],
+        );
+
+        let shown = prose_at(&application, width);
+        assert!(
+            shown.contains("Choose Invite addresses") && shown.contains(NOT_ADMITTED),
+            "at {width} columns: {shown}"
+        );
+        assert_eq!(
+            shown.matches("ask the Relay's operator").count(),
+            1,
+            "said once, whichever told it: {shown}"
+        );
+
+        // The Relay still says so as the keys move: it is how it stands, and
+        // Space there tries again.
+        press(&mut application, KeyCode::Up);
+        let shown = prose_at(&application, width);
+        assert!(shown.contains(NOT_ADMITTED), "{shown}");
+        press(&mut application, KeyCode::Down);
+        beginning(press(&mut application, KeyCode::Char(' ')), COMPANY);
+    }
+}
+
+/// A login the reader stepped away from and that the Relay then refused says
+/// so on its row all the same, from the picture alone.
+#[test]
+fn a_login_refused_after_the_reader_stepped_away_says_so_on_its_row() {
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    log_in_from_serve(&mut application, COMPANY, pending());
+    press(&mut application, KeyCode::Esc);
+    push(
+        &mut application,
+        2,
+        vec![with_login(
+            serving_through(relay(COMPANY)),
+            refused(pending(), RelayLoginRefusal::NotAdmitted),
+        )],
+    );
+    let shown = prose(&application);
+    assert!(shown.contains(NOT_ADMITTED), "{shown}");
+    assert!(shown.contains("Space log in"), "{shown}");
+}
+
+#[test]
+fn a_login_that_cannot_begin_says_why_on_the_row_where_the_reader_is() {
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    let request = beginning(press(&mut application, KeyCode::Char(' ')), COMPANY);
+    application
+        .handle_event(ApplicationEvent::RelayLoginNotBegun {
+            request,
+            error: "the Relay stopped answering".to_owned(),
+        })
+        .expect("take the failure");
+    let rows = boxed_rows_at(&application, 80);
+    let row = rows
+        .iter()
+        .position(|row| row.contains(COMPANY) && row.contains("login needed"))
+        .unwrap_or_else(|| panic!("the row names the Relay: {rows:#?}"));
+    assert!(
+        rows[row + 1].contains("Could not begin a login at"),
+        "beneath the row: {rows:#?}"
+    );
+
+    // The next key puts it down, as every note the Relay list leaves.
+    press(&mut application, KeyCode::Up);
+    assert!(!prose(&application).contains("Could not begin"));
+}
+
+#[test]
+fn a_serve_through_refused_says_why_on_the_row_where_the_reader_is() {
+    let limit = "this Server already Serves through 8 Relays, as many as it tells the Servers paired \
+                 with it of; stop Serving through one of them first";
+    for width in [80, 48] {
+        let mut application = serve_on(vec![logged_in(COMPANY)]);
+        let request = serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+        application
+            .handle_event(ApplicationEvent::RelayServeThroughFailed {
+                request,
+                error: limit.to_owned(),
+            })
+            .expect("take the refusal");
+        let shown = prose_at(&application, width);
+        assert!(
+            shown.contains(&format!("[-] Relay {COMPANY}")) && shown.contains(limit),
+            "at {width} columns: {shown}"
+        );
+        assert!(
+            shown.contains(REACHABLE),
+            "and still what the key would do: {shown}"
+        );
+    }
+}
+
+/// With a following lost, the login may go on at the Server, so it is shown
+/// again from the row by following it afresh.
+#[test]
+fn a_following_lost_says_so_on_the_row_and_the_login_can_be_shown_again() {
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    let follower = log_in_from_serve(&mut application, COMPANY, pending());
+    push(
+        &mut application,
+        2,
+        vec![with_login(serving_through(relay(COMPANY)), pending())],
+    );
+    application
+        .handle_event(ApplicationEvent::RelayLoginLost {
+            request: follower,
+            error: "the Server stopped answering".to_owned(),
+        })
+        .expect("take the lost following");
+    let shown = prose(&application);
+    assert!(
+        shown.contains(&format!("Stopped following the login at {COMPANY}")),
+        "{shown}"
+    );
+    followed_at(press(&mut application, KeyCode::Char(' ')), COMPANY);
+    assert!(prose(&application).contains(CODE));
+}
+
+#[test]
+fn a_server_holding_no_relay_is_told_it_can_add_one_and_a_adds_it_from_serve() {
+    let mut application = serving_application(true);
+    push(&mut application, 1, Vec::new());
+    open_serve(&mut application, vec![direct()]);
+    let shown = prose(&application);
+    assert!(shown.contains(NO_RELAY), "{shown}");
+    assert!(shown.contains("a add Relay"), "{shown}");
+
+    assert_eq!(
+        press(&mut application, KeyCode::Char('a')),
+        ApplicationTransition::Continue
+    );
+    let entry = prose(&application);
+    assert!(entry.contains("Add a Relay"), "{entry}");
+    assert!(entry.contains("Enter add · Esc back"), "{entry}");
+
+    // An empty address is refused as it is in /relay.
+    assert_eq!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::Continue
+    );
+    assert!(prose(&application).contains("Type a Relay's address first"));
+
+    type_terminal_text(&mut application, COMPANY);
+    let request = addition(press(&mut application, KeyCode::Enter), COMPANY);
+    assert!(prose(&application).contains("Adding Relay"));
+
+    let asked = application
+        .handle_event(ApplicationEvent::RelayAdded {
+            request,
+            relay: relay(COMPANY),
+        })
+        .expect("take the Relay added");
+    assert!(
+        !prose(&application).contains(NO_RELAY),
+        "{}",
+        prose(&application)
+    );
+    relisted(&mut application, asked, 2, vec![relay(COMPANY)]);
+    let shown = prose(&application);
+    assert!(shown.contains("Choose Invite addresses"), "{shown}");
+    assert!(
+        shown.contains(&format!("[-] Relay {COMPANY} · login needed")),
+        "{shown}"
+    );
+    assert!(shown.contains(&format!("Added {COMPANY}")), "{shown}");
+    assert!(!shown.contains(NO_RELAY), "{shown}");
+
+    // The keys stand on the Relay just added, so Space logs in there next.
+    beginning(press(&mut application, KeyCode::Char(' ')), COMPANY);
+}
+
+#[test]
+fn a_relay_added_lands_the_keys_on_it_among_others_and_in_a_listing_that_later_shows_it() {
+    let mut application = serve_on(vec![logged_in(HOME)]);
+    press(&mut application, KeyCode::Char('a'));
+    type_terminal_text(&mut application, COMPANY);
+    let request = addition(press(&mut application, KeyCode::Enter), COMPANY);
+    let asked = application
+        .handle_event(ApplicationEvent::RelayAdded {
+            request,
+            relay: relay(COMPANY),
+        })
+        .expect("take the Relay added");
+    relisted(
+        &mut application,
+        asked,
+        2,
+        vec![relay(COMPANY), logged_in(HOME)],
+    );
+    beginning(press(&mut application, KeyCode::Char(' ')), COMPANY);
+}
+
+#[test]
+fn an_address_refused_from_serve_stays_as_typed_with_why_and_esc_steps_back_to_the_picker() {
+    let mut application = serve_on(vec![logged_in(HOME)]);
+    press(&mut application, KeyCode::Char('a'));
+    type_terminal_text(&mut application, HOME);
+    let request = addition(press(&mut application, KeyCode::Enter), HOME);
+    let refusal = format!("the Relay at {HOME} is already added");
+    application
+        .handle_event(ApplicationEvent::RelayAdditionFailed {
+            request,
+            error: refusal.clone(),
+        })
+        .expect("take the refusal");
+    let shown = prose(&application);
+    assert!(
+        shown.contains(&refusal) && shown.contains(HOME) && shown.contains("Add a Relay"),
+        "{shown}"
+    );
+
+    press(&mut application, KeyCode::Esc);
+    let shown = prose(&application);
+    assert!(shown.contains("Choose Invite addresses"), "{shown}");
+    assert!(
+        shown.contains(&format!("[-] Relay {HOME}")),
+        "the reader is back where they were: {shown}"
+    );
+}
+
+/// The entry takes every key the picker has a use for as what is typed, as
+/// `/relay`'s does, and pastes.
+#[test]
+fn the_address_entry_from_serve_takes_every_key_the_picker_uses_as_text() {
+    let mut application = serve_on(vec![logged_in(HOME)]);
+    press(&mut application, KeyCode::Char('a'));
+    for typed in ['a', 'c', 'x', ' '] {
+        assert_eq!(
+            press(&mut application, KeyCode::Char(typed)),
+            ApplicationTransition::Continue
+        );
+    }
+    assert!(
+        prose(&application).contains("> acx ▏"),
+        "{}",
+        prose(&application)
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Up),
+        ApplicationTransition::Continue
+    );
+    press(&mut application, KeyCode::Backspace);
+    press(&mut application, KeyCode::Backspace);
+    press(&mut application, KeyCode::Backspace);
+    press(&mut application, KeyCode::Backspace);
+    application
+        .take_terminal_event(InputEvent::Paste(COMPANY.to_owned()))
+        .expect("paste the address");
+    addition(press(&mut application, KeyCode::Enter), COMPANY);
+}
+
+/// A login the reader stepped away from going on at the Server, ending or
+/// not, leaves the address they are typing as it is, and the keys with it.
+#[test]
+fn a_login_going_on_beneath_the_address_entry_leaves_it_as_it_is() {
+    let mut application = serve_on(vec![serving_through(relay(HOME))]);
+    let follower = log_in_from_serve(&mut application, HOME, pending());
+    press(&mut application, KeyCode::Esc);
+    press(&mut application, KeyCode::Char('a'));
+    press(&mut application, KeyCode::Char('c'));
+    assert!(prose(&application).contains("> c▏"));
+
+    // Pictured under way, the entry stands, and `a` and `c` are still typed.
+    push(
+        &mut application,
+        2,
+        vec![with_login(serving_through(relay(HOME)), pending())],
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Char('a')),
+        ApplicationTransition::Continue
+    );
+    assert!(prose(&application).contains("> ca▏"));
+
+    // Its ending leaves it too, and asks only for the Relays afresh.
+    let asked = settled(&mut application, follower, done(pending()));
+    relisted(
+        &mut application,
+        asked,
+        3,
+        vec![serving_through(logged_in(HOME))],
+    );
+    assert!(
+        prose(&application).contains("> ca▏"),
+        "{}",
+        prose(&application)
+    );
+    press(&mut application, KeyCode::Char('c'));
+    assert!(prose(&application).contains("> cac▏"));
+
+    press(&mut application, KeyCode::Esc);
+    assert!(
+        prose(&application).contains(&format!("[x] Relay {HOME}")),
+        "{}",
+        prose(&application)
+    );
+}
+
+/// `a` is the picker's alone: on the Invite shown it does nothing, and
+/// nothing about adding reaches anything behind it.
+#[test]
+fn a_adds_a_relay_only_from_the_picker() {
+    let mut application = serving_application(true);
+    push(&mut application, 1, Vec::new());
+    open_serve(&mut application, vec![direct()]);
+    let (request, _) = issuance(press(&mut application, KeyCode::Enter));
+    assert_eq!(
+        press(&mut application, KeyCode::Char('a')),
+        ApplicationTransition::Continue,
+        "while the Invite is being issued"
+    );
+    assert!(!prose(&application).contains("Add a Relay"));
+    application
+        .handle_event(ApplicationEvent::InviteIssued {
+            request,
+            invite: IssuedInvite {
+                invite: INVITE.to_owned(),
+                ways: vec![direct()],
+            },
+            peers: Vec::new(),
+        })
+        .expect("show the Invite");
+    press(&mut application, KeyCode::Char('a'));
+    assert!(!prose(&application).contains("Add a Relay"));
+    assert!(prose(&application).contains("Fresh Invite"));
 }
 
 /// Takes a key the whole way the run loop takes it.

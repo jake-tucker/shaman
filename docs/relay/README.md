@@ -636,20 +636,32 @@ Logging in opens nothing: it makes no Server reachable, and nobody can reach it 
 
 ### Serving through the Relay
 
-To make a Server reachable through the Relay, choose the Relay in its `/relay` list and press `s`. Serving through a
-Relay is chosen for each Relay, and is off until chosen. The Server waits at the Relay only while it is logged in
+To make a Server reachable through the Relay, choose the Relay in its `/relay` list and press `s`, or press Space on
+its row in `/serve`. Serving through a Relay is chosen for each Relay, and is off until chosen. The Server waits at the Relay only while it is logged in
 there and Serving is on, so the Relay's row says what it waits on: **Serving through**, or **Serves through once
 logged in**, or **Serves through once Serving is on** — `/serve` turns Serving on. Press `s` again to stop.
 
 ### Issuing an Invite
 
 On the Server to be reached, `/serve` turns Serving on and lists the ways an Invite may offer: this machine's own
-addresses, while its Serving listener listens, and `Relay <address>` for each Relay the Server Serves through and is
-logged in at. Each is ticked, and offered, unless you leave it out with Space. A Relay it holds but cannot offer is
-listed too, marked `[-]` and saying why — **login needed**, or **not Served through** — and an Invite offers it once
-that is put right in `/relay`. Enter issues the Invite, offering exactly the ways ticked: leave the addresses out for
-an Invite reached only through the Relay, or leave both kinds in, and the other machine reaches the Server directly
-where it can and through the Relay where it cannot.
+addresses, while its Serving listener listens, and `Relay <address>` for each Relay the Server holds. Each one an Invite
+can offer is ticked, and offered, unless you leave it out with Space. Enter issues the Invite, offering exactly the ways
+ticked: leave the addresses out for an Invite reached only through the Relay, or leave both kinds in, and the other
+machine reaches the Server directly where it can and through the Relay where it cannot.
+
+A Relay an Invite cannot offer is marked `[-]` and says why, and Space on its row puts that right where you stand:
+
+- **login needed**: Space begins the login, showing the address to visit and the code to enter, which `a` and `c` copy.
+  Esc steps back and leaves the login under way; its row then says where the login stands, Space shows it again, and
+  `/relay` finds the same login. A login the Relay refuses says why on the row.
+- **not Served through**: Space Serves through that Relay. Its row says beforehand what that does: it makes this machine
+  reachable through that Relay. Nothing else turns this on, so a Relay needing both takes one key press for the login
+  and another for this. Where the Server refuses, it says why on the row.
+
+Once the Relay can be offered it is ticked like any other, and the next Invite offers it without reopening `/serve`;
+this holds even for a Relay you had left out, since pressing the key on its row says you want it. `a` adds a Relay
+here, with the same address entry as `/relay`, so a first-time setup can begin in `/serve`, which says so where the
+Server holds no Relay. `/relay` does all of this too, and is where a Relay is removed or stops being Served through.
 
 ### Pairing through the Relay
 

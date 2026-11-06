@@ -95,7 +95,7 @@ use super::{
     selection::{
         SelectionCell, SelectionFrame, SelectionGranularity, SelectionSurface, TextSelection,
     },
-    serve_overlay::{ServeOverlay, ServeRequest, ServeWays},
+    serve_overlay::{ServeOverlay, ServeRequest, ServeWays, Withheld},
     session_picker::{SessionPicker, SessionPickerListing},
     settings_panel::{AvailabilityRead, SettingsPanel},
     sidebar::{Sidebar, SidebarActivation, SidebarPress},
@@ -7105,6 +7105,9 @@ impl Application {
                         address,
                     });
                 }
+                if self.state.relay_overlay.adds_for_picker(request) {
+                    self.state.serve_overlay.focus_on_relay(&relay.address);
+                }
                 Ok(ApplicationTransition::ListRelays(
                     self.state.relay_overlay.relay_added(request, &relay),
                 ))
@@ -8138,6 +8141,19 @@ impl Application {
         };
         self.state.connect_overlay.await_login(relay, refusal, step);
         transition
+    }
+
+    /// The Relay the keys are on in `/serve`'s picker, to be put right where
+    /// it is withheld as `withheld` says and nothing stands over the picker.
+    fn relay_put_right(&mut self, withheld: Withheld) -> Option<String> {
+        if self.state.relay_overlay.is_open() {
+            return None;
+        }
+        let ways = ServeWays::of(
+            &self.state.serving_listener,
+            self.state.relay_overlay.held_relays(),
+        );
+        self.state.serve_overlay.put_right(ways, withheld)
     }
 
     /// Leads to a login at the Relay at `address` whatever else is open: the
@@ -11825,6 +11841,31 @@ impl Application {
                     ApplicationTransition::RemovePeer,
                 ))
             }
+            SemanticCommandId::ServeRelayLogin => {
+                let address = self.relay_put_right(Withheld::LoginNeeded);
+                Ok(relay_login_transition(address.and_then(|address| {
+                    self.state.relay_overlay.log_in_for_picker(&address)
+                })))
+            }
+            SemanticCommandId::ServeRelayServeThrough => Ok(self
+                .relay_put_right(Withheld::NotServedThrough)
+                .and_then(|address| self.state.relay_overlay.serve_through_for_picker(&address))
+                .map_or(
+                    ApplicationTransition::Continue,
+                    |(request, address, serve_through)| {
+                        ApplicationTransition::SetRelayServeThrough {
+                            request,
+                            address,
+                            serve_through,
+                        }
+                    },
+                )),
+            SemanticCommandId::ServeRelayAdd => {
+                if self.state.serve_overlay.is_choosing() {
+                    self.state.relay_overlay.add_for_picker();
+                }
+                Ok(ApplicationTransition::Continue)
+            }
             SemanticCommandId::ServeClose => {
                 self.state.serve_overlay.close();
                 Ok(ApplicationTransition::Continue)
@@ -13781,7 +13822,16 @@ impl Application {
                         self.state.connect_overlay.input_mode(),
                     );
                 }
-                SelectionSurface::Serve => return command_for_serve_overlay_event(event),
+                SelectionSurface::Serve => {
+                    let ways = ServeWays::of(
+                        &self.state.serving_listener,
+                        self.state.relay_overlay.held_relays(),
+                    );
+                    return command_for_serve_overlay_event(
+                        event,
+                        self.state.serve_overlay.space(ways),
+                    );
+                }
                 SelectionSurface::Relay => {
                     return command_for_relay_overlay_event(
                         event,

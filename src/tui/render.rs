@@ -45,7 +45,7 @@ use super::{
     provider_icons::provider_label,
     relay_overlay::serve_through_status,
     rename_dialog::RenameGeometry,
-    serve_overlay::{CandidateWay, LISTENER_FAILED, LISTENER_OFF, ServeWays},
+    serve_overlay::{CandidateWay, LISTENER_FAILED, LISTENER_OFF, ServeSpace, ServeWays, WayNote},
     session_picker::SessionPickerRow,
     setting_details,
     settings_panel::{
@@ -1142,7 +1142,12 @@ fn render_relay_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         SelectionSurface::Relay,
         area,
         lines,
-        " Relay ",
+        // What the picker asked for stands where the reader is, in `/serve`.
+        if overlay.is_for_picker() {
+            " Serve "
+        } else {
+            " Relay "
+        },
         theme,
     );
 }
@@ -1479,11 +1484,32 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         .map_or_else(Vec::new, |no_way| {
             wrapped_lines(no_way, content_width, theme.feedback.error)
         });
-    let keys = wrapped_lines(
-        "↑↓ move · Space toggle · Enter issue Invite · Esc close",
-        content_width,
-        theme.text.subdued,
-    );
+    let no_relay = state
+        .serve_overlay
+        .no_relay(ways)
+        .map_or_else(Vec::new, |no_relay| {
+            wrapped_lines(no_relay, content_width, theme.text.subdued)
+        });
+    // The keys are taught for the way the reader is on: Space is what would
+    // put a Relay right, where that is what it does there.
+    let selected = state.serve_overlay.focused(&candidates);
+    let keys = match candidates.get(selected) {
+        None => "a add Relay · Esc close".to_owned(),
+        Some(candidate) => {
+            let space = match (candidate.space(), &candidate.way) {
+                (ServeSpace::LogIn, Way::Relay(address))
+                    if state.relay_overlay.under_way(address).is_some() =>
+                {
+                    "Space show login"
+                }
+                (ServeSpace::LogIn, _) => "Space log in",
+                (ServeSpace::ServeThrough, _) => "Space Serve through",
+                (ServeSpace::Toggle, _) => "Space toggle",
+            };
+            format!("↑↓ move · {space} · a add Relay · Enter issue Invite · Esc close")
+        }
+    };
+    let keys = wrapped_lines(&keys, content_width, theme.text.subdued);
     if candidates.is_empty() {
         if matches!(ways.listener, ListenerState::Open { .. }) {
             lines.push(Line::styled(
@@ -1493,16 +1519,22 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         }
     } else {
         let content_height = usize::from(area.height.saturating_sub(2));
-        let capacity =
-            content_height.saturating_sub(lines.len() + error.len() + no_way.len() + keys.len());
-        let selected = state.serve_overlay.focused(&candidates);
+        let capacity = content_height
+            .saturating_sub(lines.len() + error.len() + no_way.len() + no_relay.len() + keys.len());
         // A Relay's address wraps beneath its mark across as many Rows as the
-        // box is narrow, so each way is one entry however many Rows it takes.
+        // box is narrow, and what is said of it beneath that, so each way is
+        // one entry however many Rows it takes.
         let groups = candidates
             .iter()
             .enumerate()
             .map(|(index, candidate)| {
-                serve_candidate_lines(candidate, index == selected, content_width, theme)
+                serve_candidate_lines(
+                    candidate,
+                    &candidate.notes(&state.relay_overlay),
+                    index == selected,
+                    content_width,
+                    theme,
+                )
             })
             .collect::<Vec<_>>();
         let entries = groups
@@ -1522,6 +1554,7 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
                 .take(capacity),
         );
     }
+    lines.extend(no_relay);
     lines.extend(no_way);
     lines.extend(error);
     lines.extend(keys);
@@ -1537,9 +1570,11 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
 }
 
 /// A way an Invite may offer, marked offered or left out — or, for a Relay
-/// an Invite cannot offer, marked so and saying why.
+/// an Invite cannot offer, marked so and saying why — and `notes` beneath it,
+/// each wrapped whole.
 fn serve_candidate_lines(
     candidate: &CandidateWay,
+    notes: &[WayNote],
     selected: bool,
     width: u16,
     theme: &Theme,
@@ -1556,13 +1591,28 @@ fn serve_candidate_lines(
     } else {
         theme.text.primary
     };
-    way_lines(
+    let mut lines = way_lines(
         marker,
         &candidate.way.to_string(),
         candidate.withheld.map(|withheld| withheld.brief()),
         width,
         style,
-    )
+    );
+    let indent = " ".repeat(marker.width());
+    let room = width.saturating_sub(u16::try_from(marker.width()).unwrap_or(u16::MAX));
+    for note in notes {
+        let style = if note.failed {
+            theme.feedback.error
+        } else {
+            theme.text.subdued
+        };
+        lines.extend(
+            TextLayout::new(&note.text, room)
+                .rows()
+                .map(|row| Line::styled(format!("{indent}{}", row.text), style)),
+        );
+    }
+    lines
 }
 
 /// A Peer's entry: the name it gave itself, by which what a Sidekick on it
