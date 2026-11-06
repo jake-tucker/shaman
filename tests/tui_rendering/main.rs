@@ -49,7 +49,7 @@ mod subagent_picker;
 mod subagent_view;
 mod subagent_wait;
 mod subsessions;
-pub(crate) mod support;
+mod support;
 mod theme;
 mod transcript;
 mod transcript_attachments;

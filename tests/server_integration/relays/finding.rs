@@ -447,33 +447,50 @@ async fn a_refusal_for_any_other_reason_reads_unreachable_saying_why() {
     laptop.shutdown().await;
 }
 
+/// A Relay that takes the asking and says nothing, however long it is left.
+async fn hanging_relay() -> String {
+    listing_relay(|mut socket| async move { while heard(&mut socket).await.is_some() {} }).await
+}
+
 #[tokio::test]
-async fn a_relay_that_hangs_costs_its_answer_budget_alone_and_the_others_list() {
-    let hanging = listing_relay(|mut socket| async move {
-        // Takes the asking and says nothing, however long it is left.
-        while heard(&mut socket).await.is_some() {}
-    })
-    .await;
-    let relay = TestRelay::start().await;
+async fn a_relay_that_hangs_costs_its_answer_budget_and_no_more() {
+    let hanging = hanging_relay().await;
     let laptop = TestServer::with_timings(
         "find-hanging",
-        relay_timings().with_relay_answer_timeout(Duration::from_secs(1)),
+        relay_timings().with_relay_answer_timeout(Duration::from_millis(100)),
     )
     .await;
-    let workstation = TestServer::start("find-hanging-workstation").await;
+    // The budget is what the Relay's silence may cost, not the making of the
+    // key the Server proves itself with, and a login it gets through is the
+    // scripted Relay's own to answer at once.
     laptop.make_identity_key().await;
+    laptop.logged_in_at_scripted(&hanging).await;
+
+    assert!(matches!(
+        laptop.machines_at(&hanging).await,
+        RelayMachinesAnswer::Unreachable { .. }
+    ));
+    laptop.shutdown().await;
+}
+
+/// Whichever Relay answers does so while another hangs, for as long as that
+/// hangs, on the Server's usual budget: nothing waits for it to run out.
+#[tokio::test]
+async fn a_relay_that_hangs_holds_up_no_other_relay() {
+    let hanging = hanging_relay().await;
+    let relay = TestRelay::start().await;
+    let laptop = TestServer::start("find-hanging-beside").await;
+    let workstation = TestServer::start("find-hanging-workstation").await;
     laptop.logged_in_at_scripted(&hanging).await;
     laptop.log_in(&relay, "583231", "octocat").await;
     workstation.log_in(&relay, "583231", "octocat").await;
 
     let address = relay.address();
-    let (from_hanging, from_answering) =
-        tokio::join!(laptop.machines_at(&hanging), laptop.listed_at(&address));
-    assert!(
-        matches!(from_hanging, RelayMachinesAnswer::Unreachable { .. }),
-        "{from_hanging:?}"
-    );
-    assert_eq!(from_answering.0.len(), 1);
+    tokio::select! {
+        biased;
+        answer = laptop.machines_at(&hanging) => panic!("a Relay that hangs answers nothing: {answer:?}"),
+        (machines, _) = laptop.listed_at(&address) => assert_eq!(machines.len(), 1),
+    }
 
     workstation.shutdown().await;
     laptop.shutdown().await;
@@ -712,7 +729,7 @@ async fn a_hostname_carrying_terminal_escapes_is_drawn_safely() {
     );
 
     let mut application = suru::tui::Application::default();
-    crate::tui_rendering::support::type_terminal_text(&mut application, "/pair");
+    crate::support::drawn::type_terminal_text(&mut application, "/pair");
     let request = match application
         .take_terminal_event(crossterm::event::Event::Key(
             crossterm::event::KeyEvent::new(
@@ -735,8 +752,8 @@ async fn a_hostname_carrying_terminal_escapes_is_drawn_safely() {
     application
         .handle_event(suru::tui::ApplicationEvent::RelayMachinesAnswered { request, machines })
         .unwrap();
-    let drawn = crate::tui_rendering::support::rendered_application_rows_at(&application, 100, 40)
-        .join("\n");
+    let drawn =
+        crate::support::drawn::rendered_application_rows_at(&application, 100, 40).join("\n");
     assert!(drawn.contains("workstation"), "{drawn}");
     assert!(
         !drawn.chars().any(|character| {

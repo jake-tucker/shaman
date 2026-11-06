@@ -3,6 +3,7 @@ pub mod broker;
 pub mod connect_proxy;
 pub mod deadlines;
 pub mod detached_servers;
+pub mod drawn;
 pub mod failing_provider;
 #[cfg(unix)]
 pub mod managed_worktree;

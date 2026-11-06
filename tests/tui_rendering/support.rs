@@ -29,6 +29,10 @@ use suru::{
 };
 use uuid::Uuid;
 
+pub use crate::support::drawn::{
+    rendered_application_rows_at, rendered_rows_at, type_terminal_text,
+};
+
 /// A Workspace directory whose [`path`](Self::path) is the canonical reading
 /// — the one a launching client holds and the server roots Sessions at — so
 /// an assertion comparing it against either means the same on every platform.
@@ -108,30 +112,8 @@ pub fn rendered_rows(render: impl FnOnce(&mut Frame<'_>)) -> Vec<String> {
     rendered_rows_at(80, 15, render)
 }
 
-fn rendered_rows_at(width: u16, height: u16, render: impl FnOnce(&mut Frame<'_>)) -> Vec<String> {
-    let mut terminal =
-        Terminal::new(TestBackend::new(width, height)).expect("create test terminal");
-    terminal
-        .draw(render)
-        .expect("render headless TUI application");
-    let buffer = terminal.backend().buffer();
-    buffer
-        .content()
-        .chunks(buffer.area.width as usize)
-        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-        .collect()
-}
-
 pub fn rendered_application_rows(application: &Application) -> Vec<String> {
     rendered_rows(|frame| application.render(frame))
-}
-
-pub fn rendered_application_rows_at(
-    application: &Application,
-    width: u16,
-    height: u16,
-) -> Vec<String> {
-    rendered_rows_at(width, height, |frame| application.render(frame))
 }
 
 pub fn rendered_application_buffer(application: &Application, width: u16, height: u16) -> Buffer {
@@ -457,20 +439,6 @@ pub fn answer_workspace_resolution(
             result,
         })
         .expect("deliver the Server's Workspace resolution")
-}
-
-pub fn type_terminal_text(application: &mut Application, text: &str) {
-    for character in text.chars() {
-        assert_eq!(
-            application
-                .handle_terminal_event(InputEvent::Key(KeyEvent::new(
-                    KeyCode::Char(character),
-                    KeyModifiers::NONE,
-                )))
-                .expect("type terminal text"),
-            ApplicationTransition::Continue
-        );
-    }
 }
 
 pub fn enter_session(

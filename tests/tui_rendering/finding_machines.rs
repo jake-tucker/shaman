@@ -238,7 +238,7 @@ fn where_nothing_is_found_pasting_an_invite_is_the_first_thing_shown_and_each_re
         "an old Relay leaves pasting alone: {rows:#?}"
     );
     assert!(
-        row(&rows, "On other.example.org").contains("needs a login"),
+        row(&rows, "On other.example.org").contains("login needed"),
         "{rows:#?}"
     );
     assert!(
