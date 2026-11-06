@@ -1,6 +1,8 @@
 # Admit to a Relay by login, and form trust by Invite alone
 
-_Amended by ADR-0064: logged-in machines can now find each other through their Relay, as this decision left room for. Finding pairs nothing, and a Pairing is still formed only by redeeming an Invite. Extended by ADR-0065: that Invite may now be delivered by a short code, a password-authenticated key exchange the Relay carries and cannot read, which is as strong as this decision asks._
+_Amended by ADR-0064: logged-in machines can now find each other through their Relay, as this decision left room for. Finding pairs nothing, and a Pairing is still formed only by redeeming an Invite._
+
+_Extended by ADR-0065: that Invite may now be delivered by a short code, a password-authenticated key exchange the Relay carries and cannot read, which is as strong as this decision asks._
 
 A Relay (ADR-0045) serves many users, so it requires a login and joins two Servers only where both are logged in as the same user: each user reaches their own machines through it and no one else's. Login decides who may use the Relay and nothing more. A Pairing is still formed only by redeeming an Invite, whether it travels through the Relay or directly, and no Server trusts another on the word of the Relay, or of an identity provider, that the two belong to one user. Login is by GitHub first, behind an interface other identity providers — Okta, Google — can later stand behind.
 

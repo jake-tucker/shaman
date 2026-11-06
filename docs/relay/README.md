@@ -698,10 +698,13 @@ the Invite is spent. Restarting the Server ends both.
 
 A code gets one try. If a wrong one is tried, or an attempt never finishes, it is dead, and `/serve` says so in its
 place, since an attempt you did not make is worth seeing. Any Suru attached to this Server raises a Notice too, wherever
-you are in it, and `/serve` says it again when you reopen it, until another code replaces it. The long string stays
-good, because a wrong guess says nothing about it, and `n` gets a new code for the same Invite, with no more time on it.
-Anyone logged in under your Account, or the Relay itself, can spoil a code this way, which costs a new one and gains them
-nothing else.
+you are in it, and `/serve` says it again when you reopen it, until another code replaces it or the Invite ends. The long
+string stays good, because a wrong guess says nothing about it, and `n` gets a new code for the same Invite, with no more
+time on it. Anyone logged in under your Account, or the Relay itself, can spoil a code this way, which costs a new one
+and gains them nothing else.
+
+Reopening `/serve` while an Invite stands says so, since Enter replaces it and its code, and the code cannot be shown
+again: it is held to be typed, not looked up.
 
 A Relay an Invite cannot offer is marked `[-]` and says why, and Space on its row puts that right where you stand:
 
@@ -767,9 +770,18 @@ The code runs a password-authenticated key exchange with that machine over a con
 output is the same Invite, encrypted to this Server. It adds nothing to what either machine trusts, and the Relay can
 neither read it nor search for the code afterwards. This Server tries once for each time you ask: where a machine waits
 at two Relays it goes on to the second only if the first would not join them, or if the machine answered at once that it
-took no guess there, as it does for a Relay its Invite does not offer. Where the code fails it is dead, and Suru says to
-get a new one, and types nothing again for you. Where no code is live on the other machine, Suru says to issue an Invite
-there. If the Invite delivered names another key than the one listed for the machine, Suru refuses it and says so: the
+took no guess there, as it does for a Relay its Invite does not offer. While it tries, Esc only says so: the code's one
+try is under way, and Suru stays to show how it went. Where the code fails it is dead: Suru says to get a new one, takes
+it out of the field, and tries nothing again for you. Do not type it again. A Relay standing in for the other machine
+gets one guess at the code each time you do, and the other machine never sees those.
+
+So if this machine says a code failed while the other still shows it waiting, nothing tried that code over there, and
+what answered in its place was not that machine: the Relay may be at fault. A Relay in the path has about one chance in
+five hundred billion each time you try (see [ADR-0065](../adr/0065-deliver-an-invite-by-a-short-code-through-a-pake-with-one-guess-per-code.md)),
+and even a right guess there only shows you its own fingerprint at the preview.
+
+Where no code is live on the other machine, Suru says to issue an Invite there, and takes what you typed away, since
+whatever gets one live gives a different code. If the Invite delivered names another key than the one listed for the machine, Suru refuses it and says so: the
 Relay's list was wrong or was lying. Esc at the preview pairs nothing: the code is used, the Invite stands until it
 expires, and `n` in `/serve` there gets another code for it.
 
