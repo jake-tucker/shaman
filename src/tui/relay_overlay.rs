@@ -103,6 +103,9 @@ pub(super) struct RelayOverlay {
     asked_by: Option<RelaySurface>,
     /// What was done for a surface, waiting to be handed to it.
     outcome: Option<RelayOutcome>,
+    /// How many pictures of the Relays have been taken, for what waits on one
+    /// to tell whether one has come since.
+    pictures_taken: u64,
 }
 
 /// A surface that has the list do something at a Relay on its behalf.
@@ -122,6 +125,9 @@ pub(super) struct RelayOutcome {
     pub(super) notes: Vec<ListNote>,
     /// Whether the Relay was added by it.
     pub(super) added: bool,
+    /// For a Relay added whose listing failed, the pictures of the Relays taken
+    /// by then: it has no row only for want of one taken since.
+    pub(super) awaits_row_past: Option<u64>,
 }
 
 impl RelayOutcome {
@@ -131,6 +137,7 @@ impl RelayOutcome {
             address: address.to_owned(),
             notes: note.into_iter().collect(),
             added: false,
+            awaits_row_past: None,
         }
     }
 }
@@ -445,9 +452,17 @@ impl RelayOverlay {
             return;
         }
         if let RelayOverlayState::AwaitingListing(mut outcome) = std::mem::take(&mut self.state) {
+            if outcome.added && failure.is_some() {
+                outcome.awaits_row_past = Some(self.pictures_taken);
+            }
             outcome.notes.extend(failure);
             self.outcome = Some(outcome);
         }
+    }
+
+    /// How many pictures of the Relays have been taken.
+    pub(super) fn pictures_taken(&self) -> u64 {
+        self.pictures_taken
     }
 
     /// Takes what was done for a surface, for it to be handed there.
@@ -599,6 +614,7 @@ impl RelayOverlay {
             .map(|relay| relay.address.clone());
         self.held = Some(Pictured::of(&listing));
         self.relays = listing.relays;
+        self.pictures_taken += 1;
         if let Some(index) = self
             .select_on_listing
             .as_deref()

@@ -1567,18 +1567,8 @@ fn serve_picker_lines(state: &TuiState, area: Rect, theme: &Theme) -> Vec<Line<'
     let shown = overlay
         .window()
         .settle(&entries, layout.ways, Some(selected));
-    if layout.statement_fits
-        && statement > 0
-        && shown.contains(&selected)
-        && state.serve_overlay_has_the_keys()
-    {
-        let above = entries[shown.start..selected]
-            .iter()
-            .map(|entry| entry.rows)
-            .sum::<usize>();
-        if above + focused_way + statement <= layout.ways {
-            overlay.drew_statement(&candidates[selected].way);
-        }
+    if layout.shows_statement(&entries, &shown, selected) && state.serve_overlay_has_the_keys() {
+        overlay.drew_statement(&candidates[selected].way);
     }
 
     let mut lines = Vec::new();

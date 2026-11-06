@@ -35,6 +35,7 @@
 use std::{
     cell::{Cell, RefCell},
     collections::HashSet,
+    ops::Range,
 };
 
 use crate::protocol::{
@@ -43,7 +44,7 @@ use crate::protocol::{
 
 use super::{
     commands::SemanticCommandId,
-    list_window::ListWindow,
+    list_window::{ListWindow, WindowEntry},
     relay_overlay::{ListNote, RelayOutcome, RelayOverlay},
 };
 
@@ -157,13 +158,16 @@ struct Choice {
     relay_note: Option<RelayNote>,
 }
 
-/// What is said of the Relay at `address`, beneath its row. It stands until the
-/// next key the reader presses, or, with no row to stand on — a Relay added, say,
-/// that no picture has shown yet — until it has one.
+/// What is said of the Relay at `address`, beneath its row, or beneath the ways
+/// where it has none. It stands until the next key the reader presses, or, of a
+/// Relay added whose listing failed, until a picture has been taken since.
 #[derive(Clone, Debug)]
 struct RelayNote {
     address: String,
     notes: Vec<ListNote>,
+    /// The pictures of the Relays taken when its listing failed, for a Relay
+    /// added: one taken after these says whether it stands.
+    awaits_row_past: Option<u64>,
 }
 
 impl Choice {
@@ -249,6 +253,15 @@ impl Choice {
             .filter(|note| standing.as_ref() != Some(note))
             .chain(standing.clone())
             .collect()
+    }
+
+    /// Whether what is said is of a Relay added that has no row only because
+    /// no picture has been taken since its listing failed.
+    fn awaits_row(&self, relays: &RelayOverlay) -> bool {
+        self.relay_note.as_ref().is_some_and(|note| {
+            note.awaits_row_past == Some(relays.pictures_taken())
+                && relays.held(&note.address).is_none()
+        })
     }
 
     /// Whether a Relay the `relays` hold has a row for what is said of it.
@@ -350,8 +363,9 @@ pub(super) struct ServePickerNeeds {
 /// other ways.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct ServePickerLayout {
-    /// Whether the row the keys are on can say all it must.
-    pub(super) statement_fits: bool,
+    /// The Rows of the row the keys are on and all it must say, where it must
+    /// say anything and the box can hold both.
+    must_show: Option<usize>,
     /// The Rows given to saying the terminal is too small, which is cut short
     /// rather than left out.
     pub(super) too_small: usize,
@@ -371,6 +385,25 @@ impl ServePickerLayout {
     /// A row with no statement has nothing that must fit.
     pub(super) fn statement_fits(focused_way: usize, statement: usize, height: usize) -> bool {
         statement == 0 || focused_way + statement <= height
+    }
+
+    /// Whether a frame showing `entries` from among those in `shown`, the keys
+    /// on the one at `focused`, shows its name and all it must say.
+    pub(super) fn shows_statement(
+        &self,
+        entries: &[WindowEntry],
+        shown: &Range<usize>,
+        focused: usize,
+    ) -> bool {
+        self.must_show.is_some_and(|must_show| {
+            shown.contains(&focused)
+                && entries[shown.start..focused]
+                    .iter()
+                    .map(|entry| entry.rows)
+                    .sum::<usize>()
+                    + must_show
+                    <= self.ways
+        })
     }
 
     pub(super) fn of(needs: ServePickerNeeds) -> Self {
@@ -403,7 +436,7 @@ impl ServePickerLayout {
         let no_relay = whole(needs.no_relay);
         let listener = whole(needs.listener);
         Self {
-            statement_fits,
+            must_show: (needs.statement > 0 && statement_fits).then_some(held),
             too_small,
             keys,
             said,
@@ -448,6 +481,7 @@ impl Withheld {
 impl ServeOverlay {
     /// Opens the picker, answering the preparation it asks for.
     pub(super) fn open(&mut self) -> ServeRequest {
+        self.forget_frame();
         let request = self.issue();
         self.state = ServeOverlayState::Preparing { request };
         request
@@ -535,12 +569,13 @@ impl ServeOverlay {
     }
 
     /// What the picker says where the Server, as `ways` stand now, holds no
-    /// Relay — with nothing said yet of one added that a picture has yet to show.
+    /// Relay — unless one added has yet to have a picture show it.
     pub(super) fn no_relay(&self, ways: ServeWays<'_>) -> Option<&'static str> {
         let ServeOverlayState::Choosing(choice) = &self.state else {
             return None;
         };
-        (ways.relays.held_relays().is_empty() && choice.relay_note.is_none()).then_some(NO_RELAY)
+        (ways.relays.held_relays().is_empty() && !choice.awaits_row(ways.relays))
+            .then_some(NO_RELAY)
     }
 
     /// Whether the reader is choosing among the ways.
@@ -631,15 +666,16 @@ impl ServeOverlay {
         choice.relay_note = (!outcome.notes.is_empty()).then_some(RelayNote {
             address: outcome.address,
             notes: outcome.notes,
+            awaits_row_past: outcome.awaits_row_past,
         });
     }
 
     /// Puts down what the Relay list last handed back, which every key does
-    /// where it has a row to have been read on, answering whether there was
-    /// anything to put down.
+    /// unless it is of a Relay added whose row is still to come, answering
+    /// whether there was anything to put down.
     pub(super) fn put_down_relay_note(&mut self, ways: ServeWays<'_>) -> bool {
         match &mut self.state {
-            ServeOverlayState::Choosing(choice) if choice.relay_note_has_a_row(ways.relays) => {
+            ServeOverlayState::Choosing(choice) if !choice.awaits_row(ways.relays) => {
                 choice.relay_note.take().is_some()
             }
             _ => false,
@@ -932,5 +968,47 @@ impl ServeOverlay {
             *removing = None;
             *message = Some(error);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entries(rows: &[usize]) -> Vec<WindowEntry> {
+        rows.iter()
+            .map(|rows| WindowEntry::focusable(*rows))
+            .collect()
+    }
+
+    fn laid_out(height: usize, focused_way: usize, statement: usize) -> ServePickerLayout {
+        ServePickerLayout::of(ServePickerNeeds {
+            height,
+            focused_way,
+            statement,
+            ..ServePickerNeeds::default()
+        })
+    }
+
+    #[test]
+    fn a_statement_is_shown_only_where_the_focused_row_is_drawn_whole() {
+        // Six Rows for the ways, beneath the heading.
+        let layout = laid_out(7, 1, 2);
+        assert!(layout.shows_statement(&entries(&[3]), &(0..1), 0));
+        assert!(layout.shows_statement(&entries(&[3, 3]), &(0..2), 1));
+        assert!(
+            !layout.shows_statement(&entries(&[4, 3]), &(0..2), 1),
+            "pushed past the foot of the ways"
+        );
+        assert!(
+            !layout.shows_statement(&entries(&[3, 3]), &(0..1), 1),
+            "outside the window"
+        );
+    }
+
+    #[test]
+    fn a_statement_is_not_shown_where_there_is_none_or_it_cannot_fit() {
+        assert!(!laid_out(6, 1, 0).shows_statement(&entries(&[1]), &(0..1), 0));
+        assert!(!laid_out(2, 1, 2).shows_statement(&entries(&[1]), &(0..1), 0));
     }
 }

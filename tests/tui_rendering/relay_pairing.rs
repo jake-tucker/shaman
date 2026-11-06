@@ -3052,6 +3052,101 @@ fn a_row_covered_by_what_stood_over_the_picker_serves_through_nothing_until_a_fr
     serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
 }
 
+/// What a frame showed before `/serve` closed is nothing to go on once it is
+/// open again, with no frame showing it since.
+#[test]
+fn reopening_serve_forgets_what_the_frame_before_it_closed_showed() {
+    let mut application = listening_application(ListenerState::Off);
+    push(&mut application, 1, vec![logged_in(COMPANY)]);
+    open_serve(&mut application, Vec::new());
+    assert!(says_what_serving_through_does(
+        &application,
+        COMPANY,
+        80,
+        24
+    ));
+    press_with_no_frame(&mut application, KeyCode::Esc);
+
+    type_terminal_text(&mut application, "/serve");
+    let ApplicationTransition::BeginServing { request, .. } =
+        press_with_no_frame(&mut application, KeyCode::Enter)
+    else {
+        panic!("/serve prepares Serving");
+    };
+    prepared(&mut application, request, Vec::new());
+    assert_eq!(
+        press_with_no_frame(&mut application, KeyCode::Char(' ')),
+        ApplicationTransition::Continue
+    );
+    serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+}
+
+/// A refusal of a Relay since gone is said once it comes, with no row to say it
+/// on, and goes with the next key like any other, the Server holding no Relay
+/// said all the while.
+#[test]
+fn a_refusal_of_a_relay_since_gone_gives_way_to_the_next_key() {
+    let mut application = serve_on(vec![logged_in(COMPANY)]);
+    let request = serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+    push(&mut application, 2, Vec::new());
+    application
+        .handle_event(ApplicationEvent::RelayServeThroughFailed {
+            request,
+            error: "the Relay is not one this Server holds".to_owned(),
+        })
+        .expect("take the refusal");
+    let shown = prose(&application);
+    assert!(shown.contains("Could not change"), "{shown}");
+    assert!(shown.contains(NO_RELAY), "{shown}");
+
+    press(&mut application, KeyCode::Down);
+    let shown = prose(&application);
+    assert!(!shown.contains("Could not change"), "{shown}");
+    assert!(shown.contains(NO_RELAY), "{shown}");
+}
+
+/// A Relay added whose listing failed is awaited only until a picture says
+/// otherwise: one taken since that does not show it says it is gone.
+#[test]
+fn a_relay_added_whose_listing_failed_gives_way_once_a_picture_does_not_show_it() {
+    let mut application = serving_application(true);
+    push(&mut application, 1, Vec::new());
+    open_serve(&mut application, vec![direct()]);
+    press(&mut application, KeyCode::Char('a'));
+    type_terminal_text(&mut application, COMPANY);
+    let request = addition(press(&mut application, KeyCode::Enter), COMPANY);
+    let ApplicationTransition::ListRelays(request) = application
+        .handle_event(ApplicationEvent::RelayAdded {
+            request,
+            relay: relay(COMPANY),
+        })
+        .expect("take the Relay added")
+    else {
+        panic!("expected the Relays listed afresh");
+    };
+    application
+        .handle_event(ApplicationEvent::RelayListingFailed {
+            request,
+            error: "the Server stopped answering".to_owned(),
+        })
+        .expect("take the failed listing");
+    press(&mut application, KeyCode::Down);
+    let shown = prose(&application);
+    assert!(shown.contains(&format!("Added {COMPANY}")), "{shown}");
+    assert!(!shown.contains(NO_RELAY), "{shown}");
+
+    push(&mut application, 2, Vec::new());
+    assert!(
+        prose(&application).contains(NO_RELAY),
+        "{}",
+        prose(&application)
+    );
+    press(&mut application, KeyCode::Down);
+    let shown = prose(&application);
+    assert!(!shown.contains(&format!("Added {COMPANY}")), "{shown}");
+    assert!(shown.contains(NO_RELAY), "{shown}");
+}
+
 /// Refused for want of room, Space leaves what the reader left out as it is.
 #[test]
 fn space_refused_for_want_of_room_changes_no_choice() {

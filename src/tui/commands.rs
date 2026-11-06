@@ -2833,7 +2833,7 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         id: SemanticCommandId::ServeRelayServeThrough,
         title: "Serve Through Focused Relay",
         reach: SemanticReach::Client,
-        description: "Have this Server Serve through the Relay focused among the Invite addresses, making this machine reachable through it",
+        description: "Have this Server Serve through the Relay focused among the Invite addresses, making this machine reachable through it; does nothing unless the last frame showed its row saying so",
         slash: None,
         keybinding: None,
     },
