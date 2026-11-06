@@ -7043,13 +7043,15 @@ impl Application {
             ApplicationEvent::MachineRelaysKnown { request, relays } => {
                 self.state
                     .connect_overlay
-                    .machine_relays_known(request, relays);
+                    .machines_mut()
+                    .relays_known(request, relays);
                 Ok(ApplicationTransition::Continue)
             }
             ApplicationEvent::RelayMachinesAnswered { request, machines } => {
                 self.state
                     .connect_overlay
-                    .machines_answered(request, machines);
+                    .machines_mut()
+                    .answered(request, machines);
                 Ok(ApplicationTransition::Continue)
             }
             ApplicationEvent::EverywhereRemotesListed { request, remotes } => {

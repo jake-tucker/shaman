@@ -36,7 +36,7 @@ use super::{
     connect_overlay::{ConnectOverlay, LoginStep},
     context_overlay::{ContextOverlayView, ContextRow},
     directory_browser::{DirectoryBrowserRow, DirectoryBrowserRowKind},
-    found_machines::{FoundMachine, FoundMachines, GroupStanding, MachineGroup, MachineStanding},
+    found_machines::{FoundMachine, FoundMachines, GroupState, MachineGroup, MachineState},
     icon_picker,
     keymap::binding_label,
     list_window::WindowEntry,
@@ -1061,9 +1061,7 @@ fn found_machine_lines(
     let selected = machines.selected_fingerprint();
     let row_width = usize::from(width);
     let name_width = machines
-        .groups()
-        .iter()
-        .flat_map(|group| &group.machines)
+        .machines()
         .map(|machine| machine.shown_name().width())
         .max()
         .unwrap_or(0)
@@ -1073,14 +1071,14 @@ fn found_machine_lines(
     let mut focus = None;
     for group in machines.groups() {
         let host = relay_heading(&group.address);
-        let saying = match &group.standing {
-            GroupStanding::Asking => Some("looking…".to_owned()),
-            GroupStanding::Listed { .. } if !group.machines.is_empty() => None,
-            GroupStanding::Listed { elsewhere: 0 } => Some("no other machines".to_owned()),
-            GroupStanding::Listed { .. } => Some("none but those under another Relay".to_owned()),
-            GroupStanding::NotListed => Some("cannot list machines; paste an Invite".to_owned()),
-            GroupStanding::LoginNeeded => Some("needs a login; log in from /relay".to_owned()),
-            GroupStanding::Unreachable(why) => Some(format!("Unreachable · {why}")),
+        let saying = match &group.state {
+            GroupState::Asking => Some("looking…".to_owned()),
+            GroupState::Listed { .. } if !group.machines.is_empty() => None,
+            GroupState::Listed { elsewhere: 0 } => Some("no other machines".to_owned()),
+            GroupState::Listed { .. } => Some("none but those under another Relay".to_owned()),
+            GroupState::NotListed => Some("cannot list machines; paste an Invite".to_owned()),
+            GroupState::LoginNeeded => Some("login needed; log in from /relay".to_owned()),
+            GroupState::Unreachable(why) => Some(format!("Unreachable · {why}")),
         };
         let heading = match saying {
             Some(saying) => format!("On {host}: {saying}"),
@@ -1140,10 +1138,10 @@ fn found_machine_row(
     };
     let name = truncate_to_width(&name, name_width);
     let padding = " ".repeat(name_width.saturating_sub(name.width()));
-    let standing = match &machine.standing {
-        MachineStanding::Serving => "Serving",
-        MachineStanding::RemoteAlready(_) => "Remote already",
-        MachineStanding::NotServing => "not Serving (run /serve there)",
+    let state = match &machine.state {
+        MachineState::Serving => "Serving",
+        MachineState::RemoteAlready(_) => "Remote already",
+        MachineState::NotServing => "not Serving (run /serve there)",
     };
     let others = machine
         .waiting_at
@@ -1158,10 +1156,10 @@ fn found_machine_row(
         format!(" · also on {}", others.join(", "))
     };
     Line::styled(
-        truncate_to_width(&format!("{marker}{name}{padding}  {standing}{also}"), width),
+        truncate_to_width(&format!("{marker}{name}{padding}  {state}{also}"), width),
         if chosen {
             theme.selection.focused
-        } else if machine.standing == MachineStanding::NotServing {
+        } else if machine.state == MachineState::NotServing {
             theme.text.subdued
         } else {
             theme.text.primary

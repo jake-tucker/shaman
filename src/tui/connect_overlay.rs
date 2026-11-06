@@ -275,18 +275,9 @@ impl ConnectOverlay {
         &self.machines
     }
 
-    /// Takes the Relays the asking `asked` goes to.
-    pub(super) fn machine_relays_known(&mut self, asked: ConnectRequest, relays: Vec<String>) {
-        self.machines.relays_known(asked, relays);
-    }
-
-    /// Takes what a Relay answered the asking `asked`.
-    pub(super) fn machines_answered(
-        &mut self,
-        asked: ConnectRequest,
-        machines: crate::protocol::RelayMachines,
-    ) {
-        self.machines.answered(asked, machines);
+    /// The same, to take what the Relays answer.
+    pub(super) fn machines_mut(&mut self) -> &mut FoundMachines {
+        &mut self.machines
     }
 
     /// Asks the Server's Relays again where the machines are shown and all they

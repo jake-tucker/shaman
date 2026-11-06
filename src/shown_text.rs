@@ -66,7 +66,7 @@ pub(crate) fn unseen(character: char) -> bool {
 /// whitespace is one space, so no text can lay itself out as columns of a row
 /// it is drawn in. It is composed canonically, each character bearing only so
 /// many combining marks. What is left of a sequence the scanner cannot make out
-/// is plain text, never a control. Nothing may be all that is left.
+/// is plain text, never a control. An empty answer says nothing could be shown.
 pub(crate) fn shown(text: &str, at_most: usize) -> String {
     let mut visible = String::new();
     for fragment in AnsiScanner::default().feed(&introducers_spelled_out(text)) {

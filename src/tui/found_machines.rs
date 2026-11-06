@@ -60,7 +60,7 @@ pub(super) struct FoundMachines {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct MachineGroup {
     pub(super) address: String,
-    pub(super) standing: GroupStanding,
+    pub(super) state: GroupState,
     pub(super) machines: Vec<FoundMachine>,
     /// Whether the Relay holds more than it listed.
     pub(super) cut_short: bool,
@@ -68,7 +68,7 @@ pub(super) struct MachineGroup {
 
 /// How a Relay's group stands beside whatever machines it shows.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) enum GroupStanding {
+pub(super) enum GroupState {
     /// It has yet to answer for the first time.
     Asking,
     /// It listed what it listed: of those, `elsewhere` are shown in another
@@ -94,7 +94,7 @@ pub(super) struct FoundMachine {
     /// The first characters of its fingerprint, where another row goes by
     /// that name however it is cased or composed.
     pub(super) told_apart: Option<String>,
-    pub(super) standing: MachineStanding,
+    pub(super) state: MachineState,
     /// The Relays it waits at now, which are the ways a short Invite could
     /// reach it by.
     pub(super) waiting_at: Vec<String>,
@@ -105,14 +105,14 @@ pub(super) struct FoundMachine {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) enum MachineStanding {
+pub(super) enum MachineState {
     Serving,
     NotServing,
     /// A Pairing this Server holds, with the Remote so named, has its key.
     RemoteAlready(String),
 }
 
-impl MachineStanding {
+impl MachineState {
     /// Where it comes among a Relay's rows: what can be chosen first.
     fn rank(&self) -> u8 {
         match self {
@@ -181,18 +181,18 @@ impl FoundMachines {
     /// on its machine wherever that has come to stand.
     fn settle(&mut self) {
         self.groups = groups(&self.relays, &self.answers);
-        let rows = || self.groups.iter().flat_map(|group| &group.machines);
-        if self
-            .selected
-            .as_ref()
-            .is_some_and(|selected| !rows().any(|machine| machine.fingerprint == *selected))
-        {
+        if self.selected.as_ref().is_some_and(|selected| {
+            !self
+                .machines()
+                .any(|machine| machine.fingerprint == *selected)
+        }) {
             self.selected = None;
         }
         if !self.touched && self.selected.is_none() {
-            let first = rows()
-                .find(|machine| machine.standing == MachineStanding::Serving)
-                .or_else(|| rows().next())
+            let first = self
+                .machines()
+                .find(|machine| machine.state == MachineState::Serving)
+                .or_else(|| self.machines().next())
                 .map(|machine| machine.fingerprint.clone());
             if first.is_some() {
                 self.selected = first;
@@ -205,13 +205,18 @@ impl FoundMachines {
         &self.groups
     }
 
+    /// Every machine shown, in the order its rows are drawn.
+    pub(super) fn machines(&self) -> impl Iterator<Item = &FoundMachine> {
+        self.groups.iter().flat_map(|group| &group.machines)
+    }
+
     pub(super) fn window(&self) -> &ListWindow {
         &self.window
     }
 
     /// Whether any machine is shown.
     pub(super) fn any(&self) -> bool {
-        self.groups.iter().any(|group| !group.machines.is_empty())
+        self.machines().next().is_some()
     }
 
     /// Whether any Relay is asked, and so whether looking again means
@@ -228,9 +233,7 @@ impl FoundMachines {
     /// The machine Row Focus stands on, where it stands on one.
     pub(super) fn selected(&self) -> Option<&FoundMachine> {
         let selected = self.selected.as_ref()?;
-        self.groups
-            .iter()
-            .flat_map(|group| &group.machines)
+        self.machines()
             .find(|machine| machine.fingerprint == *selected)
     }
 
@@ -260,9 +263,7 @@ impl FoundMachines {
         self.touched = true;
         self.note = None;
         let rows: Vec<&str> = self
-            .groups
-            .iter()
-            .flat_map(|group| &group.machines)
+            .machines()
             .map(|machine| machine.fingerprint.as_str())
             .collect();
         let next = match (&self.selected, forward) {
@@ -293,16 +294,16 @@ impl FoundMachines {
             return false;
         };
         let name = machine.shown_name();
-        self.note = Some(match &machine.standing {
-            MachineStanding::Serving => {
+        self.note = Some(match &machine.state {
+            MachineState::Serving => {
                 format!("To pair with {name}, issue an Invite there with /serve and paste it here")
             }
-            MachineStanding::NotServing => format!(
+            MachineState::NotServing => format!(
                 "{name} is logged in but not waiting to be reached, which may mean Serving is \
                  off, it is not Served through this Relay, or the machine is off; run /serve \
                  there, then issue an Invite to paste here"
             ),
-            MachineStanding::RemoteAlready(remote) => {
+            MachineState::RemoteAlready(remote) => {
                 format!("Already paired as the Remote {remote}; /connect turns toward it")
             }
         });
@@ -371,10 +372,10 @@ fn groups(relays: &[String], answers: &HashMap<String, RelayMachinesAnswer>) -> 
             fingerprint: fingerprint.to_owned(),
             name,
             told_apart: None,
-            standing: match remote {
-                Some(remote) => MachineStanding::RemoteAlready(remote),
-                None if waiting_at.is_empty() => MachineStanding::NotServing,
-                None => MachineStanding::Serving,
+            state: match remote {
+                Some(remote) => MachineState::RemoteAlready(remote),
+                None if waiting_at.is_empty() => MachineState::NotServing,
+                None => MachineState::Serving,
             },
             also_at: seen
                 .iter()
@@ -392,31 +393,31 @@ fn groups(relays: &[String], answers: &HashMap<String, RelayMachinesAnswer>) -> 
             let mut machines = placed.remove(relay.as_str()).unwrap_or_default();
             machines.sort_by_cached_key(|machine| {
                 (
-                    machine.standing.rank(),
+                    machine.state.rank(),
                     folded(&machine.name),
                     machine.fingerprint.clone(),
                 )
             });
-            let (standing, cut_short) = match answers.get(relay) {
-                None => (GroupStanding::Asking, false),
+            let (state, cut_short) = match answers.get(relay) {
+                None => (GroupState::Asking, false),
                 Some(RelayMachinesAnswer::Listed {
                     machines: listed,
                     cut_short,
                 }) => (
-                    GroupStanding::Listed {
+                    GroupState::Listed {
                         elsewhere: listed.len() - machines.len(),
                     },
                     *cut_short,
                 ),
-                Some(RelayMachinesAnswer::NotListed) => (GroupStanding::NotListed, false),
-                Some(RelayMachinesAnswer::LoginNeeded) => (GroupStanding::LoginNeeded, false),
+                Some(RelayMachinesAnswer::NotListed) => (GroupState::NotListed, false),
+                Some(RelayMachinesAnswer::LoginNeeded) => (GroupState::LoginNeeded, false),
                 Some(RelayMachinesAnswer::Unreachable { message }) => {
-                    (GroupStanding::Unreachable(message.clone()), false)
+                    (GroupState::Unreachable(message.clone()), false)
                 }
             };
             MachineGroup {
                 address: relay.clone(),
-                standing,
+                state,
                 machines,
                 cut_short,
             }
@@ -496,12 +497,10 @@ mod tests {
         found
     }
 
-    fn rows(found: &FoundMachines) -> Vec<(String, MachineStanding)> {
+    fn rows(found: &FoundMachines) -> Vec<(String, MachineState)> {
         found
-            .groups()
-            .iter()
-            .flat_map(|group| &group.machines)
-            .map(|machine| (machine.shown_name(), machine.standing.clone()))
+            .machines()
+            .map(|machine| (machine.shown_name(), machine.state.clone()))
             .collect()
     }
 
@@ -532,12 +531,12 @@ mod tests {
         assert_eq!(
             rows(&found),
             [
-                ("workstation".to_owned(), MachineStanding::Serving),
+                ("workstation".to_owned(), MachineState::Serving),
                 (
                     "build-box".to_owned(),
-                    MachineStanding::RemoteAlready("build-box".to_owned())
+                    MachineState::RemoteAlready("build-box".to_owned())
                 ),
-                ("old-laptop".to_owned(), MachineStanding::NotServing),
+                ("old-laptop".to_owned(), MachineState::NotServing),
             ]
         );
         assert_eq!(
@@ -554,7 +553,7 @@ mod tests {
             listed(ONE, vec![machine("aaaa0000", "named-at-one", false)]),
         );
         assert_eq!(fingerprints(&found, 0), ["aaaa0000"]);
-        assert_eq!(rows(&found)[0].1, MachineStanding::NotServing);
+        assert_eq!(rows(&found)[0].1, MachineState::NotServing);
 
         found.answered(
             asking(1),
@@ -567,15 +566,12 @@ mod tests {
         );
         assert_eq!(fingerprints(&found, 1), ["aaaa0000"]);
         let row = &found.groups()[1].machines[0];
-        assert_eq!(row.standing, MachineStanding::Serving);
+        assert_eq!(row.state, MachineState::Serving);
         assert_eq!(row.name, "named-at-two");
         assert_eq!(row.waiting_at, [TWO]);
         assert_eq!(row.also_at, [ONE]);
         assert_eq!(row.also_named, ["named-at-one"]);
-        assert_eq!(
-            found.groups()[0].standing,
-            GroupStanding::Listed { elsewhere: 1 }
-        );
+        assert_eq!(found.groups()[0].state, GroupState::Listed { elsewhere: 1 });
     }
 
     #[test]
@@ -613,7 +609,7 @@ mod tests {
             rows(&found),
             [(
                 "the-remote".to_owned(),
-                MachineStanding::RemoteAlready("the-remote".to_owned())
+                MachineState::RemoteAlready("the-remote".to_owned())
             )]
         );
     }
@@ -862,7 +858,7 @@ mod tests {
     #[test]
     fn every_relay_says_how_it_stands_and_one_failing_stops_none_of_the_others() {
         let mut found = found(&[ONE, TWO]);
-        assert_eq!(found.groups()[0].standing, GroupStanding::Asking);
+        assert_eq!(found.groups()[0].state, GroupState::Asking);
         found.answered(
             asking(1),
             RelayMachines {
@@ -872,14 +868,14 @@ mod tests {
                 },
             },
         );
-        assert_eq!(found.groups()[1].standing, GroupStanding::Asking);
+        assert_eq!(found.groups()[1].state, GroupState::Asking);
         found.answered(
             asking(1),
             listed(TWO, vec![machine("aaaa0000", "box", true)]),
         );
         assert_eq!(
-            found.groups()[0].standing,
-            GroupStanding::Unreachable("did not answer".to_owned())
+            found.groups()[0].state,
+            GroupState::Unreachable("did not answer".to_owned())
         );
         assert_eq!(fingerprints(&found, 1), ["aaaa0000"]);
     }
