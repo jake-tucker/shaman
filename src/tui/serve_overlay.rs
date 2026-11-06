@@ -1073,7 +1073,7 @@ impl ServeOverlay {
     }
 
     pub(super) fn copy_text(&self) -> Option<String> {
-        self.invite().map(|invite| invite.invite.clone())
+        self.invite().map(|invite| invite.invite.0.clone())
     }
 
     /// Ending a Pairing is asked for twice, as it is for a Remote: the first

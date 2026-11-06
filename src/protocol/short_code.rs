@@ -11,7 +11,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use zeroize::Zeroizing;
 
-use super::InvitePreview;
+use super::{InvitePreview, InviteText};
 
 /// The event the Server's own event stream pushes how its short code stands
 /// under: as a client connects, and again whenever that changes.
@@ -178,59 +178,6 @@ impl ShortCodeState {
     }
 }
 
-/// Whether `text` is, by how it opens, a whole Invite rather than a code. No code
-/// reads so unless it is typed in lower case with its separator and opens `SURU-V`,
-/// which one in some millions do and which is then only taken for the Invite field.
-pub fn opens_as_an_invite(text: &str) -> bool {
-    text.trim_start().starts_with(INVITE_OPENING)
-}
-
-/// How every Invite's string opens, a version following.
-const INVITE_OPENING: &str = "suru-v";
-
-/// The whole string of an Invite, as a Client holds it while the reader decides.
-/// Its token redeems the Invite for whoever has it, so it says nothing of itself
-/// in `Debug`, whatever holds it comes to be printed by.
-#[derive(Clone, Default, Eq, PartialEq)]
-pub struct InviteText(pub String);
-
-impl InviteText {
-    /// What stands in `Debug` for the string of an Invite.
-    pub(crate) const REDACTED: Self = Self(String::new());
-}
-
-impl std::fmt::Debug for InviteText {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("InviteText(..)")
-    }
-}
-
-impl From<String> for InviteText {
-    fn from(invite: String) -> Self {
-        Self(invite)
-    }
-}
-
-impl From<&str> for InviteText {
-    fn from(invite: &str) -> Self {
-        Self(invite.to_owned())
-    }
-}
-
-impl std::ops::Deref for InviteText {
-    type Target = str;
-
-    fn deref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl PartialEq<&str> for InviteText {
-    fn eq(&self, other: &&str) -> bool {
-        self.0 == *other
-    }
-}
-
 /// A code typed for a machine chosen from those a Relay listed: ask for that
 /// machine's Invite over one of the Relays said to carry it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -247,21 +194,11 @@ pub struct FetchShortInviteRequest {
 
 /// The ordinary Invite a short code delivered, and its preview. Nothing is
 /// trusted yet: it is redeemed as any other is.
-#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeliveredInvite {
-    pub invite: String,
+    pub invite: InviteText,
     pub preview: InvitePreview,
-}
-
-impl std::fmt::Debug for DeliveredInvite {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("DeliveredInvite")
-            .field("invite", &InviteText::REDACTED)
-            .field("preview", &self.preview)
-            .finish()
-    }
 }
 
 #[cfg(test)]
@@ -333,10 +270,63 @@ mod tests {
 
     #[test]
     fn a_whole_invite_is_told_from_a_code_by_how_it_opens() {
-        assert!(opens_as_an_invite("suru-v1-eyJ3IjpbXX0"));
-        assert!(opens_as_an_invite("\n  suru-v2-anything"));
-        assert!(!opens_as_an_invite("K7QF-2MXP"));
-        assert!(!opens_as_an_invite("k7suru-v1-eyJ3IjpbXX0"));
+        assert!(crate::protocol::opens_as_an_invite("suru-v1-eyJ3IjpbXX0"));
+        assert!(crate::protocol::opens_as_an_invite("\n  suru-v2-anything"));
+        assert!(!crate::protocol::opens_as_an_invite("K7QF-2MXP"));
+        assert!(!crate::protocol::opens_as_an_invite(
+            "k7suru-v1-eyJ3IjpbXX0"
+        ));
+    }
+
+    /// An Invite crosses a Server's API as the bare string it always was, and
+    /// nothing holding one prints its token.
+    #[test]
+    fn nothing_says_an_invites_token_by_accident() {
+        const INVITE: &str = "suru-v1-the-token-in-its-string";
+        let text = InviteText::from(INVITE);
+        assert_eq!(
+            serde_json::to_string(&text).unwrap(),
+            format!("\"{INVITE}\"")
+        );
+        let preview = InvitePreview {
+            hostname: "workstation".to_owned(),
+            fingerprint: "aaaa".to_owned(),
+            ways: Vec::new(),
+        };
+        for said in [
+            format!("{text:?}"),
+            format!(
+                "{:?}",
+                DeliveredInvite {
+                    invite: text.clone(),
+                    preview,
+                }
+            ),
+            format!(
+                "{:?}",
+                crate::protocol::IssuedInvite {
+                    invite: text.clone(),
+                    ways: Vec::new(),
+                    short_code: None,
+                }
+            ),
+            format!(
+                "{:?}",
+                crate::protocol::PreviewInviteRequest {
+                    invite: text.clone(),
+                }
+            ),
+            format!(
+                "{:?}",
+                crate::protocol::RedeemInviteRequest {
+                    invite: text.clone(),
+                    name: None,
+                    ways: Vec::new(),
+                }
+            ),
+        ] {
+            assert!(!said.contains("the-token"), "{said}");
+        }
     }
 
     #[test]
@@ -362,50 +352,6 @@ mod tests {
         ] {
             assert!(!said.contains("K7QF"), "{said}");
             assert!(!said.contains("2MXP"), "{said}");
-        }
-    }
-
-    #[test]
-    fn nothing_says_an_invites_token_by_accident() {
-        const INVITE: &str = "suru-v1-the-token-in-its-string";
-        let preview = InvitePreview {
-            hostname: "workstation".to_owned(),
-            fingerprint: "aaaa".to_owned(),
-            ways: Vec::new(),
-        };
-        for said in [
-            format!("{:?}", InviteText::from(INVITE)),
-            format!(
-                "{:?}",
-                DeliveredInvite {
-                    invite: INVITE.to_owned(),
-                    preview,
-                }
-            ),
-            format!(
-                "{:?}",
-                crate::protocol::IssuedInvite {
-                    invite: INVITE.to_owned(),
-                    ways: Vec::new(),
-                    short_code: None,
-                }
-            ),
-            format!(
-                "{:?}",
-                crate::protocol::PreviewInviteRequest {
-                    invite: INVITE.to_owned(),
-                }
-            ),
-            format!(
-                "{:?}",
-                crate::protocol::RedeemInviteRequest {
-                    invite: INVITE.to_owned(),
-                    name: None,
-                    ways: Vec::new(),
-                }
-            ),
-        ] {
-            assert!(!said.contains("the-token"), "{said}");
         }
     }
 

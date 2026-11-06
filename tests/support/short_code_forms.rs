@@ -58,3 +58,13 @@ pub fn form_held<'a>(seen: &[u8], forms: &'a [Vec<u8>]) -> Option<&'a [u8]> {
         .find(|form| seen.windows(form.len()).any(|at| at == form.as_slice()))
         .map(Vec::as_slice)
 }
+
+/// A code that is not `code`, for a guess that is wrong.
+pub fn another_code(code: &ShortCode) -> ShortCode {
+    let other = if code.grouped() == "2222-2222" {
+        "3333-3333"
+    } else {
+        "2222-2222"
+    };
+    ShortCode::parse(other).unwrap()
+}

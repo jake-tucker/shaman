@@ -606,10 +606,13 @@ fn command_for_insights_wheel(
 /// than typing and Enter issuing the Invite for the complete chosen set. On a
 /// Relay an Invite cannot offer, Space takes `action`, which puts it right, and
 /// `a` adds a Relay: what either opens stands over the picker with keys of its
-/// own, as [`command_for_relay_overlay_event`] takes them.
+/// own, as [`command_for_relay_overlay_event`] takes them. With a Peer's removal
+/// armed `n` only puts that down, as any other key does, rather than replace the
+/// code as well.
 pub(super) fn command_for_serve_overlay_event(
     event: InputEvent,
     action: WayAction,
+    removal_armed: bool,
 ) -> Option<CommandId> {
     let InputEvent::Key(key) = event else {
         return None;
@@ -629,7 +632,9 @@ pub(super) fn command_for_serve_overlay_event(
         (KeyCode::Enter, KeyModifiers::NONE) => SemanticCommandId::ServeConfirm,
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => SemanticCommandId::ServeCopyInvite,
         (KeyCode::Char('c'), KeyModifiers::NONE) => SemanticCommandId::ServeCopyShortCode,
-        (KeyCode::Char('n'), KeyModifiers::NONE) => SemanticCommandId::ServeNewShortCode,
+        (KeyCode::Char('n'), KeyModifiers::NONE) if !removal_armed => {
+            SemanticCommandId::ServeNewShortCode
+        }
         (KeyCode::Char('x'), KeyModifiers::NONE) => SemanticCommandId::ServeRemovePeer,
         (KeyCode::Esc, KeyModifiers::NONE) => SemanticCommandId::ServeClose,
         _ => return None,

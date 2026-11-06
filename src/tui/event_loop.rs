@@ -3111,7 +3111,7 @@ fn spawn_invite_preview(
     results: UnboundedSender<PairingResult>,
 ) {
     tokio::spawn(async move {
-        let result = match commands.preview_invite(invite.0.clone()).await {
+        let result = match commands.preview_invite(invite.clone()).await {
             Ok(preview) => PairingResult::InvitePreviewed {
                 request,
                 invite,

@@ -631,7 +631,10 @@ impl ManagedClient {
         self.session_commands().fetch_short_invite(request).await
     }
 
-    pub async fn preview_invite(&self, invite: impl Into<String>) -> Result<InvitePreview> {
+    pub async fn preview_invite(
+        &self,
+        invite: impl Into<crate::protocol::InviteText>,
+    ) -> Result<InvitePreview> {
         self.session_commands().preview_invite(invite.into()).await
     }
 
@@ -1898,7 +1901,10 @@ impl SessionCommandClient {
         .await
     }
 
-    pub(crate) async fn preview_invite(&self, invite: String) -> Result<InvitePreview> {
+    pub(crate) async fn preview_invite(
+        &self,
+        invite: crate::protocol::InviteText,
+    ) -> Result<InvitePreview> {
         self.post_session_command(
             "/v1/pairing/invites/preview",
             &PreviewInviteRequest { invite },

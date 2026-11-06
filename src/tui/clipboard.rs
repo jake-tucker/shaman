@@ -35,10 +35,21 @@ pub enum ClipboardRead {
     Failed { reason: String },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ClipboardContent {
     pub text: String,
     pub html: Option<String>,
+}
+
+/// What is copied may be an Invite or a short code, so it says only how much.
+impl std::fmt::Debug for ClipboardContent {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ClipboardContent")
+            .field("text_bytes", &self.text.len())
+            .field("html", &self.html.is_some())
+            .finish()
+    }
 }
 
 impl From<String> for ClipboardContent {

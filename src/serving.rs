@@ -92,9 +92,10 @@ use uuid::Uuid;
 use crate::{
     protocol::{
         ACT_HEADER, AUTHOR_HEADER, ActId, Author, DeliveredInvite, FetchShortInviteRequest,
-        InvitePreview, IssueInviteRequest, IssuedInvite, IssuedShortCode, ListenerState, Peer,
-        RedeemInviteRequest, Remote, RemoteHealth, RemoteRemoval, RemoteStatus, ServingSettings,
-        SessionError, SessionErrorCode, ShortCodeStanding, UnreachableReason, Way,
+        INVITE_OPENING, InvitePreview, IssueInviteRequest, IssuedInvite, IssuedShortCode,
+        ListenerState, Peer, RedeemInviteRequest, Remote, RemoteHealth, RemoteRemoval,
+        RemoteStatus, ServingSettings, SessionError, SessionErrorCode, ShortCodeStanding,
+        UnreachableReason, Way,
     },
     runtime::{protect_current_user_file, replace_private_file},
 };
@@ -837,7 +838,8 @@ impl PairingFailure {
             | SessionErrorCode::ShortCodeDead => StatusCode::GONE,
             SessionErrorCode::InviteSuperseded
             | SessionErrorCode::RemoteNameConflict
-            | SessionErrorCode::ShortCodeNotLive => StatusCode::CONFLICT,
+            | SessionErrorCode::ShortCodeNotLive
+            | SessionErrorCode::ShortCodeBeingTried => StatusCode::CONFLICT,
             SessionErrorCode::ShortCodeKeyMismatch => StatusCode::BAD_GATEWAY,
             SessionErrorCode::PairingConnectionFailed
             | SessionErrorCode::PairingAuthenticationFailed
@@ -1100,7 +1102,7 @@ impl ServingController {
         let encoded = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).map_err(|_| {
             internal_pairing_failure(anyhow::anyhow!("could not encode Invite payload"))
         })?);
-        let invite = format!("suru-v1-{encoded}");
+        let invite = format!("{INVITE_OPENING}1-{encoded}");
         let expires_at = tokio::time::Instant::now() + self.invite_ttl;
         let short_code = {
             // Held throughout, so nothing redeems an Invite between its code
@@ -1126,7 +1128,7 @@ impl ServingController {
             short_code
         };
         Ok(IssuedInvite {
-            invite,
+            invite: invite.into(),
             ways,
             short_code,
         })
@@ -2718,7 +2720,7 @@ fn delivered(invite: &str, listed: &[u8]) -> std::result::Result<DeliveredInvite
         ));
     }
     Ok(DeliveredInvite {
-        invite: invite.to_owned(),
+        invite: invite.into(),
         preview: InvitePreview {
             // Believed no more for having been delivered: whoever knew the
             // code wrote it.

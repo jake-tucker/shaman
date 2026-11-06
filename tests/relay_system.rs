@@ -19,7 +19,7 @@ use suru::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         FetchShortInviteRequest, IssueInviteRequest, RelayLoginOutcome, RelayState,
-        SessionErrorCode, SettingMutation, ShortCode, Way,
+        SessionErrorCode, SettingMutation, Way,
     },
     server::{self, ServerConfig, ServerTimings},
 };
@@ -41,7 +41,7 @@ use support::{
     observed_tcp_proxy::ObservedTcpProxy,
     receive_initial_state,
     relay_voice::RelayVoice,
-    short_code_forms::{form_held, forms_of},
+    short_code_forms::{another_code, form_held, forms_of},
 };
 
 /// A name nothing resolves, so a Server can reach the Relay by it only
@@ -346,12 +346,7 @@ async fn reach_the_relays(proxy: std::net::TcpListener, trust: TrustedCertificat
         .expect("the code delivers the Invite through the proxy");
     assert_eq!(delivered.invite, issued.invite);
     let burned = client.new_short_code().await.unwrap().code;
-    let attempted = ShortCode::parse(if burned.grouped() == "2222-2222" {
-        "3333-3333"
-    } else {
-        "2222-2222"
-    })
-    .unwrap();
+    let attempted = another_code(&burned);
     let refused = redeeming
         .fetch_short_invite(FetchShortInviteRequest {
             server_key: serving_key,

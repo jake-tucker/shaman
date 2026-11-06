@@ -234,7 +234,7 @@ impl Serving {
             },
         )
         .await;
-        invite.invite
+        invite.invite.0
     }
 
     async fn shutdown(self) {
@@ -510,7 +510,7 @@ async fn redeem(own: &RuntimeDescriptor, remote: &Serving, name: &str) -> reqwes
         .post(format!("{}/v1/pairing/remotes", own.base_url))
         .bearer_auth(&own.token)
         .json(&RedeemInviteRequest {
-            invite: remote.invite().await,
+            invite: remote.invite().await.into(),
             name: Some(name.to_owned()),
             ways: Vec::new(),
         })

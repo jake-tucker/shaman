@@ -772,13 +772,15 @@ neither read it nor search for the code afterwards. This Server tries once for e
 at two Relays it goes on to the second only if the first would not join them, or if the machine answered at once that it
 took no guess there, as it does for a Relay its Invite does not offer. While it tries, Esc only says so: the code's one
 try is under way, and Suru stays to show how it went. Where the code fails it is dead: Suru says to get a new one, takes
-it out of the field, and tries nothing again for you. Do not type it again. A Relay standing in for the other machine
-gets one guess at the code each time you do, and the other machine never sees those.
+it out of the field, and tries nothing again for you. Do not type it again. Whatever answered in the other machine's
+place, a Relay or a machine you chose by mistake, gets one guess at the code each time you do, and the other machine
+never sees those.
 
 So if this machine says a code failed while the other still shows it waiting, nothing tried that code over there, and
-what answered in its place was not that machine: the Relay may be at fault. A Relay in the path has about one chance in
-five hundred billion each time you try (see [ADR-0065](../adr/0065-deliver-an-invite-by-a-short-code-through-a-pake-with-one-guess-per-code.md)),
-and even a right guess there only shows you its own fingerprint at the preview.
+what answered in its place was not that machine: the Relay may be at fault. The other machine showing a wrong try says
+nothing either way, since whatever stood in can burn the code there too. A Relay in the path has about one chance in
+five hundred billion each time you try of guessing the code, which would get it the Invite (see
+[ADR-0065](../adr/0065-deliver-an-invite-by-a-short-code-through-a-pake-with-one-guess-per-code.md)).
 
 Where no code is live on the other machine, Suru says to issue an Invite there, and takes what you typed away, since
 whatever gets one live gives a different code. If the Invite delivered names another key than the one listed for the machine, Suru refuses it and says so: the

@@ -13656,20 +13656,9 @@ impl Application {
         let mut changed = self.note_interaction(&event);
         let interaction = is_reader_interaction(&event);
         let command = self.command_for_terminal_input(event);
-        // A new short code leaves nothing to take back, so the key that puts
-        // down an armed removal does that alone rather than replace the code
-        // as well.
-        let removal_armed = self.state.serve_overlay.removal_armed();
         if interaction {
             changed |= self.settle_armed_removals(command.as_ref());
         }
-        let command = command.filter(|command| {
-            !(removal_armed
-                && matches!(
-                    command,
-                    CommandId::InvokeSemantic(SemanticCommandId::ServeNewShortCode)
-                ))
-        });
         let Some(command) = command else {
             return Ok(TerminalEventTaken {
                 changed,
@@ -13967,6 +13956,7 @@ impl Application {
                         self.state
                             .serve_overlay
                             .focused_action(self.state.serve_ways()),
+                        self.state.serve_overlay.removal_armed(),
                     );
                 }
                 SelectionSurface::Relay => {

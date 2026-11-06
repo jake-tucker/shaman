@@ -359,7 +359,7 @@ fn serve_offers_each_relay_served_through_and_logged_in_at_and_the_invite_carrie
         .handle_event(ApplicationEvent::InviteIssued {
             request,
             invite: IssuedInvite {
-                invite: INVITE.to_owned(),
+                invite: INVITE.into(),
                 ways: vec![Way::Relay(COMPANY.to_owned())],
                 short_code: None,
             },
@@ -647,7 +647,7 @@ fn a_late_invite_lands_nowhere() {
         .handle_event(ApplicationEvent::InviteIssued {
             request: earlier,
             invite: IssuedInvite {
-                invite: "suru-v1-superseded".to_owned(),
+                invite: "suru-v1-superseded".into(),
                 ways: vec![direct()],
                 short_code: None,
             },
@@ -741,7 +741,7 @@ fn redeeming_through_a_relay_this_server_is_not_logged_in_at_logs_in_there_and_c
     assert_eq!(
         redemption,
         RedeemInviteRequest {
-            invite: INVITE.to_owned(),
+            invite: INVITE.into(),
             name: Some("studio".to_owned()),
             ways: vec![Way::Relay(COMPANY.to_owned())],
         }
@@ -3299,7 +3299,7 @@ fn a_adds_a_relay_only_from_the_picker() {
         .handle_event(ApplicationEvent::InviteIssued {
             request,
             invite: IssuedInvite {
-                invite: INVITE.to_owned(),
+                invite: INVITE.into(),
                 ways: vec![direct()],
                 short_code: None,
             },

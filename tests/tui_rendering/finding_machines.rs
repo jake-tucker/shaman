@@ -836,7 +836,7 @@ fn asking_with(
 /// The machine's Invite, by the format an Invite has, and its preview.
 fn delivered_invite() -> DeliveredInvite {
     DeliveredInvite {
-        invite: "suru-v1-delivered".to_owned(),
+        invite: "suru-v1-delivered".into(),
         preview: InvitePreview {
             hostname: "workstation".to_owned(),
             fingerprint: WORKSTATION.to_owned(),
@@ -1074,6 +1074,15 @@ fn escape_during_the_one_try_says_so_and_stays_to_show_how_it_went() {
         );
         let text = shown_text(&application);
         assert!(text.contains("one try is under way"), "{text}");
+        assert!(
+            text.contains("a minute or so"),
+            "whole, however it wraps: {text}"
+        );
+        let narrow = rendered_application_rows_at(&application, 30, 16).join("\n");
+        assert!(
+            narrow.contains("stays"),
+            "and on a narrow terminal: {narrow}"
+        );
         let answer = if delivered {
             ApplicationEvent::ShortInviteDelivered {
                 request,
@@ -1164,6 +1173,7 @@ fn a_code_pasted_where_an_invite_goes_says_to_choose_its_machine() {
     let text = shown_text(&application);
     assert!(text.contains("looks like a short code"), "{text}");
     assert!(text.contains("choose the machine"), "{text}");
+    assert!(text.contains("it there"), "whole, however it wraps: {text}");
 }
 
 /// A machine that is not Serving, or a Remote already, has no code to ask for.

@@ -57,8 +57,9 @@
 //! limits how many may come through: a party that has yet to finish its opening
 //! holds nothing another needs. It holds a place among the connections the
 //! Serving side's acceptor is finishing, as any connection saying nothing does,
-//! for no longer than [`ShortCodes::reading_timeout`], and that shared room is
-//! what bounds them.
+//! for its handshake's bound to say its first byte and the reading bound to say
+//! the rest, and that shared room is what bounds them (ADR-0065 says what filling
+//! it costs).
 
 use std::{
     sync::{Arc, Mutex as StdMutex, atomic::AtomicU64, atomic::Ordering},
@@ -122,7 +123,16 @@ const KEY_FORMS: [(&[u8], usize); 3] = [
     ),
 ];
 /// The longest of [`KEY_FORMS`].
-const MAX_KEY: usize = 120;
+const MAX_KEY: usize = {
+    let (mut longest, mut form) = (0, 0);
+    while form < KEY_FORMS.len() {
+        if KEY_FORMS[form].1 > longest {
+            longest = KEY_FORMS[form].1;
+        }
+        form += 1;
+    }
+    longest
+};
 /// How long a SPAKE2 message is: which side it comes from, and a point.
 const SHARE: usize = 33;
 /// What opens a SPAKE2 message from each side.
@@ -645,14 +655,14 @@ impl ShortCodes {
         let mut current = self.current();
         let Some(entry) = current.as_mut().filter(|entry| entry.stands()) else {
             return Err(PairingFailure::new(
-                SessionErrorCode::InviteExpired,
-                "the Invite this code came with has ended, or offers no Relay; issue a new one \
-                 with /serve",
+                SessionErrorCode::ShortCodeNotLive,
+                "no Invite standing has a code: the last has ended, or offers no Relay; issue a \
+                 new one with /serve",
             ));
         };
         if self.standing.borrow().state == ShortCodeState::UnderWay {
             return Err(PairingFailure::new(
-                SessionErrorCode::RemoteBusy,
+                SessionErrorCode::ShortCodeBeingTried,
                 "this code is being tried now; a new one can be had once that ends",
             ));
         }
@@ -1577,7 +1587,7 @@ mod tests {
         let Err(refused) = codes.replace() else {
             panic!("that exchange could still deliver");
         };
-        assert_eq!(refused.code, SessionErrorCode::RemoteBusy);
+        assert_eq!(refused.code, SessionErrorCode::ShortCodeBeingTried);
         assert_eq!(state(&codes), ShortCodeState::UnderWay);
     }
 
@@ -1600,7 +1610,6 @@ mod tests {
             altered[4] ^= 1;
             assert!(!is_identity_key(&altered));
         }
-        assert!(MAX_KEY >= KEY_FORMS.iter().map(|(_, length)| *length).max().unwrap());
         assert!(!is_identity_key(
             b"a free-form field anything could travel in"
         ));

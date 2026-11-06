@@ -413,7 +413,7 @@ impl ConnectOverlay {
     ) {
         if self.awaits_fetch(request) {
             self.state = ConnectOverlayState::Confirming {
-                invite: delivered.invite.into(),
+                invite: delivered.invite,
                 preview: delivered.preview,
             };
             self.preview_window.scroll_to(0);
@@ -476,8 +476,9 @@ impl ConnectOverlay {
                 ..
             } => Some("Asking for the Invite…"),
             ConnectOverlayState::Fetching { .. } => Some(
-                "Asking for the Invite… The code's one try is under way, and this says how it \
-                 went in a moment",
+                "Asking for the Invite… The code's one try is under way, so this stays to show \
+                 how it went. It ends on its own, in seconds unless a Relay is slow to answer, \
+                 when it can take a minute or so for each",
             ),
             ConnectOverlayState::Inspecting { .. } => Some("Inspecting Invite…"),
             ConnectOverlayState::Redeeming { .. } => Some("Pairing Remote…"),
@@ -852,7 +853,7 @@ impl ConnectOverlay {
     ) -> (ConnectRequest, RedeemInviteRequest) {
         let request = self.issue();
         let redemption = RedeemInviteRequest {
-            invite: draft.invite.0.clone(),
+            invite: draft.invite.clone(),
             name: Some(draft.name.trim().to_owned()),
             ways: draft.ways.clone(),
         };

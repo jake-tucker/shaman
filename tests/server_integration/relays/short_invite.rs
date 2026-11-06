@@ -37,7 +37,7 @@ use crate::{
     support::{
         PROGRESS_DEADLINE,
         relay_voice::carried,
-        short_code_forms::{form_held, forms_of},
+        short_code_forms::{another_code, form_held, forms_of},
     },
 };
 
@@ -105,16 +105,6 @@ impl TestServer {
         .await;
         telling.unwrap_or_else(|_| panic!("the Server never said its short code stands {state:?}"))
     }
-}
-
-/// Another code than `code`.
-fn wrong(code: &ShortCode) -> ShortCode {
-    let other = if code.grouped() == "2222-2222" {
-        "3333-3333"
-    } else {
-        "2222-2222"
-    };
-    ShortCode::parse(other).unwrap()
 }
 
 /// The workstation and laptop of a test, the workstation Serving through
@@ -423,7 +413,7 @@ async fn a_wrong_code_forms_nothing_ends_the_code_leaves_the_long_string_and_tel
         .await;
 
     let refused = laptop
-        .fetch(&workstation, &[relay.address()], &wrong(&code))
+        .fetch(&workstation, &[relay.address()], &another_code(&code))
         .await
         .expect_err("a wrong code delivers nothing");
     assert_eq!(error_code(&refused), SessionErrorCode::ShortCodeDead);
@@ -518,7 +508,7 @@ async fn a_new_code_keeps_the_invite_it_is_for() {
         .invite_with_code(vec![Way::Relay(relay.address())])
         .await;
     laptop
-        .fetch(&workstation, &[relay.address()], &wrong(&code))
+        .fetch(&workstation, &[relay.address()], &another_code(&code))
         .await
         .expect_err("a wrong code delivers nothing");
     workstation.told_code(ShortCodeState::WrongCodeTried).await;
@@ -554,7 +544,7 @@ async fn a_code_expires_with_its_invite_and_a_new_one_is_not_had_for_it() {
         .expect_err("an expired code is not live");
     assert_eq!(error_code(&refused), SessionErrorCode::ShortCodeNotLive);
     let refused = workstation.client.new_short_code().await.unwrap_err();
-    assert_eq!(error_code(&refused), SessionErrorCode::InviteExpired);
+    assert_eq!(error_code(&refused), SessionErrorCode::ShortCodeNotLive);
     laptop.shutdown().await;
     workstation.shutdown().await;
 }
@@ -708,7 +698,7 @@ async fn a_stalled_exchange_is_closed_within_its_bound_and_counts_as_its_guess()
         .await;
     let key = asker.subject_public_key_info();
     let (_, share) = Spake2::<Ed25519Group>::start_a(
-        &Password::new(wrong(&code).grouped().replace('-', "")),
+        &Password::new(another_code(&code).grouped().replace('-', "")),
         &Identity::new(&key),
         &Identity::new(&workstation.identity().subject_public_key_info()),
     );
@@ -785,7 +775,7 @@ async fn a_party_guessing_as_the_redeemer_learns_nothing_of_the_code_and_only_bu
     let mut stream = relay.voice().joined(&asker, &serving_key).await;
     let key = asker.subject_public_key_info();
     let (spake, share) = Spake2::<Ed25519Group>::start_a(
-        &Password::new(wrong(&code).grouped().replace('-', "")),
+        &Password::new(another_code(&code).grouped().replace('-', "")),
         &Identity::new(&key),
         &Identity::new(&serving_key),
     );
@@ -1299,7 +1289,7 @@ async fn no_code_or_anything_derived_from_one_reaches_a_relay_message_or_a_log()
         .to_owned();
 
     let (_, burned) = workstation.invite_with_code(way()).await;
-    let attempted = wrong(&burned);
+    let attempted = another_code(&burned);
     let refused = laptop
         .fetch(&workstation, &[relay.address()], &attempted)
         .await

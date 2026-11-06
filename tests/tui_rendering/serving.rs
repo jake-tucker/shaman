@@ -69,7 +69,7 @@ fn serving_shows_a_fresh_copyable_invite_and_removes_enrolled_peers() {
         .handle_event(ApplicationEvent::InviteIssued {
             request,
             invite: IssuedInvite {
-                invite: invite.clone(),
+                invite: invite.clone().into(),
                 ways: vec![Way::Direct(SocketAddr::from((
                     Ipv4Addr::new(10, 0, 0, 8),
                     7777,
@@ -300,7 +300,7 @@ fn serve_lists_scroll_to_keep_the_focused_candidate_and_peer_fully_visible() {
         .handle_event(ApplicationEvent::InviteIssued {
             request,
             invite: IssuedInvite {
-                invite: long_invite.clone(),
+                invite: long_invite.clone().into(),
                 ways: vec![Way::Direct(SocketAddr::from((
                     Ipv4Addr::new(10, 0, 0, 20),
                     7777,
@@ -382,7 +382,7 @@ fn showing_a_code_beside(code: &str, serial: u64, peers: Vec<Peer>) -> Applicati
         .handle_event(ApplicationEvent::InviteIssued {
             request,
             invite: IssuedInvite {
-                invite: "suru-v1-long-string".to_owned(),
+                invite: "suru-v1-long-string".into(),
                 ways: vec![Way::Relay("https://relay.example.com".to_owned())],
                 short_code: Some(IssuedShortCode {
                     code: ShortCode::parse(code).unwrap(),
@@ -677,7 +677,7 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
         .handle_event(ApplicationEvent::InviteIssued {
             request,
             invite: IssuedInvite {
-                invite: "suru-v1-next".to_owned(),
+                invite: "suru-v1-next".into(),
                 ways: vec![Way::Relay("https://relay.example.com".to_owned())],
                 short_code: Some(IssuedShortCode {
                     code: ShortCode::parse("H4RW-9TNB").unwrap(),

@@ -52,13 +52,18 @@ impl TestServer {
             .await
             .expect("issue an Invite")
             .invite
+            .0
     }
 
     /// Redeems `invite`, naming the Remote `name`.
-    pub(super) async fn redeem_as(&self, invite: String, name: &str) -> anyhow::Result<Remote> {
+    pub(super) async fn redeem_as(
+        &self,
+        invite: impl Into<suru::protocol::InviteText>,
+        name: &str,
+    ) -> anyhow::Result<Remote> {
         self.client
             .redeem_invite(RedeemInviteRequest {
-                invite,
+                invite: invite.into(),
                 name: Some(name.to_owned()),
                 ways: Vec::new(),
             })

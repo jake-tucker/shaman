@@ -3454,7 +3454,7 @@ async fn malformed_foreign_superseded_spent_and_expired_invites_have_precise_err
         assert_eq!(pairing_error_code(&preview_error), expected);
         let error = connecting_client
             .redeem_invite(RedeemInviteRequest {
-                invite: invite.to_owned(),
+                invite: invite.into(),
                 name: Some("unused".to_owned()),
                 ways: Vec::new(),
             })
@@ -4812,7 +4812,7 @@ async fn redeeming_an_invite_never_shows_its_token_over_tls_1_2() {
 
     let error = client
         .redeem_invite(RedeemInviteRequest {
-            invite: tls12_only.invite(),
+            invite: tls12_only.invite().into(),
             name: Some("workstation".to_owned()),
             ways: Vec::new(),
         })
@@ -4981,7 +4981,7 @@ async fn an_https_proxy_is_sent_nothing_and_its_way_fails() {
 
     let error = client
         .redeem_invite(RedeemInviteRequest {
-            invite: handmade_invite(Way::Direct(way.address), b"the Serving Server's key"),
+            invite: handmade_invite(Way::Direct(way.address), b"the Serving Server's key").into(),
             name: Some("workstation".to_owned()),
             ways: Vec::new(),
         })

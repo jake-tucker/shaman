@@ -2021,6 +2021,56 @@ impl std::fmt::Display for Way {
     }
 }
 
+/// How every Invite's string opens, a version following.
+pub(crate) const INVITE_OPENING: &str = "suru-v";
+
+/// Whether `text` is, by how it opens, a whole Invite rather than a short code.
+/// No code reads so unless it is typed in lower case with its separator and opens
+/// `SURU-V`, which one in some millions do and which is then only taken for the
+/// Invite field.
+pub fn opens_as_an_invite(text: &str) -> bool {
+    text.trim_start().starts_with(INVITE_OPENING)
+}
+
+/// The whole string of an Invite. Its token redeems the Invite for whoever has
+/// it, so it says nothing of itself in `Debug`, whatever holds it comes to be
+/// printed by.
+#[derive(Clone, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct InviteText(pub String);
+
+impl fmt::Debug for InviteText {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("InviteText(..)")
+    }
+}
+
+impl From<String> for InviteText {
+    fn from(invite: String) -> Self {
+        Self(invite)
+    }
+}
+
+impl From<&str> for InviteText {
+    fn from(invite: &str) -> Self {
+        Self(invite.to_owned())
+    }
+}
+
+impl std::ops::Deref for InviteText {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq<&str> for InviteText {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
 /// The ways of reaching this Server its Serving user chose to offer in a
 /// freshly issued Invite.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2031,26 +2081,15 @@ pub struct IssueInviteRequest {
 
 /// The pasteable Invite together with the ways it offers, returned by the
 /// Server's local interface so a Client need not decode credential data.
-#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct IssuedInvite {
-    pub invite: String,
+    pub invite: InviteText,
     pub ways: Vec<Way>,
     /// The short code a reader can type in place of carrying `invite`, where
     /// it offers a Relay; none where it offers direct ways alone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub short_code: Option<IssuedShortCode>,
-}
-
-impl std::fmt::Debug for IssuedInvite {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("IssuedInvite")
-            .field("invite", &InviteText::REDACTED)
-            .field("ways", &self.ways)
-            .field("short_code", &self.short_code)
-            .finish()
-    }
 }
 
 /// The non-secret facts a local Client may show before the reader decides to
@@ -2065,42 +2104,22 @@ pub struct InvitePreview {
 
 /// A pasted Invite to inspect locally. Inspection validates and decodes the
 /// Invite but never dials an offered way or changes Pairing state.
-#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PreviewInviteRequest {
-    pub invite: String,
-}
-
-impl std::fmt::Debug for PreviewInviteRequest {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("PreviewInviteRequest")
-            .field("invite", &InviteText::REDACTED)
-            .finish()
-    }
+    pub invite: InviteText,
 }
 
 /// The connecting user's choices when redeeming an Invite. `ways` must be the
 /// Invite's offered ways in the priority order to dial; an empty list keeps
 /// the offered order. `name` defaults to the Serving machine's hostname when
 /// omitted.
-#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RedeemInviteRequest {
-    pub invite: String,
+    pub invite: InviteText,
     pub name: Option<String>,
     pub ways: Vec<Way>,
-}
-
-impl std::fmt::Debug for RedeemInviteRequest {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("RedeemInviteRequest")
-            .field("invite", &InviteText::REDACTED)
-            .field("name", &self.name)
-            .field("ways", &self.ways)
-            .finish()
-    }
 }
 
 /// A durable paired Serving Server as the connecting Server knows it.
@@ -5790,6 +5809,8 @@ pub enum SessionErrorCode {
     ShortCodeNotLive,
     /// A short code's one try was used and delivered nothing.
     ShortCodeDead,
+    /// A short code is being tried, so no new one is had until that ends.
+    ShortCodeBeingTried,
     /// A short code delivered an Invite naming another key than the machine's.
     ShortCodeKeyMismatch,
     InvalidRemoteName,

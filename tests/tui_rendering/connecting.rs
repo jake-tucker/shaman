@@ -1497,7 +1497,7 @@ fn remote_name_is_editable_and_ways_are_redeemed_in_the_visible_priority_order()
     assert_eq!(
         redemption(press(&mut application, KeyCode::Enter)),
         RedeemInviteRequest {
-            invite: "suru-v1-example".to_owned(),
+            invite: "suru-v1-example".into(),
             name: Some("desktop".to_owned()),
             ways: vec![preferred, first],
         }
@@ -1831,7 +1831,7 @@ fn the_priority_order_is_reorderable_before_the_keys_reach_the_address_list() {
     assert_eq!(
         redemption(press(&mut application, KeyCode::Enter)),
         RedeemInviteRequest {
-            invite: "suru-v1-example".to_owned(),
+            invite: "suru-v1-example".into(),
             name: Some("studio!".to_owned()),
             ways: vec![
                 Way::Direct("10.0.0.8:7777".parse().unwrap()),

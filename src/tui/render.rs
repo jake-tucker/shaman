@@ -602,7 +602,7 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             state,
             SelectionSurface::Connect,
             area,
-            vec![Line::styled(label, theme.text.subdued)],
+            wrapped_lines(label, area.width.saturating_sub(2), theme.text.subdued),
             " Connect ",
             theme,
         );
@@ -1009,7 +1009,7 @@ fn invite_entry_lines(
         Line::styled(invite.to_owned(), theme.text.primary)
     });
     if let Some(error) = error {
-        field.push(Line::styled(error.to_owned(), theme.feedback.error));
+        field.extend(wrapped_lines(error, width, theme.feedback.error));
     }
     // A login the reader left came to stand since: the Invite now pairs.
     if let Some(relay) = overlay.logged_in_at() {
