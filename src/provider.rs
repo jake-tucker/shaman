@@ -208,6 +208,29 @@ impl CacheRateLookup for HostedCacheRates {
     }
 }
 
+/// What of a shell's environment a Provider depends on, read off the runtimes so
+/// a Login start (`login_start`) can neither miss a Provider nor restate one's
+/// variables.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ProviderEnvironment {
+    /// Variables a Server started with no shell behind it is to be given: those
+    /// that name a place, and that decide whether the Provider is found and what
+    /// it finds itself signed in to. None may hold a secret.
+    pub carried: &'static [&'static str],
+    /// What the names begin with of variables its harness reads that a Server
+    /// started so is not given, since they may hold a secret, named to its user
+    /// so that their absence is no mystery.
+    pub uncarried_prefixes: &'static [&'static str],
+}
+
+/// What each built-in Provider declares of [`ProviderEnvironment`].
+pub(crate) fn built_in_environments() -> Vec<ProviderEnvironment> {
+    runtimes(None)
+        .iter()
+        .map(|runtime| runtime.environment())
+        .collect()
+}
+
 /// The built-in Providers as a client lists them, in that same fixed order.
 /// Read off the runtimes themselves, so a surface presenting Providers can
 /// neither miss one the server hosts nor call one a name no runtime answers
@@ -1748,6 +1771,13 @@ pub trait ProviderRuntime: Send + Sync + 'static {
         false
     }
 
+    /// What of a shell's environment this Provider depends on. Defaulted so a
+    /// test's stand-in need not say; every built-in Provider must, as
+    /// `every_built_in_provider_declares_what_finds_it` holds.
+    fn environment(&self) -> ProviderEnvironment {
+        ProviderEnvironment::default()
+    }
+
     /// How far this Provider compacts a Session's context on request.
     /// Defaulted to [`ManualCompaction::Unsupported`], matching the refusal
     /// [`ProviderSession::compact`] defaults to, so a Provider without the
@@ -2119,6 +2149,28 @@ mod tests {
 
     /// Every Provider's binary resolution shares this scope, so they share its lock.
     static ENVIRONMENT: Mutex<()> = Mutex::new(());
+
+    /// A Provider that declared nothing would be missing from every Server
+    /// started at login, found by no `PATH` override and in no warning.
+    #[test]
+    fn every_built_in_provider_declares_what_finds_it() {
+        for runtime in runtimes(None) {
+            let environment = runtime.environment();
+            assert!(
+                environment
+                    .carried
+                    .iter()
+                    .any(|name| name.starts_with("SURU_") && name.ends_with("_PATH")),
+                "{} names no executable override: {environment:?}",
+                runtime.display_name()
+            );
+            assert!(
+                !environment.uncarried_prefixes.is_empty(),
+                "{} names nothing it reads that is not carried",
+                runtime.display_name()
+            );
+        }
+    }
 
     const FIXTURE_PATH_ENV: &str = "SURU_FIXTURE_PROVIDER_PATH";
 

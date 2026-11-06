@@ -40,7 +40,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use uuid::Uuid;
 
-use crate::{login_start::Standing, runtime::LastStop};
+use crate::runtime::LastStop;
 
 use super::{ManagedClientConfig, RecoveryBackoff, launcher, lifecycle};
 
@@ -165,14 +165,15 @@ impl Keeping {
     }
 }
 
-/// Keeps `config`'s Channel's Server running until `registered` says its Login
-/// start has been removed, asking only as it comes to launch one: the Keeper of
-/// a removed registration has nothing further to do, and runs out at logout at
-/// the latest.
+/// Keeps `config`'s Channel's Server running until `no_longer_wanted` says so,
+/// which it is asked only as a Server comes to be launched: the Keeper of a
+/// removed Login start has nothing further to do, and runs out at logout at the
+/// latest. Anything short of being sure is for it to answer no, since an answer
+/// of yes ends a Keeper for good.
 pub async fn keep_server(
     config: &ManagedClientConfig,
     timings: KeeperTimings,
-    registered: impl Fn() -> Standing,
+    no_longer_wanted: impl Fn() -> bool,
 ) -> Result<()> {
     let baseline = launcher::StopBaseline::read(config);
     let startup = tokio::time::Instant::now() + config.startup_timeout;
@@ -209,7 +210,7 @@ pub async fn keep_server(
         if now < next_launch {
             continue;
         }
-        if registered() == Standing::NotRegistered {
+        if no_longer_wanted() {
             tracing::info!("the channel's start at login was removed, so its keeper is done");
             return Ok(());
         }

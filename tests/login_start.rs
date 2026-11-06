@@ -14,7 +14,10 @@ use std::{
     process::Stdio,
 };
 
-use suru::protocol::RuntimeDescriptor;
+use suru::{
+    login_start::{KeeperArguments, ServiceManagerStandIn},
+    protocol::RuntimeDescriptor,
+};
 use tokio::{
     process::{Child, Command},
     time::{Duration, timeout},
@@ -89,31 +92,13 @@ impl Machine {
 
     /// `suru server <subcommand>` for `channel`, as a user's shell runs it.
     fn server_cli(&self, channel: &str, subcommand: &[&str]) -> Command {
-        let mut command = self.sparse(env!("CARGO_BIN_EXE_suru"));
-        command
-            .arg("server")
-            .args(subcommand)
-            .env("SURU_STATE_DIR", self.servers.state_dir())
-            .env("SURU_DATA_DIR", self.servers.state_dir())
-            .env("SURU_CONFIG_DIR", self.servers.state_dir())
-            .env("SURU_CHANNEL", channel)
-            .envs(self.servers.isolated_environment());
-        if matches!(subcommand[0], "install" | "uninstall" | "status") {
-            command.arg("--service-manager").arg(&self.stand_in);
-        }
-        if subcommand[0] == "start" {
-            command
-                .arg("--startup-timeout-ms")
-                .arg(PROGRESS_DEADLINE.as_millis().to_string());
-        }
-        if subcommand[0] == "stop" {
-            command
-                .arg("--stop-timeout-ms")
-                .arg(PROGRESS_DEADLINE.as_millis().to_string())
-                .arg("--health-check-timeout-ms")
-                .arg("100");
-        }
-        command
+        crate::cli_integration::server_cli_with_home(
+            &self.servers,
+            channel,
+            subcommand[0],
+            self.home.path(),
+            &self.stand_in,
+        )
     }
 
     async fn run(&self, channel: &str, subcommand: &[&str]) -> std::process::Output {
@@ -145,38 +130,46 @@ impl Machine {
         let stdout = String::from_utf8_lossy(&output.stdout);
         stdout
             .lines()
-            .find(|line| line.starts_with("Start at login:"))
+            .find(|line| line.starts_with("Login start:"))
             .unwrap_or_else(|| panic!("status says nothing of a start at login: {output:?}"))
             .to_owned()
     }
 
     /// The Keeper of `channel`, run as a registration runs it: with nothing of a
-    /// shell's environment but what it carries on its command line. It reads as
-    /// [`registered_words`] does on the platforms where a test can read one.
+    /// shell's environment but what it carries on its command line.
     fn keeper(&self, channel: &str, executable: &Path) -> Child {
+        self.keeper_looking_every(channel, executable, LOOK_INTERVAL_MS)
+    }
+
+    fn keeper_looking_every(
+        &self,
+        channel: &str,
+        executable: &Path,
+        look_interval_ms: u64,
+    ) -> Child {
+        let arguments = KeeperArguments {
+            executable: executable.to_path_buf(),
+            state_base_dir: self.servers.state_dir().to_path_buf(),
+            data_base_dir: self.servers.state_dir().to_path_buf(),
+            config_dir: Some(self.servers.state_dir().to_path_buf()),
+            channel: channel.to_owned(),
+            identity_store: None,
+            carried: self
+                .servers
+                .isolated_environment()
+                .into_iter()
+                .map(|(name, value)| (name.to_owned(), value.display().to_string()))
+                .collect(),
+            stand_in: ServiceManagerStandIn {
+                program: Some(self.stand_in.clone()),
+            },
+            look_interval_ms: Some(look_interval_ms),
+        };
         let mut command = self.sparse(executable);
         command
-            .arg("__keep-server")
-            .arg("--executable")
-            .arg(executable)
-            .arg("--state-dir")
-            .arg(self.servers.state_dir())
-            .arg("--data-dir")
-            .arg(self.servers.state_dir())
-            .arg("--config-dir")
-            .arg(self.servers.state_dir())
-            .arg("--channel")
-            .arg(channel)
-            .arg("--service-manager")
-            .arg(&self.stand_in)
-            .arg("--look-interval-ms")
-            .arg(LOOK_INTERVAL_MS.to_string());
-        for (name, value) in self.servers.isolated_environment() {
-            command
-                .arg("--env")
-                .arg(format!("{name}={}", value.display()));
-        }
-        command.stdout(Stdio::null()).stderr(Stdio::null());
+            .args(arguments.words().expect("spell the Keeper's command line"))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         command.spawn().expect("run the Keeper")
     }
 
@@ -290,21 +283,89 @@ exit 0
     #[cfg(windows)]
     {
         let path = home.join("stand-in-service-manager.cmd");
-        let marker = home.join("stand-in-task");
+        let definition = home.join(WINDOWS_TASK_DEFINITION);
         std::fs::write(
             &path,
             format!(
                 "@echo off\r\n\
-                 if /i \"%~1\"==\"/Create\" (type nul > \"{marker}\" & exit /b 0)\r\n\
-                 if /i \"%~1\"==\"/Delete\" (del \"{marker}\" & exit /b 0)\r\n\
-                 if /i \"%~1\"==\"/Query\" (if exist \"{marker}\" (exit /b 0) else (exit /b 1))\r\n\
+                 if /i \"%~1\"==\"/Create\" goto create\r\n\
+                 if /i \"%~1\"==\"/Delete\" goto delete\r\n\
+                 if /i \"%~2\"==\"/FO\" exit /b 0\r\n\
+                 if exist \"{definition}\" exit /b 0\r\n\
+                 exit /b 1\r\n\
+                 :create\r\n\
+                 copy /y \"%~5\" \"{definition}\" >nul\r\n\
+                 exit /b 0\r\n\
+                 :delete\r\n\
+                 del \"{definition}\"\r\n\
                  exit /b 0\r\n",
-                marker = marker.display()
+                definition = definition.display()
             ),
         )
         .expect("write the stand-in");
         path
     }
+}
+
+/// Where the Windows stand-in keeps the definition of the Task it was given.
+#[cfg(windows)]
+const WINDOWS_TASK_DEFINITION: &str = "stand-in-task.xml";
+
+/// What the Task the stand-in was given runs, read back as Windows would: UTF-16,
+/// XML, then a command line as a program splits it. One Task at a time is all a
+/// stand-in keeps, so `channel` is only checked.
+#[cfg(windows)]
+fn registered_words(home: &Path, channel: &str) -> Vec<String> {
+    let bytes = std::fs::read(home.join(WINDOWS_TASK_DEFINITION)).expect("read the Task");
+    let units = bytes[2..]
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
+        .collect::<Vec<_>>();
+    let task = String::from_utf16(&units).expect("the Task is UTF-16");
+    let element = |name: &str| {
+        let (_, rest) = task
+            .split_once(&format!("<{name}>"))
+            .unwrap_or_else(|| panic!("the Task names its {name}"));
+        rest.split_once(&format!("</{name}>"))
+            .expect("the element ends")
+            .0
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&")
+    };
+    let mut words = vec![element("Command")];
+    let arguments = element("Arguments");
+    let mut characters = arguments.chars().peekable();
+    while let Some(opening) = characters.next() {
+        assert_eq!(opening, '"', "every word is quoted: {arguments}");
+        let mut word = String::new();
+        let mut backslashes = 0;
+        loop {
+            match characters.next().expect("a word ends") {
+                '\\' => backslashes += 1,
+                '"' if backslashes % 2 == 1 => {
+                    word.push_str(&"\\".repeat(backslashes / 2));
+                    word.push('"');
+                    backslashes = 0;
+                }
+                '"' => {
+                    word.push_str(&"\\".repeat(backslashes / 2));
+                    break;
+                }
+                other => {
+                    word.push_str(&"\\".repeat(backslashes));
+                    word.push(other);
+                    backslashes = 0;
+                }
+            }
+        }
+        words.push(word);
+        characters.next();
+    }
+    assert!(words.iter().any(|word| word == channel), "{words:?}");
+    words
 }
 
 /// The program and arguments the registration of `channel` under `home` names,
@@ -383,7 +444,7 @@ async fn installing_and_uninstalling_are_each_harmless_twice_and_status_follows(
     let channel = "login-start-round-trip";
     assert_eq!(
         machine.login_start_standing(channel).await,
-        "Start at login: not registered"
+        "Login start: not registered"
     );
     let nothing = machine.succeed(channel, &["uninstall"]).await;
     assert!(nothing.contains("nothing to remove"), "{nothing}");
@@ -419,14 +480,14 @@ async fn installing_and_uninstalling_are_each_harmless_twice_and_status_follows(
     }
     let standing = machine.login_start_standing(channel).await;
     assert!(
-        standing.starts_with("Start at login: registered"),
+        standing.starts_with("Login start: registered"),
         "{standing}"
     );
 
     machine.succeed(channel, &["install"]).await;
     let standing = machine.login_start_standing(channel).await;
     assert!(
-        standing.starts_with("Start at login: registered"),
+        standing.starts_with("Login start: registered"),
         "{standing}"
     );
 
@@ -434,7 +495,7 @@ async fn installing_and_uninstalling_are_each_harmless_twice_and_status_follows(
     assert!(removed.contains("left running"), "{removed}");
     assert_eq!(
         machine.login_start_standing(channel).await,
-        "Start at login: not registered"
+        "Login start: not registered"
     );
     let nothing = machine.succeed(channel, &["uninstall"]).await;
     assert!(nothing.contains("nothing to remove"), "{nothing}");
@@ -462,17 +523,16 @@ async fn a_channels_registration_leaves_another_channels_alone() {
     machine.succeed(beta, &["install"]).await;
     assert_eq!(
         machine.login_start_standing(gamma).await,
-        "Start at login: not registered"
+        "Login start: not registered"
     );
 
     machine.succeed(gamma, &["install"]).await;
     machine.succeed(beta, &["uninstall"]).await;
     let standing = machine.login_start_standing(gamma).await;
     assert!(
-        standing.starts_with("Start at login: registered"),
+        standing.starts_with("Login start: registered"),
         "{standing}"
     );
-    #[cfg(unix)]
     assert!(
         registered_words(machine.home.path(), gamma)
             .iter()

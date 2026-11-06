@@ -146,6 +146,20 @@ impl Default for ClaudeRuntime {
 }
 
 impl ProviderRuntime for ClaudeRuntime {
+    fn environment(&self) -> crate::provider::ProviderEnvironment {
+        crate::provider::ProviderEnvironment {
+            carried: &[CLAUDE_PATH_ENV, "CLAUDE_CONFIG_DIR"],
+            uncarried_prefixes: &[
+                "ANTHROPIC_",
+                "CLAUDE_CODE_",
+                "AWS_",
+                "CLOUD_ML_",
+                "VERTEX_",
+                "GOOGLE_APPLICATION_",
+            ],
+        }
+    }
+
     fn provider_id(&self) -> ProviderId {
         ProviderId::new(CLAUDE_PROVIDER_ID)
     }

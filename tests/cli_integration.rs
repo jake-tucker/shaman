@@ -2255,6 +2255,26 @@ const LAUNCHER_SETTLE_DEADLINE: Duration =
 /// `suru server <command>` against `channel` under `servers`, with the
 /// environment that keeps any server it launches from the real Providers.
 fn server_cli(servers: &DetachedServers, channel: &str, command: &str) -> tokio::process::Command {
+    server_cli_with_home(
+        servers,
+        channel,
+        command,
+        servers.state_dir(),
+        &servers.state_dir().join("absent-service-manager"),
+    )
+}
+
+/// `suru server <command>` as [`server_cli`] has it, keeping whatever registers a
+/// Login start under `home` and telling it to `service_manager`, a stand-in, so
+/// that the real user's service manager is left out of it. Every command that
+/// looks at a Login start goes through here.
+pub(crate) fn server_cli_with_home(
+    servers: &DetachedServers,
+    channel: &str,
+    command: &str,
+    home: &std::path::Path,
+    service_manager: &std::path::Path,
+) -> tokio::process::Command {
     // The CLI's own start and stop deadlines are failure deadlines in exactly
     // the sense `PROGRESS_DEADLINE` describes: the command returns the moment
     // the server settles, so a generous value costs a passing run nothing. A
@@ -2263,8 +2283,7 @@ fn server_cli(servers: &DetachedServers, channel: &str, command: &str) -> tokio:
     // than the stop deadline allowed — and the CLI then reported a settled
     // shutdown as a failure.
     let settle_ms = PROGRESS_DEADLINE.as_millis().to_string();
-    let absent_service_manager = servers.state_dir().join("absent-service-manager");
-    let absent_service_manager = absent_service_manager.to_string_lossy();
+    let service_manager_path = service_manager.to_string_lossy();
     // The health probe is the opposite case. It is spent in full on every
     // iteration that finds the endpoint still reachable, so it keeps a short
     // literal: deciding "unreachable" quickly is what makes the wait above end
@@ -2277,10 +2296,7 @@ fn server_cli(servers: &DetachedServers, channel: &str, command: &str) -> tokio:
             "--health-check-timeout-ms",
             "100",
         ],
-        // Status says whether a start at login is registered, which this
-        // leaves the real user's service manager out of: no stand-in is there
-        // to run, and the home it reads a registration from is the test's.
-        "status" => vec!["--service-manager", &absent_service_manager],
+        "status" | "install" | "uninstall" => vec!["--service-manager", &service_manager_path],
         _ => vec![],
     };
     let mut process = tokio::process::Command::new(env!("CARGO_BIN_EXE_suru"));
@@ -2294,10 +2310,10 @@ fn server_cli(servers: &DetachedServers, channel: &str, command: &str) -> tokio:
         .env("SURU_CHANNEL", channel)
         .envs(servers.isolated_environment())
         .kill_on_drop(true);
-    if command == "status" {
+    if matches!(command, "status" | "install" | "uninstall") {
         process
-            .env("HOME", servers.state_dir())
-            .env("XDG_CONFIG_HOME", servers.state_dir());
+            .env("HOME", home)
+            .env("XDG_CONFIG_HOME", home.join(".config"));
     }
     process
 }

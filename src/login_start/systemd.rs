@@ -11,13 +11,18 @@
 //! another init system — there is nothing to register with. Installing says so,
 //! leaving nothing behind, and removing still takes away what it finds.
 
+use std::{path::PathBuf, sync::Arc};
+
 use anyhow::{Context, Result, bail};
 
-use super::{KeepCommand, LoginStart, Removal, Standing, keep_file, remove_file};
+use super::{
+    CommandOutcome, KeepCommand, Removal, ServiceManager, ServiceManagerCommands, Standing,
+    file_standing, remove_file, write_registration,
+};
 
 const SYSTEMCTL: &str = "systemctl";
 
-pub(super) fn covers() -> String {
+fn covers() -> String {
     let user = std::env::var("USER").unwrap_or_else(|_| "$USER".to_owned());
     format!(
         "\
@@ -27,28 +32,12 @@ What this covers on Linux:
 logout. To run with no session at all, run `loginctl enable-linger {user}`, which needs no \
 reinstalling.
 - A Server whose identity key is in a keyring that nothing has unlocked, as with no desktop \
-login, fails Serving where you can see it rather than making a new one (ADR-0050)."
+login, fails Serving where you can see it rather than making a new one."
     )
 }
 
 fn unit_name(channel: &str) -> String {
     format!("suru-server-{channel}.service")
-}
-
-fn units(login_start: &LoginStart) -> std::path::PathBuf {
-    login_start.places.config_home.join("systemd").join("user")
-}
-
-fn unit_path(login_start: &LoginStart) -> std::path::PathBuf {
-    units(login_start).join(unit_name(&login_start.channel))
-}
-
-/// The link `systemctl enable` makes for this unit, which is the whole of its
-/// being enabled.
-fn wants_link(login_start: &LoginStart) -> std::path::PathBuf {
-    units(login_start)
-        .join("default.target.wants")
-        .join(unit_name(&login_start.channel))
 }
 
 /// `word` as `ExecStart` reads one word back: double quotes, within which `\`
@@ -97,98 +86,127 @@ WantedBy=default.target
     )
 }
 
-pub(super) fn register(login_start: &LoginStart, keep: &KeepCommand) -> Result<String> {
-    // Asked first, so a machine with no user instance is told so with nothing
-    // left behind.
-    let reload = systemctl(login_start, ["daemon-reload"]);
-    if let Some(unanswered) = unanswered(&reload) {
-        bail!(
-            "could not register a start at login: this machine has no systemd user instance to \
-             register it with ({unanswered}). Nothing was registered. In a container or under \
-             another init system, have what starts things there run `suru server start`."
-        );
+/// A Channel's systemd user unit.
+pub(super) struct UserUnit {
+    pub(super) channel: String,
+    pub(super) home: PathBuf,
+    /// The directory systemd reads a user's own units beneath.
+    pub(super) config_home: PathBuf,
+    pub(super) commands: Arc<dyn ServiceManagerCommands>,
+}
+
+impl UserUnit {
+    fn units(&self) -> PathBuf {
+        self.config_home.join("systemd").join("user")
     }
-    let path = unit_path(login_start);
-    let was_registered = path.try_exists().unwrap_or(false);
-    keep_file(&path, unit(keep).as_bytes())?;
-    let enabled = systemctl(login_start, ["daemon-reload"]).and_then(|reloaded| {
-        if reloaded.success {
-            systemctl(login_start, ["enable", &unit_name(&login_start.channel)])
+
+    fn unit_path(&self) -> PathBuf {
+        self.units().join(unit_name(&self.channel))
+    }
+
+    /// The link `systemctl enable` makes for this unit, which is the whole of
+    /// its being enabled.
+    fn wants_link(&self) -> PathBuf {
+        self.units()
+            .join("default.target.wants")
+            .join(unit_name(&self.channel))
+    }
+
+    fn systemctl<const N: usize>(&self, arguments: [&str; N]) -> std::io::Result<CommandOutcome> {
+        let arguments = std::iter::once("--user")
+            .chain(arguments)
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        self.commands.run(SYSTEMCTL, &arguments)
+    }
+}
+
+impl ServiceManager for UserUnit {
+    fn register(&self, keep: &KeepCommand) -> Result<String> {
+        // Asked first, so a machine with no user instance is told so with
+        // nothing left behind.
+        if let Some(unanswered) = unanswered(&self.systemctl(["daemon-reload"])) {
+            bail!(
+                "could not register a Login start: this machine has no systemd user instance to \
+                 register it with ({unanswered}). Nothing was registered. In a container or under \
+                 another init system, have what starts things there run `suru server start`."
+            );
+        }
+        let path = self.unit_path();
+        let was_registered = path.try_exists().unwrap_or(false);
+        write_registration(&path, unit(keep).as_bytes())?;
+        let enabled = self.systemctl(["daemon-reload"]).and_then(|reloaded| {
+            if reloaded.success {
+                self.systemctl(["enable", &unit_name(&self.channel)])
+            } else {
+                Ok(reloaded)
+            }
+        });
+        if let Some(unanswered) = unanswered(&enabled) {
+            if !was_registered {
+                let _ = remove_file(&path);
+            }
+            bail!(
+                "could not enable {}: {unanswered}",
+                unit_name(&self.channel)
+            );
+        }
+        Ok(path.display().to_string())
+    }
+
+    fn remove(&self) -> Result<Removal> {
+        let path = self.unit_path();
+        let link = self.wants_link();
+        let registered =
+            path.try_exists().context("inspect the unit")? || link.symlink_metadata().is_ok();
+        let manager_unanswered = if registered {
+            unanswered(&self.systemctl(["disable", &unit_name(&self.channel)]))
         } else {
-            Ok(reloaded)
+            None
+        };
+        // With no user instance to answer, the link is taken away as `disable`
+        // would have.
+        remove_file(&link)?;
+        remove_file(&path)?;
+        if !registered {
+            return Ok(Removal::NothingRegistered);
         }
-    });
-    if let Some(unanswered) = unanswered(&enabled) {
-        if !was_registered {
-            let _ = remove_file(&path);
+        let location = path.display().to_string();
+        let Some(reason) = manager_unanswered else {
+            // Nothing depends on this: an instance that does not answer reads
+            // the directory as it next starts.
+            let _ = self.systemctl(["daemon-reload"]);
+            return Ok(Removal::Removed { location });
+        };
+        Ok(Removal::RemovedUnanswered { location, reason })
+    }
+
+    /// Read from the files alone, so a machine with no user instance answering
+    /// can still be told about, and with no process to spawn each time. Only
+    /// the link being found gone means the unit is not enabled: any other way of
+    /// not reading it says nothing.
+    fn standing(&self) -> Standing {
+        match file_standing(&self.unit_path(), &self.home) {
+            Standing::Registered(location) => match self.wants_link().symlink_metadata() {
+                Ok(_) => Standing::Registered(location),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    Standing::NotRegistered
+                }
+                Err(error) => {
+                    Standing::Unknown(format!("{}: {error}", self.wants_link().display()))
+                }
+            },
+            other => other,
         }
-        bail!(
-            "could not enable {}: {unanswered}",
-            unit_name(&login_start.channel)
-        );
     }
-    Ok(path.display().to_string())
-}
 
-pub(super) fn remove(login_start: &LoginStart) -> Result<Removal> {
-    let path = unit_path(login_start);
-    let link = wants_link(login_start);
-    let registered =
-        path.try_exists().context("inspect the unit")? || link.symlink_metadata().is_ok();
-    let manager_unanswered = if registered {
-        unanswered(&systemctl(
-            login_start,
-            ["disable", &unit_name(&login_start.channel)],
-        ))
-    } else {
-        None
-    };
-    // With no user instance to answer, the link is taken away as `disable`
-    // would have.
-    remove_file(&link)?;
-    remove_file(&path)?;
-    if !registered {
-        return Ok(Removal::NothingRegistered);
+    fn covers(&self) -> String {
+        covers()
     }
-    let Some(reason) = manager_unanswered else {
-        // Nothing depends on this: an instance that does not answer reads the
-        // directory as it next starts.
-        let _ = systemctl(login_start, ["daemon-reload"]);
-        return Ok(Removal::Removed(path.display().to_string()));
-    };
-    Ok(Removal::RemovedUnanswered(
-        path.display().to_string(),
-        reason,
-    ))
-}
-
-/// Read from the files alone, so a machine with no user instance answering can
-/// still be told about, and with no process to spawn each time.
-pub(super) fn standing(login_start: &LoginStart) -> Standing {
-    let path = unit_path(login_start);
-    match (
-        path.try_exists(),
-        wants_link(login_start).symlink_metadata(),
-    ) {
-        (Ok(true), Ok(_)) => Standing::Registered(path.display().to_string()),
-        (Ok(_), _) => Standing::NotRegistered,
-        (Err(error), _) => Standing::Unknown(format!("{}: {error}", path.display())),
-    }
-}
-
-fn systemctl<const N: usize>(
-    login_start: &LoginStart,
-    arguments: [&str; N],
-) -> std::io::Result<super::CommandOutcome> {
-    let arguments = std::iter::once("--user")
-        .chain(arguments)
-        .map(Into::into)
-        .collect::<Vec<_>>();
-    login_start.commands.run(SYSTEMCTL, &arguments)
 }
 
 /// Why `outcome` is no success, where it is not.
-fn unanswered(outcome: &std::io::Result<super::CommandOutcome>) -> Option<String> {
+fn unanswered(outcome: &std::io::Result<CommandOutcome>) -> Option<String> {
     match outcome {
         Ok(outcome) if outcome.success => None,
         Ok(outcome) => Some(outcome.said.clone()),
@@ -198,11 +216,17 @@ fn unanswered(outcome: &std::io::Result<super::CommandOutcome>) -> Option<String
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        Platform,
-        test_support::{RecordingCommands, awkward_keep, login_start},
-    };
+    use super::super::test_support::{RecordingCommands, awkward_keep};
     use super::*;
+
+    fn user_unit(channel: &str, home: &std::path::Path, commands: &RecordingCommands) -> UserUnit {
+        UserUnit {
+            channel: channel.to_owned(),
+            home: home.to_path_buf(),
+            config_home: home.join(".config"),
+            commands: commands.shared(),
+        }
+    }
 
     fn words(words: &[&str]) -> Vec<String> {
         words.iter().map(|word| (*word).to_owned()).collect()
@@ -246,11 +270,11 @@ mod tests {
     fn registering_enables_without_starting_and_removing_disables_without_stopping() {
         let home = tempfile::tempdir().unwrap();
         let commands = RecordingCommands::default();
-        let beta = login_start(Platform::Systemd, "beta", home.path(), &commands);
+        let beta = user_unit("beta", home.path(), &commands);
         let unit = "suru-server-beta.service";
 
-        register(&beta, &awkward_keep()).unwrap();
-        assert!(unit_path(&beta).is_file());
+        beta.register(&awkward_keep()).unwrap();
+        assert!(beta.unit_path().is_file());
         assert_eq!(
             commands.ran(),
             [
@@ -261,12 +285,12 @@ mod tests {
         );
 
         // `--now` is what would start or end something; stop-like verbs too.
-        std::fs::create_dir_all(wants_link(&beta).parent().unwrap()).unwrap();
-        std::fs::write(wants_link(&beta), "").unwrap();
+        std::fs::create_dir_all(beta.wants_link().parent().unwrap()).unwrap();
+        std::fs::write(beta.wants_link(), "").unwrap();
         assert!(matches!(beta.standing(), Standing::Registered(_)));
-        assert!(matches!(remove(&beta).unwrap(), Removal::Removed(_)));
-        assert!(!unit_path(&beta).exists());
-        assert!(!wants_link(&beta).exists());
+        assert!(matches!(beta.remove().unwrap(), Removal::Removed { .. }));
+        assert!(!beta.unit_path().exists());
+        assert!(!beta.wants_link().exists());
         let ran = commands.ran();
         assert_eq!(ran[3], words(&["systemctl", "--user", "disable", unit]));
         assert_eq!(ran[4], words(&["systemctl", "--user", "daemon-reload"]));
@@ -281,21 +305,21 @@ mod tests {
     fn doing_either_twice_is_harmless_and_a_second_install_replaces_the_first() {
         let home = tempfile::tempdir().unwrap();
         let commands = RecordingCommands::default();
-        let beta = login_start(Platform::Systemd, "beta", home.path(), &commands);
+        let beta = user_unit("beta", home.path(), &commands);
 
-        assert_eq!(remove(&beta).unwrap(), Removal::NothingRegistered);
+        assert_eq!(beta.remove().unwrap(), Removal::NothingRegistered);
         assert!(commands.ran().is_empty(), "nothing to tell systemd");
 
-        register(&beta, &awkward_keep()).unwrap();
+        beta.register(&awkward_keep()).unwrap();
         let mut moved = awkward_keep();
         moved.program = "/opt/moved/suru".to_owned();
-        register(&beta, &moved).unwrap();
-        let contents = std::fs::read_to_string(unit_path(&beta)).unwrap();
+        beta.register(&moved).unwrap();
+        let contents = std::fs::read_to_string(beta.unit_path()).unwrap();
         assert!(contents.contains("/opt/moved/suru"), "{contents}");
         assert!(!contents.contains("R&D"), "{contents}");
 
-        assert!(matches!(remove(&beta).unwrap(), Removal::Removed(_)));
-        assert_eq!(remove(&beta).unwrap(), Removal::NothingRegistered);
+        assert!(matches!(beta.remove().unwrap(), Removal::Removed { .. }));
+        assert_eq!(beta.remove().unwrap(), Removal::NothingRegistered);
     }
 
     /// A container has no systemd at all, or none for this user.
@@ -314,11 +338,11 @@ mod tests {
                 refusing
             },
         ] {
-            let beta = login_start(Platform::Systemd, "beta", home.path(), &commands);
-            let error = register(&beta, &awkward_keep()).unwrap_err().to_string();
+            let beta = user_unit("beta", home.path(), &commands);
+            let error = beta.register(&awkward_keep()).unwrap_err().to_string();
             assert!(error.contains("no systemd user instance"), "{error}");
             assert!(error.contains("Nothing was registered"), "{error}");
-            assert!(!unit_path(&beta).exists());
+            assert!(!beta.unit_path().exists());
             assert_eq!(beta.standing(), Standing::NotRegistered);
         }
     }
@@ -328,10 +352,10 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let commands = RecordingCommands::default();
         commands.refuse("enable");
-        let beta = login_start(Platform::Systemd, "beta", home.path(), &commands);
-        let error = register(&beta, &awkward_keep()).unwrap_err().to_string();
+        let beta = user_unit("beta", home.path(), &commands);
+        let error = beta.register(&awkward_keep()).unwrap_err().to_string();
         assert!(error.contains("could not enable"), "{error}");
-        assert!(!unit_path(&beta).exists());
+        assert!(!beta.unit_path().exists());
     }
 
     /// Uninstalling where no user instance answers still takes away what is
@@ -340,34 +364,34 @@ mod tests {
     fn removing_with_no_user_instance_takes_away_what_it_finds_and_says_so() {
         let home = tempfile::tempdir().unwrap();
         let commands = RecordingCommands::default();
-        let beta = login_start(Platform::Systemd, "beta", home.path(), &commands);
-        register(&beta, &awkward_keep()).unwrap();
-        std::fs::create_dir_all(wants_link(&beta).parent().unwrap()).unwrap();
-        std::fs::write(wants_link(&beta), "").unwrap();
+        let beta = user_unit("beta", home.path(), &commands);
+        beta.register(&awkward_keep()).unwrap();
+        std::fs::create_dir_all(beta.wants_link().parent().unwrap()).unwrap();
+        std::fs::write(beta.wants_link(), "").unwrap();
 
         commands.go_missing();
         assert!(matches!(
-            remove(&beta).unwrap(),
-            Removal::RemovedUnanswered(_, _)
+            beta.remove().unwrap(),
+            Removal::RemovedUnanswered { .. }
         ));
-        assert!(!unit_path(&beta).exists());
-        assert!(!wants_link(&beta).exists());
+        assert!(!beta.unit_path().exists());
+        assert!(!beta.wants_link().exists());
         assert_eq!(beta.standing(), Standing::NotRegistered);
-        assert_eq!(remove(&beta).unwrap(), Removal::NothingRegistered);
+        assert_eq!(beta.remove().unwrap(), Removal::NothingRegistered);
     }
 
     #[test]
     fn a_channels_unit_leaves_another_channels_alone() {
         let home = tempfile::tempdir().unwrap();
         let commands = RecordingCommands::default();
-        let beta = login_start(Platform::Systemd, "beta", home.path(), &commands);
-        let release = login_start(Platform::Systemd, "release", home.path(), &commands);
+        let beta = user_unit("beta", home.path(), &commands);
+        let release = user_unit("release", home.path(), &commands);
 
-        register(&beta, &awkward_keep()).unwrap();
-        register(&release, &awkward_keep()).unwrap();
-        remove(&beta).unwrap();
-        assert!(unit_path(&release).is_file());
-        assert!(!unit_path(&beta).exists());
+        beta.register(&awkward_keep()).unwrap();
+        release.register(&awkward_keep()).unwrap();
+        beta.remove().unwrap();
+        assert!(release.unit_path().is_file());
+        assert!(!beta.unit_path().exists());
         for command in commands.ran() {
             let names_both = command.iter().any(|word| word.contains("beta"))
                 && command.iter().any(|word| word.contains("release"));

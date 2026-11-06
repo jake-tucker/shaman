@@ -17,31 +17,27 @@
 //! does at logout, or sooner: a Keeper finding its registration gone launches
 //! nothing further and ends.
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 
-use super::{KeepCommand, LoginStart, Removal, Standing, keep_file, remove_file, xml_text};
+use super::{
+    KeepCommand, Removal, ServiceManager, Standing, file_standing, remove_file, write_registration,
+    xml_text,
+};
 
-pub(super) const COVERS: &str = "\
+const COVERS: &str = "\
 What this covers on macOS:
 - A login at this Mac's screen, automatic login included.
 - Not a Mac that has rebooted and that nobody has logged in to, nor a login over SSH alone: \
 those stay Unreachable. The Server's identity key is in the login keychain, which that login \
-unlocks (ADR-0050), so a Mac waits for it, and a Server that cannot read its key fails Serving \
+unlocks, so a Mac waits for it, and a Server that cannot read its key fails Serving \
 where you can see it rather than making a new one.
 - macOS may list this under Login Items & Extensions in System Settings. Turned off there, it \
 does not run.";
 
 fn label(channel: &str) -> String {
     format!("ai.suru.server.{channel}")
-}
-
-fn path(login_start: &LoginStart) -> std::path::PathBuf {
-    login_start
-        .places
-        .home
-        .join("Library")
-        .join("LaunchAgents")
-        .join(format!("{}.plist", label(&login_start.channel)))
 }
 
 /// The LaunchAgent that runs `keep` in `working_directory`.
@@ -85,42 +81,60 @@ fn plist(channel: &str, keep: &KeepCommand, working_directory: &str) -> String {
     )
 }
 
-pub(super) fn register(login_start: &LoginStart, keep: &KeepCommand) -> Result<String> {
-    let path = path(login_start);
-    let contents = plist(
-        &login_start.channel,
-        keep,
-        &login_start.places.home.to_string_lossy(),
-    );
-    keep_file(&path, contents.as_bytes())?;
-    Ok(path.display().to_string())
+/// A Channel's LaunchAgent, which needs no command run: the file is all of it.
+pub(super) struct LaunchAgent {
+    pub(super) channel: String,
+    pub(super) home: PathBuf,
 }
 
-pub(super) fn remove(login_start: &LoginStart) -> Result<Removal> {
-    let path = path(login_start);
-    Ok(if remove_file(&path)? {
-        Removal::Removed(path.display().to_string())
-    } else {
-        Removal::NothingRegistered
-    })
+impl LaunchAgent {
+    fn path(&self) -> PathBuf {
+        self.home
+            .join("Library")
+            .join("LaunchAgents")
+            .join(format!("{}.plist", label(&self.channel)))
+    }
 }
 
-pub(super) fn standing(login_start: &LoginStart) -> Standing {
-    let path = path(login_start);
-    match path.try_exists() {
-        Ok(true) => Standing::Registered(path.display().to_string()),
-        Ok(false) => Standing::NotRegistered,
-        Err(error) => Standing::Unknown(format!("{}: {error}", path.display())),
+impl ServiceManager for LaunchAgent {
+    fn register(&self, keep: &KeepCommand) -> Result<String> {
+        let path = self.path();
+        let contents = plist(&self.channel, keep, &self.home.to_string_lossy());
+        write_registration(&path, contents.as_bytes())?;
+        Ok(path.display().to_string())
+    }
+
+    fn remove(&self) -> Result<Removal> {
+        let path = self.path();
+        Ok(if remove_file(&path)? {
+            Removal::Removed {
+                location: path.display().to_string(),
+            }
+        } else {
+            Removal::NothingRegistered
+        })
+    }
+
+    fn standing(&self) -> Standing {
+        file_standing(&self.path(), &self.home)
+    }
+
+    fn covers(&self) -> String {
+        COVERS.to_owned()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        Platform,
-        test_support::{RecordingCommands, awkward_keep, login_start},
-    };
+    use super::super::test_support::awkward_keep;
     use super::*;
+
+    fn agent(channel: &str, home: &std::path::Path) -> LaunchAgent {
+        LaunchAgent {
+            channel: channel.to_owned(),
+            home: home.to_path_buf(),
+        }
+    }
 
     #[test]
     fn the_agent_runs_the_keeper_once_at_each_login_at_the_screen() {
@@ -176,18 +190,19 @@ mod tests {
     }
 
     #[test]
-    fn registering_runs_no_command_at_all_and_doing_either_twice_is_harmless() {
+    fn doing_either_twice_is_harmless() {
         let home = tempfile::tempdir().unwrap();
-        let commands = RecordingCommands::default();
-        let beta = login_start(Platform::Launchd, "beta", home.path(), &commands);
+        let beta = agent("beta", home.path());
         let path = home
             .path()
-            .join("Library/LaunchAgents/ai.suru.server.beta.plist");
+            .join("Library")
+            .join("LaunchAgents")
+            .join("ai.suru.server.beta.plist");
 
         assert_eq!(beta.standing(), Standing::NotRegistered);
-        assert_eq!(remove(&beta).unwrap(), Removal::NothingRegistered);
+        assert_eq!(beta.remove().unwrap(), Removal::NothingRegistered);
 
-        register(&beta, &awkward_keep()).unwrap();
+        beta.register(&awkward_keep()).unwrap();
         let first = std::fs::read_to_string(&path).unwrap();
         assert!(first.contains("100%"));
         assert_eq!(
@@ -197,31 +212,31 @@ mod tests {
 
         let mut moved = awkward_keep();
         moved.program = "/opt/moved/suru".to_owned();
-        register(&beta, &moved).unwrap();
+        beta.register(&moved).unwrap();
         let second = std::fs::read_to_string(&path).unwrap();
         assert!(second.contains("/opt/moved/suru"), "{second}");
         assert!(!second.contains("R&amp;D"), "{second}");
 
         assert_eq!(
-            remove(&beta).unwrap(),
-            Removal::Removed(path.display().to_string())
+            beta.remove().unwrap(),
+            Removal::Removed {
+                location: path.display().to_string()
+            }
         );
-        assert_eq!(remove(&beta).unwrap(), Removal::NothingRegistered);
+        assert_eq!(beta.remove().unwrap(), Removal::NothingRegistered);
         assert_eq!(beta.standing(), Standing::NotRegistered);
-        assert!(commands.ran().is_empty(), "{:?}", commands.ran());
     }
 
     #[test]
     fn a_channels_agent_leaves_another_channels_alone() {
         let home = tempfile::tempdir().unwrap();
-        let commands = RecordingCommands::default();
-        let beta = login_start(Platform::Launchd, "beta", home.path(), &commands);
-        let release = login_start(Platform::Launchd, "release", home.path(), &commands);
+        let beta = agent("beta", home.path());
+        let release = agent("release", home.path());
 
-        register(&beta, &awkward_keep()).unwrap();
+        beta.register(&awkward_keep()).unwrap();
         assert_eq!(release.standing(), Standing::NotRegistered);
-        register(&release, &awkward_keep()).unwrap();
-        remove(&beta).unwrap();
+        release.register(&awkward_keep()).unwrap();
+        beta.remove().unwrap();
         assert!(matches!(release.standing(), Standing::Registered(_)));
         assert_eq!(beta.standing(), Standing::NotRegistered);
     }
@@ -232,10 +247,9 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let home = tempfile::tempdir().unwrap();
-        let commands = RecordingCommands::default();
-        let beta = login_start(Platform::Launchd, "beta", home.path(), &commands);
-        register(&beta, &awkward_keep()).unwrap();
-        let mode = std::fs::metadata(path(&beta)).unwrap().permissions().mode();
+        let beta = agent("beta", home.path());
+        beta.register(&awkward_keep()).unwrap();
+        let mode = std::fs::metadata(beta.path()).unwrap().permissions().mode();
         assert_eq!(mode & 0o077, 0, "{mode:o}");
     }
 }

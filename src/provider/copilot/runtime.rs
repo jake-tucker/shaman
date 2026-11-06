@@ -122,6 +122,13 @@ impl Default for CopilotRuntime {
 }
 
 impl ProviderRuntime for CopilotRuntime {
+    fn environment(&self) -> crate::provider::ProviderEnvironment {
+        crate::provider::ProviderEnvironment {
+            carried: &[COPILOT_PATH_ENV, "COPILOT_HOME"],
+            uncarried_prefixes: &["COPILOT_", "GITHUB_", "GH_"],
+        }
+    }
+
     fn provider_id(&self) -> ProviderId {
         ProviderId::new(COPILOT_PROVIDER_ID)
     }

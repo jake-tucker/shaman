@@ -24,11 +24,16 @@ use std::{
     io,
     path::{Path, PathBuf},
     process::Command,
+    sync::Arc,
+    time::Duration,
 };
 
 use anyhow::{Context, Result, bail};
 
-use crate::managed_client::ManagedClientConfig;
+use crate::{
+    IdentityStoreChoice, logging,
+    managed_client::{KeeperTimings, ManagedClientConfig, keep_server},
+};
 
 mod launchd;
 mod systemd;
@@ -37,41 +42,175 @@ mod task_scheduler;
 /// The hidden command a registration runs: the Channel's Keeper.
 pub const KEEPER_COMMAND: &str = "__keep-server";
 
-/// What of the environment a Login start carries from the shell it was
-/// installed from to the Server it starts, because it decides which Providers
-/// that Server finds and what it finds them signed in to: the `PATH` every
-/// Provider is found by, the variables that name a Provider's executable over
-/// `PATH`, and those that move where a Provider keeps its sign-in. Each names a
-/// place and holds no secret, and these are all a registration captures: a
+/// What of the environment a Login start carries for every Provider alike: the
+/// `PATH` each is found by, and where any of them may read its configuration
+/// from. Each Provider declares the rest of what it needs carried
+/// ([`ProviderEnvironment`](crate::provider::ProviderEnvironment)). All of it
+/// names a place and holds no secret, and it is all a registration captures: a
 /// file under the user's home is no place for the rest of a shell's
 /// environment.
-const CARRIED_VARIABLES: [&str; 8] = [
-    "PATH",
-    "SURU_CODEX_PATH",
-    "SURU_COPILOT_PATH",
-    "SURU_CLAUDE_PATH",
-    "CODEX_HOME",
-    "CLAUDE_CONFIG_DIR",
-    "COPILOT_HOME",
-    "XDG_CONFIG_HOME",
-];
+const CARRIED_FOR_EVERY_PROVIDER: [&str; 2] = ["PATH", "XDG_CONFIG_HOME"];
 
-/// Variables a shell may hold that a Server started from it would use, and
-/// that a registration will not carry because they hold or may hold a secret.
-/// `suru server install` names those it finds set, so a Provider that signs in
-/// by one, or a Relay reached through a proxy, does not fail unexplained.
-const UNCARRIED_VARIABLES: [&str; 10] = [
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "OPENAI_API_KEY",
-    "CODEX_API_KEY",
-    "COPILOT_GITHUB_TOKEN",
-    "GH_TOKEN",
-    "GITHUB_TOKEN",
-    "HTTPS_PROXY",
-    "HTTP_PROXY",
-    "ALL_PROXY",
-];
+/// A stand-in for the machine's service manager, for tests that must not reach
+/// the real one. A flag rather than an empty `PATH` because Windows looks in its
+/// system directory for a program whatever `PATH` says.
+#[derive(Clone, Debug, Default, Eq, PartialEq, clap::Args)]
+pub struct ServiceManagerStandIn {
+    #[arg(long = "service-manager", hide = true)]
+    pub program: Option<PathBuf>,
+}
+
+/// A Keeper's command line: every path, and all that its Server's environment
+/// is to carry, since a service manager gives a process almost none of what a
+/// shell does.
+///
+/// Every registration on every machine holds this, in a file or Task no later
+/// build rewrites, until `suru server install` is run again. So these spellings
+/// are a persisted interface: a build renaming one would fail at the next login,
+/// silently, while `suru server status` said registered. Accept an old spelling
+/// as an alias, and never remove one. The test
+/// `a_keepers_flags_are_spelled_as_registrations_have_them` holds them still.
+#[derive(Clone, Debug, Eq, PartialEq, clap::Args)]
+pub struct KeeperArguments {
+    /// The binary each Server is launched from, which is the path the
+    /// registration names rather than what this process resolves to, so an
+    /// upgrade at that path is what the next Server runs.
+    #[arg(long)]
+    pub executable: PathBuf,
+    #[arg(long = "state-dir")]
+    pub state_base_dir: PathBuf,
+    #[arg(long = "data-dir")]
+    pub data_base_dir: PathBuf,
+    #[arg(long = "config-dir")]
+    pub config_dir: Option<PathBuf>,
+    #[arg(long)]
+    pub channel: String,
+    #[arg(long)]
+    pub identity_store: Option<IdentityStoreChoice>,
+    /// A variable each Server is launched with, as `NAME=value`.
+    #[arg(long = "env", value_parser = carried_variable)]
+    pub carried: Vec<(String, String)>,
+    #[command(flatten)]
+    pub stand_in: ServiceManagerStandIn,
+    /// How often this Keeper looks at its Channel, for tests that cannot wait
+    /// out the default.
+    #[arg(long, hide = true)]
+    pub look_interval_ms: Option<u64>,
+}
+
+fn carried_variable(value: &str) -> Result<(String, String), String> {
+    value
+        .split_once('=')
+        .map(|(name, value)| (name.to_owned(), value.to_owned()))
+        .ok_or_else(|| format!("{value:?} is not NAME=value"))
+}
+
+impl KeeperArguments {
+    /// These arguments as a command line, beginning with the command, that
+    /// [`clap`] reads back as they are.
+    pub fn words(&self) -> Result<Vec<String>> {
+        let mut words = vec![
+            KEEPER_COMMAND.to_owned(),
+            "--executable".to_owned(),
+            unicode(&self.executable)?,
+            "--state-dir".to_owned(),
+            unicode(&self.state_base_dir)?,
+            "--data-dir".to_owned(),
+            unicode(&self.data_base_dir)?,
+            "--channel".to_owned(),
+            self.channel.clone(),
+        ];
+        if let Some(config_dir) = &self.config_dir {
+            words.push("--config-dir".to_owned());
+            words.push(unicode(config_dir)?);
+        }
+        if let Some(store) = self.identity_store {
+            words.push("--identity-store".to_owned());
+            words.push(store.to_string());
+        }
+        if let Some(stand_in) = &self.stand_in.program {
+            words.push("--service-manager".to_owned());
+            words.push(unicode(stand_in)?);
+        }
+        if let Some(interval_ms) = self.look_interval_ms {
+            words.push("--look-interval-ms".to_owned());
+            words.push(interval_ms.to_string());
+        }
+        for (name, value) in &self.carried {
+            words.push("--env".to_owned());
+            words.push(format!("{name}={value}"));
+        }
+        Ok(words)
+    }
+
+    /// Runs this Keeper, for as long as its Channel's Login start stands.
+    pub async fn keep(self) -> Result<()> {
+        let_go_of_the_console();
+        let mut config = ManagedClientConfig::new(self.state_base_dir, self.channel)?
+            .with_data_dir(self.data_base_dir)
+            .with_server_executable(self.executable);
+        if let Some(config_dir) = self.config_dir {
+            config = config.with_config_dir(config_dir);
+        }
+        if let Some(identity_store) = self.identity_store {
+            config = config.with_identity_store(identity_store);
+        }
+        for (name, value) in self.carried {
+            config = config.with_server_env(name, value);
+        }
+        let mut timings = KeeperTimings::default();
+        if let Some(interval_ms) = self.look_interval_ms {
+            timings.look_interval = Duration::from_millis(interval_ms);
+        }
+        // A home that is not back yet at login holds no Log for a while, which
+        // is no reason to give up keeping a Server.
+        let _log_guard = logging::init(config.runtime(), logging::Role::Keeper)
+            .inspect_err(|error| eprintln!("Could not open a Log: {error:#}"))
+            .ok();
+        // One that cannot say whether it is registered goes on as if it were.
+        let login_start = LoginStart::for_this_user(config.channel(), self.stand_in)
+            .inspect_err(|error| {
+                tracing::warn!("could not read the channel's login start: {error:#}");
+            })
+            .ok();
+        keep_server(&config, timings, || {
+            login_start
+                .as_ref()
+                .is_some_and(|login_start| login_start.standing() == Standing::NotRegistered)
+        })
+        .await
+    }
+}
+
+/// A Task at logon comes with a console of its own, showing for this moment,
+/// and a Keeper has nothing to say there and launches its Server with none.
+///
+/// Once the console is freed, the handles this process holds for it are not
+/// ones to rely on: whether Windows has closed them, and whether a slot may
+/// since have gone to some other file, reports differ. So they are cleared
+/// rather than left to find out. A launch's `StandardHandleInheritanceGuard`
+/// passes over a null standard handle, every Keeper's child is given standard
+/// handles of its own, and Rust's standard streams take a null handle for a sink,
+/// which is what a Keeper's stray `eprintln!` wants. Its Log is a file of its
+/// own, which holds none of these.
+#[cfg(windows)]
+fn let_go_of_the_console() {
+    use windows_sys::Win32::System::Console::{
+        FreeConsole, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, SetStdHandle,
+    };
+
+    // SAFETY: FreeConsole takes nothing, and failing changes nothing; a standard
+    // handle may be set to null, and nothing else is running yet to be using one.
+    unsafe {
+        FreeConsole();
+        for standard_handle in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            SetStdHandle(standard_handle, std::ptr::null_mut());
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn let_go_of_the_console() {}
 
 /// The service manager a Login start is registered with.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -94,9 +233,11 @@ impl Platform {
 }
 
 /// How a command given to a service manager ended.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct CommandOutcome {
     success: bool,
+    /// What it printed, for looking through.
+    printed: String,
     /// What it said on its way out, for the user to read.
     said: String,
 }
@@ -107,59 +248,50 @@ trait ServiceManagerCommands: Send + Sync {
     fn run(&self, program: &str, arguments: &[OsString]) -> io::Result<CommandOutcome>;
 }
 
-/// Runs the machine's own service manager, or the stand-in `suru server`'s
-/// hidden `--service-manager` names in its place.
+/// Runs the machine's own service manager, or its stand-in.
 struct MachineCommands {
-    stand_in: Option<PathBuf>,
+    stand_in: ServiceManagerStandIn,
 }
 
 impl ServiceManagerCommands for MachineCommands {
     fn run(&self, program: &str, arguments: &[OsString]) -> io::Result<CommandOutcome> {
         let program = self
             .stand_in
+            .program
             .as_deref()
             .map_or_else(|| OsString::from(program), |path| path.into());
-        let output = Command::new(program)
-            .args(arguments)
-            .stdin(std::process::Stdio::null())
-            .output()?;
+        let mut command = Command::new(program);
+        command.args(arguments).stdin(std::process::Stdio::null());
+        // A Keeper has let go of its console, so without this each command it
+        // ran as a crash was answered would show a window of its own.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        let output = command.output()?;
         Ok(CommandOutcome {
             success: output.status.success(),
+            printed: String::from_utf8_lossy(&output.stdout).into_owned(),
             said: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
         })
     }
 }
 
-/// Where a registration is kept and whom it is for.
-#[derive(Clone, Debug)]
-struct Places {
-    /// The user's home, which a LaunchAgent lives under and the Keeper runs in.
-    home: PathBuf,
-    /// The directory systemd reads a user's own units beneath.
-    config_home: PathBuf,
-    /// The user a Scheduled Task is for, as `DOMAIN\user`, on Windows.
-    user: Option<String>,
-}
-
-impl Places {
-    fn of_this_user() -> Result<Self> {
-        let home = dirs::home_dir().context("determine the current user's home directory")?;
-        let config_home = std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .unwrap_or_else(|| home.join(".config"));
-        let user = std::env::var("USERNAME")
-            .ok()
-            .map(|user| match std::env::var("USERDOMAIN") {
-                Ok(domain) if !domain.is_empty() => format!("{domain}\\{user}"),
-                _ => user,
-            });
-        Ok(Self {
-            home,
-            config_home,
-            user,
-        })
-    }
+/// What a Login start is registered with: one per platform, each holding what
+/// that platform's registration needs and no more.
+trait ServiceManager: Send + Sync {
+    /// Registers `keep` for the next login, over any earlier registration of
+    /// this Channel's, and answers where it is kept.
+    fn register(&self, keep: &KeepCommand) -> Result<String>;
+    fn remove(&self) -> Result<Removal>;
+    /// Whether this Channel's Login start is registered, as the service
+    /// manager's own records have it. [`Standing::NotRegistered`] is an answer,
+    /// and ends a Keeper; anything short of one is [`Standing::Unknown`].
+    fn standing(&self) -> Standing;
+    /// What a registration covers on this platform, and what it does not.
+    fn covers(&self) -> String;
 }
 
 /// Whether a Login start is registered for a Channel.
@@ -176,10 +308,27 @@ impl std::fmt::Display for Standing {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Registered(location) => {
-                write!(formatter, "Start at login: registered ({location})")
+                write!(formatter, "Login start: registered ({location})")
             }
-            Self::NotRegistered => formatter.write_str("Start at login: not registered"),
-            Self::Unknown(reason) => write!(formatter, "Start at login: could not tell ({reason})"),
+            Self::NotRegistered => formatter.write_str("Login start: not registered"),
+            Self::Unknown(reason) => write!(formatter, "Login start: could not tell ({reason})"),
+        }
+    }
+}
+
+/// How a registration kept as a file stands, for `home`'s user. A file not found
+/// says nothing while the home itself is not found, as one on a mount that is
+/// not back yet at login is not.
+fn file_standing(path: &Path, home: &Path) -> Standing {
+    match (path.try_exists(), home.try_exists()) {
+        (Ok(true), _) => Standing::Registered(path.display().to_string()),
+        (Ok(false), Ok(true)) => Standing::NotRegistered,
+        (Ok(false), Ok(false)) => Standing::Unknown(format!(
+            "the home directory {} is not there",
+            home.display()
+        )),
+        (Err(error), _) | (_, Err(error)) => {
+            Standing::Unknown(format!("{}: {error}", path.display()))
         }
     }
 }
@@ -187,71 +336,71 @@ impl std::fmt::Display for Standing {
 /// What removing a Login start came to.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Removal {
-    Removed(String),
+    Removed {
+        location: String,
+    },
     /// Removed, though the service manager did not answer, for this reason.
-    RemovedUnanswered(String, String),
+    RemovedUnanswered {
+        location: String,
+        reason: String,
+    },
     NothingRegistered,
     /// Nothing is registered and no service manager is there to hold any.
-    NoServiceManager(String),
+    NoServiceManager {
+        reason: String,
+    },
 }
 
 /// A Channel's Login start on this machine.
 pub struct LoginStart {
-    platform: Platform,
     channel: String,
-    places: Places,
-    commands: Box<dyn ServiceManagerCommands>,
+    manager: Box<dyn ServiceManager>,
 }
 
 impl LoginStart {
-    /// `channel`'s Login start for the current user. `service_manager` names a
-    /// stand-in to run in place of the machine's service manager, so that a
-    /// test of the command line cannot reach the real one.
-    pub fn for_this_user(channel: &str, service_manager: Option<PathBuf>) -> Result<Self> {
-        Ok(Self {
-            platform: Platform::current(),
-            channel: channel.to_owned(),
-            places: Places::of_this_user()?,
-            commands: Box::new(MachineCommands {
-                stand_in: service_manager,
+    /// `channel`'s Login start for the current user.
+    pub fn for_this_user(channel: &str, stand_in: ServiceManagerStandIn) -> Result<Self> {
+        let channel = channel.to_owned();
+        let home = dirs::home_dir().context("determine the current user's home directory")?;
+        let commands: Arc<dyn ServiceManagerCommands> = Arc::new(MachineCommands { stand_in });
+        let manager: Box<dyn ServiceManager> = match Platform::current() {
+            Platform::Launchd => Box::new(launchd::LaunchAgent {
+                channel: channel.clone(),
+                home,
             }),
-        })
+            Platform::Systemd => {
+                let config_home = std::env::var_os("XDG_CONFIG_HOME")
+                    .map(PathBuf::from)
+                    .filter(|path| path.is_absolute())
+                    .unwrap_or_else(|| home.join(".config"));
+                Box::new(systemd::UserUnit {
+                    channel: channel.clone(),
+                    home,
+                    config_home,
+                    commands,
+                })
+            }
+            Platform::TaskScheduler => {
+                let user =
+                    std::env::var("USERNAME").context("read the current user from USERNAME")?;
+                let user = match std::env::var("USERDOMAIN") {
+                    Ok(domain) if !domain.is_empty() => format!("{domain}\\{user}"),
+                    _ => user,
+                };
+                Box::new(task_scheduler::ScheduledTask {
+                    channel: channel.clone(),
+                    user,
+                    home,
+                    commands,
+                })
+            }
+        };
+        Ok(Self { channel, manager })
     }
 
-    /// Whether this Channel's Login start is registered, as the service
-    /// manager's own records have it.
+    /// Whether this Channel's Login start is registered.
     pub fn standing(&self) -> Standing {
-        match self.platform {
-            Platform::Launchd => launchd::standing(self),
-            Platform::Systemd => systemd::standing(self),
-            Platform::TaskScheduler => task_scheduler::standing(self),
-        }
-    }
-
-    /// Registers `keep` for the next login, over any earlier registration of
-    /// this Channel's, and answers where it is kept.
-    fn register(&self, keep: &KeepCommand) -> Result<String> {
-        match self.platform {
-            Platform::Launchd => launchd::register(self, keep),
-            Platform::Systemd => systemd::register(self, keep),
-            Platform::TaskScheduler => task_scheduler::register(self, keep),
-        }
-    }
-
-    fn remove(&self) -> Result<Removal> {
-        match self.platform {
-            Platform::Launchd => launchd::remove(self),
-            Platform::Systemd => systemd::remove(self),
-            Platform::TaskScheduler => task_scheduler::remove(self),
-        }
-    }
-
-    fn covers(&self) -> String {
-        match self.platform {
-            Platform::Launchd => launchd::COVERS.to_owned(),
-            Platform::Systemd => systemd::covers(),
-            Platform::TaskScheduler => task_scheduler::COVERS.to_owned(),
-        }
+        self.manager.standing()
     }
 }
 
@@ -261,50 +410,14 @@ impl LoginStart {
 /// ways, so a Channel's registration is whole in itself and a Scheduled Task,
 /// which has no way to set an environment, is told it as the others are.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct KeepCommand {
+struct KeepCommand {
     program: String,
     arguments: Vec<String>,
 }
 
 impl KeepCommand {
-    /// The Keeper of `config`'s Channel, run from `executable`, carrying
-    /// `carried`. `service_manager` is the stand-in `suru server install` was
-    /// given, which its Keeper then asks too.
-    fn new(
-        config: &ManagedClientConfig,
-        executable: &Path,
-        carried: &[(String, String)],
-        service_manager: Option<&Path>,
-    ) -> Result<Self> {
-        let runtime = config.runtime();
-        let program = spelled(executable)?;
-        let mut arguments = vec![
-            KEEPER_COMMAND.to_owned(),
-            "--executable".to_owned(),
-            program.clone(),
-            "--state-dir".to_owned(),
-            spelled(&std::path::absolute(runtime.state_base_dir())?)?,
-            "--data-dir".to_owned(),
-            spelled(&std::path::absolute(runtime.data_base_dir())?)?,
-            "--channel".to_owned(),
-            runtime.channel().to_owned(),
-        ];
-        if let Some(config_dir) = runtime.config_dir() {
-            arguments.push("--config-dir".to_owned());
-            arguments.push(spelled(&std::path::absolute(config_dir)?)?);
-        }
-        if let Some(store) = runtime.identity_store() {
-            arguments.push("--identity-store".to_owned());
-            arguments.push(store.to_string());
-        }
-        if let Some(service_manager) = service_manager {
-            arguments.push("--service-manager".to_owned());
-            arguments.push(spelled(service_manager)?);
-        }
-        for (name, value) in carried {
-            arguments.push("--env".to_owned());
-            arguments.push(format!("{name}={value}"));
-        }
+    fn new(keeper: &KeeperArguments) -> Result<Self> {
+        let arguments = keeper.words()?;
         // No service manager's format can carry a control character whole, and
         // none belongs in a path a user would keep a Channel at.
         if let Some(argument) = arguments
@@ -312,33 +425,38 @@ impl KeepCommand {
             .find(|argument| argument.chars().any(char::is_control))
         {
             bail!(
-                "cannot register a start at login naming {argument:?}: it holds a control character"
+                "cannot register a Login start naming {argument:?}: it holds a control character"
             );
         }
-        Ok(Self { program, arguments })
+        // The program is the binary a Server is launched from, so what a
+        // service manager runs and what a Keeper launches stay one path.
+        Ok(Self {
+            program: unicode(&keeper.executable)?,
+            arguments,
+        })
     }
 
     /// The program and arguments, in order, as a service manager is to run them.
-    pub fn words(&self) -> impl Iterator<Item = &str> {
+    fn words(&self) -> impl Iterator<Item = &str> {
         std::iter::once(self.program.as_str()).chain(self.arguments.iter().map(String::as_str))
     }
 }
 
-fn spelled(path: &Path) -> Result<String> {
+fn unicode(path: &Path) -> Result<String> {
     path.to_str().map(str::to_owned).with_context(|| {
-        format!("cannot register a start at login naming {path:?}: it is not valid Unicode")
+        format!("cannot register a Login start naming {path:?}: it is not valid Unicode")
     })
 }
 
 /// Why a path a registration would name may not outlast an upgrade.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PassingPath {
+enum ShortLived {
     Build,
     Versioned,
     Temporary,
 }
 
-impl PassingPath {
+impl ShortLived {
     fn says(self) -> &'static str {
         match self {
             Self::Build => "it is in a build directory",
@@ -349,9 +467,9 @@ impl PassingPath {
 }
 
 /// Why `path` may not outlast an upgrade, if there is a reason to think so.
-/// Only ever a reason to warn: a path that looks as though it passes may be the
-/// one the user means to keep.
-fn passing(path: &Path, temporary: &Path) -> Option<PassingPath> {
+/// Only ever a reason to warn: a path that looks short-lived may be the one the
+/// user means to keep.
+fn short_lived(path: &Path, temporary: &Path) -> Option<ShortLived> {
     let is_named = |names: &[&str]| {
         path.components()
             .any(|component| names.iter().any(|name| component.as_os_str() == *name))
@@ -369,7 +487,7 @@ fn passing(path: &Path, temporary: &Path) -> Option<PassingPath> {
                 .is_some_and(|target| target.join("CACHEDIR.TAG").is_file())
     });
     if built {
-        return Some(PassingPath::Build);
+        return Some(ShortLived::Build);
     }
     let temporary_spellings = [
         Some(temporary.to_path_buf()),
@@ -380,7 +498,7 @@ fn passing(path: &Path, temporary: &Path) -> Option<PassingPath> {
         .flatten()
         .any(|temporary| path.starts_with(temporary))
     {
-        return Some(PassingPath::Temporary);
+        return Some(ShortLived::Temporary);
     }
     let versioned = path.components().any(|component| {
         component.as_os_str().to_str().is_some_and(|name| {
@@ -389,7 +507,7 @@ fn passing(path: &Path, temporary: &Path) -> Option<PassingPath> {
         })
     });
     if versioned || is_named(&["Cellar", "Caskroom", "nix"]) {
-        return Some(PassingPath::Versioned);
+        return Some(ShortLived::Versioned);
     }
     None
 }
@@ -400,14 +518,15 @@ fn passing(path: &Path, temporary: &Path) -> Option<PassingPath> {
 /// What this process knows itself as may be the far end of a link: on Linux
 /// `current_exe` resolves through them, so Homebrew's `bin/suru` reads as a
 /// Cellar path naming one version, which the next upgrade removes while the
-/// link goes on naming whichever is current. So where `current` looks passing,
-/// a `PATH` entry that leads to this same binary and does not is named instead.
+/// link goes on naming whichever is current. So where `current` looks
+/// short-lived, a `PATH` entry that leads to this same binary and does not is
+/// named instead.
 fn registered_executable(
     current: &Path,
     path_variable: Option<&OsStr>,
     temporary: &Path,
-) -> (PathBuf, Option<PassingPath>) {
-    let Some(why) = passing(current, temporary) else {
+) -> (PathBuf, Option<ShortLived>) {
+    let Some(why) = short_lived(current, temporary) else {
         return (current.to_path_buf(), None);
     };
     let (Some(name), Ok(binary), Some(path_variable)) = (
@@ -422,7 +541,7 @@ fn registered_executable(
         .map(|directory| directory.join(name))
         .find(|candidate| {
             crate::paths::canonical(candidate).is_ok_and(|resolved| resolved == binary)
-                && passing(candidate, temporary).is_none()
+                && short_lived(candidate, temporary).is_none()
         });
     match lasting {
         Some(lasting) => (lasting, None),
@@ -430,13 +549,16 @@ fn registered_executable(
     }
 }
 
-/// What of the variables `variable` reads a registration carries.
+/// What of the variables `variable` reads a registration carries, of those every
+/// Provider needs and those each of `providers` declares.
 fn carried_environment(
+    providers: &[crate::provider::ProviderEnvironment],
     variable: impl Fn(&str) -> Option<OsString>,
 ) -> Result<Vec<(String, String)>> {
-    CARRIED_VARIABLES
-        .into_iter()
-        .filter_map(|name| Some((name, variable(name).filter(|value| !value.is_empty())?)))
+    CARRIED_FOR_EVERY_PROVIDER
+        .iter()
+        .chain(providers.iter().flat_map(|provider| provider.carried))
+        .filter_map(|name| Some((*name, variable(name).filter(|value| !value.is_empty())?)))
         .map(|(name, value)| {
             let value = value
                 .into_string()
@@ -448,28 +570,54 @@ fn carried_environment(
 
 /// `suru server install`: registers the Login start of `config`'s Channel, and
 /// answers what to tell the user.
-pub fn install(config: &ManagedClientConfig, service_manager: Option<PathBuf>) -> Result<String> {
-    let login_start = LoginStart::for_this_user(config.channel(), service_manager.clone())?;
+pub fn install(config: &ManagedClientConfig, stand_in: ServiceManagerStandIn) -> Result<String> {
+    let login_start = LoginStart::for_this_user(config.channel(), stand_in.clone())?;
     let current = std::env::current_exe().context("find current Suru executable")?;
     let path_variable = std::env::var_os("PATH");
-    let (executable, passing) =
+    let (executable, short_lived) =
         registered_executable(&current, path_variable.as_deref(), &std::env::temp_dir());
-    let carried = carried_environment(|name| std::env::var_os(name))?;
-    let keep = KeepCommand::new(config, &executable, &carried, service_manager.as_deref())?;
-    let location = login_start.register(&keep)?;
+    let providers = crate::provider::built_in_environments();
+    let runtime = config.runtime();
+    let keep = KeepCommand::new(&KeeperArguments {
+        executable: executable.clone(),
+        state_base_dir: std::path::absolute(runtime.state_base_dir())?,
+        data_base_dir: std::path::absolute(runtime.data_base_dir())?,
+        config_dir: runtime.config_dir().map(std::path::absolute).transpose()?,
+        channel: runtime.channel().to_owned(),
+        identity_store: runtime.identity_store(),
+        carried: carried_environment(&providers, |name| std::env::var_os(name))?,
+        stand_in,
+        look_interval_ms: None,
+    })?;
+    let location = login_start.manager.register(&keep)?;
     Ok(install_report(
         &login_start,
         &location,
         &executable,
-        passing,
-        &uncarried_variables(|name| std::env::var_os(name)),
+        short_lived,
+        &uncarried_variables(&providers, std::env::vars_os().map(|(name, _)| name)),
     ))
 }
 
-fn uncarried_variables(variable: impl Fn(&str) -> Option<OsString>) -> Vec<&'static str> {
-    UNCARRIED_VARIABLES
-        .into_iter()
-        .filter(|name| variable(name).is_some_and(|value| !value.is_empty()))
+fn uncarried_variables(
+    _providers: &[crate::provider::ProviderEnvironment],
+    names: impl Iterator<Item = OsString>,
+) -> Vec<String> {
+    const UNCARRIED: [&str; 10] = [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_API_KEY",
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "ALL_PROXY",
+    ];
+    names
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| UNCARRIED.contains(&name.as_str()))
         .collect()
 }
 
@@ -477,12 +625,12 @@ fn install_report(
     login_start: &LoginStart,
     location: &str,
     executable: &Path,
-    passing: Option<PassingPath>,
-    uncarried: &[&str],
+    short_lived: Option<ShortLived>,
+    uncarried: &[String],
 ) -> String {
     let channel = &login_start.channel;
     let mut report = format!(
-        "Registered a start at login for the `{channel}` Channel's Server: {location}\n\n\
+        "Registered a Login start for the `{channel}` Channel's Server: {location}\n\n\
          It comes into force at the next login and changes nothing until then: a Server \
          running now is left running, and `suru server start` starts one where none is.\n\
          At each login a Keeper starts the Server and restarts it if it crashes. A Server \
@@ -490,7 +638,7 @@ fn install_report(
          start`.\n\n{}\n\n\
          Providers are found on the PATH this command ran with, which the registration \
          keeps. Run `suru server install` again after it changes.\n",
-        login_start.covers()
+        login_start.manager.covers()
     );
     if !uncarried.is_empty() {
         report.push_str(&format!(
@@ -499,12 +647,12 @@ fn install_report(
             uncarried.join(", ")
         ));
     }
-    if let Some(passing) = passing {
+    if let Some(short_lived) = short_lived {
         report.push_str(&format!(
             "\nWarning: this registration names {}, which may not survive an upgrade: {}. \
              Run `suru server install` again from wherever Suru is kept for good.\n",
             executable.display(),
-            passing.says()
+            short_lived.says()
         ));
     }
     report
@@ -512,38 +660,38 @@ fn install_report(
 
 /// `suru server uninstall`: removes the Login start of `channel`, and answers
 /// what to tell the user.
-pub fn uninstall(channel: &str, service_manager: Option<PathBuf>) -> Result<String> {
-    let login_start = LoginStart::for_this_user(channel, service_manager)?;
-    Ok(uninstall_report(channel, &login_start.remove()?))
+pub fn uninstall(channel: &str, stand_in: ServiceManagerStandIn) -> Result<String> {
+    let login_start = LoginStart::for_this_user(channel, stand_in)?;
+    Ok(uninstall_report(channel, &login_start.manager.remove()?))
 }
 
 fn uninstall_report(channel: &str, removal: &Removal) -> String {
     const LEFT_ALONE: &str = "A Server running now is left running; `suru server stop` stops it.";
     match removal {
-        Removal::Removed(location) => format!(
-            "Removed the start at login for the `{channel}` Channel's Server: {location}\n\
+        Removal::Removed { location } => format!(
+            "Removed the Login start for the `{channel}` Channel's Server: {location}\n\
              {LEFT_ALONE}\n"
         ),
-        Removal::RemovedUnanswered(location, reason) => format!(
-            "Removed the start at login for the `{channel}` Channel's Server: {location}\n\
+        Removal::RemovedUnanswered { location, reason } => format!(
+            "Removed the Login start for the `{channel}` Channel's Server: {location}\n\
              The service manager did not answer, so it reads this at its next start: {reason}\n\
              {LEFT_ALONE}\n"
         ),
         Removal::NothingRegistered => format!(
-            "No start at login is registered for the `{channel}` Channel, so there is nothing \
+            "No Login start is registered for the `{channel}` Channel, so there is nothing \
              to remove.\n"
         ),
-        Removal::NoServiceManager(reason) => format!(
-            "No start at login is registered for the `{channel}` Channel, and this machine has \
+        Removal::NoServiceManager { reason } => format!(
+            "No Login start is registered for the `{channel}` Channel, and this machine has \
              no service manager to hold one: {reason}\n"
         ),
     }
 }
 
-/// A file a registration keeps: readable by its owner alone, and replaced
+/// Writes a file a registration keeps: readable by its owner alone, and replaced
 /// whole, so a registration is never read half written. launchd accepts a
 /// LaunchAgent only if nobody else can write to it, and systemd asks no more.
-fn keep_file(path: &Path, contents: &[u8]) -> Result<()> {
+fn write_registration(path: &Path, contents: &[u8]) -> Result<()> {
     let directory = path
         .parent()
         .with_context(|| format!("{path:?} lies in no directory"))?;
@@ -569,7 +717,7 @@ fn xml_text(text: &str) -> String {
 
 #[cfg(test)]
 mod test_support {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
 
     use super::*;
 
@@ -582,6 +730,8 @@ mod test_support {
         pub(super) missing: Arc<Mutex<bool>>,
         /// Commands holding any of these words fail.
         pub(super) refusing: Arc<Mutex<Vec<&'static str>>>,
+        /// What a command that succeeds prints.
+        pub(super) printing: Arc<Mutex<String>>,
     }
 
     impl RecordingCommands {
@@ -593,8 +743,16 @@ mod test_support {
             self.refusing.lock().unwrap().push(word);
         }
 
+        pub(super) fn print(&self, printed: &str) {
+            printed.clone_into(&mut self.printing.lock().unwrap());
+        }
+
         pub(super) fn go_missing(&self) {
             *self.missing.lock().unwrap() = true;
+        }
+
+        pub(super) fn shared(&self) -> Arc<dyn ServiceManagerCommands> {
+            Arc::new(self.clone())
         }
     }
 
@@ -618,31 +776,13 @@ mod test_support {
             self.ran.lock().unwrap().push(words);
             Ok(CommandOutcome {
                 success,
+                printed: self.printing.lock().unwrap().clone(),
                 said: if success {
                     String::new()
                 } else {
                     "refused".to_owned()
                 },
             })
-        }
-    }
-
-    /// A Login start kept under `home`, told to `commands`.
-    pub(super) fn login_start(
-        platform: Platform,
-        channel: &str,
-        home: &Path,
-        commands: &RecordingCommands,
-    ) -> LoginStart {
-        LoginStart {
-            platform,
-            channel: channel.to_owned(),
-            places: Places {
-                home: home.to_path_buf(),
-                config_home: home.join(".config"),
-                user: Some("HOST\\jo".to_owned()),
-            },
-            commands: Box::new(commands.clone()),
         }
     }
 
@@ -663,57 +803,107 @@ mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use clap::Parser;
 
-    fn client_config(channel: &str) -> ManagedClientConfig {
-        ManagedClientConfig::new(std::env::temp_dir().join("suru-state"), channel)
-            .unwrap()
-            .with_data_dir(std::env::temp_dir().join("suru-data"))
-            .with_config_dir(std::env::temp_dir().join("suru-config"))
+    use super::*;
+    use crate::provider::ProviderEnvironment;
+
+    #[derive(Parser)]
+    struct ReadBack {
+        #[command(subcommand)]
+        command: ReadBackCommand,
+    }
+
+    #[derive(clap::Subcommand)]
+    enum ReadBackCommand {
+        #[command(name = "__keep-server")]
+        Keeper(KeeperArguments),
+    }
+
+    fn every_argument() -> KeeperArguments {
+        KeeperArguments {
+            executable: PathBuf::from("/opt/suru"),
+            state_base_dir: PathBuf::from("/state dir"),
+            data_base_dir: PathBuf::from("/data"),
+            config_dir: Some(PathBuf::from("/config")),
+            channel: "beta".to_owned(),
+            identity_store: Some(IdentityStoreChoice::File),
+            carried: vec![
+                ("PATH".to_owned(), "/a=b/bin".to_owned()),
+                ("CODEX_HOME".to_owned(), "/codex".to_owned()),
+            ],
+            stand_in: ServiceManagerStandIn {
+                program: Some(PathBuf::from("/stand-in")),
+            },
+            look_interval_ms: None,
+        }
+    }
+
+    /// What a Keeper is registered with, the parser reads back as it was.
+    #[test]
+    fn a_keepers_command_line_reads_back_as_it_was_written() {
+        let arguments = every_argument();
+        let words = arguments.words().unwrap();
+        let ReadBackCommand::Keeper(read) = ReadBack::try_parse_from(
+            std::iter::once("suru").chain(words.iter().map(String::as_str)),
+        )
+        .unwrap()
+        .command;
+        assert_eq!(read, arguments);
+    }
+
+    /// These are on disk in every registration an earlier build made, read by
+    /// whatever build is at the path at the next login, and a rename fails there
+    /// silently. Don't change this list: accept a new spelling as an alias.
+    #[test]
+    fn a_keepers_flags_are_spelled_as_registrations_have_them() {
+        assert_eq!(
+            every_argument().words().unwrap(),
+            [
+                "__keep-server",
+                "--executable",
+                "/opt/suru",
+                "--state-dir",
+                "/state dir",
+                "--data-dir",
+                "/data",
+                "--channel",
+                "beta",
+                "--config-dir",
+                "/config",
+                "--identity-store",
+                "file",
+                "--service-manager",
+                "/stand-in",
+                "--env",
+                "PATH=/a=b/bin",
+                "--env",
+                "CODEX_HOME=/codex",
+            ]
+        );
     }
 
     #[test]
-    fn a_keep_command_carries_its_channel_and_directories_on_its_command_line() {
-        let carried = [("PATH".to_owned(), "/somewhere/bin".to_owned())];
-        let keep = KeepCommand::new(
-            &client_config("beta"),
-            &std::env::temp_dir().join("suru"),
-            &carried,
-            None,
-        )
-        .unwrap();
+    fn a_registration_runs_the_binary_its_keeper_launches() {
+        let keep = KeepCommand::new(&every_argument()).unwrap();
         let words = keep.words().collect::<Vec<_>>();
-        let after =
-            |flag: &str| words[words.iter().position(|word| *word == flag).unwrap() + 1].to_owned();
+        assert_eq!(words[0], "/opt/suru");
         assert_eq!(words[1], KEEPER_COMMAND);
-        assert_eq!(after("--channel"), "beta");
-        assert_eq!(after("--executable"), words[0]);
-        assert_eq!(
-            after("--state-dir"),
-            std::env::temp_dir().join("suru-state").to_str().unwrap()
-        );
-        assert_eq!(
-            after("--data-dir"),
-            std::env::temp_dir().join("suru-data").to_str().unwrap()
-        );
-        assert_eq!(
-            after("--config-dir"),
-            std::env::temp_dir().join("suru-config").to_str().unwrap()
-        );
-        assert_eq!(after("--env"), "PATH=/somewhere/bin");
+        assert_eq!(words[3], "/opt/suru");
     }
 
     #[test]
     fn a_keep_command_with_a_control_character_is_refused_rather_than_mangled() {
-        let error = KeepCommand::new(
-            &client_config("beta"),
-            &std::env::temp_dir().join("su\nru"),
-            &[],
-            None,
-        )
-        .unwrap_err();
+        let mut arguments = every_argument();
+        arguments.state_base_dir = PathBuf::from("/su\nru");
+        let error = KeepCommand::new(&arguments).unwrap_err();
         assert!(error.to_string().contains("control character"), "{error:#}");
     }
+
+    const CODEX_LIKE: ProviderEnvironment = ProviderEnvironment {
+        carried: &["SURU_CODEX_PATH", "CODEX_HOME"],
+        uncarried_prefixes: &["OPENAI_"],
+    };
 
     /// The secrets a shell holds go nowhere near a registration: only what
     /// names a place is carried.
@@ -722,9 +912,8 @@ mod tests {
         let shell = |name: &str| {
             let value = match name {
                 "PATH" => "/opt/bin",
-                "SURU_CLAUDE_PATH" => "/opt/claude",
-                "CODEX_HOME" => "/opt/codex-home",
-                "COPILOT_HOME" => "",
+                "SURU_CODEX_PATH" => "/opt/codex",
+                "CODEX_HOME" => "",
                 "ANTHROPIC_API_KEY" => "secret",
                 "AWS_SECRET_ACCESS_KEY" => "secret",
                 "HTTPS_PROXY" => "http://me:secret@proxy",
@@ -733,17 +922,21 @@ mod tests {
             Some(OsString::from(value))
         };
         assert_eq!(
-            carried_environment(shell).unwrap(),
+            carried_environment(&[CODEX_LIKE], shell).unwrap(),
             [
                 ("PATH".to_owned(), "/opt/bin".to_owned()),
-                ("SURU_CLAUDE_PATH".to_owned(), "/opt/claude".to_owned()),
-                ("CODEX_HOME".to_owned(), "/opt/codex-home".to_owned()),
+                ("SURU_CODEX_PATH".to_owned(), "/opt/codex".to_owned()),
             ],
         );
-        assert_eq!(
-            uncarried_variables(shell),
-            ["ANTHROPIC_API_KEY", "HTTPS_PROXY"],
-        );
+    }
+
+    /// A Provider is carried what it declares: with none declared here, its
+    /// variables go no further than the shell.
+    #[test]
+    fn what_each_provider_declares_is_what_is_carried_for_it() {
+        let shell = |name: &str| (name == "SURU_CODEX_PATH").then(|| OsString::from("/codex"));
+        assert!(carried_environment(&[], shell).unwrap().is_empty());
+        assert_eq!(carried_environment(&[CODEX_LIKE], shell).unwrap().len(), 1);
     }
 
     fn rooted(path: &str) -> PathBuf {
@@ -762,31 +955,28 @@ mod tests {
             ("/usr/local/bin/suru", None),
             ("/opt/homebrew/bin/suru", None),
             ("/home/jo/python3.12/suru", None),
-            ("/home/jo/suru/target/debug/suru", Some(PassingPath::Build)),
-            (
-                "/home/jo/suru/target/release/suru",
-                Some(PassingPath::Build),
-            ),
+            ("/home/jo/suru/target/debug/suru", Some(ShortLived::Build)),
+            ("/home/jo/suru/target/release/suru", Some(ShortLived::Build)),
             (
                 "/home/jo/suru/target/x86_64-unknown-linux-gnu/release/suru",
-                Some(PassingPath::Build),
+                Some(ShortLived::Build),
             ),
             (
                 "/opt/homebrew/Cellar/suru/1.2.3/bin/suru",
-                Some(PassingPath::Versioned),
+                Some(ShortLived::Versioned),
             ),
             (
                 "/opt/homebrew/Cellar/suru/HEAD/bin/suru",
-                Some(PassingPath::Versioned),
+                Some(ShortLived::Versioned),
             ),
             (
                 "/home/jo/.asdf/installs/suru/v0.4.1/suru",
-                Some(PassingPath::Versioned),
+                Some(ShortLived::Versioned),
             ),
-            ("/nix/store/abc-suru/bin/suru", Some(PassingPath::Versioned)),
-            ("/scratch/tmp/unpacked/suru", Some(PassingPath::Temporary)),
+            ("/nix/store/abc-suru/bin/suru", Some(ShortLived::Versioned)),
+            ("/scratch/tmp/unpacked/suru", Some(ShortLived::Temporary)),
         ] {
-            assert_eq!(passing(&rooted(path), &temporary), expected, "{path}");
+            assert_eq!(short_lived(&rooted(path), &temporary), expected, "{path}");
         }
     }
 
@@ -799,8 +989,8 @@ mod tests {
         std::fs::create_dir_all(target.join("debug")).unwrap();
         std::fs::write(target.join("CACHEDIR.TAG"), "").unwrap();
         assert_eq!(
-            passing(&target.join("debug").join("suru"), elsewhere.path()),
-            Some(PassingPath::Build)
+            short_lived(&target.join("debug").join("suru"), elsewhere.path()),
+            Some(ShortLived::Build)
         );
     }
 
@@ -842,24 +1032,31 @@ mod tests {
         let no_link = std::env::join_paths([&other]).unwrap();
         assert_eq!(
             registered_executable(&binary, Some(&no_link), &temporary),
-            (binary, Some(PassingPath::Versioned))
+            (binary, Some(ShortLived::Versioned))
         );
+    }
+
+    fn login_start() -> LoginStart {
+        LoginStart {
+            channel: "beta".to_owned(),
+            manager: Box::new(launchd::LaunchAgent {
+                channel: "beta".to_owned(),
+                home: rooted("/home/jo"),
+            }),
+        }
     }
 
     #[test]
     fn the_install_report_says_what_was_done_and_warns_of_what_will_not_last() {
-        let home = tempfile::tempdir().unwrap();
-        let commands = test_support::RecordingCommands::default();
-        let login_start =
-            test_support::login_start(Platform::Launchd, "beta", home.path(), &commands);
+        let login_start = login_start();
         let executable = rooted("/home/jo/target/debug/suru");
 
         let report = install_report(
             &login_start,
             "somewhere",
             &executable,
-            Some(PassingPath::Build),
-            &["ANTHROPIC_API_KEY"],
+            Some(ShortLived::Build),
+            &["ANTHROPIC_API_KEY".to_owned()],
         );
         assert!(
             report.contains("`beta` Channel's Server: somewhere"),
@@ -874,31 +1071,73 @@ mod tests {
         assert!(!report.contains("Not carried"), "{report}");
     }
 
+    /// A file missing says nothing while the home it would be under is missing
+    /// too, as one on a mount that is not back yet is; and a Keeper reading
+    /// "not registered" ends.
+    #[test]
+    fn a_registration_is_not_called_gone_while_the_home_is_not_there() {
+        let home = tempfile::tempdir().unwrap();
+        let path = home.path().join("registration");
+        assert_eq!(file_standing(&path, home.path()), Standing::NotRegistered);
+        std::fs::write(&path, "").unwrap();
+        assert!(matches!(
+            file_standing(&path, home.path()),
+            Standing::Registered(_)
+        ));
+        let gone = home.path().join("not mounted");
+        assert!(matches!(
+            file_standing(&gone.join("registration"), &gone),
+            Standing::Unknown(_)
+        ));
+    }
+
     /// Every platform's output says what it covers, including that a Mac waits
     /// for its login keychain and what Linux needs to run with no session.
     #[test]
     fn each_platform_says_what_its_registration_covers_and_what_it_does_not() {
-        let home = tempfile::tempdir().unwrap();
+        let home = rooted("/home/jo");
         let commands = test_support::RecordingCommands::default();
-        let covers =
-            |platform| test_support::login_start(platform, "beta", home.path(), &commands).covers();
-        let mac = covers(Platform::Launchd);
+        let mac = launchd::LaunchAgent {
+            channel: "beta".to_owned(),
+            home: home.clone(),
+        }
+        .covers();
         assert!(mac.contains("login keychain"), "{mac}");
-        assert!(mac.contains("ADR-0050"), "{mac}");
-        let linux = covers(Platform::Systemd);
+        let linux = systemd::UserUnit {
+            channel: "beta".to_owned(),
+            home: home.clone(),
+            config_home: home.clone(),
+            commands: commands.shared(),
+        }
+        .covers();
         assert!(linux.contains("loginctl enable-linger"), "{linux}");
-        let windows = covers(Platform::TaskScheduler);
+        let windows = task_scheduler::ScheduledTask {
+            channel: "beta".to_owned(),
+            user: "HOST\\jo".to_owned(),
+            home,
+            commands: commands.shared(),
+        }
+        .covers();
         assert!(windows.contains("logon"), "{windows}");
     }
 
     #[test]
     fn the_uninstall_report_says_a_running_server_was_left_alone() {
-        let removed = uninstall_report("beta", &Removal::Removed("somewhere".to_owned()));
+        let removed = uninstall_report(
+            "beta",
+            &Removal::Removed {
+                location: "somewhere".to_owned(),
+            },
+        );
         assert!(removed.contains("left running"), "{removed}");
         let nothing = uninstall_report("beta", &Removal::NothingRegistered);
         assert!(nothing.contains("nothing to remove"), "{nothing}");
-        let no_manager =
-            uninstall_report("beta", &Removal::NoServiceManager("no systemd".to_owned()));
+        let no_manager = uninstall_report(
+            "beta",
+            &Removal::NoServiceManager {
+                reason: "no systemd".to_owned(),
+            },
+        );
         assert!(no_manager.contains("no systemd"), "{no_manager}");
     }
 }

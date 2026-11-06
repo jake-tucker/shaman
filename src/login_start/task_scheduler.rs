@@ -15,28 +15,35 @@
 //! given: the Keeper is what restarts a crashed Server, and a Task run again
 //! would take a Manual stop as already seen.
 
+use std::{io, path::PathBuf, sync::Arc};
+
 use anyhow::{Context, Result, bail};
 
-use super::{KeepCommand, LoginStart, Removal, Standing, xml_text};
+use super::{KeepCommand, Removal, ServiceManager, ServiceManagerCommands, Standing, xml_text};
 
 const SCHTASKS: &str = "schtasks";
 
-pub(super) const COVERS: &str = "\
+const COVERS: &str = "\
 What this covers on Windows:
 - A logon by this user.
 - Not a machine that has rebooted and that nobody has logged on to: it stays Unreachable until \
 someone does. A console window may show for a moment as it starts.
 - A Server whose identity key is in Credential Manager reads it as this user. One that cannot \
-fails Serving where you can see it rather than making a new one (ADR-0050).";
+fails Serving where you can see it rather than making a new one.";
 
-/// A Task's name is the machine's rather than the user's, so it names both,
-/// which keeps one user's Channel from colliding with another's.
+/// A Task's name is the machine's rather than the user's, so it names both, the
+/// user's domain included, which keeps one user's Channel from colliding with
+/// another's. Its trigger goes on naming `DOMAIN\\user` as Windows does: only the
+/// name of the Task is spelled otherwise, a `\\` there meaning a folder.
 fn task_name(channel: &str, user: &str) -> String {
-    let user = user.rsplit('\\').next().unwrap_or(user);
+    let user = match user.split_once('\\') {
+        Some((domain, user)) => format!("{user}@{domain}"),
+        None => user.to_owned(),
+    };
     let user = user
         .chars()
         .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_') {
+            if character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_' | '@') {
                 character
             } else {
                 '_'
@@ -143,92 +150,149 @@ fn task_file(definition: &str) -> Vec<u8> {
         .collect()
 }
 
-fn user(login_start: &LoginStart) -> Result<&str> {
-    login_start
-        .places
-        .user
-        .as_deref()
-        .context("determine the current Windows user: USERNAME is not set")
+/// A Channel's Scheduled Task, for one user.
+pub(super) struct ScheduledTask {
+    pub(super) channel: String,
+    /// The user it is for, as `DOMAIN\user`.
+    pub(super) user: String,
+    pub(super) home: PathBuf,
+    pub(super) commands: Arc<dyn ServiceManagerCommands>,
 }
 
-pub(super) fn register(login_start: &LoginStart, keep: &KeepCommand) -> Result<String> {
-    let user = user(login_start)?;
-    let name = task_name(&login_start.channel, user);
-    let definition = task_definition(keep, user, &login_start.places.home.to_string_lossy());
-    let file = tempfile::Builder::new()
-        .prefix("suru-login-start-")
-        .suffix(".xml")
-        .tempfile()
-        .context("create the Task's definition")?;
-    std::fs::write(file.path(), task_file(&definition)).context("write the Task's definition")?;
-    let created = login_start.commands.run(
-        SCHTASKS,
-        &[
-            "/Create".into(),
-            "/TN".into(),
-            (&name).into(),
-            "/XML".into(),
-            file.path().into(),
-            "/F".into(),
-        ],
-    );
-    match created {
-        Ok(outcome) if outcome.success => Ok(format!("Scheduled Task \"{name}\"")),
-        Ok(outcome) => bail!("could not register a start at login: {}", outcome.said),
-        Err(error) => bail!(
-            "could not register a start at login: {SCHTASKS} could not be run ({error}). \
-             Nothing was registered."
-        ),
-    }
+/// What Task Scheduler answered about a Task.
+enum Queried {
+    Found,
+    Gone,
+    /// `schtasks` ran and did not answer, for this reason.
+    Unanswered(String),
+    /// `schtasks` could not be run at all, for this reason.
+    NotThere(String),
 }
 
-pub(super) fn remove(login_start: &LoginStart) -> Result<Removal> {
-    let name = task_name(&login_start.channel, user(login_start)?);
-    match standing(login_start) {
-        Standing::NotRegistered => return Ok(Removal::NothingRegistered),
-        Standing::Unknown(reason) => return Ok(Removal::NoServiceManager(reason)),
-        Standing::Registered(_) => {}
+impl ScheduledTask {
+    fn name(&self) -> String {
+        task_name(&self.channel, &self.user)
     }
-    let deleted = login_start.commands.run(
-        SCHTASKS,
-        &["/Delete".into(), "/TN".into(), (&name).into(), "/F".into()],
-    )?;
-    if !deleted.success {
-        bail!(
-            "could not remove Scheduled Task \"{name}\": {}",
-            deleted.said
-        );
-    }
-    Ok(Removal::Removed(format!("Scheduled Task \"{name}\"")))
-}
 
-/// Told by the exit status alone, since what `schtasks` says is in the
-/// language of the machine.
-pub(super) fn standing(login_start: &LoginStart) -> Standing {
-    let user = match user(login_start) {
-        Ok(user) => user,
-        Err(error) => return Standing::Unknown(format!("{error:#}")),
-    };
-    let name = task_name(&login_start.channel, user);
-    let queried = login_start
-        .commands
-        .run(SCHTASKS, &["/Query".into(), "/TN".into(), (&name).into()]);
-    match queried {
-        Ok(outcome) if outcome.success => {
-            Standing::Registered(format!("Scheduled Task \"{name}\""))
+    fn location(&self) -> String {
+        format!("Scheduled Task \"{}\"", self.name())
+    }
+
+    fn query(&self, arguments: &[&str]) -> io::Result<super::CommandOutcome> {
+        let arguments = arguments.iter().map(Into::into).collect::<Vec<_>>();
+        self.commands.run(SCHTASKS, &arguments)
+    }
+
+    /// Whether the Task is there. `schtasks` says the same of a Task it cannot
+    /// find as of any other trouble, in the language of the machine and with the
+    /// one exit status, so a query for the Task failing says nothing alone: it
+    /// is gone only where a listing of every Task, which is what shows Task
+    /// Scheduler answering at all, comes back without it.
+    fn queried(&self) -> Queried {
+        let name = self.name();
+        match self.query(&["/Query", "/TN", &name]) {
+            Ok(outcome) if outcome.success => return Queried::Found,
+            Ok(_) => {}
+            Err(error) => {
+                return Queried::NotThere(format!("{SCHTASKS} could not be run: {error}"));
+            }
         }
-        Ok(_) => Standing::NotRegistered,
-        Err(error) => Standing::Unknown(format!("{SCHTASKS} could not be run: {error}")),
+        match self.query(&["/Query", "/FO", "CSV", "/NH"]) {
+            Ok(listing) if listing.success => {
+                if listing.printed.contains(&format!("\"\\{name}\"")) {
+                    Queried::Found
+                } else {
+                    Queried::Gone
+                }
+            }
+            Ok(listing) => {
+                Queried::Unanswered(format!("{SCHTASKS} did not answer: {}", listing.said))
+            }
+            Err(error) => Queried::NotThere(format!("{SCHTASKS} could not be run: {error}")),
+        }
+    }
+}
+
+impl ServiceManager for ScheduledTask {
+    fn register(&self, keep: &KeepCommand) -> Result<String> {
+        let name = self.name();
+        let definition = task_definition(keep, &self.user, &self.home.to_string_lossy());
+        let file = tempfile::Builder::new()
+            .prefix("suru-login-start-")
+            .suffix(".xml")
+            .tempfile()
+            .context("create the Task's definition")?;
+        std::fs::write(file.path(), task_file(&definition))
+            .context("write the Task's definition")?;
+        let created = self.commands.run(
+            SCHTASKS,
+            &[
+                "/Create".into(),
+                "/TN".into(),
+                (&name).into(),
+                "/XML".into(),
+                file.path().into(),
+                "/F".into(),
+            ],
+        );
+        match created {
+            Ok(outcome) if outcome.success => Ok(self.location()),
+            Ok(outcome) => bail!("could not register a Login start: {}", outcome.said),
+            Err(error) => bail!(
+                "could not register a Login start: {SCHTASKS} could not be run ({error}). \
+                 Nothing was registered."
+            ),
+        }
+    }
+
+    fn remove(&self) -> Result<Removal> {
+        match self.queried() {
+            Queried::Gone => return Ok(Removal::NothingRegistered),
+            Queried::NotThere(reason) => return Ok(Removal::NoServiceManager { reason }),
+            Queried::Unanswered(reason) => {
+                bail!("could not tell whether a Login start is registered: {reason}")
+            }
+            Queried::Found => {}
+        }
+        let name = self.name();
+        let deleted = self.query(&["/Delete", "/TN", &name, "/F"])?;
+        if !deleted.success {
+            bail!(
+                "could not remove Scheduled Task \"{name}\": {}",
+                deleted.said
+            );
+        }
+        Ok(Removal::Removed {
+            location: self.location(),
+        })
+    }
+
+    fn standing(&self) -> Standing {
+        match self.queried() {
+            Queried::Found => Standing::Registered(self.location()),
+            Queried::Gone => Standing::NotRegistered,
+            Queried::Unanswered(reason) | Queried::NotThere(reason) => Standing::Unknown(reason),
+        }
+    }
+
+    fn covers(&self) -> String {
+        COVERS.to_owned()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        Platform,
-        test_support::{RecordingCommands, awkward_keep, login_start},
-    };
+    use super::super::test_support::{RecordingCommands, awkward_keep};
     use super::*;
+
+    fn scheduled_task(channel: &str, commands: &RecordingCommands) -> ScheduledTask {
+        ScheduledTask {
+            channel: channel.to_owned(),
+            user: USER.to_owned(),
+            home: PathBuf::from(r"C:\Users\jo"),
+            commands: commands.shared(),
+        }
+    }
 
     const USER: &str = r"HOST\jo";
 
@@ -321,25 +385,46 @@ mod tests {
     }
 
     #[test]
-    fn a_tasks_name_is_kept_apart_by_channel_and_by_user() {
-        assert_eq!(task_name("beta", USER), "suru-server-beta (jo)");
-        assert_eq!(task_name("release", USER), "suru-server-release (jo)");
-        assert_eq!(task_name("beta", r"HOST\sam"), "suru-server-beta (sam)");
-        assert_eq!(task_name("beta", "jo smith"), "suru-server-beta (jo_smith)");
+    fn a_tasks_name_is_kept_apart_by_channel_by_user_and_by_domain() {
+        assert_eq!(task_name("beta", USER), "suru-server-beta (jo@HOST)");
+        assert_eq!(task_name("release", USER), "suru-server-release (jo@HOST)");
+        assert_eq!(
+            task_name("beta", r"HOST\sam"),
+            "suru-server-beta (sam@HOST)"
+        );
+        assert_eq!(
+            task_name("beta", r"OTHER\jo"),
+            "suru-server-beta (jo@OTHER)"
+        );
+        assert_eq!(
+            task_name("beta", r"HOST\jo smith"),
+            "suru-server-beta (jo_smith@HOST)"
+        );
+        assert_eq!(task_name("beta", "jo"), "suru-server-beta (jo)");
+    }
+
+    /// A Task's name carries its domain another way; what it runs as does not.
+    #[test]
+    fn a_tasks_trigger_goes_on_naming_the_user_as_windows_does() {
+        let task = task_definition(&awkward_keep(), r"OTHER\jo", r"C:\Users\jo");
+        assert_eq!(
+            task.matches(r"<UserId>OTHER\jo</UserId>").count(),
+            2,
+            "{task}"
+        );
     }
 
     #[test]
     fn registering_creates_over_any_earlier_task_and_never_runs_it() {
-        let home = tempfile::tempdir().unwrap();
         let commands = RecordingCommands::default();
-        let beta = login_start(Platform::TaskScheduler, "beta", home.path(), &commands);
+        let beta = scheduled_task("beta", &commands);
 
-        register(&beta, &awkward_keep()).unwrap();
-        register(&beta, &awkward_keep()).unwrap();
+        beta.register(&awkward_keep()).unwrap();
+        beta.register(&awkward_keep()).unwrap();
         for command in commands.ran() {
             assert_eq!(command[0], "schtasks");
             assert_eq!(command[1], "/Create");
-            assert_eq!(&command[2..4], ["/TN", "suru-server-beta (jo)"]);
+            assert_eq!(&command[2..4], ["/TN", "suru-server-beta (jo@HOST)"]);
             assert_eq!(command[4], "/XML");
             assert_eq!(
                 command[6], "/F",
@@ -350,40 +435,63 @@ mod tests {
     }
 
     #[test]
-    fn removing_asks_first_so_doing_it_twice_is_harmless() {
-        let home = tempfile::tempdir().unwrap();
+    fn removing_finds_the_task_first_so_doing_it_twice_is_harmless() {
         let commands = RecordingCommands::default();
-        let beta = login_start(Platform::TaskScheduler, "beta", home.path(), &commands);
+        let beta = scheduled_task("beta", &commands);
 
-        assert!(matches!(remove(&beta).unwrap(), Removal::Removed(_)));
+        assert!(matches!(beta.remove().unwrap(), Removal::Removed { .. }));
         let ran = commands.ran();
         assert_eq!(ran[0][1], "/Query");
         assert_eq!(ran[1][1], "/Delete");
-        assert_eq!(&ran[1][2..], ["/TN", "suru-server-beta (jo)", "/F"]);
+        assert_eq!(&ran[1][2..], ["/TN", "suru-server-beta (jo@HOST)", "/F"]);
         assert!(!ran.iter().flatten().any(|word| word == "/End"), "{ran:?}");
 
-        commands.refuse("/Query");
-        assert_eq!(remove(&beta).unwrap(), Removal::NothingRegistered);
-        assert_eq!(
-            commands.ran().len(),
-            3,
+        commands.refuse("/TN");
+        assert_eq!(beta.remove().unwrap(), Removal::NothingRegistered);
+        assert!(
+            !commands.ran()[2..]
+                .iter()
+                .flatten()
+                .any(|word| word == "/Delete"),
             "nothing is deleted when nothing is there"
         );
     }
 
+    /// `schtasks` fails alike for a Task that is not there and for any trouble,
+    /// and a Keeper reading "not registered" ends for good: so only a listing
+    /// that came back without the Task means it is gone.
+    #[test]
+    fn a_query_failing_alone_does_not_make_a_task_gone() {
+        let commands = RecordingCommands::default();
+        let beta = scheduled_task("beta", &commands);
+
+        commands.refuse("/TN");
+        assert_eq!(beta.standing(), Standing::NotRegistered);
+
+        commands.print("\"\\other task\",\"N/A\",\"Ready\"\r\n");
+        assert_eq!(beta.standing(), Standing::NotRegistered);
+
+        commands.print("\"\\suru-server-beta (jo@HOST)\",\"N/A\",\"Running\"\r\n");
+        assert!(matches!(beta.standing(), Standing::Registered(_)));
+
+        commands.refuse("/FO");
+        assert!(matches!(beta.standing(), Standing::Unknown(_)));
+        let error = beta.remove().unwrap_err().to_string();
+        assert!(error.contains("could not tell"), "{error}");
+    }
+
     #[test]
     fn with_no_schtasks_nothing_is_claimed_and_nothing_crashes() {
-        let home = tempfile::tempdir().unwrap();
         let commands = RecordingCommands::default();
         commands.go_missing();
-        let beta = login_start(Platform::TaskScheduler, "beta", home.path(), &commands);
+        let beta = scheduled_task("beta", &commands);
 
         assert!(matches!(beta.standing(), Standing::Unknown(_)));
         assert!(matches!(
-            remove(&beta).unwrap(),
-            Removal::NoServiceManager(_)
+            beta.remove().unwrap(),
+            Removal::NoServiceManager { .. }
         ));
-        let error = register(&beta, &awkward_keep()).unwrap_err().to_string();
+        let error = beta.register(&awkward_keep()).unwrap_err().to_string();
         assert!(error.contains("could not be run"), "{error}");
     }
 }

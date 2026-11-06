@@ -169,6 +169,13 @@ impl Default for CodexRuntime {
 }
 
 impl ProviderRuntime for CodexRuntime {
+    fn environment(&self) -> crate::provider::ProviderEnvironment {
+        crate::provider::ProviderEnvironment {
+            carried: &[CODEX_PATH_ENV, "CODEX_HOME"],
+            uncarried_prefixes: &["CODEX_", "OPENAI_"],
+        }
+    }
+
     fn provider_id(&self) -> ProviderId {
         ProviderId::new("codex")
     }
