@@ -637,9 +637,10 @@ Logging in opens nothing: it makes no Server reachable, and nobody can reach it 
 ### Serving through the Relay
 
 To make a Server reachable through the Relay, choose the Relay in its `/relay` list and press `s`, or press Space on
-its row in `/serve`. Serving through a Relay is chosen for each Relay, and is off until chosen. The Server waits at the Relay only while it is logged in
-there and Serving is on, so the Relay's row says what it waits on: **Serving through**, or **Serves through once
-logged in**, or **Serves through once Serving is on** — `/serve` turns Serving on. Press `s` again to stop.
+its row in `/serve`. Serving through a Relay is chosen for each Relay, and is off until chosen. The Server waits at the
+Relay only while it is logged in there and Serving is on, so the Relay's row says what it waits on: **Serving
+through**, or **Serves through once logged in**, or **Serves through once Serving is on** — `/serve` turns Serving on.
+Press `s` again to stop.
 
 ### Issuing an Invite
 
@@ -655,8 +656,9 @@ A Relay an Invite cannot offer is marked `[-]` and says why, and Space on its ro
   Esc steps back and leaves the login under way; its row then says where the login stands, Space shows it again, and
   `/relay` finds the same login. A login the Relay refuses says why on the row.
 - **not Served through**: Space Serves through that Relay. Its row says beforehand what that does: it makes this machine
-  reachable through that Relay. Nothing else turns this on, so a Relay needing both takes one key press for the login
-  and another for this. Where the Server refuses, it says why on the row.
+  reachable through that Relay. A terminal too small to show all of that says so instead, and Space then does nothing.
+  A login never turns this on, so a Relay needing both takes one key press for the login and another for this. Where
+  the Server refuses, it says why on the row.
 
 Once the Relay can be offered it is ticked like any other, and the next Invite offers it without reopening `/serve`;
 this holds even for a Relay you had left out, since pressing the key on its row says you want it. `a` adds a Relay

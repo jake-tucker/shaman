@@ -12,13 +12,19 @@
 //! was asked to, the picker says why it lists no address, and with nothing at
 //! all to offer, what would give it something.
 //!
-//! A Relay shown with why is put right from its row: Space logs in there or
-//! Serves through it, each its own key on a row naming the Relay, and `a` adds
-//! one. The Relay list does the work, over the picker and back again (see
-//! [`super::relay_overlay`]), so only what the keys are on and what the reader
-//! has left out is held here. Putting a Relay right from its row says the
-//! reader wants it offered, whatever they left out of it before; one put right
-//! by anything else leaves what they chose as it stands.
+//! A Relay shown with why is put right from its row, each act of its own named
+//! by the row's [`WayAction`]: logging in there or Serving through it, and `a`
+//! adds one. The Relay list does the work, over the picker and back again (see
+//! [`super::relay_overlay`]), handing back what came of it for the row to say.
+//! Asking for a Relay to be put right says the reader wants it offered, whatever
+//! they left out of it before; one put right by anything else, or a login only
+//! looked at, leaves what they chose as it stands.
+//!
+//! Serving through a Relay opens the machine, so its row says so first and the
+//! key acts only on what the reader was shown: the row's name and the whole
+//! statement, drawn by the last frame. [`ServePickerLayout`] gives them Rows ahead of
+//! everything else the picker says, and where there are not enough the picker
+//! says the terminal is too small rather than offer the key.
 //!
 //! Preparing the picker and the Invite asked for each name themselves with a
 //! [`ServeRequest`], and only the answer to the one awaited is taken: one the
@@ -26,15 +32,19 @@
 //! nowhere. The keys stay on the way they are on however the Relays move
 //! around it, moving to its neighbour only where it goes itself.
 
-use std::{cell::Cell, collections::HashSet};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashSet,
+};
 
 use crate::protocol::{
     IssueInviteRequest, IssuedInvite, ListenerState, Peer, Relay, RelayState, Way,
 };
 
 use super::{
+    commands::SemanticCommandId,
     list_window::ListWindow,
-    relay_overlay::{RelayOverlay, logging_in, login_refused},
+    relay_overlay::{ListNote, RelayOutcome, RelayOverlay},
 };
 
 /// What the picker says in place of the machine's addresses while the
@@ -66,17 +76,22 @@ pub(super) const NO_RELAY: &str = "This Server holds no Relay; press a to add on
 /// the key opens the machine to.
 const REACHABLE: &str = "Serving through it makes this machine reachable through this Relay";
 
+/// What the picker says where a frame has too few Rows to say all of
+/// [`REACHABLE`] on the row the keys are on, which the key then does not act on.
+pub(super) const TOO_SMALL: &str = "This terminal is too small to show what Serving through this \
+                                    Relay does; enlarge it to Serve through it";
+
 /// What the ways an Invite may offer stand on, followed while the picker
 /// stands: how the Serving listener stands and the Client's own Server's
 /// Relays, each as the Server last pictured them.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ServeWays<'a> {
     pub(super) listener: &'a ListenerState,
-    pub(super) relays: &'a [Relay],
+    pub(super) relays: &'a RelayOverlay,
 }
 
 impl<'a> ServeWays<'a> {
-    pub(super) fn of(listener: &'a ListenerState, relays: &'a [Relay]) -> Self {
+    pub(super) fn of(listener: &'a ListenerState, relays: &'a RelayOverlay) -> Self {
         Self { listener, relays }
     }
 }
@@ -94,6 +109,9 @@ pub(super) struct ServeOverlay {
     /// Invite may offer, or the Peers it has enrolled.
     window: ListWindow,
     last_request: u64,
+    /// The way whose row the last frame drew whole with what its key does, the
+    /// keys on it and nothing over it. Given up as every frame begins.
+    statement_drawn: RefCell<Option<Way>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -135,6 +153,17 @@ struct Choice {
     /// neighbour where the way they were on goes.
     at: Cell<usize>,
     error: Option<String>,
+    /// What the Relay list last handed back of the Relay it was asked about.
+    relay_note: Option<RelayNote>,
+}
+
+/// What is said of the Relay at `address`, beneath its row. It stands until the
+/// next key the reader presses, or, with no row to stand on — a Relay added, say,
+/// that no picture has shown yet — until it has one.
+#[derive(Clone, Debug)]
+struct RelayNote {
+    address: String,
+    notes: Vec<ListNote>,
 }
 
 impl Choice {
@@ -184,17 +213,49 @@ impl Choice {
                 chosen: !self.left_out.contains(&way),
                 way,
                 withheld: None,
+                action: WayAction::ToggleOffered,
+                notes: Vec::new(),
             });
-        let relays = ways.relays.iter().map(|relay| {
+        let relays = ways.relays.held_relays().iter().map(|relay| {
             let way = Way::Relay(relay.address.clone());
             let withheld = Withheld::of(relay);
             CandidateWay {
                 chosen: withheld.is_none() && !self.left_out.contains(&way),
-                way,
                 withheld,
+                action: WayAction::of(withheld, ways.relays.under_way(&relay.address).is_some()),
+                notes: self.notes_on(&relay.address, withheld, ways.relays),
+                way,
             }
         });
         addresses.chain(relays).collect()
+    }
+
+    /// What the row of the Relay at `address` says beneath it, withheld as
+    /// `withheld` says: what the Relay list last handed back of it, and then
+    /// how a login it needs stands, if that says anything else.
+    fn notes_on(
+        &self,
+        address: &str,
+        withheld: Option<Withheld>,
+        relays: &RelayOverlay,
+    ) -> Vec<ListNote> {
+        let standing = (withheld == Some(Withheld::LoginNeeded))
+            .then(|| relays.login_standing(address))
+            .flatten();
+        self.relay_note
+            .iter()
+            .filter(|note| note.address == address)
+            .flat_map(|note| note.notes.iter().cloned())
+            .filter(|note| standing.as_ref() != Some(note))
+            .chain(standing.clone())
+            .collect()
+    }
+
+    /// Whether a Relay the `relays` hold has a row for what is said of it.
+    fn relay_note_has_a_row(&self, relays: &RelayOverlay) -> bool {
+        self.relay_note
+            .as_ref()
+            .is_some_and(|note| relays.held(&note.address).is_some())
     }
 }
 
@@ -205,73 +266,154 @@ pub(super) struct CandidateWay {
     pub(super) chosen: bool,
     /// Why an Invite cannot offer it, where it cannot.
     pub(super) withheld: Option<Withheld>,
-}
-
-/// What a row says beneath the way it names.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct WayNote {
-    pub(super) text: String,
-    pub(super) failed: bool,
+    /// What can be done on its row.
+    pub(super) action: WayAction,
+    /// What its row says beneath it of what was done there and how a login
+    /// there stands.
+    pub(super) notes: Vec<ListNote>,
 }
 
 impl CandidateWay {
-    /// What Space does on this row.
-    pub(super) fn space(&self) -> ServeSpace {
-        match self.withheld {
-            None => ServeSpace::Toggle,
-            Some(Withheld::LoginNeeded) => ServeSpace::LogIn,
-            Some(Withheld::NotServedThrough) => ServeSpace::ServeThrough,
-        }
-    }
-
-    /// What its row says beneath it of a Relay, as `relays` hold it: what was
-    /// last done for the picker there, and then how it stands where that
-    /// bears on what its key does — the login under way there or refused
-    /// there, or what Serving through it would open.
-    pub(super) fn notes(&self, relays: &RelayOverlay) -> Vec<WayNote> {
-        let Way::Relay(address) = &self.way else {
-            return Vec::new();
-        };
-        let standing = match self.withheld {
-            Some(Withheld::LoginNeeded) => relays
-                .under_way(address)
-                .map(|login| WayNote {
-                    text: logging_in(&login),
-                    failed: false,
-                })
-                .or_else(|| {
-                    let login = relays.held(address)?.login.as_ref()?;
-                    Some(WayNote {
-                        text: login_refused(address, &login.outcome)?,
-                        failed: true,
-                    })
-                }),
-            Some(Withheld::NotServedThrough) => Some(WayNote {
-                text: REACHABLE.to_owned(),
-                failed: false,
-            }),
-            None => None,
-        };
-        let left = relays
-            .picker_note(address)
-            .filter(|(text, _)| standing.as_ref().is_none_or(|said| said.text != *text))
-            .map(|(text, failed)| WayNote {
-                text: text.to_owned(),
-                failed,
-            });
-        left.into_iter().chain(standing).collect()
+    /// What must be said on this row before its action can be taken.
+    pub(super) fn statement(&self) -> Option<&'static str> {
+        (self.action == WayAction::ServeThrough).then_some(REACHABLE)
     }
 }
 
-/// What Space does on the row the keys are on.
+/// What can be done on a row of the picker, with what names it wherever it is
+/// invoked from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ServeSpace {
+pub(super) enum WayAction {
     /// Offers a way left out, and leaves out one offered.
-    Toggle,
-    /// Logs in at the Relay.
-    LogIn,
+    ToggleOffered,
+    /// Begins a login at the Relay.
+    BeginLogin,
+    /// Shows again the login under way at the Relay.
+    ShowLogin,
     /// Serves through the Relay.
     ServeThrough,
+}
+
+impl WayAction {
+    fn of(withheld: Option<Withheld>, login_under_way: bool) -> Self {
+        match withheld {
+            None => Self::ToggleOffered,
+            Some(Withheld::LoginNeeded) if login_under_way => Self::ShowLogin,
+            Some(Withheld::LoginNeeded) => Self::BeginLogin,
+            Some(Withheld::NotServedThrough) => Self::ServeThrough,
+        }
+    }
+
+    /// The command that takes it.
+    pub(super) fn command(self) -> SemanticCommandId {
+        match self {
+            Self::ToggleOffered => SemanticCommandId::ServeToggleAddress,
+            Self::BeginLogin | Self::ShowLogin => SemanticCommandId::ServeRelayLogin,
+            Self::ServeThrough => SemanticCommandId::ServeRelayServeThrough,
+        }
+    }
+
+    /// What the keys say it does.
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::ToggleOffered => "toggle",
+            Self::BeginLogin => "log in",
+            Self::ShowLogin => "show login",
+            Self::ServeThrough => "Serve through",
+        }
+    }
+}
+
+/// How many Rows each part of the picker takes for a frame, wrapped.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct ServePickerNeeds {
+    /// The Rows inside the box.
+    pub(super) height: usize,
+    pub(super) listener: usize,
+    /// The way the keys are on, its name wrapped whole.
+    pub(super) focused_way: usize,
+    /// What must be said on that row before its action can be taken.
+    pub(super) statement: usize,
+    pub(super) too_small: usize,
+    pub(super) no_relay: usize,
+    pub(super) no_way: usize,
+    /// What went wrong, and what has no row to be said on.
+    pub(super) said: usize,
+    pub(super) keys: usize,
+}
+
+/// How a frame shares its Rows among the parts of the picker. The row the keys
+/// are on comes first, with what must be said on it if the box can hold both:
+/// that is the one thing the key is not taken without. Each other part is
+/// whole or not there, as a sentence cut short can mislead, and goes in the
+/// order the reader can least do without it; what is left over goes to the
+/// other ways.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ServePickerLayout {
+    /// Whether the row the keys are on can say all it must.
+    pub(super) statement_fits: bool,
+    /// The Rows given to saying the terminal is too small, which is cut short
+    /// rather than left out.
+    pub(super) too_small: usize,
+    pub(super) keys: bool,
+    pub(super) said: bool,
+    pub(super) no_way: bool,
+    pub(super) heading: bool,
+    pub(super) no_relay: bool,
+    pub(super) listener: bool,
+    /// The Rows given to the ways, the row the keys are on among them.
+    pub(super) ways: usize,
+}
+
+impl ServePickerLayout {
+    /// Whether a box `height` Rows tall can hold a way `focused_way` Rows long
+    /// and the `statement` Rows beneath it, as [`Self::of`] would lay them out.
+    /// A row with no statement has nothing that must fit.
+    pub(super) fn statement_fits(focused_way: usize, statement: usize, height: usize) -> bool {
+        statement == 0 || focused_way + statement <= height
+    }
+
+    pub(super) fn of(needs: ServePickerNeeds) -> Self {
+        let statement_fits = Self::statement_fits(needs.focused_way, needs.statement, needs.height);
+        let mut left = needs.height;
+        let too_small = if statement_fits {
+            0
+        } else {
+            needs.too_small.min(left)
+        };
+        left -= too_small;
+        let held = if statement_fits {
+            needs.focused_way + needs.statement
+        } else {
+            needs.focused_way
+        }
+        .min(left);
+        left -= held;
+        let mut whole = |rows: usize| {
+            let fits = rows <= left;
+            if fits {
+                left -= rows;
+            }
+            fits
+        };
+        let keys = whole(needs.keys);
+        let said = whole(needs.said);
+        let no_way = whole(needs.no_way);
+        let heading = whole(1);
+        let no_relay = whole(needs.no_relay);
+        let listener = whole(needs.listener);
+        Self {
+            statement_fits,
+            too_small,
+            keys,
+            said,
+            no_way,
+            heading,
+            no_relay,
+            listener,
+            ways: held + left,
+        }
+    }
 }
 
 /// Why an Invite cannot offer a Relay.
@@ -393,9 +535,12 @@ impl ServeOverlay {
     }
 
     /// What the picker says where the Server, as `ways` stand now, holds no
-    /// Relay.
+    /// Relay — with nothing said yet of one added that a picture has yet to show.
     pub(super) fn no_relay(&self, ways: ServeWays<'_>) -> Option<&'static str> {
-        (self.is_choosing() && ways.relays.is_empty()).then_some(NO_RELAY)
+        let ServeOverlayState::Choosing(choice) = &self.state else {
+            return None;
+        };
+        (ways.relays.held_relays().is_empty() && choice.relay_note.is_none()).then_some(NO_RELAY)
     }
 
     /// Whether the reader is choosing among the ways.
@@ -403,49 +548,130 @@ impl ServeOverlay {
         matches!(self.state, ServeOverlayState::Choosing(_))
     }
 
-    /// What Space does on the row the keys are on, as `ways` stand now.
-    pub(super) fn space(&self, ways: ServeWays<'_>) -> ServeSpace {
+    /// What can be done on the row the keys are on, as `ways` stand now.
+    pub(super) fn focused_action(&self, ways: ServeWays<'_>) -> WayAction {
         let ServeOverlayState::Choosing(choice) = &self.state else {
-            return ServeSpace::Toggle;
+            return WayAction::ToggleOffered;
         };
         let candidates = choice.candidates(ways);
         candidates
             .get(choice.focused(&candidates))
-            .map_or(ServeSpace::Toggle, CandidateWay::space)
+            .map_or(WayAction::ToggleOffered, |candidate| candidate.action)
     }
 
-    /// The address of the Relay the keys are on, where it is withheld as
-    /// `withheld` says, for it to be put right. Having asked for that, the
-    /// reader wants it offered, whatever they left out before.
-    pub(super) fn put_right(&mut self, ways: ServeWays<'_>, withheld: Withheld) -> Option<String> {
+    /// The way the keys are on, stood on from here on however the ways move,
+    /// where nothing stands over the picker.
+    fn pin_focus(&mut self, ways: ServeWays<'_>) -> Option<CandidateWay> {
         let ServeOverlayState::Choosing(choice) = &mut self.state else {
             return None;
         };
+        if ways.relays.is_open() {
+            return None;
+        }
         let candidates = choice.candidates(ways);
         let index = choice.focused(&candidates);
         choice.focus_on(&candidates, index);
-        let candidate = candidates.get(index)?;
+        candidates.into_iter().nth(index)
+    }
+
+    /// The reader wants the `way` they asked to have put right offered, whatever
+    /// they left out before.
+    fn want_offered(&mut self, way: &Way) {
+        if let ServeOverlayState::Choosing(choice) = &mut self.state {
+            choice.left_out.remove(way);
+            choice.error = None;
+        }
+        self.window.reveal();
+    }
+
+    /// The address of the Relay the keys are on, where a login there is what
+    /// its row offers. Only looking at one under way asks nothing more.
+    pub(super) fn relay_to_log_in(&mut self, ways: ServeWays<'_>) -> Option<String> {
+        let candidate = self.pin_focus(ways)?;
         let Way::Relay(address) = &candidate.way else {
             return None;
         };
-        if candidate.withheld != Some(withheld) {
-            return None;
+        match candidate.action {
+            WayAction::BeginLogin => self.want_offered(&candidate.way),
+            WayAction::ShowLogin => {}
+            WayAction::ToggleOffered | WayAction::ServeThrough => return None,
         }
-        choice.left_out.remove(&candidate.way);
-        choice.error = None;
-        self.window.reveal();
         Some(address.clone())
     }
 
-    /// Puts the keys on the Relay at `address`, just added from the picker
-    /// and offered once it can be, for when a picture shows it.
-    pub(super) fn focus_on_relay(&mut self, address: &str) {
-        if let ServeOverlayState::Choosing(choice) = &mut self.state {
-            let way = Way::Relay(address.to_owned());
+    /// The address of the Relay the keys are on, where Serving through it is
+    /// what its row offers and the frame the reader last saw said what that
+    /// does. Asking for it having seen anything less does nothing.
+    pub(super) fn relay_to_serve_through(&mut self, ways: ServeWays<'_>) -> Option<String> {
+        let candidate = self.pin_focus(ways)?;
+        let Way::Relay(address) = &candidate.way else {
+            return None;
+        };
+        if candidate.action != WayAction::ServeThrough
+            || self.statement_drawn.borrow().as_ref() != Some(&candidate.way)
+        {
+            return None;
+        }
+        self.want_offered(&candidate.way);
+        Some(address.clone())
+    }
+
+    /// Takes what the Relay list did at a Relay for the picker, the keys going
+    /// to one it added.
+    pub(super) fn take_relay_outcome(&mut self, outcome: RelayOutcome) {
+        let ServeOverlayState::Choosing(choice) = &mut self.state else {
+            return;
+        };
+        if outcome.added {
+            let way = Way::Relay(outcome.address.clone());
             choice.left_out.remove(&way);
             choice.focus = Some(way);
             self.window.reveal();
         }
+        choice.relay_note = (!outcome.notes.is_empty()).then_some(RelayNote {
+            address: outcome.address,
+            notes: outcome.notes,
+        });
+    }
+
+    /// Puts down what the Relay list last handed back, which every key does
+    /// where it has a row to have been read on, answering whether there was
+    /// anything to put down.
+    pub(super) fn put_down_relay_note(&mut self, ways: ServeWays<'_>) -> bool {
+        match &mut self.state {
+            ServeOverlayState::Choosing(choice) if choice.relay_note_has_a_row(ways.relays) => {
+                choice.relay_note.take().is_some()
+            }
+            _ => false,
+        }
+    }
+
+    /// What the Relay list last handed back of a Relay with no row to say it
+    /// on, as `ways` stand now.
+    pub(super) fn notes_with_no_row(&self, ways: ServeWays<'_>) -> &[ListNote] {
+        match &self.state {
+            ServeOverlayState::Choosing(choice) if !choice.relay_note_has_a_row(ways.relays) => {
+                choice
+                    .relay_note
+                    .as_ref()
+                    .map_or(&[], |note| note.notes.as_slice())
+            }
+            _ => &[],
+        }
+    }
+
+    /// Gives up what the last frame drew, as a frame begins.
+    pub(super) fn forget_frame(&self) {
+        *self.statement_drawn.borrow_mut() = None;
+    }
+
+    /// Notes that this frame drew `way`'s row whole, with what its action does.
+    pub(super) fn drew_statement(&self, way: &Way) {
+        *self.statement_drawn.borrow_mut() = Some(way.clone());
+    }
+
+    pub(super) fn reveal_focus(&self) {
+        self.window.reveal();
     }
 
     /// Where among `candidates` — the ways listed — the keys stand.

@@ -20,7 +20,7 @@ use super::{
         insights::{InsightsPanel, InsightsTarget},
     },
     relay_overlay::RelayInputMode,
-    serve_overlay::ServeSpace,
+    serve_overlay::WayAction,
     settings_panel::PanelKeys,
     state::{CommandId, ScrollDirection},
 };
@@ -604,12 +604,12 @@ fn command_for_insights_wheel(
 /// The Serve overlay owns the keys while it is visible. Its picker of the
 /// ways an Invite offers follows the other picker surfaces, with Space changing membership rather
 /// than typing and Enter issuing the Invite for the complete chosen set. On a
-/// Relay an Invite cannot offer, Space does what `space` says puts it right,
-/// and `a` adds a Relay: what either opens stands over the picker with keys of
-/// its own, as [`command_for_relay_overlay_event`] takes them.
+/// Relay an Invite cannot offer, Space takes `action`, which puts it right, and
+/// `a` adds a Relay: what either opens stands over the picker with keys of its
+/// own, as [`command_for_relay_overlay_event`] takes them.
 pub(super) fn command_for_serve_overlay_event(
     event: InputEvent,
-    space: ServeSpace,
+    action: WayAction,
 ) -> Option<CommandId> {
     let InputEvent::Key(key) = event else {
         return None;
@@ -624,11 +624,7 @@ pub(super) fn command_for_serve_overlay_event(
         (KeyCode::Down, KeyModifiers::NONE) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
             SemanticCommandId::ServeNext
         }
-        (KeyCode::Char(' '), KeyModifiers::NONE) => match space {
-            ServeSpace::Toggle => SemanticCommandId::ServeToggleAddress,
-            ServeSpace::LogIn => SemanticCommandId::ServeRelayLogin,
-            ServeSpace::ServeThrough => SemanticCommandId::ServeRelayServeThrough,
-        },
+        (KeyCode::Char(' '), KeyModifiers::NONE) => action.command(),
         (KeyCode::Char('a'), KeyModifiers::NONE) => SemanticCommandId::ServeRelayAdd,
         (KeyCode::Enter, KeyModifiers::NONE) => SemanticCommandId::ServeConfirm,
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => SemanticCommandId::ServeCopyInvite,

@@ -1649,7 +1649,7 @@ fn a_long_refusal_on_the_remotes_details_reads_whole_with_the_keys_in_view() {
 
     let mut read = vec![shown];
     for _ in 0..20 {
-        press(&mut application, KeyCode::PageDown);
+        press_with_no_frame(&mut application, KeyCode::PageDown);
         read.push(prose_at(&application, 40));
     }
     let end = read.last().expect("read at least once");
@@ -1658,9 +1658,9 @@ fn a_long_refusal_on_the_remotes_details_reads_whole_with_the_keys_in_view() {
         "the refusal's last instruction is reached: {end}"
     );
     assert!(end.contains(keys), "the keys stay in view: {end}");
-    press(&mut application, KeyCode::PageUp);
+    press_with_no_frame(&mut application, KeyCode::PageUp);
     for _ in 0..20 {
-        press(&mut application, KeyCode::PageUp);
+        press_with_no_frame(&mut application, KeyCode::PageUp);
     }
     assert!(
         prose_at(&application, 40).contains("this Server is logged in at"),
@@ -2851,6 +2851,339 @@ fn a_login_going_on_beneath_the_address_entry_leaves_it_as_it_is() {
     );
 }
 
+/// Whatever the terminal, Space Serves through a Relay only where the frame
+/// the reader last saw named it and said the whole of what that does, and says
+/// otherwise that the terminal is too small to.
+#[test]
+fn space_serves_through_only_where_the_frame_showed_the_row_and_what_it_does() {
+    let mut acted = 0;
+    let mut too_small = 0;
+    for (listener, keys_down) in [(open_at(7777), 1), (ListenerState::Off, 0), (failed(), 0)] {
+        for after_login in [false, true] {
+            for (width, height) in [
+                // Where a reader found it clipped.
+                (80, 12),
+                (80, 11),
+                (40, 24),
+                (60, 16),
+                (80, 8),
+                (80, 13),
+                (80, 9),
+                // Short.
+                (80, 3),
+                (80, 4),
+                (80, 5),
+                (80, 6),
+                (80, 7),
+                (80, 10),
+                (120, 8),
+                // Narrow.
+                (12, 24),
+                (16, 24),
+                (20, 24),
+                (24, 24),
+                (30, 24),
+                (40, 12),
+                // Both.
+                (20, 8),
+                (30, 10),
+                (40, 8),
+                (48, 10),
+                (60, 8),
+            ] {
+                let mut application = listening_application(listener.clone());
+                push(&mut application, 1, vec![relay(COMPANY)]);
+                open_serve(&mut application, vec![direct()]);
+                for _ in 0..keys_down {
+                    press(&mut application, KeyCode::Down);
+                }
+                if after_login {
+                    let follower = log_in_from_serve(&mut application, COMPANY, pending());
+                    let asked = settled(&mut application, follower, done(pending()));
+                    relisted(&mut application, asked, 2, vec![logged_in(COMPANY)]);
+                } else {
+                    push(&mut application, 2, vec![logged_in(COMPANY)]);
+                }
+                let shown = says_what_serving_through_does(&application, COMPANY, width, height);
+                let screen = boxed_rows_sized(&application, width, height).concat();
+                let asked = press_with_no_frame(&mut application, KeyCode::Char(' '));
+                let context = format!(
+                    "at {width}x{height}, listener {listener:?}, after a login {after_login}: \
+                     {screen}"
+                );
+                if shown {
+                    acted += 1;
+                    serve_through(asked, COMPANY, true);
+                } else {
+                    too_small += 1;
+                    assert_eq!(asked, ApplicationTransition::Continue, "{context}");
+                    // At its very shortest the whole frame says so in its stead.
+                    assert!(
+                        screen.is_empty()
+                            || screen.to_lowercase().contains("too small")
+                            || spaceless(&screen).contains("Thisterminal"),
+                        "says the terminal is too small: {context}"
+                    );
+                }
+            }
+        }
+    }
+    assert!(
+        acted > 0 && too_small > 0,
+        "both are reached: {acted} acted, {too_small} too small"
+    );
+}
+
+/// The sizes a reader found the row clipped at hold the row and all it says
+/// wherever the Rows are there to hold them, ahead of the rest of the picker.
+#[test]
+fn the_row_and_what_serving_through_does_come_ahead_of_the_rest_of_the_picker() {
+    for (listener, keys_down, width, height) in [
+        (ListenerState::Off, 0, 80, 12),
+        (ListenerState::Off, 0, 80, 11),
+        (ListenerState::Off, 0, 40, 24),
+        (failed(), 0, 60, 16),
+        (open_at(7777), 1, 80, 8),
+    ] {
+        let mut application = listening_application(listener);
+        push(&mut application, 1, vec![logged_in(COMPANY)]);
+        open_serve(&mut application, vec![direct()]);
+        for _ in 0..keys_down {
+            press(&mut application, KeyCode::Down);
+        }
+        assert!(
+            says_what_serving_through_does(&application, COMPANY, width, height),
+            "at {width}x{height}: {:#?}",
+            boxed_rows_sized(&application, width, height)
+        );
+    }
+}
+
+/// Among other Relays, and however the frame shrinks, the row the keys are on
+/// is the one that must say it.
+#[test]
+fn space_serves_through_among_other_relays_only_where_its_own_row_says_it() {
+    let others = vec![
+        serving_through(logged_in("https://a.example.com")),
+        logged_in("https://b.example.com"),
+        logged_in("https://c.example.com"),
+        logged_in(COMPANY),
+    ];
+    let mut acted = 0;
+    let mut withheld = 0;
+    for height in 3..=24 {
+        for width in [24, 40, 80] {
+            let mut application = listening_application(ListenerState::Off);
+            push(&mut application, 1, others.clone());
+            open_serve(&mut application, Vec::new());
+            for _ in 0..3 {
+                press(&mut application, KeyCode::Down);
+            }
+            // A taller frame first, whose window the shorter one inherits.
+            rendered_application_rows_at(&application, width, 24);
+            let shown = says_what_serving_through_does(&application, COMPANY, width, height);
+            let asked = press_with_no_frame(&mut application, KeyCode::Char(' '));
+            if shown {
+                acted += 1;
+                serve_through(asked, COMPANY, true);
+            } else {
+                withheld += 1;
+                assert_eq!(
+                    asked,
+                    ApplicationTransition::Continue,
+                    "at {width}x{height}"
+                );
+            }
+        }
+    }
+    assert!(
+        acted > 0 && withheld > 0,
+        "{acted} acted, {withheld} withheld"
+    );
+}
+
+/// Only a row with something it must say first can be too small to say it: any
+/// other keeps its key, however little of it the frame can hold.
+#[test]
+fn a_row_with_nothing_it_must_say_first_is_never_too_small_for_its_key() {
+    for relays in [
+        vec![serving_through(logged_in(COMPANY))],
+        vec![serving_through(relay(COMPANY))],
+    ] {
+        for (width, height) in [(16, 8), (16, 10), (20, 8), (24, 9), (30, 8), (80, 8)] {
+            let mut application = listening_application(ListenerState::Off);
+            push(&mut application, 1, relays.clone());
+            open_serve(&mut application, Vec::new());
+            let screen = boxed_rows_sized(&application, width, height).concat();
+            assert!(
+                !spaceless(&screen).contains("Thisterminal"),
+                "at {width}x{height}: {screen}"
+            );
+        }
+    }
+}
+
+/// The key answers the frame the reader last saw, not one yet to be drawn:
+/// keys that join one frame cannot Serve through a row none has shown.
+#[test]
+fn space_joining_the_key_that_moved_to_a_row_serves_through_nothing_until_a_frame_shows_it() {
+    let mut application = serve_on(vec![logged_in(HOME), logged_in(COMPANY)]);
+    rendered_application_rows(&application);
+    press_with_no_frame(&mut application, KeyCode::Down);
+    assert_eq!(
+        press_with_no_frame(&mut application, KeyCode::Char(' ')),
+        ApplicationTransition::Continue
+    );
+    serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+}
+
+/// A row beneath what stands over the picker is not on screen, whatever the
+/// frame beneath drew.
+#[test]
+fn a_row_covered_by_what_stood_over_the_picker_serves_through_nothing_until_a_frame_shows_it() {
+    let mut application = serve_on(vec![logged_in(COMPANY)]);
+    press(&mut application, KeyCode::Char('a'));
+    rendered_application_rows(&application);
+    press_with_no_frame(&mut application, KeyCode::Esc);
+    assert_eq!(
+        press_with_no_frame(&mut application, KeyCode::Char(' ')),
+        ApplicationTransition::Continue
+    );
+    serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
+}
+
+/// Refused for want of room, Space leaves what the reader left out as it is.
+#[test]
+fn space_refused_for_want_of_room_changes_no_choice() {
+    let mut application = serve_on(vec![serving_through(logged_in(COMPANY))]);
+    press(&mut application, KeyCode::Char(' '));
+    push(&mut application, 2, vec![logged_in(COMPANY)]);
+    rendered_application_rows_at(&application, 80, 4);
+    assert_eq!(
+        press_with_no_frame(&mut application, KeyCode::Char(' ')),
+        ApplicationTransition::Continue
+    );
+    push(
+        &mut application,
+        3,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    assert!(
+        prose(&application).contains(&format!("[ ] Relay {COMPANY}")),
+        "{}",
+        prose(&application)
+    );
+}
+
+/// Only looking at a login another Client began says nothing of whether the
+/// reader wants the Relay offered, so what they left out stays left out.
+#[test]
+fn looking_at_a_login_under_way_leaves_a_relay_left_out_as_it_is() {
+    let mut application = serve_on(vec![serving_through(logged_in(COMPANY))]);
+    press(&mut application, KeyCode::Char(' '));
+    let lapsed = serving_through(Relay {
+        state: RelayState::LoginNeeded,
+        ..logged_in(COMPANY)
+    });
+    push(&mut application, 2, vec![with_login(lapsed, pending())]);
+
+    let follower = followed_at(press(&mut application, KeyCode::Char(' ')), COMPANY);
+    assert!(prose(&application).contains(CODE));
+    press(&mut application, KeyCode::Esc);
+    let asked = settled(&mut application, follower, done(pending()));
+    relisted(
+        &mut application,
+        asked,
+        3,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+
+    assert!(
+        prose(&application).contains(&format!("[ ] Relay {COMPANY}")),
+        "{}",
+        prose(&application)
+    );
+    let (_, asked) = issuance(press(&mut application, KeyCode::Enter));
+    assert_eq!(asked.ways, vec![direct()]);
+}
+
+/// A refusal that a listing asked for afresh was to show stays said where that
+/// listing fails, beside why it did.
+#[test]
+fn a_login_refused_stays_said_where_the_listing_that_would_show_it_fails() {
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    let follower = log_in_from_serve(&mut application, COMPANY, pending());
+    let ApplicationTransition::ListRelays(request) = settled(
+        &mut application,
+        follower,
+        refused(pending(), RelayLoginRefusal::NotAdmitted),
+    ) else {
+        panic!("expected the Relays listed afresh");
+    };
+    application
+        .handle_event(ApplicationEvent::RelayListingFailed {
+            request,
+            error: "the Server stopped answering".to_owned(),
+        })
+        .expect("take the failed listing");
+    let shown = prose(&application);
+    assert!(
+        shown.contains(NOT_ADMITTED) && shown.contains("the Server stopped answering"),
+        "{shown}"
+    );
+}
+
+/// A Relay added whose listing fails has no row to say so on: the picker says
+/// so all the same, and not that the Server holds none, until a picture shows
+/// it — whatever keys are pressed meanwhile.
+#[test]
+fn a_relay_added_whose_listing_fails_is_said_though_no_row_shows_it() {
+    let mut application = serving_application(true);
+    push(&mut application, 1, Vec::new());
+    open_serve(&mut application, vec![direct()]);
+    press(&mut application, KeyCode::Char('a'));
+    type_terminal_text(&mut application, COMPANY);
+    let request = addition(press(&mut application, KeyCode::Enter), COMPANY);
+    let ApplicationTransition::ListRelays(request) = application
+        .handle_event(ApplicationEvent::RelayAdded {
+            request,
+            relay: relay(COMPANY),
+        })
+        .expect("take the Relay added")
+    else {
+        panic!("expected the Relays listed afresh");
+    };
+    application
+        .handle_event(ApplicationEvent::RelayListingFailed {
+            request,
+            error: "the Server stopped answering".to_owned(),
+        })
+        .expect("take the failed listing");
+
+    let told = |application: &Application| {
+        let shown = prose(application);
+        assert!(shown.contains(&format!("Added {COMPANY}")), "{shown}");
+        assert!(shown.contains("the Server stopped answering"), "{shown}");
+        assert!(!shown.contains(NO_RELAY), "{shown}");
+    };
+    told(&application);
+    press(&mut application, KeyCode::Down);
+    told(&application);
+
+    push(&mut application, 2, vec![relay(COMPANY)]);
+    let shown = prose(&application);
+    assert!(
+        shown.contains(&format!("[-] Relay {COMPANY} · login needed")),
+        "{shown}"
+    );
+    press(&mut application, KeyCode::Up);
+    assert!(
+        !prose(&application).contains("the Server stopped answering"),
+        "with a row to stand on, the next key puts it down: {}",
+        prose(&application)
+    );
+}
+
 /// `a` is the picker's alone: on the Invite shown it does nothing, and
 /// nothing about adding reaches anything behind it.
 #[test]
@@ -2880,8 +3213,37 @@ fn a_adds_a_relay_only_from_the_picker() {
     assert!(prose(&application).contains("Fresh Invite"));
 }
 
-/// Takes a key the whole way the run loop takes it.
+/// Whether a frame `width` by `height` shows the Relay at `address` and, beneath
+/// it on its own row, the whole of what Serving through it does: read with all
+/// spacing gone, so a word split across Rows reads whole.
+fn says_what_serving_through_does(
+    application: &Application,
+    address: &str,
+    width: u16,
+    height: u16,
+) -> bool {
+    let screen = spaceless(&boxed_rows_sized(application, width, height).concat());
+    let Some(named) = screen.find(address) else {
+        return false;
+    };
+    let row = screen[named..].split('[').next().unwrap_or_default();
+    row.contains(&spaceless(REACHABLE))
+}
+
+fn spaceless(text: &str) -> String {
+    text.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// Takes a key the whole way the run loop takes it, a frame drawn since
+/// whatever came before it.
 fn press(application: &mut Application, code: KeyCode) -> ApplicationTransition {
+    rendered_application_rows(application);
+    press_with_no_frame(application, code)
+}
+
+/// Takes a key that joined whatever came before it in one frame, as the run
+/// loop takes whatever is waiting together.
+fn press_with_no_frame(application: &mut Application, code: KeyCode) -> ApplicationTransition {
     application
         .take_terminal_event(InputEvent::Key(KeyEvent::new(code, KeyModifiers::NONE)))
         .expect("take the key")
@@ -2889,6 +3251,7 @@ fn press(application: &mut Application, code: KeyCode) -> ApplicationTransition 
 }
 
 fn invoke(application: &mut Application, command: SemanticCommandId) -> ApplicationTransition {
+    rendered_application_rows(application);
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             command,
@@ -3232,7 +3595,12 @@ fn unbroken_at(application: &Application, width: u16) -> String {
 /// overlay open says, where one is, read from inside its box so nothing
 /// drawn beside it is read with it — each trimmed.
 fn boxed_rows_at(application: &Application, width: u16) -> Vec<String> {
-    let rows = rendered_application_rows_at(application, width, 24)
+    boxed_rows_sized(application, width, 24)
+}
+
+/// [`boxed_rows_at`] for a screen `height` Rows tall, the last frame drawn.
+fn boxed_rows_sized(application: &Application, width: u16, height: u16) -> Vec<String> {
+    let rows = rendered_application_rows_at(application, width, height)
         .into_iter()
         .map(|row| row.chars().collect::<Vec<_>>())
         .collect::<Vec<_>>();

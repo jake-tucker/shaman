@@ -43,9 +43,11 @@ use super::{
     model_options::ModelOptionChoiceRow,
     onboarding::OwnServer,
     provider_icons::provider_label,
-    relay_overlay::serve_through_status,
+    relay_overlay::{ListNote, RelaySurface, serve_through_status},
     rename_dialog::RenameGeometry,
-    serve_overlay::{CandidateWay, LISTENER_FAILED, LISTENER_OFF, ServeSpace, ServeWays, WayNote},
+    serve_overlay::{
+        CandidateWay, LISTENER_FAILED, LISTENER_OFF, ServePickerLayout, ServePickerNeeds, TOO_SMALL,
+    },
     session_picker::SessionPickerRow,
     setting_details,
     settings_panel::{
@@ -165,6 +167,8 @@ pub(super) fn render_with_slots(
     state.selection_frames.borrow_mut().clear();
     state.selection_overlay_area.set(None);
     state.settings_panel.forget_layout();
+    // Likewise what `/serve`'s row was last shown saying, which its key answers.
+    state.serve_overlay.forget_frame();
     // The Sidebar's own frame record, given up for the same reason: whether it
     // has the keys depends on whether the frame had the columns to draw it.
     state.sidebar.forget_frame();
@@ -1142,11 +1146,10 @@ fn render_relay_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         SelectionSurface::Relay,
         area,
         lines,
-        // What the picker asked for stands where the reader is, in `/serve`.
-        if overlay.is_for_picker() {
-            " Serve "
-        } else {
-            " Relay "
+        // What a surface asked for stands where the reader is, in that surface.
+        match overlay.asked_by() {
+            Some(RelaySurface::Serve) => " Serve ",
+            None => " Relay ",
         },
         theme,
     );
@@ -1450,135 +1453,209 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         return;
     }
 
-    let mut lines = vec![Line::styled(
-        "Choose Invite addresses",
-        theme.text.primary.add_modifier(Modifier::BOLD),
-    )];
-    let content_width = area.width.saturating_sub(2);
-    // The listener and the Relays as the Server last pictured them, so the
-    // ways follow both while the reader chooses.
-    let ways = ServeWays::of(&state.serving_listener, state.relay_overlay.held_relays());
-    let candidates = state.serve_overlay.candidates(ways);
-    match ways.listener {
-        ListenerState::Open { .. } => {}
-        ListenerState::Off => lines.extend(wrapped_lines(
-            LISTENER_OFF,
-            content_width,
-            theme.text.subdued,
-        )),
-        ListenerState::Failed { reason } => lines.extend(wrapped_lines(
-            &format!("{LISTENER_FAILED}{reason}"),
-            content_width,
-            theme.feedback.error,
-        )),
-    }
-    // What went wrong, what would give an Invite a way where it has none at
-    // all to offer, and the keys are laid out first, wrapped whole, so the
-    // ways are given only the Rows they leave.
-    let error = state.serve_overlay.error().map_or_else(Vec::new, |error| {
-        wrapped_lines(error, content_width, theme.feedback.error)
-    });
-    let no_way = state
-        .serve_overlay
-        .nothing_to_offer(ways)
-        .map_or_else(Vec::new, |no_way| {
-            wrapped_lines(no_way, content_width, theme.feedback.error)
-        });
-    let no_relay = state
-        .serve_overlay
-        .no_relay(ways)
-        .map_or_else(Vec::new, |no_relay| {
-            wrapped_lines(no_relay, content_width, theme.text.subdued)
-        });
-    // The keys are taught for the way the reader is on: Space is what would
-    // put a Relay right, where that is what it does there.
-    let selected = state.serve_overlay.focused(&candidates);
-    let keys = match candidates.get(selected) {
-        None => "a add Relay · Esc close".to_owned(),
-        Some(candidate) => {
-            let space = match (candidate.space(), &candidate.way) {
-                (ServeSpace::LogIn, Way::Relay(address))
-                    if state.relay_overlay.under_way(address).is_some() =>
-                {
-                    "Space show login"
-                }
-                (ServeSpace::LogIn, _) => "Space log in",
-                (ServeSpace::ServeThrough, _) => "Space Serve through",
-                (ServeSpace::Toggle, _) => "Space toggle",
-            };
-            format!("↑↓ move · {space} · a add Relay · Enter issue Invite · Esc close")
-        }
-    };
-    let keys = wrapped_lines(&keys, content_width, theme.text.subdued);
-    if candidates.is_empty() {
-        if matches!(ways.listener, ListenerState::Open { .. }) {
-            lines.push(Line::styled(
-                "No non-loopback addresses found",
-                theme.feedback.error,
-            ));
-        }
-    } else {
-        let content_height = usize::from(area.height.saturating_sub(2));
-        let capacity = content_height
-            .saturating_sub(lines.len() + error.len() + no_way.len() + no_relay.len() + keys.len());
-        // A Relay's address wraps beneath its mark across as many Rows as the
-        // box is narrow, and what is said of it beneath that, so each way is
-        // one entry however many Rows it takes.
-        let groups = candidates
-            .iter()
-            .enumerate()
-            .map(|(index, candidate)| {
-                serve_candidate_lines(
-                    candidate,
-                    &candidate.notes(&state.relay_overlay),
-                    index == selected,
-                    content_width,
-                    theme,
-                )
-            })
-            .collect::<Vec<_>>();
-        let entries = groups
-            .iter()
-            .map(|group| WindowEntry::focusable(group.len()))
-            .collect::<Vec<_>>();
-        let shown = state
-            .serve_overlay
-            .window()
-            .settle(&entries, capacity, Some(selected));
-        lines.extend(
-            groups
-                .into_iter()
-                .skip(shown.start)
-                .take(shown.len())
-                .flatten()
-                .take(capacity),
-        );
-    }
-    lines.extend(no_relay);
-    lines.extend(no_way);
-    lines.extend(error);
-    lines.extend(keys);
     render_overlay_box(
         frame,
         state,
         SelectionSurface::Serve,
         area,
-        lines,
+        serve_picker_lines(state, area, theme),
         " Serve ",
         theme,
     );
 }
 
+/// The picker of the ways an Invite may offer, as [`ServePickerLayout`] shares out
+/// the box at `area`. Each way is wrapped whole and is one entry however many
+/// Rows it takes.
+fn serve_picker_lines(state: &TuiState, area: Rect, theme: &Theme) -> Vec<Line<'static>> {
+    let overlay = &state.serve_overlay;
+    let content_width = area.width.saturating_sub(2);
+    let height = usize::from(area.height.saturating_sub(2));
+    // The listener and the Relays as the Server last pictured them, so the
+    // ways follow both while the reader chooses.
+    let ways = state.serve_ways();
+    let candidates = overlay.candidates(ways);
+    let selected = overlay.focused(&candidates);
+    let mut rows = candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| {
+            serve_candidate_lines(candidate, index == selected, content_width, theme)
+        })
+        .collect::<Vec<_>>();
+    let (focused_way, statement) = rows
+        .get(selected)
+        .map_or((0, 0), |row| (row.way.len(), row.statement.len()));
+    let statement_fits = ServePickerLayout::statement_fits(focused_way, statement, height);
+
+    let listener = match ways.listener {
+        ListenerState::Open { .. } => Vec::new(),
+        ListenerState::Off => wrapped_lines(LISTENER_OFF, content_width, theme.text.subdued),
+        ListenerState::Failed { reason } => wrapped_lines(
+            &format!("{LISTENER_FAILED}{reason}"),
+            content_width,
+            theme.feedback.error,
+        ),
+    };
+    let no_way = overlay
+        .nothing_to_offer(ways)
+        .map_or_else(Vec::new, |no_way| {
+            wrapped_lines(no_way, content_width, theme.feedback.error)
+        });
+    let no_relay = overlay.no_relay(ways).map_or_else(Vec::new, |no_relay| {
+        wrapped_lines(no_relay, content_width, theme.text.subdued)
+    });
+    // What has no row to be said on, and what went wrong.
+    let mut said = overlay
+        .notes_with_no_row(ways)
+        .iter()
+        .flat_map(|note| wrapped_lines(&note.text, content_width, note_style(note, theme)))
+        .collect::<Vec<_>>();
+    if let Some(error) = overlay.error() {
+        said.extend(wrapped_lines(error, content_width, theme.feedback.error));
+    }
+    let too_small = if statement_fits {
+        Vec::new()
+    } else {
+        wrapped_lines(TOO_SMALL, content_width, theme.feedback.error)
+    };
+    // The keys are taught for the way the reader is on, and not offered where
+    // what would make them safe to press cannot be shown.
+    let keys = match candidates.get(selected) {
+        None => "a add Relay · Esc close".to_owned(),
+        Some(_) if !statement_fits => "↑↓ move · a add Relay · Esc close".to_owned(),
+        Some(candidate) => format!(
+            "↑↓ move · Space {} · a add Relay · Enter issue Invite · Esc close",
+            candidate.action.label()
+        ),
+    };
+    let keys = wrapped_lines(&keys, content_width, theme.text.subdued);
+    let no_address = candidates.is_empty() && matches!(ways.listener, ListenerState::Open { .. });
+
+    let layout = ServePickerLayout::of(ServePickerNeeds {
+        height,
+        listener: listener.len(),
+        focused_way,
+        statement,
+        too_small: too_small.len(),
+        no_relay: no_relay.len(),
+        no_way: no_way.len(),
+        said: said.len() + usize::from(no_address),
+        keys: keys.len(),
+    });
+
+    if statement > 0 {
+        // The row the key acts on is never left out of the window, however it
+        // came to stand there.
+        overlay.reveal_focus();
+    }
+    if !statement_fits && let Some(row) = rows.get_mut(selected) {
+        row.statement.clear();
+        row.notes.clear();
+    }
+    let groups = rows.into_iter().map(ServeRowLines::into_lines);
+    let mut groups = groups.collect::<Vec<_>>();
+    // What is said beneath a statement gives way to it, so the row the keys are
+    // on is never taller than the Rows it has.
+    if let Some(group) = groups.get_mut(selected) {
+        group.truncate(layout.ways);
+    }
+    let entries = groups
+        .iter()
+        .map(|group| WindowEntry::focusable(group.len()))
+        .collect::<Vec<_>>();
+    let shown = overlay
+        .window()
+        .settle(&entries, layout.ways, Some(selected));
+    if layout.statement_fits
+        && statement > 0
+        && shown.contains(&selected)
+        && state.serve_overlay_has_the_keys()
+    {
+        let above = entries[shown.start..selected]
+            .iter()
+            .map(|entry| entry.rows)
+            .sum::<usize>();
+        if above + focused_way + statement <= layout.ways {
+            overlay.drew_statement(&candidates[selected].way);
+        }
+    }
+
+    let mut lines = Vec::new();
+    if layout.heading {
+        lines.push(Line::styled(
+            "Choose Invite addresses",
+            theme.text.primary.add_modifier(Modifier::BOLD),
+        ));
+    }
+    if layout.listener {
+        lines.extend(listener);
+    }
+    lines.extend(
+        groups
+            .into_iter()
+            .skip(shown.start)
+            .take(shown.len())
+            .flatten()
+            .take(layout.ways),
+    );
+    if layout.no_relay {
+        lines.extend(no_relay);
+    }
+    if layout.no_way {
+        lines.extend(no_way);
+    }
+    if layout.said {
+        if no_address {
+            lines.push(Line::styled(
+                "No non-loopback addresses found",
+                theme.feedback.error,
+            ));
+        }
+        lines.extend(said);
+    }
+    lines.extend(too_small.into_iter().take(layout.too_small));
+    if layout.keys {
+        lines.extend(keys);
+    }
+    lines
+}
+
+fn note_style(note: &ListNote, theme: &Theme) -> Style {
+    if note.failed {
+        theme.feedback.error
+    } else {
+        theme.text.subdued
+    }
+}
+
+/// The Rows of a way an Invite may offer: its name, what must be said on it
+/// before its action can be taken, and whatever else is said of it, in the order
+/// they give way to a box too short for them.
+struct ServeRowLines {
+    way: Vec<Line<'static>>,
+    statement: Vec<Line<'static>>,
+    notes: Vec<Line<'static>>,
+}
+
+impl ServeRowLines {
+    fn into_lines(self) -> Vec<Line<'static>> {
+        let mut lines = self.way;
+        lines.extend(self.statement);
+        lines.extend(self.notes);
+        lines
+    }
+}
+
 /// A way an Invite may offer, marked offered or left out — or, for a Relay
-/// an Invite cannot offer, marked so and saying why — and `notes` beneath it,
-/// each wrapped whole.
+/// an Invite cannot offer, marked so and saying why — and all else its row says
+/// beneath it, each wrapped whole.
 fn serve_candidate_lines(
     candidate: &CandidateWay,
-    notes: &[WayNote],
     selected: bool,
     width: u16,
     theme: &Theme,
-) -> Vec<Line<'static>> {
+) -> ServeRowLines {
     let marker = match (candidate.withheld, candidate.chosen) {
         (Some(_), _) => "[-] ",
         (None, true) => "[x] ",
@@ -1591,7 +1668,7 @@ fn serve_candidate_lines(
     } else {
         theme.text.primary
     };
-    let mut lines = way_lines(
+    let way = way_lines(
         marker,
         &candidate.way.to_string(),
         candidate.withheld.map(|withheld| withheld.brief()),
@@ -1600,19 +1677,23 @@ fn serve_candidate_lines(
     );
     let indent = " ".repeat(marker.width());
     let room = width.saturating_sub(u16::try_from(marker.width()).unwrap_or(u16::MAX));
-    for note in notes {
-        let style = if note.failed {
-            theme.feedback.error
-        } else {
-            theme.text.subdued
-        };
-        lines.extend(
-            TextLayout::new(&note.text, room)
-                .rows()
-                .map(|row| Line::styled(format!("{indent}{}", row.text), style)),
-        );
+    let beneath = |text: &str, style: Style| {
+        TextLayout::new(text, room)
+            .rows()
+            .map(|row| Line::styled(format!("{indent}{}", row.text), style))
+            .collect::<Vec<_>>()
+    };
+    ServeRowLines {
+        way,
+        statement: candidate
+            .statement()
+            .map_or_else(Vec::new, |statement| beneath(statement, theme.text.subdued)),
+        notes: candidate
+            .notes
+            .iter()
+            .flat_map(|note| beneath(&note.text, note_style(note, theme)))
+            .collect(),
     }
-    lines
 }
 
 /// A Peer's entry: the name it gave itself, by which what a Sidekick on it

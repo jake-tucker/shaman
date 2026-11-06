@@ -88,14 +88,14 @@ use super::{
     onboarding::{Advance, DerivationMove, Heard, Onboarding, Opening, OwnServer, RootsEdit},
     relay_overlay::{
         ListingLanded, RedemptionLoginLead, RelayLoginAct, RelayLoginFollow, RelayLoginLead,
-        RelayOverlay, RelayRequest,
+        RelayOverlay, RelayRequest, RelaySurface,
     },
     rename_dialog::{RenameDialog, RenamePress},
     render::render_with_slots,
     selection::{
         SelectionCell, SelectionFrame, SelectionGranularity, SelectionSurface, TextSelection,
     },
-    serve_overlay::{ServeOverlay, ServeRequest, ServeWays, Withheld},
+    serve_overlay::{ServeOverlay, ServeRequest, ServeWays},
     session_picker::{SessionPicker, SessionPickerListing},
     settings_panel::{AvailabilityRead, SettingsPanel},
     sidebar::{Sidebar, SidebarActivation, SidebarPress},
@@ -2424,6 +2424,36 @@ impl TuiState {
             .withdraw_unshown_relay_login_needed(|address, lapse| {
                 !lapse_lasts(relays, address, lapse)
             });
+    }
+
+    /// What the ways `/serve` may offer stand on, as they stand now.
+    pub(super) fn serve_ways(&self) -> ServeWays<'_> {
+        ServeWays::of(&self.serving_listener, &self.relay_overlay)
+    }
+
+    /// Has `/serve`'s overlay do `act` with the ways as they stand now.
+    fn with_serve_ways<T>(&mut self, act: impl FnOnce(&mut ServeOverlay, ServeWays<'_>) -> T) -> T {
+        let ways = ServeWays::of(&self.serving_listener, &self.relay_overlay);
+        act(&mut self.serve_overlay, ways)
+    }
+
+    /// Whether `/serve`'s overlay has the keys, with nothing standing over it.
+    pub(super) fn serve_overlay_has_the_keys(&self) -> bool {
+        matches!(
+            self.surface_above_interventions(),
+            Some(SurfaceAboveInterventions::Selection(
+                SelectionSurface::Serve
+            ))
+        )
+    }
+
+    /// Hands what the Relay list did for a surface to that surface.
+    fn hand_on_relay_outcome(&mut self) {
+        if let Some(outcome) = self.relay_overlay.take_outcome() {
+            match outcome.surface {
+                RelaySurface::Serve => self.serve_overlay.take_relay_outcome(outcome),
+            }
+        }
     }
 
     /// Has the `/relay` list take a picture of the Relays as `take` does, and
@@ -6428,6 +6458,7 @@ impl Application {
         let theme_name = self.state.settings.appearance.theme.clone();
         self.state.remember_agent_selection_presentation();
         let transition = self.handle_event_inner(event)?;
+        self.state.hand_on_relay_outcome();
         if let (Some(session), Some(projection)) =
             (&self.state.session_reference, &self.state.session)
         {
@@ -7105,9 +7136,6 @@ impl Application {
                         address,
                     });
                 }
-                if self.state.relay_overlay.adds_for_picker(request) {
-                    self.state.serve_overlay.focus_on_relay(&relay.address);
-                }
                 Ok(ApplicationTransition::ListRelays(
                     self.state.relay_overlay.relay_added(request, &relay),
                 ))
@@ -7142,14 +7170,14 @@ impl Application {
             // to picture, so it is asked for afresh. A redemption waiting on
             // that login carries on, or stops there, as it ended.
             ApplicationEvent::RelayLoginSettled { request, login } => {
-                let Some(address) = self.state.relay_overlay.login_settled(request, &login) else {
+                let Some((address, listing)) =
+                    self.state.relay_overlay.login_settled(request, &login)
+                else {
                     return Ok(ApplicationTransition::Continue);
                 };
                 self.state
                     .carry_on_redemption(|connect| connect.followed_login_ended(&address, &login));
-                Ok(ApplicationTransition::ListRelays(
-                    self.state.relay_overlay.refresh(),
-                ))
+                Ok(ApplicationTransition::ListRelays(listing))
             }
             ApplicationEvent::RelayLoginLost { request, error } => {
                 if let Some(address) = self.state.relay_overlay.login_lost(request, &error) {
@@ -8141,19 +8169,6 @@ impl Application {
         };
         self.state.connect_overlay.await_login(relay, refusal, step);
         transition
-    }
-
-    /// The Relay the keys are on in `/serve`'s picker, to be put right where
-    /// it is withheld as `withheld` says and nothing stands over the picker.
-    fn relay_put_right(&mut self, withheld: Withheld) -> Option<String> {
-        if self.state.relay_overlay.is_open() {
-            return None;
-        }
-        let ways = ServeWays::of(
-            &self.state.serving_listener,
-            self.state.relay_overlay.held_relays(),
-        );
-        self.state.serve_overlay.put_right(ways, withheld)
     }
 
     /// Leads to a login at the Relay at `address` whatever else is open: the
@@ -11793,42 +11808,23 @@ impl Application {
                 })
             }
             SemanticCommandId::ServePrevious => {
-                let ways = ServeWays::of(
-                    &self.state.serving_listener,
-                    self.state.relay_overlay.held_relays(),
-                );
-                self.state.serve_overlay.select_previous(ways);
+                self.state.with_serve_ways(ServeOverlay::select_previous);
                 Ok(ApplicationTransition::Continue)
             }
             SemanticCommandId::ServeNext => {
-                let ways = ServeWays::of(
-                    &self.state.serving_listener,
-                    self.state.relay_overlay.held_relays(),
-                );
-                self.state.serve_overlay.select_next(ways);
+                self.state.with_serve_ways(ServeOverlay::select_next);
                 Ok(ApplicationTransition::Continue)
             }
             SemanticCommandId::ServeToggleAddress => {
-                let ways = ServeWays::of(
-                    &self.state.serving_listener,
-                    self.state.relay_overlay.held_relays(),
-                );
-                self.state.serve_overlay.toggle_selected(ways);
+                self.state.with_serve_ways(ServeOverlay::toggle_selected);
                 Ok(ApplicationTransition::Continue)
             }
-            SemanticCommandId::ServeConfirm => {
-                let ways = ServeWays::of(
-                    &self.state.serving_listener,
-                    self.state.relay_overlay.held_relays(),
-                );
-                Ok(self
-                    .state
-                    .serve_overlay
-                    .issue_request(ways)
-                    .map_or(ApplicationTransition::Continue, |(request, issuance)| {
-                        ApplicationTransition::IssueInvite { request, issuance }
-                    }))
-            }
+            SemanticCommandId::ServeConfirm => Ok(self
+                .state
+                .with_serve_ways(ServeOverlay::issue_request)
+                .map_or(ApplicationTransition::Continue, |(request, issuance)| {
+                    ApplicationTransition::IssueInvite { request, issuance }
+                })),
             SemanticCommandId::ServeCopyInvite => {
                 Ok(self.state.serve_overlay.copy_text().map(Into::into).map_or(
                     ApplicationTransition::Continue,
@@ -11842,27 +11838,26 @@ impl Application {
                 ))
             }
             SemanticCommandId::ServeRelayLogin => {
-                let address = self.relay_put_right(Withheld::LoginNeeded);
+                let address = self.state.with_serve_ways(ServeOverlay::relay_to_log_in);
                 Ok(relay_login_transition(address.and_then(|address| {
-                    self.state.relay_overlay.log_in_for_picker(&address)
+                    self.state
+                        .relay_overlay
+                        .log_in_for(RelaySurface::Serve, &address)
                 })))
             }
-            SemanticCommandId::ServeRelayServeThrough => Ok(self
-                .relay_put_right(Withheld::NotServedThrough)
-                .and_then(|address| self.state.relay_overlay.serve_through_for_picker(&address))
-                .map_or(
-                    ApplicationTransition::Continue,
-                    |(request, address, serve_through)| {
-                        ApplicationTransition::SetRelayServeThrough {
-                            request,
-                            address,
-                            serve_through,
-                        }
-                    },
-                )),
+            SemanticCommandId::ServeRelayServeThrough => {
+                let address = self
+                    .state
+                    .with_serve_ways(ServeOverlay::relay_to_serve_through);
+                Ok(serve_through_transition(address.and_then(|address| {
+                    self.state
+                        .relay_overlay
+                        .serve_through_for(RelaySurface::Serve, &address)
+                })))
+            }
             SemanticCommandId::ServeRelayAdd => {
                 if self.state.serve_overlay.is_choosing() {
-                    self.state.relay_overlay.add_for_picker();
+                    self.state.relay_overlay.add_for(RelaySurface::Serve);
                 }
                 Ok(ApplicationTransition::Continue)
             }
@@ -12022,18 +12017,9 @@ impl Application {
                 .map_or(ApplicationTransition::Continue, |(request, address)| {
                     ApplicationTransition::RemoveRelay { request, address }
                 })),
-            SemanticCommandId::RelayServeThroughToggle => {
-                Ok(self.state.relay_overlay.toggle_serve_through().map_or(
-                    ApplicationTransition::Continue,
-                    |(request, address, serve_through)| {
-                        ApplicationTransition::SetRelayServeThrough {
-                            request,
-                            address,
-                            serve_through,
-                        }
-                    },
-                ))
-            }
+            SemanticCommandId::RelayServeThroughToggle => Ok(serve_through_transition(
+                self.state.relay_overlay.toggle_serve_through(),
+            )),
             SemanticCommandId::RelayClose => {
                 self.state.relay_overlay.back();
                 Ok(ApplicationTransition::Continue)
@@ -13563,6 +13549,9 @@ impl Application {
         if !aims(SemanticCommandId::RelayRemove) {
             changed |= self.state.relay_overlay.disarm_removal();
         }
+        changed |= self
+            .state
+            .with_serve_ways(ServeOverlay::put_down_relay_note);
         changed
     }
 
@@ -13823,13 +13812,11 @@ impl Application {
                     );
                 }
                 SelectionSurface::Serve => {
-                    let ways = ServeWays::of(
-                        &self.state.serving_listener,
-                        self.state.relay_overlay.held_relays(),
-                    );
                     return command_for_serve_overlay_event(
                         event,
-                        self.state.serve_overlay.space(ways),
+                        self.state
+                            .serve_overlay
+                            .focused_action(self.state.serve_ways()),
                     );
                 }
                 SelectionSurface::Relay => {
@@ -14170,6 +14157,19 @@ fn lapse_lasts(relays: &[crate::protocol::Relay], address: &str, lapse: uuid::Uu
             && relay.state != RelayState::LoggedIn
             && relay.login_needed_notice.is_none_or(|asked| asked == lapse)
     })
+}
+
+/// What choosing whether a Relay is Served through asks of the Client's own
+/// Server, where it asks anything.
+fn serve_through_transition(choice: Option<(RelayRequest, String, bool)>) -> ApplicationTransition {
+    choice.map_or(
+        ApplicationTransition::Continue,
+        |(request, address, serve_through)| ApplicationTransition::SetRelayServeThrough {
+            request,
+            address,
+            serve_through,
+        },
+    )
 }
 
 fn follow_relay_logins(follows: Vec<RelayLoginFollow>) -> ApplicationTransition {

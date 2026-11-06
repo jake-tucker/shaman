@@ -34,13 +34,14 @@
 //! the same followers, so a login is begun and followed once whichever
 //! surface asks for it, and the list shows it as under way.
 //!
-//! `/serve`'s picker puts a Relay right through the same list, so what shows a
-//! login, takes an address or waits on the Server is one thing wherever it was
-//! asked for. Asked for by the picker, it stands over the picker and returns
-//! there rather than to the list the reader never opened, leaving what it
-//! would have said on the list for the Relay's row. What it returns from having
-//! asked for a picture afresh waits for that picture, so the row is never read,
-//! nor an Invite asked for, as the Relay stood before what was just done.
+//! Another surface — [`RelaySurface`] — puts a Relay right through the same
+//! list, so what shows a login, takes an address or waits on the Server is one
+//! thing wherever it was asked for. Asked for by a surface, it stands over that
+//! surface and returns there rather than to the list the reader never opened,
+//! handing the surface a [`RelayOutcome`] saying what the list would have said.
+//! What asks for a picture afresh hands that over only once the picture lands,
+//! so nothing is read, or acted on, as the Relay stood before what was just
+//! done.
 
 use std::collections::HashMap;
 
@@ -96,12 +97,42 @@ pub(super) struct RelayOverlay {
     followers: HashMap<String, Follower>,
     last_request: u64,
     window: ListWindow,
-    /// Whether what stands here was asked for by `/serve`'s picker, which it
-    /// returns to in place of the list.
-    for_picker: bool,
-    /// What was last done for the picker left to say, on the row of the Relay
-    /// at this address, standing until the next key the reader presses.
-    picker_note: Option<(String, ListNote)>,
+    /// The surface that last asked for something of the list rather than
+    /// opening it, or none where it was last opened itself. What stands here
+    /// returns to that surface rather than to the list.
+    asked_by: Option<RelaySurface>,
+    /// What was done for a surface, waiting to be handed to it.
+    outcome: Option<RelayOutcome>,
+}
+
+/// A surface that has the list do something at a Relay on its behalf.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum RelaySurface {
+    /// `/serve`'s picker of the ways an Invite offers.
+    Serve,
+}
+
+/// What the list did at the Relay at `address` for `surface`, handed to it as
+/// the list returns there.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct RelayOutcome {
+    pub(super) surface: RelaySurface,
+    pub(super) address: String,
+    /// What the list would have said of it, in the order it came to be said.
+    pub(super) notes: Vec<ListNote>,
+    /// Whether the Relay was added by it.
+    pub(super) added: bool,
+}
+
+impl RelayOutcome {
+    fn of(surface: RelaySurface, address: &str, note: Option<ListNote>) -> Self {
+        Self {
+            surface,
+            address: address.to_owned(),
+            notes: note.into_iter().collect(),
+            added: false,
+        }
+    }
 }
 
 /// The request following a Relay's login, and that login as it was when it
@@ -168,23 +199,22 @@ enum RelayOverlayState {
         address: String,
         serve_through: bool,
     },
-    /// Done for the picker at the Relay at `address`, and waiting on the
-    /// picture asked for afresh, which shows it, to return there.
-    Picturing {
-        address: String,
-    },
+    /// Done for a surface, and waiting on the listing asked for afresh, which
+    /// shows it, to hand the surface this and return there.
+    AwaitingListing(RelayOutcome),
 }
 
-/// The one line something finished leaves beneath the list, standing until
-/// the next key the reader presses.
-#[derive(Clone, Debug)]
-struct ListNote {
-    text: String,
-    failed: bool,
+/// The one line something finished leaves, beneath the list or wherever a
+/// surface it was done for says it, standing until the next key the reader
+/// presses.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct ListNote {
+    pub(super) text: String,
+    pub(super) failed: bool,
 }
 
 impl ListNote {
-    fn said(text: String) -> Self {
+    pub(super) fn said(text: String) -> Self {
         Self {
             text,
             failed: false,
@@ -297,7 +327,7 @@ impl RelayOverlay {
     pub(super) fn open(&mut self) -> RelayRequest {
         self.state = RelayOverlayState::Loading;
         self.log_in_at = None;
-        self.for_picker = false;
+        self.asked_by = None;
         self.ask_for_listing()
     }
 
@@ -318,95 +348,111 @@ impl RelayOverlay {
         RelayLoginLead::Listing(request)
     }
 
-    /// Steps back to the list from adding a Relay or watching a login, which
-    /// goes on at the Server all the same, and closes the list itself.
+    /// Steps back from adding a Relay or watching a login, which goes on at
+    /// the Server all the same, to wherever that was asked for from — the list,
+    /// or the surface it stands over — and closes the list itself.
     pub(super) fn back(&mut self) {
-        self.state = match self.state {
+        match std::mem::take(&mut self.state) {
             RelayOverlayState::AddressEntry { .. } | RelayOverlayState::LoginDisplay { .. }
-                if !self.for_picker =>
+                if self.asked_by.is_none() =>
             {
-                Self::listing(None)
+                self.state = Self::listing(None);
             }
-            _ => {
-                self.log_in_at = None;
-                self.for_picker = false;
-                RelayOverlayState::Closed
-            }
-        };
+            RelayOverlayState::AwaitingListing(outcome) => self.outcome = Some(outcome),
+            _ => self.log_in_at = None,
+        }
     }
 
-    /// Whether what stands here stands over `/serve`'s picker.
-    pub(super) fn is_for_picker(&self) -> bool {
-        self.for_picker
+    /// The surface what stands here stands over, where it stands over one.
+    pub(super) fn asked_by(&self) -> Option<RelaySurface> {
+        self.asked_by
     }
 
-    /// Opens the address entry for `/serve`'s picker, whose Enter adds the
-    /// Relay typed there as the list's does.
-    pub(super) fn add_for_picker(&mut self) {
+    /// Opens the address entry for `surface`, whose Enter adds the Relay typed
+    /// there as the list's does.
+    pub(super) fn add_for(&mut self, surface: RelaySurface) {
         if self.is_open() {
             return;
         }
-        self.for_picker = true;
-        self.picker_note = None;
+        self.asked_by = Some(surface);
         self.state = RelayOverlayState::AddressEntry {
             address: String::new(),
             error: None,
         };
     }
 
-    /// Logs in at the Relay at `address` for `/serve`'s picker: a login already
-    /// under way there is shown again rather than begun anew, since its code
-    /// still stands.
-    pub(super) fn log_in_for_picker(&mut self, address: &str) -> Option<RelayLoginAct> {
+    /// Logs in at the Relay at `address` for `surface`: a login already under
+    /// way there is shown again rather than begun anew, since its code still
+    /// stands.
+    pub(super) fn log_in_for(
+        &mut self,
+        surface: RelaySurface,
+        address: &str,
+    ) -> Option<RelayLoginAct> {
         if self.is_open() {
             return None;
         }
-        self.for_picker = true;
-        self.picker_note = None;
+        self.asked_by = Some(surface);
         self.log_in_to(address.to_owned())
     }
 
-    /// Asks for the Relay at `address` to be Served through for `/serve`'s
-    /// picker, answering the request that asks. It asks for that alone, so a
-    /// picture from before an earlier asking can only ask it again.
-    pub(super) fn serve_through_for_picker(
+    /// Asks for the Relay at `address` to be Served through for `surface`,
+    /// answering the request that asks. It asks for that alone, so a picture
+    /// from before an earlier asking can only ask it again.
+    pub(super) fn serve_through_for(
         &mut self,
+        surface: RelaySurface,
         address: &str,
     ) -> Option<(RelayRequest, String, bool)> {
         if self.is_open() {
             return None;
         }
-        self.for_picker = true;
-        self.picker_note = None;
+        self.asked_by = Some(surface);
         Some(self.ask_serve_through(address.to_owned(), true))
     }
 
-    /// Returns from what stood at the Relay at `address`, to the picker where
-    /// the picker asked for it — waiting first for the picture asked for
-    /// afresh, where `picture_asked` says one is — and otherwise to the list.
-    fn returned(&mut self, address: &str, note: Option<ListNote>, picture_asked: bool) {
-        if !self.for_picker {
-            self.state = Self::listing(note);
+    /// Returns from what stood at the Relay at `address` to wherever it was
+    /// asked for from, saying `note`, with nothing more to wait for.
+    fn returned(&mut self, address: &str, note: Option<ListNote>) {
+        self.state = match self.asked_by {
+            None => Self::listing(note),
+            Some(surface) => {
+                self.outcome = Some(RelayOutcome::of(surface, address, note));
+                RelayOverlayState::Closed
+            }
+        };
+    }
+
+    /// Returns from what stood at the Relay at `address` as [`Self::returned`]
+    /// does, but to a surface only once a listing shows it, answering the
+    /// listing that asks for: nothing else ends the wait, so it is always asked
+    /// for here.
+    #[must_use]
+    fn returned_on_listing(&mut self, address: &str, note: Option<ListNote>) -> RelayRequest {
+        self.state = match self.asked_by {
+            None => Self::listing(note),
+            Some(surface) => {
+                RelayOverlayState::AwaitingListing(RelayOutcome::of(surface, address, note))
+            }
+        };
+        self.ask_for_listing()
+    }
+
+    /// Ends the wait on a listing, where anything waits on one, handing over
+    /// what was done and why the listing failed, where it did.
+    fn listing_landed(&mut self, failure: Option<ListNote>) {
+        if !matches!(self.state, RelayOverlayState::AwaitingListing(_)) {
             return;
         }
-        self.picker_note = note.map(|note| (address.to_owned(), note));
-        if picture_asked {
-            self.state = RelayOverlayState::Picturing {
-                address: address.to_owned(),
-            };
-        } else {
-            self.for_picker = false;
-            self.state = RelayOverlayState::Closed;
+        if let RelayOverlayState::AwaitingListing(mut outcome) = std::mem::take(&mut self.state) {
+            outcome.notes.extend(failure);
+            self.outcome = Some(outcome);
         }
     }
 
-    /// What was last done for the picker at the Relay at `address` said, and
-    /// whether it says something failed.
-    pub(super) fn picker_note(&self, address: &str) -> Option<(&str, bool)> {
-        self.picker_note
-            .as_ref()
-            .filter(|(noted, _)| noted == address)
-            .map(|(_, note)| (note.text.as_str(), note.failed))
+    /// Takes what was done for a surface, for it to be handed there.
+    pub(super) fn take_outcome(&mut self) -> Option<RelayOutcome> {
+        self.outcome.take()
     }
 
     pub(super) fn is_open(&self) -> bool {
@@ -419,7 +465,7 @@ impl RelayOverlay {
             RelayOverlayState::Adding { .. } => Some("Adding Relay…"),
             RelayOverlayState::BeginningLogin { .. } => Some("Beginning login…"),
             RelayOverlayState::Removing { .. } => Some("Removing Relay…"),
-            RelayOverlayState::Picturing { .. } => Some("Updating the Relays…"),
+            RelayOverlayState::AwaitingListing(_) => Some("Updating the Relays…"),
             RelayOverlayState::SettingServeThrough {
                 serve_through: true,
                 ..
@@ -443,7 +489,7 @@ impl RelayOverlay {
             | RelayOverlayState::BeginningLogin { .. }
             | RelayOverlayState::Removing { .. }
             | RelayOverlayState::SettingServeThrough { .. }
-            | RelayOverlayState::Picturing { .. } => RelayInputMode::Waiting,
+            | RelayOverlayState::AwaitingListing(_) => RelayInputMode::Waiting,
         }
     }
 
@@ -466,10 +512,7 @@ impl RelayOverlay {
         if self.takes(&listing) {
             self.take(listing);
         }
-        if matches!(self.state, RelayOverlayState::Picturing { .. }) {
-            self.for_picker = false;
-            self.state = RelayOverlayState::Closed;
-        }
+        self.listing_landed(None);
         if let Some(address) = self.log_in_at.take() {
             match self.position(&address) {
                 Some(index) => {
@@ -514,12 +557,6 @@ impl RelayOverlay {
     /// what it said before what is held.
     pub(super) fn takes_pushed(&self, listing: &RelayListing) -> bool {
         self.attached != Some(listing.instance) || self.takes(listing)
-    }
-
-    /// Asks for the Server's Relays afresh, for the list to show what was
-    /// just done there and whatever else has happened since.
-    pub(super) fn refresh(&mut self) -> RelayRequest {
-        self.ask_for_listing()
     }
 
     /// How the Relay at `address` stands, as the list last heard of it.
@@ -598,11 +635,9 @@ impl RelayOverlay {
             return;
         }
         self.listing = None;
-        if let RelayOverlayState::Picturing { address } = &self.state {
-            self.picker_note = Some((address.clone(), ListNote::failed(error.clone())));
-            self.for_picker = false;
-            self.state = RelayOverlayState::Closed;
-        }
+        self.listing_landed(Some(ListNote::failed(format!(
+            "Could not list this Server's Relays: {error}"
+        ))));
         self.listing_error = Some(error);
         self.log_in_at = None;
         if matches!(self.state, RelayOverlayState::Loading) {
@@ -688,20 +723,18 @@ impl RelayOverlay {
     /// list holds nothing more of it until a picture shows it, answered to
     /// the listing this asks for — the Relay may be gone again by then.
     pub(super) fn relay_added(&mut self, request: RelayRequest, relay: &Relay) -> RelayRequest {
-        if self.awaits_addition(request) {
-            if !self.for_picker {
-                self.select_on_listing = Some(relay.address.clone());
-            }
-            let note = ListNote::said(format!("Added {}", relay.address));
-            self.returned(&relay.address, Some(note), true);
+        if !self.awaits_addition(request) {
+            return self.ask_for_listing();
         }
-        self.ask_for_listing()
-    }
-
-    /// Whether the addition `request` asked for is awaited, for `/serve`'s
-    /// picker.
-    pub(super) fn adds_for_picker(&self, request: RelayRequest) -> bool {
-        self.for_picker && self.awaits_addition(request)
+        if self.asked_by.is_none() {
+            self.select_on_listing = Some(relay.address.clone());
+        }
+        let note = ListNote::said(format!("Added {}", relay.address));
+        let listing = self.returned_on_listing(&relay.address, Some(note));
+        if let RelayOverlayState::AwaitingListing(outcome) = &mut self.state {
+            outcome.added = true;
+        }
+        listing
     }
 
     /// The address stays as the reader typed it, with why it was refused
@@ -784,22 +817,26 @@ impl RelayOverlay {
         {
             let address = address.clone();
             let note = ListNote::failed(format!("Could not begin a login at {address}: {error}"));
-            self.returned(&address, Some(note), false);
+            self.returned(&address, Some(note));
         }
     }
 
     /// Takes how a login ended, from the follower that asked, answering the
-    /// Relay it was at — or nothing, from a follower left behind. A display
-    /// showing it resolves to the list, saying how; how the Relay then
-    /// stands is for a picture asked for afresh to show.
+    /// Relay it was at and the listing to ask for — or nothing, from a follower
+    /// left behind. A display showing it returns to wherever it was asked for
+    /// from, saying how; how the Relay then stands is for that listing to show.
     pub(super) fn login_settled(
         &mut self,
         request: RelayRequest,
         login: &RelayLogin,
-    ) -> Option<String> {
+    ) -> Option<(String, RelayRequest)> {
         let address = self.release_follower(request)?;
-        self.resolve_display_with(&address, login, true);
-        Some(address)
+        let listing = if self.displays_as_ended(&address, login) {
+            self.returned_on_listing(&address, login_ended(&address, &login.outcome))
+        } else {
+            self.ask_for_listing()
+        };
+        Some((address, listing))
     }
 
     /// Following a login ended before the login did, answering the Relay it
@@ -810,7 +847,7 @@ impl RelayOverlay {
         if self.displays_login_at(&address) {
             let note =
                 ListNote::failed(format!("Stopped following the login at {address}: {error}"));
-            self.returned(&address, Some(note), false);
+            self.returned(&address, Some(note));
         }
         Some(address)
     }
@@ -884,10 +921,11 @@ impl RelayOverlay {
         Some(address)
     }
 
-    /// Returns a display whose login the Relays held show ended to the list,
-    /// saying how. Only that login ending resolves it: a picture of the Relay
-    /// from before it began, or one showing a later login begun elsewhere —
-    /// whose follower reports the one on display given up — leaves it be.
+    /// Returns a display whose login the Relays held show ended to wherever it
+    /// was asked for from, saying how. Only that login ending resolves it: a
+    /// picture of the Relay from before it began, or one showing a later login
+    /// begun elsewhere — whose follower reports the one on display given up —
+    /// leaves it be.
     fn resolve_display(&mut self) {
         let RelayOverlayState::LoginDisplay { address, login } = &self.state else {
             return;
@@ -902,24 +940,21 @@ impl RelayOverlay {
             return;
         };
         let address = address.clone();
-        self.resolve_display_with(&address, &ended, false);
+        if self.displays_as_ended(&address, &ended) {
+            self.returned(&address, login_ended(&address, &ended.outcome));
+        }
     }
 
-    /// Returns a display of `login`, at the Relay at `address`, to wherever it
-    /// was asked for once it has ended, saying how, where `picture_asked`
-    /// says that waits on a picture asked for afresh.
-    fn resolve_display_with(&mut self, address: &str, login: &RelayLogin, picture_asked: bool) {
-        let RelayOverlayState::LoginDisplay {
-            address: shown_at,
-            login: shown,
-        } = &self.state
-        else {
-            return;
-        };
-        if shown_at != address || shown.user_code != login.user_code || is_pending(Some(login)) {
-            return;
-        }
-        self.returned(address, login_ended(address, &login.outcome), picture_asked);
+    /// Whether the display shows the very `login` at the Relay at `address`,
+    /// and it has ended.
+    fn displays_as_ended(&self, address: &str, login: &RelayLogin) -> bool {
+        matches!(
+            &self.state,
+            RelayOverlayState::LoginDisplay { address: shown_at, login: shown }
+                if shown_at == address
+                    && shown.user_code == login.user_code
+                    && !is_pending(Some(login))
+        )
     }
 
     fn displays_login_at(&self, address: &str) -> bool {
@@ -957,17 +992,15 @@ impl RelayOverlay {
     }
 
     /// Puts down an armed removal and clears the note something finished
-    /// left, here or on the picker's row, which every key but the one that
-    /// arms removal does, answering whether there was either to put down.
+    /// left, which every key but the one that arms removal does, answering
+    /// whether there was either to put down.
     pub(super) fn disarm_removal(&mut self) -> bool {
-        let noted = self.picker_note.take().is_some();
-        noted
-            | match &mut self.state {
-                RelayOverlayState::Listing { armed, note } => {
-                    std::mem::take(armed) | note.take().is_some()
-                }
-                _ => false,
+        match &mut self.state {
+            RelayOverlayState::Listing { armed, note } => {
+                std::mem::take(armed) | note.take().is_some()
             }
+            _ => false,
+        }
     }
 
     pub(super) fn removal_armed(&self) -> bool {
@@ -1042,7 +1075,7 @@ impl RelayOverlay {
     ) -> RelayRequest {
         if self.awaits_serve_through(request) {
             let note = ListNote::said(serve_through_said(relay, serving));
-            self.returned(&relay.address, Some(note), true);
+            return self.returned_on_listing(&relay.address, Some(note));
         }
         self.ask_for_listing()
     }
@@ -1059,7 +1092,7 @@ impl RelayOverlay {
             let note = ListNote::failed(format!(
                 "Could not change whether this Server Serves through {address}: {error}"
             ));
-            self.returned(&address, Some(note), false);
+            self.returned(&address, Some(note));
         }
     }
 
@@ -1142,6 +1175,18 @@ impl RelayOverlay {
             Some(login) if !is_pending(relay.login.as_ref()) => logging_in(&login),
             _ => relay_status(relay),
         }
+    }
+
+    /// How a login at the Relay at `address` stands, where it bears on a Relay
+    /// needing one: under way, with what its user does to finish it, or refused,
+    /// with why. Every one the Server's latest there, so it lasts as long as
+    /// that does, on whichever surface asks.
+    pub(super) fn login_standing(&self, address: &str) -> Option<ListNote> {
+        if let Some(login) = self.under_way(address) {
+            return Some(ListNote::said(logging_in(&login)));
+        }
+        let login = self.held(address)?.login.as_ref()?;
+        login_ended(address, &login.outcome).filter(|note| note.failed)
     }
 
     /// The login under way at the Relay at `address`: the one the list shows
@@ -1247,7 +1292,7 @@ fn serve_through_said(relay: &Relay, serving: bool) -> String {
 }
 
 /// A login under way, with what its user does to finish it.
-pub(super) fn logging_in(login: &RelayLogin) -> String {
+fn logging_in(login: &RelayLogin) -> String {
     format!(
         "Logging in · enter {} at {}",
         login.user_code, login.verification_uri
