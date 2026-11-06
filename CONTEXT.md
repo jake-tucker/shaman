@@ -444,7 +444,7 @@ The state of a paired Remote that has stopped answering by every way it offers w
 _Avoid_: Offline, disconnected, down, reconnecting (the Client's word for the Remote is the state, not the local Server's effort)
 
 **Relay**:
-A server through which Servers that cannot reach each other directly carry a Pairing: each connects outward to it, and it passes what they say between them without being able to read it or to speak as either. A Relay admits by login and joins only Servers whose Logins stand under one Account, and it is never what makes one Server trust another — that remains the Invite. A Relay is an entry a Server's user can list and remove, and a Server may hold several.
+A server through which Servers that cannot reach each other directly carry a Pairing: each connects outward to it, and it passes what they say between them without being able to read it or to speak as either. A Relay admits by login and joins only Servers whose Logins stand under one Account, and it is never what makes one Server trust another — that remains the Invite. Asked by a Server whose Login stands, as its user's Client asks and never of its own accord, a Relay lists the other Logins under that Server's Account, each by its identity key, the hostname it reported, and whether it is waiting to be reached now, so a user can find their machines from `/pair`. It is no source of trust: a hostname is whatever that Server said and a key is the Relay's word, nothing listed changes what is believed of any key, and the most a Relay that lies can do is mislabel a row. The answer saying a machine is a Remote already is the Server's own match of the key against the Pairings it holds, which opens nothing. A Relay is an entry a Server's user can list and remove, and a Server may hold several.
 _Avoid_: Relay server, proxy, broker, hub, gateway, tunnel
 
 **Account**:
@@ -452,7 +452,7 @@ The user as one Relay knows them: what an identity at an identity provider logs 
 _Avoid_: User, tenant, identity (an identity is the provider's; an Account is the Relay's)
 
 **Login**:
-A Server's lasting standing at a Relay under one Account, formed once through an identity provider and tied to that Server's identity, so each Server on a machine holds its own. A Login does not lapse with time: it stands until its Server's user removes the Relay or the Relay's operator removes the Login. While its Account no longer satisfies the Relay — the Relay's own finding, never the Server's — the Relay refuses the Login without forgetting it, the Relay's entry reads **login needed**, and one fresh login from any Server of that Account restores them all.
+A Server's lasting standing at a Relay under one Account, formed once through an identity provider and tied to that Server's identity, so each Server on a machine holds its own. A Login does not lapse with time: it stands until its Server's user removes the Relay or the Relay's operator removes the Login. While its Account no longer satisfies the Relay — the Relay's own finding, never the Server's — the Relay refuses the Login without forgetting it, the Relay's entry reads **login needed**, and one fresh login from any Server of that Account restores them all. A Login is listed to the other Servers of its Account from the moment it is formed, whether or not its Server Serves, and stays listed until it is removed, however long its machine has been off; being listed opens nothing, and only a Login that stands is told the list.
 _Avoid_: Session, registration, enrollment (a Pairing's word)
 
 **Outlook**:

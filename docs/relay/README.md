@@ -519,7 +519,10 @@ and joins nothing more until it is restarted.
 Each Account may have at most 64 Servers logged in (`logins_per_account`) and 256 connections joined at once
 (`joined_connections_per_account`), so no one Account can exhaust the Relay. A Server keeping a Remote in view
 through the Relay holds one joined connection. Past a cap, a login or a join is refused, and Suru tells its user
-which cap was reached, to ask you to raise it or to remove a Login. Raise either in the configuration.
+which cap was reached, to ask you to raise it or to remove a Login. Raise either in the configuration. Raising
+`logins_per_account` far enough has the list of [an Account's machines](#finding-your-machines) cut short, since it
+stays within one message of the protocol, which says so to its user: at the default cap it is always whole, and it
+holds about 150 Servers however their hostnames are spelled, those waiting to be reached kept ahead of the rest.
 
 Anyone who can reach the Relay can open a connection to it and prove a key made up on the spot, admitted or not, so
 connections are capped as well, whoever opens them:
@@ -536,7 +539,8 @@ connections are capped as well, whoever opens them:
 A connection counts as idle only once it has gone five seconds asking nothing. A Server asks for a join, or takes
 one up, the moment it has proven its key, so however many Remotes it reaches through the Relay at once none of
 those connections is counted; what counts is the one connection a Server keeps to hear at once that its Login
-stops standing, and any that proves and then sits. Either idle cap may be as low as 1. [The configuration reference](configuration.md#connections_at_once-logins_at_once-idle_connections_per_server-idle_connections_per_server_without_login)
+stops standing, and any that proves and then sits. Asking for the list of an Account's machines is the same, on a
+connection let go of once it is answered. Either idle cap may be as low as 1. [The configuration reference](configuration.md#connections_at_once-logins_at_once-idle_connections_per_server-idle_connections_per_server_without_login)
 says what each counts.
 
 ## Requiring a fresh login
@@ -700,6 +704,42 @@ Once the Relay can be offered it is ticked like any other, and the next Invite o
 this holds even for a Relay you had left out, since pressing the key on its row says you want it. `a` adds a Relay
 here, with the same address entry as `/relay`, so a first-time setup can begin in `/serve`, which says so where the
 Server holds no Relay. `/relay` does all of this too, and is where a Relay is removed or stops being Served through.
+
+### Finding your machines
+
+`/pair` opens on the other machines logged in under your Account at each Relay this Server has logged in at, grouped by Relay:
+
+```
+On relay.example.com
+› workstation   Serving
+  build-box     Remote already
+  old-laptop    not Serving (run /serve there)
+```
+
+- **Serving**: waiting at the Relay right now. Enter on it says to issue an Invite there and paste it here.
+- **not Serving**: logged in but not waiting, which may mean Serving is off, it does not Serve through this Relay, or
+  the machine is simply off. It cannot be chosen to pair, and Enter says what to do on it.
+- **Remote already**: its key matches a Pairing this Server holds, and it is shown by the Remote's name. Enter says
+  so.
+
+A machine listed by two Relays is one row. It reads **Serving** if it waits at either, sits in the group of the first
+it waits at or, waiting at neither, the first that lists it, and names the other; where the two were told different
+hostnames, it goes by the one its group's Relay was told, and the selected row's detail says the other. Rows sharing a
+name show the first characters of each fingerprint, and the selected row shows its whole fingerprint.
+
+Each Relay is asked on its own as `/pair` opens, and its group fills in as it answers: **looking…** until then,
+**Unreachable** if it does not answer within the Server's budget for that, **needs a login** if the Server's Login
+there does not stand, and **no other machines** if there are none. `Ctrl+R` asks them all again. Nothing is asked
+except when a Client asks.
+
+The Invite field stands beside the list throughout: pasting or typing an Invite puts it there wherever the keys are,
+and `Tab` moves to it. Where nothing is found, it comes first, as it does for a Relay too old to list machines, which
+says so in its group and goes on pairing by Invite as ever.
+
+**None of this is believed.** A hostname is whatever the other Server said and a key is the Relay's word, and nothing
+listed changes what this Server holds of any key. A Relay that lies can mislabel a row and no more: choosing a row
+forms no Pairing, and a Pairing is formed only as it always is, by redeeming an Invite and trusting its preview. The
+Relay stores nothing to answer this, keeps no last-seen time, and writes nothing of it to either log.
 
 ### Pairing through the Relay
 

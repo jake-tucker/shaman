@@ -36,7 +36,7 @@ The core "type a prompt and stuff happens" flow works as you might expect, so he
 cool things Suru does:
 
 - Cross-provider subagents - a Claude-managed Opus session can spin up a Codex-managed Astra session to review its work.
-- Remote access - run `/serve` to generate an invite on the host, then paste the invite into `/pair` on another machine
+- Remote access - run `/serve` to generate an invite on the host, then paste the invite into `/pair` on another machine, which also lists your machines logged in at your Relays
   to allow the client to view all of the host's sessions. Reaching the host directly needs a network path between the
   two machines; where there is none, a Relay can carry the connection instead (below). Every connection, redeeming the
   invite included, is TLS 1.3 pinned to the host's key, with the joining machine presenting its own key in a client

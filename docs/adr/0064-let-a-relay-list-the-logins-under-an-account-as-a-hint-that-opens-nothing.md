@@ -1,0 +1,26 @@
+# Let a Relay list the Logins under an Account as a hint that opens nothing
+
+A Pairing through a Relay asked for a long string to be carried between two machines, often with no good channel between them, which is usually why they wanted a Relay. A Server whose Login stands may now ask its Relay which other Logins stand under its Account, and `/pair` opens on what its Relays answer. This is the convenience ADR-0046 left room for: logged-in machines find each other, and a Pairing is still formed only by redeeming an Invite. Finding is not trusting.
+
+The list shows every other Login under the Account, whether or not its Server Serves, each by its identity key, the hostname it reported, and whether it waits to be reached now. "Not Serving, run `/serve` there" is the most useful thing the list can say, and it can say that only of a machine that is not waiting. So a Server appears once it has logged in, and being listed opens nothing, which keeps "holding a Login opens nothing" true: being reached still takes Serving through the Relay, and being trusted still takes an Invite.
+
+Nothing listed is believed. A hostname is whatever that Server said and a key is the Relay's word, so a Relay that lies about either can mislabel a row and no more. Choosing a row forms no Pairing, and nothing listed changes what is held of any key. A key is matched against the Pairings a Server holds only to say **Remote already**, which is safe for the same reason. The Server asked holds what a Relay says to what can be passed on before any Client hears of it: an entry whose key no Server could hold, its own key, or a second of one key goes, and a hostname keeps only what a reader can be shown, as a Peer's name does.
+
+It is asked when a Client asks and never polled, one Relay at a time on a connection of its own, each within the Server's answer budget, so a Relay that hangs costs its own group and holds up nothing else, and nothing a Server waits on there is disturbed. The route is server administration, refused to Peers and offered by no Sidekick Tool. The Relay stores nothing for it, records no last-seen time, and neither log has any line of it; the Account it answers for is read from its records under the standing lock each time it is asked, never kept from when the connection proved itself.
+
+The list changes the Relay protocol by addition, as ADR-0047 asks. A Relay from before it refuses the asking as it refuses whatever it does not recognize, with `Unexpected`, and on a fresh connection of its own, where a current Relay never says that of this message, that refusal is how a Server tells such a Relay from one that failed, and Suru offers pasting alone there. The protocol's version does not move, since a bump would refuse those Relays outright. The answer stays within one message however high an operator raises `logins_per_account`, saying when it was cut short: those waiting are kept ahead of those not, each kind the latest formed first, so it is cut in one place for one set of Logins, and at the default cap it is never cut, whatever the hostnames are.
+
+## Considered Options
+
+- **List only Servers that wait to be reached.** Rejected: a machine with Serving off would simply be missing, with nothing to say what to do about it, and a phished Server would still learn of every machine that Serves.
+- **Have a machine Approve or Deny a pairing asked of it from the list.** Rejected: a phished Server could name itself `laptop` and ask, and one careless press would give it what a Peer holds, including running commands.
+- **Trust a listed key as the one to pair with.** Rejected by ADR-0046: it pairs on the Relay's word.
+- **Show nothing until every Relay has answered.** Rejected: one Relay that hangs would hold up the rest for its whole budget. Each Relay's group fills in as it answers, and the Invite field stands beside them from the first frame, so what a late answer changes never takes a key or a paste from the reader.
+- **Keep the list in the Server, refreshed in the background.** Rejected: nothing else needs it, and a Server polling every Relay it holds gives the Relays a record of when it was awake to no purpose.
+
+## Consequences
+
+- A Server logged in by phished device login (ADR-0048) now learns the Account's hostnames and fingerprints, and whether each is waiting. It gains nothing it can use to be trusted: reaching any of them still ends in a Pairing it cannot form without an Invite. This is the price of showing every Login rather than only those that Serve, and it was judged worth paying.
+- A stale Login stays listed until its Server or the operator removes it, and a connection that has died unannounced reads as waiting until the Relay finds that out. The list is a hint, so both cost a reader a failed attempt at most.
+- An operator who raises `logins_per_account` past what one message holds gets a list cut short, and says so. Nothing is paged; a user with hundreds of machines at one Relay is not who this is for.
+- A hostname in a row can look like another's under a lookalike character, which folding does not catch. The selected row's fingerprint is what a reader can check, and the preview of the Invite it ends in shows that fingerprint again before anything is trusted.

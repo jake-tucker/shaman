@@ -173,6 +173,11 @@ many connections the Relay joins for one Account at once: a Server keeping a Rem
 Relay holds one, so an Account whose Servers each keep the others in view holds one for each ordered
 pair. A join past it is refused until one ends. Suru tells its user which cap was reached.
 
+An Account's Servers can ask which others stand under it, and that answer stays within one message of the
+protocol, however high `logins_per_account` goes. At the default it is always whole; raised past what one
+message holds, about 150 Servers with the longest hostnames it lists and about 350 with short ones, it is
+cut short, saying so, with those waiting to be reached kept ahead of the rest.
+
 ### `connections_at_once`, `logins_at_once`, `idle_connections_per_server`, `idle_connections_per_server_without_login`
 
 Caps on connections, which anyone who can reach the Relay may open, logged in or not, so nobody — and no
