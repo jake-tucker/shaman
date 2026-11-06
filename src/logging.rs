@@ -40,6 +40,12 @@ const FILTER_ENV_VAR: &str = "SURU_LOG";
 const DEFAULT_FILTER: &str = "warn,suru=info";
 /// Per-run Log files kept before the oldest are pruned.
 const RETAINED_LOG_FILES: usize = 20;
+/// A Keeper's Log files kept, counted apart from the rest. A Keeper lasts the
+/// login while Clients and Servers come and go beside it, so among them its Log
+/// would be pruned as it ran, and its warnings go nowhere for the rest of the
+/// login. Counted apart, the Log of the one running is among the newest of its
+/// kind, since only another login starts another.
+const RETAINED_KEEPER_LOG_FILES: usize = 3;
 /// Dependencies that log the payloads they carry at their verbose levels, and
 /// the most verbose level each is let log at whatever `SURU_LOG` asks: rmcp
 /// logs each Broker call whole, Answers included, at debug and trace and its
@@ -182,23 +188,30 @@ fn log_file_name(role: Role, at: time::OffsetDateTime, pid: u32) -> String {
     format!("{timestamp}-{}-{pid}.log", role.as_str())
 }
 
-/// Best-effort removal of the oldest Log files beyond `keep`; the timestamped
-/// names make lexicographic order chronological.
+/// Best-effort removal of the oldest Log files beyond `keep`, and of the oldest
+/// Keeper's beyond [`RETAINED_KEEPER_LOG_FILES`]; the timestamped names make
+/// lexicographic order chronological.
 fn prune_stale_log_files(log_dir: &Path, keep: usize) {
     let Ok(entries) = fs::read_dir(log_dir) else {
         return;
     };
-    let mut files: Vec<PathBuf> = entries
+    let keeper = format!("-{}-", Role::Keeper.as_str());
+    let (keepers, others): (Vec<PathBuf>, Vec<PathBuf>) = entries
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "log") && path.is_file())
-        .collect();
-    if files.len() <= keep {
-        return;
-    }
-    files.sort();
-    for path in files.drain(..files.len() - keep) {
-        let _ = fs::remove_file(path);
+        .partition(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().contains(&keeper))
+        });
+    for (mut files, keep) in [(others, keep), (keepers, RETAINED_KEEPER_LOG_FILES)] {
+        if files.len() <= keep {
+            continue;
+        }
+        files.sort();
+        for path in files.drain(..files.len() - keep) {
+            let _ = fs::remove_file(path);
+        }
     }
 }
 
@@ -221,6 +234,47 @@ mod tests {
         assert_eq!(first, "20260822T095959-server-41.log");
         assert_eq!(second, "20260822T100000-client-42.log");
         assert!(first < second);
+    }
+
+    /// A Keeper lasts the login, so however many Clients run beside it, its Log
+    /// is not pruned out from under it.
+    #[test]
+    fn a_keepers_log_is_counted_apart_from_those_that_come_and_go() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let log = |time: u32, role: &str| format!("20260822T{time:06}-{role}-1.log");
+        std::fs::write(dir.path().join(log(0, "keeper")), "").unwrap();
+        for time in 1..=30 {
+            std::fs::write(dir.path().join(log(time, "client")), "").unwrap();
+        }
+        prune_stale_log_files(dir.path(), 2);
+        let remaining = |dir: &Path| {
+            let mut names = std::fs::read_dir(dir)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect::<Vec<_>>();
+            names.sort();
+            names
+        };
+        assert_eq!(
+            remaining(dir.path()),
+            [log(0, "keeper"), log(29, "client"), log(30, "client")]
+        );
+
+        for time in 31..=35 {
+            std::fs::write(dir.path().join(log(time, "keeper")), "").unwrap();
+        }
+        prune_stale_log_files(dir.path(), 2);
+        assert_eq!(
+            remaining(dir.path()),
+            [
+                log(29, "client"),
+                log(30, "client"),
+                log(33, "keeper"),
+                log(34, "keeper"),
+                log(35, "keeper"),
+            ],
+            "Keepers' Logs stay bounded too"
+        );
     }
 
     #[test]

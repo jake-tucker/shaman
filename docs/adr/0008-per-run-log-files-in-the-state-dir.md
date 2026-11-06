@@ -12,3 +12,4 @@ Suru processes write structured Logs through the `tracing` ecosystem into `<stat
 - `server.log` — the launcher's redirect of the detached server's stdout/stderr — is deliberately kept as a dumb crash net, separate from structured Logs: it catches exactly what no in-process subscriber can (panics, pre-init failures), an integration test greps it, and startup errors embed its tail.
 - Payload policy: provider request/response bodies (user prompts, code) may appear only at `debug`/`trace`; auth material (the descriptor token, provider credentials) never appears at any level.
 - The retained-file count and default filter are hardcoded constants, not config machinery.
+- A Keeper (ADR-0063) lasts a whole login while the others come and go, so its Logs are counted apart, the newest three kept. Otherwise a running Keeper's Log would be pruned from under it, and its warnings go nowhere.

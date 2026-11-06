@@ -3,9 +3,11 @@
 //! It is registered with `schtasks /Create /XML`, which alone can say all a Task
 //! here must: a `/TR` command line holds at most 261 characters, and `/SC
 //! ONLOGON` asks for elevation, because with no user named on its trigger it
-//! would run at anybody's logon. It is never run on registering, and deleting
-//! it ends at most the Keeper it started: the Server is detached from that, as
-//! from any process that launches one.
+//! would run at anybody's logon. It is never run on registering. Deleting it
+//! should end at most the Keeper it started, the Server being launched detached
+//! from that as from any process that launches one; whether Task Scheduler holds
+//! to that as a Task is ended or deleted has yet to be seen on a real one
+//! (`docs/validation/0608-login-start.md`).
 //!
 //! A Task's defaults would quietly undo a Keeper, so each is said here: it would
 //! be ended after three days, and on going onto battery, and be run at the low
@@ -35,6 +37,9 @@ fails Serving where you can see it rather than making a new one.";
 /// user's domain included, which keeps one user's Channel from colliding with
 /// another's. Its trigger goes on naming `DOMAIN\\user` as Windows does: only the
 /// name of the Task is spelled otherwise, a `\\` there meaning a folder.
+///
+/// So a machine renamed goes by another name here, and its Task is left behind
+/// under the old one, which `status` and `uninstall` no longer find.
 fn task_name(channel: &str, user: &str) -> String {
     let user = match user.split_once('\\') {
         Some((domain, user)) => format!("{user}@{domain}"),

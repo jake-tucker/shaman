@@ -671,7 +671,9 @@ What each platform covers:
   crash would, and the next login starts another. To run with no session at all, run `loginctl enable-linger $USER`; a
   key kept in a keyring nothing has unlocked then fails Serving where you can see it. A machine with no systemd user instance, such as a container, is told so, and has whatever starts things there run
   `suru server start`.
-- **Windows**: a Scheduled Task at this user's logon. A machine that nobody has logged on to stays Unreachable.
+- **Windows**: a Scheduled Task at this user's logon. A machine that nobody has logged on to stays Unreachable. The Task's
+  name holds the machine's, so after renaming the machine `suru server status` and `uninstall` no longer find it: delete
+  the old `suru-server-…` Task in Task Scheduler, and install again.
 
 A Server that cannot read its identity key never makes a new one: it goes on serving its own machine, and fails Serving
 where you can see it until the store answers.

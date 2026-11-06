@@ -2150,8 +2150,9 @@ mod tests {
     /// Every Provider's binary resolution shares this scope, so they share its lock.
     static ENVIRONMENT: Mutex<()> = Mutex::new(());
 
-    /// A Provider that declared nothing would be missing from every Server
-    /// started at login, found by no `PATH` override and in no warning.
+    /// A Provider that declared nothing would be found by no executable override
+    /// on a Server started at login. It need not declare anything it does not
+    /// read: one with no secrets has no prefixes to name.
     #[test]
     fn every_built_in_provider_declares_what_finds_it() {
         for runtime in runtimes(None) {
@@ -2162,11 +2163,6 @@ mod tests {
                     .iter()
                     .any(|name| name.starts_with("SURU_") && name.ends_with("_PATH")),
                 "{} names no executable override: {environment:?}",
-                runtime.display_name()
-            );
-            assert!(
-                !environment.uncarried_prefixes.is_empty(),
-                "{} names nothing it reads that is not carried",
                 runtime.display_name()
             );
         }

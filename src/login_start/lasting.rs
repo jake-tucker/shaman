@@ -54,7 +54,11 @@ pub(super) fn short_lived(path: &Path, temporary: &Path) -> Option<ShortLived> {
     let versioned = path
         .components()
         .any(|component| component.as_os_str().to_str().is_some_and(names_a_version));
-    if versioned || is_named(&["Cellar", "Caskroom", "nix"]) {
+    // A snap runs from a directory named for its revision, a bare number, which
+    // nothing else here can tell from a directory that merely ends in one.
+    let in_a_snap_revision =
+        path.starts_with("/snap") && !path.starts_with("/snap/bin") && !is_named(&["current"]);
+    if versioned || in_a_snap_revision || is_named(&["Cellar", "Caskroom", "nix"]) {
         return Some(ShortLived::Versioned);
     }
     None
@@ -203,6 +207,26 @@ mod tests {
             ("/home/jo/1.notes/suru", None),
         ] {
             assert_eq!(short_lived(&rooted(path), &temporary), expected, "{path}");
+        }
+    }
+
+    #[test]
+    fn a_snaps_revision_directory_will_not_last_and_its_lasting_paths_will() {
+        let temporary = rooted("/scratch/tmp");
+        assert_eq!(
+            short_lived(Path::new("/snap/suru/123/bin/suru"), &temporary),
+            Some(ShortLived::Versioned)
+        );
+        for lasting in [
+            "/snap/bin/suru",
+            "/snap/suru/current/bin/suru",
+            "/home/jo/snap/suru/suru",
+        ] {
+            assert_eq!(
+                short_lived(Path::new(lasting), &temporary),
+                None,
+                "{lasting}"
+            );
         }
     }
 
