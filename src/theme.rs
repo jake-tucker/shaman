@@ -116,6 +116,10 @@ pub(crate) struct FeedbackRoles {
 pub(crate) struct BorderRoles {
     pub(crate) default: Style,
     pub(crate) subdued: Style,
+    /// The text a border carries. It is the Theme's text colour rather than
+    /// the border's own, which many Themes paint all but into the panel the
+    /// border surrounds.
+    pub(crate) title: Style,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -590,7 +594,11 @@ quantized_fields!(FeedbackRoles {
     success,
     info,
 });
-quantized_fields!(BorderRoles { default, subdued });
+quantized_fields!(BorderRoles {
+    default,
+    subdued,
+    title,
+});
 quantized_fields!(MarkdownRoles {
     text,
     heading,
@@ -951,6 +959,7 @@ impl Theme {
             border: BorderRoles {
                 default: Style::default().fg(Color::Gray),
                 subdued: Style::default().fg(Color::DarkGray),
+                title: text.primary,
             },
             markdown: MarkdownRoles {
                 text: text.primary,
@@ -1083,6 +1092,7 @@ impl Theme {
             border: BorderRoles {
                 default: style(grays.border()),
                 subdued: style(grays.border_subtle()),
+                title: text.primary,
             },
             markdown: MarkdownRoles {
                 text: style(foreground),
@@ -1212,6 +1222,7 @@ impl Theme {
             border: BorderRoles {
                 default: style(border),
                 subdued: style(border_subtle),
+                title: style(text),
             },
             markdown: MarkdownRoles {
                 text: style(markdown_text),

@@ -263,7 +263,7 @@ fn render_panel(buffer: &mut Buffer, area: Rect, panel: InsightsPanel, drawing: 
     let title = if focused {
         theme.accent.primary.add_modifier(Modifier::BOLD)
     } else {
-        theme.text.primary.add_modifier(Modifier::BOLD)
+        theme.border.title.add_modifier(Modifier::BOLD)
     };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)

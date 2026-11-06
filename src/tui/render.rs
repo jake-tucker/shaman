@@ -1750,13 +1750,7 @@ fn render_session_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, th
     };
     clear_over(frame, state, area);
     frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(theme.border.default)
-                .style(theme.surface.overlay),
-        ),
+        Paragraph::new(lines).block(titled_overlay_block(title, theme)),
         area,
     );
     record_overlay_selection(frame, state, area, SelectionSurface::Sessions, true);
@@ -2942,14 +2936,7 @@ fn render_model_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, them
         ));
     }
     clear_over(frame, state, area);
-    frame.render_widget(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" Models ")
-            .border_style(theme.border.default)
-            .style(theme.surface.overlay),
-        area,
-    );
+    frame.render_widget(titled_overlay_block(" Models ", theme), area);
     frame.render_widget(Paragraph::new(lines), list_area);
     let Some(split) = split else {
         record_overlay_selection_around(
@@ -3133,13 +3120,7 @@ fn render_approval_posture_picker(
         .collect::<Vec<_>>();
     clear_over(frame, state, area);
     frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Approval Posture ")
-                .border_style(theme.border.default)
-                .style(theme.surface.overlay),
-        ),
+        Paragraph::new(lines).block(titled_overlay_block(" Approval Posture ", theme)),
         area,
     );
 }
@@ -3203,13 +3184,7 @@ fn render_theme_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, them
     }
     clear_over(frame, state, area);
     frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Themes ")
-                .border_style(theme.border.default)
-                .style(theme.surface.overlay),
-        ),
+        Paragraph::new(lines).block(titled_overlay_block(" Themes ", theme)),
         area,
     );
     record_overlay_selection(frame, state, area, SelectionSurface::Themes, true);
@@ -3534,14 +3509,7 @@ fn render_split_settings_panel(
     // were drawn across.
     let window = drawn.window(list_area.y, list_area.left()..list_area.right());
     clear_over(frame, state, area);
-    frame.render_widget(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" Settings ")
-            .border_style(theme.border.default)
-            .style(theme.surface.overlay),
-        area,
-    );
+    frame.render_widget(titled_overlay_block(" Settings ", theme), area);
     if let Some(tab_line) = tab_line {
         frame.render_widget(Paragraph::new(tab_line), Rect { height: 1, ..inner });
     }
@@ -3958,6 +3926,17 @@ fn record_overlay_selection_parts(
     }
 }
 
+/// The frame of a picker, dialog, or menu drawn over the rest of the view, with
+/// its title in the colour a Theme keeps for the text on a border.
+fn titled_overlay_block<'a>(title: impl Into<Line<'a>>, theme: &Theme) -> Block<'a> {
+    Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .title_style(theme.border.title)
+        .border_style(theme.border.default)
+        .style(theme.surface.overlay)
+}
+
 /// Clears `area` for a picker, dialog, or menu drawn over the frame, and
 /// records it as covering whatever strip of thumbnails lies beneath, so that
 /// strip is left blank rather than drawn over it (ADR 0038).
@@ -3991,13 +3970,7 @@ fn draw_overlay_box(
 ) {
     clear_over(frame, state, area);
     frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title.to_owned())
-                .border_style(theme.border.default)
-                .style(theme.surface.overlay),
-        ),
+        Paragraph::new(lines).block(titled_overlay_block(title.to_owned(), theme)),
         area,
     );
 }
@@ -4260,13 +4233,10 @@ fn render_composer_completion(
         })
         .collect::<Vec<_>>();
     let paragraph = if bordered {
-        Paragraph::new(rows).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(state.composer_completion.title())
-                .border_style(theme.border.default)
-                .style(theme.surface.overlay),
-        )
+        Paragraph::new(rows).block(titled_overlay_block(
+            state.composer_completion.title(),
+            theme,
+        ))
     } else {
         Paragraph::new(rows).style(theme.surface.overlay)
     };
@@ -4365,13 +4335,7 @@ fn render_subagent_picker(
         ));
     }
     let paragraph = if bordered {
-        Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Subagents ")
-                .border_style(theme.border.default)
-                .style(theme.surface.overlay),
-        )
+        Paragraph::new(lines).block(titled_overlay_block(" Subagents ", theme))
     } else {
         Paragraph::new(lines).style(theme.surface.overlay)
     };
@@ -7358,6 +7322,7 @@ fn render_pending_prompts(
             Block::default()
                 .borders(Borders::ALL)
                 .title(title)
+                .title_style(theme.border.title)
                 .border_style(if managing {
                     theme.border.default
                 } else {

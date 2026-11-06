@@ -711,6 +711,61 @@ fn a_snapshot_repaints_an_open_view_and_its_overlay_in_the_named_theme() {
 }
 
 #[test]
+fn a_panel_title_reads_where_the_themes_border_melts_into_the_panel() {
+    let workspace = workspace_dir();
+    let mut application =
+        connected_application_with_terminal_facts(workspace.path(), TerminalFacts::unprobed(true));
+    deliver_settings(&mut application, themed("dracula"));
+
+    application
+        .handle_event(ApplicationEvent::Command(CommandId::InsertText(
+            "/".to_owned(),
+        )))
+        .expect("show composer autocomplete");
+    let autocomplete = rendered_application_buffer(&application, 100, 20);
+    let title = text_position(&autocomplete, "Commands");
+    let title_cell = autocomplete.cell(title).unwrap();
+    assert_eq!(
+        title_cell.fg,
+        Color::Rgb(248, 248, 242),
+        "the title takes the Theme's text colour"
+    );
+    let rule = autocomplete.cell((title.0 + 12, title.1)).unwrap();
+    assert_eq!(rule.symbol(), "─");
+    assert_eq!(
+        rule.fg, rule.bg,
+        "Dracula paints its border in the panel's own colour, which a title could not be read in"
+    );
+    assert_eq!(
+        title_cell.bg, rule.bg,
+        "the title keeps the panel behind it"
+    );
+}
+
+#[test]
+fn the_pending_panels_title_reads_in_the_themes_text_colour() {
+    let workspace = workspace_dir();
+    let mut application =
+        connected_application_with_terminal_facts(workspace.path(), TerminalFacts::unprobed(true));
+    enter_session(&mut application, workspace.path());
+    deliver_settings(&mut application, themed("dracula"));
+    application
+        .handle_event(ApplicationEvent::Command(CommandId::InsertText(
+            "Queued for later".to_owned(),
+        )))
+        .expect("type a queued Prompt");
+    application
+        .handle_event(ApplicationEvent::Command(CommandId::SubmitQueue))
+        .expect("dock the queued Prompt");
+
+    let buffer = rendered_application_buffer(&application, 100, 20);
+    assert_eq!(
+        buffer.cell(text_position(&buffer, "Pending ·")).unwrap().fg,
+        Color::Rgb(248, 248, 242)
+    );
+}
+
+#[test]
 fn a_named_theme_paints_ordinary_text_with_its_own_foreground() {
     let workspace = workspace_dir();
     let mut application =
