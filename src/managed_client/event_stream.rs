@@ -89,6 +89,11 @@ fn decode_event(event: Event, expected_instance_id: uuid::Uuid) -> Result<Manage
                 serde_json::from_str(&event.data).context("decode how a short code stands")?;
             Ok(ManagedEvent::ShortCode(standing))
         }
+        crate::protocol::PAIR_BACK_EVENT => {
+            let offers: crate::protocol::PairBackOffers =
+                serde_json::from_str(&event.data).context("decode offers to pair back")?;
+            Ok(ManagedEvent::PairBack(offers))
+        }
         ONBOARDED_EVENT => {
             let onboarded: bool = serde_json::from_str(&event.data)
                 .context("decode whether the server has been onboarded")?;

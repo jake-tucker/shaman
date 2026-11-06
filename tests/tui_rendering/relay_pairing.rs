@@ -744,6 +744,7 @@ fn redeeming_through_a_relay_this_server_is_not_logged_in_at_logs_in_there_and_c
             invite: INVITE.into(),
             name: Some("studio".to_owned()),
             ways: vec![Way::Relay(COMPANY.to_owned())],
+            pair_back: false,
         }
     );
 

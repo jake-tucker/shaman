@@ -102,9 +102,13 @@ use crate::{
 
 mod identity;
 mod identity_store;
+mod pair_back;
 mod short_invite;
 
 use identity::IdentityMaterial;
+use pair_back::{
+    OFFER_PATH, PairBack, StoredHeldOffer, StoredMadeOffer, ToldOffer, take_offer_word,
+};
 use short_invite::{Attempt, Dead, Opening, Parties, RefusedAtOnce, ShortCodes};
 
 use crate::shown_text::{composed, fingerprint_prefixes, folded, short_fingerprint, shown, unseen};
@@ -379,6 +383,9 @@ pub(crate) struct ServingController {
     offered_relays: Arc<watch::Sender<Vec<String>>>,
     /// How what Remotes tell of the Relays they Serve through is stored.
     told: Arc<ToldStore>,
+    /// What is under way of the offers to pair back this Server holds and has
+    /// made, beside the records of them on its Peers and Remotes.
+    pair_back: Arc<PairBack>,
 }
 
 /// How what a Server's Remotes tell of the Relays they Serve through is
@@ -501,6 +508,42 @@ fn relay_refusal<'error>(
         return Some(refusal);
     }
     error.source().and_then(relay_refusal)
+}
+
+/// A held client a Serving Server is asked through.
+type StrongClient = Arc<PairingHttpClient>;
+
+/// This machine's own addresses, as an Invite may offer them, at `port`.
+pub(crate) fn machine_addresses(port: u16) -> std::io::Result<Vec<SocketAddr>> {
+    let mut addresses = if_addrs::get_if_addrs()?
+        .into_iter()
+        .filter(if_addrs::Interface::is_oper_up)
+        .filter_map(|interface| machine_address(&interface, port))
+        .collect::<Vec<_>>();
+    addresses.sort_unstable();
+    addresses.dedup();
+    Ok(addresses)
+}
+
+fn machine_address(interface: &if_addrs::Interface, port: u16) -> Option<SocketAddr> {
+    let address = interface.ip();
+    let is_candidate = match address {
+        std::net::IpAddr::V4(address) => {
+            !address.is_loopback() && !address.is_unspecified() && !address.is_multicast()
+        }
+        std::net::IpAddr::V6(address) => {
+            !address.is_loopback() && !address.is_unspecified() && !address.is_multicast()
+        }
+    };
+    if !is_candidate {
+        return None;
+    }
+    Some(match address {
+        std::net::IpAddr::V6(address) if address.is_unicast_link_local() => SocketAddr::V6(
+            std::net::SocketAddrV6::new(address, port, 0, interface.index?),
+        ),
+        address => SocketAddr::new(address, port),
+    })
 }
 
 #[derive(Clone)]
@@ -630,6 +673,20 @@ struct IssuedToken {
     token: [u8; 32],
     expires_at: tokio::time::Instant,
     state: TokenState,
+    /// The one key that may redeem it, where it is issued for an offer to pair
+    /// back: shown nowhere, so it stands outside superseding altogether
+    /// (ADR-0066).
+    bound_to: Option<Vec<u8>>,
+}
+
+impl IssuedToken {
+    /// Whether `key` may redeem this token: any that holds it, unless it is
+    /// bound to another. A key it is not bound to is told nothing of it.
+    fn admits(&self, key: &[u8]) -> bool {
+        self.bound_to
+            .as_deref()
+            .is_none_or(|bound_to| bool::from(bound_to.ct_eq(key)))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -647,6 +704,11 @@ struct StoredPeer {
     /// The name the Peer gave itself when it redeemed its Invite.
     #[serde(default)]
     name: String,
+    /// The offer to pair back the Peer made at the end of the ceremony that
+    /// formed this Pairing, until it is answered. Made nowhere else, and held
+    /// here, so a Peer holds one at most and it goes with the Pairing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    offer: Option<StoredHeldOffer>,
 }
 
 impl StoredPeer {
@@ -725,6 +787,10 @@ struct StoredRemote {
     /// even to the same key, is told apart from the Pairing before it.
     #[serde(skip)]
     generation: u64,
+    /// The offer to pair back this Server made the Remote, until it is
+    /// answered, withdrawn, or the Pairing ends with this record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    offer: Option<StoredMadeOffer>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -760,6 +826,11 @@ struct EnrollmentRequest {
     /// protocol version rather than by a request it cannot read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     hostname: Option<String>,
+    /// The offer to pair back this ceremony ends by making, by its id. Taken
+    /// only as a commit forms the Pairing: there is no other way to make one
+    /// (ADR-0066).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    offer: Option<Uuid>,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -791,6 +862,10 @@ struct PairingHealth {
 #[serde(deny_unknown_fields)]
 struct OfferedRelays {
     relays: Vec<String>,
+    /// How the offer to pair back this very Peer made stands, where it made
+    /// one. Nothing is told here of any other Peer's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    offer: Option<ToldOffer>,
 }
 
 #[derive(Clone)]
@@ -856,9 +931,10 @@ impl PairingFailure {
             }
             // The key comes to be got once its store answers again.
             SessionErrorCode::IdentityKeyUnavailable => StatusCode::SERVICE_UNAVAILABLE,
-            SessionErrorCode::PeerNotFound | SessionErrorCode::RemoteNotFound => {
-                StatusCode::NOT_FOUND
-            }
+            SessionErrorCode::PeerNotFound
+            | SessionErrorCode::RemoteNotFound
+            | SessionErrorCode::OfferNotFound => StatusCode::NOT_FOUND,
+            SessionErrorCode::PairBackNotOfferable => StatusCode::CONFLICT,
             _ => StatusCode::BAD_REQUEST,
         }
     }
@@ -896,7 +972,9 @@ impl ServingController {
         local_base_url: String,
         local_token: String,
     ) -> Result<Self> {
-        let peers: Vec<StoredPeer> = read_records(&data_dir.join(PEERS_FILE))?;
+        let mut peers: Vec<StoredPeer> = read_records(&data_dir.join(PEERS_FILE))?;
+        let mut remotes: Vec<StoredRemote> = read_records(&data_dir.join(REMOTES_FILE))?;
+        pair_back::take_back_redemptions_caught_midway(data_dir, &mut peers, &mut remotes)?;
         let mut revocations = peers
             .iter()
             .map(|peer| (peer.id.clone(), Arc::new(ConnectionRevocation::default())))
@@ -944,7 +1022,7 @@ impl ServingController {
             protocol_version,
             identity: IdentityKey::new(data_dir),
             peers: Arc::new(RwLock::new(peers)),
-            remotes: Arc::new(RwLock::new(read_records(&data_dir.join(REMOTES_FILE))?)),
+            remotes: Arc::new(RwLock::new(remotes)),
             remote_clients: Arc::new(StdMutex::new(HashMap::new())),
             awaiting: Arc::new(StdMutex::new(HashMap::new())),
             awaited_at_once: AWAITED_AT_ONCE,
@@ -957,7 +1035,23 @@ impl ServingController {
             told: Arc::new(ToldStore::every(
                 crate::server::ServerTimings::default().told_relays_store_interval,
             )),
-        })
+            pair_back: Arc::new(PairBack::within(
+                crate::server::ServerTimings::default().pair_back_invite_ttl,
+                crate::server::ServerTimings::default().pair_back_retry_interval,
+            )),
+        }
+        .with_offers_published())
+    }
+
+    /// Bounds how long a token issued for an offer to pair back lives, and how
+    /// soon a try that came to nothing is made again.
+    pub(crate) fn with_pair_back_timings(
+        mut self,
+        invite_ttl: tokio::time::Duration,
+        retry_interval: tokio::time::Duration,
+    ) -> Self {
+        self.pair_back = Arc::new(PairBack::within(invite_ttl, retry_interval));
+        self.with_offers_published()
     }
 
     /// Bounds how long removing a Remote waits for that Remote to drop its
@@ -1093,16 +1187,7 @@ impl ServingController {
 
         let identity = self.identity().await.map_err(identity_failure)?;
         let token = new_token();
-        let payload = InvitePayload {
-            ways: ways.clone(),
-            server_key: URL_SAFE_NO_PAD.encode(&identity.public_key),
-            token: URL_SAFE_NO_PAD.encode(token),
-            hostname: machine_hostname(),
-        };
-        let encoded = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).map_err(|_| {
-            internal_pairing_failure(anyhow::anyhow!("could not encode Invite payload"))
-        })?);
-        let invite = format!("{INVITE_OPENING}1-{encoded}");
+        let invite = invite_text(&ways, &identity, &token)?;
         let expires_at = tokio::time::Instant::now() + self.invite_ttl;
         let short_code = {
             // Held throughout, so nothing redeems an Invite between its code
@@ -1116,7 +1201,7 @@ impl ServingController {
                 .issued(token, expires_at, &invite, &ways)
                 .map_err(|error| internal_pairing_failure(anyhow::Error::new(error)))?;
             for issued in &mut invites.issued {
-                if matches!(issued.state, TokenState::Outstanding) {
+                if matches!(issued.state, TokenState::Outstanding) && issued.bound_to.is_none() {
                     issued.state = TokenState::Superseded;
                 }
             }
@@ -1124,6 +1209,7 @@ impl ServingController {
                 token,
                 expires_at,
                 state: TokenState::Outstanding,
+                bound_to: None,
             });
             short_code
         };
@@ -1289,17 +1375,34 @@ impl ServingController {
         request: RedeemInviteRequest,
     ) -> std::result::Result<Remote, PairingFailure> {
         let invite = parse_invite(&request.invite)?;
+        let remote = self.redeem(invite, request).await?;
+        self.paired_with(&remote);
+        Ok(remote)
+    }
+
+    /// Redeems `invite`, as `request` asks, leaving what became of any offer
+    /// to pair back that machine holds here for whoever asked.
+    async fn redeem(
+        &self,
+        invite: ParsedInvite,
+        request: RedeemInviteRequest,
+    ) -> std::result::Result<Remote, PairingFailure> {
         let ways = ordered_ways(&invite.ways, &request.ways)?;
         if let Some(name) = request.name.as_deref() {
             validate_remote_name(name)?;
             self.ensure_remote_name_available(name)?;
         }
+        let offer = request
+            .pair_back
+            .then(|| self.new_offer(&invite.server_key))
+            .transpose()?;
         let identity = self.identity().await.map_err(identity_failure)?;
         let prepare = EnrollmentRequest {
             token: URL_SAFE_NO_PAD.encode(invite.token),
             protocol_version: self.protocol_version,
             phase: EnrollmentPhase::Prepare,
             hostname: None,
+            offer: None,
         };
         let enrolled = dial_enrollment(
             &ways,
@@ -1324,13 +1427,17 @@ impl ServingController {
             ways,
             status: RemoteStatus::Available,
         };
-        self.persist_remote(&remote, &invite.server_key)?;
+        // Stored ahead of the commit that makes it, so a crash can leave this
+        // Server an offer the other does not hold, and never the reverse.
+        let offer_id = offer.as_ref().map(StoredMadeOffer::id);
+        self.persist_remote(&remote, &invite.server_key, offer)?;
 
         let commit = EnrollmentRequest {
             token: URL_SAFE_NO_PAD.encode(invite.token),
             protocol_version: self.protocol_version,
             phase: EnrollmentPhase::Commit,
             hostname: Some(machine_hostname()),
+            offer: offer_id,
         };
         if let Err(error) = dial_enrollment(
             &remote.ways,
@@ -1344,6 +1451,7 @@ impl ServingController {
             self.rollback_remote(&remote);
             return Err(error);
         }
+        self.keep_only_offer(&invite.server_key, offer_id);
         Ok(remote)
     }
 
@@ -1542,6 +1650,8 @@ impl ServingController {
             peers.insert(index, removed);
             return Err(internal_pairing_failure(error));
         }
+        drop(peers);
+        self.offers_changed();
         if let Some(revoked) = self
             .revocations
             .read()
@@ -1568,6 +1678,10 @@ impl ServingController {
         let remote = self.stored_remote(name)?;
         let acknowledged = self.ask_remote_to_withdraw(&remote).await;
         self.delete_remote(name)?;
+        if acknowledged {
+            // The Peer that key is known by has gone there, with what it held.
+            self.keep_only_offer(&remote.public_key, None);
+        }
         Ok(RemoteRemoval {
             name: name.to_owned(),
             acknowledged,
@@ -1593,6 +1707,8 @@ impl ServingController {
             peers.insert(index, withdrawn);
             return Err(internal_pairing_failure(error));
         }
+        drop(peers);
+        self.offers_changed();
         Ok(())
     }
 
@@ -1645,6 +1761,10 @@ impl ServingController {
             .expect("Remote client lock is not poisoned")
             .remove(name);
         self.note_pairing_change();
+        if removed.offer.is_some() {
+            self.retire_bound_tokens(&removed.public_key);
+            self.offers_changed();
+        }
         Ok(())
     }
 
@@ -2165,6 +2285,9 @@ impl ServingController {
             let Ok((_, response)) = answer else {
                 return Err(Followed::Lost);
             };
+            if response.status() == StatusCode::UNAUTHORIZED {
+                self.refused_by(remote);
+            }
             if !response.status().is_success() {
                 return Err(Followed::Refused);
             }
@@ -2173,14 +2296,15 @@ impl ServingController {
             Ok((told, relays))
         })
         .await;
-        let (mut told, relays) = match first {
+        let (mut told, said) = match first {
             Ok(Ok(first)) => first,
             Ok(Err(followed)) => return followed,
             Err(_) => return Followed::Lost,
         };
-        if !self.take_up_told(remote, held, &relays) {
+        if !self.take_up_told(remote, held, &said.relays) {
             return Followed::LetGo;
         }
+        self.take_up_told_offer(remote, &client, said.offer);
         drop(client);
         let mut pairings = self.pairing_changes();
         loop {
@@ -2192,8 +2316,12 @@ impl ServingController {
                         return Followed::LetGo;
                     }
                 }
-                relays = told.next() => match relays {
-                    Ok(relays) if self.take_up_told(remote, held, &relays) => {}
+                said = told.next() => match said {
+                    Ok(said) if self.take_up_told(remote, held, &said.relays) => {
+                        if let Some(client) = held.upgrade() {
+                            self.take_up_told_offer(remote, &client, said.offer);
+                        }
+                    }
                     Ok(_) => return Followed::LetGo,
                     Err(followed) => return followed,
                 },
@@ -2383,6 +2511,7 @@ impl ServingController {
                     }
                 }
                 Ok(response) if response.status() == StatusCode::UNAUTHORIZED => {
+                    self.refused_by(remote);
                     WayAttempt::Rejected(PairingFailure::new(
                         SessionErrorCode::PairingAuthenticationFailed,
                         "Remote refused this Server's key",
@@ -2464,6 +2593,7 @@ impl ServingController {
     ) -> std::result::Result<Response, PairingFailure> {
         if response.status() == StatusCode::UNAUTHORIZED {
             self.record_remote_connection(remote, RemoteStatus::Revoked, way);
+            self.refused_by(remote);
             return Err(PairingFailure::new(
                 SessionErrorCode::PairingAuthenticationFailed,
                 "Remote refused this Server's key",
@@ -2548,6 +2678,7 @@ impl ServingController {
         &self,
         remote: &Remote,
         public_key: &[u8],
+        offer: Option<StoredMadeOffer>,
     ) -> std::result::Result<(), PairingFailure> {
         let mut remotes = self
             .remotes
@@ -2561,6 +2692,7 @@ impl ServingController {
             public_key: public_key.to_vec(),
             answered: Vec::new(),
             generation: self.pairings_made.fetch_add(1, Ordering::AcqRel) + 1,
+            offer,
         });
         if let Err(error) = write_private_json(&self.data_dir.join(REMOTES_FILE), &*remotes) {
             remotes.pop();
@@ -2568,6 +2700,7 @@ impl ServingController {
         }
         drop(remotes);
         self.note_pairing_change();
+        self.offers_changed();
         Ok(())
     }
 
@@ -2582,9 +2715,25 @@ impl ServingController {
         let _ = write_private_json(&self.data_dir.join(REMOTES_FILE), &*remotes);
         drop(remotes);
         self.note_pairing_change();
+        self.offers_changed();
     }
 
     fn enroll(
+        &self,
+        request: EnrollmentRequest,
+        public_key: Vec<u8>,
+    ) -> std::result::Result<(), PairingFailure> {
+        let commits = matches!(request.phase, EnrollmentPhase::Commit);
+        self.enroll_holding_ledger(request, public_key)?;
+        // With the ledger let go, since telling of the offers reads the
+        // Remotes, under which a token is issued.
+        if commits {
+            self.offers_changed();
+        }
+        Ok(())
+    }
+
+    fn enroll_holding_ledger(
         &self,
         request: EnrollmentRequest,
         public_key: Vec<u8>,
@@ -2596,14 +2745,21 @@ impl ServingController {
             ));
         }
         let token = decode_token(&request.token)?;
+        // A Remote of this very key already reaches back, so no offer is held.
+        let offer = request
+            .offer
+            .filter(|_| !self.holds_remote_of(&public_key))
+            .map(StoredHeldOffer::taken);
         let mut invites = self
             .invites
             .lock()
             .expect("Invite ledger lock is not poisoned");
+        // A key a token is not bound to is told what any unknown token is, and
+        // changes nothing of it: only the key it names can spend it.
         let Some(issued) = invites
             .issued
             .iter_mut()
-            .find(|issued| bool::from(issued.token.ct_eq(&token)))
+            .find(|issued| bool::from(issued.token.ct_eq(&token)) && issued.admits(&public_key))
         else {
             return Err(PairingFailure::new(
                 SessionErrorCode::InviteSpent,
@@ -2652,20 +2808,25 @@ impl ServingController {
             others.iter().map(String::as_str),
         );
         let previous_peers = peers.clone();
+        // Enrolling again is another ceremony, and another Pairing: whatever
+        // offer the last made gives way to what this one makes, if anything.
         if let Some(existing) = peers.iter_mut().find(|peer| peer.id == id) {
             existing.public_key = public_key;
             existing.name = name;
+            existing.offer = offer;
         } else {
             peers.push(StoredPeer {
                 id: id.clone(),
                 public_key,
                 name,
+                offer,
             });
         }
         if let Err(error) = write_private_json(&self.data_dir.join(PEERS_FILE), &*peers) {
             *peers = previous_peers;
             return Err(internal_pairing_failure(error));
         }
+        drop(peers);
         // A key's revocation stands until it is revoked, so the connections
         // that answer to it — those kept across a withdrawal among them —
         // answer to it however often the key enrolls again; only a removed
@@ -2700,7 +2861,11 @@ impl ServingController {
             tracing::warn!("could not persist revoked Peer tombstones: {error:#}");
         }
         issued.state = TokenState::Spent;
-        self.short_codes.redeemed(&issued.token);
+        // A token bound to one key never had a short code, and a code that
+        // stands for another Invite stays as it was.
+        if issued.bound_to.is_none() {
+            self.short_codes.redeemed(&issued.token);
+        }
         Ok(())
     }
 }
@@ -2889,6 +3054,11 @@ async fn serve(
         .route("/v1/pairing/enroll", post(enroll_peer))
         .route(PAIRING_WITHDRAWAL_PATH, post(withdraw_peer))
         .route(OFFERED_RELAYS_PATH, get(tell_offered_relays))
+        .route(
+            OFFER_PATH,
+            post(take_offer_word)
+                .layer(axum::extract::DefaultBodyLimit::max(PAIRING_ANSWER_BUDGET)),
+        )
         .route("/v1/pairing/proxy/{*path}", any(forward_peer_api))
         .with_state(state);
     loop {
@@ -3734,22 +3904,36 @@ async fn tell_offered_relays(
         return refusal.response();
     }
     let offered = state.controller.offered_relays.subscribe();
+    let offers = state.controller.pair_back.tellings();
     let telling = stream::unfold(
-        (offered, state.controller, peer_key, true),
-        |(mut offered, controller, peer_key, first)| async move {
-            if !first && offered.changed().await.is_err() {
-                return None;
+        (offered, offers, state.controller, peer_key, None),
+        |(mut offered, mut offers, controller, peer_key, mut last)| async move {
+            loop {
+                if last.is_some() {
+                    tokio::select! {
+                        changed = offered.changed() => changed.ok()?,
+                        changed = offers.changed() => changed.ok()?,
+                    }
+                }
+                // A Peer removed or withdrawn since is told nothing more.
+                if !controller.is_enrolled_peer(&peer_key) {
+                    return None;
+                }
+                let telling = OfferedRelays {
+                    relays: offered.borrow_and_update().clone(),
+                    offer: controller.told_offer(&peer_key),
+                };
+                offers.borrow_and_update();
+                let said = serde_json::to_vec(&telling).expect("Relays told always encode");
+                if last.as_ref() == Some(&said) {
+                    continue;
+                }
+                last = Some(said.clone());
+                let mut told = said;
+                told.push(b'\n');
+                let told = Ok::<_, std::convert::Infallible>(Bytes::from(told));
+                return Some((told, (offered, offers, controller, peer_key, last)));
             }
-            // A Peer removed or withdrawn since is told nothing more.
-            if !controller.is_enrolled_peer(&peer_key) {
-                return None;
-            }
-            let relays = offered.borrow_and_update().clone();
-            let mut told =
-                serde_json::to_vec(&OfferedRelays { relays }).expect("Relays told always encode");
-            told.push(b'\n');
-            let told = Ok::<_, std::convert::Infallible>(Bytes::from(told));
-            Some((told, (offered, controller, peer_key, false)))
         },
     );
     (
@@ -4316,7 +4500,7 @@ impl ClientCertVerifier for PinnedPeers {
                 .expect("Invite ledger lock is not poisoned")
                 .issued
                 .iter()
-                .any(|issued| bool::from(issued.token.ct_eq(&token)))
+                .any(|issued| bool::from(issued.token.ct_eq(&token)) && issued.admits(&key))
         });
         // A just-revoked key remains pinned only as a tombstone, allowing the
         // authenticated Serving endpoint to answer 401 on the next health
@@ -5572,9 +5756,9 @@ impl<B: HttpBody<Data = Bytes> + Unpin> Telling<B> {
         }
     }
 
-    /// The Relays told next, once the whole of the telling has come. Let go
-    /// of before then, it loses nothing of what is coming.
-    async fn next(&mut self) -> std::result::Result<Vec<String>, Followed> {
+    /// What is told next, once the whole of the telling has come. Let go of
+    /// before then, it loses nothing of what is coming.
+    async fn next(&mut self) -> std::result::Result<OfferedRelays, Followed> {
         loop {
             // A telling ends within the budget, or not at all.
             let within = self.coming.len().min(PAIRING_ANSWER_BUDGET + 1);
@@ -5597,18 +5781,19 @@ impl<B: HttpBody<Data = Bytes> + Unpin> Telling<B> {
     }
 }
 
-/// The Relays `told` says a Serving Server Serves through, where it says so
-/// as one does: no more than [`MAX_TOLD_RELAYS`] of them, each once, each
-/// address no longer than [`MAX_TOLD_RELAY_LEN`] and written the one way a
-/// Relay's address is.
-fn told_relays(told: &[u8]) -> Option<Vec<String>> {
-    let OfferedRelays { relays } = serde_json::from_slice(told).ok()?;
-    let well_told = relays.len() <= MAX_TOLD_RELAYS
-        && relays.iter().collect::<HashSet<_>>().len() == relays.len()
-        && relays
+/// What `told` says of the Relays a Serving Server Serves through, where it
+/// says so as one does: no more than [`MAX_TOLD_RELAYS`] of them, each once,
+/// each address no longer than [`MAX_TOLD_RELAY_LEN`] and written the one way
+/// a Relay's address is.
+fn told_relays(told: &[u8]) -> Option<OfferedRelays> {
+    let said: OfferedRelays = serde_json::from_slice(told).ok()?;
+    let well_told = said.relays.len() <= MAX_TOLD_RELAYS
+        && said.relays.iter().collect::<HashSet<_>>().len() == said.relays.len()
+        && said
+            .relays
             .iter()
             .all(|relay| relay.len() <= MAX_TOLD_RELAY_LEN && canonical_relay(relay));
-    well_told.then_some(relays)
+    well_told.then_some(said)
 }
 
 /// A Remote's `ways` keeping up with `relays`, the Relays its Serving Server
@@ -5818,6 +6003,24 @@ async fn decode_pairing_response(response: Answer) -> PairingFailure {
             format!("Serving Server refused enrollment with HTTP {status}"),
         ),
     }
+}
+
+/// The Invite offering `ways`, naming `identity`'s key and carrying `token`.
+fn invite_text(
+    ways: &[Way],
+    identity: &IdentityMaterial,
+    token: &[u8; 32],
+) -> std::result::Result<String, PairingFailure> {
+    let payload = InvitePayload {
+        ways: ways.to_vec(),
+        server_key: URL_SAFE_NO_PAD.encode(&identity.public_key),
+        token: URL_SAFE_NO_PAD.encode(token),
+        hostname: machine_hostname(),
+    };
+    let encoded = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).map_err(|_| {
+        internal_pairing_failure(anyhow::anyhow!("could not encode Invite payload"))
+    })?);
+    Ok(format!("{INVITE_OPENING}1-{encoded}"))
 }
 
 fn parse_invite(invite: &str) -> std::result::Result<ParsedInvite, PairingFailure> {
@@ -7246,6 +7449,7 @@ mod tests {
     fn only_relays_told_as_a_serving_server_tells_them_are_taken_up() {
         let told = |relays: serde_json::Value| {
             told_relays(&serde_json::to_vec(&serde_json::json!({ "relays": relays })).unwrap())
+                .map(|said| said.relays)
         };
         assert_eq!(
             told(serde_json::json!(["https://relay.example.com"])),
@@ -7286,11 +7490,11 @@ mod tests {
         );
         assert_eq!(told(serde_json::json!([long])), None, "too long an address");
         assert_eq!(
-            told_relays(br#"{"relays":[],"ways":["192.0.2.1:7000"]}"#),
+            told_relays(br#"{"relays":[],"ways":["192.0.2.1:7000"]}"#).map(|said| said.relays),
             None,
             "nothing but Relays is taken up"
         );
-        assert_eq!(told_relays(b"not what a Serving Server says"), None);
+        assert!(told_relays(b"not what a Serving Server says").is_none());
     }
 
     /// Nothing a Serving Server tells of its Relays is taken in past the
@@ -7314,7 +7518,8 @@ mod tests {
             telling(vec![first.to_vec(), rest.to_vec()])
                 .next()
                 .await
-                .ok(),
+                .ok()
+                .map(|said| said.relays),
             Some(vec!["https://relay.example.com".to_owned()]),
             "a telling as long as the budget, in two pieces"
         );
@@ -7406,6 +7611,7 @@ mod tests {
                 id: "ab12cd34ef567890".to_owned(),
                 public_key: public_key.clone(),
                 name: "laptop".to_owned(),
+                offer: None,
             });
         let state = ServingState {
             controller: controller.clone(),
@@ -7656,6 +7862,7 @@ mod tests {
             public_key: Vec::new(),
             answered: Vec::new(),
             generation: 0,
+            offer: None,
         };
         let client = Arc::new(
             paired_http_client(
@@ -7819,6 +8026,7 @@ mod tests {
                 invite: invite.clone(),
                 name: Some("workstation".to_owned()),
                 ways: Vec::new(),
+                pair_back: false,
             })
         };
         let failure = redeem()

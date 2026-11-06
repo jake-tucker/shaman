@@ -306,6 +306,13 @@ pub struct ServerTimings {
     /// change is kept up with at once, and stored once this has passed, or
     /// as the Server stops.
     pub told_relays_store_interval: Duration,
+    /// How long a token issued for an offer to pair back lives: long enough
+    /// for the machine it is bound to to redeem it, since it is issued only as
+    /// it is about to be spent, and retired however that ends.
+    pub pair_back_invite_ttl: Duration,
+    /// How soon, at the least, an accepted offer whose last try came to
+    /// nothing is tried again, on either side, while the two are connected.
+    pub pair_back_retry_interval: Duration,
     /// Server-to-Server protocol version, injectable for compatibility tests.
     pub pairing_protocol_version: u32,
     /// Which proxy, if any, each direct way of a Remote is dialled through:
@@ -427,6 +434,8 @@ impl Default for ServerTimings {
             remote_report_poll_interval: Duration::from_secs(5),
             remote_report_wake_grace: Duration::from_secs(60),
             told_relays_store_interval: Duration::from_secs(5),
+            pair_back_invite_ttl: Duration::from_secs(2 * 60),
+            pair_back_retry_interval: Duration::from_secs(60),
             pairing_protocol_version: PROTOCOL_VERSION,
             direct_proxies: DirectProxies::from_environment(),
             identity_store_timeout: crate::serving::IDENTITY_STORE_TIMEOUT,
@@ -530,6 +539,14 @@ impl ServerTimings {
     /// waiting out the default.
     pub fn with_serving_handshake_timeout(mut self, timeout: Duration) -> Self {
         self.serving_handshake_timeout = timeout;
+        self
+    }
+
+    /// Sets how soon an accepted offer whose last try came to nothing is tried
+    /// again; injectable so tests see it tried again without waiting out the
+    /// default.
+    pub fn with_pair_back_retry_interval(mut self, interval: Duration) -> Self {
+        self.pair_back_retry_interval = interval;
         self
     }
 
@@ -1641,6 +1658,10 @@ async fn start(
     .with_direct_idle_timeout(timings.direct_idle_timeout)
     .with_direct_retry_interval(timings.direct_retry_interval)
     .with_told_relays_store_interval(timings.told_relays_store_interval)
+    .with_pair_back_timings(
+        timings.pair_back_invite_ttl,
+        timings.pair_back_retry_interval,
+    )
     .with_joined_keepalive(crate::serving::JoinedKeepalive {
         interval: timings.joined_stream_keepalive_interval,
         timeout: timings.joined_stream_keepalive_timeout,
@@ -2007,6 +2028,13 @@ async fn start(
             "/v1/remotes/{name}/{*path}",
             axum::routing::any(proxy_remote),
         )
+        .route("/v1/pairing/offers", get(list_offers))
+        .route(
+            "/v1/pairing/offers/{id}",
+            axum::routing::delete(withdraw_offer),
+        )
+        .route("/v1/pairing/offers/{id}/answer", post(answer_offer))
+        .route("/v1/pairing/offers/{id}/notice", post(claim_offer_notice))
         .route("/v1/pairing/peers", get(list_peers))
         .route(
             "/v1/pairing/peers/{peer_id}",
@@ -2374,6 +2402,7 @@ async fn events(State(state): State<AppState>, headers: HeaderMap) -> Response {
         ServingEvents {
             listener: state.serving.listener(),
             short_code: state.serving.short_code_standing(),
+            offers: state.serving.offers(),
         },
         state.onboarded.subscribe(),
         state.timings.sse_keepalive_interval,
@@ -2385,6 +2414,7 @@ async fn events(State(state): State<AppState>, headers: HeaderMap) -> Response {
 struct ServingEvents {
     listener: watch::Receiver<ListenerState>,
     short_code: watch::Receiver<ShortCodeStanding>,
+    offers: watch::Receiver<crate::protocol::PairBackOffers>,
 }
 
 struct EventStreamState {
@@ -2398,6 +2428,7 @@ struct EventStreamState {
     relays: watch::Receiver<RelayListing>,
     listener: watch::Receiver<ListenerState>,
     short_code: watch::Receiver<ShortCodeStanding>,
+    offers: watch::Receiver<crate::protocol::PairBackOffers>,
     onboarded: watch::Receiver<bool>,
     keepalive: tokio::time::Interval,
     finished: bool,
@@ -2415,6 +2446,13 @@ fn short_code_event(standing: &ShortCodeStanding) -> Event {
         .event(SHORT_CODE_EVENT)
         .json_data(standing)
         .expect("how a short code stands always serializes")
+}
+
+fn offers_event(offers: &crate::protocol::PairBackOffers) -> Event {
+    Event::default()
+        .event(crate::protocol::PAIR_BACK_EVENT)
+        .json_data(offers)
+        .expect("offers to pair back always serialize")
 }
 
 fn onboarded_event(onboarded: bool) -> Event {
@@ -2439,6 +2477,7 @@ fn event_stream(
     ServingEvents {
         mut listener,
         mut short_code,
+        mut offers,
     }: ServingEvents,
     mut onboarded: watch::Receiver<bool>,
     keepalive_interval: Duration,
@@ -2467,6 +2506,10 @@ fn event_stream(
         let standing = short_code.borrow_and_update();
         (standing.serial > 0).then(|| short_code_event(&standing))
     };
+    // The offers to pair back it holds and has made follow, and then each
+    // change of them, for as long as they stand, whichever Client is first
+    // to hear of them.
+    let offering = offers_event(&offers.borrow_and_update());
     // Whether the Server has been onboarded comes last, and then each change
     // of it. A Client read it in its health before the stream opened, so
     // another Client may have marked the Server between the two: what the
@@ -2491,6 +2534,9 @@ fn event_stream(
         short_code_standing.map(Ok::<_, std::convert::Infallible>),
     ))
     .chain(stream::once(async move {
+        Ok::<_, std::convert::Infallible>(offering)
+    }))
+    .chain(stream::once(async move {
         Ok::<_, std::convert::Infallible>(onboarding)
     }));
     let state = EventStreamState {
@@ -2502,6 +2548,7 @@ fn event_stream(
         relays,
         listener,
         short_code,
+        offers,
         onboarded,
         keepalive: tokio::time::interval_at(
             Instant::now() + keepalive_interval,
@@ -2555,6 +2602,13 @@ fn event_stream(
                         return None;
                     }
                     let event = relays_event(&state.relays.borrow_and_update());
+                    return Some((Ok::<_, std::convert::Infallible>(event), state));
+                }
+                changed = state.offers.changed() => {
+                    if changed.is_err() {
+                        return None;
+                    }
+                    let event = offers_event(&state.offers.borrow_and_update());
                     return Some((Ok::<_, std::convert::Infallible>(event), state));
                 }
                 changed = state.short_code.changed() => {
@@ -2801,6 +2855,74 @@ async fn remove_peer(
         return StatusCode::UNAUTHORIZED.into_response();
     }
     match state.serving.remove_peer(&peer_id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => pairing_error_response(error),
+    }
+}
+
+/// The offers to pair back this Server holds and has made, as it tells its
+/// Clients of them.
+async fn list_offers(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !is_authenticated(&headers, &state.descriptor.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    Json(state.serving.offers().borrow().clone()).into_response()
+}
+
+/// This Server's user answers an offer a Peer made it.
+async fn answer_offer(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    request: Request,
+) -> Response {
+    let answer = match decode_session_command::<crate::protocol::AnswerOfferRequest>(
+        &state,
+        request,
+        "Offer answer",
+    )
+    .await
+    {
+        Ok(answer) => answer,
+        Err(response) => return response,
+    };
+    match state.serving.answer_offer(id, answer) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => pairing_error_response(error),
+    }
+}
+
+/// Gives the Client asking the Notice of an offer, where none has had it.
+async fn claim_offer_notice(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    request: Request,
+) -> Response {
+    let claim = match decode_session_command::<crate::protocol::OfferNoticeClaim>(
+        &state,
+        request,
+        "Offer Notice claim",
+    )
+    .await
+    {
+        Ok(claim) => claim,
+        Err(response) => return response,
+    };
+    match state.serving.claim_offer_notice(id, claim.claimant) {
+        Ok(claimed) => Json(crate::protocol::OfferNoticeClaimed { claimed }).into_response(),
+        Err(error) => pairing_error_response(error),
+    }
+}
+
+/// This Server's user withdraws an offer it made a Remote.
+async fn withdraw_offer(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<Uuid>,
+) -> Response {
+    if !is_authenticated(&headers, &state.descriptor.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    match state.serving.withdraw_offer(id) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => pairing_error_response(error),
     }
@@ -5414,6 +5536,7 @@ mod tests {
         });
         let (listener, _) = watch::channel(ListenerState::Off);
         let (short_code, _) = watch::channel(ShortCodeStanding::default());
+        let (offers, _) = watch::channel(crate::protocol::PairBackOffers::default());
         let (onboarded, _) = watch::channel(true);
         let first = event_stream(
             shutdown.subscribe(),
@@ -5423,6 +5546,7 @@ mod tests {
             ServingEvents {
                 listener: listener.subscribe(),
                 short_code: short_code.subscribe(),
+                offers: offers.subscribe(),
             },
             onboarded.subscribe(),
             Duration::from_secs(60),
@@ -5435,6 +5559,7 @@ mod tests {
             ServingEvents {
                 listener: listener.subscribe(),
                 short_code: short_code.subscribe(),
+                offers: offers.subscribe(),
             },
             onboarded.subscribe(),
             Duration::from_secs(60),

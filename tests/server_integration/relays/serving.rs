@@ -141,6 +141,7 @@ impl TestServer {
                 invite: invite.invite,
                 name: Some("workstation".to_owned()),
                 ways: Vec::new(),
+                pair_back: false,
             })
             .await
             .expect("form a Pairing");
@@ -301,9 +302,37 @@ impl Multiplexed {
         Ok(Self { sender, running })
     }
 
+    /// Asks `request` of the Serving Server: the status it answers, and the
+    /// first line of what it goes on saying.
+    pub(super) async fn ask_first_line(
+        &mut self,
+        request: hyper::Request<Full<axum::body::Bytes>>,
+    ) -> (StatusCode, Vec<u8>) {
+        let asking = async {
+            self.sender.ready().await.unwrap();
+            let answer = self.sender.send_request(request).await.unwrap();
+            let status = answer.status();
+            let mut body = answer.into_body();
+            let mut said = Vec::new();
+            while let Some(frame) = body.frame().await {
+                if let Ok(data) = frame.unwrap().into_data() {
+                    said.extend_from_slice(&data);
+                }
+                if let Some(end) = said.iter().position(|byte| *byte == b'\n') {
+                    said.truncate(end);
+                    break;
+                }
+            }
+            (status, said)
+        };
+        timeout(PROGRESS_DEADLINE, asking)
+            .await
+            .expect("the Serving Server says something in time")
+    }
+
     /// Asks `request` of the Serving Server: the status it answers, and what
     /// it says.
-    async fn ask(
+    pub(super) async fn ask(
         &mut self,
         request: hyper::Request<Full<axum::body::Bytes>>,
     ) -> std::io::Result<(StatusCode, axum::body::Bytes)> {

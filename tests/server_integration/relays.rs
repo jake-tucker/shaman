@@ -41,6 +41,8 @@ mod intake;
 mod offering;
 #[path = "relays/operator.rs"]
 mod operator;
+#[path = "relays/pair_back.rs"]
+mod pair_back;
 #[path = "relays/pairing.rs"]
 mod pairing;
 #[path = "relays/serving.rs"]

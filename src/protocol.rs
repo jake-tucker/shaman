@@ -13,8 +13,9 @@ use uuid::Uuid;
 mod workspace_paths;
 pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths};
 
-pub const PROTOCOL_VERSION: u32 = 108;
+pub const PROTOCOL_VERSION: u32 = 109;
 mod attachment;
+mod pair_back;
 mod reading;
 mod relay;
 mod short_code;
@@ -27,6 +28,7 @@ pub use crate::questionnaire::{
     QuestionnaireSubmission,
 };
 pub use attachment::*;
+pub use pair_back::*;
 pub use reading::*;
 pub use relay::*;
 pub use short_code::*;
@@ -2120,6 +2122,10 @@ pub struct RedeemInviteRequest {
     pub invite: InviteText,
     pub name: Option<String>,
     pub ways: Vec<Way>,
+    /// Whether the ceremony also offers to let the Serving Server reach this
+    /// one, as a Pairing of its own, should its user accept (ADR-0066).
+    #[serde(default)]
+    pub pair_back: bool,
 }
 
 /// A durable paired Serving Server as the connecting Server knows it.
@@ -5813,6 +5819,11 @@ pub enum SessionErrorCode {
     ShortCodeBeingTried,
     /// A short code delivered an Invite naming another key than the machine's.
     ShortCodeKeyMismatch,
+    /// This Server could not offer to pair back as asked: it has no way to
+    /// offer, or the other machine can reach it already.
+    PairBackNotOfferable,
+    /// No offer to pair back stands under the id asked of.
+    OfferNotFound,
     InvalidRemoteName,
     RemoteNameConflict,
     RemoteNotFound,

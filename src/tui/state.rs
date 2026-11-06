@@ -862,6 +862,9 @@ pub struct TuiState {
     pub(super) serving_listener: ListenerState,
     /// How the Server's latest short code stands, as it last said.
     pub(super) short_code: crate::protocol::ShortCodeStanding,
+    /// The offers to pair back the Client's own Server holds and has made, as
+    /// it last said.
+    pub(super) offers: crate::protocol::PairBackOffers,
     pub(super) relay_overlay: RelayOverlay,
     pub(super) context_overlay: ContextOverlay,
     /// The Usage Metrics view, drawn over the whole frame while it is open.
@@ -1179,6 +1182,7 @@ impl TuiState {
             serve_overlay: ServeOverlay::default(),
             serving_listener: ListenerState::default(),
             short_code: crate::protocol::ShortCodeStanding::default(),
+            offers: crate::protocol::PairBackOffers::default(),
             relay_overlay: RelayOverlay::default(),
             context_overlay: ContextOverlay::default(),
             metrics_view: MetricsView::default(),
@@ -2386,6 +2390,10 @@ impl TuiState {
     /// may be anywhere in this Client to hear of. The Server stops saying so
     /// once the Invite has ended, so a Client attaching later hears nothing of
     /// what can no longer be put right, and a Client hears of each code once.
+    fn receive_offers(&mut self, offers: crate::protocol::PairBackOffers) {
+        self.offers = offers;
+    }
+
     fn receive_short_code(&mut self, standing: crate::protocol::ShortCodeStanding) {
         if standing.state.burned() {
             self.application_notice
@@ -2700,6 +2708,7 @@ impl TuiState {
             ManagedEvent::Relays(listing) => self.receive_relays(listing),
             ManagedEvent::ServingListener(state) => self.serving_listener = state,
             ManagedEvent::ShortCode(standing) => self.receive_short_code(standing),
+            ManagedEvent::PairBack(offers) => self.receive_offers(offers),
             ManagedEvent::RemoteFailed { message, .. } => self.settle_remote_failure(message),
             ManagedEvent::ServerShutdown(shutdown) => {
                 self.stop_opening_loading();
@@ -2884,6 +2893,7 @@ impl TuiState {
             | ManagedEvent::Relays(_)
             | ManagedEvent::ServingListener(_)
             | ManagedEvent::ShortCode(_)
+            | ManagedEvent::PairBack(_)
             | ManagedEvent::Onboarded(_)
             | ManagedEvent::WorkspaceListing(_)
             | ManagedEvent::RemoteRecovered
@@ -2966,6 +2976,7 @@ impl TuiState {
             | ManagedEvent::Relays(_)
             | ManagedEvent::ServingListener(_)
             | ManagedEvent::ShortCode(_)
+            | ManagedEvent::PairBack(_)
             | ManagedEvent::Onboarded(_)
             | ManagedEvent::WorkspaceListing(_)
             | ManagedEvent::RemoteRecovered

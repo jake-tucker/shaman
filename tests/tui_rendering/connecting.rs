@@ -1500,6 +1500,7 @@ fn remote_name_is_editable_and_ways_are_redeemed_in_the_visible_priority_order()
             invite: "suru-v1-example".into(),
             name: Some("desktop".to_owned()),
             ways: vec![preferred, first],
+            pair_back: false,
         }
     );
 }
@@ -1837,6 +1838,7 @@ fn the_priority_order_is_reorderable_before_the_keys_reach_the_address_list() {
                 Way::Direct("10.0.0.8:7777".parse().unwrap()),
                 Way::Direct("192.168.1.24:7777".parse().unwrap())
             ],
+            pair_back: false,
         }
     );
 }

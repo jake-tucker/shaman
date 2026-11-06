@@ -250,6 +250,9 @@ pub enum ManagedEvent {
     /// How the Server's latest short code stands, as it connects and again
     /// whenever that changes. Never the code.
     ShortCode(crate::protocol::ShortCodeStanding),
+    /// The offers to pair back the Server holds and has made, as it connects
+    /// and again whenever they change.
+    PairBack(crate::protocol::PairBackOffers),
     /// The Server's Workspace listing, as its `GET /v1/workspaces` answers
     /// it: pushed on its Session catalog stream after the Model Catalog on
     /// every connect, and again whenever what it lists moves (ADR 0052), so
@@ -666,6 +669,34 @@ impl ManagedClient {
     /// the Outlook is turned, as they stand at the listing's revision.
     pub async fn list_relays(&self) -> Result<RelayListing> {
         self.session_commands().list_relays().await
+    }
+
+    /// The offers to pair back the Client's own Server holds and has made.
+    pub async fn list_offers(&self) -> Result<crate::protocol::PairBackOffers> {
+        self.session_commands().list_offers().await
+    }
+
+    /// Answers an offer the Client's own Server holds, as its user.
+    pub async fn answer_offer(
+        &self,
+        id: uuid::Uuid,
+        answer: crate::protocol::AnswerOfferRequest,
+    ) -> Result<()> {
+        self.session_commands().answer_offer(id, answer).await
+    }
+
+    /// Withdraws an offer the Client's own Server made, as its user.
+    pub async fn withdraw_offer(&self, id: uuid::Uuid) -> Result<()> {
+        self.session_commands().withdraw_offer(id).await
+    }
+
+    /// Claims of the Client's own Server, as the Client run `claimant`, the
+    /// Notice of the offer `id`: whether it gave this Client that Notice, to
+    /// raise, as it gives it the first Client to claim it and no other.
+    pub async fn claim_offer_notice(&self, id: uuid::Uuid, claimant: uuid::Uuid) -> Result<bool> {
+        self.session_commands()
+            .claim_offer_notice(id, claimant)
+            .await
     }
 
     /// Claims of the Client's own Server, as the Client run `claimant`, the
@@ -1965,6 +1996,65 @@ impl SessionCommandClient {
             .await
             .context("send Remote removal")?;
         decode_api_response(response, "Remote removal").await
+    }
+
+    pub(crate) async fn list_offers(&self) -> Result<crate::protocol::PairBackOffers> {
+        self.get_pairing_resource("/v1/pairing/offers", "Offer listing")
+            .await
+    }
+
+    pub(crate) async fn answer_offer(
+        &self,
+        id: uuid::Uuid,
+        answer: crate::protocol::AnswerOfferRequest,
+    ) -> Result<()> {
+        let descriptor = self.descriptor.borrow().clone();
+        let response = self
+            .http
+            .post(format!(
+                "{}/v1/pairing/offers/{id}/answer",
+                descriptor.base_url
+            ))
+            .bearer_auth(&descriptor.token)
+            .json(&answer)
+            .send()
+            .await
+            .context("send Offer answer")?;
+        decode_empty_api_response(response, "Offer answer").await
+    }
+
+    pub(crate) async fn withdraw_offer(&self, id: uuid::Uuid) -> Result<()> {
+        let descriptor = self.descriptor.borrow().clone();
+        let response = self
+            .http
+            .delete(format!("{}/v1/pairing/offers/{id}", descriptor.base_url))
+            .bearer_auth(&descriptor.token)
+            .send()
+            .await
+            .context("send Offer withdrawal")?;
+        decode_empty_api_response(response, "Offer withdrawal").await
+    }
+
+    pub(crate) async fn claim_offer_notice(
+        &self,
+        id: uuid::Uuid,
+        claimant: uuid::Uuid,
+    ) -> Result<bool> {
+        let descriptor = self.descriptor.borrow().clone();
+        let response = self
+            .http
+            .post(format!(
+                "{}/v1/pairing/offers/{id}/notice",
+                descriptor.base_url
+            ))
+            .bearer_auth(&descriptor.token)
+            .json(&crate::protocol::OfferNoticeClaim { claimant })
+            .send()
+            .await
+            .context("send Offer Notice claim")?;
+        let claim: crate::protocol::OfferNoticeClaimed =
+            decode_api_response(response, "Offer Notice claim").await?;
+        Ok(claim.claimed)
     }
 
     pub(crate) async fn list_relays(&self) -> Result<RelayListing> {

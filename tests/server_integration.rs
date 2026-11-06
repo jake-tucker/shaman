@@ -926,6 +926,7 @@ async fn two_servers_form_a_pairing_and_reconnect_using_only_their_keys() {
                 Way::Direct(serving_address),
                 Way::Direct(unavailable_address),
             ],
+            pair_back: false,
         })
         .await
         .expect("redeem Invite through the connecting Server");
@@ -963,6 +964,7 @@ async fn two_servers_form_a_pairing_and_reconnect_using_only_their_keys() {
             invite: default_name_invite.invite,
             name: None,
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect("default the Remote name from the Serving hostname");
@@ -979,6 +981,7 @@ async fn two_servers_form_a_pairing_and_reconnect_using_only_their_keys() {
             invite: duplicate_name_invite.invite,
             name: None,
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect_err("a duplicate hostname default is rejected before enrollment commits");
@@ -991,6 +994,7 @@ async fn two_servers_form_a_pairing_and_reconnect_using_only_their_keys() {
             invite: reusable_invite,
             name: Some("other-workstation".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect("a rejected default name neither spends the Invite nor enrolls a Peer");
@@ -1253,6 +1257,7 @@ async fn paired_servers_with(name: &str, options: PairOptions<'_>) -> PairedServ
             invite: invite.invite,
             name: Some("workstation".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect("form Pairing");
@@ -2293,6 +2298,7 @@ async fn catalog_subscriptions_hold_independent_interest_in_two_remotes() {
             invite: invite.invite,
             name: Some("laptop".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect("pair the connecting Server with the laptop");
@@ -3301,6 +3307,7 @@ async fn a_paired_server_protocol_mismatch_is_status_and_refuses_remote_api_use(
             invite: invite.invite,
             name: Some("workstation".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect("form Pairing");
@@ -3457,6 +3464,7 @@ async fn malformed_foreign_superseded_spent_and_expired_invites_have_precise_err
                 invite: invite.into(),
                 name: Some("unused".to_owned()),
                 ways: Vec::new(),
+                pair_back: false,
             })
             .await
             .expect_err("invalid Invite is rejected");
@@ -3480,6 +3488,7 @@ async fn malformed_foreign_superseded_spent_and_expired_invites_have_precise_err
             invite: superseded.invite,
             name: Some("superseded".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect_err("older Invite is superseded");
@@ -3493,6 +3502,7 @@ async fn malformed_foreign_superseded_spent_and_expired_invites_have_precise_err
             invite: live.invite.clone(),
             name: Some("first".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect("first redemption spends Invite");
@@ -3517,6 +3527,7 @@ async fn malformed_foreign_superseded_spent_and_expired_invites_have_precise_err
             invite: live.invite,
             name: Some("second".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect_err("second redemption is rejected");
@@ -3577,6 +3588,7 @@ async fn malformed_foreign_superseded_spent_and_expired_invites_have_precise_err
             invite: expired.invite,
             name: Some("expired".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect_err("expired Invite is rejected");
@@ -3610,6 +3622,7 @@ async fn malformed_foreign_superseded_spent_and_expired_invites_have_precise_err
             invite: incompatible.invite,
             name: Some("incompatible".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect_err("a protocol mismatch refuses the Pairing");
@@ -3723,6 +3736,7 @@ async fn an_invite_offering_no_address_or_one_twice_is_refused_in_the_words_it_a
             invite,
             name: Some("elsewhere".to_owned()),
             ways: vec![Way::Direct(elsewhere.local_addr().unwrap())],
+            pair_back: false,
         })
         .await
         .expect_err("an order naming an address the Invite does not offer is refused");
@@ -3813,6 +3827,7 @@ async fn serving_persistence_failure_does_not_leave_an_authorized_peer() {
             invite: invite.invite,
             name: Some("must-not-pair".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect_err("Serving-side persistence failure aborts enrollment");
@@ -3966,6 +3981,7 @@ async fn removing_a_peer_that_withdrew_and_paired_again_closes_what_it_kept_open
             invite: invite.invite,
             name: Some("workstation".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect("pair the same key again");
@@ -4016,6 +4032,7 @@ async fn removing_a_peer_paired_again_closes_what_it_opened_while_it_was_removed
             invite: invite.invite,
             name: Some("workstation-again".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect("pair the removed key again");
@@ -4057,6 +4074,7 @@ async fn pair_again(pair: &PairedServers, name: &str) {
             invite: invite.invite,
             name: Some(name.to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect("pair the removed key again");
@@ -4197,6 +4215,7 @@ async fn pairing_records_survive_restart_and_removing_the_peer_ends_the_pairing(
             invite: invite.invite,
             name: Some("durable".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect("form Pairing");
@@ -4632,6 +4651,7 @@ async fn an_invite_address_presenting_the_wrong_server_key_fails_closed() {
             invite: invite.invite,
             name: Some("impostor".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect_err("address with the wrong pinned key is refused");
@@ -4815,6 +4835,7 @@ async fn redeeming_an_invite_never_shows_its_token_over_tls_1_2() {
             invite: tls12_only.invite().into(),
             name: Some("workstation".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect_err("a Server speaking TLS 1.2 alone is not paired with");
@@ -4984,6 +5005,7 @@ async fn an_https_proxy_is_sent_nothing_and_its_way_fails() {
             invite: handmade_invite(Way::Direct(way.address), b"the Serving Server's key").into(),
             name: Some("workstation".to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .await
         .expect_err("a way named an `https` proxy is not dialled");

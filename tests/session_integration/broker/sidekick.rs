@@ -76,6 +76,19 @@ pub(super) const SIDEKICK_TOOLS: [&str; 27] = [
     "forget_memory",
 ];
 
+/// A Sidekick can neither make, accept nor withdraw an offer to pair back, nor
+/// touch the Invites and Pairings it rests on: each is a reader's own act on
+/// their own Server, offered by no Tool (ADR-0066). `SIDEKICK_TOOLS` is compared
+/// whole with what a Sidekick is offered wherever it is listed.
+#[test]
+fn no_tool_of_a_sidekicks_has_to_do_with_an_offer_to_pair_back() {
+    for tool in SIDEKICK_TOOLS {
+        for word in ["offer", "pair", "invite", "peer"] {
+            assert!(!tool.contains(word), "{tool} has to do with {word}");
+        }
+    }
+}
+
 /// Asks the Server for its Sidekick Workspace, as `/sidekick` does.
 async fn sidekick_workspace(descriptor: &RuntimeDescriptor) -> ResolvedWorkspace {
     crate::support::loopback_client()

@@ -856,6 +856,7 @@ impl ConnectOverlay {
             invite: draft.invite.clone(),
             name: Some(draft.name.trim().to_owned()),
             ways: draft.ways.clone(),
+            pair_back: false,
         };
         self.logged_in_at = None;
         self.left_login = None;

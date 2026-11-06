@@ -66,6 +66,7 @@ impl TestServer {
                 invite: invite.into(),
                 name: Some(name.to_owned()),
                 ways: Vec::new(),
+                pair_back: false,
             })
             .await
     }

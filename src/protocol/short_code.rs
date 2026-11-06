@@ -322,6 +322,7 @@ mod tests {
                     invite: text.clone(),
                     name: None,
                     ways: Vec::new(),
+                    pair_back: false,
                 }
             ),
         ] {

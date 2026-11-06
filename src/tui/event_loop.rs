@@ -5,7 +5,6 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     future::{Future, pending},
-    net::{IpAddr, SocketAddr, SocketAddrV6},
     ops::ControlFlow,
     path::PathBuf,
     pin::Pin,
@@ -3243,14 +3242,10 @@ fn spawn_serving_preparation(
             } else {
                 None
             };
-            let mut candidates = if_addrs::get_if_addrs()?
+            let candidates = crate::serving::machine_addresses(port)?
                 .into_iter()
-                .filter(if_addrs::Interface::is_oper_up)
-                .filter_map(|interface| invite_candidate(&interface, port))
                 .map(crate::protocol::Way::Direct)
                 .collect::<Vec<_>>();
-            candidates.sort_unstable();
-            candidates.dedup();
             Ok::<_, anyhow::Error>(PairingResult::Prepared {
                 request,
                 settings,
@@ -3264,27 +3259,6 @@ fn spawn_serving_preparation(
         });
         let _ = results.send(result);
     });
-}
-
-fn invite_candidate(interface: &if_addrs::Interface, port: u16) -> Option<SocketAddr> {
-    let address = interface.ip();
-    let is_candidate = match address {
-        IpAddr::V4(address) => {
-            !address.is_loopback() && !address.is_unspecified() && !address.is_multicast()
-        }
-        IpAddr::V6(address) => {
-            !address.is_loopback() && !address.is_unspecified() && !address.is_multicast()
-        }
-    };
-    if !is_candidate {
-        return None;
-    }
-    Some(match address {
-        IpAddr::V6(address) if address.is_unicast_link_local() => {
-            SocketAddr::V6(SocketAddrV6::new(address, port, 0, interface.index?))
-        }
-        address => SocketAddr::new(address, port),
-    })
 }
 
 fn spawn_invite_issuance(

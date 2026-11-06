@@ -1166,6 +1166,7 @@ async fn an_act_whose_answer_is_lost_once_the_remote_took_it_is_neither_denied_n
             invite: invite.invite,
             name: Some(REMOTE.to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .send()
         .await

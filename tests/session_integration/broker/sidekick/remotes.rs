@@ -513,6 +513,7 @@ async fn redeem(own: &RuntimeDescriptor, remote: &Serving, name: &str) -> reqwes
             invite: remote.invite().await.into(),
             name: Some(name.to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         })
         .send()
         .await
@@ -926,6 +927,7 @@ async fn paired_through_relay(channel: &str, timings: ServerTimings) -> (Paired,
             invite: invite.invite,
             name: Some(REMOTE.to_owned()),
             ways: Vec::new(),
+            pair_back: false,
         },
     )
     .await;
