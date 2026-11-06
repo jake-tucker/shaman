@@ -21,6 +21,7 @@ use super::PROGRESS_DEADLINE;
 
 /// A Relay as a test reaches it to speak as a Server: where it listens, and
 /// the address it is known by, which every proof made for it names.
+#[derive(Clone)]
 pub struct RelayVoice {
     pub at: std::net::SocketAddr,
     pub known_as: String,

@@ -1055,7 +1055,7 @@ impl RelayController {
                 if hand_off.stands() {
                     let carried = conversation.carried(self.carrying.stop());
                     self.serving
-                        .accept_carried(carried, hand_off.waited.stretch);
+                        .accept_carried(carried, hand_off.waited.stretch, address);
                 } else {
                     tracing::debug!(
                         "a join was made through a Relay this Server no longer waits at"

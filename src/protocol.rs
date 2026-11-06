@@ -13,10 +13,11 @@ use uuid::Uuid;
 mod workspace_paths;
 pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths};
 
-pub const PROTOCOL_VERSION: u32 = 107;
+pub const PROTOCOL_VERSION: u32 = 108;
 mod attachment;
 mod reading;
 mod relay;
+mod short_code;
 mod source_control;
 mod standing;
 mod usage_metrics;
@@ -28,6 +29,7 @@ pub use crate::questionnaire::{
 pub use attachment::*;
 pub use reading::*;
 pub use relay::*;
+pub use short_code::*;
 pub use source_control::*;
 pub use standing::{SessionStanding, StandingReading};
 pub use usage_metrics::*;
@@ -2034,6 +2036,10 @@ pub struct IssueInviteRequest {
 pub struct IssuedInvite {
     pub invite: String,
     pub ways: Vec<Way>,
+    /// The short code a reader can type in place of carrying `invite`, where
+    /// it offers a Relay; none where it offers direct ways alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short_code: Option<IssuedShortCode>,
 }
 
 /// The non-secret facts a local Client may show before the reader decides to
@@ -5749,6 +5755,12 @@ pub enum SessionErrorCode {
     InviteSpent,
     InviteSuperseded,
     InvalidInviteWays,
+    /// Where a short code was asked for, no code is live: nothing was tried.
+    ShortCodeNotLive,
+    /// A short code's one try was used and delivered nothing.
+    ShortCodeDead,
+    /// A short code delivered an Invite naming another key than the machine's.
+    ShortCodeKeyMismatch,
     InvalidRemoteName,
     RemoteNameConflict,
     RemoteNotFound,

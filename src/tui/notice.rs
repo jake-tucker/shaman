@@ -23,7 +23,7 @@ use ratatui::style::Style;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    protocol::{SettingsDiagnostic, SettingsDiagnosticSeverity},
+    protocol::{SettingsDiagnostic, SettingsDiagnosticSeverity, ShortCodeState},
     theme::{Theme, ThemeDiagnostic},
 };
 
@@ -38,6 +38,9 @@ const LOG_POINTER: &str = "see the Log";
 
 /// Where a reader told a Relay needs a login goes to log in there.
 pub(super) const RELAY_LOGIN_POINTER: &str = "/relay to log in";
+
+/// Where a reader told a short code is dead goes for a new one.
+const NEW_CODE_POINTER: &str = "/serve for a new one";
 
 /// What the Application has to say, and whether the reader has seen it. The
 /// identity of a dismissed Notice keeps that condition from returning without
@@ -138,6 +141,23 @@ impl ApplicationNotice {
             },
             SettingsDiagnosticSeverity::Warning,
             format!("Login needed at {address}"),
+        );
+    }
+
+    /// Reports that an attempt used up the short code numbered `serial`. Each
+    /// code is its own condition, and it says so whichever Client's reader
+    /// issued it, since an attempt they did not make is worth their seeing.
+    pub(super) fn receive_short_code_burned(&mut self, serial: u64, state: ShortCodeState) {
+        let summary = match state {
+            ShortCodeState::LeftUnfinished => {
+                "An attempt on this machine's short code never finished, so the code is dead"
+            }
+            _ => "A wrong short code was tried on this machine, so the code is dead",
+        };
+        self.raise(
+            NoticeIdentity::ShortCodeBurned(serial),
+            SettingsDiagnosticSeverity::Warning,
+            summary.to_owned(),
         );
     }
 
@@ -274,6 +294,8 @@ pub(super) enum NoticeIdentity {
         address: String,
         lapse: Uuid,
     },
+    /// An attempt used up the short code so numbered.
+    ShortCodeBurned(u64),
 }
 
 impl NoticeIdentity {
@@ -491,13 +513,20 @@ impl Notice {
     /// Where the Notice points its reader: at the Log for whatever it keeps
     /// the detail of, and at where to log in for a Relay needing a login.
     fn pointers(&self) -> String {
-        let logged = self
-            .identities()
-            .any(|identity| !matches!(identity, NoticeIdentity::RelayLoginNeeded { .. }));
+        let logged = self.identities().any(|identity| {
+            !matches!(
+                identity,
+                NoticeIdentity::RelayLoginNeeded { .. } | NoticeIdentity::ShortCodeBurned(_)
+            )
+        });
         let relay = !self.relays_needing_login().is_empty();
+        let code = self
+            .identities()
+            .any(|identity| matches!(identity, NoticeIdentity::ShortCodeBurned(_)));
         [
             logged.then_some(LOG_POINTER),
             relay.then_some(RELAY_LOGIN_POINTER),
+            code.then_some(NEW_CODE_POINTER),
         ]
         .into_iter()
         .flatten()

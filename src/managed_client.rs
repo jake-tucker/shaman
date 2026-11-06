@@ -247,6 +247,9 @@ pub enum ManagedEvent {
     /// every connect, and again whenever it changes, so a client offers the
     /// machine's own addresses in an Invite only while the listener listens.
     ServingListener(crate::protocol::ListenerState),
+    /// How the Server's latest short code stands, as it connects and again
+    /// whenever that changes. Never the code.
+    ShortCode(crate::protocol::ShortCodeStanding),
     /// The Server's Workspace listing, as its `GET /v1/workspaces` answers
     /// it: pushed on its Session catalog stream after the Model Catalog on
     /// every connect, and again whenever what it lists moves (ADR 0052), so
@@ -612,6 +615,20 @@ impl ManagedClient {
 
     pub async fn issue_invite(&self, request: IssueInviteRequest) -> Result<IssuedInvite> {
         self.session_commands().issue_invite(request).await
+    }
+
+    /// A fresh short code for the Invite that stands, leaving that Invite as
+    /// it is.
+    pub async fn new_short_code(&self) -> Result<crate::protocol::IssuedShortCode> {
+        self.session_commands().new_short_code().await
+    }
+
+    /// Asks a machine chosen from a Relay's list for its Invite by its code.
+    pub async fn fetch_short_invite(
+        &self,
+        request: crate::protocol::FetchShortInviteRequest,
+    ) -> Result<crate::protocol::DeliveredInvite> {
+        self.session_commands().fetch_short_invite(request).await
     }
 
     pub async fn preview_invite(&self, invite: impl Into<String>) -> Result<InvitePreview> {
@@ -1862,6 +1879,23 @@ impl SessionCommandClient {
     pub(crate) async fn issue_invite(&self, request: IssueInviteRequest) -> Result<IssuedInvite> {
         self.post_session_command("/v1/pairing/invites", &request, "Invite issuance")
             .await
+    }
+
+    pub(crate) async fn new_short_code(&self) -> Result<crate::protocol::IssuedShortCode> {
+        self.post_session_command_without_body("/v1/pairing/invites/short-code", "New short code")
+            .await
+    }
+
+    pub(crate) async fn fetch_short_invite(
+        &self,
+        request: crate::protocol::FetchShortInviteRequest,
+    ) -> Result<crate::protocol::DeliveredInvite> {
+        self.post_session_command(
+            "/v1/pairing/invites/delivery",
+            &request,
+            "Short Invite delivery",
+        )
+        .await
     }
 
     pub(crate) async fn preview_invite(&self, invite: String) -> Result<InvitePreview> {

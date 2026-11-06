@@ -3134,6 +3134,22 @@ async fn refuses_server_administration_to_peers(
             "/v1/relays/https:%2F%2Frelay.example.com/login-needed-notice",
             None,
         ),
+        // A short code is its Server's own: neither a new one nor another
+        // Server's Invite fetched by one is a Peer's to ask for.
+        (
+            reqwest::Method::POST,
+            "/v1/pairing/invites/short-code",
+            None,
+        ),
+        (
+            reqwest::Method::POST,
+            "/v1/pairing/invites/delivery",
+            Some(serde_json::json!({
+                "server_key": "a2V5",
+                "relays": ["https://relay.example.com"],
+                "code": "K7QF2MXP",
+            })),
+        ),
         // The Server's own event stream tells its Clients of its Relays.
         (reqwest::Method::GET, "/v1/events", None),
         // Only a Client's own Server is onboarded, never a Remote.

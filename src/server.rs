@@ -44,15 +44,16 @@ use crate::protocol::{
     RelayListing, Remote, ResolveWorkspaceRequest, RuntimeDescriptor, SERVER_SHUTDOWN_EVENT,
     SERVING_LISTENER_EVENT, SESSION_CATALOG_SNAPSHOT_EVENT, SESSION_CATALOG_UPDATED_EVENT,
     SESSION_ERROR_CODE_HEADER, SESSION_READING_PATH, SESSION_SNAPSHOT_EVENT, SESSION_UPDATED_EVENT,
-    SETTINGS_SNAPSHOT_EVENT, SKILL_CATALOG_UPDATED_EVENT, SUBAGENT_TREE_SNAPSHOT_EVENT,
-    SUBAGENT_TREE_UPDATED_EVENT, ServerIdentity, ServerShutdown, SessionCatalogRevision,
-    SessionChange, SessionError, SessionErrorCode, SessionId, SessionReadingQuery, SessionRevision,
-    SessionTitleProposal, SessionTitleProposalOffer, SessionUpdate, SetSessionIconRequest,
-    SetSessionTitleRequest, SetWorkspaceDescriptionRequest, SetWorkspaceIconRequest,
-    SettingMutation, SettingsSnapshot, SettleSessionRequest, ShutdownReason, SkillCatalog,
-    SkillCatalogRequest, SubagentTreeRevision, SubagentTreeUpdate, TurnId,
-    UpdateAgentSelectionRequest, UpdateApprovalPostureRequest, UsageMetricsQuery,
-    ViewSessionRequest, WORKSPACE_LISTING_EVENT, WorkspaceListing, WorkspaceListingRevision,
+    SETTINGS_SNAPSHOT_EVENT, SHORT_CODE_EVENT, SKILL_CATALOG_UPDATED_EVENT,
+    SUBAGENT_TREE_SNAPSHOT_EVENT, SUBAGENT_TREE_UPDATED_EVENT, ServerIdentity, ServerShutdown,
+    SessionCatalogRevision, SessionChange, SessionError, SessionErrorCode, SessionId,
+    SessionReadingQuery, SessionRevision, SessionTitleProposal, SessionTitleProposalOffer,
+    SessionUpdate, SetSessionIconRequest, SetSessionTitleRequest, SetWorkspaceDescriptionRequest,
+    SetWorkspaceIconRequest, SettingMutation, SettingsSnapshot, SettleSessionRequest,
+    ShortCodeStanding, ShutdownReason, SkillCatalog, SkillCatalogRequest, SubagentTreeRevision,
+    SubagentTreeUpdate, TurnId, UpdateAgentSelectionRequest, UpdateApprovalPostureRequest,
+    UsageMetricsQuery, ViewSessionRequest, WORKSPACE_LISTING_EVENT, WorkspaceListing,
+    WorkspaceListingRevision,
 };
 use crate::provider::{
     ContextBreakdownError, ProviderOrchestrator, ProviderRuntime, ProviderUpdateGate,
@@ -268,6 +269,10 @@ pub struct ServerTimings {
     /// this Server opens to a Remote, through a Relay among them — so a
     /// dialer, a Serving Server or a Relay that never does holds nothing up.
     pub serving_handshake_timeout: Duration,
+    /// How long an exchange delivering an Invite by its short code may take,
+    /// on either side of it, before it is closed. One that took the code before
+    /// that has had its guess.
+    pub short_invite_timeout: Duration,
     /// How long, on each new dial of a Remote, its direct ways are tried
     /// alone before its Relay ways are started beside them, where no direct
     /// way has answered by then and not every one has failed: short enough
@@ -410,6 +415,7 @@ impl Default for ServerTimings {
             remote_watch_limits: RemoteWatchLimits::default(),
             remote_requests_at_once: crate::serving::AWAITED_AT_ONCE,
             serving_handshake_timeout: Duration::from_secs(10),
+            short_invite_timeout: Duration::from_secs(10),
             direct_head_start: Duration::from_millis(250),
             direct_idle_timeout: Duration::from_secs(90),
             direct_retry_interval: Duration::from_secs(5),
@@ -520,6 +526,12 @@ impl ServerTimings {
     /// waiting out the default.
     pub fn with_serving_handshake_timeout(mut self, timeout: Duration) -> Self {
         self.serving_handshake_timeout = timeout;
+        self
+    }
+
+    /// Bounds how long a short Invite's exchange may take before it is closed.
+    pub fn with_short_invite_timeout(mut self, timeout: Duration) -> Self {
+        self.short_invite_timeout = timeout;
         self
     }
 
@@ -1608,6 +1620,7 @@ async fn start(
     )?
     .with_withdrawal_timeout(timings.remote_withdrawal_timeout)
     .with_handshake_timeout(timings.serving_handshake_timeout)
+    .with_short_invite_timeout(timings.short_invite_timeout)
     .with_direct_head_start(timings.direct_head_start)
     .with_awaited_at_once(timings.remote_requests_at_once)
     .with_direct_idle_timeout(timings.direct_idle_timeout)
@@ -1967,6 +1980,8 @@ async fn start(
         .route("/v1/settings", post(mutate_setting))
         .route("/v1/pairing/invites", post(issue_invite))
         .route("/v1/pairing/invites/preview", post(preview_invite))
+        .route("/v1/pairing/invites/short-code", post(new_short_code))
+        .route("/v1/pairing/invites/delivery", post(fetch_short_invite))
         .route("/v1/pairing/remotes", get(list_remotes).post(redeem_invite))
         .route("/v1/pairing/remotes/{name}/health", post(probe_remote))
         .route(
@@ -2341,11 +2356,20 @@ async fn events(State(state): State<AppState>, headers: HeaderMap) -> Response {
         state.settings.subscribe(),
         state.model_catalog.clone(),
         state.relays.subscribe(),
-        state.serving.listener(),
+        ServingEvents {
+            listener: state.serving.listener(),
+            short_code: state.serving.short_code_standing(),
+        },
         state.onboarded.subscribe(),
         state.timings.sse_keepalive_interval,
     ))
     .into_response()
+}
+
+/// What the event stream tells a Client of how Serving stands.
+struct ServingEvents {
+    listener: watch::Receiver<ListenerState>,
+    short_code: watch::Receiver<ShortCodeStanding>,
 }
 
 struct EventStreamState {
@@ -2358,6 +2382,7 @@ struct EventStreamState {
     pushed_catalog: ModelCatalog,
     relays: watch::Receiver<RelayListing>,
     listener: watch::Receiver<ListenerState>,
+    short_code: watch::Receiver<ShortCodeStanding>,
     onboarded: watch::Receiver<bool>,
     keepalive: tokio::time::Interval,
     finished: bool,
@@ -2368,6 +2393,13 @@ fn relays_event(listing: &RelayListing) -> Event {
         .event(RELAYS_EVENT)
         .json_data(listing)
         .expect("Relay listings always serialize")
+}
+
+fn short_code_event(standing: &ShortCodeStanding) -> Event {
+    Event::default()
+        .event(SHORT_CODE_EVENT)
+        .json_data(standing)
+        .expect("how a short code stands always serializes")
 }
 
 fn onboarded_event(onboarded: bool) -> Event {
@@ -2389,7 +2421,10 @@ fn event_stream(
     mut settings: watch::Receiver<SettingsSnapshot>,
     model_catalog: ModelCatalogService,
     mut relays: watch::Receiver<RelayListing>,
-    mut listener: watch::Receiver<ListenerState>,
+    ServingEvents {
+        mut listener,
+        mut short_code,
+    }: ServingEvents,
     mut onboarded: watch::Receiver<bool>,
     keepalive_interval: Duration,
 ) -> impl futures_util::Stream<Item = std::result::Result<Event, std::convert::Infallible>> {
@@ -2410,6 +2445,13 @@ fn event_stream(
     // How the Serving listener stands comes last, and then each change of
     // it, so a Client offers this machine's addresses only while it listens.
     let listening = serving_listener_event(&listener.borrow_and_update());
+    // How its short code stands follows, once one has been issued, and never
+    // the code: a Client attaching after a wrong code was tried still hears of
+    // it.
+    let short_code_standing = {
+        let standing = short_code.borrow_and_update();
+        (standing.serial > 0).then(|| short_code_event(&standing))
+    };
     // Whether the Server has been onboarded comes last, and then each change
     // of it. A Client read it in its health before the stream opened, so
     // another Client may have marked the Server between the two: what the
@@ -2430,6 +2472,9 @@ fn event_stream(
     .chain(stream::once(async move {
         Ok::<_, std::convert::Infallible>(listening)
     }))
+    .chain(stream::iter(
+        short_code_standing.map(Ok::<_, std::convert::Infallible>),
+    ))
     .chain(stream::once(async move {
         Ok::<_, std::convert::Infallible>(onboarding)
     }));
@@ -2441,6 +2486,7 @@ fn event_stream(
         pushed_catalog,
         relays,
         listener,
+        short_code,
         onboarded,
         keepalive: tokio::time::interval_at(
             Instant::now() + keepalive_interval,
@@ -2494,6 +2540,13 @@ fn event_stream(
                         return None;
                     }
                     let event = relays_event(&state.relays.borrow_and_update());
+                    return Some((Ok::<_, std::convert::Infallible>(event), state));
+                }
+                changed = state.short_code.changed() => {
+                    if changed.is_err() {
+                        return None;
+                    }
+                    let event = short_code_event(&state.short_code.borrow_and_update());
                     return Some((Ok::<_, std::convert::Infallible>(event), state));
                 }
                 changed = state.listener.changed() => {
@@ -2599,6 +2652,36 @@ async fn preview_invite(State(state): State<AppState>, request: Request) -> Resp
     };
     match state.serving.preview_invite(&request.invite) {
         Ok(preview) => Json(preview).into_response(),
+        Err(error) => pairing_error_response(error),
+    }
+}
+
+/// A fresh short code for the Invite that stands, in place of its last.
+async fn new_short_code(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !is_authenticated(&headers, &state.descriptor.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    match state.serving.new_short_code() {
+        Ok(issued) => Json(issued).into_response(),
+        Err(error) => pairing_error_response(error),
+    }
+}
+
+/// Asks a machine chosen from a Relay's list for its Invite by the code a
+/// reader typed.
+async fn fetch_short_invite(State(state): State<AppState>, request: Request) -> Response {
+    let request = match decode_session_command::<crate::protocol::FetchShortInviteRequest>(
+        &state,
+        request,
+        "Short Invite delivery",
+    )
+    .await
+    {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    match state.serving.fetch_short_invite(request).await {
+        Ok(delivered) => Json(delivered).into_response(),
         Err(error) => pairing_error_response(error),
     }
 }
@@ -5315,13 +5398,17 @@ mod tests {
             relays: Vec::new(),
         });
         let (listener, _) = watch::channel(ListenerState::Off);
+        let (short_code, _) = watch::channel(ShortCodeStanding::default());
         let (onboarded, _) = watch::channel(true);
         let first = event_stream(
             shutdown.subscribe(),
             settings.subscribe(),
             model_catalog.clone(),
             relays.subscribe(),
-            listener.subscribe(),
+            ServingEvents {
+                listener: listener.subscribe(),
+                short_code: short_code.subscribe(),
+            },
             onboarded.subscribe(),
             Duration::from_secs(60),
         );
@@ -5330,7 +5417,10 @@ mod tests {
             settings.subscribe(),
             model_catalog,
             relays.subscribe(),
-            listener.subscribe(),
+            ServingEvents {
+                listener: listener.subscribe(),
+                short_code: short_code.subscribe(),
+            },
             onboarded.subscribe(),
             Duration::from_secs(60),
         );

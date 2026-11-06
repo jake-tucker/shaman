@@ -45,6 +45,8 @@ mod operator;
 mod pairing;
 #[path = "relays/serving.rs"]
 mod serving;
+#[path = "relays/short_invite.rs"]
+mod short_invite;
 
 /// How often a test's Relay checks its Accounts against its admission rules
 /// again.

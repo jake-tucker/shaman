@@ -361,6 +361,7 @@ fn serve_offers_each_relay_served_through_and_logged_in_at_and_the_invite_carrie
             invite: IssuedInvite {
                 invite: INVITE.to_owned(),
                 ways: vec![Way::Relay(COMPANY.to_owned())],
+                short_code: None,
             },
             peers: Vec::new(),
         })
@@ -648,6 +649,7 @@ fn a_late_invite_lands_nowhere() {
             invite: IssuedInvite {
                 invite: "suru-v1-superseded".to_owned(),
                 ways: vec![direct()],
+                short_code: None,
             },
             peers: Vec::new(),
         })
@@ -3299,6 +3301,7 @@ fn a_adds_a_relay_only_from_the_picker() {
             invite: IssuedInvite {
                 invite: INVITE.to_owned(),
                 ways: vec![direct()],
+                short_code: None,
             },
             peers: Vec::new(),
         })

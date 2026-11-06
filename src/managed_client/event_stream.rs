@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use crate::protocol::{
     ListenerState, MODEL_CATALOG_EVENT, ModelCatalog, ONBOARDED_EVENT, RELAYS_EVENT, RelayListing,
     RuntimeDescriptor, SERVER_SHUTDOWN_EVENT, SERVING_LISTENER_EVENT, SETTINGS_SNAPSHOT_EVENT,
-    ServerShutdown, SettingsSnapshot, ShutdownReason,
+    SHORT_CODE_EVENT, ServerShutdown, SettingsSnapshot, ShortCodeStanding, ShutdownReason,
 };
 
 use super::ManagedEvent;
@@ -83,6 +83,11 @@ fn decode_event(event: Event, expected_instance_id: uuid::Uuid) -> Result<Manage
             let state: ListenerState =
                 serde_json::from_str(&event.data).context("decode the Serving listener's state")?;
             Ok(ManagedEvent::ServingListener(state))
+        }
+        SHORT_CODE_EVENT => {
+            let standing: ShortCodeStanding =
+                serde_json::from_str(&event.data).context("decode how a short code stands")?;
+            Ok(ManagedEvent::ShortCode(standing))
         }
         ONBOARDED_EVENT => {
             let onboarded: bool = serde_json::from_str(&event.data)

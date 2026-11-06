@@ -73,6 +73,7 @@ fn serving_shows_a_fresh_copyable_invite_and_removes_enrolled_peers() {
                     Ipv4Addr::new(10, 0, 0, 8),
                     7777,
                 )))],
+                short_code: None,
             },
             peers: vec![Peer {
                 id: "peer-laptop".to_owned(),
@@ -303,6 +304,7 @@ fn serve_lists_scroll_to_keep_the_focused_candidate_and_peer_fully_visible() {
                     Ipv4Addr::new(10, 0, 0, 20),
                     7777,
                 )))],
+                short_code: None,
             },
             peers,
         })

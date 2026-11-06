@@ -2,7 +2,8 @@
 //! the system's HTTP proxy, and over HTTPS trusting what the machine's trust
 //! store trusts — and writing nothing of its Relays to its Log, however
 //! verbose the Log is asked to be, whether it logs in at them, Serves
-//! through them, or refuses one whose certificate it cannot accept. The proxy
+//! through them, or refuses one whose certificate it cannot accept; nor
+//! anything of a short code delivered through one. The proxy
 //! and the trust store are named in the environment, and the Log is set up
 //! once for the whole process, so this binary holds this one test alone.
 
@@ -11,11 +12,18 @@ use std::{
     time::Duration,
 };
 
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
 use rcgen::PublicKeyData as _;
 use suru::{
     logging::{self, Role},
     managed_client::{ManagedClient, ManagedClientConfig},
-    protocol::{RelayLoginOutcome, RelayState, SettingMutation},
+    protocol::{
+        FetchShortInviteRequest, IssueInviteRequest, RelayLoginOutcome, RelayState,
+        SessionErrorCode, SettingMutation, ShortCode, Way,
+    },
     server::{self, ServerConfig, ServerTimings},
 };
 use suru_relay::{Admission, AdmissionRule, Identity, RelayConfig, ScriptedProvider};
@@ -279,6 +287,89 @@ async fn reach_the_relays(proxy: std::net::TcpListener, trust: TrustedCertificat
         "the Server waits at its Relay, and takes a join up there, through the proxy"
     );
 
+    // A second Server of the same Account, in this process and so writing to
+    // this Log, is delivered an Invite by its short code, and then tries a
+    // wrong one: however verbose the Log, neither the code nor what it could be
+    // searched by reaches it.
+    let redeeming_state = tempfile::tempdir().unwrap();
+    let redeeming_root = tempfile::tempdir().unwrap();
+    let redeeming_server = server::spawn_with_provider_and_timings(
+        ServerConfig::new(redeeming_state.path(), "relay-system-redeeming")
+            .unwrap()
+            .with_config_dir(redeeming_root.path()),
+        Arc::new(support::failing_provider::FailingProviderRuntime),
+        ServerTimings {
+            shutdown_grace: Duration::from_millis(5),
+            ..ServerTimings::default()
+        },
+    )
+    .await
+    .expect("spawn the redeeming Server");
+    let mut redeeming = ManagedClient::connect(
+        ManagedClientConfig::new(redeeming_state.path(), "relay-system-redeeming").unwrap(),
+    )
+    .await
+    .expect("attach a Client to the redeeming Server");
+    receive_initial_state(&mut redeeming).await;
+    redeeming.add_relay(address.clone()).await.unwrap();
+    let redeeming_login = redeeming.begin_relay_login(&address).await.unwrap();
+    assert!(provider.approve(
+        &redeeming_login.user_code,
+        Identity {
+            subject: "583231".to_owned(),
+            username: "octocat".to_owned(),
+        },
+    ));
+    assert!(matches!(
+        redeeming
+            .follow_relay_login(&address)
+            .await
+            .unwrap()
+            .outcome,
+        RelayLoginOutcome::Done { .. }
+    ));
+    let serving_key = URL_SAFE_NO_PAD.encode(identity.subject_public_key_info());
+    let issued = client
+        .issue_invite(IssueInviteRequest {
+            ways: vec![Way::Relay(address.clone())],
+        })
+        .await
+        .unwrap();
+    let live = issued.short_code.expect("the Invite offers a Relay").code;
+    let delivered = redeeming
+        .fetch_short_invite(FetchShortInviteRequest {
+            server_key: serving_key.clone(),
+            relays: vec![address.clone()],
+            code: live.clone(),
+        })
+        .await
+        .expect("the code delivers the Invite through the proxy");
+    assert_eq!(delivered.invite, issued.invite);
+    let burned = client.new_short_code().await.unwrap().code;
+    let attempted = ShortCode::parse(if burned.grouped() == "2222-2222" {
+        "3333-3333"
+    } else {
+        "2222-2222"
+    })
+    .unwrap();
+    let refused = redeeming
+        .fetch_short_invite(FetchShortInviteRequest {
+            server_key: serving_key,
+            relays: vec![address.clone()],
+            code: attempted.clone(),
+        })
+        .await
+        .expect_err("a wrong code delivers nothing");
+    assert_eq!(
+        refused
+            .downcast_ref::<suru::protocol::SessionError>()
+            .map(|error| error.code),
+        Some(SessionErrorCode::ShortCodeDead),
+        "{refused:#}"
+    );
+    drop(redeeming);
+    redeeming_server.shutdown().await.unwrap();
+
     // A Relay on this machine's loopback is reached directly: a proxy
     // elsewhere could not reach it.
     let loopback_route = ObservedTcpProxy::start((std::net::Ipv4Addr::LOCALHOST, 9).into()).await;
@@ -421,6 +512,32 @@ async fn reach_the_relays(proxy: std::net::TcpListener, trust: TrustedCertificat
         .expect("read the Server's Log directory")
         .map(|entry| std::fs::read_to_string(entry.unwrap().path()).unwrap())
         .collect::<String>();
+    for code in [&live, &burned, &attempted] {
+        let grouped = code.grouped();
+        let canonical = grouped.replace('-', "");
+        let hash = ring::digest::digest(&ring::digest::SHA256, canonical.as_bytes());
+        let blake3 = blake3::hash(canonical.as_bytes());
+        for form in [
+            canonical.clone(),
+            grouped.clone(),
+            canonical.to_lowercase(),
+            grouped.to_lowercase(),
+            URL_SAFE_NO_PAD.encode(&canonical),
+            STANDARD.encode(&canonical),
+            URL_SAFE_NO_PAD.encode(hash.as_ref()),
+            STANDARD.encode(hash.as_ref()),
+            hash.as_ref()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+            blake3.to_hex().to_string(),
+        ] {
+            assert!(
+                !logs.contains(&form),
+                "the Server's Log holds nothing of a short code, yet it holds {form:?}"
+            );
+        }
+    }
     for material in [
         PROXIED_HOST,
         login.user_code.as_str(),

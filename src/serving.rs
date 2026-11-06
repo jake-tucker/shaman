@@ -91,19 +91,22 @@ use uuid::Uuid;
 
 use crate::{
     protocol::{
-        ACT_HEADER, AUTHOR_HEADER, ActId, Author, InvitePreview, IssueInviteRequest, IssuedInvite,
-        ListenerState, Peer, RedeemInviteRequest, Remote, RemoteHealth, RemoteRemoval,
-        RemoteStatus, ServingSettings, SessionError, SessionErrorCode, UnreachableReason, Way,
+        ACT_HEADER, AUTHOR_HEADER, ActId, Author, DeliveredInvite, FetchShortInviteRequest,
+        InvitePreview, IssueInviteRequest, IssuedInvite, IssuedShortCode, ListenerState, Peer,
+        RedeemInviteRequest, Remote, RemoteHealth, RemoteRemoval, RemoteStatus, ServingSettings,
+        SessionError, SessionErrorCode, ShortCodeStanding, UnreachableReason, Way,
     },
     runtime::{protect_current_user_file, replace_private_file},
 };
 
 mod identity;
 mod identity_store;
+mod short_invite;
 
 use identity::IdentityMaterial;
+use short_invite::{Attempt, Dead, Opening, Parties, RefusedAtOnce, ShortCodeEntry, ShortCodes};
 
-use crate::shown_text::{composed, fingerprint_prefixes, folded, short_fingerprint, unseen};
+use crate::shown_text::{composed, fingerprint_prefixes, folded, short_fingerprint, shown, unseen};
 pub(crate) use identity::{
     IDENTITY_STORE_TIMEOUT, IdentityKeeping, IdentityKey, IdentityKeyUnavailable,
 };
@@ -345,6 +348,8 @@ pub(crate) struct ServingController {
     /// on either side of it.
     joined_keepalive: JoinedKeepalive,
     invites: Arc<StdMutex<InviteLedger>>,
+    /// The short codes of those Invites, and the exchange that delivers them.
+    short_codes: ShortCodes,
     protocol_version: u32,
     identity: IdentityKey,
     peers: Arc<RwLock<Vec<StoredPeer>>>,
@@ -622,6 +627,8 @@ struct IssuedToken {
     token: [u8; 32],
     expires_at: tokio::time::Instant,
     state: TokenState,
+    /// The short code of an Invite that offers a Relay, until the Invite ends.
+    short: Option<ShortCodeEntry>,
 }
 
 #[derive(Clone, Copy)]
@@ -825,10 +832,13 @@ impl PairingFailure {
 
     pub(crate) fn status(&self) -> StatusCode {
         match self.code {
-            SessionErrorCode::InviteExpired | SessionErrorCode::InviteSpent => StatusCode::GONE,
-            SessionErrorCode::InviteSuperseded | SessionErrorCode::RemoteNameConflict => {
-                StatusCode::CONFLICT
-            }
+            SessionErrorCode::InviteExpired
+            | SessionErrorCode::InviteSpent
+            | SessionErrorCode::ShortCodeDead => StatusCode::GONE,
+            SessionErrorCode::InviteSuperseded
+            | SessionErrorCode::RemoteNameConflict
+            | SessionErrorCode::ShortCodeNotLive => StatusCode::CONFLICT,
+            SessionErrorCode::ShortCodeKeyMismatch => StatusCode::BAD_GATEWAY,
             SessionErrorCode::PairingConnectionFailed
             | SessionErrorCode::PairingAuthenticationFailed
             | SessionErrorCode::PairingOutcomeUnknown => StatusCode::BAD_GATEWAY,
@@ -884,6 +894,7 @@ impl ServingController {
         local_base_url: String,
         local_token: String,
     ) -> Result<Self> {
+        let invites = Arc::new(StdMutex::new(InviteLedger::default()));
         let peers: Vec<StoredPeer> = read_records(&data_dir.join(PEERS_FILE))?;
         let mut revocations = peers
             .iter()
@@ -921,7 +932,11 @@ impl ServingController {
                     timeout: timings.joined_stream_keepalive_timeout,
                 }
             },
-            invites: Arc::new(StdMutex::new(InviteLedger::default())),
+            short_codes: ShortCodes::new(
+                invites.clone(),
+                crate::server::ServerTimings::default().short_invite_timeout,
+            ),
+            invites,
             protocol_version,
             identity: IdentityKey::new(data_dir),
             peers: Arc::new(RwLock::new(peers)),
@@ -959,6 +974,13 @@ impl ServingController {
     /// handshake before it is dropped.
     pub(crate) fn with_handshake_timeout(mut self, timeout: tokio::time::Duration) -> Self {
         self.handshake_timeout = timeout;
+        self
+    }
+
+    /// Bounds how long an exchange delivering an Invite by its short code may
+    /// take, on either side of it, before it is given up.
+    pub(crate) fn with_short_invite_timeout(mut self, timeout: tokio::time::Duration) -> Self {
+        self.short_codes = self.short_codes.within(timeout);
         self
     }
 
@@ -1071,23 +1093,137 @@ impl ServingController {
         let encoded = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).map_err(|_| {
             internal_pairing_failure(anyhow::anyhow!("could not encode Invite payload"))
         })?);
-        let mut invites = self
-            .invites
-            .lock()
-            .expect("Invite ledger lock is not poisoned");
-        for issued in &mut invites.issued {
-            if matches!(issued.state, TokenState::Outstanding) {
-                issued.state = TokenState::Superseded;
+        let invite = format!("suru-v1-{encoded}");
+        let minted = self
+            .short_codes
+            .mint(&invite, &ways)
+            .map_err(|error| internal_pairing_failure(anyhow::Error::new(error)))?;
+        let (short, short_code) = minted.unzip();
+        let expires_at = tokio::time::Instant::now() + self.invite_ttl;
+        {
+            let mut invites = self
+                .invites
+                .lock()
+                .expect("Invite ledger lock is not poisoned");
+            for issued in &mut invites.issued {
+                if matches!(issued.state, TokenState::Outstanding) {
+                    issued.state = TokenState::Superseded;
+                    issued.short = None;
+                }
+            }
+            invites.issued.push(IssuedToken {
+                token,
+                expires_at,
+                state: TokenState::Outstanding,
+                short,
+            });
+            // The Invite before this one ended here, its code with it, and
+            // said so under the same lock as anything an exchange says.
+            match &short_code {
+                Some(short_code) => self.short_codes.announce(short_code.serial),
+                None => self.short_codes.invite_ended(),
             }
         }
-        invites.issued.push(IssuedToken {
-            token,
-            expires_at: tokio::time::Instant::now() + self.invite_ttl,
-            state: TokenState::Outstanding,
-        });
+        if short_code.is_some() {
+            self.short_codes.watch_expiry(token, expires_at);
+        }
         Ok(IssuedInvite {
-            invite: format!("suru-v1-{encoded}"),
+            invite,
             ways,
+            short_code,
+        })
+    }
+
+    /// A fresh short code for the Invite that stands, in place of whatever
+    /// became of the last one. That Invite goes on as it was, its long string
+    /// and its lifetime untouched, so a hostile party burning a code costs a
+    /// reader the code and nothing else.
+    pub(crate) fn new_short_code(&self) -> std::result::Result<IssuedShortCode, PairingFailure> {
+        self.short_codes
+            .replace()
+            .map_err(|(code, message)| PairingFailure::new(code, message))
+    }
+
+    /// How this Server's latest short code stands, moving on as that changes.
+    pub(crate) fn short_code_standing(&self) -> watch::Receiver<ShortCodeStanding> {
+        self.short_codes.standing()
+    }
+
+    /// Asks the machine listed under `request.server_key` for its Invite by the
+    /// code a reader typed: an ordinary Invite to preview and redeem, which
+    /// forms nothing by being delivered.
+    ///
+    /// This is one attempt, and no more than one guess, for each time a reader
+    /// asks. Relay ways are tried in order only up to the point a guess could
+    /// be made: past one whose join failed, before anything of the exchange
+    /// was said, and past one that said at once that it took no guess. From the
+    /// moment any other answer comes, or none does, it ends here whatever came
+    /// of it, and is never tried again of itself: a Relay standing in for the
+    /// machine gets one guess each time, so nothing here gives it another.
+    pub(crate) async fn fetch_short_invite(
+        &self,
+        request: FetchShortInviteRequest,
+    ) -> std::result::Result<DeliveredInvite, PairingFailure> {
+        let listed = URL_SAFE_NO_PAD
+            .decode(&request.server_key)
+            .ok()
+            .filter(|key| !key.is_empty() && key.len() <= 4096)
+            .ok_or_else(|| {
+                PairingFailure::new(
+                    SessionErrorCode::InvalidInvite,
+                    "the machine's key is malformed",
+                )
+            })?;
+        let Some(relays) = self.relays.get() else {
+            return Err(PairingFailure::new(
+                SessionErrorCode::PairingConnectionFailed,
+                "this Server reaches no Relay",
+            ));
+        };
+        let own_key = self.identity.public_key().await.map_err(identity_failure)?;
+        let (interest, wanted) = watch::channel(());
+        let mut refused_at_once = None;
+        let mut join_failure = None;
+        for relay in &request.relays {
+            let mut stream = match relays
+                .join(relay.clone(), listed.clone(), Wanted(wanted.clone()))
+                .await
+            {
+                Ok(stream) => stream,
+                Err(error) => {
+                    join_failure.get_or_insert(error);
+                    continue;
+                }
+            };
+            let attempt = short_invite::redeem(
+                &mut stream,
+                &request.code,
+                Parties {
+                    way: relay,
+                    redeeming: &own_key,
+                    serving: &listed,
+                },
+                self.short_codes.timeout(),
+            )
+            .await;
+            match attempt {
+                Attempt::Delivered(invite) => return delivered(&invite, &listed),
+                Attempt::Dead(why) => return Err(code_dead(why)),
+                Attempt::Refused(refused) => {
+                    // An answer no guess went into: it says the same whoever
+                    // said it, so nothing is lost by going on to the next.
+                    refused_at_once.get_or_insert(refused);
+                }
+            }
+        }
+        drop(interest);
+        Err(match (refused_at_once, join_failure) {
+            (Some(refused), _) => code_refused(refused),
+            (None, Some(error)) => join_failed(&error),
+            (None, None) => PairingFailure::new(
+                SessionErrorCode::PairingConnectionFailed,
+                "no Relay was named to reach the machine through",
+            ),
         })
     }
 
@@ -1592,7 +1728,9 @@ impl ServingController {
     /// connections the listener and the Relays hand it, and another stretch
     /// of Serving for the Relays to wait in.
     async fn start_serving(&self, settings: ServingSettings) -> Result<ActiveServing> {
-        let tls = self.serving_tls(self.identity().await?)?;
+        let identity = self.identity().await?;
+        let own_key = Arc::<[u8]>::from(identity.public_key.as_slice());
+        let tls = self.serving_tls(identity)?;
         let connections = Arc::new(RevocableConnections::default());
         let (dialled, dialled_arrivals) = mpsc::channel(DIALLED_ARRIVALS_QUEUED);
         let (carried, carried_arrivals) = mpsc::channel(CARRIED_ARRIVALS_QUEUED);
@@ -1602,6 +1740,7 @@ impl ServingController {
                 carried_to(carried_arrivals),
             )),
             tls,
+            own_key,
             connections.clone(),
             self.clone(),
         ));
@@ -1727,6 +1866,7 @@ impl ServingController {
         &self,
         stream: impl AsyncRead + AsyncWrite + Send + Unpin + 'static,
         stretch: u64,
+        relay: &str,
     ) {
         let carried = self
             .carried
@@ -1738,6 +1878,7 @@ impl ServingController {
         let arrival = Arrival {
             stream: Box::new(stream),
             from: ArrivedFrom::Relay,
+            relay: Some(relay.to_owned()),
             closes_with: None,
         };
         if carried.is_none_or(|carried| carried.try_send(arrival).is_err()) {
@@ -2398,11 +2539,12 @@ impl ServingController {
     }
 
     fn discard_invites(&self) {
-        self.invites
+        let mut invites = self
+            .invites
             .lock()
-            .expect("Invite ledger lock is not poisoned")
-            .issued
-            .clear();
+            .expect("Invite ledger lock is not poisoned");
+        invites.issued.clear();
+        self.short_codes.invite_ended();
     }
 
     fn persist_remote(
@@ -2561,8 +2703,88 @@ impl ServingController {
             tracing::warn!("could not persist revoked Peer tombstones: {error:#}");
         }
         issued.state = TokenState::Spent;
+        issued.short = None;
+        self.short_codes.invite_ended();
         Ok(())
     }
+}
+
+/// The Invite a short code delivered, where its key is the one listed for the
+/// machine chosen. Both sides bound that key into the exchange, so an honest
+/// pair always agree on this: where they do not, whoever delivered it knew the
+/// code, and the list is what was wrong.
+fn delivered(invite: &str, listed: &[u8]) -> std::result::Result<DeliveredInvite, PairingFailure> {
+    let parsed = parse_invite(invite)?;
+    if parsed.server_key != listed {
+        return Err(PairingFailure::new(
+            SessionErrorCode::ShortCodeKeyMismatch,
+            "The Invite delivered names another key than the one listed for this machine, so it \
+             was refused: the Relay's list was wrong or was lying. Pair by pasting an Invite \
+             instead, and check its fingerprint on the other machine",
+        ));
+    }
+    Ok(DeliveredInvite {
+        invite: invite.to_owned(),
+        preview: InvitePreview {
+            // Believed no more for having been delivered: whoever knew the
+            // code wrote it.
+            hostname: shown(&parsed.hostname, MAX_PEER_NAME_CHARS),
+            fingerprint: fingerprint(&parsed.server_key),
+            ways: parsed.ways,
+        },
+    })
+}
+
+/// What a reader is told of an attempt whose guess is gone. It does not invite
+/// them to type that code again.
+fn code_dead(why: Dead) -> PairingFailure {
+    PairingFailure::new(
+        SessionErrorCode::ShortCodeDead,
+        match why {
+            Dead::Failed => {
+                "That code did not work, and a code gets one try, so it is dead now. Get a new \
+                 one from /serve on the other machine"
+            }
+            Dead::Unfinished => {
+                "The attempt did not finish, and a code gets one try, so count it as dead. Get a \
+                 new one from /serve on the other machine"
+            }
+        },
+    )
+}
+
+/// What a reader is told where the code was refused with no guess made.
+fn code_refused(refused: RefusedAtOnce) -> PairingFailure {
+    match refused {
+        RefusedAtOnce::NoCode => PairingFailure::new(
+            SessionErrorCode::ShortCodeNotLive,
+            "No code is live on that machine for this Relay. Issue an Invite there with /serve",
+        ),
+        RefusedAtOnce::Busy => PairingFailure::new(
+            SessionErrorCode::RemoteBusy,
+            "That machine is taking as many attempts as it takes at once, so yours was not tried \
+             and the code is not used. Try again in a moment",
+        ),
+        RefusedAtOnce::Version | RefusedAtOnce::Malformed => PairingFailure::new(
+            SessionErrorCode::PairingProtocolMismatch,
+            "That machine runs another version of Suru that does not take this code, which is \
+             not used. Pair by pasting an Invite instead",
+        ),
+    }
+}
+
+/// What a reader is told where no Relay would join this Server to the machine,
+/// so nothing of the code was tried.
+fn join_failed(error: &std::io::Error) -> PairingFailure {
+    if let Some(refusal) = relay_refusal(error) {
+        return PairingFailure::refused(refusal.clone());
+    }
+    PairingFailure::new(
+        SessionErrorCode::PairingConnectionFailed,
+        format!(
+            "Could not reach that machine through its Relays, so the code was not tried: {error}"
+        ),
+    )
 }
 
 /// Binds the Serving listener. An IPv6 bind clears `IPV6_V6ONLY` first so the
@@ -2650,12 +2872,15 @@ fn tell(listening: &watch::Sender<ListenerState>, state: ListenerState) {
 async fn serve(
     arrivals: Arrivals,
     tls: ServingTls,
+    own_key: Arc<[u8]>,
     connections: Arc<RevocableConnections>,
     controller: ServingController,
 ) {
     let mut acceptor = PairingAcceptor {
         arrivals: arrivals.fuse(),
         tls,
+        short_codes: controller.short_codes.clone(),
+        own_key,
         handshake_timeout: controller.handshake_timeout,
         handshakes: tokio::task::JoinSet::new(),
         revocations: controller.revocations.clone(),
@@ -3550,6 +3775,11 @@ async fn tell_offered_relays(
 struct Arrival {
     stream: Box<dyn ByteStream>,
     from: ArrivedFrom,
+    /// The address of the Relay that carried it, written the one way, which
+    /// the log does not name (ADR-0008). A connection opening with a short
+    /// Invite's exchange is heard only where this is known, so never one dialled
+    /// to the listener.
+    relay: Option<String>,
     /// What closes the connection beside its Peer's revocation and Serving
     /// stopping: for one dialled to the listener, that listener's stopping.
     closes_with: Option<Arc<ConnectionRevocation>>,
@@ -3587,6 +3817,7 @@ fn dialled_to(listener: TcpListener) -> Arrivals {
                     let arrival = Arrival {
                         stream: Box::new(stream),
                         from: ArrivedFrom::Direct(network_address),
+                        relay: None,
                         closes_with: None,
                     };
                     return Some((arrival, listener));
@@ -3693,6 +3924,10 @@ type Handshake = std::result::Result<
     tokio::time::error::Elapsed,
 >;
 
+/// How one connection's TLS handshake ended, where it came from, and what
+/// closes it beside its Peer's revocation and Serving stopping.
+type HandshakeEnded = (Handshake, ArrivedFrom, Option<Arc<ConnectionRevocation>>);
+
 /// The Serving side's pinned-key acceptor, whatever source a connection
 /// arrives from: each finishes its TLS handshake on its own, within its
 /// handshake timeout, so one that never does — a dialer that says nothing,
@@ -3701,11 +3936,16 @@ type Handshake = std::result::Result<
 struct PairingAcceptor {
     arrivals: stream::Fuse<Arrivals>,
     tls: ServingTls,
+    /// The door for a connection a Relay carried that opens with a short
+    /// Invite's exchange rather than TLS, and this Server's own key to it.
+    short_codes: ShortCodes,
+    own_key: Arc<[u8]>,
     /// How long each connection may take to finish its handshake.
     handshake_timeout: tokio::time::Duration,
     /// Each under way, with where its connection came from and what closes
-    /// it beside its Peer's revocation and Serving stopping.
-    handshakes: tokio::task::JoinSet<(Handshake, ArrivedFrom, Option<Arc<ConnectionRevocation>>)>,
+    /// it beside its Peer's revocation and Serving stopping; or nothing, where
+    /// it opened with the exchange, which is over by then.
+    handshakes: tokio::task::JoinSet<Option<HandshakeEnded>>,
     revocations: Arc<RwLock<HashMap<String, Arc<ConnectionRevocation>>>>,
     awaiting_revocation: AwaitingRevocation,
     connections: Arc<RevocableConnections>,
@@ -3767,11 +4007,31 @@ impl PairingAcceptor {
                 Some(arrival) = self.arrivals.next(), if room => {
                     let acceptor = self.tls.over(arrival.from).clone();
                     let handshake_timeout = self.handshake_timeout;
+                    let short_codes = self.short_codes.clone();
+                    let own_key = self.own_key.clone();
                     self.handshakes.spawn(async move {
-                        let handshake = tokio::time::timeout(
-                            handshake_timeout,
-                            acceptor.accept(arrival.stream),
-                        );
+                        let by = tokio::time::Instant::now() + handshake_timeout;
+                        // Reading what a carried connection opens with is part
+                        // of its handshake's time: one dialled to the listener
+                        // has only ever had TLS to speak.
+                        let stream = match arrival.relay.as_deref() {
+                            None => arrival.stream,
+                            Some(way) => match short_invite::opening(arrival.stream, by).await {
+                                Opening::Tls(stream) => stream,
+                                Opening::Exchange(stream) => {
+                                    short_codes.answer(stream, way, &own_key).await;
+                                    return None;
+                                }
+                                Opening::Nothing => {
+                                    tracing::debug!(
+                                        peer = %arrival.from,
+                                        "a connection opened with nothing"
+                                    );
+                                    return None;
+                                }
+                            },
+                        };
+                        let handshake = tokio::time::timeout_at(by, acceptor.accept(stream));
                         // One dialled to a listener that stops meanwhile is let
                         // go there and then, as that listener's are.
                         let handshake = match &arrival.closes_with {
@@ -3784,17 +4044,17 @@ impl PairingAcceptor {
                             },
                             None => handshake.await,
                         };
-                        (handshake, arrival.from, arrival.closes_with)
+                        Some((handshake, arrival.from, arrival.closes_with))
                     });
                 }
                 Some(finished) = self.handshakes.join_next() => match finished {
-                    Ok((Ok(Ok(stream)), from, closes_with)) => {
+                    Ok(Some((Ok(Ok(stream)), from, closes_with))) => {
                         return (stream, from, closes_with);
                     }
-                    Ok((_, from, _)) => {
+                    Ok(Some((_, from, _))) => {
                         tracing::debug!(peer = %from, "Serving TLS handshake refused");
                     }
-                    Err(_) => {}
+                    Ok(None) | Err(_) => {}
                 },
                 // Nothing more will arrive, and no handshake is under way.
                 else => std::future::pending().await,
@@ -6512,19 +6772,23 @@ mod tests {
         serving.adopt(settings(true)).await.unwrap();
         let first = serving.serving().borrow().number;
         let (mut far, near) = tokio::io::duplex(64);
-        serving.accept_carried(near, first);
+        serving.accept_carried(near, first, "https://relay.example.com");
         assert!(taken(&mut far));
 
         serving.adopt(settings(false)).await.unwrap();
         serving.adopt(settings(true)).await.unwrap();
         let (mut far, near) = tokio::io::duplex(64);
-        serving.accept_carried(near, first);
+        serving.accept_carried(near, first, "https://relay.example.com");
         assert!(
             !taken(&mut far),
             "a join taken up before Serving stopped is not handed on once it starts again"
         );
         let (mut far, near) = tokio::io::duplex(64);
-        serving.accept_carried(near, serving.serving().borrow().number);
+        serving.accept_carried(
+            near,
+            serving.serving().borrow().number,
+            "https://relay.example.com",
+        );
         assert!(taken(&mut far));
 
         serving.shutdown().await;
@@ -6568,7 +6832,7 @@ mod tests {
         let stretch = *serving.serving().borrow();
         assert!(stretch.serving, "and the Server is Serving all the same");
         let (mut carried, near) = tokio::io::duplex(64);
-        serving.accept_carried(near, stretch.number);
+        serving.accept_carried(near, stretch.number, "https://relay.example.com");
         assert!(open(&mut carried), "a connection a Relay carries is taken");
 
         serving.adopt(settings(true)).await.unwrap();
@@ -6654,7 +6918,7 @@ mod tests {
         let mut carried = Vec::new();
         for _ in 0..SERVING_HANDSHAKES_AT_ONCE {
             let (far, near) = tokio::io::duplex(64);
-            serving.accept_carried(near, stretch);
+            serving.accept_carried(near, stretch, "https://relay.example.com");
             carried.push(far);
             // The acceptor takes each up before the next arrives.
             tokio::task::yield_now().await;

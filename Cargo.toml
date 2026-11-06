@@ -52,6 +52,9 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
 pulldown-cmark = "0.13.4"
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
+# The HKDF, HMAC, AEAD and randomness a short Invite's exchange takes from what the Pairing's TLS is already built on
+# (ADR-0065), so nothing new is compiled for them.
+ring = "0.17.14"
 rmcp = { version = "3.4.1", default-features = false, features = ["server", "transport-streamable-http-server"] }
 # `system-proxy` reads the operating system's HTTP proxy, which a Server honours on its way to a Relay;
 # loopback and direct Pairing dials opt out of every proxy.
@@ -68,6 +71,8 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["preserve_order"] }
 shlex = "2"
 socket2 = "0.6.5"
+# The balanced PAKE a short Invite is delivered by: RustCrypto's SPAKE2, on the last stable release (ADR-0065).
+spake2 = "0.4.0"
 subtle = "2.6.1"
 tempfile = "3.21.0"
 termina = "0.4.0"

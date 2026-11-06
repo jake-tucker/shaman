@@ -860,6 +860,8 @@ pub struct TuiState {
     /// How the Server's Serving listener stands, as it last pushed it, which
     /// is what `/serve` offers this machine's addresses by.
     pub(super) serving_listener: ListenerState,
+    /// How the Server's latest short code stands, as it last said.
+    pub(super) short_code: crate::protocol::ShortCodeStanding,
     pub(super) relay_overlay: RelayOverlay,
     pub(super) context_overlay: ContextOverlay,
     /// The Usage Metrics view, drawn over the whole frame while it is open.
@@ -1176,6 +1178,7 @@ impl TuiState {
             connect_overlay: ConnectOverlay::default(),
             serve_overlay: ServeOverlay::default(),
             serving_listener: ListenerState::default(),
+            short_code: crate::protocol::ShortCodeStanding::default(),
             relay_overlay: RelayOverlay::default(),
             context_overlay: ContextOverlay::default(),
             metrics_view: MetricsView::default(),
@@ -2388,6 +2391,17 @@ impl TuiState {
     /// was given. Relays pushed before what the list holds say nothing of a
     /// lapse now, and claim nothing. A later lapse is another, whether or not
     /// this Client heard the earlier one end.
+    /// Takes how the Server's latest short code stands, raising a Notice of an
+    /// attempt that used it up, which its reader did not necessarily make and
+    /// may be anywhere in this Client to hear of.
+    fn receive_short_code(&mut self, standing: crate::protocol::ShortCodeStanding) {
+        if standing.state.burned() {
+            self.application_notice
+                .receive_short_code_burned(standing.serial, standing.state);
+        }
+        self.short_code = standing;
+    }
+
     fn receive_relays(&mut self, listing: crate::protocol::RelayListing) {
         if self.relay_overlay.takes_pushed(&listing) {
             for relay in &listing.relays {
@@ -2681,6 +2695,7 @@ impl TuiState {
             }
             ManagedEvent::Relays(listing) => self.receive_relays(listing),
             ManagedEvent::ServingListener(state) => self.serving_listener = state,
+            ManagedEvent::ShortCode(standing) => self.receive_short_code(standing),
             ManagedEvent::RemoteFailed { message, .. } => self.settle_remote_failure(message),
             ManagedEvent::ServerShutdown(shutdown) => {
                 self.stop_opening_loading();
@@ -2864,6 +2879,7 @@ impl TuiState {
             | ManagedEvent::Recovering(_)
             | ManagedEvent::Relays(_)
             | ManagedEvent::ServingListener(_)
+            | ManagedEvent::ShortCode(_)
             | ManagedEvent::Onboarded(_)
             | ManagedEvent::WorkspaceListing(_)
             | ManagedEvent::RemoteRecovered
@@ -2945,6 +2961,7 @@ impl TuiState {
             | ManagedEvent::Recovering(_)
             | ManagedEvent::Relays(_)
             | ManagedEvent::ServingListener(_)
+            | ManagedEvent::ShortCode(_)
             | ManagedEvent::Onboarded(_)
             | ManagedEvent::WorkspaceListing(_)
             | ManagedEvent::RemoteRecovered
