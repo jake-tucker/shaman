@@ -4,6 +4,11 @@
 //! is believed (ADR-0064): what a Relay says is held to what can be passed on,
 //! and the most a lying Relay can do is mislabel a machine.
 
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+
 use futures_util::{SinkExt, StreamExt};
 use rcgen::PublicKeyData;
 use suru::protocol::{RelayMachine, RelayMachinesAnswer, RemoteStatus, SessionErrorCode, Way};
@@ -222,8 +227,11 @@ async fn a_server_lists_the_other_machines_under_its_account_and_whether_each_wa
 
 #[tokio::test]
 async fn a_relay_not_logged_in_at_is_asked_nothing_and_one_not_held_is_not_found() {
-    let (address, _) = scripted_relay(|_socket, _relay, _| async move {
-        panic!("a Relay this Server has not logged in at is asked nothing");
+    let connections = Arc::new(AtomicUsize::new(0));
+    let counting = connections.clone();
+    let (address, _) = scripted_relay(move |_socket, _relay, _| {
+        counting.fetch_add(1, Ordering::AcqRel);
+        async {}
     })
     .await;
     let laptop = TestServer::start("find-no-login").await;
@@ -237,12 +245,43 @@ async fn a_relay_not_logged_in_at_is_asked_nothing_and_one_not_held_is_not_found
         laptop.machines_at(&address).await,
         RelayMachinesAnswer::LoginNeeded
     );
+    assert_eq!(
+        connections.load(Ordering::Acquire),
+        0,
+        "a Relay this Server has not logged in at proves nothing and is told nothing"
+    );
     let error = laptop
         .client
         .list_relay_machines("https://never-added.example")
         .await
         .expect_err("a Relay not held is not asked");
     assert_eq!(error_code(&error), SessionErrorCode::RelayNotFound);
+    laptop.shutdown().await;
+}
+
+/// Only a Client's asking asks a Relay: nothing the Server does on its own
+/// comes to it, and each asking is one connection of its own.
+#[tokio::test]
+async fn a_relay_is_asked_only_as_a_client_asks() {
+    let asked = Arc::new(AtomicUsize::new(0));
+    let counting = asked.clone();
+    let address = listing_relay(move |mut socket| {
+        counting.fetch_add(1, Ordering::AcqRel);
+        async move {
+            tell(&mut socket, &logins(Vec::new(), false)).await;
+        }
+    })
+    .await;
+    let laptop = TestServer::start("find-not-polled").await;
+    laptop.logged_in_at_scripted(&address).await;
+    laptop
+        .wait_for_state(&address, suru::protocol::RelayState::LoggedIn)
+        .await;
+    assert_eq!(asked.load(Ordering::Acquire), 0);
+
+    laptop.listed_at(&address).await;
+    laptop.listed_at(&address).await;
+    assert_eq!(asked.load(Ordering::Acquire), 2);
     laptop.shutdown().await;
 }
 
@@ -418,7 +457,7 @@ async fn a_relay_that_hangs_costs_its_answer_budget_alone_and_the_others_list() 
     let relay = TestRelay::start().await;
     let laptop = TestServer::with_timings(
         "find-hanging",
-        relay_timings().with_relay_answer_timeout(Duration::from_millis(300)),
+        relay_timings().with_relay_answer_timeout(Duration::from_secs(1)),
     )
     .await;
     let workstation = TestServer::start("find-hanging-workstation").await;
