@@ -1012,12 +1012,21 @@ fn invite_entry_lines(
     if let Some(note) = machines.note() {
         below.extend(wrapped_lines(note, width, theme.text.primary));
     }
-    let keys = match (on_the_field, machines.any_relays()) {
-        (false, _) => "↑↓ choose · Enter choose · Tab Invite · Ctrl+R look again · Esc close",
-        (true, true) => "↑↓ machines · Enter inspect · Ctrl+R look again · Esc close",
-        (true, false) => "Enter inspect · Esc close",
+    let walking = match (on_the_field, machines.any_relays()) {
+        (false, _) => "↑↓ choose · Enter choose · Tab Invite · ",
+        (true, true) => "↑↓ machines · Enter inspect · ",
+        (true, false) => "Enter inspect · ",
     };
-    below.extend(wrapped_lines(keys, width, theme.text.subdued));
+    let again = if machines.any_relays() && !machines.is_looking() {
+        "Ctrl+R look again · "
+    } else {
+        ""
+    };
+    below.extend(wrapped_lines(
+        &format!("{walking}{again}Esc close"),
+        width,
+        theme.text.subdued,
+    ));
 
     let room = usize::from(area.height.saturating_sub(2));
     let capacity = room.saturating_sub(field.len() + below.len());

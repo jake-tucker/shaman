@@ -1239,7 +1239,7 @@ fn mismatch(offered: &[Version], spoken: &[Version], behind: Side) -> String {
 /// The hostname a Server reported, as the label its Login keeps: what a
 /// reader can see of it, within [`MAX_HOSTNAME_CHARS`].
 fn label(hostname: &str) -> String {
-    listing::shown(hostname, MAX_HOSTNAME_CHARS)
+    listing::without_controls(hostname, MAX_HOSTNAME_CHARS)
 }
 
 fn fresh_nonce() -> [u8; NONCE_LEN] {

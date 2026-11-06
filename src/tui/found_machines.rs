@@ -23,7 +23,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     protocol::{RelayMachine, RelayMachines, RelayMachinesAnswer},
-    serving::{folded, short_fingerprint},
+    shown_text::{fingerprint_prefixes, folded},
 };
 
 use super::{connect_overlay::ConnectRequest, list_window::ListWindow};
@@ -38,6 +38,8 @@ pub(super) struct FoundMachines {
     /// What each answered, last. A Relay asked again goes on showing this
     /// until it answers.
     answers: HashMap<String, RelayMachinesAnswer>,
+    /// Whether the Relays the asking in hand goes to have yet to be known.
+    relays_awaited: bool,
     /// The Relays yet to answer the asking in hand.
     awaited: HashSet<String>,
     /// All of that as it is shown.
@@ -127,6 +129,7 @@ impl FoundMachines {
     pub(super) fn begin(&mut self, asked: ConnectRequest) {
         *self = Self {
             asked: Some(asked),
+            relays_awaited: true,
             ..Self::default()
         };
     }
@@ -140,7 +143,15 @@ impl FoundMachines {
     /// it answers, and Row Focus where it is.
     pub(super) fn look_again(&mut self, asked: ConnectRequest) {
         self.asked = Some(asked);
+        self.relays_awaited = true;
         self.note = None;
+    }
+
+    /// Whether the asking in hand has yet to be answered, so that asking again
+    /// would only ask each Relay over it: a key held down is not a reader
+    /// asking. It ends, since the Server answers for each Relay within a bound.
+    pub(super) fn is_looking(&self) -> bool {
+        self.relays_awaited || !self.awaited.is_empty()
     }
 
     /// The Relays to be asked as `asked` are `relays`, where that is the asking
@@ -149,6 +160,7 @@ impl FoundMachines {
         if self.asked != Some(asked) {
             return;
         }
+        self.relays_awaited = false;
         self.answers.retain(|address, _| relays.contains(address));
         self.awaited = relays.iter().cloned().collect();
         self.relays = relays;
@@ -430,9 +442,7 @@ fn tell_apart(groups: &mut [MachineGroup]) {
         if fingerprints.len() < 2 {
             continue;
         }
-        let shown = (short_fingerprint(&machine.fingerprint).len()..=machine.fingerprint.len())
-            .step_by(4)
-            .map(|shown| &machine.fingerprint[..shown])
+        let shown = fingerprint_prefixes(&machine.fingerprint)
             .find(|shown| {
                 fingerprints
                     .iter()

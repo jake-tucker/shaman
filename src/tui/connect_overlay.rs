@@ -289,10 +289,12 @@ impl ConnectOverlay {
         self.machines.answered(asked, machines);
     }
 
-    /// Asks the Server's Relays again where the machines are shown, answering
-    /// the request it is asked under.
+    /// Asks the Server's Relays again where the machines are shown and all they
+    /// were last asked is answered, answering the request it is asked under.
     pub(super) fn look_again(&mut self) -> Option<ConnectRequest> {
-        if !matches!(self.state, ConnectOverlayState::InviteEntry { .. }) {
+        if !matches!(self.state, ConnectOverlayState::InviteEntry { .. })
+            || self.machines.is_looking()
+        {
             return None;
         }
         let asked = self.issue();

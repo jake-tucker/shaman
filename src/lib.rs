@@ -25,6 +25,7 @@ mod serving;
 mod session_projection;
 mod sessions;
 pub mod settings;
+mod shown_text;
 mod sidekick;
 mod skill_catalog;
 pub mod source_control;

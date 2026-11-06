@@ -2,28 +2,25 @@
 //! Client hears of it (ADR-0064).
 //!
 //! The Relay may lie, and a Login's hostname is whatever its Server reported,
-//! so this is where what a Relay says is held to what can safely be passed on:
-//! an entry whose key no Server could hold, this Server's own, or a second of
-//! one key goes; a hostname keeps only what a reader can be shown; and a key
-//! is matched against the Pairings this Server holds to name a Remote, which
+//! so this is where what a Relay lists is held to what can be passed on, each
+//! hostname having been held to what a reader can be shown as it was taken in
+//! ([`super::intake`]): an entry whose key no Server could hold, this Server's
+//! own, or a second of one key goes; a hostname with nothing left of it goes by
+//! the key's fingerprint; and a key is matched against the Pairings this Server holds to name a Remote, which
 //! opens nothing, so the most a lying Relay can do is mislabel a row.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use suru_relay_protocol::{self as relay_protocol, ListedLogin, MAX_LISTED_HOSTNAME_CHARS};
+use suru_relay_protocol::{self as relay_protocol, ListedLogin};
 
 use crate::{
-    ansi::{AnsiScanner, FragmentRole},
     protocol::{RelayMachine, RelayMachinesAnswer, Remote, RemoteStatus},
-    serving::{composed, short_fingerprint, unseen},
+    shown_text::short_fingerprint,
 };
 
-/// The most characters of why a Relay is out of reach that are passed on.
-const MAX_REASON_CHARS: usize = 512;
-
-/// A Relay out of reach, for `reason`, which may be the Relay's own words.
+/// A Relay out of reach, for `reason`.
 pub(super) fn unreachable(reason: &str) -> RelayMachinesAnswer {
     RelayMachinesAnswer::Unreachable {
-        message: shown(reason, MAX_REASON_CHARS),
+        message: reason.to_owned(),
     }
 }
 
@@ -44,13 +41,12 @@ pub(super) fn listed(
         })
         .map(|login| {
             let fingerprint = relay_protocol::fingerprint(&login.key.0);
-            let hostname = shown(&login.hostname, MAX_LISTED_HOSTNAME_CHARS);
             RelayMachine {
                 key: URL_SAFE_NO_PAD.encode(&login.key.0),
-                hostname: if hostname.is_empty() {
+                hostname: if login.hostname.is_empty() {
                     format!("machine {}", short_fingerprint(&fingerprint))
                 } else {
-                    hostname
+                    login.hostname
                 },
                 waiting: login.waiting,
                 remote: remotes
@@ -63,39 +59,6 @@ pub(super) fn listed(
             }
         })
         .collect()
-}
-
-/// What can safely reach a terminal of `text`, which came from another
-/// machine, within `at_most` characters: escape sequences and control strings
-/// go whole, as do control, formatting and otherwise default-ignorable
-/// characters, as a Peer's name is held free of them — nothing a reader could
-/// not see, and nothing that moves what they do see; any other break of a line
-/// is a space; and it is composed canonically, outer whitespace aside.
-pub(super) fn shown(text: &str, at_most: usize) -> String {
-    let visible: String = AnsiScanner::default()
-        .feed(text)
-        .into_iter()
-        .filter_map(|fragment| match fragment.into_role() {
-            FragmentRole::Text(text) => Some(text),
-            _ => None,
-        })
-        .collect::<String>()
-        .chars()
-        .filter(|character| !unseen(*character))
-        .map(|character| {
-            if character.is_whitespace() {
-                ' '
-            } else {
-                character
-            }
-        })
-        .collect();
-    composed(visible.trim())
-        .chars()
-        .take(at_most)
-        .collect::<String>()
-        .trim_end()
-        .to_owned()
 }
 
 #[cfg(test)]
@@ -129,69 +92,12 @@ mod tests {
     }
 
     #[test]
-    fn what_could_move_or_hide_text_on_a_terminal_goes_whole() {
-        for (given, kept) in [
-            ("workstation", "workstation"),
-            ("  workstation \t", "workstation"),
-            // C0, C1, DEL.
-            ("work\u{0}\u{7}\u{8}\r\nstation", "workstation"),
-            ("work\u{80}\u{85}\u{9b}\u{9f}station", "workstation"),
-            ("work\u{7f}station", "workstation"),
-            // Escape sequences, whole and not their leavings: CSI, SGR, cursor
-            // moves, a title set by OSC either way it ends, a hyperlink, DCS,
-            // APC, and an escape of two characters.
-            ("\u{1b}[31mwork\u{1b}[0mstation", "workstation"),
-            ("work\u{1b}[2J\u{1b}[1;1Hstation", "workstation"),
-            ("\u{1b}]0;owned\u{7}workstation", "workstation"),
-            ("\u{1b}]0;owned\u{1b}\\workstation", "workstation"),
-            (
-                "\u{1b}]8;;https://evil.example\u{1b}\\workstation\u{1b}]8;;\u{1b}\\",
-                "workstation",
-            ),
-            ("\u{1b}Powned\u{1b}\\workstation", "workstation"),
-            ("\u{1b}_owned\u{1b}\\workstation", "workstation"),
-            ("\u{1b}cworkstation", "workstation"),
-            // Bidi overrides and isolates, which reorder what is drawn.
-            ("\u{202e}noitatskrow", "noitatskrow"),
-            ("work\u{2066}station\u{2069}\u{200f}", "workstation"),
-            // What takes no width at all.
-            (
-                "work\u{200b}\u{200c}\u{200d}\u{2060}\u{feff}station",
-                "workstation",
-            ),
-            ("work\u{ad}\u{e0001}\u{fe0f}station", "workstation"),
-            // Another way to break a line is a space, not a break.
-            ("work\u{2028}station\u{2029}", "work station"),
-            // Composed one way, however it was typed.
-            ("Cafe\u{301}", "Café"),
-            // Wide characters stay, and are bound like any other.
-            ("東京のマシン", "東京のマシン"),
-        ] {
-            assert_eq!(shown(given, 64), kept, "{given:?}");
-        }
-        assert_eq!(shown(&"語".repeat(100), 64), "語".repeat(64));
-        assert_eq!(shown("ab cd", 3), "ab", "no whitespace is left at its end");
-    }
-
-    #[test]
     fn a_hostname_with_nothing_left_of_it_is_named_by_its_fingerprint() {
         let key = key();
-        for hostname in [
-            "",
-            "   ",
-            "\u{1b}[31m",
-            "\u{200b}\u{202e}",
-            "\u{1b}]0;never ends",
-        ] {
-            let listed = listed(vec![login(&key, hostname)], b"own", &[]);
-            let fingerprint = relay_protocol::fingerprint(&key);
-            assert_eq!(
-                listed[0].hostname,
-                format!("machine {}", &fingerprint[..8]),
-                "{hostname:?}"
-            );
-            assert_eq!(listed[0].fingerprint, fingerprint);
-        }
+        let listed = listed(vec![login(&key, "")], b"own", &[]);
+        let fingerprint = relay_protocol::fingerprint(&key);
+        assert_eq!(listed[0].hostname, format!("machine {}", &fingerprint[..8]));
+        assert_eq!(listed[0].fingerprint, fingerprint);
     }
 
     #[test]

@@ -35,6 +35,8 @@ use crate::support::{
 mod dialling;
 #[path = "relays/finding.rs"]
 mod finding;
+#[path = "relays/intake.rs"]
+mod intake;
 #[path = "relays/offering.rs"]
 mod offering;
 #[path = "relays/operator.rs"]

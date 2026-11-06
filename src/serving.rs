@@ -102,6 +102,8 @@ mod identity;
 mod identity_store;
 
 use identity::IdentityMaterial;
+
+use crate::shown_text::{composed, fingerprint_prefixes, folded, short_fingerprint, unseen};
 pub(crate) use identity::{
     IDENTITY_STORE_TIMEOUT, IdentityKeeping, IdentityKey, IdentityKeyUnavailable,
 };
@@ -653,13 +655,7 @@ impl StoredPeer {
 }
 
 /// The most characters a Peer's name runs to.
-pub(crate) const MAX_PEER_NAME_CHARS: usize = 64;
-
-/// The first characters of a key fingerprint: enough to tell two Peers
-/// known by one name apart wherever they are named.
-pub(crate) fn short_fingerprint(fingerprint: &str) -> &str {
-    &fingerprint[..fingerprint.len().min(8)]
-}
+const MAX_PEER_NAME_CHARS: usize = 64;
 
 /// The name the Peer whose key fingerprint is `id` is known by here, from the
 /// `hostname` it gave itself redeeming its Invite. It is kept as given, outer
@@ -694,8 +690,8 @@ fn peer_name<'a>(
         return name;
     }
     let mut told_apart = String::new();
-    for shown_of_key in (short_fingerprint(id).len()..=id.len()).step_by(4) {
-        let suffix = format!(" ({})", &id[..shown_of_key.min(id.len())]);
+    for prefix in fingerprint_prefixes(id) {
+        let suffix = format!(" ({prefix})");
         let room = MAX_PEER_NAME_CHARS.saturating_sub(suffix.chars().count());
         let kept = name.chars().take(room).collect::<String>();
         told_apart = format!("{}{suffix}", kept.trim_end());
@@ -704,32 +700,6 @@ fn peer_name<'a>(
         }
     }
     told_apart
-}
-
-/// `name` composed canonically, so one name is spelled one way however it was
-/// typed.
-pub(crate) fn composed(name: &str) -> String {
-    icu_normalizer::ComposingNormalizerBorrowed::new_nfc()
-        .normalize(name)
-        .into_owned()
-}
-
-/// `name` as names are told apart: composed, then case folded, so `Å` and
-/// `å`, or `ß` and `ss`, are one.
-pub(crate) fn folded(name: &str) -> String {
-    composed(name).to_uppercase().to_lowercase()
-}
-
-/// Whether `character` is one a reader cannot see in a name: a control, a
-/// formatting character, or one Unicode says is ignorable by default.
-pub(crate) fn unseen(character: char) -> bool {
-    use icu_properties::{
-        CodePointMapData, CodePointSetData,
-        props::{DefaultIgnorableCodePoint, GeneralCategory},
-    };
-    character.is_control()
-        || CodePointSetData::new::<DefaultIgnorableCodePoint>().contains(character)
-        || CodePointMapData::<GeneralCategory>::new().get(character) == GeneralCategory::Format
 }
 
 #[derive(Clone, Deserialize, Serialize)]

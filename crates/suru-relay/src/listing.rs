@@ -21,9 +21,11 @@ use suru_relay_protocol::{
 /// and bound so a cap raised without end costs each asking no more than this.
 pub(crate) const LOGINS_READ_AT_ONCE: usize = 4096;
 
-/// What `hostname` shows a reader within `at_most` characters: what is left
-/// of it beside control characters and outer whitespace.
-pub(crate) fn shown(hostname: &str, at_most: usize) -> String {
+/// `hostname` within `at_most` characters, without its control characters and
+/// outer whitespace. That is all the Relay does to what a Server reported: it
+/// shows no reader anything, and a Server holds what it is told to what can be
+/// shown as it takes it in.
+pub(crate) fn without_controls(hostname: &str, at_most: usize) -> String {
     hostname
         .chars()
         .filter(|character| !character.is_control())
@@ -47,32 +49,40 @@ pub(crate) fn answer(
         .map(|(key, hostname)| ListedLogin {
             waiting: waits(&key),
             key: Bytes(key),
-            hostname: shown(&hostname, MAX_LISTED_HOSTNAME_CHARS),
+            hostname: without_controls(&hostname, MAX_LISTED_HOSTNAME_CHARS),
         })
         .collect();
     logins.sort_by_key(|login| !login.waiting);
-    let total = logins.len();
-    let kept = within_one_message(&logins);
-    logins.truncate(kept);
+    let whole = !more && fitting(&logins, false) == logins.len();
+    if !whole {
+        let mut kept = fitting(&logins, true);
+        // Saying it was cut short takes one byte less than saying it was not,
+        // and must not be all that lets the last of them fit: it would say so
+        // of an answer holding every one.
+        if !more && kept == logins.len() {
+            kept -= 1;
+        }
+        logins.truncate(kept);
+    }
     RelayMessage::Logins {
         logins,
-        cut_short: more || kept < total,
+        cut_short: !whole,
     }
 }
 
-/// How many of `logins`, from the first, fit one message saying it was cut
-/// short.
-fn within_one_message(logins: &[ListedLogin]) -> usize {
+/// How many of `logins`, from the first, fit one message, as it says whether it
+/// was cut short as `cut_short` has it.
+fn fitting(logins: &[ListedLogin], cut_short: bool) -> usize {
     let mut length = encoded_length(&RelayMessage::Logins {
         logins: Vec::new(),
-        cut_short: true,
+        cut_short,
     });
     logins
         .iter()
-        .take_while(|login| {
-            // A comma between each and the one before; one too many is
-            // counted, which errs on the side of the bound.
-            length += encoded_length(login) + 1;
+        .enumerate()
+        .take_while(|(index, login)| {
+            let comma = usize::from(*index > 0);
+            length += encoded_length(*login) + comma;
             length <= MAX_MESSAGE_LEN
         })
         .count()
@@ -123,6 +133,73 @@ mod tests {
             assert!(cut_short, "{character:?}");
             assert!(!kept.is_empty(), "{character:?}");
         }
+    }
+
+    /// Logins coming to exactly `length` bytes on the wire as an answer listing
+    /// them whole and saying it is not cut short, each of a key as long as any
+    /// and a hostname no longer than a Relay lists.
+    fn logins_encoding_to(length: usize) -> Vec<(Vec<u8>, String)> {
+        let mut logins: Vec<(Vec<u8>, String)> = Vec::new();
+        let encoded = |logins: &[(Vec<u8>, String)]| {
+            let listed = logins
+                .iter()
+                .map(|(key, hostname)| ListedLogin {
+                    key: Bytes(key.clone()),
+                    hostname: hostname.clone(),
+                    waiting: false,
+                })
+                .collect();
+            encoded_length(&RelayMessage::Logins {
+                logins: listed,
+                cut_short: false,
+            })
+        };
+        // As many Logins as leave room for one more, then what is left in their
+        // hostnames.
+        while encoded(&logins) + LONGEST_KEY * 2 < length {
+            let mut key = u32::try_from(logins.len()).unwrap().to_be_bytes().to_vec();
+            key.resize(LONGEST_KEY, 7);
+            logins.push((key, "x".to_owned()));
+        }
+        for (_, hostname) in &mut logins {
+            hostname.clear();
+        }
+        let mut left = length - encoded(&logins);
+        for (_, hostname) in &mut logins {
+            let taken = left.min(MAX_LISTED_HOSTNAME_CHARS);
+            hostname.push_str(&"x".repeat(taken));
+            left -= taken;
+        }
+        assert_eq!(left, 0);
+        assert_eq!(encoded(&logins), length);
+        logins
+    }
+
+    #[test]
+    fn an_answer_is_as_long_as_one_message_holds_and_no_longer() {
+        let logins = logins_encoding_to(MAX_MESSAGE_LEN);
+        let whole = answer(logins.clone(), false, |_| false);
+        assert_eq!(serde_json::to_vec(&whole).unwrap().len(), MAX_MESSAGE_LEN);
+        let (kept, cut_short) = listed(&whole);
+        assert!(!cut_short, "it holds every one, and says so");
+        assert_eq!(kept.len(), logins.len());
+
+        // One byte longer does not fit, nor does it saying so take it past.
+        let mut past = logins_encoding_to(MAX_MESSAGE_LEN);
+        let mut longest = past.iter_mut().find(|(_, hostname)| hostname.len() < 64);
+        longest.as_mut().expect("room in a hostname").1.push('x');
+        let cut = answer(past.clone(), false, |_| false);
+        let wire = serde_json::to_vec(&cut).unwrap();
+        assert!(wire.len() <= MAX_MESSAGE_LEN, "{} bytes", wire.len());
+        let (kept, cut_short) = listed(&cut);
+        assert!(cut_short);
+        assert_eq!(kept.len(), past.len() - 1);
+
+        // Held back already, it must also hold saying so.
+        let whole_but_more = answer(logins.clone(), true, |_| false);
+        let wire = serde_json::to_vec(&whole_but_more).unwrap();
+        assert!(wire.len() <= MAX_MESSAGE_LEN, "{} bytes", wire.len());
+        assert!(listed(&whole_but_more).1);
     }
 
     /// A Relay at its default cap lists every Login, each with the longest

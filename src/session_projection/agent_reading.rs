@@ -52,6 +52,7 @@
 //! Server, and how entries are numbered is part of what Servers say to each
 //! other.
 
+use crate::shown_text::short_fingerprint;
 use std::{collections::HashMap, path::Path};
 
 use time::{OffsetDateTime, macros::format_description};
@@ -1548,15 +1549,6 @@ fn named(author: &Author, at: &ReadAt) -> String {
             }
         }
     }
-}
-
-/// The first characters of a Peer's key fingerprint, enough to tell two
-/// Peers known by one name apart.
-fn short_fingerprint(fingerprint: &str) -> &str {
-    fingerprint
-        .char_indices()
-        .nth(8)
-        .map_or(fingerprint, |(end, _)| &fingerprint[..end])
 }
 
 /// The Answers `question` accepts besides leaving it unanswered, as

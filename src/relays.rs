@@ -64,8 +64,10 @@ use crate::{
         ServingController, ServingStretch, Wanted, machine_hostname, no_longer_wanted,
         read_records,
     },
+    shown_text::shown,
 };
 
+mod intake;
 mod machines;
 
 const RELAYS_FILE: &str = "relays.json";
@@ -1791,6 +1793,7 @@ impl Dialer {
                     });
                 }
                 if relay_protocol::canonical_address(&relay).as_deref() != Some(address) {
+                    let relay = shown(&relay, intake::MAX_REASON_CHARS);
                     return Err(DialFailure::Refused(format!(
                         "the Relay at {address} names itself {relay}, so this Server proves \
                          nothing to it; add the Relay by the address it names"
@@ -2036,10 +2039,11 @@ impl Conversation {
     async fn hear(&mut self) -> Option<RelayMessage> {
         loop {
             match self.socket.next().await? {
-                Ok(Message::Text(text)) => match serde_json::from_str(text.as_str()) {
-                    Ok(RelayMessage::Unrecognized) | Err(_) => {}
-                    Ok(message) => return Some(message),
-                },
+                Ok(Message::Text(text)) => {
+                    if let Some(message) = intake::told(text.as_str()) {
+                        return Some(message);
+                    }
+                }
                 Ok(Message::Close(_)) | Err(_) => return None,
                 Ok(_) => {}
             }
@@ -2098,10 +2102,11 @@ impl Conversation {
                         asked = None;
                         ask_at = tokio::time::Instant::now() + interval;
                     }
-                    Some(Ok(Message::Text(text))) => match serde_json::from_str(text.as_str()) {
-                        Ok(RelayMessage::Unrecognized) | Err(_) => {}
-                        Ok(message) => heard(message),
-                    },
+                    Some(Ok(Message::Text(text))) => {
+                        if let Some(message) = intake::told(text.as_str()) {
+                            heard(message);
+                        }
+                    }
                     Some(Ok(_)) => {}
                 },
                 () = tokio::time::sleep_until(wake) => {

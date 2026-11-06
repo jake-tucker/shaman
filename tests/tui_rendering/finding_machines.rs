@@ -466,6 +466,62 @@ fn looking_again_asks_afresh_and_answers_to_the_asking_before_land_nowhere() {
     assert!(!text.contains("old-laptop"), "{text}");
 }
 
+/// Holding the key down is not a reader asking again and again: while what was
+/// asked has yet to be answered, each Relay would only be asked over it.
+#[test]
+fn looking_again_is_ignored_while_answers_are_awaited() {
+    let mut application = Application::default();
+    let look_again = |application: &mut Application| {
+        press_with(application, KeyCode::Char('r'), KeyModifiers::CONTROL)
+    };
+    let asked = open_pair(&mut application);
+    assert_eq!(
+        look_again(&mut application),
+        ApplicationTransition::Continue,
+        "the Relays to ask have yet to be known"
+    );
+    relays_known(&mut application, asked, &[RELAY, OTHER]);
+    assert!(!shown_text(&application).contains("Ctrl+R"));
+    assert_eq!(
+        look_again(&mut application),
+        ApplicationTransition::Continue
+    );
+    answered(&mut application, asked, RELAY, listed(the_three()));
+    assert!(
+        !shown_text(&application).contains("Ctrl+R"),
+        "one Relay has yet to answer"
+    );
+    assert_eq!(
+        look_again(&mut application),
+        ApplicationTransition::Continue
+    );
+
+    answered(
+        &mut application,
+        asked,
+        OTHER,
+        RelayMachinesAnswer::LoginNeeded,
+    );
+    assert!(shown_text(&application).contains("Ctrl+R look again"));
+    let again = match look_again(&mut application) {
+        ApplicationTransition::FindMachines(again) => again,
+        other => panic!("every Relay having answered, it asks again, not {other:?}"),
+    };
+    assert_eq!(
+        look_again(&mut application),
+        ApplicationTransition::Continue,
+        "asked again, it waits on those answers in turn"
+    );
+    relays_known(&mut application, again, &[]);
+    assert!(
+        matches!(
+            look_again(&mut application),
+            ApplicationTransition::FindMachines(_)
+        ),
+        "no Relay left to wait on"
+    );
+}
+
 /// Nothing a row is chosen for reaches any Server: every press is answered
 /// with no transition at all, whatever the row says.
 #[test]
