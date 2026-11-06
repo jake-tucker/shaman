@@ -323,6 +323,11 @@ async fn managed_clients_observe_durable_session_deletion() {
         .expect("deleted Session stream reports its terminal rejection")
         .expect_err("deleted Session cannot be reattached");
     assert!(!stream_error.is_recoverable());
+    assert_eq!(
+        stream_error.deleted_session(),
+        Some(session_id),
+        "the rejection says the Session is gone, so a client need not treat it as a failure"
+    );
     assert!(
         deleting_client
             .list_sessions(None)

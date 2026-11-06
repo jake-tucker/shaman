@@ -12,7 +12,7 @@ use tokio::{
 
 use crate::protocol::{
     Outlook, RemoteStatus, RuntimeDescriptor, SESSION_SNAPSHOT_EVENT, SESSION_UPDATED_EVENT,
-    SessionId, SessionSnapshot, SessionUpdate,
+    SessionError, SessionErrorCode, SessionId, SessionSnapshot, SessionUpdate,
 };
 
 use super::{
@@ -32,6 +32,8 @@ enum SessionStreamErrorKind {
     Transport,
     Protocol,
     Remote(RemoteStatus),
+    /// The Server holds no such Session.
+    Missing(SessionId),
 }
 
 impl SessionStreamError {
@@ -67,6 +69,13 @@ impl SessionStreamError {
         }
     }
 
+    fn missing(session_id: SessionId, message: impl Into<String>) -> Self {
+        Self {
+            kind: SessionStreamErrorKind::Missing(session_id),
+            message: message.into(),
+        }
+    }
+
     pub fn is_recoverable(&self) -> bool {
         self.kind == SessionStreamErrorKind::Transport
     }
@@ -74,7 +83,22 @@ impl SessionStreamError {
     pub fn remote_status(&self) -> Option<RemoteStatus> {
         match self.kind {
             SessionStreamErrorKind::Remote(status) => Some(status),
-            SessionStreamErrorKind::Transport | SessionStreamErrorKind::Protocol => None,
+            SessionStreamErrorKind::Transport
+            | SessionStreamErrorKind::Protocol
+            | SessionStreamErrorKind::Missing(_) => None,
+        }
+    }
+
+    /// The Session this stream's Server says it no longer holds. A subscription
+    /// only reports this having already heard from that Session, so it reads as
+    /// the Session having been deleted — which may be news no catalog brings:
+    /// a Subagent's Session goes unannounced with its parent.
+    pub fn deleted_session(&self) -> Option<SessionId> {
+        match self.kind {
+            SessionStreamErrorKind::Missing(session_id) => Some(session_id),
+            SessionStreamErrorKind::Transport
+            | SessionStreamErrorKind::Protocol
+            | SessionStreamErrorKind::Remote(_) => None,
         }
     }
 }
@@ -216,25 +240,31 @@ async fn open_response(
                 RemoteConnectionFailure::Terminal { status, message } => {
                     SessionStreamError::remote(status, message)
                 }
-                RemoteConnectionFailure::Rejected(message)
-                | RemoteConnectionFailure::Missing(message) => {
+                RemoteConnectionFailure::Missing(message) => {
+                    SessionStreamError::missing(session_id, message)
+                }
+                RemoteConnectionFailure::Rejected(message) => {
                     SessionStreamError::protocol(anyhow::anyhow!(message))
                 }
             });
     }
     let response = response.map_err(|error| SessionStreamError::transport(error.to_string()))?;
-    if response.status().is_success() {
-        Ok(response)
-    } else if response.status().is_server_error() {
-        Err(SessionStreamError::transport(format!(
-            "server rejected the Session event stream with {}",
-            response.status()
-        )))
-    } else {
-        Err(SessionStreamError::protocol(anyhow::anyhow!(
-            "server rejected the Session event stream with {}",
-            response.status()
-        )))
+    let status = response.status();
+    if status.is_success() {
+        return Ok(response);
+    }
+    if status.is_server_error() {
+        return Err(SessionStreamError::transport(format!(
+            "server rejected the Session event stream with {status}"
+        )));
+    }
+    match response.json::<SessionError>().await {
+        Ok(error) if error.code == SessionErrorCode::SessionNotFound => {
+            Err(SessionStreamError::missing(session_id, error.message))
+        }
+        _ => Err(SessionStreamError::protocol(anyhow::anyhow!(
+            "server rejected the Session event stream with {status}"
+        ))),
     }
 }
 

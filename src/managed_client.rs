@@ -459,9 +459,17 @@ impl ManagedClient {
     /// events, and every request it sends fails.
     #[cfg(test)]
     pub(crate) fn offline() -> Self {
+        Self::reaching("http://127.0.0.1:9")
+    }
+
+    /// A client of whatever answers at `base_url`, for a test standing in a
+    /// Server of its own: it reports no events and its requests go there,
+    /// retrying at millisecond scale for as long as the client is held.
+    #[cfg(test)]
+    pub(crate) fn reaching(base_url: &str) -> Self {
         let (_, events) = mpsc::channel(1);
-        let (_, descriptor) = watch::channel(RuntimeDescriptor::new(
-            "http://127.0.0.1:9".to_owned(),
+        let (descriptor_tx, descriptor) = watch::channel(RuntimeDescriptor::new(
+            base_url.to_owned(),
             "offline-token".to_owned(),
             crate::protocol::ServerIdentity {
                 instance_id: uuid::Uuid::new_v4(),
@@ -478,7 +486,12 @@ impl ManagedClient {
             max_recovery_backoff: Duration::from_millis(1),
             attachment_fetch_timeout: ATTACHMENT_FETCH_TIMEOUT,
             config_dir: None,
-            task: tokio::spawn(std::future::ready(())),
+            // A stream gives up reconnecting once nothing can name a new
+            // Server, so the descriptor's sender lives as long as the client.
+            task: tokio::spawn(async move {
+                let _descriptor = descriptor_tx;
+                std::future::pending::<()>().await;
+            }),
         }
     }
 

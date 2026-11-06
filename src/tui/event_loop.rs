@@ -20,9 +20,10 @@ use crate::{
     },
     protocol::{
         AdmitPromptRequest, AgentSelection, AgentSelectionOperationId, CreateSessionRequest,
-        ModelCatalog, Outlook, PromptId, ResolveWorkspaceRequest, SessionId, SessionListItem,
-        SessionReference, SessionSnapshot, SettingMutation, SettingsSnapshot, SkillCatalog,
-        SkillCatalogRequest, UpdateAgentSelectionRequest, UpdateApprovalPostureRequest,
+        ModelCatalog, Outlook, PromptId, ResolveWorkspaceRequest, SessionDeleted, SessionId,
+        SessionListItem, SessionReference, SessionSnapshot, SettingMutation, SettingsSnapshot,
+        SkillCatalog, SkillCatalogRequest, UpdateAgentSelectionRequest,
+        UpdateApprovalPostureRequest,
     },
 };
 use anyhow::{Result, anyhow};
@@ -2156,6 +2157,16 @@ impl RunLoop {
                     remote_failure_from_session_error(self.application.outlook().clone(), &error)
                 {
                     return self.receive_origin_catalog(Some(event));
+                }
+                if let Some(session_id) = error.deleted_session() {
+                    // The stream is finished, whichever Session is on screen
+                    // by now. Its news lands as the catalog's would: the
+                    // catalog may be behind it, or never bring it at all.
+                    self.tasks.end_subscription();
+                    return self.receive_origin_catalog(Some(OriginCatalogEvent {
+                        outlook: self.application.outlook().clone(),
+                        event: ManagedEvent::SessionDeleted(SessionDeleted { session_id }),
+                    }));
                 }
                 if !error.is_recoverable() {
                     return Err(error.into());
@@ -7096,20 +7107,30 @@ mod thumbnail_tests {
 
 #[cfg(test)]
 mod ready_event_tests {
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        time::Duration,
+    };
+
+    use axum::{http::StatusCode, response::IntoResponse};
     use futures_util::{StreamExt, stream};
 
     use super::{
         Application, ClipboardContent, ClipboardDelivery, ControlFlow, Exit, NativeClipboardSink,
-        RunLoop, SESSION_EVENT_BATCH, SessionSubscription, SessionTasks, TaskChannels,
-        TerminalInput,
+        OriginCatalogEvent, RunLoop, SESSION_EVENT_BATCH, SessionSubscription, SessionTasks,
+        TaskChannels, TerminalInput,
     };
     use crate::{
-        managed_client::{ManagedClient, SessionEvent},
+        managed_client::{ManagedClient, ManagedEvent, SessionEvent},
         protocol::{
-            ModelAvailability, Outlook, Session, SessionChange, SessionId, SessionRevision,
-            SessionSnapshot, SessionStatus, SessionUpdate, Workspace,
+            ModelAvailability, Outlook, SESSION_SNAPSHOT_EVENT, Session, SessionChange,
+            SessionDeleted, SessionErrorCode, SessionId, SessionRevision, SessionSnapshot,
+            SessionStatus, SessionUpdate, Workspace,
         },
-        tui::{ApplicationTransition, ModelListRequest, composer::ComposerKey},
+        tui::{ApplicationEvent, ApplicationTransition, ModelListRequest, composer::ComposerKey},
     };
 
     /// A clipboard nothing in these tests copies to.
@@ -7276,6 +7297,173 @@ mod ready_event_tests {
             .expect("the picker's listing is still in flight");
         assert_eq!(in_flight, &listing, "and is the one the picker asked for");
         assert!(!task.is_finished(), "which nothing cancelled");
+    }
+
+    /// Stands in for the Server of a Session deleted once it has been read:
+    /// the first subscription hears its snapshot and then the stream ends,
+    /// and every one after that hears what a Server says of a Session it no
+    /// longer holds. Answers the base URL it serves at.
+    async fn server_of_a_session_deleted_after(snapshot: &SessionSnapshot) -> String {
+        let first_answer = format!(
+            "event: {SESSION_SNAPSHOT_EVENT}\nid: {}\ndata: {}\n\n",
+            snapshot.revision.0,
+            serde_json::to_string(snapshot).expect("encode the snapshot"),
+        );
+        let opened = Arc::new(AtomicBool::new(false));
+        let app = axum::Router::new().fallback(move || {
+            let opened = opened.clone();
+            let first_answer = first_answer.clone();
+            async move {
+                if opened.swap(true, Ordering::SeqCst) {
+                    crate::server::session_error_response(
+                        StatusCode::NOT_FOUND,
+                        SessionErrorCode::SessionNotFound,
+                        "Session does not exist on this server instance",
+                    )
+                } else {
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                        first_answer,
+                    )
+                        .into_response()
+                }
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind a loopback listener");
+        let base_url = format!(
+            "http://{}",
+            listener.local_addr().expect("read the bound address")
+        );
+        tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("serve the stand-in");
+        });
+        base_url
+    }
+
+    /// A deleted Session's stream ends as the catalog hears of the deletion,
+    /// and reconnecting learns of it directly. That can come first: while the
+    /// loop is held up, or for a Subagent's Session, whose going with its
+    /// parent no catalog announces. Either way the Session has ended, which is
+    /// no reason for the client to.
+    #[tokio::test]
+    async fn a_session_found_deleted_by_its_stream_ends_the_session_and_not_the_client() {
+        let workspace = tempfile::tempdir().unwrap();
+        let snapshot = streamed_snapshot(workspace.path());
+        let session_id = snapshot.session.id;
+        let mut run = offline_run_loop(Application::default());
+        run.client = ManagedClient::reaching(&server_of_a_session_deleted_after(&snapshot).await);
+        run.application
+            .handle_event(ApplicationEvent::SessionAttached(snapshot))
+            .expect("open the Session");
+        run.tasks.adopt(
+            run.client
+                .attach_session(session_id)
+                .await
+                .expect("attach the Session"),
+        );
+
+        while let Some(subscription) = run.tasks.subscription.as_mut() {
+            let event = tokio::time::timeout(Duration::from_secs(10), subscription.next())
+                .await
+                .expect("the stream hears of the deletion");
+            let step = run
+                .receive_session_event(event)
+                .expect("a Session's deletion does not end the client");
+            assert_eq!(step, ControlFlow::Continue(()));
+        }
+
+        assert!(run.application.state.session.is_none(), "the Session ended");
+        assert_eq!(
+            run.application.state.submission_error.as_deref(),
+            Some("Session ended because it was deleted"),
+            "and the reader is told why"
+        );
+
+        // The catalog catches up afterwards, with nothing left to do.
+        let step = run
+            .receive_origin_catalog(Some(OriginCatalogEvent {
+                outlook: Outlook::Local,
+                event: ManagedEvent::SessionDeleted(SessionDeleted { session_id }),
+            }))
+            .expect("the catalog's word of the deletion lands");
+        assert_eq!(step, ControlFlow::Continue(()));
+        assert_eq!(
+            run.application.state.submission_error.as_deref(),
+            Some("Session ended because it was deleted"),
+        );
+    }
+
+    /// A Session the reader has moved on from keeps its stream until the one
+    /// they chose hydrates. Its deletion ends that stream and leaves the
+    /// Session on screen alone.
+    #[tokio::test]
+    async fn a_session_left_behind_found_deleted_leaves_the_session_on_screen() {
+        let workspace = tempfile::tempdir().unwrap();
+        let left_behind = streamed_snapshot(workspace.path());
+        let on_screen = streamed_snapshot(workspace.path());
+        let on_screen_id = on_screen.session.id;
+        let mut run = offline_run_loop(Application::default());
+        run.client =
+            ManagedClient::reaching(&server_of_a_session_deleted_after(&left_behind).await);
+        run.application
+            .handle_event(ApplicationEvent::SessionAttached(on_screen))
+            .expect("open the Session");
+        run.tasks.adopt(
+            run.client
+                .attach_session(left_behind.session.id)
+                .await
+                .expect("attach the Session left behind"),
+        );
+        let mut subscription = run.tasks.subscription.take().expect("just adopted");
+        let hydration = subscription.next().await.expect("its snapshot arrives");
+        assert!(hydration.is_ok(), "the Session left behind was read once");
+        run.tasks.adopt(subscription);
+
+        while let Some(subscription) = run.tasks.subscription.as_mut() {
+            let event = tokio::time::timeout(Duration::from_secs(10), subscription.next())
+                .await
+                .expect("the stream hears of the deletion");
+            let step = run
+                .receive_session_event(event)
+                .expect("a Session's deletion does not end the client");
+            assert_eq!(step, ControlFlow::Continue(()));
+        }
+
+        let open = run.application.state.session.as_ref();
+        assert_eq!(
+            open.map(|session| session.snapshot().session.id),
+            Some(on_screen_id),
+            "the Session on screen stays"
+        );
+        assert_eq!(run.application.state.submission_error, None);
+    }
+
+    /// A Remote says a Session is gone in the same words, through its proxy.
+    #[tokio::test]
+    async fn a_remote_sessions_deletion_reads_as_a_deletion() {
+        let workspace = tempfile::tempdir().unwrap();
+        let snapshot = streamed_snapshot(workspace.path());
+        let session_id = snapshot.session.id;
+        let client = ManagedClient::reaching(&server_of_a_session_deleted_after(&snapshot).await);
+        let mut subscription = client
+            .session_commands_for(Outlook::Remote("studio".to_owned()))
+            .attach_session(session_id)
+            .await
+            .expect("attach the Session");
+
+        let hydration = subscription.next().await.expect("its snapshot arrives");
+        assert!(hydration.is_ok(), "the Session was read once");
+        let error = tokio::time::timeout(Duration::from_secs(10), subscription.next())
+            .await
+            .expect("the stream hears of the deletion")
+            .expect("the stream says why it ended")
+            .expect_err("the Session is gone");
+
+        assert_eq!(error.deleted_session(), Some(session_id));
     }
 
     /// A streaming Turn arrives as a run of small Session events. Every one
