@@ -149,10 +149,8 @@ impl ApplicationNotice {
     /// issued it, since an attempt they did not make is worth their seeing.
     pub(super) fn receive_short_code_burned(&mut self, serial: u64, state: ShortCodeState) {
         let summary = match state {
-            ShortCodeState::LeftUnfinished => {
-                "An attempt on this machine's short code never finished, so the code is dead"
-            }
-            _ => "A wrong short code was tried on this machine, so the code is dead",
+            ShortCodeState::LeftUnfinished => "A short code attempt never finished; code dead",
+            _ => "Wrong short code tried; code dead",
         };
         self.raise(
             NoticeIdentity::ShortCodeBurned(serial),

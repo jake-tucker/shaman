@@ -3,14 +3,15 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use crate::tui_rendering::support::{
-    deliver_listener, deliver_settings, open_at, rendered_application_rows,
+    deliver_listener, deliver_settings, open_at, ready_health, rendered_application_rows,
     rendered_application_rows_at, type_terminal_text,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use suru::{
+    managed_client::ManagedEvent,
     protocol::{
-        EffectiveSettings, IssueInviteRequest, IssuedInvite, ListenerState, Peer, SettingsSnapshot,
-        Way,
+        EffectiveSettings, IssueInviteRequest, IssuedInvite, IssuedShortCode, ListenerState, Peer,
+        SettingsSnapshot, ShortCode, ShortCodeStanding, ShortCodeState, Way,
     },
     tui::{Application, ApplicationEvent, ApplicationTransition, SemanticCommandId},
 };
@@ -340,4 +341,282 @@ fn serve_lists_scroll_to_keep_the_focused_candidate_and_peer_fully_visible() {
         rows.iter().any(|row| row.contains("machine-9")),
         "and its name above them: {rows:#?}"
     );
+}
+
+/// `/serve` showing an Invite offering a Relay and direct way, its code the one
+/// given.
+fn showing_a_code(code: &str, serial: u64) -> Application {
+    let mut application = Application::default();
+    let mut settings = EffectiveSettings::default();
+    settings.serving.enabled = true;
+    settings.serving.port = 7777;
+    deliver_settings(&mut application, settings);
+    deliver_listener(&mut application, open_at(7777));
+    type_terminal_text(&mut application, "/serve");
+    let ApplicationTransition::BeginServing { request, .. } =
+        press(&mut application, KeyCode::Enter)
+    else {
+        panic!("/serve prepares Serving");
+    };
+    application
+        .handle_event(ApplicationEvent::ServingPrepared {
+            request,
+            settings: None,
+            candidates: vec![Way::Direct(SocketAddr::from((
+                Ipv4Addr::new(10, 0, 0, 8),
+                7777,
+            )))],
+        })
+        .expect("load Serving candidates");
+    let ApplicationTransition::IssueInvite { request, .. } =
+        press(&mut application, KeyCode::Enter)
+    else {
+        panic!("Enter issues an Invite");
+    };
+    application
+        .handle_event(ApplicationEvent::InviteIssued {
+            request,
+            invite: IssuedInvite {
+                invite: "suru-v1-long-string".to_owned(),
+                ways: vec![Way::Relay("https://relay.example.com".to_owned())],
+                short_code: Some(IssuedShortCode {
+                    code: ShortCode::parse(code).unwrap(),
+                    serial,
+                }),
+            },
+            peers: Vec::new(),
+        })
+        .expect("show the Invite");
+    told_code(&mut application, serial, ShortCodeState::Live, true);
+    application
+}
+
+fn told_code(
+    application: &mut Application,
+    serial: u64,
+    state: ShortCodeState,
+    invite_stands: bool,
+) {
+    application
+        .handle_event(ApplicationEvent::Managed(ManagedEvent::ShortCode(
+            ShortCodeStanding {
+                serial,
+                state,
+                invite_stands,
+            },
+        )))
+        .expect("take how the code stands");
+}
+
+#[test]
+fn an_invite_offering_a_relay_shows_its_code_in_two_groups_beside_the_long_string() {
+    let application = showing_a_code("K7QF-2MXP", 1);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("K7QF-2MXP"), "{text}");
+    assert!(text.contains("suru-v1-long-string"), "{text}");
+    assert!(text.contains("/pair"), "where it is typed: {text}");
+    assert!(text.contains("n new code"), "{text}");
+}
+
+#[test]
+fn a_code_stays_whole_on_a_narrow_terminal() {
+    let application = showing_a_code("K7QF-2MXP", 1);
+    for (width, height) in [(30, 14), (40, 12), (80, 12)] {
+        let rows = rendered_application_rows_at(&application, width, height).join("\n");
+        assert!(rows.contains("K7QF-2MXP"), "at {width}x{height}: {rows}");
+    }
+}
+
+#[test]
+fn each_of_the_long_string_and_the_code_is_copied_by_its_own_key() {
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    assert_eq!(
+        press_with(&mut application, KeyCode::Char('c'), KeyModifiers::CONTROL),
+        ApplicationTransition::CopyToClipboard("suru-v1-long-string".to_owned().into()),
+        "the key it always was"
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Char('c')),
+        ApplicationTransition::CopyToClipboard("K7QF-2MXP".to_owned().into())
+    );
+}
+
+#[test]
+fn a_wrong_code_tried_is_told_where_it_is_shown_and_one_key_gets_a_new_one() {
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    told_code(&mut application, 1, ShortCodeState::WrongCodeTried, true);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("A wrong code was tried"), "{text}");
+    assert!(text.contains("stays good"), "{text}");
+    assert!(!text.contains("K7QF-2MXP"), "a dead code goes: {text}");
+
+    let ApplicationTransition::IssueShortCode(request) =
+        press(&mut application, KeyCode::Char('n'))
+    else {
+        panic!("n asks for a new code");
+    };
+    application
+        .handle_event(ApplicationEvent::ShortCodeIssued {
+            request,
+            code: IssuedShortCode {
+                code: ShortCode::parse("H4RW-9TNB").unwrap(),
+                serial: 2,
+            },
+        })
+        .expect("show the new code");
+    told_code(&mut application, 2, ShortCodeState::Live, true);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("H4RW-9TNB"), "{text}");
+    assert!(
+        text.contains("suru-v1-long-string"),
+        "the same Invite: {text}"
+    );
+    assert!(!text.contains("wrong code was tried"), "{text}");
+}
+
+#[test]
+fn an_attempt_left_unfinished_is_told_as_it_is_rather_than_as_a_wrong_code() {
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    told_code(&mut application, 1, ShortCodeState::LeftUnfinished, true);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("never finished"), "{text}");
+    assert!(!text.contains("wrong code"), "{text}");
+}
+
+#[test]
+fn a_code_delivered_expired_or_replaced_says_so_in_place_of_the_code() {
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    told_code(&mut application, 1, ShortCodeState::Delivered, true);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("was used"), "{text}");
+    assert!(!text.contains("K7QF-2MXP"), "{text}");
+
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    told_code(&mut application, 1, ShortCodeState::Ended, false);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("ended with its Invite"), "{text}");
+    assert!(!text.contains("K7QF-2MXP"), "{text}");
+    assert_eq!(
+        press(&mut application, KeyCode::Char('n')),
+        ApplicationTransition::Continue,
+        "no new code is had for an Invite that has ended"
+    );
+
+    // Another Client issued an Invite since.
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    told_code(&mut application, 2, ShortCodeState::Live, true);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("replaced"), "{text}");
+    assert!(!text.contains("K7QF-2MXP"), "{text}");
+    assert_eq!(
+        press(&mut application, KeyCode::Char('n')),
+        ApplicationTransition::Continue,
+        "a new code would be for that Invite, which this reader was not shown"
+    );
+}
+
+#[test]
+fn a_new_code_refused_says_why_where_the_code_is_shown() {
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    let ApplicationTransition::IssueShortCode(request) =
+        press(&mut application, KeyCode::Char('n'))
+    else {
+        panic!("n asks for a new code");
+    };
+    application
+        .handle_event(ApplicationEvent::ShortCodeIssuanceFailed {
+            request,
+            error: "the Invite this code came with has ended".to_owned(),
+        })
+        .expect("say why");
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("has ended"), "{text}");
+}
+
+/// A reader who has closed `/serve` hears of it wherever they are, and the
+/// picker says it again on opening, until a new code replaces it.
+#[test]
+fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_they_reopen() {
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    press(&mut application, KeyCode::Esc);
+    told_code(&mut application, 1, ShortCodeState::WrongCodeTried, true);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(
+        text.contains("Wrong short code tried"),
+        "a Notice, with no overlay open: {text}"
+    );
+    assert!(text.contains("/serve for a new one"), "{text}");
+
+    type_terminal_text(&mut application, "/serve");
+    let ApplicationTransition::BeginServing { request, .. } =
+        press(&mut application, KeyCode::Enter)
+    else {
+        panic!("/serve prepares Serving");
+    };
+    application
+        .handle_event(ApplicationEvent::ServingPrepared {
+            request,
+            settings: None,
+            candidates: vec![Way::Direct(SocketAddr::from((
+                Ipv4Addr::new(10, 0, 0, 8),
+                7777,
+            )))],
+        })
+        .expect("load Serving candidates");
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(
+        text.contains("A wrong code was tried on the last short code"),
+        "{text}"
+    );
+
+    let ApplicationTransition::IssueInvite { request, .. } =
+        press(&mut application, KeyCode::Enter)
+    else {
+        panic!("Enter issues an Invite");
+    };
+    application
+        .handle_event(ApplicationEvent::InviteIssued {
+            request,
+            invite: IssuedInvite {
+                invite: "suru-v1-next".to_owned(),
+                ways: vec![Way::Relay("https://relay.example.com".to_owned())],
+                short_code: Some(IssuedShortCode {
+                    code: ShortCode::parse("H4RW-9TNB").unwrap(),
+                    serial: 2,
+                }),
+            },
+            peers: Vec::new(),
+        })
+        .expect("show the Invite");
+    told_code(&mut application, 2, ShortCodeState::Live, true);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("H4RW-9TNB"), "{text}");
+    assert!(!text.contains("A wrong code was tried"), "{text}");
+}
+
+/// An attempt on a code reaches the Client as how the code stands, and so
+/// every Client of the Server, whichever issued it.
+#[test]
+fn a_client_that_issued_nothing_is_told_of_an_attempt_too() {
+    let mut application = Application::default();
+    told_code(&mut application, 3, ShortCodeState::WrongCodeTried, true);
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(text.contains("Wrong short code tried"), "{text}");
+}
+
+/// A code is held in memory alone, so a Server replaced has none: the reader is
+/// told, rather than go on reading off a code that can no longer be tried.
+#[test]
+fn a_server_replaced_under_a_code_shown_takes_the_code_away_saying_why() {
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    for instance in [1, 2] {
+        application
+            .handle_event(ApplicationEvent::Managed(ManagedEvent::Connected(
+                ready_health(uuid::Uuid::from_u128(instance), 1),
+            )))
+            .expect("connect");
+    }
+    let text = rendered_application_rows(&application).join("\n");
+    assert!(!text.contains("K7QF-2MXP"), "{text}");
+    assert!(text.contains("restarted"), "{text}");
 }

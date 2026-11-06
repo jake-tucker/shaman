@@ -552,16 +552,16 @@ async fn a_code_is_spent_with_its_invite_by_the_long_string() {
 #[tokio::test]
 async fn a_code_kept_in_memory_alone_ends_with_the_server_as_its_invite_does() {
     let relay = TestRelay::start().await;
-    let (mut workstation, laptop) = pair_of(&relay, "short-invite-restart").await;
+    // Where a join reaches the connection the Server left behind, the attempt
+    // is given up on at once rather than at its full bound.
+    let timings = relay_timings()
+        .with_short_invite_timeout(Duration::from_millis(100))
+        .with_serving_handshake_timeout(Duration::from_millis(100));
+    let (mut workstation, laptop) = serving_through(&relay, "short-invite-restart", timings).await;
     let (issued, code) = workstation
         .invite_with_code(vec![Way::Relay(relay.address())])
         .await;
     workstation.restart().await;
-    workstation
-        .client
-        .set_relay_serve_through(&relay.address(), true)
-        .await
-        .unwrap();
     let refused = timeout(PROGRESS_DEADLINE, async {
         loop {
             match laptop.fetch(&workstation, &[relay.address()], &code).await {

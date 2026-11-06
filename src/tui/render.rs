@@ -620,6 +620,47 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         );
         return;
     }
+    if let Some((machine, typed, error)) = overlay.code_entry() {
+        let width = area.width.saturating_sub(2);
+        let mut lines = wrapped_lines(
+            &format!("Pair with {}", machine.shown_name()),
+            width,
+            theme.text.primary.add_modifier(Modifier::BOLD),
+        );
+        lines.extend(wrapped_lines(
+            &format!("Fingerprint {}", machine.fingerprint),
+            width,
+            theme.text.subdued,
+        ));
+        lines.extend(wrapped_lines(
+            "Type the code /serve shows on that machine. It gets one try",
+            width,
+            theme.text.primary,
+        ));
+        lines.push(if typed.is_empty() {
+            Line::styled("▏", theme.text.primary)
+        } else {
+            Line::styled(typed, theme.text.primary)
+        });
+        if let Some(error) = error {
+            lines.extend(wrapped_lines(error, width, theme.feedback.error));
+        }
+        lines.extend(wrapped_lines(
+            "Enter ask for its Invite · Esc back",
+            width,
+            theme.text.subdued,
+        ));
+        render_overlay_box(
+            frame,
+            state,
+            SelectionSurface::Connect,
+            area,
+            lines,
+            " Connect ",
+            theme,
+        );
+        return;
+    }
     if let Some(preview) = overlay.confirmation() {
         let content_width = area.width.saturating_sub(2);
         let room = usize::from(area.height.saturating_sub(2)).saturating_sub(1);
@@ -1599,6 +1640,27 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
             "Fresh Invite",
             theme.text.primary.add_modifier(Modifier::BOLD),
         )];
+        // The code comes first, however long the long string wraps on a narrow
+        // terminal, since it is what a reader reads off the screen.
+        let shown_code = state.serve_overlay.shown_code(&state.short_code);
+        if let Some(shown_code) = &shown_code {
+            if let Some(code) = &shown_code.code {
+                lines.extend(wrapped_lines(
+                    &format!("Short code {code}"),
+                    content_width,
+                    theme.text.primary.add_modifier(Modifier::BOLD),
+                ));
+            }
+            lines.extend(wrapped_lines(
+                shown_code.said,
+                content_width,
+                if shown_code.attempt_failed {
+                    theme.feedback.error
+                } else {
+                    theme.text.subdued
+                },
+            ));
+        }
         lines.extend(invite_lines);
         lines.push(Line::styled("Enrolled Peers", theme.text.primary));
         if state.serve_overlay.peers().is_empty() {
@@ -1643,14 +1705,22 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         if let Some(error) = state.serve_overlay.error() {
             lines.push(Line::styled(error.to_owned(), theme.feedback.error));
         }
-        lines.push(Line::styled(
-            if state.serve_overlay.removal_armed() {
-                "x confirm removal · any other key cancels"
-            } else {
-                "Ctrl+C copy · ↑↓ choose Peer · x remove · Esc close"
-            },
-            theme.text.subdued,
-        ));
+        let keys = if state.serve_overlay.removal_armed() {
+            "x confirm removal · any other key cancels".to_owned()
+        } else {
+            let copy_code = shown_code
+                .as_ref()
+                .filter(|shown_code| shown_code.code.is_some())
+                .map_or("", |_| "c copy code · ");
+            let new_code = shown_code
+                .as_ref()
+                .filter(|shown_code| shown_code.renewable)
+                .map_or("", |_| "n new code · ");
+            format!(
+                "Ctrl+C copy Invite · {copy_code}{new_code}↑↓ choose Peer · x remove · Esc close"
+            )
+        };
+        lines.extend(wrapped_lines(&keys, content_width, theme.text.subdued));
         render_overlay_box(
             frame,
             state,
@@ -1723,6 +1793,13 @@ fn serve_picker_lines(state: &TuiState, area: Rect, theme: &Theme) -> Vec<Line<'
         .collect::<Vec<_>>();
     if let Some(error) = overlay.error() {
         said.extend(wrapped_lines(error, content_width, theme.feedback.error));
+    }
+    if let Some(last_code) = overlay.last_code_said(&state.short_code) {
+        said.extend(wrapped_lines(
+            last_code,
+            content_width,
+            theme.feedback.error,
+        ));
     }
     let too_small = if statement_fits {
         Vec::new()

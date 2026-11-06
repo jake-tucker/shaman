@@ -10,7 +10,10 @@
 use crate::tui_rendering::support::{rendered_application_rows_at, type_terminal_text};
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use suru::{
-    protocol::{InvitePreview, RelayMachine, RelayMachines, RelayMachinesAnswer, Way},
+    protocol::{
+        DeliveredInvite, FetchShortInviteRequest, InvitePreview, RelayMachine, RelayMachines,
+        RelayMachinesAnswer, ShortCode, Way,
+    },
     tui::{Application, ApplicationEvent, ApplicationTransition, ConnectRequest},
 };
 
@@ -527,18 +530,7 @@ fn looking_again_is_ignored_while_answers_are_awaited() {
 #[test]
 fn choosing_a_machine_forms_no_pairing_and_says_what_to_do_there() {
     let (mut application, _) = showing_the_three();
-    assert_eq!(
-        press(&mut application, KeyCode::Enter),
-        ApplicationTransition::Continue
-    );
-    let text = shown_text(&application);
-    assert!(
-        text.contains("To pair with workstation, issue an Invite there with /serve and paste it"),
-        "{text}"
-    );
-
     press(&mut application, KeyCode::Down);
-    assert!(!shown_text(&application).contains("To pair with"));
     assert_eq!(
         press(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue
@@ -821,4 +813,252 @@ fn pairing_another_from_the_picker_looks_for_machines_as_pair_does() {
     relays_known(&mut application, asked, &[RELAY]);
     answered(&mut application, asked, RELAY, listed(the_three()));
     assert!(shown_text(&application).contains("› workstation"));
+}
+
+/// Chooses the workstation in `showing_the_three`, typing `code` for it, and
+/// answers the asking it makes.
+fn asking_with(
+    application: &mut Application,
+    code: &str,
+) -> (ConnectRequest, FetchShortInviteRequest) {
+    assert_eq!(
+        press(application, KeyCode::Enter),
+        ApplicationTransition::Continue,
+        "choosing a machine asks for its code, and nothing of any Server"
+    );
+    paste(application, code);
+    match press(application, KeyCode::Enter) {
+        ApplicationTransition::FetchShortInvite { request, fetch } => (request, fetch),
+        other => panic!("a well-formed code is asked for, not {other:?}"),
+    }
+}
+
+/// The machine's Invite, by the format an Invite has, and its preview.
+fn delivered_invite() -> DeliveredInvite {
+    DeliveredInvite {
+        invite: "suru-v1-delivered".to_owned(),
+        preview: InvitePreview {
+            hostname: "workstation".to_owned(),
+            fingerprint: WORKSTATION.to_owned(),
+            ways: vec![Way::Relay(RELAY.to_owned())],
+        },
+    }
+}
+
+#[test]
+fn choosing_a_serving_machine_asks_for_its_code_in_a_field_of_its_own() {
+    let (mut application, _) = showing_the_three();
+    assert_eq!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::Continue
+    );
+    let text = shown_text(&application);
+    assert!(text.contains("Pair with workstation"), "{text}");
+    assert!(text.contains(WORKSTATION), "its fingerprint: {text}");
+    assert!(text.contains("/serve"), "where the code is: {text}");
+    assert!(text.contains("one try"), "{text}");
+
+    type_terminal_text(&mut application, "k7qf");
+    let text = shown_text(&application);
+    assert!(
+        text.contains("K7QF"),
+        "shown as it is written there: {text}"
+    );
+    press(&mut application, KeyCode::Backspace);
+    assert!(!shown_text(&application).contains("K7QF"));
+
+    assert_eq!(
+        press(&mut application, KeyCode::Esc),
+        ApplicationTransition::Continue
+    );
+    let text = shown_text(&application);
+    assert!(text.contains("› workstation"), "back on the list: {text}");
+}
+
+#[test]
+fn a_code_is_typed_in_any_case_with_or_without_its_separator_and_pastes_as_it_came() {
+    for typed in ["K7QF-2MXP", "k7qf2mxp", "  k7qf-2MXP\n", "K7QF 2MXP"] {
+        let (mut application, _) = showing_the_three();
+        let (_, fetch) = asking_with(&mut application, typed);
+        assert_eq!(
+            fetch,
+            FetchShortInviteRequest {
+                server_key: format!("key-{WORKSTATION}"),
+                relays: vec![RELAY.to_owned()],
+                code: ShortCode::parse("K7QF2MXP").unwrap(),
+            },
+            "{typed:?}"
+        );
+    }
+}
+
+/// Nothing spends the one guess a code gets until it is well formed.
+#[test]
+fn what_is_no_code_is_refused_here_with_nothing_asked_of_any_server() {
+    for (typed, says) in [
+        ("", "the code /serve shows"),
+        ("K7QF", "eight characters"),
+        ("K7QF-2MXPP", "eight characters"),
+        ("K7QF-2MX0", "no 0, O, 1 or I"),
+        ("k7qf-2mxo", "no 0, O, 1 or I"),
+        ("K7QF-2MX1", "no 0, O, 1 or I"),
+        ("K7QF-2MXI", "no 0, O, 1 or I"),
+        ("K7QF_2MXP", "letters and digits"),
+    ] {
+        let (mut application, _) = showing_the_three();
+        press(&mut application, KeyCode::Enter);
+        paste(&mut application, typed);
+        assert_eq!(
+            press(&mut application, KeyCode::Enter),
+            ApplicationTransition::Continue,
+            "{typed:?}"
+        );
+        let text = shown_text(&application);
+        assert!(text.contains(says), "{typed:?}: {text}");
+    }
+}
+
+#[test]
+fn a_whole_invite_pasted_where_a_code_goes_is_taken_for_the_invite_it_is() {
+    let (mut application, _) = showing_the_three();
+    press(&mut application, KeyCode::Enter);
+    paste(&mut application, "\n  suru-v1-the-long-string\n");
+    let text = shown_text(&application);
+    assert!(text.contains("Paste Invite"), "{text}");
+    assert!(text.contains("suru-v1-the-long-string"), "{text}");
+    let ApplicationTransition::PreviewInvite { invite, .. } =
+        press(&mut application, KeyCode::Enter)
+    else {
+        panic!("Enter inspects it");
+    };
+    assert_eq!(invite, "suru-v1-the-long-string");
+}
+
+#[test]
+fn a_delivered_invite_reaches_the_usual_preview_and_the_usual_redemption() {
+    let (mut application, _) = showing_the_three();
+    let (request, _) = asking_with(&mut application, "K7QF-2MXP");
+    assert!(shown_text(&application).contains("Asking for the Invite"));
+    application
+        .handle_event(ApplicationEvent::ShortInviteDelivered {
+            request,
+            delivered: delivered_invite(),
+        })
+        .expect("take the Invite");
+    let text = shown_text(&application);
+    assert!(text.contains("Confirm Serving Server"), "{text}");
+    assert!(text.contains(WORKSTATION), "{text}");
+    assert_eq!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::Continue,
+        "trusting it opens Configure Remote"
+    );
+    let ApplicationTransition::RedeemInvite { redemption, .. } =
+        press(&mut application, KeyCode::Enter)
+    else {
+        panic!("Enter pairs");
+    };
+    assert_eq!(redemption.invite, "suru-v1-delivered");
+    assert_eq!(redemption.name.as_deref(), Some("workstation"));
+}
+
+/// Cancelling at the preview pairs nothing and leaves the machine's Invite
+/// standing there, though the code that fetched it is spent.
+#[test]
+fn escape_at_a_delivered_invites_preview_closes_as_it_does_for_any_other() {
+    let (mut application, _) = showing_the_three();
+    let (request, _) = asking_with(&mut application, "K7QF-2MXP");
+    application
+        .handle_event(ApplicationEvent::ShortInviteDelivered {
+            request,
+            delivered: delivered_invite(),
+        })
+        .expect("take the Invite");
+    press(&mut application, KeyCode::Esc);
+    let text = shown_text(&application);
+    assert!(!text.contains("Confirm Serving Server"), "{text}");
+    assert!(!text.contains("suru-v1-delivered"), "{text}");
+}
+
+/// A code that failed is said to be dead, and it is not typed again for the
+/// reader: nothing is sent until they type a new one and ask.
+#[test]
+fn a_failed_code_is_said_to_be_dead_and_taken_away_and_nothing_tries_it_again() {
+    let (mut application, _) = showing_the_three();
+    let (request, _) = asking_with(&mut application, "K7QF-2MXP");
+    let transition = application
+        .handle_event(ApplicationEvent::ShortInviteFailed {
+            request,
+            error: "That code did not work, and a code gets one try, so it is dead now. Get a \
+                    new one from /serve on the other machine"
+                .to_owned(),
+            spent: true,
+        })
+        .expect("take the failure");
+    assert_eq!(transition, ApplicationTransition::Continue);
+    let text = shown_text(&application);
+    assert!(text.contains("dead now"), "{text}");
+    assert!(
+        !text.contains("K7QF"),
+        "the code is gone from the field: {text}"
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::Continue,
+        "Enter tries nothing again"
+    );
+    let (_, fetch) = {
+        paste(&mut application, "H4RW-9TNB");
+        match press(&mut application, KeyCode::Enter) {
+            ApplicationTransition::FetchShortInvite { request, fetch } => (request, fetch),
+            other => panic!("a new code is asked for, not {other:?}"),
+        }
+    };
+    assert_eq!(fetch.code, ShortCode::parse("H4RW9TNB").unwrap());
+}
+
+/// Where nothing was spent — no code live there, or no Relay carrying it — the
+/// code stays for the reader to ask again once they have done what it says.
+#[test]
+fn no_code_live_says_to_issue_an_invite_there_and_leaves_what_was_typed() {
+    let (mut application, _) = showing_the_three();
+    let (request, _) = asking_with(&mut application, "K7QF-2MXP");
+    application
+        .handle_event(ApplicationEvent::ShortInviteFailed {
+            request,
+            error: "No code is live on that machine for this Relay. Issue an Invite there with \
+                    /serve"
+                .to_owned(),
+            spent: false,
+        })
+        .expect("take the failure");
+    let text = shown_text(&application);
+    assert!(text.contains("Issue an Invite there"), "{text}");
+    assert!(text.contains("K7QF"), "{text}");
+}
+
+#[test]
+fn an_answer_left_over_from_a_code_the_reader_moved_past_lands_nowhere() {
+    let (mut application, _) = showing_the_three();
+    let (request, _) = asking_with(&mut application, "K7QF-2MXP");
+    press(&mut application, KeyCode::Esc);
+    application
+        .handle_event(ApplicationEvent::ShortInviteDelivered {
+            request,
+            delivered: delivered_invite(),
+        })
+        .expect("take the Invite");
+    assert!(!shown_text(&application).contains("Confirm Serving Server"));
+}
+
+/// A machine that is not Serving, or a Remote already, has no code to ask for.
+#[test]
+fn only_a_serving_machine_asks_for_a_code() {
+    let (mut application, _) = showing_the_three();
+    press(&mut application, KeyCode::Down);
+    press(&mut application, KeyCode::Enter);
+    assert!(!shown_text(&application).contains("Pair with"));
+    press(&mut application, KeyCode::Down);
+    press(&mut application, KeyCode::Enter);
+    assert!(!shown_text(&application).contains("Pair with"));
 }

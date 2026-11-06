@@ -17,7 +17,8 @@
 //! two Relays were told different hostnames, the row keeps to one and the
 //! detail of the selected row says the others. A machine is **Remote already**
 //! whatever else it is, and goes by the Remote's name. Nothing here is believed
-//! (ADR-0064): choosing a row only says what to do next, and forms no Pairing.
+//! (ADR-0064): choosing a row only says what to do next, or asks for the code
+//! that would deliver its Invite, and forms no Pairing.
 
 use std::collections::{HashMap, HashSet};
 
@@ -285,19 +286,18 @@ impl FoundMachines {
         self.window.reveal();
     }
 
-    /// Chooses the machine Row Focus stands on, answering whether it stands on
-    /// one. Nothing comes of it but being told what to do there: no machine
-    /// listed is trusted, or asked anything, on the strength of being chosen.
-    pub(super) fn choose(&mut self) -> bool {
+    /// Chooses the machine Row Focus stands on. One waiting to be reached is
+    /// asked for its code; of any other, the reader is only told what to do
+    /// there. No machine listed is trusted, or asked anything, on the strength
+    /// of being chosen.
+    pub(super) fn choose(&mut self) -> MachineChoice {
         self.touched = true;
         let Some(machine) = self.selected() else {
-            return false;
+            return MachineChoice::Nothing;
         };
         let name = machine.shown_name();
         self.note = Some(match &machine.state {
-            MachineState::Serving => {
-                format!("To pair with {name}, issue an Invite there with /serve and paste it here")
-            }
+            MachineState::Serving => return MachineChoice::AsksForItsCode(machine.clone()),
             MachineState::NotServing => format!(
                 "{name} is logged in but not waiting to be reached, which may mean Serving is \
                  off, it is not Served through this Relay, or the machine is off; run /serve \
@@ -307,8 +307,19 @@ impl FoundMachines {
                 format!("Already paired as the Remote {remote}; /connect turns toward it")
             }
         });
-        true
+        MachineChoice::Told
     }
+}
+
+/// What came of choosing the machine Row Focus stands on.
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum MachineChoice {
+    /// Row Focus stands on no machine.
+    Nothing,
+    /// The reader was told what to do there.
+    Told,
+    /// It waits to be reached, so typing its code is what comes next.
+    AsksForItsCode(FoundMachine),
 }
 
 impl FoundMachine {
@@ -838,21 +849,23 @@ mod tests {
                 ],
             ),
         );
-        assert!(found.choose());
-        assert!(
-            found.note().unwrap().contains("issue an Invite there"),
-            "{:?}",
-            found.note()
-        );
+        assert!(matches!(
+            found.choose(),
+            MachineChoice::AsksForItsCode(machine) if machine.name == "workstation"
+        ));
+        assert_eq!(found.note(), None, "it says nothing of itself");
         found.walk(true);
-        assert_eq!(found.note(), None, "the next key takes it away");
-        assert!(found.choose());
+        assert_eq!(found.choose(), MachineChoice::Told);
         assert!(found.note().unwrap().contains("Already paired"));
         found.walk(true);
-        assert!(found.choose());
+        assert_eq!(found.choose(), MachineChoice::Told);
         assert!(found.note().unwrap().contains("run /serve there"));
         found.focus_invite();
-        assert!(!found.choose(), "no machine stands to be chosen");
+        assert_eq!(
+            found.choose(),
+            MachineChoice::Nothing,
+            "no machine stands to be chosen"
+        );
     }
 
     #[test]

@@ -17,18 +17,33 @@
 //! `/pair` opens on Invite entry and on the machines found at the Server's
 //! Relays together ([`FoundMachines`]), so whatever the Relays answer, and
 //! however late, an Invite pasted or typed goes where it always did.
+//!
+//! Choosing a machine waiting to be reached asks for the code its `/serve`
+//! shows, in a field of its own. Nothing is sent until what was typed is a code
+//! (ADR-0065), since the code gets one try, and a try that fails is not made
+//! again: it is taken from the field, and the reader told to get a new one. What
+//! the code delivers goes on as any Invite does, through the preview.
 
 use std::collections::HashMap;
 
+use zeroize::Zeroizing;
+
 use crate::protocol::{
-    InvitePreview, Outlook, RedeemInviteRequest, RelayLogin, RelayLoginOutcome, Remote,
-    RemoteHealth, RemoteStatus, UnreachableReason, Way,
+    DeliveredInvite, FetchShortInviteRequest, InvitePreview, Outlook, RedeemInviteRequest,
+    RelayLogin, RelayLoginOutcome, Remote, RemoteHealth, RemoteStatus, ShortCode,
+    UnreachableReason, Way,
 };
 
 use super::{
-    found_machines::FoundMachines, list_window::ListWindow, relay_overlay::RelayRequest,
+    found_machines::{FoundMachine, FoundMachines, MachineChoice},
+    list_window::ListWindow,
+    relay_overlay::RelayRequest,
     unreachable_reason,
 };
+
+/// The most of a code's field is kept: more than any code with its separator,
+/// so a long paste says it is too long, and bounded so that it stays small.
+const MOST_TYPED: usize = 64;
 
 /// One request the Connect overlay sent the Client's own Server — an
 /// Invite's preview, or its redemption — told apart from every other so its
@@ -79,6 +94,13 @@ enum ConnectOverlayState {
         invite: String,
         error: Option<String>,
     },
+    /// A machine chosen, its code being typed.
+    CodeEntry(CodeEntry),
+    /// That code asked for the machine's Invite under `request`.
+    Fetching {
+        entry: CodeEntry,
+        request: ConnectRequest,
+    },
     Inspecting {
         request: ConnectRequest,
     },
@@ -112,6 +134,27 @@ enum ConnectOverlayState {
     Removing {
         selected: usize,
     },
+}
+
+/// The code being typed for a machine chosen from those found.
+#[derive(Clone, Debug)]
+struct CodeEntry {
+    machine: FoundMachine,
+    /// What stands in the Invite field, for going back to.
+    invite: String,
+    typed: TypedCode,
+    error: Option<String>,
+}
+
+/// What has been typed of a code, which is the code once it is whole: wiped as
+/// it goes, and saying nothing of itself.
+#[derive(Clone, Default)]
+struct TypedCode(Zeroizing<String>);
+
+impl std::fmt::Debug for TypedCode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TypedCode(..)")
+    }
 }
 
 /// The one line a finished removal leaves on the picker, standing until the
@@ -234,6 +277,9 @@ pub(super) struct ConnectDetails<'a> {
 pub(super) enum ConnectInputMode {
     Waiting,
     Invite,
+    /// A machine's code, which takes what is typed and pasted as the Invite
+    /// field does.
+    Code,
     Confirm,
     Name,
     Ways,
@@ -294,9 +340,112 @@ impl ConnectOverlay {
     }
 
     /// Chooses the machine Row Focus stands on at Invite entry, answering
-    /// whether one was chosen. It forms no Pairing.
+    /// whether one was chosen: one waiting to be reached is asked for its code,
+    /// and any other says what to do there. It forms no Pairing.
     pub(super) fn choose_machine(&mut self) -> bool {
-        matches!(self.state, ConnectOverlayState::InviteEntry { .. }) && self.machines.choose()
+        let ConnectOverlayState::InviteEntry { invite, .. } = &self.state else {
+            return false;
+        };
+        let invite = invite.clone();
+        match self.machines.choose() {
+            MachineChoice::Nothing => false,
+            MachineChoice::Told => true,
+            MachineChoice::AsksForItsCode(machine) => {
+                self.state = ConnectOverlayState::CodeEntry(CodeEntry {
+                    machine,
+                    invite,
+                    typed: TypedCode::default(),
+                    error: None,
+                });
+                true
+            }
+        }
+    }
+
+    /// Asks for the Invite of the machine chosen by the code typed, where it is
+    /// a code: where it is not, it says why, and nothing is asked of anything.
+    pub(super) fn begin_fetching(&mut self) -> Option<(ConnectRequest, FetchShortInviteRequest)> {
+        let ConnectOverlayState::CodeEntry(entry) = &mut self.state else {
+            return None;
+        };
+        if entry.typed.0.is_empty() {
+            entry.error = Some("Type the code /serve shows on that machine".to_owned());
+            return None;
+        }
+        let code = match ShortCode::parse(&entry.typed.0) {
+            Ok(code) => code,
+            Err(problem) => {
+                entry.error = Some(problem.to_string());
+                return None;
+            }
+        };
+        let fetch = FetchShortInviteRequest {
+            server_key: entry.machine.key.clone(),
+            relays: entry.machine.waiting_at.clone(),
+            code,
+        };
+        let ConnectOverlayState::CodeEntry(entry) = std::mem::take(&mut self.state) else {
+            return None;
+        };
+        let request = self.issue();
+        self.state = ConnectOverlayState::Fetching { entry, request };
+        Some((request, fetch))
+    }
+
+    fn awaits_fetch(&self, request: ConnectRequest) -> bool {
+        matches!(self.state, ConnectOverlayState::Fetching { request: awaited, .. } if awaited == request)
+    }
+
+    /// Shows the preview of what the code asked for under `request` delivered,
+    /// where it is the one awaited, as any Invite's is.
+    pub(super) fn short_invite_delivered(
+        &mut self,
+        request: ConnectRequest,
+        delivered: DeliveredInvite,
+    ) {
+        if self.awaits_fetch(request) {
+            self.state = ConnectOverlayState::Confirming {
+                invite: delivered.invite,
+                preview: delivered.preview,
+            };
+            self.preview_window.scroll_to(0);
+        }
+    }
+
+    /// Returns to the machine's code saying why it delivered nothing. A code
+    /// `spent` is taken from the field: it will not work again, and nothing
+    /// here tries it again.
+    pub(super) fn short_invite_failed(
+        &mut self,
+        request: ConnectRequest,
+        error: String,
+        spent: bool,
+    ) {
+        if !self.awaits_fetch(request) {
+            return;
+        }
+        let ConnectOverlayState::Fetching { mut entry, .. } = std::mem::take(&mut self.state)
+        else {
+            return;
+        };
+        if spent {
+            entry.typed = TypedCode::default();
+        }
+        entry.error = Some(error);
+        self.state = ConnectOverlayState::CodeEntry(entry);
+    }
+
+    /// What is typed so far of the code for the machine chosen, as it is written
+    /// on the other machine, and why it delivered nothing, where it did not.
+    pub(super) fn code_entry(&self) -> Option<(&FoundMachine, String, Option<&str>)> {
+        match &self.state {
+            ConnectOverlayState::CodeEntry(entry) => Some((
+                &entry.machine,
+                entry.typed.0.to_ascii_uppercase(),
+                entry.error.as_deref(),
+            )),
+            _ => None,
+        }
     }
 
     /// Remembers the login on display as one the reader left while it was
@@ -314,6 +463,7 @@ impl ConnectOverlay {
     pub(super) fn loading_label(&self) -> Option<&'static str> {
         match &self.state {
             ConnectOverlayState::Loading => Some("Loading Remotes…"),
+            ConnectOverlayState::Fetching { .. } => Some("Asking for the Invite…"),
             ConnectOverlayState::Inspecting { .. } => Some("Inspecting Invite…"),
             ConnectOverlayState::Redeeming { .. } => Some("Pairing Remote…"),
             ConnectOverlayState::Removing { .. } => Some("Removing Remote…"),
@@ -357,6 +507,7 @@ impl ConnectOverlay {
     pub(super) fn input_mode(&self) -> ConnectInputMode {
         match &self.state {
             ConnectOverlayState::InviteEntry { .. } => ConnectInputMode::Invite,
+            ConnectOverlayState::CodeEntry(_) => ConnectInputMode::Code,
             ConnectOverlayState::Confirming { .. } => ConnectInputMode::Confirm,
             ConnectOverlayState::Details(draft) if draft.focus == ConnectFocus::Name => {
                 ConnectInputMode::Name
@@ -369,6 +520,7 @@ impl ConnectOverlay {
             } => ConnectInputMode::Login,
             ConnectOverlayState::Closed
             | ConnectOverlayState::Loading
+            | ConnectOverlayState::Fetching { .. }
             | ConnectOverlayState::Inspecting { .. }
             | ConnectOverlayState::Redeeming { .. }
             | ConnectOverlayState::LoggingIn { .. }
@@ -408,6 +560,26 @@ impl ConnectOverlay {
                 *error = None;
                 self.machines.focus_invite();
             }
+            ConnectOverlayState::CodeEntry(entry) => {
+                let mut typed = entry.typed.0.clone();
+                typed.extend(text.chars().filter(|character| !character.is_whitespace()));
+                // A whole Invite pasted, or typed, is the Invite it is: it
+                // goes where it would have gone, and spends no code.
+                if typed.starts_with("suru-v") {
+                    self.state = ConnectOverlayState::InviteEntry {
+                        invite: typed.to_string(),
+                        error: None,
+                    };
+                    self.machines.focus_invite();
+                    return;
+                }
+                let kept = typed.char_indices().nth(MOST_TYPED).map(|(at, _)| at);
+                if let Some(kept) = kept {
+                    typed.truncate(kept);
+                }
+                entry.typed = TypedCode(typed);
+                entry.error = None;
+            }
             ConnectOverlayState::Details(draft) if draft.focus == ConnectFocus::Name => {
                 draft
                     .name
@@ -424,6 +596,10 @@ impl ConnectOverlay {
                 invite.pop();
                 *error = None;
                 self.machines.focus_invite();
+            }
+            ConnectOverlayState::CodeEntry(entry) => {
+                entry.typed.0.pop();
+                entry.error = None;
             }
             ConnectOverlayState::Details(draft) if draft.focus == ConnectFocus::Name => {
                 draft.name.pop();
@@ -1030,6 +1206,10 @@ impl ConnectOverlay {
                 self.refusal_window.scroll_to(0);
                 ConnectOverlayState::Details(draft)
             }
+            ConnectOverlayState::CodeEntry(entry) => ConnectOverlayState::InviteEntry {
+                invite: entry.invite,
+                error: None,
+            },
             _ => ConnectOverlayState::Closed,
         };
     }

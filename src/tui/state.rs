@@ -2606,6 +2606,8 @@ impl TuiState {
                     .as_ref()
                     .is_some_and(|identity| identity.instance_id != health.instance_id);
                 if replaced_server {
+                    self.short_code = crate::protocol::ShortCodeStanding::default();
+                    self.serve_overlay.server_replaced();
                     if self.new_worktree.is_some()
                         && let Some(prompt_id) = self
                             .pending_submission
@@ -5625,6 +5627,27 @@ pub enum ApplicationEvent {
         machines: crate::protocol::RelayMachines,
     },
     /// What the preview `request` asked for found the Invite to offer.
+    /// What a machine's code delivered.
+    ShortInviteDelivered {
+        request: ConnectRequest,
+        delivered: crate::protocol::DeliveredInvite,
+    },
+    /// Why a machine's code delivered nothing, and whether its one try was
+    /// `spent`.
+    ShortInviteFailed {
+        request: ConnectRequest,
+        error: String,
+        spent: bool,
+    },
+    /// The new short code for the Invite shown.
+    ShortCodeIssued {
+        request: ServeRequest,
+        code: crate::protocol::IssuedShortCode,
+    },
+    ShortCodeIssuanceFailed {
+        request: ServeRequest,
+        error: String,
+    },
     InvitePreviewed {
         request: ConnectRequest,
         invite: String,
@@ -6249,6 +6272,17 @@ pub enum ApplicationTransition {
     /// Ask the local Server for paired Remotes without opening or refreshing
     /// the Connect overlay.
     ListEverywhereRemotes(EverywhereListRequest),
+    /// Ask a machine chosen from those found for its Invite by the code typed,
+    /// and answer with [`ApplicationEvent::ShortInviteDelivered`] or
+    /// [`ApplicationEvent::ShortInviteFailed`], either naming `request`.
+    FetchShortInvite {
+        request: ConnectRequest,
+        fetch: crate::protocol::FetchShortInviteRequest,
+    },
+    /// Ask for a new short code for the Invite shown, and answer with
+    /// [`ApplicationEvent::ShortCodeIssued`] or
+    /// [`ApplicationEvent::ShortCodeIssuanceFailed`], either naming the request.
+    IssueShortCode(ServeRequest),
     /// Inspect a pasted Invite, and answer with
     /// [`ApplicationEvent::InvitePreviewed`] or
     /// [`ApplicationEvent::InvitePreviewFailed`], either naming `request`.
@@ -7101,6 +7135,30 @@ impl Application {
                         self.state.sidebar.fail_everywhere_remotes(request, error);
                     }
                 }
+                Ok(ApplicationTransition::Continue)
+            }
+            ApplicationEvent::ShortInviteDelivered { request, delivered } => {
+                self.state
+                    .connect_overlay
+                    .short_invite_delivered(request, delivered);
+                Ok(ApplicationTransition::Continue)
+            }
+            ApplicationEvent::ShortInviteFailed {
+                request,
+                error,
+                spent,
+            } => {
+                self.state
+                    .connect_overlay
+                    .short_invite_failed(request, error, spent);
+                Ok(ApplicationTransition::Continue)
+            }
+            ApplicationEvent::ShortCodeIssued { request, code } => {
+                self.state.serve_overlay.show_new_code(request, code);
+                Ok(ApplicationTransition::Continue)
+            }
+            ApplicationEvent::ShortCodeIssuanceFailed { request, error } => {
+                self.state.serve_overlay.new_code_refused(request, error);
                 Ok(ApplicationTransition::Continue)
             }
             ApplicationEvent::InvitePreviewed {
@@ -11755,6 +11813,9 @@ impl Application {
                 {
                     return Ok(ApplicationTransition::Continue);
                 }
+                if let Some((request, fetch)) = self.state.connect_overlay.begin_fetching() {
+                    return Ok(ApplicationTransition::FetchShortInvite { request, fetch });
+                }
                 if let Some((request, redemption)) = self
                     .state
                     .connect_overlay
@@ -11890,6 +11951,23 @@ impl Application {
                     ApplicationTransition::CopyToClipboard,
                 ))
             }
+            SemanticCommandId::ServeCopyShortCode => Ok(self
+                .state
+                .serve_overlay
+                .copy_code_text(&self.state.short_code)
+                .map(Into::into)
+                .map_or(
+                    ApplicationTransition::Continue,
+                    ApplicationTransition::CopyToClipboard,
+                )),
+            SemanticCommandId::ServeNewShortCode => Ok(self
+                .state
+                .serve_overlay
+                .begin_renewing(&self.state.short_code)
+                .map_or(
+                    ApplicationTransition::Continue,
+                    ApplicationTransition::IssueShortCode,
+                )),
             SemanticCommandId::ServeRemovePeer => {
                 Ok(self.state.serve_overlay.remove_selected().map_or(
                     ApplicationTransition::Continue,

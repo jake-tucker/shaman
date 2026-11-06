@@ -628,6 +628,8 @@ pub(super) fn command_for_serve_overlay_event(
         (KeyCode::Char('a'), KeyModifiers::NONE) => SemanticCommandId::ServeRelayAdd,
         (KeyCode::Enter, KeyModifiers::NONE) => SemanticCommandId::ServeConfirm,
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => SemanticCommandId::ServeCopyInvite,
+        (KeyCode::Char('c'), KeyModifiers::NONE) => SemanticCommandId::ServeCopyShortCode,
+        (KeyCode::Char('n'), KeyModifiers::NONE) => SemanticCommandId::ServeNewShortCode,
         (KeyCode::Char('x'), KeyModifiers::NONE) => SemanticCommandId::ServeRemovePeer,
         (KeyCode::Esc, KeyModifiers::NONE) => SemanticCommandId::ServeClose,
         _ => return None,
@@ -712,7 +714,10 @@ pub(super) fn command_for_connect_overlay_event(
 ) -> Option<CommandId> {
     let key = match event {
         InputEvent::Paste(text)
-            if matches!(mode, ConnectInputMode::Invite | ConnectInputMode::Name) =>
+            if matches!(
+                mode,
+                ConnectInputMode::Invite | ConnectInputMode::Code | ConnectInputMode::Name
+            ) =>
         {
             return Some(CommandId::InsertConnectText(text));
         }
@@ -823,6 +828,7 @@ pub(super) fn command_for_connect_overlay_event(
         }
         (
             ConnectInputMode::Invite
+            | ConnectInputMode::Code
             | ConnectInputMode::Confirm
             | ConnectInputMode::Name
             | ConnectInputMode::Ways
@@ -831,12 +837,12 @@ pub(super) fn command_for_connect_overlay_event(
             KeyModifiers::NONE,
         ) => Some(CommandId::InvokeSemantic(SemanticCommandId::ConnectConfirm)),
         (
-            ConnectInputMode::Invite | ConnectInputMode::Name,
+            ConnectInputMode::Invite | ConnectInputMode::Code | ConnectInputMode::Name,
             KeyCode::Backspace,
             KeyModifiers::NONE,
         ) => Some(CommandId::DeleteConnectTextBackward),
         (
-            ConnectInputMode::Invite | ConnectInputMode::Name,
+            ConnectInputMode::Invite | ConnectInputMode::Code | ConnectInputMode::Name,
             KeyCode::Char(character),
             KeyModifiers::NONE | KeyModifiers::SHIFT,
         ) => Some(CommandId::InsertConnectText(character.to_string())),

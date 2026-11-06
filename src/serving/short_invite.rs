@@ -426,7 +426,13 @@ impl ShortCodes {
         Self {
             invites,
             standing: Arc::new(watch::Sender::new(ShortCodeStanding::default())),
-            last_serial: Arc::default(),
+            // Going on from wherever a run before this one got to, so a
+            // Client that heard of a code then never takes one now for it.
+            last_serial: Arc::new(AtomicU64::new(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |since| since.as_secs()),
+            )),
             at_once: Arc::new(Semaphore::new(EXCHANGES_AT_ONCE)),
             timeout,
         }

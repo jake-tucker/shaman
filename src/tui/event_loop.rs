@@ -1712,6 +1712,21 @@ impl RunLoop {
                     self.channels.pairing.clone(),
                 );
             }
+            ApplicationTransition::FetchShortInvite { request, fetch } => {
+                spawn_short_invite_fetch(
+                    self.client.session_commands(),
+                    request,
+                    fetch,
+                    self.channels.pairing.clone(),
+                );
+            }
+            ApplicationTransition::IssueShortCode(request) => {
+                spawn_short_code_issuance(
+                    self.client.session_commands(),
+                    request,
+                    self.channels.pairing.clone(),
+                );
+            }
             ApplicationTransition::PreviewInvite { request, invite } => {
                 spawn_invite_preview(
                     self.client.session_commands(),
@@ -2009,6 +2024,8 @@ impl RunLoop {
             | ApplicationTransition::BeginConnecting
             | ApplicationTransition::BeginPairing(_)
             | ApplicationTransition::FindMachines(_)
+            | ApplicationTransition::FetchShortInvite { .. }
+            | ApplicationTransition::IssueShortCode(_)
             | ApplicationTransition::PreviewInvite { .. }
             | ApplicationTransition::RedeemInvite { .. }
             | ApplicationTransition::TurnOutlook { .. }
@@ -2743,6 +2760,24 @@ impl RunLoop {
             PairingResult::EverywhereRemoteListingFailed { request, error } => {
                 ApplicationEvent::EverywhereRemoteListingFailed { request, error }
             }
+            PairingResult::ShortInviteDelivered { request, delivered } => {
+                ApplicationEvent::ShortInviteDelivered { request, delivered }
+            }
+            PairingResult::ShortInviteFailed {
+                request,
+                error,
+                spent,
+            } => ApplicationEvent::ShortInviteFailed {
+                request,
+                error,
+                spent,
+            },
+            PairingResult::ShortCodeIssued { request, code } => {
+                ApplicationEvent::ShortCodeIssued { request, code }
+            }
+            PairingResult::ShortCodeIssuanceFailed { request, error } => {
+                ApplicationEvent::ShortCodeIssuanceFailed { request, error }
+            }
             PairingResult::InvitePreviewed {
                 request,
                 invite,
@@ -2939,6 +2974,23 @@ enum PairingResult {
         request: EverywhereListRequest,
         error: String,
     },
+    ShortInviteDelivered {
+        request: crate::tui::ConnectRequest,
+        delivered: crate::protocol::DeliveredInvite,
+    },
+    ShortInviteFailed {
+        request: crate::tui::ConnectRequest,
+        error: String,
+        spent: bool,
+    },
+    ShortCodeIssued {
+        request: crate::tui::ServeRequest,
+        code: crate::protocol::IssuedShortCode,
+    },
+    ShortCodeIssuanceFailed {
+        request: crate::tui::ServeRequest,
+        error: String,
+    },
     InvitePreviewed {
         request: crate::tui::ConnectRequest,
         invite: String,
@@ -3000,6 +3052,52 @@ fn relay_login_needed(error: &anyhow::Error) -> Option<String> {
         crate::protocol::UnreachableReason::RelayCapReached { .. }
         | crate::protocol::UnreachableReason::RelayDifferentAccounts { .. } => None,
     }
+}
+
+/// Makes the one attempt a reader asked for by typing a machine's code. Nothing
+/// here or above it asks again: only the reader does.
+fn spawn_short_invite_fetch(
+    commands: SessionCommandClient,
+    request: crate::tui::ConnectRequest,
+    fetch: crate::protocol::FetchShortInviteRequest,
+    results: UnboundedSender<PairingResult>,
+) {
+    tokio::spawn(async move {
+        let result = match commands.fetch_short_invite(fetch).await {
+            Ok(delivered) => PairingResult::ShortInviteDelivered { request, delivered },
+            Err(error) => PairingResult::ShortInviteFailed {
+                request,
+                spent: error
+                    .downcast_ref::<crate::protocol::SessionError>()
+                    .is_some_and(|error| {
+                        matches!(
+                            error.code,
+                            crate::protocol::SessionErrorCode::ShortCodeDead
+                                | crate::protocol::SessionErrorCode::ShortCodeKeyMismatch
+                        )
+                    }),
+                error: error.to_string(),
+            },
+        };
+        let _ = results.send(result);
+    });
+}
+
+fn spawn_short_code_issuance(
+    commands: SessionCommandClient,
+    request: crate::tui::ServeRequest,
+    results: UnboundedSender<PairingResult>,
+) {
+    tokio::spawn(async move {
+        let result = match commands.new_short_code().await {
+            Ok(code) => PairingResult::ShortCodeIssued { request, code },
+            Err(error) => PairingResult::ShortCodeIssuanceFailed {
+                request,
+                error: error.to_string(),
+            },
+        };
+        let _ = results.send(result);
+    });
 }
 
 fn spawn_invite_preview(

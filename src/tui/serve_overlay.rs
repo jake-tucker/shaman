@@ -31,6 +31,12 @@
 //! reader has since moved past — the picker closed and opened again — lands
 //! nowhere. The keys stay on the way they are on however the Relays move
 //! around it, moving to its neighbour only where it goes itself.
+//!
+//! An Invite offering a Relay comes with a short code, shown beside its long
+//! string for as long as it can be tried (ADR-0065). The Server says how it
+//! stands, so what is shown follows: an attempt on it, which this reader may
+//! not have made, says so in its place, with one key for a new one that leaves
+//! the Invite as it was.
 
 use std::{
     cell::{Cell, RefCell},
@@ -39,7 +45,8 @@ use std::{
 };
 
 use crate::protocol::{
-    IssueInviteRequest, IssuedInvite, ListenerState, Peer, Relay, RelayState, Way,
+    IssueInviteRequest, IssuedInvite, IssuedShortCode, ListenerState, Peer, Relay, RelayState,
+    ShortCodeStanding, ShortCodeState, Way,
 };
 
 use super::{
@@ -136,7 +143,22 @@ enum ServeOverlayState {
         armed: bool,
         removing: Option<String>,
         error: Option<String>,
+        /// The asking for a new short code awaited, where one is.
+        renewing: Option<ServeRequest>,
     },
+}
+
+/// What is said of the short code of the Invite shown, as the Server says it
+/// stands.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct ShownCode {
+    /// The code, in its two groups, for as long as it can be tried.
+    pub(super) code: Option<String>,
+    pub(super) said: &'static str,
+    /// Whether it is said as something to take note of.
+    pub(super) attempt_failed: bool,
+    /// Whether a new code can be had for the Invite shown.
+    pub(super) renewable: bool,
 }
 
 /// What the reader has chosen of the ways an Invite may offer. Every way is
@@ -856,8 +878,173 @@ impl ServeOverlay {
             armed: false,
             removing: None,
             error: None,
+            renewing: None,
         };
         self.window.open();
+    }
+
+    /// What is said of the short code of the Invite shown, where it has one.
+    /// The Server may say how the code stands before or after this Client hears
+    /// it was issued, so what it says of an earlier code says nothing of it.
+    pub(super) fn shown_code(&self, standing: &ShortCodeStanding) -> Option<ShownCode> {
+        let issued = self.invite()?.short_code.as_ref()?;
+        let shown = |code: Option<String>, said, attempt_failed, renewable| ShownCode {
+            code,
+            said,
+            attempt_failed,
+            renewable,
+        };
+        if standing.serial > issued.serial {
+            return Some(shown(
+                None,
+                "This code was replaced by a newer one, issued since",
+                false,
+                false,
+            ));
+        }
+        let state = if standing.serial == issued.serial {
+            standing.state
+        } else {
+            ShortCodeState::Live
+        };
+        let stands = standing.serial < issued.serial || standing.invite_stands;
+        Some(match state {
+            ShortCodeState::Live => shown(
+                Some(issued.code.grouped()),
+                "Type it in /pair on the other machine. It gets one try",
+                false,
+                true,
+            ),
+            ShortCodeState::UnderWay => shown(None, "This code is being tried now", false, true),
+            ShortCodeState::Delivered => shown(
+                None,
+                "This code was used: the machine that typed it holds the Invite, and is not \
+                 paired until it trusts it there",
+                false,
+                stands,
+            ),
+            ShortCodeState::WrongCodeTried if stands => shown(
+                None,
+                "A wrong code was tried, so this one is dead. The Invite stays good, and a new \
+                 code can be had for it",
+                true,
+                true,
+            ),
+            ShortCodeState::WrongCodeTried => shown(
+                None,
+                "A wrong code was tried, so this one is dead, and its Invite has ended since",
+                true,
+                false,
+            ),
+            ShortCodeState::LeftUnfinished if stands => shown(
+                None,
+                "An attempt on this code never finished, so it is dead. The Invite stays good, \
+                 and a new code can be had for it",
+                true,
+                true,
+            ),
+            ShortCodeState::LeftUnfinished => shown(
+                None,
+                "An attempt on this code never finished, so it is dead, and its Invite has ended \
+                 since",
+                true,
+                false,
+            ),
+            ShortCodeState::Ended => shown(None, "This code ended with its Invite", false, false),
+        })
+    }
+
+    /// What the picker says of the last short code, where an attempt used it
+    /// up: the reader may have closed `/serve`, or be in another Client, and it
+    /// stands until another code replaces it.
+    pub(super) fn last_code_said(&self, standing: &ShortCodeStanding) -> Option<&'static str> {
+        if !self.is_choosing() {
+            return None;
+        }
+        match standing.state {
+            ShortCodeState::WrongCodeTried => Some(
+                "A wrong code was tried on the last short code, which is dead. Enter issues a new \
+                 Invite, and a new code with it",
+            ),
+            ShortCodeState::LeftUnfinished => Some(
+                "An attempt on the last short code never finished, so it is dead. Enter issues a \
+                 new Invite, and a new code with it",
+            ),
+            _ => None,
+        }
+    }
+
+    /// Asks for a new short code for the Invite shown, where one can be had,
+    /// answering the request that asks.
+    pub(super) fn begin_renewing(&mut self, standing: &ShortCodeStanding) -> Option<ServeRequest> {
+        if !self.shown_code(standing)?.renewable {
+            return None;
+        }
+        let request = self.issue();
+        let ServeOverlayState::Managing {
+            renewing, error, ..
+        } = &mut self.state
+        else {
+            return None;
+        };
+        if renewing.is_some() {
+            return None;
+        }
+        *renewing = Some(request);
+        *error = None;
+        Some(request)
+    }
+
+    /// Shows the new short code `request` asked for, where it is the one
+    /// awaited.
+    pub(super) fn show_new_code(&mut self, request: ServeRequest, code: IssuedShortCode) {
+        if let ServeOverlayState::Managing {
+            invite, renewing, ..
+        } = &mut self.state
+            && *renewing == Some(request)
+        {
+            invite.short_code = Some(code);
+            *renewing = None;
+        }
+    }
+
+    /// Says why no new short code came of `request`, where it is the one
+    /// awaited.
+    pub(super) fn new_code_refused(&mut self, request: ServeRequest, why: String) {
+        if let ServeOverlayState::Managing {
+            renewing, error, ..
+        } = &mut self.state
+            && *renewing == Some(request)
+        {
+            *renewing = None;
+            *error = Some(why);
+        }
+    }
+
+    /// Takes that the Server that issued what is shown has gone. A code, and
+    /// the Invite it came with, are held in memory alone and went with it, so
+    /// what is shown here can no longer be tried.
+    pub(super) fn server_replaced(&mut self) {
+        if let ServeOverlayState::Managing {
+            invite,
+            renewing,
+            error,
+            ..
+        } = &mut self.state
+        {
+            invite.short_code = None;
+            *renewing = None;
+            *error = Some(
+                "The Server has restarted, so this Invite and its code are gone; close this and \
+                 run /serve to issue another"
+                    .to_owned(),
+            );
+        }
+    }
+
+    /// The short code shown, as it is typed, for copying.
+    pub(super) fn copy_code_text(&self, standing: &ShortCodeStanding) -> Option<String> {
+        self.shown_code(standing)?.code
     }
 
     /// Returns the picker to the ways as the reader chose them, with why the
