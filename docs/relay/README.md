@@ -643,22 +643,33 @@ through**, or **Serves through once logged in**, or **Serves through once Servin
 Press `s` again to stop.
 
 A Server waits at the Relay only while it runs, and nothing starts one after a reboot. To have it come back with nobody
-at the machine, run `suru server install` there, which starts this Channel's Server whenever you log in, with no
-elevation, and `suru server status` says whether it is registered. `suru server uninstall` removes it. Neither touches a
-Server running now: it comes into force at the next login, and `suru server start` starts one before then. Once it has,
-a Server that crashes is restarted, and one stopped by `suru server stop` stays stopped until the next login or `suru
-server start`. Install again after moving Suru or changing your `PATH`, since a Server started this way finds its
-Providers on the `PATH` kept when you installed; install warns of a binary path that will not survive an upgrade, and of
-API keys or proxy settings it will not carry, because they may hold secrets.
+at the machine, run `suru server install` there, which registers a Login start: this Channel's Server starts whenever you
+log in, with no elevation. `suru server status` says whether one is registered, reading the registration alone, so it
+cannot see one turned off in the service manager itself: a Login Items toggle, `launchctl disable`, a disabled Task or a
+masked unit. `suru server uninstall` removes it. Neither touches a Server running now: it comes into force at the next
+login, and `suru server start` starts one before then.
+
+From then on a Server that crashes is restarted, within about ten seconds. One stopped by `suru server stop` stays stopped
+until the next login or `suru server start`, and that holds for a stop issued just after a crash, when there is nothing
+to stop and `suru server stop` says so. A plain `kill` is taken as a stop too; only something like `kill -9` reads as a
+crash. A Server that hangs is neither restarted nor stoppable this way: `suru server stop` reports it unreachable.
+
+Install again after moving Suru or changing your `PATH`, since a Server started this way finds its Providers on the `PATH`
+kept when you installed. Install warns of a binary path that may not survive an upgrade, of `PATH` entries a reboot takes
+away, and of variables it will not carry because they may hold secrets or belong to that shell: API keys, tokens, proxy
+settings and a Provider's own settings. It names them and never keeps their values, so a Provider or Relay relying on one
+needs another way in.
 
 What each platform covers:
 
 - **macOS**: a LaunchAgent, run by a login at the Mac's screen. A Mac waits for its login keychain, which holds the
   Server's identity key, so one that has rebooted and that nobody has logged in to, or that is reached only over SSH,
-  stays Unreachable.
-- **Linux**: a systemd user unit, run from the user's first login until the last logout. To run with no session at all,
-  run `loginctl enable-linger $USER`; a key kept in a keyring nothing has unlocked then fails Serving where you can see
-  it. A machine with no systemd user instance, such as a container, is told so, and has whatever starts things there run
+  stays Unreachable. A Server started this way may count as its own program to macOS's privacy checks, so work in
+  Documents, Desktop or Downloads may raise a consent prompt that waits for someone at the screen. That, and what a
+  logout does to it, have not been verified.
+- **Linux**: a systemd user unit, run from the user's first login. At the last logout the Server is ended outright, as a
+  crash would, and the next login starts another. To run with no session at all, run `loginctl enable-linger $USER`; a
+  key kept in a keyring nothing has unlocked then fails Serving where you can see it. A machine with no systemd user instance, such as a container, is told so, and has whatever starts things there run
   `suru server start`.
 - **Windows**: a Scheduled Task at this user's logon. A machine that nobody has logged on to stays Unreachable.
 

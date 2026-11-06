@@ -1330,6 +1330,7 @@ mod tests {
         }
         .covers();
         assert!(mac.contains("login keychain"), "{mac}");
+        assert!(mac.contains("consent prompt"), "{mac}");
         let linux = systemd::UserUnit {
             channel: "beta".to_owned(),
             home: home.clone(),

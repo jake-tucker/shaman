@@ -34,7 +34,10 @@ those stay Unreachable. The Server's identity key is in the login keychain, whic
 unlocks, so a Mac waits for it, and a Server that cannot read its key fails Serving \
 where you can see it rather than making a new one.
 - macOS may list this under Login Items & Extensions in System Settings. Turned off there, it \
-does not run.";
+does not run.
+- To macOS's privacy checks, a Server started this way may count as its own program rather than \
+as part of your terminal. Work in Documents, Desktop or Downloads may raise a consent prompt that \
+waits for someone at the screen.";
 
 fn label(channel: &str) -> String {
     format!("ai.suru.server.{channel}")

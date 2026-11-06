@@ -28,8 +28,8 @@ fn covers() -> String {
         "\
 What this covers on Linux:
 - This user's first login, whether at a screen or over SSH.
-- Not a machine that has rebooted and that nobody has logged in to, and it stops at the last \
-logout. To run with no session at all, run `loginctl enable-linger {user}`, which needs no \
+- Not a machine that has rebooted and that nobody has logged in to, and at the last logout the \
+Server is ended outright, as a crash would. To run with no session at all, run `loginctl enable-linger {user}`, which needs no \
 reinstalling.
 - A Server whose identity key is in a keyring that nothing has unlocked, as with no desktop \
 login, fails Serving where you can see it rather than making a new one."
@@ -60,10 +60,16 @@ fn exec_word(word: &str) -> String {
 ///
 /// `KillMode=process`, because the Server is in this unit's control group
 /// though it is detached from its Keeper: the default, `control-group`, would
-/// take it down with the Keeper as the unit stops. The Server still goes at
-/// logout, when the user instance ends and takes all of its control groups
-/// with it, as a SIGTERM it answers as a Manual stop; the next login's Keeper
-/// reads that stop as already seen, and starts another.
+/// take it down with the Keeper, whenever the Keeper ended.
+///
+/// That leaves logout with no linger. The user instance signals the Keeper alone,
+/// and the system then ends `user@.service`, killing what is left of its control
+/// groups outright. So the Server goes as a crash leaves it, with no Manual stop
+/// recorded; SQLite's journal keeps storage whole, its Providers go with it, and
+/// the next login's Keeper finds the election free and starts another. There is
+/// no clean way to do better here: an `ExecStop=` running `suru server stop` also
+/// runs once the Keeper has ended by itself, which it does on finding its
+/// registration gone, and would stop a Server uninstalling must leave alone.
 ///
 /// Its stdout and stderr go to the journal, which systemd keeps bounded, and the
 /// Server's to the state directory, where any launched Server's go.

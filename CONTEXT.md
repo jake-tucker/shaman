@@ -403,6 +403,10 @@ _Avoid_: Thread mapping, provider cache
 The long-lived Suru process that owns a user's Sessions, Server Settings, and Provider work on one machine, one per Channel, which Clients attach to rather than doing that work themselves.
 _Avoid_: Daemon, backend, host
 
+**Manual stop**:
+A Server's stopping because its user asked: `suru server stop`, or the operating system's signal answered as one, such as a plain `kill`. It is recorded for the Channel before the Server lets the Channel go, and is final for every Server launched before it, so it is neither undone by a Client recovering nor by a Keeper; only a later launch serves. A stop asked for with no Server there to answer it, one having just crashed, is recorded all the same. Distinct from a crash, which records nothing and is answered by starting another, and from a replacement, which hands the Channel on.
+_Avoid_: Shutdown, kill, quit
+
 **Login start**:
 A Channel's registration with the machine's service manager to run its Keeper whenever its user logs in: a LaunchAgent, a systemd user unit, or a Scheduled Task at logon, off until asked for with `suru server install`, never needing elevation, and in force from the next login. It is a start at login rather than at boot because a Server's identity key may be out of reach until then, and neither registering nor removing one touches a Server running now.
 _Avoid_: Service, daemon, autostart, login item

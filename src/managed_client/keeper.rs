@@ -211,7 +211,7 @@ pub async fn keep_server(
             continue;
         }
         if no_longer_wanted() {
-            tracing::info!("the channel's start at login was removed, so its keeper is done");
+            tracing::info!("the channel's login start was removed, so its keeper is done");
             return Ok(());
         }
         tracing::warn!("the channel's server is gone with no manual stop recorded: launching one");
