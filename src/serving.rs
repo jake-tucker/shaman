@@ -653,11 +653,11 @@ impl StoredPeer {
 }
 
 /// The most characters a Peer's name runs to.
-const MAX_PEER_NAME_CHARS: usize = 64;
+pub(crate) const MAX_PEER_NAME_CHARS: usize = 64;
 
 /// The first characters of a key fingerprint: enough to tell two Peers
 /// known by one name apart wherever they are named.
-fn short_fingerprint(fingerprint: &str) -> &str {
+pub(crate) fn short_fingerprint(fingerprint: &str) -> &str {
     &fingerprint[..fingerprint.len().min(8)]
 }
 
@@ -708,7 +708,7 @@ fn peer_name<'a>(
 
 /// `name` composed canonically, so one name is spelled one way however it was
 /// typed.
-fn composed(name: &str) -> String {
+pub(crate) fn composed(name: &str) -> String {
     icu_normalizer::ComposingNormalizerBorrowed::new_nfc()
         .normalize(name)
         .into_owned()
@@ -716,13 +716,13 @@ fn composed(name: &str) -> String {
 
 /// `name` as names are told apart: composed, then case folded, so `Å` and
 /// `å`, or `ß` and `ss`, are one.
-fn folded(name: &str) -> String {
+pub(crate) fn folded(name: &str) -> String {
     composed(name).to_uppercase().to_lowercase()
 }
 
 /// Whether `character` is one a reader cannot see in a name: a control, a
 /// formatting character, or one Unicode says is ignorable by default.
-fn unseen(character: char) -> bool {
+pub(crate) fn unseen(character: char) -> bool {
     use icu_properties::{
         CodePointMapData, CodePointSetData,
         props::{DefaultIgnorableCodePoint, GeneralCategory},

@@ -20,7 +20,7 @@ use crate::{
         CheckoutStateChanged, CreateSessionRequest, Health, InterruptOutcome, InvitePreview,
         IssueInviteRequest, IssuedInvite, LifecycleState, ModelCatalog, MoveOutcome,
         MoveSessionRequest, Outlook, Peer, PreviewInviteRequest, Prompt, PromptId,
-        RedeemInviteRequest, Relay, RelayListing, RelayLogin, RelayRemoval,
+        RedeemInviteRequest, Relay, RelayListing, RelayLogin, RelayMachines, RelayRemoval,
         RelayServeThroughRequest, Remote, RemoteHealth, RemoteRemoval, ResolveWorkspaceRequest,
         RuntimeDescriptor, SESSION_ERROR_CODE_HEADER, ServerShutdown, SessionApprovalPosture,
         SessionCatalogSnapshot, SessionCreated, SessionDeleted, SessionError, SessionErrorCode,
@@ -665,6 +665,13 @@ impl ManagedClient {
 
     pub async fn add_relay(&self, address: impl Into<String>) -> Result<Relay> {
         self.session_commands().add_relay(address.into()).await
+    }
+
+    /// Has the Client's own Server ask the Relay at `address` which other
+    /// machines are logged in there, answering how it answered within the
+    /// Server's bound on that.
+    pub async fn list_relay_machines(&self, address: &str) -> Result<RelayMachines> {
+        self.session_commands().list_relay_machines(address).await
     }
 
     /// Has the Client's own Server begin a login at the Relay at `address`:
@@ -1959,6 +1966,18 @@ impl SessionCommandClient {
             .await
             .context("send Relay addition")?;
         decode_api_response(response, "Relay addition").await
+    }
+
+    pub(crate) async fn list_relay_machines(&self, address: &str) -> Result<RelayMachines> {
+        let descriptor = self.descriptor.borrow().clone();
+        let response = self
+            .http
+            .get(relay_url(&descriptor.base_url, &[address, "machines"])?)
+            .bearer_auth(&descriptor.token)
+            .send()
+            .await
+            .context("send Relay machine listing")?;
+        decode_api_response(response, "Relay machine listing").await
     }
 
     pub(crate) async fn begin_relay_login(&self, address: &str) -> Result<RelayLogin> {

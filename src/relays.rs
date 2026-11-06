@@ -3,7 +3,9 @@
 //! connection it keeps to each Relay it has logged in at — on which, while
 //! it is Serving and its user has chosen to Serve through that Relay, it
 //! waits to be reached, taking up each join asked of it and handing what the
-//! join carries to the Serving side. As the redeeming side of a Pairing, it
+//! join carries to the Serving side. As a Client asks, it asks a Relay it has
+//! logged in at which other machines stand there under its Account
+//! ([`machines`]), a hint that changes nothing here. As the redeeming side of a Pairing, it
 //! asks at a Relay it has logged in at to be joined to the Serving Server a
 //! Relay way names, whenever that way is dialled. The Server proves itself
 //! by its identity key every time it connects and holds no other credential
@@ -52,7 +54,8 @@ use crate::serving::SOCKET_USER_TIMEOUT;
 use crate::{
     protocol::{
         Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginOutcome, RelayLoginRefusal,
-        RelayRemoval, RelaySide, RelayState, RelayUnreachable, SessionErrorCode, UnreachableReason,
+        RelayMachines, RelayMachinesAnswer, RelayRemoval, RelaySide, RelayState, RelayUnreachable,
+        SessionErrorCode, UnreachableReason,
     },
     runtime::replace_private_file,
     serving::{
@@ -62,6 +65,8 @@ use crate::{
         read_records,
     },
 };
+
+mod machines;
 
 const RELAYS_FILE: &str = "relays.json";
 
@@ -324,6 +329,84 @@ impl RelayController {
     /// revision of them.
     pub(crate) fn subscribe(&self) -> watch::Receiver<RelayListing> {
         self.published.subscribe()
+    }
+
+    /// What the Relay at `address` says of the other machines logged in there
+    /// under the Account the Server's Login stands under, on a connection
+    /// opened to ask and let go of again, so nothing the Server waits on there
+    /// is disturbed, and all within the answer budget, so a Relay that does
+    /// not answer costs no more than that and holds nothing up. Where the
+    /// Server has not logged in there, nothing is asked. It changes nothing:
+    /// not how the Relay reads, nor anything held of any key.
+    pub(crate) async fn machines(
+        &self,
+        address: &str,
+    ) -> std::result::Result<RelayMachines, RelayFailure> {
+        let address = relay_address(address)?;
+        let logged_in = self
+            .lock()
+            .iter()
+            .find(|held| held.stored.address == address)
+            .map(|held| held.stored.logged_in)
+            .ok_or_else(relay_not_found)?;
+        let answer = if logged_in {
+            tokio::time::timeout(
+                self.timings.answer_timeout,
+                self.ask_for_machines(&address),
+            )
+            .await
+            .unwrap_or_else(|_| machines::unreachable("the Relay did not answer in time"))
+        } else {
+            RelayMachinesAnswer::LoginNeeded
+        };
+        Ok(RelayMachines { address, answer })
+    }
+
+    async fn ask_for_machines(&self, address: &str) -> RelayMachinesAnswer {
+        let answer_timeout = self.timings.answer_timeout;
+        let mut conversation = match self
+            .dialer
+            .open(address, &self.identity, answer_timeout)
+            .await
+        {
+            Ok((conversation, Some(_))) => conversation,
+            Ok((conversation, None)) => {
+                conversation.close().await;
+                return RelayMachinesAnswer::LoginNeeded;
+            }
+            Err(failure) => return machines::unreachable(&failure.unreachable().message),
+        };
+        if conversation.say(&ServerMessage::ListLogins).await.is_err() {
+            return machines::unreachable("the Relay stopped answering");
+        }
+        // Asked on a connection of its own, freshly proven, the one thing that
+        // has a Relay call this unexpected is not knowing it: the refusal a
+        // Relay from before the list gives whatever it does not recognize.
+        let answer = match conversation.hear().await {
+            Some(RelayMessage::Logins { logins, cut_short }) => {
+                let own_key = self.identity.public_key().await;
+                match own_key {
+                    Ok(own_key) => RelayMachinesAnswer::Listed {
+                        machines: machines::listed(logins, &own_key, &self.serving.list_remotes()),
+                        cut_short,
+                    },
+                    Err(_) => machines::unreachable("the Server could not use its identity key"),
+                }
+            }
+            Some(RelayMessage::Refused {
+                refusal: Refusal::LoginNeeded,
+                ..
+            }) => RelayMachinesAnswer::LoginNeeded,
+            Some(RelayMessage::Refused {
+                refusal: Refusal::Unexpected,
+                ..
+            }) => RelayMachinesAnswer::NotListed,
+            Some(RelayMessage::Refused { message, .. }) => machines::unreachable(&message),
+            Some(_) => machines::unreachable("the Relay answered with something else"),
+            None => machines::unreachable("the Relay stopped answering"),
+        };
+        conversation.close().await;
+        answer
     }
 
     /// Gives the Client run `claimant` the Notice of the Relay at `address`

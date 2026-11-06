@@ -1,7 +1,8 @@
 //! A Server's Relays on its own API: the entries its user lists, adds and
 //! removes, the logins the Server carries out at them, and whether it Serves
-//! through each (ADR-0045, ADR-0048). This is server administration, refused to Peers and offered to
-//! no Sidekick.
+//! through each (ADR-0045, ADR-0048), and what each says of the other machines
+//! logged in there under the same Account (ADR-0064). This is server
+//! administration, refused to Peers and offered to no Sidekick.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -176,6 +177,58 @@ pub enum RelayLoginRefusal {
     /// The Relay logged the Server in, but the Server could not record its
     /// Login; logging in again records it.
     Unrecorded,
+}
+
+/// What a Relay said, as it was asked, of the other machines logged in there
+/// under the Account this Server's Login stands under. It is a hint to find a
+/// machine by and is believed of nothing: it opens nothing, and nothing in it
+/// changes what this Server holds of any key (ADR-0064).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RelayMachines {
+    pub address: String,
+    pub answer: RelayMachinesAnswer,
+}
+
+/// How a Relay answered being asked for the machines logged in there.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayMachinesAnswer {
+    /// The machines it listed. `cut_short` says it holds more than it listed.
+    Listed {
+        machines: Vec<RelayMachine>,
+        cut_short: bool,
+    },
+    /// The Server holds no Login there that stands, so it was not told.
+    LoginNeeded,
+    /// It did not answer in time, or could not be spoken to; `message` says
+    /// why to a reader.
+    Unreachable { message: String },
+    /// It is of a release that does not know how to list them, so an Invite
+    /// is the way to pair through it.
+    NotListed,
+}
+
+/// A machine a Relay listed. Nothing here has been checked but that the key
+/// could be one: a hostname is whatever that machine said, and a key the
+/// Relay's word.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RelayMachine {
+    /// The identity key the Relay ties its Login to, as unpadded URL-safe
+    /// base64: what a join there would name it by.
+    pub key: String,
+    /// That key's fingerprint, by which it is known here.
+    pub fingerprint: String,
+    /// What can safely be shown of the hostname it reported, or of its
+    /// fingerprint where nothing of that can be.
+    pub hostname: String,
+    /// Whether it waits to be reached at the Relay now.
+    pub waiting: bool,
+    /// The name of the Remote this Server is paired with by that key, where
+    /// it is. Matching opens nothing, so a Relay lying about a key has a
+    /// machine named as something it is not, and no more.
+    pub remote: Option<String>,
 }
 
 /// A Relay to add, by the address it is reached at.

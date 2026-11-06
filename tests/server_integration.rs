@@ -3113,6 +3113,12 @@ async fn refuses_server_administration_to_peers(
             "/v1/relays/https:%2F%2Frelay.example.com/login",
             None,
         ),
+        // What a Relay lists of the Server's Account is the Server's own.
+        (
+            reqwest::Method::GET,
+            "/v1/relays/https:%2F%2Frelay.example.com/machines",
+            None,
+        ),
         (
             reqwest::Method::DELETE,
             "/v1/relays/https:%2F%2Frelay.example.com",

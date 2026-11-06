@@ -1,7 +1,9 @@
 //! The Relay routes: listing the Server's Relays, adding one by address,
 //! beginning a login there and following it, choosing whether the Server
 //! Serves through one, saying a Client has raised its Notice of one coming to
-//! need a login, and removing one. They are server administration, refused
+//! need a login, removing one, and asking one which other machines are logged
+//! in there, as a Client asks and never of the Server's own accord. They are
+//! server administration, refused
 //! to Peers, and no Sidekick Tool offers them (ADR-0045).
 
 use std::convert::Infallible;
@@ -36,6 +38,7 @@ pub(super) fn routes() -> Router<AppState> {
             "/v1/relays/{address}/login",
             get(follow_relay_login).post(begin_relay_login),
         )
+        .route("/v1/relays/{address}/machines", get(list_relay_machines))
         .route(
             "/v1/relays/{address}/serve-through",
             axum::routing::put(set_relay_serve_through),
@@ -93,6 +96,23 @@ async fn follow_relay_login(
         Ok(progress) => Sse::new(login_events(progress, state.shutdown.subscribe_to_intent()))
             .keep_alive(KeepAlive::new().interval(state.timings.sse_keepalive_interval))
             .into_response(),
+        Err(failure) => failure_response(failure),
+    }
+}
+
+/// Asks a Relay which other machines are logged in there, within its answer
+/// budget: how it answered, whatever that was, so a Client can say so of that
+/// Relay alone.
+async fn list_relay_machines(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(address): AxumPath<String>,
+) -> Response {
+    if !is_authenticated(&headers, &state.descriptor.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    match state.relays.machines(&address).await {
+        Ok(machines) => Json(machines).into_response(),
         Err(failure) => failure_response(failure),
     }
 }

@@ -1944,13 +1944,15 @@ mod tests {
 
     /// A Sidekick never adds, logs in to or removes a Relay, nor changes
     /// whether its Server Serves through one, so nothing it does can open its
-    /// machine to another; and no other Agent is offered more than it is.
+    /// machine to another, nor asks one which machines are logged in there;
+    /// and no other Agent is offered more than it is.
     #[test]
     fn no_tool_any_agent_is_offered_reaches_a_relay() {
         for tool in BrokerTool::ALL {
             for role in [BrokerRole::Agent, BrokerRole::Sidekick] {
                 assert!(
                     !tool.name().contains("relay")
+                        && !tool.name().contains("machine")
                         && !tool.description(role).to_lowercase().contains("relay"),
                     "{} reaches a Relay",
                     tool.name()
