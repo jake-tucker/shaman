@@ -642,6 +642,29 @@ Relay only while it is logged in there and Serving is on, so the Relay's row say
 through**, or **Serves through once logged in**, or **Serves through once Serving is on** — `/serve` turns Serving on.
 Press `s` again to stop.
 
+A Server waits at the Relay only while it runs, and nothing starts one after a reboot. To have it come back with nobody
+at the machine, run `suru server install` there, which starts this Channel's Server whenever you log in, with no
+elevation, and `suru server status` says whether it is registered. `suru server uninstall` removes it. Neither touches a
+Server running now: it comes into force at the next login, and `suru server start` starts one before then. Once it has,
+a Server that crashes is restarted, and one stopped by `suru server stop` stays stopped until the next login or `suru
+server start`. Install again after moving Suru or changing your `PATH`, since a Server started this way finds its
+Providers on the `PATH` kept when you installed; install warns of a binary path that will not survive an upgrade, and of
+API keys or proxy settings it will not carry, because they may hold secrets.
+
+What each platform covers:
+
+- **macOS**: a LaunchAgent, run by a login at the Mac's screen. A Mac waits for its login keychain, which holds the
+  Server's identity key, so one that has rebooted and that nobody has logged in to, or that is reached only over SSH,
+  stays Unreachable.
+- **Linux**: a systemd user unit, run from the user's first login until the last logout. To run with no session at all,
+  run `loginctl enable-linger $USER`; a key kept in a keyring nothing has unlocked then fails Serving where you can see
+  it. A machine with no systemd user instance, such as a container, is told so, and has whatever starts things there run
+  `suru server start`.
+- **Windows**: a Scheduled Task at this user's logon. A machine that nobody has logged on to stays Unreachable.
+
+A Server that cannot read its identity key never makes a new one: it goes on serving its own machine, and fails Serving
+where you can see it until the store answers.
+
 ### Issuing an Invite
 
 On the Server to be reached, `/serve` turns Serving on and lists the ways an Invite may offer: this machine's own

@@ -43,6 +43,8 @@ cool things Suru does:
   certificate.
 - Relays - where your machines cannot reach each other directly, run a Relay of your own that each connects out to
   over HTTPS. It carries the Pairing's end-to-end TLS without being able to read it, and admits users by GitHub login.
+- Start at login - run `suru server install` so a machine comes back after a reboot with no one starting Suru on it.
+  See [Serving through the Relay](docs/relay/README.md#serving-through-the-relay) for what each platform covers.
   See [Running a Relay](docs/relay/README.md).
 - `/sidekick` - an agent with a view over all your sessions across all of your machines. Use it to answer meta questions,
   or to orchestrate work across workspaces and remotes.

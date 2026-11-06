@@ -403,6 +403,14 @@ _Avoid_: Thread mapping, provider cache
 The long-lived Suru process that owns a user's Sessions, Server Settings, and Provider work on one machine, one per Channel, which Clients attach to rather than doing that work themselves.
 _Avoid_: Daemon, backend, host
 
+**Login start**:
+A Channel's registration with the machine's service manager to run its Keeper whenever its user logs in: a LaunchAgent, a systemd user unit, or a Scheduled Task at logon, off until asked for with `suru server install`, never needing elevation, and in force from the next login. It is a start at login rather than at boot because a Server's identity key may be out of reach until then, and neither registering nor removing one touches a Server running now.
+_Avoid_: Service, daemon, autostart, login item
+
+**Keeper**:
+The small process a Login start runs for as long as its user is logged in, which launches its Channel's Server as a Client would and launches another where one crashed. It reads the Channel's election and last-stop record and holds no authority of its own, so a Server stopped with `suru server stop` stays stopped until the next login or someone starts it, and it never replaces a Server after setting out. A Client attaches to a Server; a Keeper never attaches, and is no Client.
+_Avoid_: Supervisor, watchdog, daemon
+
 **Client**:
 A user-facing Suru surface — today the TUI — that attaches to the Server on its own machine and presents that Server's work. A Client never speaks to another machine's Server directly; anything remote it sees, it sees through its own Server.
 _Avoid_: Frontend, terminal, UI process
