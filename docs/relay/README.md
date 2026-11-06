@@ -502,9 +502,9 @@ The Relay writes one JSON line to standard output for each connection it joins, 
 
 It names the Account, and for each Server — `joining` asked to be joined, `serving` Serves through the Relay — its
 identity key's fingerprint, the hostname it reported as it logged in, its network address, and the bytes it sent
-that the Relay passed on. It never holds anything a connection carried, which the Relay cannot read. The Relay keeps
-no history of connections in its database: ship standard output wherever you keep logs. Its own diagnostics go to
-standard error; `RUST_LOG` sets how much it says there (`info` unless set).
+that the Relay passed on. It never holds anything a connection carried, which the Relay cannot read, a short code's
+exchange included. The Relay keeps no history of connections in its database: ship standard output wherever you keep
+logs. Its own diagnostics go to standard error; `RUST_LOG` sets how much it says there (`info` unless set).
 
 The address is the Server's own only where [`trusted_proxies`](configuration.md#trusted_proxies) names the reverse
 proxy in front of the Relay; otherwise it is the proxy's.
@@ -690,6 +690,19 @@ can offer is ticked, and offered, unless you leave it out with Space. Enter issu
 ticked: leave the addresses out for an Invite reached only through the Relay, or leave both kinds in, and the other
 machine reaches the Server directly where it can and through the Relay where it cannot.
 
+An Invite offering a Relay also has a **short code**, shown above the long string in two groups, such as `K7QF-2MXP`,
+which is typed in `/pair` on the other machine with no string to carry. `c` copies the code and `Ctrl+C` the long string.
+An Invite offering direct ways alone has no code, since the code's exchange needs a connection the Relay joins. The code
+lives and dies with its Invite: it expires with it after ten minutes, the next Invite replaces it, and it is dead once
+the Invite is spent. Restarting the Server ends both.
+
+A code gets one try. If a wrong one is tried, or an attempt never finishes, it is dead, and `/serve` says so in its
+place, since an attempt you did not make is worth seeing. Any Suru attached to this Server raises a Notice too, wherever
+you are in it, and `/serve` says it again when you reopen it, until another code replaces it. The long string stays
+good, because a wrong guess says nothing about it, and `n` gets a new code for the same Invite, with no more time on it.
+Anyone logged in under your Account, or the Relay itself, can spoil a code this way, which costs a new one and gains them
+nothing else.
+
 A Relay an Invite cannot offer is marked `[-]` and says why, and Space on its row puts that right where you stand:
 
 - **login needed**: Space begins the login, showing the address to visit and the code to enter, which `a` and `c` copy.
@@ -716,7 +729,8 @@ On relay.example.com
   old-laptop    not Serving (run /serve there)
 ```
 
-- **Serving**: waiting at the Relay right now. Enter on it says to issue an Invite there and paste it here.
+- **Serving**: waiting at the Relay right now. Enter on it asks for the code its `/serve` shows; see
+  [Pairing through the Relay](#pairing-through-the-relay).
 - **not Serving**: logged in but not waiting, which may mean Serving is off, it does not Serve through this Relay, or
   the machine is simply off. It cannot be chosen to pair, and Enter says what to do on it.
 - **Remote already**: its key matches a Pairing this Server holds, and it is shown by the Remote's name. Enter says
@@ -737,13 +751,29 @@ and `Tab` moves to it. Where nothing is found, it comes first, as it does for a 
 says so in its group and goes on pairing by Invite as ever.
 
 **None of this is believed.** A hostname is whatever the other Server said and a key is the Relay's word, and nothing
-listed changes what this Server holds of any key. A Relay that lies can mislabel a row and no more: choosing a row
-forms no Pairing, and a Pairing is formed only as it always is, by redeeming an Invite and trusting its preview. The
+listed changes what this Server holds of any key. A Relay that lies can mislabel a row, and fail an attempt, and no
+more: choosing a row forms no Pairing, and a Pairing is formed only as it always is, by redeeming an Invite and trusting
+its preview. The
 Relay stores nothing to answer this, keeps no last-seen time, and writes nothing of it to either log.
 
 ### Pairing through the Relay
 
-On the other machine, `/pair` takes the Invite. Before anything is trusted, Suru shows the Serving Server's
+On the other machine, `/pair` takes the Invite in either of two forms: choose the machine from those found and type its
+short code, or paste the long string. A code can be typed in any case, with or without its separator, and pasted. It
+holds no `0`, `O`, `1` or `I`, and what could not be a code is refused there, which uses nothing. A whole Invite pasted
+where the code goes is taken for the Invite it is.
+
+The code runs a password-authenticated key exchange with that machine over a connection the Relay joins, and its only
+output is the same Invite, encrypted to this Server. It adds nothing to what either machine trusts, and the Relay can
+neither read it nor search for the code afterwards. This Server tries once for each time you ask: where a machine waits
+at two Relays it goes on to the second only if the first would not join them, or if the machine answered at once that it
+took no guess there, as it does for a Relay its Invite does not offer. Where the code fails it is dead, and Suru says to
+get a new one, and types nothing again for you. Where no code is live on the other machine, Suru says to issue an Invite
+there. If the Invite delivered names another key than the one listed for the machine, Suru refuses it and says so: the
+Relay's list was wrong or was lying. Esc at the preview pairs nothing: the code is used, the Invite stands until it
+expires, and `n` in `/serve` there gets another code for it.
+
+Either way, before anything is trusted, Suru shows the Serving Server's
 fingerprint and, under **Reached by**, every way the Invite offers: each Relay whole, saying how this Server stands
 there — **logged in**, **login needed** or **Unreachable**. Enter trusts it, opening **Configure Remote**, where you
 name the Remote and may reorder the ways it is reached by; another Enter pairs. Esc at either step pairs nothing.

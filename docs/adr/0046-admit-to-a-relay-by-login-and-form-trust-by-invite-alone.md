@@ -1,6 +1,6 @@
 # Admit to a Relay by login, and form trust by Invite alone
 
-_Amended by ADR-0064: logged-in machines can now find each other through their Relay, as this decision left room for. Finding pairs nothing, and a Pairing is still formed only by redeeming an Invite._
+_Amended by ADR-0064: logged-in machines can now find each other through their Relay, as this decision left room for. Finding pairs nothing, and a Pairing is still formed only by redeeming an Invite. Extended by ADR-0065: that Invite may now be delivered by a short code, a password-authenticated key exchange the Relay carries and cannot read, which is as strong as this decision asks._
 
 A Relay (ADR-0045) serves many users, so it requires a login and joins two Servers only where both are logged in as the same user: each user reaches their own machines through it and no one else's. Login decides who may use the Relay and nothing more. A Pairing is still formed only by redeeming an Invite, whether it travels through the Relay or directly, and no Server trusts another on the word of the Relay, or of an identity provider, that the two belong to one user. Login is by GitHub first, behind an interface other identity providers — Okta, Google — can later stand behind.
 
@@ -14,5 +14,5 @@ Were login to form trust, a stolen GitHub login, or a Relay that lied about whic
 
 - The same-user rule is a second check beneath the Invite, never the source of trust. It also means two users cannot pair their machines through a Relay; pairing directly, which knows nothing of users, stays open to them.
 - Losing a login — at the Relay or at the identity provider — takes a user's machines off the Relay and ends no Pairing: one that also has a direct address goes on working, and ending a Pairing remains the removal of the Peer or the Remote.
-- A later convenience by which logged-in machines find each other must still end in an Invite's redemption or something as strong. One that pairs on the Relay's word reopens this decision. ADR-0064 is the first such convenience, by which they find each other and no more.
+- A later convenience by which logged-in machines find each other must still end in an Invite's redemption or something as strong. One that pairs on the Relay's word reopens this decision. ADR-0064 is the first such convenience, by which they find each other and no more. ADR-0065 is the second, which delivers an Invite to a machine so found by a code it shows.
 - A machine reached through a Relay is usually one nobody is sitting at, so keeping its login current cannot depend on someone being there. ADR-0048 decides how that is done.

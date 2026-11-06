@@ -424,7 +424,7 @@ The state in which a Server accepts connections from other machines' Servers, of
 _Avoid_: Hosting, remote mode, exposing
 
 **Invite**:
-The one-time pasteable string a Serving Server issues so another machine's Server may form a Pairing with it: the ways of reaching it its user chose to offer — its own addresses, the Relays it Serves through, or both — the Server's identity, and a token spent by its first redemption, dead after a short while unused, and superseded by the next Invite either way.
+The one-time pasteable string a Serving Server issues so another machine's Server may form a Pairing with it: the ways of reaching it its user chose to offer — its own addresses, the Relays it Serves through, or both — the Server's identity, and a token spent by its first redemption, dead after a short while unused, and superseded by the next Invite either way. An Invite offering a Relay has a **short Invite** too: a short code its `/serve` shows, which another Server logged in under the same Account types for that machine to be delivered the same Invite, by a password-authenticated key exchange the Relay carries and cannot read. The code lives and dies with its Invite and gets one try: a failed exchange ends it, and leaves the Invite as it was, for which one key gets a new code. What it delivers is an ordinary Invite, previewed and redeemed like any other.
 _Avoid_: Connect string, join code, ticket
 
 **Pairing**:
