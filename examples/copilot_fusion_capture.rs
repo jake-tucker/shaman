@@ -31,6 +31,13 @@
 //! - `resume-empty` resumes, with the assignment, a Session that never ran a Turn.
 //! - `discover <count>` opens that many Sessions only to list Models, deleting each, and times it.
 //! - `delete <id>...` deletes Sessions a run left behind: a refused create leaves its directory.
+//! - `clear` turns a Session on `hydrafusion` back to plain `auto` after a resume without the
+//!   assignment, with a one-word Turn to prove each way of clearing it.
+//! - `first-switch <tier>` opens a Session with no Model, as Suru does, lists its Models, switches
+//!   onto the tier, and runs a one-word Turn.
+//! - `store` opens Sessions under an Errand's settings and under a conversation's, with and without
+//!   a one-word Turn on `gpt-5.6-luna`, deleting each, and prints their IDs to look up in the CLI's
+//!   `session-store.db`.
 //!
 //! `interrupt`, `steer` and `crash` act on a staged phase, which a `single` route may not have: on
 //! one, they abort as soon as the route resolves and exit with status 3, unless
@@ -104,6 +111,9 @@ async fn main() -> Result<(), Failure> {
         ["resume-empty"] => resume_empty(&run).await,
         ["discover", count] => discover(&run, count.parse()?).await,
         ["delete", ids @ ..] => delete(&run, ids).await,
+        ["clear"] => clear(&run).await,
+        ["first-switch", tier] => first_switch(&run, tier).await,
+        ["store"] => store(&run).await,
         _ => Err("name a mode; the file's head describes them".into()),
     }
 }
@@ -1096,6 +1106,121 @@ async fn discover(run: &Run, count: u32) -> Result<(), Failure> {
                 "state_dir_after": state_dir(&id).exists(),
             }),
         );
+    }
+    stop_cli(&client, child).await;
+    Ok(())
+}
+
+/// Whether a tier can be cleared with the assignment gone, by the two ways Copilot offers, each on a
+/// Session of its own with a Turn on the tier behind it.
+async fn clear(run: &Run) -> Result<(), Failure> {
+    for way in ["set_model-reset", "set_auto_tier-none"] {
+        let (client, child) = start_cli(run).await?;
+        let mut live = run
+            .open(&client, way, run.config("hydrafusion", true)?)
+            .await?
+            .ok_or("the Session did not open")?;
+        live.turn(SAY_OK, SHORT_TURN).await;
+        let id = live.session.id().clone();
+        let disconnected = live.session.disconnect().await;
+        run.note(
+            "disconnected",
+            json!({ "answered": disconnected.map_err(|error| error.to_string()) }),
+        );
+        stop_cli(&client, child).await;
+
+        let (client, child) = start_cli(run).await?;
+        let mut live = run
+            .resume(&client, way, run.resume_config(&id, false))
+            .await?
+            .ok_or("the Session did not resume")?;
+        live.current("resumed without the assignment").await;
+        if way == "set_model-reset" {
+            let answered = live
+                .session
+                .set_model(
+                    "auto",
+                    Some(SetModelOptions::default().with_reset_auto_tier()),
+                )
+                .await;
+            run.note(
+                "set_model",
+                json!({ "reset": true, "answered": answered.map_err(|error| error.to_string()) }),
+            );
+        } else {
+            let answered = live.session.set_auto_tier(None).await;
+            run.note(
+                "set_auto_tier",
+                json!({ "tier": null, "answered": answered_debug(&answered) }),
+            );
+        }
+        live.current("after clearing").await;
+        live.linger(Duration::from_secs(1)).await;
+        live.turn(SAY_OK, SHORT_TURN).await;
+        live.current("after the Turn").await;
+        live.turn(SAY_OK, SHORT_TURN).await;
+        live.current("after a second Turn").await;
+        live.close(&client).await;
+        stop_cli(&client, child).await;
+    }
+    Ok(())
+}
+
+/// The way Suru reaches a tier: a Session opened with no Model, listed, and then switched.
+async fn first_switch(run: &Run, tier: &str) -> Result<(), Failure> {
+    let (client, child) = start_cli(run).await?;
+    let config = SessionConfig::default()
+        .with_streaming(true)
+        .with_include_sub_agent_streaming_events(true)
+        .with_permission_handler(Arc::new(ApproveAllHandler))
+        .with_exp_assignments(run.assigned()?);
+    let mut live = run
+        .open(&client, "first-switch", config)
+        .await?
+        .ok_or("the Session did not open")?;
+    live.current("opened").await;
+    live.catalog("opened").await;
+    set_model(run, &mut live, "auto", Some(tier), false).await?;
+    live.current("after the Turn").await;
+    live.close(&client).await;
+    stop_cli(&client, child).await;
+    Ok(())
+}
+
+/// What a deleted Session leaves in the CLI's `session-store.db`, under each set of settings.
+async fn store(run: &Run) -> Result<(), Failure> {
+    let (client, child) = start_cli(run).await?;
+    for (label, errand_settings, with_turn) in [
+        ("errand-no-turn", true, false),
+        ("conversation-no-turn", false, false),
+        ("errand-turn", true, true),
+        ("conversation-turn", false, true),
+    ] {
+        let mut config = SessionConfig::default()
+            .with_streaming(false)
+            .with_permission_handler(Arc::new(ApproveAllHandler));
+        if with_turn {
+            config = config.with_model("gpt-5.6-luna");
+            config.reasoning_effort = Some("none".to_owned());
+        }
+        if errand_settings {
+            config = config
+                .with_available_tools(Vec::<String>::new())
+                .deny_all_permissions()
+                .with_enable_session_store(false)
+                .with_enable_skills(false);
+        }
+        let mut live = run
+            .open(&client, label, config)
+            .await?
+            .ok_or("the Session did not open")?;
+        if with_turn {
+            live.turn(SAY_OK, SHORT_TURN).await;
+        } else {
+            live.catalog("opened").await;
+        }
+        let id = live.close(&client).await;
+        run.note("store_session", json!({ "label": label, "id": id }));
     }
     stop_cli(&client, child).await;
     Ok(())
