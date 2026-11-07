@@ -1213,12 +1213,19 @@ pub struct AgentSelection {
     pub options: Vec<ModelOptionSelection>,
 }
 
+impl ModelOptionSelection {
+    /// Whether this is a Routing Tier, which its ID alone says.
+    pub fn is_routing_tier(&self) -> bool {
+        self.id.as_str() == ROUTING_TIER_OPTION_ID
+    }
+}
+
 impl AgentSelection {
     /// The Routing Tier this Selection names, where it names one.
     pub fn routing_tier(&self) -> Option<&ModelOptionChoiceId> {
         self.options
             .iter()
-            .find(|option| option.id.as_str() == ROUTING_TIER_OPTION_ID)
+            .find(|option| option.is_routing_tier())
             .and_then(|option| match &option.value {
                 ModelOptionValue::Select { choice } => Some(choice),
                 ModelOptionValue::Toggle { .. } => None,
@@ -1228,8 +1235,7 @@ impl AgentSelection {
     /// This Selection naming no Routing Tier, which is what anyone but the
     /// user asking for an Agent runs under.
     pub fn without_routing_tier(mut self) -> Self {
-        self.options
-            .retain(|option| option.id.as_str() != ROUTING_TIER_OPTION_ID);
+        self.options.retain(|option| !option.is_routing_tier());
         self
     }
 }

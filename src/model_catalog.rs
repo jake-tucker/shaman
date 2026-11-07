@@ -7,8 +7,7 @@ use crate::{
     protocol::{
         AgentSelection, AgentSelectionMaterializationError, ModelAvailability, ModelCatalog,
         ModelDescriptor, ModelOptionSelection, ProviderCatalogStatus, ProviderId,
-        ProviderModelCatalog, ProviderUnavailability, ROUTING_TIER_OPTION_ID, SessionTimestamp,
-        SettingsSnapshot,
+        ProviderModelCatalog, ProviderUnavailability, SessionTimestamp, SettingsSnapshot,
     },
     provider::{ProviderError, ProviderRuntime, validate_models},
 };
@@ -242,7 +241,7 @@ impl ModelCatalogService {
             let mut was_under = service
                 .providers
                 .iter()
-                .map(ProviderCatalog::catalog_settings)
+                .map(ProviderCatalog::catalog_settings_fingerprint)
                 .collect::<Vec<_>>();
             while settings.changed().await.is_ok() {
                 let mut turned = false;
@@ -258,7 +257,7 @@ impl ModelCatalogService {
                     }
                     turned |= is_enabled != *was_enabled;
                     *was_enabled = is_enabled;
-                    let is_under = catalog.catalog_settings();
+                    let is_under = catalog.catalog_settings_fingerprint();
                     if is_under != *was_under {
                         catalog.follow_catalog_settings();
                         turned = true;
@@ -348,7 +347,7 @@ impl ModelCatalogService {
         let tier = selection
             .options
             .iter()
-            .find(|option| option.id.as_str() == ROUTING_TIER_OPTION_ID)
+            .find(|option| option.is_routing_tier())
             .cloned();
         if let Some(tier) = &tier
             && !self.takes_routing_tier(selection)
@@ -412,9 +411,9 @@ impl ProviderCatalog {
             .provider_enabled(&self.provider)
     }
 
-    fn catalog_settings(&self) -> u64 {
+    fn catalog_settings_fingerprint(&self) -> u64 {
         self.runtime
-            .catalog_settings(&self.settings.borrow().settings)
+            .catalog_settings_fingerprint(&self.settings.borrow().settings)
     }
 
     /// `models` as the Settings in force let this Provider offer them.
@@ -1027,7 +1026,10 @@ mod tests {
             model.as_str() == "conversing"
         }
 
-        fn catalog_settings(&self, settings: &crate::protocol::EffectiveSettings) -> u64 {
+        fn catalog_settings_fingerprint(
+            &self,
+            settings: &crate::protocol::EffectiveSettings,
+        ) -> u64 {
             u64::from(settings.provider.copilot.fusion_tiers)
         }
 
@@ -1354,6 +1356,33 @@ mod tests {
         assert_eq!(
             service.normalize_selection(&selecting(Vec::new())),
             Ok(selecting(Vec::new()))
+        );
+    }
+
+    /// A Routing Tier and its ID go together, both ways, so what reads a Selection with no catalog at
+    /// hand can tell one by its ID, and nothing else can pass for one.
+    #[test]
+    fn the_routing_tier_id_and_role_go_together_or_the_catalog_is_refused() {
+        let under = |id: &str, role| {
+            validate_models(&[tiered_model(vec![ModelOptionDescriptor {
+                role,
+                ..select_option(id, vec![choice("low", ModelAvailability::Available)], "low")
+            }])])
+        };
+        assert!(
+            under(
+                crate::protocol::ROUTING_TIER_OPTION_ID,
+                ModelOptionRole::RoutingTier
+            )
+            .is_ok()
+        );
+        assert!(under("tier", ModelOptionRole::RoutingTier).is_err());
+        assert!(
+            under(
+                crate::protocol::ROUTING_TIER_OPTION_ID,
+                ModelOptionRole::Other
+            )
+            .is_err()
         );
     }
 

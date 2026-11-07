@@ -1034,10 +1034,7 @@ impl DerivationStep {
                 .saving
                 .send(derivation_pin(NAMED_DERIVATIONS[index].0.clone())),
             Some(AgentSelectionAction::Select(model))
-                if model
-                    .options
-                    .iter()
-                    .all(|option| option.role.is_the_users_alone()) =>
+                if model.options_for_an_agent().next().is_none() =>
             {
                 self.saving
                     .send(pinned_selection(model.default_agent_selection()))

@@ -1570,20 +1570,10 @@ pub(super) fn requested_selection_on(
         )));
     };
     let mut selection = descriptor.default_agent_selection();
-    let offered = || {
-        descriptor
-            .options
-            .iter()
-            .filter(|option| !option.role.is_the_users_alone())
-    };
+    let offered = || descriptor.options_for_an_agent();
     for (option_id, value) in options {
         // Told alike whether the user has one on offer or not, which is no Agent's business.
-        if option_id == ROUTING_TIER_OPTION_ID
-            || descriptor
-                .options
-                .iter()
-                .any(|option| option.id.as_str() == option_id && option.role.is_the_users_alone())
-        {
+        if option_id == ROUTING_TIER_OPTION_ID {
             return Err(ToolRefusal::new(format!(
                 "Model Option `{option_id}` is the user's alone to choose; leave it out, and \
                  Model `{model}` runs without one."
@@ -1878,12 +1868,7 @@ fn listed_model(model: &ModelDescriptor) -> ListedModel {
         name: model.display_name.clone(),
         description: model.description.clone(),
         default: model.is_default,
-        options: model
-            .options
-            .iter()
-            .filter(|option| !option.role.is_the_users_alone())
-            .map(listed_option)
-            .collect(),
+        options: model.options_for_an_agent().map(listed_option).collect(),
     }
 }
 

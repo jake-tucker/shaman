@@ -1882,11 +1882,11 @@ pub trait ProviderRuntime: Send + Sync + 'static {
         false
     }
 
-    /// The part of `settings` this Provider's Model discovery answers
-    /// differently under, read as a value that changes when it does. The Model
-    /// Catalog asks this Provider again when it changes. Runtimes whose catalog
-    /// depends on no Setting need not implement it.
-    fn catalog_settings(&self, settings: &EffectiveSettings) -> u64 {
+    /// A fingerprint of the part of `settings` this Provider's Model discovery
+    /// answers differently under. The Model Catalog asks this Provider again
+    /// when it changes. Runtimes whose catalog depends on no Setting need not
+    /// implement it.
+    fn catalog_settings_fingerprint(&self, settings: &EffectiveSettings) -> u64 {
         let _ = settings;
         0
     }
@@ -1930,13 +1930,15 @@ pub(crate) fn validate_models(models: &[ModelDescriptor]) -> Result<(), Provider
                     model.id, option.role
                 )));
             }
-            if option.role == ModelOptionRole::RoutingTier
-                && (option.id.as_str() != crate::protocol::ROUTING_TIER_OPTION_ID
-                    || !matches!(option.kind, ModelOptionKind::Select { .. }))
+            let is_tier = option.role == ModelOptionRole::RoutingTier;
+            if is_tier != (option.id.as_str() == crate::protocol::ROUTING_TIER_OPTION_ID)
+                || (is_tier && !matches!(option.kind, ModelOptionKind::Select { .. }))
             {
                 return Err(ProviderError::new(format!(
-                    "Model `{}` has a Routing Tier that is not a choice under `{}`",
+                    "Model `{}` option `{}`: a Routing Tier is a choice under `{}`, and nothing \
+                     else goes by that ID",
                     model.id,
+                    option.id,
                     crate::protocol::ROUTING_TIER_OPTION_ID
                 )));
             }

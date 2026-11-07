@@ -22,8 +22,8 @@ use crate::{
     pricing::CacheRatesFuture,
     protocol::{
         AgentSelection, CopilotSettings, EffectiveSettings, ModelDescriptor, ModelId,
-        ModelOptionChoiceId, ModelOptionId, ModelOptionRole, ModelOptionSelection,
-        ModelOptionValue, ProviderId, ProviderUnavailability, SkillCatalog,
+        ModelOptionChoiceId, ModelOptionId, ModelOptionSelection, ModelOptionValue, ProviderId,
+        ProviderUnavailability, SkillCatalog,
     },
     provider::{
         ErrandFuture, ManualCompaction, ProviderErrand, ProviderFuture, ProviderModelDiscovery,
@@ -260,24 +260,23 @@ impl ProviderRuntime for CopilotRuntime {
         model.as_str() == AUTO_MODEL_ID
     }
 
-    fn catalog_settings(&self, settings: &EffectiveSettings) -> u64 {
+    fn catalog_settings_fingerprint(&self, settings: &EffectiveSettings) -> u64 {
         u64::from(settings.provider.copilot.fusion_tiers)
     }
 
     /// A Routing Tier remembered from when the Setting was on, or discovered as it turned off.
     fn models_offered_under(
         &self,
-        mut models: Vec<ModelDescriptor>,
+        models: Vec<ModelDescriptor>,
         settings: &EffectiveSettings,
     ) -> Vec<ModelDescriptor> {
-        if !settings.provider.copilot.fusion_tiers {
-            for model in &mut models {
-                model
-                    .options
-                    .retain(|option| option.role != ModelOptionRole::RoutingTier);
-            }
+        if settings.provider.copilot.fusion_tiers {
+            return models;
         }
         models
+            .into_iter()
+            .map(ModelDescriptor::without_the_users_own_options)
+            .collect()
     }
 
     fn run_errand(&self, errand: ProviderErrand) -> ErrandFuture<'_> {
