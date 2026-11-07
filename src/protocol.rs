@@ -2104,7 +2104,6 @@ pub struct InvitePreview {
     pub ways: Vec<Way>,
     /// Whether that machine already reaches this one, as one of its Peers, so
     /// there is nothing to offer it.
-    #[serde(default)]
     pub reaches_here: bool,
 }
 
@@ -2128,7 +2127,6 @@ pub struct RedeemInviteRequest {
     pub ways: Vec<Way>,
     /// Whether the ceremony also offers to let the Serving Server reach this
     /// one, as a Pairing of its own, should its user accept (ADR-0066).
-    #[serde(default)]
     pub pair_back: bool,
 }
 

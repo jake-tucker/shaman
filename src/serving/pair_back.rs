@@ -37,8 +37,8 @@ use super::{
     Body, IssuedToken, MAX_PEER_NAME_CHARS, PEERS_FILE, PairingFailure, PairingHttpClient,
     REMOTES_FILE, RedeemInviteRequest, ServingConnectionInfo, ServingController, ServingState,
     StoredPeer, StoredRemote, StrongClient, TokenState, Way, WayAttempt, first_remote_answer,
-    identity_failure, internal_pairing_failure, invite_text, new_token, parse_invite, peer_speaks,
-    remote_forward_headers, small_answer, validate_remote_name, write_private_json,
+    identity_failure, invite_text, new_token, parse_invite, peer_speaks, remote_forward_headers,
+    small_answer, validate_remote_name, write_private_json,
 };
 use crate::{
     protocol::{
@@ -58,26 +58,42 @@ const MAX_FAILURE_CHARS: usize = 400;
 /// An offer as the Server it was made to holds it, on the Peer that made it.
 /// Nothing in it came from that Peer but its id: a reader knows it by the name
 /// the Peer is known by.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct StoredHeldOffer {
     id: Uuid,
     /// When this Server took it, by its own clock.
     made_at: SessionTimestamp,
-    /// The name its user gave the Remote, having accepted it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    accepted: Option<String>,
-    /// Whether a redemption of it was under way as this was last stored: one
-    /// found so as the Server starts was caught midway by its stopping.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    redeeming: bool,
-    /// Whether no Client has been given its Notice yet.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    untold: bool,
-    /// The Client run given its Notice, so it claiming that again, not having
-    /// heard it was given it, is told it was.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    given_to: Option<Uuid>,
+    standing: Standing,
+    notice: Notice,
+}
+
+/// How an offer held stands with its reader.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+enum Standing {
+    /// Its reader has yet to answer.
+    Waiting,
+    /// Accepted under the name its reader gave the Remote, waiting on the Peer.
+    Accepted { name: String },
+    /// That, with a redemption under way as this was last stored: one found so
+    /// as the Server starts was caught midway by its stopping. Only what makes
+    /// this may redeem, so one is under way at once for each offer.
+    Redeeming { name: String },
+}
+
+/// How an offer's Notice stands, stored so a Client opened later, or after the
+/// Server restarts, raises it once and only once.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+enum Notice {
+    /// No Client has been given it.
+    Untold,
+    /// The Client run given it, so it claiming that again, not having heard it
+    /// was given it, is told it was.
+    Given(Uuid),
+    /// Its reader answered first, so nothing is left to say.
+    Passed,
 }
 
 impl StoredHeldOffer {
@@ -86,16 +102,22 @@ impl StoredHeldOffer {
         Self {
             id,
             made_at: SessionTimestamp::now(),
-            accepted: None,
-            redeeming: false,
-            untold: true,
-            given_to: None,
+            standing: Standing::Waiting,
+            notice: Notice::Untold,
+        }
+    }
+
+    /// How this offer stands, as its Peer is told.
+    fn told(&self) -> ToldOffer {
+        ToldOffer {
+            id: self.id,
+            accepted: !matches!(self.standing, Standing::Waiting),
         }
     }
 }
 
 /// An offer as the Server that made it holds it, on the Remote it was made to.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct StoredMadeOffer {
     id: Uuid,
@@ -166,6 +188,8 @@ enum OfferAnswer {
     TooSoon,
     /// A try is under way.
     Busy,
+    /// It could not be taken just now, and may be said again.
+    Failed,
     /// The Pairing has formed, and the offer has ended on this side.
     Formed,
     /// The Invite was redeemed to no Pairing, which this side says why of.
@@ -184,18 +208,23 @@ pub(super) struct PairBack {
     /// Moves on with each change to the offers held, for what is telling a
     /// Peer of its own.
     tellings: watch::Sender<u64>,
-    /// Why each accepted offer has not formed its Pairing, by its id.
-    held_up: std::sync::Mutex<HashMap<Uuid, OfferHeldUp>>,
-    /// The offers held with a redemption under way.
-    redeeming: std::sync::Mutex<HashSet<Uuid>>,
-    /// How soon each offer held may be tried again after coming to nothing.
-    next_try: std::sync::Mutex<HashMap<Uuid, tokio::time::Instant>>,
-    /// What settles each key's offer here, and what it was last told.
-    settling: std::sync::Mutex<HashMap<Vec<u8>, watch::Sender<Told>>>,
+    /// What is under way of each offer, on either side, by its id.
+    under_way: std::sync::Mutex<HashMap<Uuid, UnderWay>>,
+    /// What settles each key's offer here, and what it last heard.
+    settling: std::sync::Mutex<HashMap<Vec<u8>, watch::Sender<LastHeard>>>,
+}
+
+/// What is under way of one offer.
+#[derive(Default)]
+struct UnderWay {
+    /// Why it has not formed its Pairing, accepted as it is.
+    held_up: Option<OfferHeldUp>,
+    /// How soon it may be tried again after coming to nothing.
+    next_try: Option<tokio::time::Instant>,
 }
 
 impl PairBack {
-    pub(super) fn within(
+    pub(super) fn new(
         invite_ttl: tokio::time::Duration,
         retry_interval: tokio::time::Duration,
     ) -> Self {
@@ -204,9 +233,7 @@ impl PairBack {
             retry_interval,
             offers: watch::Sender::new(PairBackOffers::default()),
             tellings: watch::Sender::new(0),
-            held_up: std::sync::Mutex::default(),
-            redeeming: std::sync::Mutex::default(),
-            next_try: std::sync::Mutex::default(),
+            under_way: std::sync::Mutex::default(),
             settling: std::sync::Mutex::default(),
         }
     }
@@ -216,18 +243,42 @@ impl PairBack {
         self.tellings.subscribe()
     }
 
-    fn held_up(&self) -> std::sync::MutexGuard<'_, HashMap<Uuid, OfferHeldUp>> {
-        self.held_up.lock().expect("held-up lock is not poisoned")
+    fn under_way(&self) -> std::sync::MutexGuard<'_, HashMap<Uuid, UnderWay>> {
+        self.under_way
+            .lock()
+            .expect("what is under way of offers is not poisoned")
     }
 
-    fn next_try(&self) -> std::sync::MutexGuard<'_, HashMap<Uuid, tokio::time::Instant>> {
-        self.next_try.lock().expect("next-try lock is not poisoned")
+    /// Whether a try at `id` came to nothing too lately to try again yet.
+    fn too_soon(&self, id: Uuid) -> bool {
+        self.under_way()
+            .get(&id)
+            .and_then(|under_way| under_way.next_try)
+            .is_some_and(|at| tokio::time::Instant::now() < at)
+    }
+
+    /// Notes that a try at `id` came to nothing, just now.
+    fn came_to_nothing(&self, id: Uuid) {
+        self.under_way().entry(id).or_default().next_try =
+            Some(tokio::time::Instant::now() + self.retry_interval);
+    }
+
+    /// Why `id` has not formed its Pairing, where that is known.
+    fn held_up(&self, id: Uuid) -> Option<OfferHeldUp> {
+        self.under_way()
+            .get(&id)
+            .and_then(|under_way| under_way.held_up.clone())
+    }
+
+    /// Takes back what is known of `id`, as it has come to be tried afresh.
+    fn start_afresh(&self, id: Uuid) {
+        self.under_way().remove(&id);
     }
 }
 
 /// What the Serving side last said of a key's offer, and through what.
 #[derive(Clone)]
-struct Told {
+struct LastHeard {
     remote: StoredRemote,
     client: std::sync::Weak<PairingHttpClient>,
     offer: Option<ToldOffer>,
@@ -299,7 +350,6 @@ impl ServingController {
     /// this Server's Clients, and each Peer connected, of its own. What was
     /// said of an offer ended goes with it.
     pub(super) fn offers_changed(&self) {
-        let held_up = self.pair_back.held_up().clone();
         let peers = self
             .peers
             .read()
@@ -318,17 +368,22 @@ impl ServingController {
             .iter()
             .filter_map(|peer| {
                 let offer = peer.offer.as_ref()?;
-                let answer = offer.accepted.as_ref().map(|name| OfferAcceptance {
-                    name: name.clone(),
-                    held_up: held_up.get(&offer.id).cloned(),
-                });
+                let answer = match &offer.standing {
+                    Standing::Waiting => None,
+                    Standing::Accepted { name } | Standing::Redeeming { name } => {
+                        Some(OfferAcceptance {
+                            name: name.clone(),
+                            held_up: self.pair_back.held_up(offer.id),
+                        })
+                    }
+                };
                 Some(HeldOffer {
                     id: offer.id,
                     peer: peer.name(),
                     fingerprint: peer.id.clone(),
                     made_at: offer.made_at,
                     offered_name: offered_remote_name(&peer.name(), &peer.id, &names),
-                    notice: offer.untold,
+                    notice: offer.notice == Notice::Untold,
                     answer,
                 })
             })
@@ -342,7 +397,7 @@ impl ServingController {
                     remote: stored.remote.name.clone(),
                     made_at: offer.made_at,
                     withdrawn: offer.withdrawn,
-                    held_up: held_up.get(&offer.id).cloned(),
+                    held_up: self.pair_back.held_up(offer.id),
                 })
             })
             .collect::<Vec<_>>();
@@ -352,10 +407,7 @@ impl ServingController {
             .chain(made.iter().map(|offer| offer.id))
             .collect::<HashSet<_>>();
         self.pair_back
-            .held_up()
-            .retain(|id, _| standing.contains(id));
-        self.pair_back
-            .next_try()
+            .under_way()
             .retain(|id, _| standing.contains(id));
         self.pair_back.offers.send_if_modified(|offers| {
             let changed = offers.held != held || offers.made != made;
@@ -443,14 +495,10 @@ impl ServingController {
             .collect()
     }
 
-    /// Ends every offer this Server made under `key` except any under `keep`.
-    pub(super) fn keep_only_offer(&self, key: &[u8], keep: Option<Uuid>) {
-        let changed = {
-            let mut remotes = self
-                .remotes
-                .write()
-                .expect("Remote record lock is not poisoned");
-            let mut changed = false;
+    /// Ends every offer this Server made under `key` except any under `keep`,
+    /// answering whether that could be stored.
+    pub(super) fn keep_only_offer(&self, key: &[u8], keep: Option<Uuid>) -> bool {
+        let kept = self.change_remotes(|remotes| {
             for stored in remotes.iter_mut().filter(|stored| stored.public_key == key) {
                 if stored
                     .offer
@@ -458,19 +506,17 @@ impl ServingController {
                     .is_some_and(|offer| Some(offer.id) != keep)
                 {
                     stored.offer = None;
-                    changed = true;
                 }
             }
-            if changed
-                && let Err(error) = write_private_json(&self.data_dir.join(REMOTES_FILE), &*remotes)
-            {
-                tracing::warn!("could not store what ended of an offer: {error:#}");
-            }
-            changed
-        };
-        if changed {
-            self.offers_changed();
+            Ok(())
+        });
+        if let Err(failure) = &kept {
+            tracing::warn!(
+                "could not store what ended of an offer: {}",
+                failure.message
+            );
         }
+        kept.is_ok()
     }
 
     /// The Remote `remote` refused this Server's key, proving its own: it ended
@@ -494,37 +540,19 @@ impl ServingController {
     /// from here on, whatever was answered, and any token already out dies. The
     /// Remote hears at once where it is connected, and otherwise as it next is.
     pub(crate) fn withdraw_offer(&self, id: Uuid) -> std::result::Result<(), PairingFailure> {
-        let remote = {
-            let mut remotes = self
-                .remotes
-                .write()
-                .expect("Remote record lock is not poisoned");
-            let Some(stored) = remotes
+        let remote = self.change_remotes(|remotes| {
+            let stored = remotes
                 .iter_mut()
                 .find(|stored| stored.offer.as_ref().is_some_and(|offer| offer.id == id))
-            else {
-                return Err(offer_not_found());
-            };
+                .ok_or_else(offer_not_found)?;
             if let Some(offer) = stored.offer.as_mut() {
                 offer.withdrawn = true;
             }
-            let remote = stored.clone();
-            if let Err(error) = write_private_json(&self.data_dir.join(REMOTES_FILE), &*remotes) {
-                if let Some(stored) = remotes
-                    .iter_mut()
-                    .find(|stored| stored.offer.as_ref().is_some_and(|offer| offer.id == id))
-                    && let Some(offer) = stored.offer.as_mut()
-                {
-                    offer.withdrawn = false;
-                }
-                return Err(internal_pairing_failure(error));
-            }
-            remote
-        };
+            Ok(stored.clone())
+        })?;
         // After the record, so a token issued against the record as it was is
         // one this ends, and none is issued against it as it is now.
         self.retire_bound_tokens(&remote.public_key);
-        self.offers_changed();
         let client = self
             .remote_clients
             .lock()
@@ -554,7 +582,7 @@ impl ServingController {
         client: &StrongClient,
         offer: Option<ToldOffer>,
     ) {
-        let told = Told {
+        let told = LastHeard {
             remote: remote.clone(),
             client: std::sync::Arc::downgrade(client),
             offer,
@@ -584,7 +612,7 @@ impl ServingController {
     /// asks that Remote, holding `first` for the first look at it. It is what
     /// has a Server turning Serving on for this need no further step: a change
     /// to what it can offer has it look again.
-    async fn settle(self, key: Vec<u8>, mut told: watch::Receiver<Told>, first: StrongClient) {
+    async fn settle(self, key: Vec<u8>, mut told: watch::Receiver<LastHeard>, first: StrongClient) {
         let mut first = Some(first);
         let mut listening = self.listening.subscribe();
         let mut relays = self.offered_relays.subscribe();
@@ -617,10 +645,8 @@ impl ServingController {
                         () = tokio::time::sleep(self.pair_back.retry_interval) => false,
                     };
                     if ways_changed {
-                        let made = self.made_offers(&key);
-                        let mut next_try = self.pair_back.next_try();
-                        for made in made {
-                            next_try.remove(&made.id);
+                        for made in self.made_offers(&key) {
+                            self.pair_back.start_afresh(made.id);
                         }
                     }
                 }
@@ -644,26 +670,21 @@ impl ServingController {
         }
     }
 
-    async fn settle_once(&self, key: &[u8], told: &Told, client: &StrongClient) -> Settled {
+    async fn settle_once(&self, key: &[u8], told: &LastHeard, client: &StrongClient) -> Settled {
         let made = self.made_offers(key);
         match settling(&made, told.offer) {
             Settle::Nothing => {
-                let said = told
-                    .offer
-                    .and_then(|offer| self.pair_back.held_up().remove(&offer.id));
-                if said.is_some() {
+                if let Some(offer) = told.offer {
+                    self.pair_back.start_afresh(offer.id);
                     self.offers_changed();
                 }
                 Settled::Done
             }
-            Settle::Sweep { keep } => {
-                self.keep_only_offer(key, keep);
-                if keep.is_some() {
-                    Settled::LookAgain
-                } else {
-                    Settled::Done
-                }
-            }
+            Settle::Sweep { keep } => match (self.keep_only_offer(key, keep), keep) {
+                (false, _) => Settled::TryAgain,
+                (true, Some(_)) => Settled::LookAgain,
+                (true, None) => Settled::Done,
+            },
             Settle::SayWithdrawn { id } => {
                 let told = self.say(told, client, &OfferWord::Withdrawn { id }).await;
                 if matches!(
@@ -680,15 +701,10 @@ impl ServingController {
 
     /// Meets an accepted offer: issues a token bound to the Remote's key, for
     /// the one delivery it lives for, and sends the Invite; or says why not.
-    async fn meet(&self, key: &[u8], told: &Told, client: &StrongClient, id: Uuid) -> Settled {
+    async fn meet(&self, key: &[u8], told: &LastHeard, client: &StrongClient, id: Uuid) -> Settled {
         // However often it connects, a try that came to nothing is not made
         // again before its time.
-        let too_soon = self
-            .pair_back
-            .next_try()
-            .get(&id)
-            .is_some_and(|at| tokio::time::Instant::now() < *at);
-        if too_soon {
+        if self.pair_back.too_soon(id) {
             return Settled::TryAgain;
         }
         let ways = match self.offerable_ways() {
@@ -726,10 +742,7 @@ impl ServingController {
             }
             Ok(Spoken::Refused) => Settled::Done,
             Ok(_) | Err(_) => {
-                self.pair_back.next_try().insert(
-                    id,
-                    tokio::time::Instant::now() + self.pair_back.retry_interval,
-                );
+                self.pair_back.came_to_nothing(id);
                 self.note_held_up(id, OfferHeldUp::NotRedeemed);
                 Settled::TryAgain
             }
@@ -737,7 +750,7 @@ impl ServingController {
     }
 
     fn note_held_up(&self, id: Uuid, why: OfferHeldUp) {
-        self.pair_back.held_up().insert(id, why);
+        self.pair_back.under_way().entry(id).or_default().held_up = Some(why);
         self.offers_changed();
     }
 
@@ -754,38 +767,40 @@ impl ServingController {
         let identity = self.identity().await.map_err(identity_failure)?;
         let token = new_token();
         let invite = invite_text(ways, &identity, &token)?;
-        let remotes = self
-            .remotes
-            .read()
-            .expect("Remote record lock is not poisoned");
-        let standing = remotes.iter().any(|stored| {
-            stored.public_key == key
-                && stored
-                    .offer
-                    .as_ref()
-                    .is_some_and(|offer| offer.id == id && !offer.withdrawn)
-        });
-        if !standing {
+        let standing = || {
+            self.made_offers(key)
+                .iter()
+                .any(|offer| offer.id == id && !offer.withdrawn)
+        };
+        if !standing() {
             return Err(offer_not_found());
         }
-        let mut invites = self
-            .invites
-            .lock()
-            .expect("Invite ledger lock is not poisoned");
-        invites
-            .issued
-            .retain(|issued| issued.bound_to.as_deref() != Some(key));
-        invites.issued.push(IssuedToken {
-            token,
-            expires_at: tokio::time::Instant::now() + self.pair_back.invite_ttl,
-            state: TokenState::Outstanding,
-            bound_to: Some(key.to_vec()),
-        });
+        {
+            let mut invites = self
+                .invites
+                .lock()
+                .expect("Invite ledger lock is not poisoned");
+            invites
+                .issued
+                .retain(|issued| issued.bound_to.as_deref() != Some(key));
+            invites.issued.push(IssuedToken {
+                token,
+                expires_at: tokio::time::Instant::now() + self.pair_back.invite_ttl,
+                state: TokenState::Outstanding,
+                bound_to: Some(key.to_vec()),
+            });
+        }
+        // A withdrawal stores itself and then ends what is out, so one that
+        // came as this was issuing is seen here, whichever passed first.
+        if !standing() {
+            self.retire_bound_tokens(key);
+            return Err(offer_not_found());
+        }
         Ok((token, invite.into()))
     }
 
     /// Says `word` to the Remote the telling came from.
-    async fn say(&self, told: &Told, client: &StrongClient, word: &OfferWord) -> Spoken {
+    async fn say(&self, told: &LastHeard, client: &StrongClient, word: &OfferWord) -> Spoken {
         // By the ways it has now, and only of the Pairing the telling came
         // from, its name perhaps paired to another since.
         let Some(remote) = self
@@ -832,18 +847,25 @@ impl ServingController {
 
     // On the side that holds offers.
 
-    /// How the offer of the Peer whose key is `key` stands, for it alone.
-    pub(super) fn told_offer(&self, key: &[u8]) -> Option<ToldOffer> {
+    /// The offer of the first Peer `which` says, with that Peer's key.
+    fn held_offer(
+        &self,
+        which: impl Fn(&StoredPeer, &StoredHeldOffer) -> bool,
+    ) -> Option<(Vec<u8>, StoredHeldOffer)> {
         self.peers
             .read()
             .expect("Peer record lock is not poisoned")
             .iter()
-            .find(|peer| peer.public_key == key)
-            .and_then(|peer| peer.offer.as_ref())
-            .map(|offer| ToldOffer {
-                id: offer.id,
-                accepted: offer.accepted.is_some(),
+            .find_map(|peer| {
+                let offer = peer.offer.as_ref().filter(|offer| which(peer, offer))?;
+                Some((peer.public_key.clone(), offer.clone()))
             })
+    }
+
+    /// How the offer of the Peer whose key is `key` stands, for it alone.
+    pub(super) fn told_offer(&self, key: &[u8]) -> Option<ToldOffer> {
+        self.held_offer(|peer, _| peer.public_key == key)
+            .map(|(_, offer)| offer.told())
     }
 
     /// Whether this Server holds a Remote of the key.
@@ -863,25 +885,12 @@ impl ServingController {
         id: Uuid,
         change: impl FnOnce(&mut Option<StoredHeldOffer>) -> T,
     ) -> std::result::Result<Option<T>, PairingFailure> {
-        let mut peers = self
-            .peers
-            .write()
-            .expect("Peer record lock is not poisoned");
-        let Some(index) = peers
-            .iter()
-            .position(|peer| peer.offer.as_ref().is_some_and(|offer| offer.id == id))
-        else {
-            return Ok(None);
-        };
-        let before = peers[index].offer.clone();
-        let answer = change(&mut peers[index].offer);
-        if let Err(error) = write_private_json(&self.data_dir.join(PEERS_FILE), &*peers) {
-            peers[index].offer = before;
-            return Err(internal_pairing_failure(error));
-        }
-        drop(peers);
-        self.offers_changed();
-        Ok(Some(answer))
+        self.change_peers(|peers| {
+            Ok(peers
+                .iter_mut()
+                .find(|peer| peer.offer.as_ref().is_some_and(|offer| offer.id == id))
+                .map(|peer| change(&mut peer.offer)))
+        })
     }
 
     /// This Server's user answers its offer `id`. Declined, it is gone at once,
@@ -903,13 +912,8 @@ impl ServingController {
         };
         validate_remote_name(&name)?;
         self.ensure_remote_name_available(&name)?;
-        let key = self
-            .peers
-            .read()
-            .expect("Peer record lock is not poisoned")
-            .iter()
-            .find(|peer| peer.offer.as_ref().is_some_and(|offer| offer.id == id))
-            .map(|peer| peer.public_key.clone())
+        let (key, _) = self
+            .held_offer(|_, offer| offer.id == id)
             .ok_or_else(offer_not_found)?;
         if self.holds_remote_of(&key) {
             self.change_held(id, |offer| *offer = None)?;
@@ -918,12 +922,13 @@ impl ServingController {
                 "This machine holds that one as a Remote already, so the offer has ended",
             ));
         }
-        self.pair_back.held_up().remove(&id);
-        self.pair_back.next_try().remove(&id);
+        self.pair_back.start_afresh(id);
         self.change_held(id, |offer| {
             if let Some(offer) = offer.as_mut() {
-                offer.accepted = Some(name);
-                offer.untold = false;
+                offer.standing = Standing::Accepted { name };
+                if offer.notice == Notice::Untold {
+                    offer.notice = Notice::Passed;
+                }
             }
         })?
         .ok_or_else(offer_not_found)
@@ -938,40 +943,29 @@ impl ServingController {
         id: Uuid,
         claimant: Uuid,
     ) -> std::result::Result<bool, PairingFailure> {
-        let held = self
-            .peers
-            .read()
-            .expect("Peer record lock is not poisoned")
-            .iter()
-            .find_map(|peer| peer.offer.as_ref().filter(|offer| offer.id == id).cloned());
-        let Some(held) = held else {
-            return Err(offer_not_found());
-        };
-        if !held.untold {
-            return Ok(held.given_to == Some(claimant));
-        }
-        self.change_held(id, |offer| {
-            if let Some(offer) = offer.as_mut() {
-                offer.untold = false;
-                offer.given_to = Some(claimant);
+        let (_, held) = self
+            .held_offer(|_, offer| offer.id == id)
+            .ok_or_else(offer_not_found)?;
+        match held.notice {
+            Notice::Given(given_to) => Ok(given_to == claimant),
+            Notice::Passed => Ok(false),
+            Notice::Untold => {
+                self.change_held(id, |offer| {
+                    if let Some(offer) = offer.as_mut() {
+                        offer.notice = Notice::Given(claimant);
+                    }
+                })?;
+                Ok(true)
             }
-        })?;
-        Ok(true)
+        }
     }
 
     /// A Pairing with `remote` stands by a ceremony of its own, so any offer
     /// its key holds here has been overtaken and ends.
     pub(super) fn paired_with(&self, remote: &Remote) {
-        let id = self
-            .peers
-            .read()
-            .expect("Peer record lock is not poisoned")
-            .iter()
-            .find(|peer| peer.id == remote.fingerprint)
-            .and_then(|peer| peer.offer.as_ref())
-            .map(|offer| offer.id);
-        if let Some(id) = id
-            && let Err(error) = self.change_held(id, |offer| *offer = None)
+        let held = self.held_offer(|peer, _| peer.id == remote.fingerprint);
+        if let Some((_, offer)) = held
+            && let Err(error) = self.change_held(offer.id, |offer| *offer = None)
         {
             tracing::warn!("could not end an offer overtaken: {}", error.message);
         }
@@ -979,131 +973,84 @@ impl ServingController {
 
     /// Takes what the Peer whose key is `key` says of its own offer.
     async fn take_word(&self, key: Vec<u8>, word: OfferWord) -> OfferAnswer {
-        let held = |id: Uuid| {
-            self.peers
-                .read()
-                .expect("Peer record lock is not poisoned")
-                .iter()
-                .find(|peer| peer.public_key == key)
-                .and_then(|peer| peer.offer.as_ref())
-                .filter(|offer| offer.id == id)
-                .cloned()
+        let id = match &word {
+            OfferWord::Withdrawn { id }
+            | OfferWord::CannotOffer { id, .. }
+            | OfferWord::Invite { id, .. } => *id,
+        };
+        let Some((_, offer)) =
+            self.held_offer(|peer, offer| peer.public_key == key && offer.id == id)
+        else {
+            return OfferAnswer::Gone;
         };
         match word {
-            OfferWord::Withdrawn { id } => {
-                if held(id).is_none() {
-                    return OfferAnswer::Gone;
-                }
-                match self.change_held(id, |offer| *offer = None) {
-                    Ok(Some(())) => OfferAnswer::Noted,
-                    Ok(None) => OfferAnswer::Gone,
-                    Err(_) => OfferAnswer::Busy,
-                }
-            }
-            OfferWord::CannotOffer { id, why } => {
-                let Some(offer) = held(id) else {
-                    return OfferAnswer::Gone;
-                };
-                if offer.accepted.is_none() {
+            OfferWord::Withdrawn { .. } => match self.change_held(id, |offer| *offer = None) {
+                Ok(Some(())) => OfferAnswer::Noted,
+                Ok(None) => OfferAnswer::Gone,
+                Err(_) => OfferAnswer::Failed,
+            },
+            OfferWord::CannotOffer { why, .. } => {
+                if offer.standing == Standing::Waiting {
                     return OfferAnswer::NotAccepted;
                 }
                 self.note_held_up(id, why.into());
                 OfferAnswer::Noted
             }
-            OfferWord::Invite { id, invite } => {
-                let Some(offer) = held(id) else {
-                    return OfferAnswer::Gone;
-                };
-                let Some(name) = offer.accepted else {
+            OfferWord::Invite { invite, .. } => {
+                if offer.standing == Standing::Waiting {
                     return OfferAnswer::NotAccepted;
-                };
+                }
                 // Run apart from what asked, so the Peer hanging up does not
                 // stop a redemption midway.
                 let controller = self.clone();
-                tokio::spawn(async move { controller.redeem_offered(key, id, name, invite).await })
+                tokio::spawn(async move { controller.redeem_offered(key, id, invite).await })
                     .await
-                    .unwrap_or(OfferAnswer::Busy)
+                    .unwrap_or(OfferAnswer::Failed)
             }
         }
     }
 
-    /// Redeems the Invite the Peer whose key is `key` sent for its offer `id`,
-    /// accepted under the name `name`. Refused where it names another key than
-    /// that Peer's: nothing a Peer says can have this Server pair with anyone
-    /// else. One is under way at once for each offer, and none is begun sooner
-    /// after the last came to nothing than the interval allows, so a Peer
-    /// cannot have this Server dial at will.
-    async fn redeem_offered(
-        &self,
-        key: Vec<u8>,
-        id: Uuid,
-        name: String,
-        invite: InviteText,
-    ) -> OfferAnswer {
-        {
-            let mut redeeming = self
-                .pair_back
-                .redeeming
-                .lock()
-                .expect("redeeming lock is not poisoned");
-            if redeeming.contains(&id) {
-                return OfferAnswer::Busy;
-            }
-            let too_soon = self
-                .pair_back
-                .next_try()
-                .get(&id)
-                .is_some_and(|at| tokio::time::Instant::now() < *at);
-            if too_soon {
-                return OfferAnswer::TooSoon;
-            }
-            redeeming.insert(id);
+    /// Redeems the Invite the Peer whose key is `key` sent for its offer `id`.
+    /// Refused where it names another key than that Peer's: nothing a Peer says
+    /// can have this Server pair with anyone else. One is under way at once for
+    /// each offer, and none is begun sooner after the last came to nothing than
+    /// the interval allows, so a Peer cannot have this Server dial at will.
+    async fn redeem_offered(&self, key: Vec<u8>, id: Uuid, invite: InviteText) -> OfferAnswer {
+        if self.pair_back.too_soon(id) {
+            return OfferAnswer::TooSoon;
         }
-        let answer = self.redeem_offered_held(key, id, name, invite).await;
-        self.pair_back
-            .redeeming
-            .lock()
-            .expect("redeeming lock is not poisoned")
-            .remove(&id);
-        if !matches!(answer, OfferAnswer::Formed | OfferAnswer::Gone) {
-            self.pair_back.next_try().insert(
-                id,
-                tokio::time::Instant::now() + self.pair_back.retry_interval,
-            );
-        }
-        answer
-    }
-
-    async fn redeem_offered_held(
-        &self,
-        key: Vec<u8>,
-        id: Uuid,
-        name: String,
-        invite: InviteText,
-    ) -> OfferAnswer {
         let parsed = match parse_invite(&invite) {
             Ok(parsed) => parsed,
             Err(error) => {
+                self.pair_back.came_to_nothing(id);
                 self.note_failed(id, &error.message);
                 return OfferAnswer::NotFormed;
             }
         };
         if parsed.server_key != key {
+            self.pair_back.came_to_nothing(id);
             self.note_failed(
                 id,
                 "It sent an Invite naming another key than its own, so it was refused",
             );
             return OfferAnswer::WrongKey;
         }
-        self.pair_back.held_up().remove(&id);
-        let marked = self.change_held(id, |offer| {
-            if let Some(offer) = offer.as_mut() {
-                offer.redeeming = true;
-            }
+        let begun = self.change_held(id, |offer| {
+            let offer = offer.as_mut()?;
+            let Standing::Accepted { name } = &offer.standing else {
+                return None;
+            };
+            let name = name.clone();
+            offer.standing = Standing::Redeeming { name: name.clone() };
+            Some(name)
         });
-        if !matches!(marked, Ok(Some(()))) {
-            return OfferAnswer::Busy;
-        }
+        let name = match begun {
+            Ok(Some(Some(name))) => name,
+            Ok(Some(None)) => return OfferAnswer::Busy,
+            Ok(None) => return OfferAnswer::Gone,
+            Err(_) => return OfferAnswer::Failed,
+        };
+        self.pair_back.start_afresh(id);
         // A Peer that answers the handshake and then says nothing holds this no
         // longer than the token it sent lives.
         let redeemed = tokio::time::timeout(
@@ -1153,9 +1100,10 @@ impl ServingController {
             Err(error) => {
                 let _ = self.change_held(id, |offer| {
                     if let Some(offer) = offer.as_mut() {
-                        offer.redeeming = false;
+                        offer.standing = Standing::Accepted { name };
                     }
                 });
+                self.pair_back.came_to_nothing(id);
                 self.note_failed(id, &error.message);
                 OfferAnswer::NotFormed
             }
@@ -1214,17 +1162,18 @@ pub(super) fn take_back_redemptions_caught_midway(
     let mut changed_peers = false;
     let mut changed_remotes = false;
     for peer in peers.iter_mut() {
-        let Some(offer) = peer.offer.as_mut().filter(|offer| offer.redeeming) else {
+        let Some(offer) = peer.offer.as_mut() else {
             continue;
         };
-        offer.redeeming = false;
-        changed_peers = true;
+        let Standing::Redeeming { name } = &offer.standing else {
+            continue;
+        };
+        let name = name.clone();
         let before = remotes.len();
-        remotes.retain(|stored| {
-            stored.public_key != peer.public_key
-                || Some(&stored.remote.name) != offer.accepted.as_ref()
-        });
+        remotes.retain(|stored| stored.public_key != peer.public_key || stored.remote.name != name);
         changed_remotes |= remotes.len() != before;
+        offer.standing = Standing::Accepted { name };
+        changed_peers = true;
     }
     if changed_remotes {
         write_private_json(&data_dir.join(REMOTES_FILE), &*remotes)?;
@@ -1600,8 +1549,8 @@ mod tests {
             "offer": {
                 "id": id,
                 "made_at": 0,
-                "accepted": "a",
-                "redeeming": true,
+                "standing": { "redeeming": { "name": "a" } },
+                "notice": "passed",
             },
         }]);
         let remotes = serde_json::json!([

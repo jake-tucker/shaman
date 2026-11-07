@@ -542,6 +542,14 @@ impl ServerTimings {
         self
     }
 
+    /// Bounds how long a token issued for an offer to pair back lives, and so
+    /// how long a redemption of one is waited on; injectable so tests see one
+    /// given up without waiting out the default.
+    pub fn with_pair_back_invite_ttl(mut self, ttl: Duration) -> Self {
+        self.pair_back_invite_ttl = ttl;
+        self
+    }
+
     /// Sets how soon an accepted offer whose last try came to nothing is tried
     /// again; injectable so tests see it tried again without waiting out the
     /// default.

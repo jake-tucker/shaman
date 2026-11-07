@@ -699,7 +699,7 @@ enum TokenState {
     Spent,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredPeer {
     id: String,
@@ -710,7 +710,7 @@ struct StoredPeer {
     /// The offer to pair back the Peer made at the end of the ceremony that
     /// formed this Pairing, until it is answered. Made nowhere else, and held
     /// here, so a Peer holds one at most and it goes with the Pairing.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     offer: Option<StoredHeldOffer>,
 }
 
@@ -775,7 +775,7 @@ fn peer_name<'a>(
     told_apart
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredRemote {
     #[serde(flatten)]
@@ -792,7 +792,7 @@ struct StoredRemote {
     generation: u64,
     /// The offer to pair back this Server made the Remote, until it is
     /// answered, withdrawn, or the Pairing ends with this record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     offer: Option<StoredMadeOffer>,
 }
 
@@ -832,7 +832,7 @@ struct EnrollmentRequest {
     /// The offer to pair back this ceremony ends by making, by its id. Taken
     /// only as a commit forms the Pairing: there is no other way to make one
     /// (ADR-0066).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     offer: Option<Uuid>,
 }
 
@@ -867,7 +867,7 @@ struct OfferedRelays {
     relays: Vec<String>,
     /// How the offer to pair back this very Peer made stands, where it made
     /// one. Nothing is told here of any other Peer's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     offer: Option<ToldOffer>,
 }
 
@@ -1038,7 +1038,7 @@ impl ServingController {
             told: Arc::new(ToldStore::every(
                 crate::server::ServerTimings::default().told_relays_store_interval,
             )),
-            pair_back: Arc::new(PairBack::within(
+            pair_back: Arc::new(PairBack::new(
                 crate::server::ServerTimings::default().pair_back_invite_ttl,
                 crate::server::ServerTimings::default().pair_back_retry_interval,
             )),
@@ -1053,7 +1053,7 @@ impl ServingController {
         invite_ttl: tokio::time::Duration,
         retry_interval: tokio::time::Duration,
     ) -> Self {
-        self.pair_back = Arc::new(PairBack::within(invite_ttl, retry_interval));
+        self.pair_back = Arc::new(PairBack::new(invite_ttl, retry_interval));
         self.with_offers_published()
     }
 
@@ -1295,9 +1295,7 @@ impl ServingController {
             .await;
             match attempt {
                 Attempt::Delivered(invite) => {
-                    let mut delivered = delivered(&invite, &listed)?;
-                    delivered.preview.reaches_here = self.is_enrolled_peer(&listed);
-                    return Ok(delivered);
+                    return delivered(&invite, &listed, self.is_enrolled_peer(&listed));
                 }
                 Attempt::Dead(why) => return Err(code_dead(why)),
                 Attempt::Refused(refused) => {
@@ -1643,23 +1641,16 @@ impl ServingController {
     }
 
     pub(crate) fn remove_peer(&self, id: &str) -> std::result::Result<(), PairingFailure> {
-        let mut peers = self
-            .peers
-            .write()
-            .expect("Peer record lock is not poisoned");
-        let Some(index) = peers.iter().position(|peer| peer.id == id) else {
-            return Err(PairingFailure::new(
-                SessionErrorCode::PeerNotFound,
-                "Peer not found",
-            ));
-        };
-        let removed = peers.remove(index);
-        if let Err(error) = write_private_json(&self.data_dir.join(PEERS_FILE), &*peers) {
-            peers.insert(index, removed);
-            return Err(internal_pairing_failure(error));
-        }
-        drop(peers);
-        self.offers_changed();
+        self.change_peers(|peers| {
+            let Some(index) = peers.iter().position(|peer| peer.id == id) else {
+                return Err(PairingFailure::new(
+                    SessionErrorCode::PeerNotFound,
+                    "Peer not found",
+                ));
+            };
+            peers.remove(index);
+            Ok(())
+        })?;
         if let Some(revoked) = self
             .revocations
             .read()
@@ -1700,24 +1691,16 @@ impl ServingController {
     /// Peer leaves no tombstone, so its user may pair again with a new Invite.
     fn withdraw_peer(&self, public_key: &[u8]) -> std::result::Result<(), PairingFailure> {
         let id = fingerprint(public_key);
-        let mut peers = self
-            .peers
-            .write()
-            .expect("Peer record lock is not poisoned");
-        let Some(index) = peers.iter().position(|peer| peer.id == id) else {
-            return Err(PairingFailure::new(
-                SessionErrorCode::PeerNotFound,
-                "Peer not found",
-            ));
-        };
-        let withdrawn = peers.remove(index);
-        if let Err(error) = write_private_json(&self.data_dir.join(PEERS_FILE), &*peers) {
-            peers.insert(index, withdrawn);
-            return Err(internal_pairing_failure(error));
-        }
-        drop(peers);
-        self.offers_changed();
-        Ok(())
+        self.change_peers(|peers| {
+            let Some(index) = peers.iter().position(|peer| peer.id == id) else {
+                return Err(PairingFailure::new(
+                    SessionErrorCode::PeerNotFound,
+                    "Peer not found",
+                ));
+            };
+            peers.remove(index);
+            Ok(())
+        })
     }
 
     /// Dials the Remote over the Pairing listener and asks it to withdraw this
@@ -1746,22 +1729,15 @@ impl ServingController {
     }
 
     fn delete_remote(&self, name: &str) -> std::result::Result<(), PairingFailure> {
-        let mut remotes = self
-            .remotes
-            .write()
-            .expect("Remote record lock is not poisoned");
-        let Some(index) = remotes.iter().position(|stored| stored.remote.name == name) else {
-            return Err(PairingFailure::new(
-                SessionErrorCode::RemoteNotFound,
-                "Remote not found",
-            ));
-        };
-        let removed = remotes.remove(index);
-        if let Err(error) = write_private_json(&self.data_dir.join(REMOTES_FILE), &*remotes) {
-            remotes.insert(index, removed);
-            return Err(internal_pairing_failure(error));
-        }
-        drop(remotes);
+        let removed = self.change_remotes(|remotes| {
+            let Some(index) = remotes.iter().position(|stored| stored.remote.name == name) else {
+                return Err(PairingFailure::new(
+                    SessionErrorCode::RemoteNotFound,
+                    "Remote not found",
+                ));
+            };
+            Ok(remotes.remove(index))
+        })?;
         // A name freed here may be paired again to a different key, so its
         // pinned client must not outlive the record it was built from.
         self.remote_clients
@@ -1771,9 +1747,63 @@ impl ServingController {
         self.note_pairing_change();
         if removed.offer.is_some() {
             self.retire_bound_tokens(&removed.public_key);
-            self.offers_changed();
         }
         Ok(())
+    }
+
+    /// Changes the Peers' records as `change` says, stored whole or not at all
+    /// and told to whatever follows the offers on them. The one way those
+    /// records are written once the Server runs.
+    fn change_peers<T>(
+        &self,
+        change: impl FnOnce(&mut Vec<StoredPeer>) -> std::result::Result<T, PairingFailure>,
+    ) -> std::result::Result<T, PairingFailure> {
+        self.change_records(&self.peers, PEERS_FILE, change)
+    }
+
+    /// The same of the Remotes' records. What they tell of the Relays they
+    /// Serve through alone is held at once and stored later, and changes no
+    /// offer ([`Self::store_told`]).
+    fn change_remotes<T>(
+        &self,
+        change: impl FnOnce(&mut Vec<StoredRemote>) -> std::result::Result<T, PairingFailure>,
+    ) -> std::result::Result<T, PairingFailure> {
+        self.change_records(&self.remotes, REMOTES_FILE, change)
+    }
+
+    /// Changes `records`, kept in `file`, as `change` says: put back as they were
+    /// where it refuses or they cannot be stored, left unwritten where it changes
+    /// nothing, and otherwise stored and told of with their lock let go.
+    fn change_records<R, T>(
+        &self,
+        records: &RwLock<Vec<R>>,
+        file: &str,
+        change: impl FnOnce(&mut Vec<R>) -> std::result::Result<T, PairingFailure>,
+    ) -> std::result::Result<T, PairingFailure>
+    where
+        R: Clone + Eq + Serialize,
+    {
+        let mut held = records
+            .write()
+            .expect("Pairing record lock is not poisoned");
+        let before = held.clone();
+        let answer = match change(&mut held) {
+            Ok(answer) => answer,
+            Err(refusal) => {
+                *held = before;
+                return Err(refusal);
+            }
+        };
+        if *held == before {
+            return Ok(answer);
+        }
+        if let Err(error) = write_private_json(&self.data_dir.join(file), &*held) {
+            *held = before;
+            return Err(internal_pairing_failure(error));
+        }
+        drop(held);
+        self.offers_changed();
+        Ok(answer)
     }
 
     /// Tells whatever follows a Remote that the Remotes paired have changed.
@@ -2450,38 +2480,41 @@ impl ServingController {
         status: RemoteStatus,
         answered: Option<Way>,
     ) {
-        let mut remotes = self
+        // A Remote answering as it did is the common case: asked of every
+        // answer, it costs a look and no more.
+        let unchanged = self
             .remotes
-            .write()
-            .expect("Remote record lock is not poisoned");
-        let Some(index) = remotes
+            .read()
+            .expect("Remote record lock is not poisoned")
             .iter()
-            .position(|stored| same_pairing(stored, remote))
-        else {
-            return;
-        };
-        // A way the Remote no longer offers — dropped as it answered — is
-        // remembered as answering no longer.
-        let answered = answered.filter(|way| remotes[index].remote.ways.contains(way));
-        let previous_status = remotes[index].remote.status;
-        if previous_status == status
-            && answered
-                .as_ref()
-                .is_none_or(|way| remotes[index].answered.first() == Some(way))
-        {
+            .find(|stored| same_pairing(stored, remote))
+            .is_none_or(|stored| {
+                stored.remote.status == status
+                    && answered.as_ref().is_none_or(|way| {
+                        !stored.remote.ways.contains(way) || stored.answered.first() == Some(way)
+                    })
+            });
+        if unchanged {
             return;
         }
-        let previous_answered = remotes[index].answered.clone();
-        remotes[index].remote.status = status;
-        if let Some(way) = answered {
-            let answered = &mut remotes[index].answered;
-            answered.retain(|known| *known != way);
-            answered.insert(0, way);
-        }
-        if let Err(error) = write_private_json(&self.data_dir.join(REMOTES_FILE), &*remotes) {
-            remotes[index].remote.status = previous_status;
-            remotes[index].answered = previous_answered;
-            tracing::warn!("could not persist Remote status: {error:#}");
+        let recorded = self.change_remotes(|remotes| {
+            let Some(stored) = remotes
+                .iter_mut()
+                .find(|stored| same_pairing(stored, remote))
+            else {
+                return Ok(());
+            };
+            stored.remote.status = status;
+            // A way the Remote no longer offers — dropped as it answered — is
+            // remembered as answering no longer.
+            if let Some(way) = answered.filter(|way| stored.remote.ways.contains(way)) {
+                stored.answered.retain(|known| *known != way);
+                stored.answered.insert(0, way);
+            }
+            Ok(())
+        });
+        if let Err(failure) = recorded {
+            tracing::warn!("could not persist Remote status: {}", failure.message);
         }
     }
 
@@ -2688,60 +2721,37 @@ impl ServingController {
         public_key: &[u8],
         offer: Option<StoredMadeOffer>,
     ) -> std::result::Result<(), PairingFailure> {
-        let mut remotes = self
-            .remotes
-            .write()
-            .expect("Remote record lock is not poisoned");
-        if remotes.iter().any(|known| known.remote.name == remote.name) {
-            return Err(remote_name_conflict(&remote.name));
-        }
-        remotes.push(StoredRemote {
-            remote: remote.clone(),
-            public_key: public_key.to_vec(),
-            answered: Vec::new(),
-            generation: self.pairings_made.fetch_add(1, Ordering::AcqRel) + 1,
-            offer,
-        });
-        if let Err(error) = write_private_json(&self.data_dir.join(REMOTES_FILE), &*remotes) {
-            remotes.pop();
-            return Err(internal_pairing_failure(error));
-        }
-        drop(remotes);
+        self.change_remotes(|remotes| {
+            if remotes.iter().any(|known| known.remote.name == remote.name) {
+                return Err(remote_name_conflict(&remote.name));
+            }
+            remotes.push(StoredRemote {
+                remote: remote.clone(),
+                public_key: public_key.to_vec(),
+                answered: Vec::new(),
+                generation: self.pairings_made.fetch_add(1, Ordering::AcqRel) + 1,
+                offer,
+            });
+            Ok(())
+        })?;
         self.note_pairing_change();
-        self.offers_changed();
         Ok(())
     }
 
     fn rollback_remote(&self, remote: &Remote) {
-        let mut remotes = self
-            .remotes
-            .write()
-            .expect("Remote record lock is not poisoned");
-        remotes.retain(|known| {
-            known.remote.name != remote.name || known.remote.fingerprint != remote.fingerprint
+        let rolled_back = self.change_remotes(|remotes| {
+            remotes.retain(|known| {
+                known.remote.name != remote.name || known.remote.fingerprint != remote.fingerprint
+            });
+            Ok(())
         });
-        let _ = write_private_json(&self.data_dir.join(REMOTES_FILE), &*remotes);
-        drop(remotes);
+        if let Err(failure) = rolled_back {
+            tracing::warn!("could not roll a Remote back: {}", failure.message);
+        }
         self.note_pairing_change();
-        self.offers_changed();
     }
 
     fn enroll(
-        &self,
-        request: EnrollmentRequest,
-        public_key: Vec<u8>,
-    ) -> std::result::Result<(), PairingFailure> {
-        let commits = matches!(request.phase, EnrollmentPhase::Commit);
-        self.enroll_holding_ledger(request, public_key)?;
-        // With the ledger let go, since telling of the offers reads the
-        // Remotes, under which a token is issued.
-        if commits {
-            self.offers_changed();
-        }
-        Ok(())
-    }
-
-    fn enroll_holding_ledger(
         &self,
         request: EnrollmentRequest,
         public_key: Vec<u8>,
@@ -2801,40 +2811,33 @@ impl ServingController {
         }
 
         let id = fingerprint(&public_key);
-        let mut peers = self
-            .peers
-            .write()
-            .expect("Peer record lock is not poisoned");
-        let others = peers
-            .iter()
-            .filter(|peer| peer.id != id)
-            .map(StoredPeer::name)
-            .collect::<Vec<_>>();
-        let name = peer_name(
-            request.hostname.as_deref(),
-            &id,
-            others.iter().map(String::as_str),
-        );
-        let previous_peers = peers.clone();
-        // Enrolling again is another ceremony, and another Pairing: whatever
-        // offer the last made gives way to what this one makes, if anything.
-        if let Some(existing) = peers.iter_mut().find(|peer| peer.id == id) {
-            existing.public_key = public_key;
-            existing.name = name;
-            existing.offer = offer;
-        } else {
-            peers.push(StoredPeer {
-                id: id.clone(),
-                public_key,
-                name,
-                offer,
-            });
-        }
-        if let Err(error) = write_private_json(&self.data_dir.join(PEERS_FILE), &*peers) {
-            *peers = previous_peers;
-            return Err(internal_pairing_failure(error));
-        }
-        drop(peers);
+        self.change_peers(|peers| {
+            let others = peers
+                .iter()
+                .filter(|peer| peer.id != id)
+                .map(StoredPeer::name)
+                .collect::<Vec<_>>();
+            let name = peer_name(
+                request.hostname.as_deref(),
+                &id,
+                others.iter().map(String::as_str),
+            );
+            // Enrolling again is another ceremony, and another Pairing: whatever
+            // offer the last made gives way to what this one makes, if anything.
+            if let Some(existing) = peers.iter_mut().find(|peer| peer.id == id) {
+                existing.public_key = public_key;
+                existing.name = name;
+                existing.offer = offer;
+            } else {
+                peers.push(StoredPeer {
+                    id: id.clone(),
+                    public_key,
+                    name,
+                    offer,
+                });
+            }
+            Ok(())
+        })?;
         // A key's revocation stands until it is revoked, so the connections
         // that answer to it — those kept across a withdrawal among them —
         // answer to it however often the key enrolls again; only a removed
@@ -2882,7 +2885,11 @@ impl ServingController {
 /// machine chosen. Both sides bound that key into the exchange, so an honest
 /// pair always agree on this: where they do not, whoever delivered it knew the
 /// code, and the list is what was wrong.
-fn delivered(invite: &str, listed: &[u8]) -> std::result::Result<DeliveredInvite, PairingFailure> {
+fn delivered(
+    invite: &str,
+    listed: &[u8],
+    reaches_here: bool,
+) -> std::result::Result<DeliveredInvite, PairingFailure> {
     let parsed = parse_invite(invite)?;
     if parsed.server_key != listed {
         return Err(PairingFailure::new(
@@ -2900,7 +2907,7 @@ fn delivered(invite: &str, listed: &[u8]) -> std::result::Result<DeliveredInvite
             hostname: shown(&parsed.hostname, MAX_PEER_NAME_CHARS),
             fingerprint: fingerprint(&parsed.server_key),
             ways: parsed.ways,
-            reaches_here: false,
+            reaches_here,
         },
     })
 }
