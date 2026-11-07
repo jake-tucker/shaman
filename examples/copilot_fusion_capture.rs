@@ -35,6 +35,8 @@
 //!   assignment, with a one-word Turn to prove each way of clearing it.
 //! - `first-switch <tier>` opens a Session with no Model, as Suru does, lists its Models, switches
 //!   onto the tier, and runs a one-word Turn.
+//! - `plain` opens a Session with the assignment and no Model, switches onto `auto` naming no tier
+//!   as Suru does, runs a one-word Turn, and resumes it, to learn what Copilot reports it holds.
 //! - `store` opens Sessions under an Errand's settings and under a conversation's, with and without
 //!   a one-word Turn on `gpt-5.6-luna`, deleting each, and prints their IDs to look up in the CLI's
 //!   `session-store.db`.
@@ -113,6 +115,7 @@ async fn main() -> Result<(), Failure> {
         ["delete", ids @ ..] => delete(&run, ids).await,
         ["clear"] => clear(&run).await,
         ["first-switch", tier] => first_switch(&run, tier).await,
+        ["plain"] => plain(&run).await,
         ["store"] => store(&run).await,
         _ => Err("name a mode; the file's head describes them".into()),
     }
@@ -1182,6 +1185,48 @@ async fn first_switch(run: &Run, tier: &str) -> Result<(), Failure> {
     live.catalog("opened").await;
     set_model(run, &mut live, "auto", Some(tier), false).await?;
     live.current("after the Turn").await;
+    live.close(&client).await;
+    stop_cli(&client, child).await;
+    Ok(())
+}
+
+/// What Copilot says a Session with the assignment holds when it never chose a tier.
+async fn plain(run: &Run) -> Result<(), Failure> {
+    let (client, child) = start_cli(run).await?;
+    let config = SessionConfig::default()
+        .with_streaming(true)
+        .with_include_sub_agent_streaming_events(true)
+        .with_permission_handler(Arc::new(ApproveAllHandler))
+        .with_exp_assignments(run.assigned()?);
+    let mut live = run
+        .open(&client, "plain", config)
+        .await?
+        .ok_or("the Session did not open")?;
+    live.current("opened").await;
+    live.catalog("opened").await;
+    let answered = live.session.set_model("auto", None).await;
+    run.note(
+        "set_model",
+        json!({ "model": "auto", "answered": answered.map_err(|error| error.to_string()) }),
+    );
+    live.current("after switching onto auto").await;
+    live.turn("Ping", SHORT_TURN).await;
+    live.current("after the Turn").await;
+    let id = live.session.id().clone();
+    let disconnected = live.session.disconnect().await;
+    run.note(
+        "disconnected",
+        json!({ "answered": disconnected.map_err(|error| error.to_string()) }),
+    );
+    stop_cli(&client, child).await;
+
+    let (client, child) = start_cli(run).await?;
+    let live = run
+        .resume(&client, "plain", run.resume_config(&id, true))
+        .await?
+        .ok_or("the Session did not resume")?;
+    live.current("resumed with the assignment").await;
+    live.catalog("resumed").await;
     live.close(&client).await;
     stop_cli(&client, child).await;
     Ok(())

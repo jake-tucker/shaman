@@ -27,6 +27,14 @@ arrives at once, and the one naming `hydrafusion` after `session.fusion_complete
 says nothing of a tier, which is one reason Suru does not read refusals off `model_change`. On disk,
 `events.jsonl` spells the tier of a change `autoTierIdCompat` where the stream says `autoTier`.
 
+## What Copilot holds for a Session that chose no tier
+
+`copilot_fusion_capture plain`: a Session with the assignment and no Model, `set_model(auto)` naming no
+tier, one one-word Turn, and a resume with the assignment. `getCurrent` answered `{modelId: auto}` after
+the switch, after the Turn, and after the resume, with no `autoTier` at any point. So a Session naming
+no tier resumes with nothing to clear, and Suru sends it no `switchTo`. `autoTier: balance` is reported
+only for a Session that named `balance`, as `s8-tiers` did when it opened on it.
+
 ## What a deleted Session leaves in `session-store.db`
 
 Each Session deleted with `delete_session`, then looked up by ID in every table with a `session_id`:

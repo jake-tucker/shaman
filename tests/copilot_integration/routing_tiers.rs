@@ -1037,3 +1037,28 @@ async fn going_back_to_copilots_default_tier_clears_the_one_copilot_holds() {
     drop(client);
     server.shutdown().await.expect("stop server");
 }
+
+/// Copilot reports no tier for a Session that never chose one, before and after a resume, so there
+/// is nothing to clear (docs/validation/copilot-routing-tier-selection.md).
+#[tokio::test]
+async fn a_session_naming_no_tier_is_asked_for_nothing_more_on_a_resume() {
+    let copilot = tiered_conversation(SETTLES);
+    let home = Home::new("routing-tier-none-resumed");
+    let (server, client) = home.host(&copilot).await;
+    pin(&client, Some(true)).await;
+    let first = begun_on(&client, &home, on_auto(None)).await;
+    let session_id = first.session.id;
+    drop(client);
+    server.shutdown().await.expect("stop original server");
+    copilot.wait_for_exit().await;
+
+    let (server, client) = home.host(&copilot).await;
+    continued_session(&client, session_id).await;
+    let resumed = settled_session(&client, session_id, 1).await;
+
+    assert_eq!(resumed.turns[1].status, TurnStatus::Completed);
+    assert_eq!(switches(&copilot), [switch("auto", None)]);
+
+    drop(client);
+    server.shutdown().await.expect("stop replacement server");
+}
