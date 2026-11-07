@@ -3654,56 +3654,138 @@ async fn a_config_root_that_cannot_be_searched_is_an_error_and_takes_no_change()
     );
 }
 
-/// A Config Document changed by another hand — an editor, dotfiles, a rollout —
-/// is adopted with no restart and no mutation, exactly as one Suru edited is,
-/// every attached Client told. A document that stops parsing says so and takes
-/// nothing away, since a running Server has what it said last to go on, and
-/// mending it is adopted the same way.
+/// An edit of a Config Document by anything but this Server takes effect at the
+/// next start, unless a Setting declares it follows one, and the reader is told
+/// of each key meanwhile, by name alone and for as long as the two differ. A
+/// change of some other Setting adopts none of it, and a change of that very
+/// Setting wins it back. A document that stops parsing says so and takes nothing
+/// away, and mending it is told of in turn.
 #[tokio::test]
-async fn a_config_document_changed_by_another_hand_is_adopted_with_no_restart() {
+async fn an_outside_edit_of_a_setting_waits_for_the_next_start_saying_so() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let document = config_dir.path().join("suru.jsonc");
     let channel = "settings-another-hand";
-    let server = server::spawn_with_timings(
-        ServerConfig::new(state_dir.path(), channel)
-            .expect("configure server")
-            .with_config_dir(config_dir.path()),
-        suru::server::ServerTimings::default()
-            .with_config_document_check_interval(std::time::Duration::from_millis(5)),
-    )
-    .await
-    .expect("spawn server");
+    let spawn = || {
+        server::spawn_with_timings(
+            ServerConfig::new(state_dir.path(), channel)
+                .expect("configure server")
+                .with_config_dir(config_dir.path()),
+            suru::server::ServerTimings::default()
+                .with_config_document_check_interval(std::time::Duration::from_millis(5)),
+        )
+    };
+    let server = spawn().await.expect("spawn server");
     let (mut client, opening) = attach(state_dir.path(), channel).await;
-    assert_eq!(opening.pinned_keys(), [] as [String; 0]);
+    assert_eq!(opening.pinned_keys(), [] as [&str; 0]);
+    let in_force = ReasoningVisibility::default();
+    let not_in_force = ReasoningVisibility::Shown;
+    assert_ne!(in_force, not_in_force, "the edit would change something");
 
     std::fs::write(
         &document,
-        "{ \"transcript\": { \"reasoningVisibility\": \"hidden\" } }\n",
+        "{ \"transcript\": { \"reasoningVisibility\": \"shown\" } }\n",
     )
     .expect("write the Config Document");
-    let adopted = next_snapshot(&mut client).await;
+    let told = next_snapshot(&mut client).await;
+    assert_eq!(told.settings, opening.settings, "nothing moved");
+    assert_eq!(told.pinned_keys(), [] as [&str; 0], "and nothing is pinned");
+    let [diagnostic] = told.diagnostics.as_slice() else {
+        panic!("one word for one key: {:?}", told.diagnostics);
+    };
+    assert_eq!(diagnostic.severity, SettingsDiagnosticSeverity::AtNextStart);
+    assert_eq!(diagnostic.file, document);
     assert_eq!(
-        adopted.settings.transcript.reasoning_visibility,
-        ReasoningVisibility::Hidden
+        diagnostic.key.as_deref(),
+        Some("transcript.reasoningVisibility")
     );
-    assert_eq!(adopted.pinned_keys(), ["transcript.reasoningVisibility"]);
-    assert_eq!(adopted.pinned["transcript.reasoningVisibility"], document);
+    assert!(diagnostic.message.contains("next start"), "{diagnostic:?}");
+    assert!(
+        !diagnostic.message.contains("shown"),
+        "the key and never the value: {diagnostic:?}"
+    );
+
+    let unrelated = client
+        .mutate_setting(SettingMutation::AppearanceMode {
+            value: Some(AppearanceMode::Dark),
+        })
+        .await
+        .expect("change another Setting");
+    assert_eq!(
+        unrelated.settings.transcript.reasoning_visibility, in_force,
+        "a change of another Setting adopts none of the edit"
+    );
+    assert_eq!(unrelated.pinned_keys(), ["appearance.mode"]);
+    assert_eq!(
+        unrelated.diagnostics, told.diagnostics,
+        "and it is still said"
+    );
+    let on_disk = std::fs::read_to_string(&document).expect("read the Config Document");
+    assert!(
+        on_disk.contains("\"reasoningVisibility\": \"shown\"") && on_disk.contains("\"dark\""),
+        "the document keeps the edit beside the change: {on_disk}"
+    );
 
     std::fs::write(&document, "{ \"transcript\": ").expect("write the Config Document");
-    let troubled = next_snapshot(&mut client).await;
-    assert_eq!(troubled.settings, adopted.settings);
-    assert_eq!(troubled.pinned, adopted.pinned);
-    let [diagnostic] = troubled.diagnostics.as_slice() else {
-        panic!("the trouble is told: {:?}", troubled.diagnostics);
+    let troubled = loop {
+        let told = next_snapshot(&mut client).await;
+        if told
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == SettingsDiagnosticSeverity::Error)
+        {
+            break told;
+        }
     };
-    assert_eq!(diagnostic.severity, SettingsDiagnosticSeverity::Error);
+    assert_eq!(
+        troubled.settings, unrelated.settings,
+        "it takes nothing away"
+    );
+    assert_eq!(troubled.pinned, unrelated.pinned);
 
-    std::fs::write(&document, "{}\n").expect("write the Config Document");
-    let mended = next_snapshot(&mut client).await;
-    assert_eq!(mended.pinned_keys(), [] as [String; 0]);
-    assert_eq!(mended.diagnostics, []);
+    std::fs::write(
+        &document,
+        "{ \"appearance\": { \"mode\": \"dark\" }, \"transcript\": { \"reasoningVisibility\": \"shown\" } }\n",
+    )
+    .expect("write the Config Document");
+    let mended = loop {
+        let told = next_snapshot(&mut client).await;
+        if told.diagnostics == unrelated.diagnostics {
+            break told;
+        }
+    };
+    assert_eq!(mended.settings, unrelated.settings);
 
+    let won = client
+        .mutate_setting(SettingMutation::TranscriptReasoningVisibility {
+            value: Some(in_force),
+        })
+        .await
+        .expect("change the very Setting");
+    assert_eq!(won.settings.transcript.reasoning_visibility, in_force);
+    assert_eq!(won.diagnostics, [], "the two agree again");
+
+    client
+        .mutate_setting(SettingMutation::TranscriptReasoningVisibility { value: None })
+        .await
+        .expect("take the pin out");
+    std::fs::write(
+        &document,
+        "{ \"transcript\": { \"reasoningVisibility\": \"shown\" } }\n",
+    )
+    .expect("write the Config Document");
+    next_snapshot(&mut client).await;
+    drop(client);
+    server.shutdown().await.expect("shut down server");
+
+    let server = spawn().await.expect("spawn server again");
+    let (client, started) = attach(state_dir.path(), channel).await;
+    assert_eq!(
+        started.settings.transcript.reasoning_visibility, not_in_force,
+        "the next start takes the document whole"
+    );
+    assert_eq!(started.diagnostics, []);
+    assert_eq!(started.pinned_keys(), ["transcript.reasoningVisibility"]);
     drop(client);
     server.shutdown().await.expect("shut down server");
 }

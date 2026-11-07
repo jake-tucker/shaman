@@ -65,6 +65,26 @@ async fn server_starting_pinned(channel: &str, relays: serde_json::Value) -> Tes
     }
 }
 
+/// The next Settings a Client is told of that `reached` says of.
+async fn next_settings_saying(
+    client: &mut ManagedClient,
+    reached: impl Fn(&suru::protocol::SettingsSnapshot) -> bool,
+) -> suru::protocol::SettingsSnapshot {
+    timeout(PROGRESS_DEADLINE, async {
+        loop {
+            match client.next().await {
+                Some(ManagedEvent::SettingsSnapshot(snapshot)) if reached(&snapshot) => {
+                    return snapshot;
+                }
+                Some(_) => {}
+                None => panic!("the Client stopped hearing from its Server"),
+            }
+        }
+    })
+    .await
+    .expect("the Client is told")
+}
+
 /// Fails if anything connects to `listener` within a span far longer than the
 /// Server's injected retry backoff, in which one meaning to connect would.
 async fn assert_nothing_connects(listener: &tokio::net::TcpListener, why: &str) {
@@ -587,6 +607,73 @@ async fn a_document_that_stops_parsing_says_so_and_leaves_the_pins_standing() {
     );
 
     server.shutdown().await;
+}
+
+/// A document gone says nothing is pinned any more, so the pins follow and their
+/// entries stand, while each other Setting holds what was in force, said of by
+/// name. One that does not parse says nothing at all, so everything holds, pins
+/// among them.
+#[tokio::test]
+async fn pins_follow_a_document_deleted_and_hold_through_one_broken_while_the_rest_holds() {
+    let state = tempfile::tempdir().expect("create the Server's state directory");
+    let config_root = tempfile::tempdir().expect("create the Server's config root");
+    let document = config_root.path().join("suru.jsonc");
+    std::fs::write(
+        &document,
+        json!({ "serving": { "port": 9443, "relays": [NOWHERE] } }).to_string(),
+    )
+    .unwrap();
+    let channel = "relay-pin-gone";
+    let config = ServerConfig::new(state.path(), channel)
+        .expect("configure the Server")
+        .with_config_dir(config_root.path());
+    let timings = pinning_timings();
+    let (server, mut client) = run_server(&config, &timings, state.path(), channel).await;
+    let pinned_now = async |client: &ManagedClient| {
+        client
+            .list_relays()
+            .await
+            .unwrap()
+            .relays
+            .into_iter()
+            .next()
+            .expect("the entry stands")
+            .pinned_in
+            .is_some()
+    };
+    assert!(pinned_now(&client).await);
+
+    std::fs::write(&document, "{ \"serving\": ").unwrap();
+    let broken =
+        next_settings_saying(&mut client, |snapshot| !snapshot.diagnostics.is_empty()).await;
+    assert_eq!(broken.settings.serving.port, 9443);
+    assert_eq!(broken.settings.serving.relays, [NOWHERE]);
+    assert!(
+        pinned_now(&client).await,
+        "a broken document unpins nothing"
+    );
+
+    std::fs::remove_file(&document).unwrap();
+    let gone = next_settings_saying(&mut client, |snapshot| {
+        snapshot.settings.serving.relays.is_empty()
+    })
+    .await;
+    assert_eq!(gone.settings.serving.port, 9443, "the rest holds");
+    assert_eq!(gone.pinned_keys(), ["serving.port"]);
+    assert_eq!(
+        gone.diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.key.as_deref())
+            .collect::<Vec<_>>(),
+        [Some("serving.port")]
+    );
+    assert!(
+        !pinned_now(&client).await,
+        "the entry stands, pinned no longer"
+    );
+
+    drop(client);
+    server.shutdown().await.expect("stop the Server");
 }
 
 /// A modification time far outside any window in which a look is too soon to

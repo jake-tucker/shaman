@@ -2657,11 +2657,16 @@ pub enum SettingsDiagnosticSeverity {
     Warning,
     /// A whole Config Document was ignored.
     Error,
+    /// Nothing was ignored: a Config Document edited by something other than
+    /// this Server says something else of one key than what is in force, which
+    /// goes on until the next start (ADR 0067). It names the key and never the
+    /// value, and stands as long as the two differ.
+    AtNextStart,
 }
 
-/// One configuration problem found while loading Config Documents, carrying
-/// enough that the Log alone is sufficient to fix it: the file, the key path
-/// when the problem is scoped to one key, and why the value was ignored.
+/// One thing found while loading Config Documents, carrying enough that the Log
+/// alone is sufficient to act on it: the file, the key path when it is scoped to
+/// one key, and why the value was ignored or is not in force.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SettingsDiagnostic {

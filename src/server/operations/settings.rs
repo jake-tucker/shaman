@@ -1,6 +1,6 @@
 //! Changing a Setting: the one operation through which both the settings
 //! panel's change and a Sidekick's `set_setting` edit the Config Document and
-//! put what it then says in force, so a Setting a Sidekick changed takes
+//! put what they changed in force, so a Setting a Sidekick changed takes
 //! effect and reaches every Client exactly as one the user changed does.
 //!
 //! A change is whole and one at a time. It runs on a task of the Server's own,
@@ -8,22 +8,23 @@
 //! Client gone — is still put in force rather than left written to the
 //! document while the running Server and its Clients go on without it. And
 //! each change holds every later one off from its write through its
-//! adoption, its broadcast and the Approval Postures it reconciles, so the
-//! settings in force are always those the document last said, never an older
-//! change adopted after a newer one.
+//! adoption, its broadcast and the Approval Postures it reconciles, so no older
+//! change is ever adopted after a newer one.
 //!
 //! The operation changes whatever Setting it is given. What a Sidekick may
 //! change is bounded where its Tool is served, over the schema (ADR 0043),
 //! since the user's own panel may change every Setting there is.
 //!
 //! The document may also change by any other hand: a user's editor, their
-//! dotfiles, a company's rollout. This module follows that too (ADR 0067): the
-//! Server looks at the document every so often, and what it then says is put in
-//! force as one change more, so a value pinned by hand is adopted exactly as
-//! one set from the panel is. A look costs a `stat` of each name a document may
-//! go by, and reads a document only where [`Looks`] says that could tell
-//! anything new. What is read must say the same twice running first, since
-//! nothing stops another writer being seen partway through a save.
+//! dotfiles, a company's rollout, or an Agent. So what any of this puts in force
+//! is narrower than what the document says (ADR 0067): a change puts in force
+//! what it changed and nothing else it finds there, and the Server looks at the
+//! document every so often for the Settings that declare they follow an outside
+//! edit. Everything else waits for the next start, and a diagnostic says so. A
+//! look costs a `stat` of each name a document may go by, and reads a document
+//! only where [`Looks`] says that could tell anything new. What is read must
+//! say the same twice running first, since nothing stops another writer being
+//! seen partway through a save.
 
 use std::{
     future::Future,
@@ -71,7 +72,18 @@ impl SettingsAdoption {
     /// this one way. Answers why the listener could not follow, where it could
     /// not, and everything else has followed all the same.
     pub(in crate::server) async fn adopt(&self, snapshot: &SettingsSnapshot) -> anyhow::Result<()> {
-        crate::settings::log_diagnostics(&snapshot.diagnostics);
+        // Only what was not already said, so a diagnostic standing across
+        // later changes reaches the Log once.
+        let fresh = {
+            let told = self.snapshot.borrow();
+            snapshot
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| !told.diagnostics.contains(diagnostic))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        crate::settings::log_diagnostics(&fresh);
         for runtime in self.runtimes.iter() {
             runtime.apply_settings(&snapshot.settings);
         }
@@ -139,8 +151,9 @@ impl std::fmt::Debug for ServingNotAdopted {
 }
 
 impl SessionOperations {
-    /// Applies `mutation` to the winning Config Document and puts the
-    /// settings the reloaded document yields in force: every hosted Provider
+    /// Applies `mutation` to the winning Config Document and puts in force
+    /// what it changed and what is followed, leaving whatever else the document
+    /// has come to say for the next start: every hosted Provider
     /// runtime takes the Server Settings it now runs under, the Serving
     /// listener moves to what its Settings say, every attached Client is
     /// pushed the snapshot, each live Session following a Provider's
@@ -158,13 +171,16 @@ impl SessionOperations {
         mutation: SettingMutation,
     ) -> Result<SettingChanged, SettingsMutationError> {
         let changed = self
-            .put_settings_in_force(move |documents, _| documents.mutate(&mutation).map(Some))
+            .put_settings_in_force(move |documents, in_force| {
+                documents.mutate(&mutation, &in_force).map(Some)
+            })
             .await?;
         Ok(changed.expect("a mutation always yields settings to put in force"))
     }
 
     /// Looks at the Config Documents every `interval` until `shutdown`, putting
-    /// in force what they say as they come to say something else.
+    /// in force what they come to say of the Settings that follow an outside
+    /// edit, and telling of what they come to say of the others.
     pub(crate) fn follow_config_documents(
         &self,
         interval: Duration,

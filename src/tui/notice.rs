@@ -10,6 +10,11 @@
 //! the Log for the rest. A failed paste says why in a Notice of its own, as
 //! does a draft whose Attachment labels were demoted to plain text.
 //!
+//! A Config Document that an outside edit has taken ahead of what is in force
+//! says so apart from all that, naming each key: nothing went wrong, and the
+//! edit takes effect at the next start. Which keys those are is its identity,
+//! so dismissing it holds until another key joins them.
+//!
 //! A Relay coming to need a login raises a Notice too. Nothing of a Relay
 //! reaches the Log (ADR-0008), so that Notice points at where its reader logs
 //! in instead.
@@ -272,13 +277,36 @@ impl ApplicationNotice {
         true
     }
 
+    /// The part saying which keys a Config Document has come to differ on, unless
+    /// the reader already dismissed those very keys.
+    fn part_for_at_next_start(&self, diagnostics: &[&SettingsDiagnostic]) -> Option<NoticePart> {
+        let first = diagnostics.first()?;
+        let keys = diagnostics
+            .iter()
+            .filter_map(|diagnostic| diagnostic.key.clone())
+            .collect::<Vec<_>>();
+        let summary = format!(
+            "{} differs on {}; takes effect at the next start",
+            file_name(&NoticeDiagnostic::from(*first)),
+            keys.join(", ")
+        );
+        let identity = NoticeIdentity::DocumentDiffers(keys);
+        (!self.dismissed.contains(&identity)).then(|| NoticePart {
+            identities: vec![identity],
+            severity: SettingsDiagnosticSeverity::Warning,
+            summary,
+        })
+    }
+
     fn refresh_diagnostics(&mut self) {
         let mut diagnostics = Vec::new();
         let mut identities = Vec::new();
-        if !self.settings_diagnostics.is_empty()
-            && !self.dismissed.contains(&NoticeIdentity::StartupDiagnostics)
-        {
-            diagnostics.extend(self.settings_diagnostics.iter().map(NoticeDiagnostic::from));
+        let (at_next_start, found): (Vec<_>, Vec<_>) = self
+            .settings_diagnostics
+            .iter()
+            .partition(|diagnostic| diagnostic.severity == SettingsDiagnosticSeverity::AtNextStart);
+        if !found.is_empty() && !self.dismissed.contains(&NoticeIdentity::StartupDiagnostics) {
+            diagnostics.extend(found.into_iter().map(NoticeDiagnostic::from));
             identities.push(NoticeIdentity::StartupDiagnostics);
         }
         for diagnostic in &self.theme_diagnostics {
@@ -298,6 +326,7 @@ impl ApplicationNotice {
         });
         let parts = NoticePart::for_diagnostics(&diagnostics, identities)
             .into_iter()
+            .chain(self.part_for_at_next_start(&at_next_start))
             .chain(before.iter().filter(|part| part.is_runtime()).cloned())
             .collect::<Vec<_>>();
         if parts.is_empty() {
@@ -313,6 +342,8 @@ impl ApplicationNotice {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum NoticeIdentity {
     StartupDiagnostics,
+    /// A Config Document differs from what is in force on these keys.
+    DocumentDiffers(Vec<String>),
     ThemeFile(ThemeDiagnostic),
     ThemeFallback(String),
     PasteFailed {
@@ -335,7 +366,10 @@ impl NoticeIdentity {
     /// Whether this is a condition of the run, which stands until the
     /// reader dismisses it, rather than what loading configuration found.
     fn is_runtime(&self) -> bool {
-        !matches!(self, Self::StartupDiagnostics | Self::ThemeFile(_))
+        !matches!(
+            self,
+            Self::StartupDiagnostics | Self::DocumentDiffers(_) | Self::ThemeFile(_)
+        )
     }
 }
 
@@ -576,14 +610,18 @@ impl Notice {
     pub(super) fn style(&self, theme: &Theme) -> Style {
         match self.severity() {
             SettingsDiagnosticSeverity::Error => theme.feedback.error,
-            SettingsDiagnosticSeverity::Warning => theme.feedback.warning,
+            SettingsDiagnosticSeverity::Warning | SettingsDiagnosticSeverity::AtNextStart => {
+                theme.feedback.warning
+            }
         }
     }
 
     fn glyph(&self) -> &'static str {
         match self.severity() {
             SettingsDiagnosticSeverity::Error => ERROR_GLYPH,
-            SettingsDiagnosticSeverity::Warning => WARNING_GLYPH,
+            SettingsDiagnosticSeverity::Warning | SettingsDiagnosticSeverity::AtNextStart => {
+                WARNING_GLYPH
+            }
         }
     }
 }

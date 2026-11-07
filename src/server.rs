@@ -1482,9 +1482,10 @@ struct AppState {
     landing_agent_selection: LandingAgentSelectionStore,
     onboarded: OnboardedStore,
     /// The loaded effective-settings view. A watch channel so every attached
-    /// lifecycle stream re-pushes the snapshot when a mutation, or the Config
-    /// Documents changing by another hand, replaces it; what this server writes
-    /// of them it writes through [`SessionOperations::change_setting`].
+    /// lifecycle stream re-pushes the snapshot when anything replaces it, which
+    /// goes through [`SessionOperations::change_setting`] or the following of
+    /// an outside edit beside it. It need not be what the Config Documents say
+    /// now: an outside edit of most Settings waits for the next start.
     settings: Arc<watch::Sender<SettingsSnapshot>>,
     serving: ServingController,
     /// The Relays this Server holds entries for, and its Logins at them.

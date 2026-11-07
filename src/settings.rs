@@ -19,9 +19,11 @@
 //! format-preserving CST edit of the winning Config Document, so a user's key
 //! order, spacing, and comments survive an edit Suru makes; the file it leaves
 //! behind is then reloaded, which keeps the file — not an in-memory shadow of
-//! it — the source of truth for what every client is told. A document changed
-//! by anything else is read again as the server next looks, and followed the
-//! same way.
+//! it — the source of truth for the Settings it pins. What is in force is another
+//! matter once anything else edits the document, since that takes effect at the
+//! next start, save for a Setting declaring [`OutsideEdit::Followed`] (ADR 0067):
+//! the two may then differ until that start, and a diagnostic says so of each
+//! key.
 
 use std::{
     borrow::Cow,
@@ -182,6 +184,23 @@ pub enum SidekickAccess {
     Hidden,
 }
 
+/// What becomes of a Setting's value when something other than this Server
+/// edits its Config Document while the Server runs (ADR 0067), which every
+/// Setting declares beside what a Sidekick may do with it. That something may be
+/// an Agent, which is why a Setting's own author has to choose: nothing an Agent
+/// writes to the file takes effect at once unless the Setting says so.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OutsideEdit {
+    /// It takes effect at the next start, and meanwhile a diagnostic says the
+    /// document differs. Almost every Setting: a change takes effect when this
+    /// Server makes it, which the panel and a Sidekick's Tool both go through.
+    AtNextStart,
+    /// It is followed as the Server next looks. Only for a Setting that
+    /// neither opens this machine nor widens what an Agent may do, whatever it
+    /// holds: anything an Agent can write to the file, it gets at once.
+    Followed,
+}
+
 /// What each Setting an Approval Posture is made of declares: a Provider's own
 /// values for which Tool uses ask (ADR 0026), which every Session on that
 /// Provider follows until the user overrides its posture.
@@ -221,6 +240,9 @@ pub struct SettingDescriptor {
     pub scope: SettingScope,
     /// What a Sidekick may do with this Setting.
     pub sidekick: SidekickAccess,
+    /// What becomes of an edit of its Config Document by anything but this
+    /// Server.
+    pub outside_edit: OutsideEdit,
     /// What the Setting accepts, and whether the schema can name all of it.
     pub values: SettingValues,
     /// The mutation that takes this Setting's pin out of the Config Document,
@@ -1092,6 +1114,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Appearance,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[SettingChoice {
                 value: "system",
@@ -1120,6 +1143,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Appearance,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "system",
@@ -1154,6 +1178,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Appearance,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "Minimal",
@@ -1182,6 +1207,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Appearance,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "false",
@@ -1206,6 +1232,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "folded",
@@ -1234,6 +1261,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "collapsed",
@@ -1268,6 +1296,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "hidden",
@@ -1296,6 +1325,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "shown",
@@ -1324,6 +1354,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[SettingChoice {
                 // This is the named off choice. A SettingChoice shows the
@@ -1357,6 +1388,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "true",
@@ -1381,6 +1413,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[SettingChoice {
                 value: "fill",
@@ -1411,6 +1444,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::General,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[
                 SettingChoice {
@@ -1469,6 +1503,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "shown",
@@ -1497,6 +1532,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[],
             accepts: "an integer of at least 24",
@@ -1519,6 +1555,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "all_workspaces",
@@ -1553,6 +1590,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         // One Setting rather than an enablement beside a threshold, per ADR
         // 0012: the pair would admit a threshold pinned beside the `off` that
         // makes it mean nothing, and the scalar cannot be read two ways.
@@ -1584,6 +1622,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "false",
@@ -1608,6 +1647,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "shown",
@@ -1636,6 +1676,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[],
             accepts: "an integer of at least 24",
@@ -1662,6 +1703,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "release",
@@ -1686,6 +1728,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "visible",
@@ -1717,6 +1760,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
             why: "turning it on lets Suru remove Worktrees, ignored files and all, which no \
                   later change can undo",
         },
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[SettingChoice {
                 value: "off",
@@ -1745,6 +1789,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::SourceControl,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "return",
@@ -1775,6 +1820,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         sidekick: SidekickAccess::ReadOnly {
             why: "the Workspace Roots bound where a Sidekick may write",
         },
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[],
             accepts: "a list of absolute paths or paths beginning with ~",
@@ -1796,6 +1842,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "true",
@@ -1822,6 +1869,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "auto",
@@ -1862,6 +1910,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: APPROVAL_POSTURE_ACCESS,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "untrusted",
@@ -1896,6 +1945,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: APPROVAL_POSTURE_ACCESS,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "read-only",
@@ -1930,6 +1980,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "true",
@@ -1954,6 +2005,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: APPROVAL_POSTURE_ACCESS,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "ask",
@@ -1988,6 +2040,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "true",
@@ -2012,6 +2065,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: APPROVAL_POSTURE_ACCESS,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "default",
@@ -2059,6 +2113,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::Hidden,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "false",
@@ -2083,6 +2138,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::Hidden,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "true",
@@ -2107,6 +2163,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::Hidden,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[],
             accepts: "a port from 0 to 65535",
@@ -2127,6 +2184,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::Hidden,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[
                 SettingChoice {
@@ -2172,6 +2230,9 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::Hidden,
+        // A pin is an entry and nothing more: it opens nothing and widens nothing,
+        // which is what rollouts rely on being live for.
+        outside_edit: OutsideEdit::Followed,
         values: SettingValues::Open {
             named: &[],
             accepts: "a list of http:// or https:// addresses each naming a Relay's host",
@@ -2195,6 +2256,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "true",
@@ -2219,6 +2281,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[],
             accepts: BROKER_CAP_ACCEPTS,
@@ -2241,6 +2304,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[],
             accepts: BROKER_CAP_ACCEPTS,
@@ -2271,6 +2335,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
             why: "it asserts an experiment assignment to Copilot's service, which is the user's \
                   to do",
         },
+        outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
             SettingChoice {
                 value: "false",
@@ -2393,32 +2458,24 @@ impl ConfigDocuments {
         }))
     }
 
-    /// What the stack says now, for the Settings in force to follow. A document
-    /// that cannot be read whole says nothing of what it pins, so that is left
-    /// in force and only the trouble told: a save half-done or an edit mistyped
-    /// takes nothing away from a running Server. Only a Server starting has
-    /// nothing else to go on, and so runs on the built-in defaults instead.
+    /// What is to be in force once the stack has been read again by anything
+    /// other than a change of this Server's: only what the Settings declaring
+    /// [`OutsideEdit::Followed`] say, and `in_force` for the rest.
     pub fn read_again(&self, in_force: &SettingsSnapshot) -> SettingsSnapshot {
-        let said = self.load();
-        if said
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.severity == SettingsDiagnosticSeverity::Error)
-        {
-            return SettingsSnapshot {
-                diagnostics: said.diagnostics,
-                ..in_force.clone()
-            };
-        }
-        said
+        next_in_force(in_force, self.load(), None)
     }
 
     /// Applies one typed mutation to the winning Config Document — creating
     /// the document, and any intermediate objects, when they are missing — and
-    /// returns the snapshot the reloaded stack now yields.
+    /// returns what is then to be in force: what the mutation changed, as the
+    /// reloaded stack reads it, what is followed, and `in_force` for the rest.
+    /// So an edit of the document by anything else is not adopted by a change
+    /// of some other Setting, which a Sidekick able to write the file could
+    /// otherwise have widen its own Approval Posture (ADR 0067).
     pub fn mutate(
         &self,
         mutation: &SettingMutation,
+        in_force: &SettingsSnapshot,
     ) -> Result<SettingsSnapshot, SettingsMutationError> {
         let Some(root) = self.root.as_deref() else {
             return Err(SettingsMutationError::NoConfigRoot);
@@ -2429,7 +2486,7 @@ impl ConfigDocuments {
             .expect("Config Document writer lock is not poisoned");
         let (key, value) = pin_for(mutation);
         write_pin(root, key, value.as_ref())?;
-        Ok(load(Some(root)))
+        Ok(next_in_force(in_force, load(Some(root)), Some(key)))
     }
 }
 
@@ -2493,6 +2550,65 @@ impl DocumentStamp {
             Err(error) => Self::Untold(error.kind()),
         }
     }
+}
+
+/// What is to be in force given `in_force` and `said`, the stack as just read:
+/// what each Setting declaring [`OutsideEdit::Followed`] says, and `changed`, the
+/// key this Server itself just edited, and `in_force` for the rest. Each other
+/// key the stack says something else of gets a diagnostic, worked out afresh from
+/// the two, so it stands as long as they differ and is gone once they do not. A
+/// document that cannot be read whole says nothing of what it pins, so all of
+/// `in_force` stands and only the trouble is told: a save half-done or an edit
+/// mistyped takes nothing away from a running Server. Only a Server starting has
+/// nothing else to go on, and so runs on the built-in defaults instead.
+fn next_in_force(
+    in_force: &SettingsSnapshot,
+    said: SettingsSnapshot,
+    changed: Option<&str>,
+) -> SettingsSnapshot {
+    if said
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == SettingsDiagnosticSeverity::Error)
+    {
+        return SettingsSnapshot {
+            diagnostics: said.diagnostics,
+            ..in_force.clone()
+        };
+    }
+    let mut next = SettingsSnapshot {
+        diagnostics: said.diagnostics,
+        ..in_force.clone()
+    };
+    for descriptor in SCHEMA {
+        if descriptor.outside_edit == OutsideEdit::Followed || changed == Some(descriptor.key) {
+            (descriptor.apply)(&mut next.settings, &descriptor.value(&said.settings));
+            match said.pinned.get(descriptor.key) {
+                Some(document) => {
+                    next.pinned
+                        .insert(descriptor.key.to_owned(), document.clone());
+                }
+                None => {
+                    next.pinned.remove(descriptor.key);
+                }
+            }
+        } else if descriptor.value(&said.settings) != descriptor.value(&next.settings)
+            && let Some(document) = said
+                .pinned
+                .get(descriptor.key)
+                .or_else(|| in_force.pinned.get(descriptor.key))
+        {
+            next.diagnostics.push(SettingsDiagnostic {
+                severity: SettingsDiagnosticSeverity::AtNextStart,
+                file: document.clone(),
+                key: Some(descriptor.key.to_owned()),
+                message: "says something other than the value in force, and takes effect at the \
+                          next start"
+                    .to_owned(),
+            });
+        }
+    }
+    next
 }
 
 /// Why a typed mutation could not reach the Config Document.
@@ -2799,8 +2915,11 @@ pub(crate) fn workspace_roots_named_whole(snapshot: &SettingsSnapshot) -> Option
         .diagnostics
         .iter()
         .all(|diagnostic| {
-            diagnostic.severity != SettingsDiagnosticSeverity::Error
-                && !diagnostic.key.as_deref().is_some_and(touches_the_roots)
+            // A document merely ahead of what is in force ignored nothing:
+            // the Roots in force are as much the user's word as they were.
+            diagnostic.severity == SettingsDiagnosticSeverity::AtNextStart
+                || (diagnostic.severity != SettingsDiagnosticSeverity::Error
+                    && !diagnostic.key.as_deref().is_some_and(touches_the_roots))
         })
         .then_some(snapshot.settings.workspace.roots.as_slice())
 }
@@ -2841,6 +2960,12 @@ pub fn log_diagnostics(diagnostics: &[SettingsDiagnostic]) {
                 file = %diagnostic.file.display(),
                 key = diagnostic.key.as_deref(),
                 "configuration problem: {}",
+                diagnostic.message
+            ),
+            SettingsDiagnosticSeverity::AtNextStart => tracing::info!(
+                file = %diagnostic.file.display(),
+                key = diagnostic.key.as_deref(),
+                "Config Document {}",
                 diagnostic.message
             ),
         }
@@ -3106,6 +3231,7 @@ mod tests {
             group: SettingGroup::General,
             scope: SettingScope::Client,
             sidekick: SidekickAccess::ReadAndChange,
+            outside_edit: OutsideEdit::AtNextStart,
             values,
             reset: SettingMutation::TranscriptDefaultFoldPosture { value: None },
             apply: |settings, value| {
@@ -3810,6 +3936,146 @@ mod tests {
                 SERVING_RELAYS
             ]
         );
+    }
+
+    /// Which Settings an edit of the document by anything else reaches at once,
+    /// stated whole, so following another is a deliberate change here as well
+    /// as in the schema (ADR 0067). Nothing that opens this machine or widens
+    /// what an Agent may do belongs here.
+    #[test]
+    fn only_the_relays_pinned_follow_an_outside_edit_of_the_document() {
+        let followed = SCHEMA
+            .iter()
+            .filter(|descriptor| descriptor.outside_edit == OutsideEdit::Followed)
+            .map(|descriptor| descriptor.key)
+            .collect::<Vec<_>>();
+        assert_eq!(followed, [SERVING_RELAYS]);
+    }
+
+    /// Every Setting's value can be carried from one view to another through
+    /// its own spelling, so what is followed or changed arrives as the stack
+    /// read it, whatever kind of value it holds.
+    #[test]
+    fn every_settings_value_is_carried_whole_by_its_own_spelling() {
+        for descriptor in SCHEMA {
+            let values = descriptor
+                .values
+                .named()
+                .iter()
+                .map(SettingChoice::pinned_value)
+                .chain([descriptor.value(&EffectiveSettings::default())]);
+            for value in values {
+                let mut from = EffectiveSettings::default();
+                (descriptor.apply)(&mut from, &value);
+                let mut carried = EffectiveSettings::default();
+                assert_eq!(
+                    (descriptor.apply)(&mut carried, &descriptor.value(&from)),
+                    Applied::Whole,
+                    "{} takes back {value}",
+                    descriptor.key
+                );
+                assert_eq!(carried, from, "{} carries {value}", descriptor.key);
+            }
+        }
+    }
+
+    /// A key this Server just changed is taken from the stack, with what is
+    /// followed, and nothing else moves: the others keep their value and their
+    /// pin, a diagnostic names each without its value, and that diagnostic is
+    /// gone again once the stack and what is in force agree.
+    #[test]
+    fn what_comes_into_force_is_what_was_changed_and_what_is_followed() {
+        let document = PathBuf::from("suru.jsonc");
+        let in_force = SettingsSnapshot::default();
+        let said = |port: u16, relays: &[&str]| {
+            let mut said = SettingsSnapshot::default();
+            said.settings.serving.port = port;
+            said.settings.serving.relays = relays.iter().map(|relay| (*relay).to_owned()).collect();
+            said.pinned
+                .insert(SERVING_PORT.to_owned(), document.clone());
+            said.pinned
+                .insert(SERVING_RELAYS.to_owned(), document.clone());
+            said
+        };
+        let relay = "https://relay.example.test";
+
+        let looked = next_in_force(&in_force, said(9443, &[relay]), None);
+        assert_eq!(looked.settings.serving.port, in_force.settings.serving.port);
+        assert_eq!(looked.settings.serving.relays, [relay]);
+        assert_eq!(looked.pinned_keys(), [SERVING_RELAYS]);
+        let [waiting] = looked.diagnostics.as_slice() else {
+            panic!("one diagnostic for one key: {:?}", looked.diagnostics);
+        };
+        assert_eq!(waiting.severity, SettingsDiagnosticSeverity::AtNextStart);
+        assert_eq!(waiting.key.as_deref(), Some(SERVING_PORT));
+        assert!(!waiting.message.contains("9443"), "{}", waiting.message);
+
+        let changed = next_in_force(&looked, said(9443, &[relay]), Some(SERVING_PORT));
+        assert_eq!(changed.settings.serving.port, 9443);
+        assert_eq!(changed.pinned_keys(), [SERVING_PORT, SERVING_RELAYS]);
+        assert_eq!(changed.diagnostics, []);
+        assert_eq!(
+            next_in_force(&changed, said(9443, &[relay]), None),
+            changed,
+            "reading again changes nothing, so a look adopts nothing more"
+        );
+    }
+
+    /// A document that cannot be read whole holds everything in force, what is
+    /// followed among it, since it says nothing of what it pins; one that has
+    /// gone says the followed Settings are pinned no longer and only tells of
+    /// the rest.
+    #[test]
+    fn a_broken_document_holds_everything_and_a_missing_one_only_what_is_not_followed() {
+        let root = tempfile::tempdir().expect("create a config root");
+        let documents = ConfigDocuments::new(Some(root.path()));
+        let document = root.path().join(PRIMARY_CONFIG_FILE);
+        let relay = "https://relay.example.test";
+        fs::write(
+            &document,
+            format!("{{ \"serving\": {{ \"port\": 9443, \"relays\": [\"{relay}\"] }} }}"),
+        )
+        .unwrap();
+        let in_force = documents.load();
+
+        fs::write(&document, "{ \"serving\": ").unwrap();
+        let broken = documents.read_again(&in_force);
+        assert_eq!(broken.settings, in_force.settings);
+        assert_eq!(broken.pinned, in_force.pinned);
+        assert_eq!(broken.diagnostics.len(), 1, "{:?}", broken.diagnostics);
+        assert_eq!(
+            broken.diagnostics[0].severity,
+            SettingsDiagnosticSeverity::Error
+        );
+
+        fs::remove_file(&document).unwrap();
+        let missing = documents.read_again(&in_force);
+        assert_eq!(missing.settings.serving.relays, [] as [String; 0]);
+        assert_eq!(missing.settings.serving.port, 9443);
+        assert_eq!(missing.pinned_keys(), [SERVING_PORT]);
+        assert_eq!(
+            missing
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (diagnostic.severity, diagnostic.key.as_deref()))
+                .collect::<Vec<_>>(),
+            [(SettingsDiagnosticSeverity::AtNextStart, Some(SERVING_PORT))]
+        );
+    }
+
+    /// Roots a document is merely ahead of are as much the user's word as they
+    /// were: the guard on taking anything away under them is for a document
+    /// that could not be read whole.
+    #[test]
+    fn a_document_ahead_of_what_is_in_force_leaves_the_workspace_roots_named_whole() {
+        let mut snapshot = SettingsSnapshot::default();
+        snapshot.diagnostics.push(SettingsDiagnostic {
+            severity: SettingsDiagnosticSeverity::AtNextStart,
+            file: PathBuf::from("suru.jsonc"),
+            key: Some(WORKSPACE_ROOTS.to_owned()),
+            message: String::new(),
+        });
+        assert!(workspace_roots_named_whole(&snapshot).is_some());
     }
 
     /// A Setting keyed under a namespace reserved for Serving and Pairing is

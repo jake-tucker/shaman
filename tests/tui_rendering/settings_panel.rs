@@ -5257,6 +5257,48 @@ fn a_refused_edit_leads_the_pane_above_the_providers_own_condition() {
     );
 }
 
+/// For a key an outside edit took the document ahead on, the panel shows the
+/// value that governs: the row reads what is in force and keeps its pin mark as
+/// it was, and the pane says the document differs and when that takes effect.
+/// Changing it from here writes over the edit, from the value on screen.
+#[test]
+fn a_setting_a_document_is_ahead_on_shows_the_value_in_force_and_says_so() {
+    let workspace = workspace_dir();
+    let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
+    let document = super::support::named_workspace_path("suru.jsonc");
+    application
+        .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
+            SettingsSnapshot {
+                settings: EffectiveSettings::default(),
+                pinned: Default::default(),
+                diagnostics: vec![suru::protocol::SettingsDiagnostic {
+                    severity: suru::protocol::SettingsDiagnosticSeverity::AtNextStart,
+                    file: document,
+                    key: Some("serving.enabled".to_owned()),
+                    message: "says something other than the value in force, and takes effect at \
+                              the next start"
+                        .to_owned(),
+                }],
+            },
+        )))
+        .expect("receive the snapshot and its diagnostics");
+    open_experimental_tab(&mut application);
+
+    assert_eq!(
+        shown(&application, "Serving"),
+        "false",
+        "the row reads what governs, and no pin of what does not"
+    );
+    let pane = pane_text(&application);
+    assert!(pane.contains("says something other than"), "{pane}");
+    assert!(pane.contains("next start"), "{pane}");
+    assert_eq!(
+        press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
+        MutatesSetting(SettingMutation::ServingEnabled { value: Some(true) }),
+        "a step goes on from the value on screen"
+    );
+}
+
 #[test]
 fn a_diagnostic_naming_the_focused_setting_leads_the_pane_with_its_file() {
     let workspace = workspace_dir();

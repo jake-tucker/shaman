@@ -88,6 +88,93 @@ fn mistyped_key() -> SettingsDiagnostic {
     }
 }
 
+fn differs_on(key: &str) -> SettingsDiagnostic {
+    SettingsDiagnostic {
+        severity: SettingsDiagnosticSeverity::AtNextStart,
+        file: config_file("suru.jsonc"),
+        key: Some(key.to_owned()),
+        message: "says something other than the value in force, and takes effect at the next start"
+            .to_owned(),
+    }
+}
+
+/// An outside edit of a Setting that does not follow one is told apart from a
+/// problem: nothing was ignored, and the Notice names each key and when it takes
+/// effect. Dismissed, it stays so until another key joins, and it is gone with
+/// the difference.
+#[test]
+fn a_document_ahead_of_what_is_in_force_says_which_keys_wait_for_the_next_start() {
+    let workspace = tempfile::tempdir().expect("create a workspace");
+    let mut application = landing_showing(
+        workspace.path(),
+        vec![differs_on("provider.claude.permissionMode")],
+    );
+    let row = notice_row(&rendered_application_rows_at(&application, 120, 12));
+    assert!(
+        row.contains("suru.jsonc differs on provider.claude.permissionMode"),
+        "{row}"
+    );
+    assert!(row.contains("takes effect at the next start"), "{row}");
+    assert!(!row.contains("ignored"), "nothing was: {row}");
+
+    application
+        .take_terminal_event(InputEvent::Key(KeyEvent::new(
+            KeyCode::Char('z'),
+            KeyModifiers::NONE,
+        )))
+        .expect("take the key");
+    deliver_snapshot(
+        &mut application,
+        vec![differs_on("provider.claude.permissionMode")],
+    );
+    let row = notice_row(&rendered_application_rows_at(&application, 120, 12));
+    assert!(!row.contains("differs on"), "once per change: {row}");
+
+    deliver_snapshot(
+        &mut application,
+        vec![
+            differs_on("provider.claude.permissionMode"),
+            differs_on("serving.enabled"),
+        ],
+    );
+    let row = notice_row(&rendered_application_rows_at(&application, 120, 12));
+    assert!(
+        row.contains("serving.enabled"),
+        "another key is another change: {row}"
+    );
+
+    deliver_snapshot(&mut application, Vec::new());
+    let row = notice_row(&rendered_application_rows_at(&application, 120, 12));
+    assert!(
+        !row.contains("differs on"),
+        "gone with the difference: {row}"
+    );
+}
+
+/// A problem with a document and a document merely ahead are said side by side,
+/// each in its own words, and dismissing what startup found holds no later
+/// difference back.
+#[test]
+fn a_problem_and_a_difference_are_each_said_in_their_own_words() {
+    let workspace = tempfile::tempdir().expect("create a workspace");
+    let mut application = landing_showing(workspace.path(), vec![unknown_key()]);
+    rendered_application_rows_at(&application, 120, 12);
+    application
+        .take_terminal_event(InputEvent::Key(KeyEvent::new(
+            KeyCode::Char('z'),
+            KeyModifiers::NONE,
+        )))
+        .expect("take the key");
+
+    deliver_snapshot(
+        &mut application,
+        vec![unknown_key(), differs_on("serving.enabled")],
+    );
+    let row = notice_row(&rendered_application_rows_at(&application, 120, 12));
+    assert!(row.contains("differs on serving.enabled"), "{row}");
+    assert!(!row.contains("ignored"), "that one was dismissed: {row}");
+}
+
 #[test]
 fn a_syntax_broken_config_document_notices_the_failure_and_points_at_the_log() {
     let workspace = workspace_dir();

@@ -1819,8 +1819,7 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// Settings under its own `provider.<id>` key and ignores the rest, and it
     /// reads them when it acts rather than when a Session began, so a Setting
     /// that changes mid-run governs the next Turn rather than only the next
-    /// Session. Startup, a Setting's mutation, and a Config Document changed by
-    /// another hand each hand over a view the same way
+    /// Session. Whatever puts Settings in force hands over a view this way
     /// ([`crate::server::operations::SettingsAdoption`]).
     /// Runtimes that honor no Setting need not implement it.
     fn apply_settings(&self, settings: &EffectiveSettings) {

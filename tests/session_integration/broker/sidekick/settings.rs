@@ -21,7 +21,10 @@
 
 use suru::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
-    protocol::{AppearanceMode, ClaudePermissionMode, FoldPosture, SettingsSnapshot},
+    protocol::{
+        AppearanceMode, ClaudePermissionMode, FoldPosture, SettingMutation,
+        SettingsDiagnosticSeverity, SettingsSnapshot,
+    },
     settings::{SCHEMA, SettingDescriptor, SidekickAccess},
 };
 
@@ -791,6 +794,216 @@ async fn a_relay_a_config_document_pins_is_told_to_no_sidekick_and_set_by_none()
     assert_eq!(
         in_force.settings.serving.relays,
         [format!("https://{PINNED}")]
+    );
+
+    server.shutdown().await.expect("shut down server");
+}
+
+/// Whatever an Agent writes to the Config Document, only the Relays pinned come
+/// into force: no live Session's posture moves, no listener opens, and nothing
+/// else in force changes, however long it is left. Each of those keys is told of
+/// by name, and a user's change from the panel adopts none of them. The next
+/// start takes the document whole.
+#[tokio::test]
+async fn an_agents_outside_edit_moves_nothing_in_force_but_the_relays_pinned() {
+    const RELAY: &str = "https://relay.example.test";
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let config_dir = tempfile::tempdir().expect("create isolated config directory");
+    let channel = "sidekick-outside-edit";
+    let (runtime, mut claude) =
+        ControlledProvider::with_provider(ProviderId::new("claude"), claude_models());
+    let spawn = |runtime| {
+        server::spawn_with_provider_and_timings(
+            ServerConfig::new(state_dir.path(), channel)
+                .expect("configure server")
+                .with_config_dir(config_dir.path()),
+            runtime,
+            ServerTimings::default().with_config_document_check_interval(Duration::from_millis(5)),
+        )
+    };
+    let server = spawn(runtime).await.expect("spawn server");
+    let descriptor = server.descriptor().clone();
+    let (sidekick_id, _sidekick, mut provider) = start_sidekick(&descriptor, &mut claude).await;
+    let posture_before = read_session(&descriptor, sidekick_id)
+        .await
+        .session
+        .approval_posture;
+    let (mut client, opening) = attached_client(state_dir.path(), channel).await;
+    let port = {
+        let free = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        free.local_addr().unwrap().port()
+    };
+    let root = if cfg!(windows) {
+        r"C:\agent\wrote\this"
+    } else {
+        "/agent/wrote/this"
+    };
+    write_config_document(
+        config_dir.path(),
+        &json!({
+            "provider": {
+                "claude": { "permissionMode": "bypassPermissions" },
+                "codex": { "sandboxMode": "danger-full-access", "approvalPolicy": "never" },
+                "copilot": { "permissions": "allowAll", "enabled": false },
+            },
+            "serving": {
+                "enabled": true,
+                "bindAddress": "127.0.0.1",
+                "port": port,
+                "relays": [RELAY],
+            },
+            "workspace": { "roots": [root] },
+            "broker": { "enabled": false },
+        })
+        .to_string(),
+    );
+
+    let told = settings_until(&mut client, |told| told.settings.serving.relays == [RELAY]).await;
+    let mut expected = opening.settings.clone();
+    expected.serving.relays = vec![RELAY.to_owned()];
+    assert_eq!(
+        told.settings, expected,
+        "the Relays pinned, and nothing else"
+    );
+    assert_eq!(told.pinned_keys(), ["serving.relays"]);
+    let mut said = told
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            assert_eq!(diagnostic.severity, SettingsDiagnosticSeverity::AtNextStart);
+            diagnostic.key.as_deref().expect("each names its key")
+        })
+        .collect::<Vec<_>>();
+    said.sort_unstable();
+    assert_eq!(
+        said,
+        [
+            "broker.enabled",
+            "provider.claude.permissionMode",
+            "provider.codex.approvalPolicy",
+            "provider.codex.sandboxMode",
+            "provider.copilot.enabled",
+            "provider.copilot.permissions",
+            "serving.bindAddress",
+            "serving.enabled",
+            "serving.port",
+            "workspace.roots",
+        ],
+        "each is told of by name"
+    );
+    let told_of = serde_json::to_string(&told.diagnostics).expect("diagnostics serialize");
+    for value in ["bypassPermissions", "danger-full-access", "allowAll", root] {
+        assert!(!told_of.contains(value), "never the value: {told_of}");
+    }
+
+    // Many looks later, the document has moved nothing more.
+    assert!(
+        timeout(Duration::from_millis(250), provider.next_posture_update())
+            .await
+            .is_err(),
+        "the Provider is asked to widen nothing"
+    );
+    assert_eq!(
+        read_session(&descriptor, sidekick_id)
+            .await
+            .session
+            .approval_posture,
+        posture_before,
+        "no live Session's posture moved"
+    );
+    assert!(
+        std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)).is_err(),
+        "no listener opened"
+    );
+    let (_late, in_force) = attached_client(state_dir.path(), channel).await;
+    assert_eq!(in_force.settings, expected);
+    assert_eq!(in_force.diagnostics, told.diagnostics);
+
+    let panel = client
+        .mutate_setting(SettingMutation::AppearanceMode {
+            value: Some(AppearanceMode::Dark),
+        })
+        .await
+        .expect("the user changes another Setting");
+    assert_eq!(
+        panel.settings.provider.claude.permission_mode,
+        opening.settings.provider.claude.permission_mode,
+        "which adopts none of it"
+    );
+    assert!(!panel.settings.serving.enabled);
+    assert!(
+        timeout(Duration::from_millis(100), provider.next_posture_update())
+            .await
+            .is_err()
+    );
+
+    drop((client, _late));
+    server.shutdown().await.expect("shut down server");
+    let (runtime, _claude) =
+        ControlledProvider::with_provider(ProviderId::new("claude"), claude_models());
+    let server = spawn(runtime).await.expect("spawn server again");
+    let (_client, started) = attached_client(state_dir.path(), channel).await;
+    assert_eq!(
+        started.settings.provider.claude.permission_mode,
+        ClaudePermissionMode::BypassPermissions,
+        "the next start takes the document whole"
+    );
+    assert!(started.settings.serving.enabled);
+    server.shutdown().await.expect("shut down server");
+}
+
+/// A Sidekick able to write the Config Document, and that Tool to set a Setting
+/// it may change, cannot have its own Approval Posture widened by the one
+/// lending force to the other: a change puts in force what it changed, and an
+/// outside edit of anything else waits for the next start.
+#[tokio::test]
+async fn a_change_a_sidekick_makes_adopts_no_outside_edit_of_its_own_posture() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let config_dir = tempfile::tempdir().expect("create isolated config directory");
+    let channel = "sidekick-outside-posture";
+    let (server, mut claude) = host_claude(state_dir.path(), config_dir.path(), channel).await;
+    let descriptor = server.descriptor().clone();
+    let (sidekick_id, mut sidekick, mut provider) = start_sidekick(&descriptor, &mut claude).await;
+    let posture_before = read_session(&descriptor, sidekick_id)
+        .await
+        .session
+        .approval_posture;
+
+    write_config_document(
+        config_dir.path(),
+        "{ \"provider\": { \"claude\": { \"permissionMode\": \"bypassPermissions\" } } }\n",
+    );
+    set(
+        &mut sidekick,
+        json!({ "key": "appearance.mode", "value": "dark" }),
+    )
+    .await;
+
+    assert!(
+        timeout(Duration::from_millis(200), provider.next_posture_update())
+            .await
+            .is_err(),
+        "the Provider is asked to widen nothing"
+    );
+    assert_eq!(
+        read_session(&descriptor, sidekick_id)
+            .await
+            .session
+            .approval_posture,
+        posture_before,
+        "and the Sidekick's own posture is as it was"
+    );
+    let (_client, in_force) = attached_client(state_dir.path(), channel).await;
+    assert_eq!(in_force.settings.appearance.mode, AppearanceMode::Dark);
+    assert_eq!(
+        in_force.settings.provider.claude.permission_mode,
+        ClaudePermissionMode::default(),
+        "what the change did not change stays as in force"
+    );
+    let document = config_document(config_dir.path()).expect("the change is written");
+    assert!(
+        document.contains("bypassPermissions") && document.contains("\"mode\": \"dark\""),
+        "beside the outside edit, which it leaves in the document: {document}"
     );
 
     server.shutdown().await.expect("shut down server");
