@@ -1597,7 +1597,14 @@ fn render_relay_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
                 Some(false) => "s Serve through · ",
                 None => "",
             };
-            format!("↑↓ choose · a add · {offer}{serve}x remove · Esc close")
+            // A Relay a Config Document pins is not its reader's to remove
+            // here, which `x` says, naming the document, if they press it.
+            let remove = if overlay.selected_pinned() {
+                ""
+            } else {
+                "x remove · "
+            };
+            format!("↑↓ choose · a add · {offer}{serve}{remove}Esc close")
         };
         let keys = TextLayout::new(&keys, content_width)
             .rows()
@@ -1615,6 +1622,11 @@ fn render_relay_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
                 .enumerate()
                 .map(|(index, relay)| {
                     let status = overlay.status(relay);
+                    let status = if relay.pinned_in.is_some() {
+                        format!("{status} · pinned")
+                    } else {
+                        status
+                    };
                     let status = match serve_through_status(relay, state.settings().serving.enabled)
                     {
                         Some(serving) => format!("{status} · {serving}"),

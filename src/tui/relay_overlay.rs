@@ -42,6 +42,9 @@
 //! What asks for a picture afresh hands that over only once the picture lands,
 //! so nothing is read, or acted on, as the Relay stood before what was just
 //! done.
+//!
+//! A Relay a Config Document pins is marked so on its row, and its removal is
+//! refused here, as the Server refuses it, saying where it is pinned.
 
 use std::collections::HashMap;
 
@@ -49,6 +52,7 @@ use uuid::Uuid;
 
 use crate::protocol::{
     Relay, RelayListing, RelayLogin, RelayLoginOutcome, RelayLoginRefusal, RelayState,
+    relay_pinned_message,
 };
 
 use super::list_window::ListWindow;
@@ -993,13 +997,21 @@ impl RelayOverlay {
 
     /// Removing a Relay is asked for twice, as ending a Pairing is: the first
     /// press arms the selected Relay's removal and only the second performs
-    /// it, answering the request that removes it.
+    /// it, answering the request that removes it. One a Config Document pins,
+    /// as the Server last pictured it, is refused at either press, saying
+    /// where it is pinned.
     pub(super) fn remove_selected(&mut self) -> Option<(RelayRequest, String)> {
         let RelayOverlayState::Listing { armed, note } = &mut self.state else {
             return None;
         };
-        let address = self.relays.get(self.selected)?.address.clone();
+        let relay = self.relays.get(self.selected)?;
+        let address = relay.address.clone();
         *note = None;
+        if let Some(document) = &relay.pinned_in {
+            *armed = false;
+            *note = Some(ListNote::failed(relay_pinned_message(&address, document)));
+            return None;
+        }
         if !*armed {
             *armed = true;
             return None;
@@ -1124,6 +1136,14 @@ impl RelayOverlay {
         self.relays()
             .get(self.selected)
             .map(|relay| relay.serve_through)
+    }
+
+    /// Whether a Config Document pins the Relay the keys are on, as the Server
+    /// last pictured it.
+    pub(super) fn selected_pinned(&self) -> bool {
+        self.relays()
+            .get(self.selected)
+            .is_some_and(|relay| relay.pinned_in.is_some())
     }
 
     pub(super) fn relays(&self) -> &[Relay] {

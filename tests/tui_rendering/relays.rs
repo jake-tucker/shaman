@@ -954,6 +954,104 @@ fn a_relay_is_removed_from_the_list_with_a_second_press() {
     assert!(list.contains("No Relays added"), "{list}");
 }
 
+/// A Relay a Config Document pins is marked so where it is listed, beside how
+/// it stands, and no removal is offered there: the row is a Relay like any
+/// other in every other way, in the Server's own order.
+#[test]
+fn a_pinned_relay_is_marked_where_it_is_listed_and_no_removal_is_offered_there() {
+    let mut application = open_on(vec![relay(HOME), pinned(relay(COMPANY))]);
+
+    let list = rendered_application_rows(&application).join("\n");
+    assert!(
+        entry(&list, COMPANY).contains("Login needed · pinned"),
+        "{list}"
+    );
+    assert!(!entry(&list, HOME).contains("pinned"), "{list}");
+    assert!(
+        list.find(HOME) < list.find(COMPANY),
+        "it stands where the Server lists it: {list}"
+    );
+    assert!(list.contains("x remove"), "{list}");
+
+    press(&mut application, KeyCode::Down);
+    let list = rendered_application_rows(&application).join("\n");
+    assert!(list.contains("Enter log in"), "{list}");
+    assert!(!list.contains("x remove"), "{list}");
+}
+
+/// `x` on a pinned Relay is refused at once, saying where it is pinned, so it
+/// does not simply come back: no second press arms anything, and the Server is
+/// asked nothing.
+#[test]
+fn x_on_a_pinned_relay_is_refused_saying_where_it_is_pinned() {
+    let mut application = open_on(vec![pinned(logged_in(COMPANY))]);
+
+    for _ in 0..2 {
+        assert_eq!(
+            press(&mut application, KeyCode::Char('x')),
+            ApplicationTransition::Continue,
+            "nothing is asked of the Server"
+        );
+    }
+
+    let said = prose(&application);
+    assert!(
+        said.contains(&document().display().to_string()) && said.contains("serving.relays"),
+        "{said}"
+    );
+    assert!(
+        !said.contains("x confirm removal"),
+        "nothing was armed: {said}"
+    );
+    press(&mut application, KeyCode::Up);
+    assert!(
+        !prose(&application).contains("serving.relays"),
+        "any other key puts the refusal down, as it does any note"
+    );
+}
+
+/// A removal armed before a pin lands ends at the second press in the refusal,
+/// since the list goes by the latest picture of the Relay.
+#[test]
+fn a_removal_armed_before_a_pin_landed_is_refused_at_the_second_press() {
+    let mut application = open_on(vec![relay(COMPANY)]);
+    press(&mut application, KeyCode::Char('x'));
+    application
+        .handle_event(ApplicationEvent::Managed(
+            suru::managed_client::ManagedEvent::Relays(RelayListing {
+                instance: SERVER,
+                revision: LISTED + 1,
+                relays: vec![pinned(relay(COMPANY))],
+            }),
+        ))
+        .expect("take the Relays as the Server pushes them");
+
+    assert_eq!(
+        press(&mut application, KeyCode::Char('x')),
+        ApplicationTransition::Continue
+    );
+    assert!(prose(&application).contains("serving.relays"));
+}
+
+/// Marked and with its refusal said, a pinned Relay's row still fits a terminal
+/// too narrow for it on one line, wrapping beneath its address.
+#[test]
+fn a_pinned_relays_mark_and_refusal_wrap_on_a_narrow_terminal() {
+    let mut application = open_on(vec![pinned(relay(COMPANY))]);
+    press(&mut application, KeyCode::Char('x'));
+
+    let rows = rendered_application_rows_at(&application, 40, 24);
+    let shown = rows.join("\n");
+    assert!(shown.contains("pinned"), "{shown}");
+    assert!(shown.contains("Esc close"), "{shown}");
+    let said = rows
+        .iter()
+        .map(|row| row.trim().trim_matches('│').trim())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(said.contains("serving.relays"), "{shown}");
+}
+
 #[test]
 fn a_removal_is_put_down_by_any_other_key_the_run_loop_takes() {
     let mut application = open_on(vec![relay(COMPANY), relay(HOME)]);
@@ -1373,6 +1471,23 @@ fn relay(address: &str) -> Relay {
         serve_through: false,
         login_needed_notice: None,
         pinned_in: None,
+    }
+}
+
+/// The Config Document a test's pinned Relay is pinned by, rooted for the
+/// platform.
+fn document() -> std::path::PathBuf {
+    std::path::PathBuf::from(if cfg!(windows) {
+        r"C:\Users\ada\.config\suru\suru.jsonc"
+    } else {
+        "/home/ada/.config/suru/suru.jsonc"
+    })
+}
+
+fn pinned(relay: Relay) -> Relay {
+    Relay {
+        pinned_in: Some(document()),
+        ..relay
     }
 }
 
