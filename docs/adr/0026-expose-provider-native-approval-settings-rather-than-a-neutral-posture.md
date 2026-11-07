@@ -1,5 +1,7 @@
 # Expose Provider-native approval settings rather than a neutral posture
 
+_ADR-0067 bears on this: a posture written to a Config Document by any other hand takes effect at the next start and no sooner, an Agent's own write among them._
+
 Suru answered every Provider permission request itself, so no Approval ever reached the user. Approvals now cross the Provider seam as their own Activity, and the user governs which Tool uses ask through an Approval Posture made of each Provider's own values — Codex's approval policy and sandbox mode, Claude's permission mode, Copilot's ask-or-allow-all — declared as Server Settings in the Providers group and overridable per Session. A single Suru-wide posture that Suru would map onto each Provider was rejected because the mappings are lossy in both directions (Claude's accept-edits has no Codex twin, Codex's sandbox has no Claude twin) and because ADR 0004 already commits Suru to the Providers' native harnesses, whose users know these values from the Providers' own CLIs. Loosening a Session's posture never decides an Approval already pending: the posture is what Suru asks a Provider for, and whatever the Provider sends anyway is surfaced for the user to decide, since answering on the user's behalf is the behaviour this change removes.
 
 ## Consequences

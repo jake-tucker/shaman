@@ -623,7 +623,9 @@ not start on it again.
 ## Using the Relay from Suru
 
 Give your users the Relay's public address. In Suru, each of them logs in to it from every Server they want to reach,
-or reach others from, and then makes the Servers they want reachable Serve through it.
+or reach others from, and then makes the Servers they want reachable Serve through it. That Server issues an Invite, and
+the other machine pairs by it: choosing the machine from a list and typing its short code, or pasting the long string.
+All of it can be done in `/serve` as you go, and with no one at a screen [from the command line](#from-the-command-line).
 
 ### Logging in
 
@@ -638,7 +640,238 @@ Relay's operator can change it.
 
 Logging in opens nothing: it makes no Server reachable, and nobody can reach it through the Relay for it.
 
-A machine with no one at its screen does all of this [from the command line](#from-the-command-line).
+`/serve` does this where you stand: `a` adds a Relay there, and Space on a row needing a login logs in. To stand under
+another Account, press Enter on the Relay's row in `/relay` whose Login stands, which logs in again.
+
+### Serving through the Relay
+
+To make a Server reachable through the Relay, choose the Relay in its `/relay` list and press `s`, or press Space on
+its row in `/serve`. Serving through a Relay is chosen for each Relay, and is off until chosen. The Server waits at the
+Relay only while it is logged in there and Serving is on, so the Relay's row says what it waits on: **Serving
+through**, or **Serves through once logged in**, or **Serves through once Serving is on** — `/serve` turns Serving on, as
+does `suru serve invite`. Press `s` again to stop.
+
+A Server waits at the Relay only while it runs, and nothing starts one after a reboot unless
+[a Login start](#starting-a-server-at-login) does.
+
+### Issuing an Invite
+
+On the Server to be reached, `/serve` turns Serving on and lists the ways an Invite may offer: this machine's own
+addresses, while its Serving listener listens where another machine could reach it, and `Relay <address>` for each
+Relay the Server holds. A listener bound to loopback offers none, and `/serve` says so. Each one an Invite
+can offer is ticked, and offered, unless you leave it out with Space. Enter issues the Invite, offering exactly the ways
+ticked: leave the addresses out for an Invite reached only through the Relay, or leave both kinds in, and the other
+machine reaches the Server directly where it can and through the Relay where it cannot.
+
+An Invite offering a Relay also has a **short code**, shown above the long string in two groups, such as `K7QF-2MXP`,
+which is typed in `/pair` on the other machine with no string to carry. `c` copies the code and `Ctrl+C` the long string.
+An Invite offering direct ways alone has no code, since the code's exchange needs a connection the Relay joins. The code
+lives and dies with its Invite: it expires with it after ten minutes, the next Invite replaces it, and it is dead once
+the Invite is spent. Restarting the Server ends both.
+
+A code gets one try. If a wrong one is tried, or an attempt never finishes, it is dead, and `/serve` says so in its
+place, since an attempt you did not make is worth seeing. Any Suru attached to this Server raises a Notice too, wherever
+you are in it, and `/serve` says it again when you reopen it, until another code replaces it or the Invite ends. The long
+string stays good, because a wrong guess says nothing about it, and `n` gets a new code for the same Invite, with no more
+time on it. Anyone logged in under your Account, or the Relay itself, can spoil a code this way, which costs a new one
+and gains them nothing else.
+
+Reopening `/serve` while an Invite stands says so, since Enter replaces it and its code, and the code cannot be shown
+again: it is held to be typed, not looked up.
+
+The Invite on screen can end from elsewhere: `suru serve invite` or another Suru attached to this Server replaces it,
+someone redeems it, it runs out, or Serving stops. `/serve` then says it no longer works, and why, in its place. Neither it
+nor its code is shown any more, `Ctrl+C` copies nothing, and closing this and running `/serve` issues another.
+
+A Relay an Invite cannot offer is marked `[-]` and says why, and Space on its row puts that right where you stand:
+
+- **login needed**: Space begins the login, showing the address to visit and the code to enter, which `a` and `c` copy.
+  Esc steps back and leaves the login under way; its row then says where the login stands, Space shows it again, and
+  `/relay` finds the same login. A login the Relay refuses says why on the row.
+- **not Served through**: Space Serves through that Relay. Its row says beforehand what that does: it makes this machine
+  reachable through that Relay. A terminal too small to show all of that says so instead, and Space then does nothing.
+  A login never turns this on, so a Relay needing both takes one key press for the login and another for this. Where
+  the Server refuses, it says why on the row.
+
+Once the Relay can be offered it is ticked like any other, and the next Invite offers it without reopening `/serve`;
+this holds even for a Relay you had left out, since pressing the key on its row says you want it. `a` adds a Relay
+here, with the same address entry as `/relay`, so a first-time setup can begin in `/serve`, which says so where the
+Server holds no Relay. `/relay` does all of this too, and is where a Relay is removed or stops being Served through.
+
+### Finding your machines
+
+`/pair` opens on the other machines logged in under your Account at each Relay this Server holds, grouped by Relay:
+
+```
+On relay.example.com
+› workstation   Serving
+  build-box     Remote already
+  old-laptop    not Serving (run /serve there)
+```
+
+- **Serving**: waiting at the Relay right now. Enter on it asks for the code its `/serve` shows; see
+  [Pairing through the Relay](#pairing-through-the-relay).
+- **not Serving**: logged in but not waiting, which may mean Serving is off, it does not Serve through this Relay, or
+  the machine is simply off. It cannot be chosen to pair, and Enter says what to do: put that right on it, then `Ctrl+R`
+  here and type its code.
+- **Remote already**: its key matches a Pairing this Server holds, and it is shown by the Remote's name. Enter says
+  so.
+
+A machine listed by two Relays is one row. It reads **Serving** if it waits at either, sits in the group of the first
+it waits at or, waiting at neither, the first that lists it, and names the other; where the two were told different
+hostnames, it goes by the one its group's Relay was told, and the selected row's detail says the other. Rows sharing a
+name show the first characters of each fingerprint, and the selected row shows its whole fingerprint.
+
+Each Relay is asked on its own as `/pair` opens, and its group fills in as it answers: **looking…** until then,
+**Unreachable** if it does not answer within the Server's budget for that, **login needed** if the Server's Login
+there does not stand, and **no other machines** if there are none. `Ctrl+R` asks them all again. Nothing is asked
+except when a Client asks.
+
+The Invite field stands beside the list throughout: pasting or typing an Invite puts it there wherever the keys are,
+and `Tab` moves to it. Where nothing is found, it comes first, as it does for a Relay too old to list machines, which
+says so in its group and goes on pairing by Invite as ever. A Server holding no Relay says beneath it what adding one would
+give.
+
+**None of this is believed.** A hostname is whatever the other Server said and a key is the Relay's word, and nothing
+listed changes what this Server holds of any key. A Relay that lies can mislabel a row, and fail an attempt, and no
+more: choosing a row forms no Pairing, and a Pairing is formed only as it always is, by redeeming an Invite and trusting
+its preview. The Relay stores nothing to answer this, keeps no last-seen time, and writes nothing of it to either log.
+
+### Pairing through the Relay
+
+On the other machine, `/pair` takes the Invite in either of two forms: choose the machine from those found and type its
+short code, or paste the long string. A code can be typed in any case, with or without its separator, and pasted. It
+holds no `0`, `O`, `1` or `I`, and what could not be a code is refused there, which uses nothing. A whole Invite pasted
+where the code goes is taken for the Invite it is.
+
+The code runs a password-authenticated key exchange with that machine over a connection the Relay joins, and its only
+output is the same Invite, encrypted to this Server. It adds nothing to what either machine trusts, and the Relay can
+neither read it nor search for the code afterwards. This Server tries once for each time you ask: where a machine waits
+at two Relays it goes on to the second only if the first would not join them, or if the machine answered at once that it
+took no guess there, as it does for a Relay its Invite does not offer. While it tries, Esc only says so: the code's one
+try is under way, and Suru stays to show how it went. Where the code fails it is dead: Suru says to get a new one, takes
+it out of the field, and tries nothing again for you. Do not type it again. Whatever answered in the other machine's
+place, a Relay or a machine you chose by mistake, gets one guess at the code each time you do, and the other machine
+never sees those.
+
+So if this machine says a code failed while the other still shows it waiting, nothing tried that code over there, and
+what answered in its place was not that machine: the Relay may be at fault. The other machine showing a wrong try says
+nothing either way, since whatever stood in can burn the code there too. A Relay in the path has about one chance in
+five hundred billion each time you try of guessing the code, which would get it the Invite (see
+[ADR-0065](../adr/0065-deliver-an-invite-by-a-short-code-through-a-pake-with-one-guess-per-code.md)).
+
+Where no code is live on the other machine, Suru says to issue an Invite there, and takes what you typed away, since
+whatever gets one live gives a different code. If that machine does show a code, its Invite does not offer this Relay: a code
+works only over a Relay its Invite offers, so issue one that does there, or log in here at one it does. If the Invite
+delivered names another key than the one listed for the machine, Suru refuses it and says so: the Relay's list was wrong or
+was lying. Esc at the preview pairs nothing: the code is used, the Invite stands until it
+expires, and `n` in `/serve` there gets another code for it.
+
+Either way, before anything is trusted, Suru shows the Serving Server's
+fingerprint and, under **Reached by**, every way the Invite offers: each Relay whole, saying how this Server stands
+there — **logged in**, **login needed** or **Unreachable**. Enter trusts it, opening **Configure Remote**, where you
+name the Remote and may reorder the ways it is reached by; another Enter pairs. Esc at either step pairs nothing.
+
+Pairing tries the direct ways the Invite offers first, and its Relays only once no direct way has answered within a
+moment, so it needs a Relay only where no direct way answers. Where it needs one this Server has yet to log in at, it
+logs in there first: Suru adds the Relay to this Server where it holds no entry for it, shows the login's address and
+code, and carries on pairing once the login is done — one login, and one paste. An Invite offering both kinds that
+pairs directly — on the same network, say — neither adds the Relay it also offers nor logs in there, so reaching the
+Remote through it from elsewhere later needs that Relay added and logged in at in `/relay` first. A Relay joins only
+Servers logged in under the same Account, so both Servers must be logged in there as the same GitHub user; where they
+are not, Suru says so, and to log in as that user, by Enter on its row in `/relay`, or pair the two directly.
+
+A Pairing is one-way, so **Configure Remote** also offers *Also let* the Remote *reach this machine*, off by default, for
+two machines that should reach each other: it asks that other machine's user to pair back in one step. Off, you have the
+one-way Pairing you asked for, and nothing is sent. It says why where it cannot be offered, since this machine must have
+a way to offer: Serving on and its listener listening, or a Relay it Serves through. Its row puts that right, a choice
+of its own as in `/serve`, and says first what Serving through a Relay opens.
+
+The offer is a record on both machines and no Invite, and carries no token, so it lasts however long the answer takes,
+across restarts of either. On the other machine a Notice is raised once, to the first Client that can show it, and the
+offer stands in `/connect` until answered: Enter names the Remote and accepts it, and `x` twice declines. Nothing is
+added there on its own. Since a Pairing is one-way, that machine cannot call this one with its answer, so this machine
+acts on it when it next connects, which takes someone on this machine opening `/connect` or looking at that Remote;
+until then `/connect` there says it is waiting on that. Then this machine issues an Invite for that machine's key alone,
+shown nowhere and offering every way it has, rather than those `/serve` would let you pick, which leaves any Invite you
+issued from `/serve` good and is left good by one issued later, and that machine redeems it at once through whichever way
+answers, Relays it logged in at among them. Where this machine has no way to offer by then, it issues nothing, the
+offer stands, and both say why; once it has one the rest takes no further step. Where the redemption fails, that
+machine says why and it is tried again from time to time while the two are connected. The result is an ordinary second
+Pairing: each is ended on its own.
+
+`/connect` shows the offer with its Remote, and `w` withdraws it, which reaches the other machine when this one next
+connects; nothing is issued for it from then on. Ending the Pairing from either side ends the offer. See
+[ADR-0066](../adr/0066-offer-to-pair-back-by-a-standing-record-and-a-token-bound-to-one-key.md).
+
+### Reaching a Remote
+
+Suru reaches a paired Remote directly where it can, and through a Relay where it cannot, trying the direct ways first.
+`/connect` lists the Remotes, and the one chosen lists the **Relays it Serves through**, saying how this Server
+stands at each — **logged in**, **login needed**, **Unreachable**, or **not added here, so not used**. A Relay this
+Server holds no entry for is never used to reach the Remote until it is added in `/relay` and logged in at.
+
+### When a Login stops standing
+
+Should a Login come to be refused — its Account lapsed, or you removed it — Suru raises a Notice once, *Login needed
+at* the Relay's address, pointing to `/relay` to log in, and the Relay reads **Login needed** there, where Enter logs
+in again, as Space does on its row in `/serve`. A Remote that nothing but that Relay reaches reads Unreachable, offering *Log in to try again*, which leads
+to the same login. Where the Account lapsed, one fresh login from any of its Servers restores every Login under it. A
+Relay that has merely stopped answering reads Unreachable instead, and Suru keeps trying it on its own.
+
+A Relay that has just started and cannot yet tell whether its rules still admit an Account — GitHub not answering
+for its membership — reads Unreachable as well to that Account's Servers, saying it could not tell as it started,
+and raises no Notice and asks for no login: Suru tries it again on its own, and it stands again, or reads **Login
+needed**, once GitHub says.
+
+### Serving with no port open
+
+A Server Serving through a Relay needs no listening port at all. The **Serving listener** setting, in the
+Experimental tab of the settings panel (`/settings`), is on unless turned off: off, the Server binds no port while it
+Serves, and is reached only through the Relays it Serves through, and `/serve` offers none of the machine's own
+addresses.
+
+### Starting a Server at login
+
+To have a Server come back with nobody at the machine, run `suru server install` there, which sets up a Login start: this
+Channel's Server starts whenever you log in, with no elevation. `suru server status` says whether one is set up, reading
+only what install wrote, so it cannot see one turned off in the service manager itself: a Login Items toggle,
+`launchctl disable`, a disabled Task or a masked unit. `suru server uninstall` removes it. Neither touches a Server running
+now: it comes into force at the next login, and `suru server start` starts one before then.
+
+From then on a Server that crashes is restarted, within about ten seconds. One stopped by `suru server stop` stays stopped
+until the next login or `suru server start`, or until something starts one as a Client does: opening Suru, or running a
+[`suru relay` or `suru serve` command](#from-the-command-line). That holds for a stop issued just after a crash, when
+there is nothing to stop and `suru server stop` says so. A plain `kill` is taken as a stop too; only something like `kill -9` reads as a
+crash. A Server that hangs is neither restarted nor stoppable this way: `suru server stop` reports it unreachable.
+
+Whatever starts a Server chooses its Config Document, and the Keeper leaves one that is running be. So a command run after
+`suru server stop` under another `SURU_CONFIG_DIR` or `XDG_CONFIG_HOME` has a Server running on that document, pins and all,
+that the Login start then adopts until it next stops. Run such commands with the environment you installed from.
+
+Install again after moving Suru or changing your `PATH`, since a Server started this way finds its Providers on the `PATH`
+kept when you installed. Install warns of a binary path that may not survive an upgrade, of `PATH` entries a reboot takes
+away, and of variables it will not carry because they may hold secrets or belong to that shell: API keys, tokens, proxy
+settings and a Provider's own settings. It names them and never keeps their values, so a Provider or Relay relying on one
+needs another way in.
+
+What each platform covers:
+
+- **macOS**: a LaunchAgent, run by a login at the Mac's screen. A Mac waits for its login keychain, which holds the
+  Server's identity key, so one that has rebooted and that nobody has logged in to, or that is reached only over SSH,
+  stays Unreachable. A Server started this way may count as its own program to macOS's privacy checks, so work in
+  Documents, Desktop or Downloads may raise a consent prompt that waits for someone at the screen. That, and what a
+  logout does to it, have not been verified.
+- **Linux**: a systemd user unit, run from the user's first login. At the last logout the Server is ended outright, as a
+  crash would, and the next login starts another. To run with no session at all, run `loginctl enable-linger $USER`; a
+  key kept in a keyring nothing has unlocked then fails Serving where you can see it. A machine with no systemd user
+  instance, such as a container, is told so, and has whatever starts things there run `suru server start`.
+- **Windows**: a Scheduled Task at this user's logon. A machine that nobody has logged on to stays Unreachable. The Task's
+  name holds the machine's, so after renaming the machine `suru server status` and `uninstall` no longer find it: delete
+  the old `suru-server-…` Task in Task Scheduler, and install again.
+
+A Server that cannot read its identity key never makes a new one: it goes on serving its own machine, and fails Serving
+where you can see it until the store answers.
 
 ### Pinning a Relay in a Config Document
 
@@ -673,223 +906,9 @@ reached at is ignored alone, saying which entry of the list it was, and the othe
 unpins its addresses, and one that stops parsing while a Server runs says so and takes nothing away until it is mended.
 
 `x` on a pinned Relay is refused, saying which Config Document pins it, since it would only come back. Taking an address
-out of the document, or out of the list in `/settings`, unpins it and leaves the entry, and any Login there, standing, because removing a Relay also has
-the Relay forget the Login, which a config edit should not do on its own. Its user removes the entry when they want it
+out of the document, or out of the list in `/settings`, unpins it and leaves the entry, and any Login there, standing,
+because removing a Relay also has the Relay forget the Login, which a config edit should not do on its own. Its user removes the entry when they want it
 gone.
-
-### Serving through the Relay
-
-To make a Server reachable through the Relay, choose the Relay in its `/relay` list and press `s`, or press Space on
-its row in `/serve`. Serving through a Relay is chosen for each Relay, and is off until chosen. The Server waits at the
-Relay only while it is logged in there and Serving is on, so the Relay's row says what it waits on: **Serving
-through**, or **Serves through once logged in**, or **Serves through once Serving is on** — `/serve` turns Serving on.
-Press `s` again to stop.
-
-A Server waits at the Relay only while it runs, and nothing starts one after a reboot. To have it come back with nobody
-at the machine, run `suru server install` there, which registers a Login start: this Channel's Server starts whenever you
-log in, with no elevation. `suru server status` says whether one is registered, reading the registration alone, so it
-cannot see one turned off in the service manager itself: a Login Items toggle, `launchctl disable`, a disabled Task or a
-masked unit. `suru server uninstall` removes it. Neither touches a Server running now: it comes into force at the next
-login, and `suru server start` starts one before then.
-
-From then on a Server that crashes is restarted, within about ten seconds. One stopped by `suru server stop` stays stopped
-until the next login or `suru server start`, or until something starts one as a Client does: opening Suru, or running a
-[`suru relay` or `suru serve` command](#from-the-command-line). That holds for a stop issued just after a crash, when there is nothing
-to stop and `suru server stop` says so. A plain `kill` is taken as a stop too; only something like `kill -9` reads as a
-crash. A Server that hangs is neither restarted nor stoppable this way: `suru server stop` reports it unreachable.
-
-Install again after moving Suru or changing your `PATH`, since a Server started this way finds its Providers on the `PATH`
-kept when you installed. Install warns of a binary path that may not survive an upgrade, of `PATH` entries a reboot takes
-away, and of variables it will not carry because they may hold secrets or belong to that shell: API keys, tokens, proxy
-settings and a Provider's own settings. It names them and never keeps their values, so a Provider or Relay relying on one
-needs another way in.
-
-What each platform covers:
-
-- **macOS**: a LaunchAgent, run by a login at the Mac's screen. A Mac waits for its login keychain, which holds the
-  Server's identity key, so one that has rebooted and that nobody has logged in to, or that is reached only over SSH,
-  stays Unreachable. A Server started this way may count as its own program to macOS's privacy checks, so work in
-  Documents, Desktop or Downloads may raise a consent prompt that waits for someone at the screen. That, and what a
-  logout does to it, have not been verified.
-- **Linux**: a systemd user unit, run from the user's first login. At the last logout the Server is ended outright, as a
-  crash would, and the next login starts another. To run with no session at all, run `loginctl enable-linger $USER`; a
-  key kept in a keyring nothing has unlocked then fails Serving where you can see it. A machine with no systemd user instance, such as a container, is told so, and has whatever starts things there run
-  `suru server start`.
-- **Windows**: a Scheduled Task at this user's logon. A machine that nobody has logged on to stays Unreachable. The Task's
-  name holds the machine's, so after renaming the machine `suru server status` and `uninstall` no longer find it: delete
-  the old `suru-server-…` Task in Task Scheduler, and install again.
-
-A Server that cannot read its identity key never makes a new one: it goes on serving its own machine, and fails Serving
-where you can see it until the store answers.
-
-### Issuing an Invite
-
-On the Server to be reached, `/serve` turns Serving on and lists the ways an Invite may offer: this machine's own
-addresses, while its Serving listener listens where another machine could reach it, and `Relay <address>` for each
-Relay the Server holds. A listener bound to loopback offers none, and `/serve` says so. Each one an Invite
-can offer is ticked, and offered, unless you leave it out with Space. Enter issues the Invite, offering exactly the ways
-ticked: leave the addresses out for an Invite reached only through the Relay, or leave both kinds in, and the other
-machine reaches the Server directly where it can and through the Relay where it cannot.
-
-An Invite offering a Relay also has a **short code**, shown above the long string in two groups, such as `K7QF-2MXP`,
-which is typed in `/pair` on the other machine with no string to carry. `c` copies the code and `Ctrl+C` the long string.
-An Invite offering direct ways alone has no code, since the code's exchange needs a connection the Relay joins. The code
-lives and dies with its Invite: it expires with it after ten minutes, the next Invite replaces it, and it is dead once
-the Invite is spent. Restarting the Server ends both.
-
-A code gets one try. If a wrong one is tried, or an attempt never finishes, it is dead, and `/serve` says so in its
-place, since an attempt you did not make is worth seeing. Any Suru attached to this Server raises a Notice too, wherever
-you are in it, and `/serve` says it again when you reopen it, until another code replaces it or the Invite ends. The long
-string stays good, because a wrong guess says nothing about it, and `n` gets a new code for the same Invite, with no more
-time on it. Anyone logged in under your Account, or the Relay itself, can spoil a code this way, which costs a new one
-and gains them nothing else.
-
-Reopening `/serve` while an Invite stands says so, since Enter replaces it and its code, and the code cannot be shown
-again: it is held to be typed, not looked up.
-
-A Relay an Invite cannot offer is marked `[-]` and says why, and Space on its row puts that right where you stand:
-
-- **login needed**: Space begins the login, showing the address to visit and the code to enter, which `a` and `c` copy.
-  Esc steps back and leaves the login under way; its row then says where the login stands, Space shows it again, and
-  `/relay` finds the same login. A login the Relay refuses says why on the row.
-- **not Served through**: Space Serves through that Relay. Its row says beforehand what that does: it makes this machine
-  reachable through that Relay. A terminal too small to show all of that says so instead, and Space then does nothing.
-  A login never turns this on, so a Relay needing both takes one key press for the login and another for this. Where
-  the Server refuses, it says why on the row.
-
-Once the Relay can be offered it is ticked like any other, and the next Invite offers it without reopening `/serve`;
-this holds even for a Relay you had left out, since pressing the key on its row says you want it. `a` adds a Relay
-here, with the same address entry as `/relay`, so a first-time setup can begin in `/serve`, which says so where the
-Server holds no Relay. `/relay` does all of this too, and is where a Relay is removed or stops being Served through.
-
-### Finding your machines
-
-`/pair` opens on the other machines logged in under your Account at each Relay this Server has logged in at, grouped by Relay:
-
-```
-On relay.example.com
-› workstation   Serving
-  build-box     Remote already
-  old-laptop    not Serving (run /serve there)
-```
-
-- **Serving**: waiting at the Relay right now. Enter on it asks for the code its `/serve` shows; see
-  [Pairing through the Relay](#pairing-through-the-relay).
-- **not Serving**: logged in but not waiting, which may mean Serving is off, it does not Serve through this Relay, or
-  the machine is simply off. It cannot be chosen to pair, and Enter says what to do on it.
-- **Remote already**: its key matches a Pairing this Server holds, and it is shown by the Remote's name. Enter says
-  so.
-
-A machine listed by two Relays is one row. It reads **Serving** if it waits at either, sits in the group of the first
-it waits at or, waiting at neither, the first that lists it, and names the other; where the two were told different
-hostnames, it goes by the one its group's Relay was told, and the selected row's detail says the other. Rows sharing a
-name show the first characters of each fingerprint, and the selected row shows its whole fingerprint.
-
-Each Relay is asked on its own as `/pair` opens, and its group fills in as it answers: **looking…** until then,
-**Unreachable** if it does not answer within the Server's budget for that, **login needed** if the Server's Login
-there does not stand, and **no other machines** if there are none. `Ctrl+R` asks them all again. Nothing is asked
-except when a Client asks.
-
-The Invite field stands beside the list throughout: pasting or typing an Invite puts it there wherever the keys are,
-and `Tab` moves to it. Where nothing is found, it comes first, as it does for a Relay too old to list machines, which
-says so in its group and goes on pairing by Invite as ever.
-
-**None of this is believed.** A hostname is whatever the other Server said and a key is the Relay's word, and nothing
-listed changes what this Server holds of any key. A Relay that lies can mislabel a row, and fail an attempt, and no
-more: choosing a row forms no Pairing, and a Pairing is formed only as it always is, by redeeming an Invite and trusting
-its preview. The
-Relay stores nothing to answer this, keeps no last-seen time, and writes nothing of it to either log.
-
-### Pairing through the Relay
-
-On the other machine, `/pair` takes the Invite in either of two forms: choose the machine from those found and type its
-short code, or paste the long string. A code can be typed in any case, with or without its separator, and pasted. It
-holds no `0`, `O`, `1` or `I`, and what could not be a code is refused there, which uses nothing. A whole Invite pasted
-where the code goes is taken for the Invite it is.
-
-The code runs a password-authenticated key exchange with that machine over a connection the Relay joins, and its only
-output is the same Invite, encrypted to this Server. It adds nothing to what either machine trusts, and the Relay can
-neither read it nor search for the code afterwards. This Server tries once for each time you ask: where a machine waits
-at two Relays it goes on to the second only if the first would not join them, or if the machine answered at once that it
-took no guess there, as it does for a Relay its Invite does not offer. While it tries, Esc only says so: the code's one
-try is under way, and Suru stays to show how it went. Where the code fails it is dead: Suru says to get a new one, takes
-it out of the field, and tries nothing again for you. Do not type it again. Whatever answered in the other machine's
-place, a Relay or a machine you chose by mistake, gets one guess at the code each time you do, and the other machine
-never sees those.
-
-So if this machine says a code failed while the other still shows it waiting, nothing tried that code over there, and
-what answered in its place was not that machine: the Relay may be at fault. The other machine showing a wrong try says
-nothing either way, since whatever stood in can burn the code there too. A Relay in the path has about one chance in
-five hundred billion each time you try of guessing the code, which would get it the Invite (see
-[ADR-0065](../adr/0065-deliver-an-invite-by-a-short-code-through-a-pake-with-one-guess-per-code.md)).
-
-Where no code is live on the other machine, Suru says to issue an Invite there, and takes what you typed away, since
-whatever gets one live gives a different code. If the Invite delivered names another key than the one listed for the machine, Suru refuses it and says so: the
-Relay's list was wrong or was lying. Esc at the preview pairs nothing: the code is used, the Invite stands until it
-expires, and `n` in `/serve` there gets another code for it.
-
-Either way, before anything is trusted, Suru shows the Serving Server's
-fingerprint and, under **Reached by**, every way the Invite offers: each Relay whole, saying how this Server stands
-there — **logged in**, **login needed** or **Unreachable**. Enter trusts it, opening **Configure Remote**, where you
-name the Remote and may reorder the ways it is reached by; another Enter pairs. Esc at either step pairs nothing.
-
-Pairing tries the direct ways the Invite offers first, and its Relays only once no direct way has answered within a
-moment, so it needs a Relay only where no direct way answers. Where it needs one this Server has yet to log in at, it
-logs in there first: Suru adds the Relay to this Server where it holds no entry for it, shows the login's address and
-code, and carries on pairing once the login is done — one login, and one paste. An Invite offering both kinds that
-pairs directly — on the same network, say — neither adds the Relay it also offers nor logs in there, so reaching the
-Remote through it from elsewhere later needs that Relay added and logged in at in `/relay` first. A Relay joins only
-Servers logged in under the same Account, so both Servers must be logged in there as the same GitHub user; where they
-are not, Suru says so, and to log in as that user or pair the two directly.
-
-A Pairing is one-way, so **Configure Remote** also offers *Also let* the Remote *reach this machine*, off by default, for
-two machines that should reach each other: it asks that other machine's user to pair back in one step. Off, you have the
-one-way Pairing you asked for, and nothing is sent. It says why where it cannot be offered, since this machine must have
-a way to offer: Serving on and its listener listening, or a Relay it Serves through. Its row puts that right, a choice
-of its own as in `/serve`, and says first what Serving through a Relay opens.
-
-The offer is a record on both machines and no Invite, and carries no token, so it lasts however long the answer takes,
-across restarts of either. On the other machine a Notice is raised once, to the first Client that can show it, and the
-offer stands in `/connect` until answered: Enter names the Remote and accepts it, and `x` twice declines. Nothing is
-added there on its own. Since a Pairing is one-way, that machine cannot call this one with its answer, so this machine
-acts on it when it next connects, which takes someone on this machine opening `/connect` or looking at that Remote;
-until then `/connect` there says it is waiting on that. Then this machine issues an Invite for that machine's key alone, shown nowhere and offering every way it has, rather
-than those `/serve` would let you pick, which leaves any Invite you issued from `/serve` good and is left good by one issued later, and that machine redeems it at once through whichever
-way answers, Relays it logged in at among them. Where this machine has no way to offer by then, it issues nothing, the
-offer stands, and both say why; once it has one the rest takes no further step. Where the redemption fails, that
-machine says why and it is tried again from time to time while the two are connected. The result is an ordinary second
-Pairing: each is ended on its own.
-
-`/connect` shows the offer with its Remote, and `w` withdraws it, which reaches the other machine when this one next
-connects; nothing is issued for it from then on. Ending the Pairing from either side ends the offer. See
-[ADR-0066](../adr/0066-offer-to-pair-back-by-a-standing-record-and-a-token-bound-to-one-key.md).
-
-### Reaching a Remote
-
-Suru reaches a paired Remote directly where it can, and through a Relay where it cannot, trying the direct ways first.
-`/connect` lists the Remotes, and the one chosen lists the **Relays it Serves through**, saying how this Server
-stands at each — **logged in**, **login needed**, **Unreachable**, or **not added here, so not used**. A Relay this
-Server holds no entry for is never used to reach the Remote until it is added in `/relay` and logged in at.
-
-### When a Login stops standing
-
-Should a Login come to be refused — its Account lapsed, or you removed it — Suru raises a Notice once, *Login needed
-at* the Relay's address, pointing to `/relay` to log in, and the Relay reads **Login needed** there, where Enter logs
-in again. A Remote that nothing but that Relay reaches reads Unreachable, offering *Log in to try again*, which leads
-to the same login. Where the Account lapsed, one fresh login from any of its Servers restores every Login under it. A
-Relay that has merely stopped answering reads Unreachable instead, and Suru keeps trying it on its own.
-
-A Relay that has just started and cannot yet tell whether its rules still admit an Account — GitHub not answering
-for its membership — reads Unreachable as well to that Account's Servers, saying it could not tell as it started,
-and raises no Notice and asks for no login: Suru tries it again on its own, and it stands again, or reads **Login
-needed**, once GitHub says.
-
-### Serving with no port open
-
-A Server Serving through a Relay needs no listening port at all. The **Serving listener** setting, in the
-Experimental tab of the settings panel (`/settings`), is on unless turned off: off, the Server binds no port while it
-Serves, and is reached only through the Relays it Serves through, and `/serve` offers none of the machine's own
-addresses.
 
 ### From the command line
 
@@ -939,8 +958,8 @@ through a Relay does, and why something was left out. Nothing carries colour.
 - **`relay serve-through on`** makes this machine reachable through that Relay, and says so, and what it still waits on:
   as in `/relay`, the choice is remembered ahead of a login or of Serving being on, and turns neither on. **`off`** stops
   waiting there and leaves the Login.
-- **`relay remove`** forgets the Login at the Relay as well, and does not ask. A Relay a Config Document pins refuses, naming the
-  document. Removing an address the Server does not hold is a failure, since a mistyped one would leave the machine logged
+- **`relay remove`** forgets the Login at the Relay as well, and does not ask. A Relay a Config Document pins refuses, naming
+  the document. Removing an address the Server does not hold is a failure, since a mistyped one would leave the machine logged
   in where the script took it to have left.
 - **`serve invite`** turns Serving on as `/serve` does and says so, which writes `serving.enabled` to the Config Document as
   `/serve` does. It offers every way `/serve` would tick: this machine's own addresses and each Relay it can offer, saying of each
@@ -951,9 +970,10 @@ through a Relay does, and why something was left out. Nothing carries colour.
   are any; where there are none it fails, with Serving left on, as it says.
 
 An Invite lasts ten minutes, is redeemed once, and **replaces any issued before it**, so running `serve invite` twice kills
-the first. Standard output closed outright (`>&-`) cannot be told from `> /dev/null`, so the command exits 0 having shown the
-Invite to nobody, and has still replaced the last one; a pipe closed by its reader does fail. Its **short code** goes to standard error only where that is a terminal, because it is as secret as the Invite
-and standard error is what a script's log keeps; `--json` carries it on standard output for whoever wants it. An Invite and
+the first, and an open `/serve` showing it says so. Standard output closed outright (`>&-`) cannot be told from
+`> /dev/null`, so the command exits 0 having shown the Invite to nobody, and has still replaced the last one; a pipe closed
+by its reader does fail. Its **short code** goes to standard error only where that is a terminal, because it is as secret as
+the Invite and standard error is what a script's log keeps; `--json` carries it on standard output for whoever wants it. An Invite and
 its code reach no Log, and neither is ever an argument.
 
 #### Exit status

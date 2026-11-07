@@ -85,7 +85,7 @@ A Remote already holding `A`'s key on `B`, by `/serve` and a paste for instance,
 
 ## Versions
 
-`PROTOCOL_VERSION`, the Pairing's own version, moves to 109. A Pairing whose versions differ is already refused as a whole (ADR-0017): enrollment refuses at its preparation, and the stream telling Relays refuses a Peer speaking another version, so an offer is never asked of a Server that does not know it. A record simply waits through a version mismatch, and does nothing to the Pairing it rides on; a Remote still reads as `ProtocolMismatch` and nothing else. The commit's new field is said only when an offer is made, so leaving the option off changes nothing on the wire but the version.
+`PROTOCOL_VERSION`, the Pairing's own version, moves on with this, as it does with each change to what Servers say. A Pairing whose versions differ is already refused as a whole (ADR-0017): enrollment refuses at its preparation, and the stream telling Relays refuses a Peer speaking another version, so an offer is never asked of a Server that does not know it. A record simply waits through a version mismatch, and does nothing to the Pairing it rides on; a Remote still reads as `ProtocolMismatch` and nothing else. The commit's new field is said only when an offer is made, so leaving the option off changes nothing on the wire but the version.
 
 ## Considered Options
 
