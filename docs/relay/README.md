@@ -663,13 +663,14 @@ at all until a user logs in there. Each machine's Login is still formed by its o
 rollout to a thousand machines costs the Relay nothing, and admits nobody the admission rules do not.
 
 A running Server notices a change to the document within a couple of seconds, with no restart. An address written two
-ways (`relay.example.com` and `https://RELAY.example.com/`) is one entry, and an entry a user already holds is pinned
-as it stands, keeping its Login and its choice to Serve through it. An address no Relay is reached at is ignored alone,
+ways (`relay.example.com` and `https://RELAY.example.com/`) is one entry, though a host name's trailing dot makes it
+another address, and an entry a user already holds is pinned as it stands, keeping its Login and its choice to Serve
+through it. An address no Relay is reached at is ignored alone,
 saying which entry of the list it was, and the others still apply. A document that stops parsing while a Server runs
 says so and takes nothing away until it is mended.
 
 `x` on a pinned Relay is refused, saying which Config Document pins it, since it would only come back. Taking an address
-out of the document unpins it and leaves the entry, and any Login there, standing, because removing a Relay also has
+out of the document, or out of the list in `/settings`, unpins it and leaves the entry, and any Login there, standing, because removing a Relay also has
 the Relay forget the Login, which a config edit should not do on its own. Its user removes the entry when they want it
 gone.
 

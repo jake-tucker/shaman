@@ -13,3 +13,4 @@ A Sidekick may answer a Questionnaire, because an Answer is input rather than co
 
 - Adding delete, Approvals, or posture to a Sidekick later reopens this decision rather than extending a list.
 - The exclusions are enforced where the Tools are served, and for a Remote's Sidekick Workspace by the Remote, not by instructions to the Agent.
+- The bound is on Tools and stops at the file. An Agent able to write Suru's Config Document reaches the Settings its Tools withhold, and a running Server follows that within seconds (ADR-0067, which says what stands in the way and why it is accepted).
