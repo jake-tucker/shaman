@@ -1,5 +1,5 @@
-//! Records how Copilot's Fusion routing behaves on the wire: the routes it resolves, the phases they
-//! run, and what a host doing something mid-phase sees happen.
+//! Records how Copilot's Fusion routing behaves on the wire: the routes it resolves, the phases
+//! they run, and what a host doing something mid-phase sees happen.
 //!
 //! Drives the installed Copilot CLI through the SDK the way Suru's Copilot Provider does, on model
 //! `auto` staged on the Fusion preference named. Every `session.event` goes to stdout as one JSON
@@ -33,15 +33,16 @@
 //! - `delete <id>...` deletes Sessions a run left behind: a refused create leaves its directory.
 //!
 //! `interrupt`, `steer` and `crash` act on a staged phase, which a `single` route may not have: on
-//! one, they abort as soon as the route resolves and exit with status 3, unless `PROBE_ALLOW_SINGLE`
-//! is set.
+//! one, they abort as soon as the route resolves and exit with status 3, unless
+//! `PROBE_ALLOW_SINGLE` is set.
 //!
 //! `PROBE_EXP_ASSIGNMENTS` names a JSON file holding the assignment, as `copilot_auto_tier_probe`
 //! describes. `PROBE_OUT` is a path prefix for the files a run writes beside its stream: each
 //! Session's on-disk `events.jsonl` before it is deleted, and what `session.getEvents` answered.
 //! `PROBE_ALLOWED_MODELS` narrows the Models a created Session may use (comma-separated), which can
 //! make a route name one it may not. `SURU_COPILOT_PATH` names the CLI (default `copilot`). Every
-//! Session a run creates is deleted once it is done. Every Tool the Model asks for is approved, so run it somewhere disposable.
+//! Session a run creates is deleted once it is done. Every Tool the Model asks for is approved, so
+//! run it somewhere disposable.
 use std::{
     path::PathBuf,
     process::Stdio,
