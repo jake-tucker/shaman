@@ -870,6 +870,8 @@ pub struct TuiState {
     pub(super) serving_listener: ListenerState,
     /// How the Server's latest short code stands, as it last said.
     pub(super) short_code: crate::protocol::ShortCodeStanding,
+    /// How the Client's own Server's latest Invite stands, as it last said.
+    invite_standing: crate::protocol::InviteStanding,
     /// The offers to pair back the Client's own Server holds and has made, as
     /// it last said.
     pub(super) offers: crate::protocol::PairBackOffers,
@@ -1193,6 +1195,7 @@ impl TuiState {
             serve_overlay: ServeOverlay::default(),
             serving_listener: ListenerState::default(),
             short_code: crate::protocol::ShortCodeStanding::default(),
+            invite_standing: crate::protocol::InviteStanding::default(),
             offers: crate::protocol::PairBackOffers::default(),
             relay_overlay: RelayOverlay::default(),
             context_overlay: ContextOverlay::default(),
@@ -2660,6 +2663,7 @@ impl TuiState {
                     .is_some_and(|identity| identity.instance_id != health.instance_id);
                 if replaced_server {
                     self.short_code = crate::protocol::ShortCodeStanding::default();
+                    self.invite_standing = crate::protocol::InviteStanding::default();
                     self.serve_overlay.server_replaced();
                     if self.new_worktree.is_some()
                         && let Some(prompt_id) = self
@@ -2751,6 +2755,10 @@ impl TuiState {
             ManagedEvent::Relays(listing) => self.receive_relays(listing),
             ManagedEvent::ServingListener(state) => self.serving_listener = state,
             ManagedEvent::ShortCode(standing) => self.receive_short_code(standing),
+            ManagedEvent::InviteStanding(standing) => {
+                self.serve_overlay.hear_invite_standing(&standing);
+                self.invite_standing = standing;
+            }
             ManagedEvent::PairBack(offers) => self.receive_offers(offers),
             ManagedEvent::RemoteFailed { message, .. } => self.settle_remote_failure(message),
             ManagedEvent::ServerShutdown(shutdown) => {
@@ -2936,6 +2944,7 @@ impl TuiState {
             | ManagedEvent::Relays(_)
             | ManagedEvent::ServingListener(_)
             | ManagedEvent::ShortCode(_)
+            | ManagedEvent::InviteStanding(_)
             | ManagedEvent::PairBack(_)
             | ManagedEvent::Onboarded(_)
             | ManagedEvent::WorkspaceListing(_)
@@ -3019,6 +3028,7 @@ impl TuiState {
             | ManagedEvent::Relays(_)
             | ManagedEvent::ServingListener(_)
             | ManagedEvent::ShortCode(_)
+            | ManagedEvent::InviteStanding(_)
             | ManagedEvent::PairBack(_)
             | ManagedEvent::Onboarded(_)
             | ManagedEvent::WorkspaceListing(_)
@@ -7153,6 +7163,9 @@ impl Application {
                 peers,
             } => {
                 self.state.serve_overlay.show_invite(request, invite, peers);
+                // The Server may have told of what came of it before this.
+                let standing = self.state.invite_standing.clone();
+                self.state.serve_overlay.hear_invite_standing(&standing);
                 Ok(ApplicationTransition::Continue)
             }
             ApplicationEvent::InviteIssuanceFailed { request, error } => {

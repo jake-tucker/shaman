@@ -2102,11 +2102,46 @@ pub struct IssueInviteRequest {
 #[serde(deny_unknown_fields)]
 pub struct IssuedInvite {
     pub invite: InviteText,
+    /// Which Invite of this Server it is, for [`InviteStanding`] to be told of.
+    pub serial: u64,
     pub ways: Vec<Way>,
     /// The short code a reader can type in place of carrying `invite`, where
     /// it offers a Relay; none where it offers direct ways alone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub short_code: Option<IssuedShortCode>,
+}
+
+/// The event the Server's own event stream tells how its latest Invite stands
+/// under: as a Client connects, once one has been issued, and as that changes.
+pub const INVITE_STANDING_EVENT: &str = "invite_standing";
+
+/// How the latest Invite this Server issued to be shown stands, so a Client
+/// showing an earlier one or this one knows it can no longer be redeemed, by
+/// whichever surface it came to that. It says nothing of an Invite bound to one
+/// key, which is shown nowhere and stands outside superseding (ADR-0066), and
+/// holds no token and no code.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InviteStanding {
+    /// The Invite this says of; `0` before any was issued. A later one than a
+    /// Client is showing has replaced the one it shows.
+    pub serial: u64,
+    pub state: InviteState,
+}
+
+/// Where the latest Invite has got to.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InviteState {
+    /// It can be redeemed.
+    #[default]
+    Standing,
+    /// Nobody redeemed it in time.
+    Expired,
+    /// It was redeemed.
+    Spent,
+    /// Serving stopped, or its listener moved, which discards every Invite.
+    Discarded,
 }
 
 /// Whether a Server is Serving, and how its listener stands, as its user's own

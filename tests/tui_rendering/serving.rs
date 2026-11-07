@@ -10,8 +10,9 @@ use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use suru::{
     managed_client::ManagedEvent,
     protocol::{
-        EffectiveSettings, IssueInviteRequest, IssuedInvite, IssuedShortCode, ListenerState, Peer,
-        SettingsSnapshot, ShortCode, ShortCodeStanding, ShortCodeState, Way,
+        EffectiveSettings, InviteStanding, InviteState, IssueInviteRequest, IssuedInvite,
+        IssuedShortCode, ListenerState, Peer, SettingsSnapshot, ShortCode, ShortCodeStanding,
+        ShortCodeState, Way,
     },
     tui::{Application, ApplicationEvent, ApplicationTransition, SemanticCommandId},
 };
@@ -66,6 +67,7 @@ fn serving_shows_a_fresh_copyable_invite_and_removes_enrolled_peers() {
             request,
             invite: IssuedInvite {
                 invite: invite.clone().into(),
+                serial: 1,
                 ways: vec![Way::Direct(SocketAddr::from((
                     Ipv4Addr::new(10, 0, 0, 8),
                     7777,
@@ -289,6 +291,7 @@ fn serve_lists_scroll_to_keep_the_focused_candidate_and_peer_fully_visible() {
             request,
             invite: IssuedInvite {
                 invite: long_invite.clone().into(),
+                serial: 1,
                 ways: vec![Way::Direct(SocketAddr::from((
                     Ipv4Addr::new(10, 0, 0, 20),
                     7777,
@@ -371,6 +374,7 @@ fn showing_a_code_beside(code: &str, serial: u64, peers: Vec<Peer>) -> Applicati
             request,
             invite: IssuedInvite {
                 invite: "suru-v1-long-string".into(),
+                serial: 1,
                 ways: vec![Way::Relay("https://relay.example.com".to_owned())],
                 short_code: Some(IssuedShortCode {
                     code: ShortCode::parse(code).unwrap(),
@@ -666,6 +670,7 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
             request,
             invite: IssuedInvite {
                 invite: "suru-v1-next".into(),
+                serial: 1,
                 ways: vec![Way::Relay("https://relay.example.com".to_owned())],
                 short_code: Some(IssuedShortCode {
                     code: ShortCode::parse("H4RW-9TNB").unwrap(),
@@ -679,6 +684,174 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("H4RW-9TNB"), "{text}");
     assert!(!text.contains("A wrong code was tried"), "{text}");
+}
+
+/// `/serve` showing an Invite offering this machine's address alone, which has no
+/// code to hint at what became of it, as serial `serial` of its Server's.
+fn showing_a_direct_invite(serial: u64) -> Application {
+    let mut application = Application::default();
+    let mut settings = EffectiveSettings::default();
+    settings.serving.enabled = true;
+    settings.serving.port = 7777;
+    deliver_settings(&mut application, settings);
+    deliver_listener(&mut application, open_at(7777));
+    type_terminal_text(&mut application, "/serve");
+    let ApplicationTransition::BeginServing { request } = press(&mut application, KeyCode::Enter)
+    else {
+        panic!("/serve has the Server prepare Serving");
+    };
+    let way = Way::Direct(SocketAddr::from((Ipv4Addr::new(10, 0, 0, 8), 7777)));
+    application
+        .handle_event(ApplicationEvent::ServingPrepared {
+            request,
+            settings: None,
+            candidates: vec![way.clone()],
+        })
+        .expect("load Serving candidates");
+    let ApplicationTransition::IssueInvite { request, .. } =
+        press(&mut application, KeyCode::Enter)
+    else {
+        panic!("Enter issues an Invite");
+    };
+    application
+        .handle_event(ApplicationEvent::InviteIssued {
+            request,
+            invite: IssuedInvite {
+                invite: "suru-v1-direct-string".into(),
+                serial,
+                ways: vec![way],
+                short_code: None,
+            },
+            peers: Vec::new(),
+        })
+        .expect("show the Invite");
+    application
+}
+
+fn told_invite(application: &mut Application, serial: u64, state: InviteState) {
+    application
+        .handle_event(ApplicationEvent::Managed(ManagedEvent::InviteStanding(
+            InviteStanding { serial, state },
+        )))
+        .expect("take how the Invite stands");
+}
+
+/// However an Invite on screen comes to end, by whichever surface, it is shown no
+/// longer, nothing copies it, and the reader is told why and what to do.
+#[test]
+fn an_invite_that_ended_is_said_to_and_can_be_neither_read_nor_copied() {
+    for (serial, state, why) in [
+        (
+            8,
+            InviteState::Standing,
+            "A newer Invite has replaced this one",
+        ),
+        (7, InviteState::Expired, "It expired unredeemed"),
+        (7, InviteState::Spent, "It has been redeemed"),
+        (7, InviteState::Discarded, "Serving stopped"),
+    ] {
+        let mut application = showing_a_direct_invite(7);
+        let shown = rendered_application_rows(&application).join("\n");
+        assert!(shown.contains("Fresh Invite"), "{shown}");
+        assert!(shown.contains("suru-v1-direct-string"), "{shown}");
+        assert!(shown.contains("Ctrl+C copy Invite"), "{shown}");
+
+        told_invite(&mut application, serial, state);
+        let shown = rendered_application_rows(&application).join(" ");
+        assert!(!shown.contains("Fresh Invite"), "{state:?}: {shown}");
+        assert!(!shown.contains("suru-v1-direct-string"), "{shown}");
+        assert!(shown.contains("This Invite no longer works"), "{shown}");
+        assert!(shown.contains(why), "{shown}");
+        assert!(shown.contains("/serve"), "how to get another: {shown}");
+        assert!(!shown.contains("Ctrl+C copy Invite"), "{shown}");
+        assert_eq!(
+            press_with(&mut application, KeyCode::Char('c'), KeyModifiers::CONTROL),
+            ApplicationTransition::Continue,
+            "nothing dead reaches the clipboard"
+        );
+    }
+}
+
+/// The Server may tell of an Invite before this Client hears it was issued, or of
+/// one before it: neither ends what is shown.
+#[test]
+fn an_invite_is_ended_only_by_what_is_said_of_it_or_of_a_later_one() {
+    let mut application = showing_a_direct_invite(7);
+    told_invite(&mut application, 6, InviteState::Expired);
+    told_invite(&mut application, 7, InviteState::Standing);
+    let shown = rendered_application_rows(&application).join("\n");
+    assert!(shown.contains("suru-v1-direct-string"), "{shown}");
+    assert!(matches!(
+        press_with(&mut application, KeyCode::Char('c'), KeyModifiers::CONTROL),
+        ApplicationTransition::CopyToClipboard(_)
+    ));
+}
+
+/// An Invite told of as ended before the answer issuing it lands is shown ended.
+#[test]
+fn an_invite_said_to_have_ended_before_it_was_shown_is_shown_ended() {
+    let mut application = Application::default();
+    told_invite(&mut application, 9, InviteState::Standing);
+    let mut settings = EffectiveSettings::default();
+    settings.serving.enabled = true;
+    settings.serving.port = 7777;
+    deliver_settings(&mut application, settings);
+    deliver_listener(&mut application, open_at(7777));
+    type_terminal_text(&mut application, "/serve");
+    let ApplicationTransition::BeginServing { request } = press(&mut application, KeyCode::Enter)
+    else {
+        panic!("/serve has the Server prepare Serving");
+    };
+    let way = Way::Direct(SocketAddr::from((Ipv4Addr::new(10, 0, 0, 8), 7777)));
+    application
+        .handle_event(ApplicationEvent::ServingPrepared {
+            request,
+            settings: None,
+            candidates: vec![way.clone()],
+        })
+        .expect("load Serving candidates");
+    let ApplicationTransition::IssueInvite { request, .. } =
+        press(&mut application, KeyCode::Enter)
+    else {
+        panic!("Enter issues an Invite");
+    };
+    application
+        .handle_event(ApplicationEvent::InviteIssued {
+            request,
+            invite: IssuedInvite {
+                invite: "suru-v1-direct-string".into(),
+                serial: 8,
+                ways: vec![way],
+                short_code: None,
+            },
+            peers: Vec::new(),
+        })
+        .expect("show the Invite");
+    let shown = rendered_application_rows(&application).join(" ");
+    assert!(shown.contains("This Invite no longer works"), "{shown}");
+    assert!(!shown.contains("suru-v1-direct-string"), "{shown}");
+}
+
+/// A code shown beside an Invite that ended goes with it, whatever the code's own
+/// standing has yet to say.
+#[test]
+fn a_code_goes_with_its_invite_however_the_news_arrives() {
+    let mut application = showing_a_code("K7QF-2MXP", 1);
+    told_invite(&mut application, 2, InviteState::Standing);
+    let shown = rendered_application_rows(&application).join(" ");
+    assert!(!shown.contains("K7QF-2MXP"), "{shown}");
+    assert!(!shown.contains("suru-v1-long-string"), "{shown}");
+    assert!(shown.contains("This Invite no longer works"), "{shown}");
+    assert_eq!(
+        press(&mut application, KeyCode::Char('c')),
+        ApplicationTransition::Continue,
+        "no code to copy"
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Char('n')),
+        ApplicationTransition::Continue,
+        "no new code for an Invite that has ended"
+    );
 }
 
 /// An attempt on a code reaches the Client as how the code stands, and so

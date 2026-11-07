@@ -307,6 +307,7 @@ mod tests {
                 "{:?}",
                 crate::protocol::IssuedInvite {
                     invite: text.clone(),
+                    serial: 1,
                     ways: Vec::new(),
                     short_code: None,
                 }

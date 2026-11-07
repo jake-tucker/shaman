@@ -2443,6 +2443,7 @@ async fn events(State(state): State<AppState>, headers: HeaderMap) -> Response {
         ServingEvents {
             listener: state.serving.listener(),
             short_code: state.serving.short_code_standing(),
+            invite: state.serving.invite_standing(),
             offers: state.serving.offers(),
         },
         state.onboarded.subscribe(),
@@ -2455,6 +2456,7 @@ async fn events(State(state): State<AppState>, headers: HeaderMap) -> Response {
 struct ServingEvents {
     listener: watch::Receiver<ListenerState>,
     short_code: watch::Receiver<ShortCodeStanding>,
+    invite: watch::Receiver<crate::protocol::InviteStanding>,
     offers: watch::Receiver<crate::protocol::PairBackOffers>,
 }
 
@@ -2469,6 +2471,7 @@ struct EventStreamState {
     relays: watch::Receiver<RelayListing>,
     listener: watch::Receiver<ListenerState>,
     short_code: watch::Receiver<ShortCodeStanding>,
+    invite: watch::Receiver<crate::protocol::InviteStanding>,
     offers: watch::Receiver<crate::protocol::PairBackOffers>,
     onboarded: watch::Receiver<bool>,
     keepalive: tokio::time::Interval,
@@ -2487,6 +2490,13 @@ fn short_code_event(standing: &ShortCodeStanding) -> Event {
         .event(SHORT_CODE_EVENT)
         .json_data(standing)
         .expect("how a short code stands always serializes")
+}
+
+fn invite_standing_event(standing: &crate::protocol::InviteStanding) -> Event {
+    Event::default()
+        .event(crate::protocol::INVITE_STANDING_EVENT)
+        .json_data(standing)
+        .expect("how an Invite stands always serializes")
 }
 
 fn offers_event(offers: &crate::protocol::PairBackOffers) -> Event {
@@ -2518,6 +2528,7 @@ fn event_stream(
     ServingEvents {
         mut listener,
         mut short_code,
+        mut invite,
         mut offers,
     }: ServingEvents,
     mut onboarded: watch::Receiver<bool>,
@@ -2546,6 +2557,12 @@ fn event_stream(
     let short_code_standing = {
         let standing = short_code.borrow_and_update();
         (standing.serial > 0).then(|| short_code_event(&standing))
+    };
+    // How its latest Invite stands too, for a Client that comes back to one it
+    // was showing to hear what became of it while it was away.
+    let invite_standing = {
+        let standing = invite.borrow_and_update();
+        (standing.serial > 0).then(|| invite_standing_event(&standing))
     };
     // The offers to pair back it holds and has made follow where there are
     // any, and then each change of them: a Client takes hearing nothing, as it
@@ -2578,6 +2595,9 @@ fn event_stream(
         short_code_standing.map(Ok::<_, std::convert::Infallible>),
     ))
     .chain(stream::iter(
+        invite_standing.map(Ok::<_, std::convert::Infallible>),
+    ))
+    .chain(stream::iter(
         offering.map(Ok::<_, std::convert::Infallible>),
     ))
     .chain(stream::once(async move {
@@ -2592,6 +2612,7 @@ fn event_stream(
         relays,
         listener,
         short_code,
+        invite,
         offers,
         onboarded,
         keepalive: tokio::time::interval_at(
@@ -2660,6 +2681,13 @@ fn event_stream(
                         return None;
                     }
                     let event = short_code_event(&state.short_code.borrow_and_update());
+                    return Some((Ok::<_, std::convert::Infallible>(event), state));
+                }
+                changed = state.invite.changed() => {
+                    if changed.is_err() {
+                        return None;
+                    }
+                    let event = invite_standing_event(&state.invite.borrow_and_update());
                     return Some((Ok::<_, std::convert::Infallible>(event), state));
                 }
                 changed = state.listener.changed() => {
@@ -5567,6 +5595,7 @@ mod tests {
         });
         let (listener, _) = watch::channel(ListenerState::Off);
         let (short_code, _) = watch::channel(ShortCodeStanding::default());
+        let (invite, _) = watch::channel(crate::protocol::InviteStanding::default());
         let (offers, _) = watch::channel(crate::protocol::PairBackOffers::default());
         let (onboarded, _) = watch::channel(true);
         let first = event_stream(
@@ -5577,6 +5606,7 @@ mod tests {
             ServingEvents {
                 listener: listener.subscribe(),
                 short_code: short_code.subscribe(),
+                invite: invite.subscribe(),
                 offers: offers.subscribe(),
             },
             onboarded.subscribe(),
@@ -5590,6 +5620,7 @@ mod tests {
             ServingEvents {
                 listener: listener.subscribe(),
                 short_code: short_code.subscribe(),
+                invite: invite.subscribe(),
                 offers: offers.subscribe(),
             },
             onboarded.subscribe(),

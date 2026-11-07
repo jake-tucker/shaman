@@ -37,6 +37,12 @@
 //! stands, so what is shown follows: an attempt on it, which this reader may
 //! not have made, says so in its place, with one key for a new one that leaves
 //! the Invite as it was.
+//!
+//! The Invite shown can be ended from elsewhere: `suru serve invite`, another
+//! Client or an Agent's shell replaces it, someone redeems it, or it runs out.
+//! The Server says so ([`InviteStanding`]), and from then on the picker says it
+//! no longer works and shows neither it nor its code, so nothing dead can be
+//! read off the screen or copied.
 
 use std::{
     cell::{Cell, RefCell},
@@ -46,8 +52,8 @@ use std::{
 
 use crate::{
     protocol::{
-        IssueInviteRequest, IssuedInvite, IssuedShortCode, ListenerState, Peer, ShortCodeStanding,
-        ShortCodeState, Way,
+        InviteStanding, InviteState, IssueInviteRequest, IssuedInvite, IssuedShortCode,
+        ListenerState, Peer, ShortCodeStanding, ShortCodeState, Way,
     },
     relay_said::{REACHABLE, RelayWithheld},
 };
@@ -155,7 +161,49 @@ enum ServeOverlayState {
         error: Option<String>,
         /// The asking for a new short code awaited, where one is.
         renewing: Option<ServeRequest>,
+        /// What ended the Invite shown, where something has.
+        ended: Option<InviteEnded>,
     },
+}
+
+/// What ended the Invite on screen, whichever surface it came to that by.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum InviteEnded {
+    /// A later one replaced it, here or anywhere else.
+    Replaced,
+    Expired,
+    Spent,
+    /// Serving stopped, or its listener moved.
+    Discarded,
+    /// The Server that issued it has gone, and held it in memory alone.
+    ServerGone,
+}
+
+impl InviteEnded {
+    /// What is said in its place: that it is dead, why, and how to get another.
+    pub(super) fn said(self) -> &'static str {
+        match self {
+            Self::Replaced => {
+                "A newer Invite has replaced this one. Close this with Esc; running /serve issues \
+                 another, which replaces that one in turn"
+            }
+            Self::Expired => {
+                "It expired unredeemed. Close this with Esc and run /serve to issue another"
+            }
+            Self::Spent => {
+                "It has been redeemed, so it is finished. Close this with Esc and run /serve to \
+                 issue another"
+            }
+            Self::Discarded => {
+                "Serving stopped, or its listener moved, which ends every Invite. Close this with \
+                 Esc and run /serve to issue another"
+            }
+            Self::ServerGone => {
+                "The Server has restarted, so this Invite and its code are gone; close this and \
+                 run /serve to issue another"
+            }
+        }
+    }
 }
 
 /// What is said of the short code of the Invite shown, as the Server says it
@@ -874,14 +922,48 @@ impl ServeOverlay {
             removing: None,
             error: None,
             renewing: None,
+            ended: None,
         };
         self.window.open();
+    }
+
+    /// Takes how the Server's latest Invite stands, which may end the one shown.
+    /// One it says of later than that replaced it; of an earlier one, it says
+    /// nothing of this, having only yet to hear of it.
+    pub(super) fn hear_invite_standing(&mut self, standing: &InviteStanding) {
+        let ServeOverlayState::Managing { invite, ended, .. } = &mut self.state else {
+            return;
+        };
+        if ended.is_some() || standing.serial < invite.serial {
+            return;
+        }
+        *ended = if standing.serial > invite.serial {
+            Some(InviteEnded::Replaced)
+        } else {
+            match standing.state {
+                InviteState::Standing => None,
+                InviteState::Expired => Some(InviteEnded::Expired),
+                InviteState::Spent => Some(InviteEnded::Spent),
+                InviteState::Discarded => Some(InviteEnded::Discarded),
+            }
+        };
+    }
+
+    /// What ended the Invite shown, where something has.
+    pub(super) fn invite_ended(&self) -> Option<InviteEnded> {
+        match &self.state {
+            ServeOverlayState::Managing { ended, .. } => *ended,
+            _ => None,
+        }
     }
 
     /// What is said of the short code of the Invite shown, where it has one.
     /// The Server may say how the code stands before or after this Client hears
     /// it was issued, so what it says of an earlier code says nothing of it.
     pub(super) fn shown_code(&self, standing: &ShortCodeStanding) -> Option<ShownCode> {
+        if self.invite_ended().is_some() {
+            return None;
+        }
         let issued = self.invite()?.short_code.as_ref()?;
         let said = |said: &str| ShownCode {
             code: None,
@@ -1000,17 +1082,13 @@ impl ServeOverlay {
         if let ServeOverlayState::Managing {
             invite,
             renewing,
-            error,
+            ended,
             ..
         } = &mut self.state
         {
             invite.short_code = None;
             *renewing = None;
-            *error = Some(
-                "The Server has restarted, so this Invite and its code are gone; close this and \
-                 run /serve to issue another"
-                    .to_owned(),
-            );
+            *ended = Some(InviteEnded::ServerGone);
         }
     }
 
@@ -1054,7 +1132,13 @@ impl ServeOverlay {
         }
     }
 
+    /// The Invite shown, for copying. One that has ended is neither shown nor
+    /// copied, whatever the clipboard held staying as it was: the screen says
+    /// why, and a dead string on a clipboard would only be sent to someone.
     pub(super) fn copy_text(&self) -> Option<String> {
+        if self.invite_ended().is_some() {
+            return None;
+        }
         self.invite().map(|invite| invite.invite.0.clone())
     }
 

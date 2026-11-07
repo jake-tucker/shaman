@@ -89,6 +89,11 @@ fn decode_event(event: Event, expected_instance_id: uuid::Uuid) -> Result<Manage
                 serde_json::from_str(&event.data).context("decode how a short code stands")?;
             Ok(ManagedEvent::ShortCode(standing))
         }
+        crate::protocol::INVITE_STANDING_EVENT => {
+            let standing: crate::protocol::InviteStanding =
+                serde_json::from_str(&event.data).context("decode how an Invite stands")?;
+            Ok(ManagedEvent::InviteStanding(standing))
+        }
         crate::protocol::PAIR_BACK_EVENT => {
             let offers: crate::protocol::PairBackOffers =
                 serde_json::from_str(&event.data).context("decode offers to pair back")?;

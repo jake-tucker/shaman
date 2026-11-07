@@ -95,10 +95,10 @@ use uuid::Uuid;
 use crate::{
     protocol::{
         ACT_HEADER, AUTHOR_HEADER, ActId, Author, DeliveredInvite, FetchShortInviteRequest,
-        INVITE_OPENING, InvitePreview, IssueInviteRequest, IssuedInvite, IssuedShortCode,
-        ListenerState, Peer, RedeemInviteRequest, Remote, RemoteHealth, RemoteRemoval,
-        RemoteStatus, ServingSettings, SessionError, SessionErrorCode, ShortCodeStanding,
-        UnreachableReason, Way,
+        INVITE_OPENING, InvitePreview, InviteStanding, InviteState, IssueInviteRequest,
+        IssuedInvite, IssuedShortCode, ListenerState, Peer, RedeemInviteRequest, Remote,
+        RemoteHealth, RemoteRemoval, RemoteStatus, ServingSettings, SessionError, SessionErrorCode,
+        ShortCodeStanding, UnreachableReason, Way,
     },
     runtime::{protect_current_user_file, replace_private_file},
 };
@@ -669,6 +669,48 @@ impl ServingListener {
 #[derive(Default)]
 struct InviteLedger {
     issued: Vec<IssuedToken>,
+    /// How the latest Invite issued to be shown stands. One bound to one key
+    /// never moves it.
+    standing: Arc<watch::Sender<InviteStanding>>,
+}
+
+impl InviteLedger {
+    /// Takes that an Invite to be shown is issued, lasting until `expires_at`,
+    /// answering which it is. Its serial goes on from wherever a run before this
+    /// one got to, as a short code's does.
+    fn issuing(&self, expires_at: tokio::time::Instant) -> u64 {
+        let since_epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
+        let serial = since_epoch.max(self.standing.borrow().serial + 1);
+        self.standing.send_replace(InviteStanding {
+            serial,
+            state: InviteState::Standing,
+        });
+        let standing = self.standing.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep_until(expires_at).await;
+            standing.send_if_modified(|standing| {
+                let news = standing.serial == serial && standing.state == InviteState::Standing;
+                if news {
+                    standing.state = InviteState::Expired;
+                }
+                news
+            });
+        });
+        serial
+    }
+
+    /// Takes that the latest Invite ended as `state` says, where it stood.
+    fn ended(&self, state: InviteState) {
+        self.standing.send_if_modified(|standing| {
+            let news = standing.serial > 0 && standing.state == InviteState::Standing;
+            if news {
+                standing.state = state;
+            }
+            news
+        });
+    }
 }
 
 struct IssuedToken {
@@ -1225,7 +1267,7 @@ impl ServingController {
         let token = new_token();
         let invite = invite_text(&ways, &identity, &token)?;
         let expires_at = tokio::time::Instant::now() + self.invite_ttl;
-        let short_code = {
+        let (short_code, serial) = {
             // Held throughout, so nothing redeems an Invite between its code
             // coming to be and its token being one the ledger knows.
             let mut invites = self
@@ -1247,10 +1289,11 @@ impl ServingController {
                 state: TokenState::Outstanding,
                 bound_to: None,
             });
-            short_code
+            (short_code, invites.issuing(expires_at))
         };
         Ok(IssuedInvite {
             invite: invite.into(),
+            serial,
             ways,
             short_code,
         })
@@ -1262,6 +1305,16 @@ impl ServingController {
     /// reader the code and nothing else.
     pub(crate) fn new_short_code(&self) -> std::result::Result<IssuedShortCode, PairingFailure> {
         self.short_codes.replace()
+    }
+
+    /// How this Server's latest Invite to be shown stands, moving on as that
+    /// changes.
+    pub(crate) fn invite_standing(&self) -> watch::Receiver<InviteStanding> {
+        self.invites
+            .lock()
+            .expect("Invite ledger lock is not poisoned")
+            .standing
+            .subscribe()
     }
 
     /// How this Server's latest short code stands, moving on as that changes.
@@ -2745,6 +2798,7 @@ impl ServingController {
             .lock()
             .expect("Invite ledger lock is not poisoned");
         invites.issued.clear();
+        invites.ended(InviteState::Discarded);
         self.short_codes.discarded();
     }
 
@@ -2909,6 +2963,7 @@ impl ServingController {
         // stands for another Invite stays as it was.
         if issued.bound_to.is_none() {
             self.short_codes.redeemed(&issued.token);
+            invites.ended(InviteState::Spent);
         }
         Ok(())
     }

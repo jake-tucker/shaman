@@ -14,11 +14,13 @@ use std::{
 
 use serde_json::{Value, json};
 use suru::cli;
+use suru::managed_client::ManagedEvent;
 use suru::protocol::{
-    InviteOfferAnswer, InviteRelays, OfferInviteRequest, RedeemInviteRequest, RelayLoginLead,
-    RelayLoginOutcome, RelayLoginStanding, RelayMachinesAnswer, ServingChange, SettingMutation,
-    Way, WayLeftOut,
+    InviteOfferAnswer, InviteRelays, InviteStanding, InviteState, IssueInviteRequest,
+    OfferInviteRequest, RedeemInviteRequest, RelayLoginLead, RelayLoginOutcome, RelayLoginStanding,
+    RelayMachinesAnswer, ServingChange, SettingMutation, Way, WayLeftOut,
 };
+use suru::server::ServerTimings;
 use suru_relay::{SCRIPTED_VERIFICATION_URI, ScriptedProvider};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
@@ -1705,4 +1707,126 @@ async fn no_route_begins_a_login_regardless() {
         .await
         .unwrap();
     assert_eq!(begun.status(), reqwest::StatusCode::METHOD_NOT_ALLOWED);
+}
+
+/// Waits to be told of the Invite standing as `reached` says.
+async fn told_invite(
+    server: &mut TestServer,
+    reached: impl Fn(&InviteStanding) -> bool,
+) -> InviteStanding {
+    timeout(PROGRESS_DEADLINE, async {
+        loop {
+            match server.client.next().await {
+                Some(ManagedEvent::InviteStanding(standing)) if reached(&standing) => {
+                    return standing;
+                }
+                Some(_) => {}
+                None => panic!("the Client stopped hearing from its Server"),
+            }
+        }
+    })
+    .await
+    .expect("told how the Invite stands")
+}
+
+/// A Client showing an Invite hears what became of it, with nothing in what it
+/// hears that could redeem anything: a later one replacing it, and it running out.
+#[tokio::test]
+async fn a_client_is_told_of_an_invite_replaced_or_expired_by_any_hand() {
+    let mut server = TestServer::with_timings(
+        "invite-standing",
+        ServerTimings {
+            invite_ttl: Duration::from_millis(200),
+            ..super::relay_timings()
+        },
+    )
+    .await;
+    server.serve().await;
+    let at = Way::Direct(server.listening_at().expect("the listener is open"));
+    let issue = |ways: Vec<Way>| IssueInviteRequest { ways };
+
+    let first = server
+        .client
+        .issue_invite(issue(vec![at.clone()]))
+        .await
+        .unwrap();
+    assert!(
+        first.short_code.is_none(),
+        "offering no Relay, it has no code"
+    );
+    let told = told_invite(&mut server, |told| told.serial == first.serial).await;
+    assert_eq!(told.state, InviteState::Standing);
+    assert_eq!(
+        serde_json::to_value(&told).unwrap(),
+        json!({ "serial": first.serial, "state": "standing" }),
+        "no token and no code"
+    );
+
+    // By whichever hand: this one is the route `suru serve invite` comes to.
+    let second = server.client.issue_invite(issue(vec![at])).await.unwrap();
+    assert!(second.serial > first.serial);
+    told_invite(&mut server, |told| told.serial == second.serial).await;
+
+    let expired = told_invite(&mut server, |told| told.state != InviteState::Standing).await;
+    assert_eq!(
+        expired,
+        InviteStanding {
+            serial: second.serial,
+            state: InviteState::Expired,
+        }
+    );
+    server.shutdown().await;
+}
+
+/// Spending it, or Serving stopping, says so too, of an Invite with no code.
+#[tokio::test]
+async fn a_client_is_told_of_an_invite_spent_or_discarded() {
+    let mut workstation = TestServer::start("invite-standing-spent").await;
+    let laptop = TestServer::start("invite-standing-spent-laptop").await;
+    workstation.serve().await;
+    let at = Way::Direct(workstation.listening_at().expect("the listener is open"));
+
+    let issued = workstation
+        .client
+        .issue_invite(IssueInviteRequest {
+            ways: vec![at.clone()],
+        })
+        .await
+        .unwrap();
+    laptop
+        .client
+        .redeem_invite(RedeemInviteRequest {
+            invite: issued.invite.clone(),
+            name: Some("workstation".to_owned()),
+            ways: Vec::new(),
+            pair_back: false,
+        })
+        .await
+        .expect("redeem the Invite");
+    let told = told_invite(&mut workstation, |told| told.state != InviteState::Standing).await;
+    assert_eq!(
+        told,
+        InviteStanding {
+            serial: issued.serial,
+            state: InviteState::Spent,
+        }
+    );
+
+    let issued = workstation
+        .client
+        .issue_invite(IssueInviteRequest { ways: vec![at] })
+        .await
+        .unwrap();
+    workstation
+        .client
+        .mutate_setting(SettingMutation::ServingEnabled { value: Some(false) })
+        .await
+        .unwrap();
+    let told = told_invite(&mut workstation, |told| {
+        told.serial == issued.serial && told.state != InviteState::Standing
+    })
+    .await;
+    assert_eq!(told.state, InviteState::Discarded);
+    laptop.shutdown().await;
+    workstation.shutdown().await;
 }

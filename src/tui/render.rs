@@ -1913,14 +1913,25 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
     if let Some(invite) = state.serve_overlay.invite() {
         let content_width = area.width.saturating_sub(2);
         let content_height = usize::from(area.height.saturating_sub(2));
-        let invite_lines = TextLayout::new(&invite.invite, content_width)
-            .rows()
-            .map(|row| Line::styled(row.text.to_owned(), theme.text.primary))
-            .collect::<Vec<_>>();
-        let mut lines = vec![Line::styled(
-            "Fresh Invite",
-            theme.text.primary.add_modifier(Modifier::BOLD),
-        )];
+        let invite_ended = state.serve_overlay.invite_ended();
+        // An Invite that has ended is not on the screen to be read or selected.
+        let invite_lines = match invite_ended {
+            Some(ended) => wrapped_lines(ended.said(), content_width, theme.text.primary),
+            None => TextLayout::new(&invite.invite, content_width)
+                .rows()
+                .map(|row| Line::styled(row.text.to_owned(), theme.text.primary))
+                .collect::<Vec<_>>(),
+        };
+        let mut lines = vec![match invite_ended {
+            Some(_) => Line::styled(
+                "This Invite no longer works",
+                theme.feedback.error.add_modifier(Modifier::BOLD),
+            ),
+            None => Line::styled(
+                "Fresh Invite",
+                theme.text.primary.add_modifier(Modifier::BOLD),
+            ),
+        }];
         // The code comes first, however long the long string wraps on a narrow
         // terminal, since it is what a reader reads off the screen.
         let shown_code = state.serve_overlay.shown_code(&state.short_code);
@@ -1997,9 +2008,12 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
                 .as_ref()
                 .filter(|shown_code| shown_code.renewable)
                 .map_or("", |_| "n new code · ");
-            format!(
-                "Ctrl+C copy Invite · {copy_code}{new_code}↑↓ choose Peer · x remove · Esc close"
-            )
+            let copy_invite = if invite_ended.is_some() {
+                ""
+            } else {
+                "Ctrl+C copy Invite · "
+            };
+            format!("{copy_invite}{copy_code}{new_code}↑↓ choose Peer · x remove · Esc close")
         };
         lines.extend(wrapped_lines(&keys, content_width, theme.text.subdued));
         render_overlay_box(

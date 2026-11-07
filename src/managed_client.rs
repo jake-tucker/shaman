@@ -250,6 +250,9 @@ pub enum ManagedEvent {
     /// How the Server's latest short code stands, as it connects and again
     /// whenever that changes. Never the code.
     ShortCode(crate::protocol::ShortCodeStanding),
+    /// How the Server's latest Invite stands, as it connects, once one has been
+    /// issued, and again as that changes.
+    InviteStanding(crate::protocol::InviteStanding),
     /// The offers to pair back the Server holds and has made, as it connects
     /// where there are any, and again whenever they change.
     PairBack(crate::protocol::PairBackOffers),

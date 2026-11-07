@@ -53,6 +53,7 @@ async fn next_snapshot(client: &mut ManagedClient) -> SettingsSnapshot {
             | ManagedEvent::Relays(_)
             | ManagedEvent::ServingListener(_)
             | ManagedEvent::ShortCode(_)
+            | ManagedEvent::InviteStanding(_)
             | ManagedEvent::Onboarded(_)
             | ManagedEvent::WorkspaceListing(_) => continue,
             event => panic!("expected a settings snapshot event, got {event:?}"),

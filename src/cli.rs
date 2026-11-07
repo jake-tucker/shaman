@@ -971,6 +971,7 @@ mod tests {
         OfferedInvite {
             issued: IssuedInvite {
                 invite: "suru-v1-secret".into(),
+                serial: 1,
                 ways: vec![Way::Relay("https://a.example".to_owned())],
                 short_code: short_code.map(|code| IssuedShortCode { code, serial: 1 }),
             },

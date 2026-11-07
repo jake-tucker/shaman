@@ -1593,10 +1593,16 @@ mod tests {
             .unwrap_or_else(|failure| panic!("{}", failure.message));
         assert!(earlier.short_code.is_some());
         let serial = a.short_code_standing().borrow().serial;
+        let invite_standing = a.invite_standing().borrow().clone();
         let (_, first) = a
             .issue_bound_invite(&b_key, id, std::slice::from_ref(&way))
             .await
             .unwrap_or_else(|failure| panic!("{}", failure.message));
+        assert_eq!(
+            *a.invite_standing().borrow(),
+            invite_standing,
+            "an Invite shown nowhere is told of nowhere"
+        );
         assert_eq!(
             a.short_code_standing().borrow().state,
             crate::protocol::ShortCodeState::Live,
@@ -1628,6 +1634,14 @@ mod tests {
         b.redeem_invite(redeeming(&first))
             .await
             .unwrap_or_else(|failure| panic!("it survives a later Invite: {}", failure.message));
+        assert_eq!(
+            *a.invite_standing().borrow(),
+            crate::protocol::InviteStanding {
+                serial: later.serial,
+                state: crate::protocol::InviteState::Standing,
+            },
+            "and spending it says nothing of the Invite shown"
+        );
         assert_eq!(
             a.short_code_standing().borrow().state,
             crate::protocol::ShortCodeState::Ended,
