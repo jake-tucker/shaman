@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use futures_util::StreamExt;
 use serde_json::{Value, json};
 use suru::{
     managed_client::{ManagedClient, ManagedEvent},
@@ -13,10 +14,13 @@ use suru::{
         EffectiveSettings, ExecutionDirectory, ModelAvailability, ModelDescriptor, ModelId,
         ModelOptionChoiceId, ModelOptionId, ModelOptionKind, ModelOptionRole, ModelOptionSelection,
         ModelOptionValue, ProviderCatalogStatus, ProviderId, ProviderSettings,
-        ROUTING_TIER_OPTION_ID, SessionId, SessionSnapshot, TurnStatus,
+        ROUTING_TIER_OPTION_ID, SessionId, SessionSnapshot, TurnId, TurnStatus,
         UpdateAgentSelectionRequest,
     },
-    provider::{CopilotRuntime, ProviderModelDiscovery, ProviderRuntime},
+    provider::{
+        CopilotRuntime, ProviderEvent, ProviderInput, ProviderModelDiscovery, ProviderPrompt,
+        ProviderRuntime, ProviderSessionRequest, ProviderTurnInput,
+    },
 };
 
 use crate::copilot_integration::{
@@ -1092,4 +1096,66 @@ async fn a_session_naming_no_tier_is_asked_for_nothing_more_on_a_resume() {
 
     drop(client);
     server.shutdown().await.expect("stop replacement server");
+}
+
+/// A Selection stored by an older build can still name a tier on a concrete Model, which Copilot
+/// refuses. Correcting it must not write the shape the update refuses, with the tier Copilot holds
+/// for `auto` on a Model that does not run under it.
+#[tokio::test]
+async fn a_tier_refused_on_a_concrete_model_is_not_replaced_by_the_one_copilot_holds() {
+    let holds_a_tier = r#"    *'"method":"session.model.getCurrent"'*)
+      reply '{"jsonrpc":"2.0","id":'"$id"',"result":{"modelId":"auto","autoTier":"hydrafusion"}}'
+      ;;
+"#;
+    let copilot = ScriptedCopilot::new(&format!("{holds_a_tier}{}", tiered_arms(SETTLES)));
+    let workspace = tempfile::tempdir().expect("create valid Workspace");
+    let runtime = CopilotRuntime::new(copilot.executable());
+    runtime.apply_settings(&with_fusion_tiers(true));
+    let connection = runtime
+        .start_session(ProviderSessionRequest {
+            execution_directory: workspace.path().to_owned(),
+            resume_state: None,
+            approval_posture: None,
+            broker: None,
+        })
+        .await
+        .expect("open a Session");
+    let (_identity, _resume, session, mut events) = connection.into_parts();
+
+    session
+        .start_turn(ProviderTurnInput {
+            turn_id: TurnId::new(),
+            input: ProviderInput::from_prompt(ProviderPrompt::plain("Begin")),
+            selection: AgentSelection {
+                options: on_auto(Some("not-a-tier")).options,
+                ..concrete()
+            },
+            approval_posture: None,
+        })
+        .await
+        .expect("a refused tier fails no Turn");
+
+    let corrected = tokio::time::timeout(crate::support::PROGRESS_DEADLINE, async {
+        loop {
+            let event = events
+                .next()
+                .await
+                .expect("the Session's events go on")
+                .expect("an event is readable");
+            if let ProviderEvent::AgentSelectionCorrected { selection, why } = event.event {
+                return (selection, why);
+            }
+        }
+    })
+    .await
+    .expect("the Selection is corrected");
+    assert_eq!(corrected.0, concrete(), "{}", corrected.1);
+    assert!(
+        !corrected.1.contains("hydrafusion") && !corrected.1.contains("plain Auto"),
+        "it says what the Turn runs on: {}",
+        corrected.1
+    );
+
+    session.shutdown().await.expect("close the Session");
+    runtime.shutdown().await.expect("shut the runtime down");
 }

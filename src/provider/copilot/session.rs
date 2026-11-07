@@ -909,20 +909,24 @@ impl CopilotSession {
             Ok(current) => committed_tier(&current),
             Err(_) => held_tier,
         };
+        // Only `auto` runs under the tier Copilot holds, and a Selection stored by an older build
+        // can still name one on a concrete Model.
+        let held_tier = held_tier.filter(|_| wanted.model.as_str() == AUTO_MODEL_ID);
+        let running = match &held_tier {
+            None if wanted.model.as_str() != AUTO_MODEL_ID => format!("Model `{}`", wanted.model),
+            tier => running_on(tier.as_deref()),
+        };
         let mut selection = wanted.without_routing_tier();
-        selection.options.extend(
-            held_tier
-                .clone()
-                .map(|tier| model_option_selection(ROUTING_TIER_OPTION_ID, tier)),
-        );
+        selection
+            .options
+            .extend(held_tier.map(|tier| model_option_selection(ROUTING_TIER_OPTION_ID, tier)));
         let said = refusal.message().map_or_else(
             || refusal.to_string(),
             |message| concise_remote_message(message, COPILOT_FAILURE_FALLBACK),
         );
         let why = format!(
-            "Copilot refused Routing Tier `{refused}`: {}. This Turn runs on {}.",
+            "Copilot refused Routing Tier `{refused}`: {}. This Turn runs on {running}.",
             said.trim_end_matches('.'),
-            running_on(held_tier.as_deref()),
         );
         Ok(AppliedSelection {
             selection,
