@@ -1036,7 +1036,9 @@ pub fn transcript_outline(snapshot: &SessionSnapshot, parent: Option<SessionId>)
                         ..
                     } => format!("subagent {name} ({description}) {status:?}"),
                     Activity::Reasoning { .. } => "reasoning".to_owned(),
-                    Activity::Route { decision, .. } => decision.sentence(),
+                    Activity::Route { decision, .. } => {
+                        decision.sentence(suru::provider::provider_name)
+                    }
                     other => format!("{other:?}"),
                 };
                 format!(

@@ -3509,10 +3509,9 @@ pub enum RouteDecision {
         stand_in: Option<ModelId>,
         reason: Option<String>,
     },
-    /// The Route ended without a commit, by an interrupt or a crash: the
-    /// Provider `by` names kept none of its conversation, though its file
-    /// changes remain.
-    Discarded { by: String },
+    /// The Route ended without a commit, by an interrupt or a crash: its
+    /// Provider kept none of its conversation, though its file changes remain.
+    Discarded { provider: ProviderId },
 }
 
 /// One Model's part in a Route's plan.
@@ -3543,8 +3542,9 @@ pub enum RouteVerdict {
 }
 
 impl RouteDecision {
-    /// The decision in the one line every reader of a Transcript meets it in.
-    pub fn sentence(&self) -> String {
+    /// The decision in the one line every reader of a Transcript meets it in,
+    /// calling a Provider what `provider_name` says it is called.
+    pub fn sentence(&self, provider_name: impl FnOnce(&ProviderId) -> String) -> String {
         match self {
             Self::Chosen { steps } => {
                 let plan = steps
@@ -3576,9 +3576,10 @@ impl RouteDecision {
                 (Some(failed), Some(stand_in)) => format!("{failed} failed; {stand_in} stood in"),
                 (Some(failed), None) => format!("{failed} failed"),
             },
-            Self::Discarded { by } => format!(
-                "{by} discarded this Route's conversation: its file changes remain, and the Agent \
-                 won't remember this work"
+            Self::Discarded { provider } => format!(
+                "{} discarded this Route's conversation: its file changes remain, and the Agent \
+                 won't remember this work",
+                provider_name(provider)
             ),
         }
     }

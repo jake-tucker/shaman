@@ -46,8 +46,8 @@ use crate::broker::{BrokerAccess, BrokerGrant};
 use crate::protocol::{
     Activity, ActivityId, ActivityStatus, AgentIdentity, AgentSelection, ContextBreakdown,
     InterruptOutcome, Message, MessageId, MessageRole, MessageStatus, Prompt, PromptDelivery,
-    PromptId, PromptOrder, PromptStatus, ProviderId, SessionChange, SessionId, SettingsSnapshot,
-    SkillPromptDelivery, TurnId, TurnStatus,
+    PromptId, PromptOrder, PromptStatus, ProviderId, RouteDecision, SessionChange, SessionId,
+    SettingsSnapshot, SkillPromptDelivery, TurnId, TurnStatus,
 };
 use crate::sessions::{
     ApprovalPostureUpdate, BrokeredSpawn, BrokeredSpawnCap, BrokeredSpawnError,
@@ -7034,14 +7034,9 @@ fn fail_invalid_provider_event(
     )
 }
 
-/// A Tool Call's rendered input as Suru stores it: normalized like any
-/// Provider text and cut to [`MAX_STORED_TOOL_CALL_INPUT_CHARS`].
 /// `decision` as it is stored: what the Provider said of it normalized like any
 /// of its text, and cut to the cap.
-fn stored_route_decision(
-    mut decision: crate::protocol::RouteDecision,
-) -> crate::protocol::RouteDecision {
-    use crate::protocol::RouteDecision;
+fn stored_route_decision(mut decision: RouteDecision) -> RouteDecision {
     if let RouteDecision::Verdict { detail: said, .. }
     | RouteDecision::Fallback { reason: said, .. } = &mut decision
     {
@@ -7055,6 +7050,8 @@ fn stored_route_decision(
     decision
 }
 
+/// A Tool Call's rendered input as Suru stores it: normalized like any
+/// Provider text and cut to [`MAX_STORED_TOOL_CALL_INPUT_CHARS`].
 fn stored_tool_call_input(input: &str) -> NormalizedText {
     ProviderTextNormalizer::with_max_chars(MAX_STORED_TOOL_CALL_INPUT_CHARS).push(input)
 }

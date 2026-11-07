@@ -19,7 +19,7 @@ use suru::{
         Activity, ActivityStatus, Decision, Message, MessageRole, MessageStatus, ModelId,
         RouteAction, RouteDecision, RouteStep, RouteVerdict, SessionSnapshot, TurnStatus,
     },
-    provider::CopilotRuntime,
+    provider::{CopilotRuntime, provider_name},
     server::{self, ServerConfig},
 };
 use tokio::time::{Duration, timeout};
@@ -109,6 +109,22 @@ fn tool_rows(snapshot: &SessionSnapshot) -> (usize, bool) {
         tools
             .iter()
             .all(|status| *status == ActivityStatus::Completed),
+    )
+}
+
+/// The line of a capture that Copilot's abort lands on.
+const ABORT: &str = r#""type":"abort""#;
+
+/// `capture` split at the line `needle` first stands on: what came before that line, and that line
+/// and what came after.
+fn split_at_event<'a>(capture: &'a str, needle: &str) -> (&'a str, &'a str) {
+    let found = capture
+        .find(needle)
+        .unwrap_or_else(|| panic!("the capture holds no {needle}"));
+    capture.split_at(
+        capture[..found]
+            .rfind('\n')
+            .map_or(0, |line_end| line_end + 1),
     )
 }
 
@@ -278,8 +294,9 @@ async fn a_critics_approval_commits_the_draft_and_supersedes_nothing() {
     ));
 }
 
-/// Two Routes in one Turn, with no idle between them: the first commits on its judge's accept, which
-/// marks nothing of the phase it names, and the second settles on its own within the same Turn.
+/// Two Routes in one Turn, with no idle between them: the first commits on its judge's accept,
+/// which marks nothing of the phase it names, and the second settles on its own within the same
+/// Turn.
 #[tokio::test]
 async fn a_turn_holding_two_routes_settles_each_on_its_own() {
     let settled = replayed(TWO_ROUTES, "fusion-two-routes").await;
@@ -300,7 +317,7 @@ async fn a_turn_holding_two_routes_settles_each_on_its_own() {
     assert_eq!(
         route_rows(&settled)
             .iter()
-            .map(|decision| decision.sentence())
+            .map(|decision| decision.sentence(provider_name))
             .collect::<Vec<_>>(),
         [
             "Route: gpt-6.1-sol, reviewed by gpt-6-luna, revised by claude-opus-5.5 if needed",
@@ -392,28 +409,14 @@ async fn usage_counts_each_call_once() {
     assert_eq!(usage.cache_write_tokens, Some(reported("cacheWriteTokens")));
 }
 
-/// The capture of a Route interrupted, split where Copilot's abort lands: what ran before the abort,
-/// and what it said once asked.
-fn around_the_abort(capture: &'static str) -> (String, String) {
-    let lines = capture.lines().collect::<Vec<_>>();
-    let abort = lines
-        .iter()
-        .position(|line| line.contains(r#""type":"abort""#))
-        .expect("the capture holds the abort");
-    (
-        replay_capture(&lines[..abort].join("\n"), |_| true),
-        replay_capture(&lines[abort..].join("\n"), |_| true),
-    )
-}
-
 #[tokio::test]
 async fn an_interrupt_mid_route_marks_nothing_settles_what_ran_and_says_the_conversation_is_gone() {
-    let (running, stopped) = around_the_abort(INTERRUPTED);
+    let (running, stopped) = split_at_event(INTERRUPTED, ABORT);
     let copilot = ScriptedCopilot::new(&format!(
         "{}{}{}",
         conversation_arms(),
-        send_arm(&running),
-        abort_arm(&stopped),
+        send_arm(&replay_capture(running, |_| true)),
+        abort_arm(&replay_capture(stopped, |_| true)),
     ));
     let mut live = LiveTurn::start(
         CopilotRuntime::new(copilot.executable()),
@@ -453,7 +456,9 @@ async fn an_interrupt_mid_route_marks_nothing_settles_what_ran_and_says_the_conv
         }
     )));
     assert_eq!(
-        route_rows(&settled).last().map(|row| row.sentence()),
+        route_rows(&settled)
+            .last()
+            .map(|row| row.sentence(provider_name)),
         Some(
             "Copilot discarded this Route's conversation: its file changes remain, and the Agent \
              won't remember this work"
@@ -467,12 +472,8 @@ async fn an_interrupt_mid_route_marks_nothing_settles_what_ran_and_says_the_conv
 async fn a_crash_mid_route_marks_nothing_settles_what_ran_and_says_the_conversation_is_gone() {
     // The primary's attempt and the judge's verdict, and the process then goes: no commit ever
     // names a winner.
-    let lines = CASCADE_REPAIRED
-        .lines()
-        .take_while(|line| !line.contains(r#""type":"session.fusion_handoff""#))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let timeline = format!("{}      exit 9\n", replay_capture(&lines, |_| true));
+    let (ran, _) = split_at_event(CASCADE_REPAIRED, r#""type":"session.fusion_handoff""#);
+    let timeline = format!("{}      exit 9\n", replay_capture(ran, |_| true));
     let copilot = conversation_fixture(&timeline);
     let opened = opened_session(&copilot, "fusion-crashed", "Do it").await;
 
@@ -501,12 +502,8 @@ async fn closing_a_session_aborts_a_running_route() {
         "{}{}{}",
         conversation_arms(),
         send_arm(&replay_capture(
-            &INTERRUPTED
-                .lines()
-                .take_while(|line| !line.contains(r#""type":"abort""#))
-                .collect::<Vec<_>>()
-                .join("\n"),
-            |_| true,
+            split_at_event(INTERRUPTED, ABORT).0,
+            |_| true
         )),
         abort_arm(""),
     ));
@@ -545,12 +542,8 @@ async fn closing_a_session_gives_up_on_an_abort_copilot_never_answers() {
         "{}{}{}",
         conversation_arms(),
         send_arm(&replay_capture(
-            &INTERRUPTED
-                .lines()
-                .take_while(|line| !line.contains(r#""type":"abort""#))
-                .collect::<Vec<_>>()
-                .join("\n"),
-            |_| true,
+            split_at_event(INTERRUPTED, ABORT).0,
+            |_| true
         )),
         silent_abort_arm(),
     ));
@@ -736,26 +729,15 @@ const REVIEW_DENIED: &str = include_str!("fixtures/fusion-review-denied.jsonl");
 
 const ASKING: &str = r#"{"provider":{"copilot":{"permissions":"ask"}}}"#;
 
-/// A Route's capture around the first Approval a review asks: what ran up to it, the request itself,
-/// and what the decision let run after it.
-fn around_the_review_approval(capture: &'static str) -> (String, String, String) {
-    let lines = capture.lines().collect::<Vec<_>>();
-    let asked = lines
-        .iter()
-        .position(|line| {
-            line.contains(r#""type":"permission.requested""#) && !line.contains(r#""fusion":{"#)
-        })
-        .expect("the capture holds a review's request");
-    (
-        replay_capture(&lines[..asked].join("\n"), |_| true),
-        format!("      raw_event '{}'\n", lines[asked]),
-        replay_capture(&lines[asked + 1..].join("\n"), |_| true),
-    )
-}
-
 /// A fixture that plays `capture` up to its review's Approval, and the rest once it is decided.
 fn asked_in_review(capture: &'static str) -> ScriptedCopilot {
-    let (before, asked, after) = around_the_review_approval(capture);
+    let (before, from) = split_at_event(capture, r#""type":"permission.requested""#);
+    let (asked, after) = from
+        .split_once('\n')
+        .expect("the review goes on once it is answered");
+    let before = replay_capture(before, |_| true);
+    let asked = format!("      raw_event '{asked}'\n");
+    let after = replay_capture(after, |_| true);
     let answered = format!(
         r#"    *'"method":"session.permissions.handlePendingPermissionRequest"'*)
       reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"success":true}}}}'
@@ -828,7 +810,9 @@ async fn a_reviews_approval_is_an_ordinary_approval_and_accepting_it_lets_the_re
     assert_eq!(settled.turns[0].status, TurnStatus::Completed);
     assert_eq!(superseded(&settled), Vec::<&str>::new());
     assert_eq!(
-        route_rows(&settled).last().map(|row| row.sentence()),
+        route_rows(&settled)
+            .last()
+            .map(|row| row.sentence(provider_name)),
         Some("gpt-6-luna accepted the work".to_owned())
     );
     live.shutdown().await;
@@ -913,4 +897,115 @@ async fn denying_a_reviews_approval_is_a_decision_copilot_takes_and_the_route_sa
         "{lines:#?}"
     );
     live.shutdown().await;
+}
+
+/// A failed Route's fallback is a phase like any other, for all it runs live: a disconnect leaves
+/// it spending, so a Session closing on one stops it first.
+#[tokio::test]
+async fn closing_a_session_aborts_a_failed_routes_live_fallback() {
+    let (running, _) = split_at_event(ROUTE_FAILED, r#""type":"assistant.message_delta""#);
+    let copilot = ScriptedCopilot::new(&format!(
+        "{}{}{}",
+        conversation_arms(),
+        send_arm(&replay_capture(running, |_| true)),
+        abort_arm(""),
+    ));
+    let mut live = LiveTurn::start(
+        CopilotRuntime::new(copilot.executable()),
+        "fusion-close-fallback",
+        "Run it",
+    )
+    .await;
+    live.wait_for("the stand-in begins writing", |snapshot| {
+        snapshot
+            .messages
+            .iter()
+            .any(|message| message.status == MessageStatus::Streaming)
+            && !route_rows(snapshot).is_empty()
+    })
+    .await;
+
+    live.shutdown().await;
+
+    assert_eq!(
+        copilot
+            .methods()
+            .iter()
+            .filter(|method| *method == "session.abort")
+            .count(),
+        1,
+        "the stand-in Model is stopped before its Session lets go"
+    );
+}
+
+/// The fallback counts only while it runs: once its Turn has settled, closing asks nothing of
+/// Copilot, even where Copilot would never answer.
+#[tokio::test]
+async fn closing_a_session_whose_fallback_has_settled_aborts_nothing() {
+    const NEVER_ANSWERED: Duration = Duration::from_secs(600);
+    let copilot = ScriptedCopilot::new(&format!(
+        "{}{}{}",
+        conversation_arms(),
+        send_arm(&replay_capture(ROUTE_FAILED, |_| true)),
+        silent_abort_arm(),
+    ));
+    let opened = opened_session_on(
+        CopilotRuntime::new(copilot.executable()).with_interrupt_request_timeout(NEVER_ANSWERED),
+        "fusion-close-settled-fallback",
+        "Do it",
+    )
+    .await;
+    settled_session(&opened.client, opened.session_id, 0).await;
+
+    let Opened { server, client, .. } = opened;
+    drop(client);
+    timeout(PROGRESS_DEADLINE, server.shutdown())
+        .await
+        .expect("the closing Session waits on nothing")
+        .expect("shut the server down");
+
+    assert!(
+        !copilot
+            .methods()
+            .iter()
+            .any(|method| method == "session.abort")
+    );
+}
+
+/// A staged Message that streamed before it arrived whole, which no capture holds: its commit can
+/// still pass it over, all the way to the Session's Transcript.
+#[tokio::test]
+async fn a_routed_message_that_streamed_first_can_be_superseded() {
+    let attribution = |phase: &str, commit: &str| {
+        format!(
+            r#""fusion":{{"fusionId":"r","syntheticModel":"hydrafusion","policy":"standard","pattern":"cascade","phaseId":"r:{phase}","phaseKind":"{phase}","role":"solver"{commit}}}"#
+        )
+    };
+    let staged = |phase: &str| attribution(phase, "");
+    let committed = |phase: &str| attribution(phase, r#","commitId":"r:commit""#);
+    let timeline = format!(
+        r#"      event e1 session.fusion_resolved '{{"contractVersion":1,"fusionId":"r","turnId":"r:turn","syntheticModel":"hydrafusion","policy":"standard","pattern":"cascade","primaryModel":"gpt-primary","fallbackModel":"gpt-fallback","followUpModel":"gpt-primary"}}'
+      event e2 assistant.message_start '{{"messageId":"m1"}}'
+      event e3 assistant.message_delta '{{"messageId":"m1","deltaContent":"Atte"}}'
+      event e4 assistant.message '{{"messageId":"m1","content":"Attempt",{primary}}}'
+      event e5 assistant.message '{{"messageId":"m2","content":"Repair",{repair}}}'
+      event e6 session.fusion_commit_started '{{"fusionId":"r","commitId":"r:commit","sourcePhaseId":"r:repair","sourceModel":"gpt-primary","kind":"text"}}'
+      event e7 assistant.message '{{"messageId":"m2","content":"Repair",{winning}}}'
+      event e8 assistant.idle '{{}}'
+      event e9 session.idle '{{}}'
+"#,
+        primary = staged("primary"),
+        repair = staged("repair"),
+        winning = committed("repair"),
+    );
+    let copilot = conversation_fixture(&timeline);
+    let opened = opened_session(&copilot, "fusion-streamed-superseded", "Do it").await;
+
+    let settled = settled_session(&opened.client, opened.session_id, 0).await;
+    let Opened { server, client, .. } = opened;
+    drop(client);
+    server.shutdown().await.expect("shut the server down");
+
+    assert_eq!(superseded(&settled), ["Attempt"]);
+    assert_eq!(standing(&settled), ["Repair"]);
 }

@@ -50,6 +50,7 @@ use crate::{
         ReasoningVisibility, RouteDecision, SessionId, SessionRevision, SessionSnapshot,
         ToolCallVisibility, TranscriptItem, TranscriptSettings, Turn, TurnId, TurnStatus,
     },
+    provider::provider_name,
     theme::Theme,
 };
 
@@ -2272,21 +2273,16 @@ impl TranscriptEntry<'_> {
     /// belongs to no Turn, so no fold covers it.
     fn in_turn(self) -> Option<TurnEntry> {
         Some(match self {
-            Self::Message(message) if message.role == MessageRole::Agent => TurnEntry {
-                turn_id: message.turn_id,
-                role: if message.may_answer_its_turn() {
-                    TurnEntryRole::AgentMessage
-                } else if message.content.is_empty() {
-                    return None;
-                } else {
-                    TurnEntryRole::Work
-                },
-            },
             Self::Message(message) => TurnEntry {
                 turn_id: message.turn_id,
                 role: match message.role {
+                    MessageRole::User => TurnEntryRole::UserMessage,
                     MessageRole::Delegation(_) => TurnEntryRole::Delegation,
-                    _ => TurnEntryRole::UserMessage,
+                    MessageRole::Agent if message.may_answer_its_turn() => {
+                        TurnEntryRole::AgentMessage
+                    }
+                    MessageRole::Agent if message.content.is_empty() => return None,
+                    MessageRole::Agent => TurnEntryRole::Work,
                 },
             },
             Self::Activity(activity) => TurnEntry {
@@ -3255,7 +3251,10 @@ fn activity_fingerprint(activity: &Activity, step: FoldStep) -> u64 {
             author.hash(&mut hasher);
         }
         Activity::Status { .. } | Activity::Error { .. } => {}
-        Activity::Route { decision, .. } => decision.sentence().hash(&mut hasher),
+        Activity::Route { decision, .. } => {
+            decision.sentence(provider_name).hash(&mut hasher);
+            decision.detail().hash(&mut hasher);
+        }
         Activity::Command {
             status,
             output,
@@ -3795,29 +3794,14 @@ fn render_activity(
             );
             None
         }
-        Activity::Route { decision, .. } => {
-            let style = match decision {
-                RouteDecision::Fallback { .. } | RouteDecision::Discarded { .. } => {
-                    theme.feedback.warning
-                }
-                _ => theme.text.subdued,
-            };
-            let row = match decision.detail() {
-                Some(detail) => format!("{}\n{detail}", decision.sentence()),
-                None => decision.sentence(),
-            };
-            push_styled_prefixed_lines(
-                projection,
-                ContentGutter {
-                    lead: "  ",
-                    indent: "  ",
-                },
-                &row,
-                style,
-                theme,
-            );
-            None
-        }
+        Activity::Route { decision, .. } => push_route_row(
+            projection,
+            decision,
+            step != FoldStep::Expanded,
+            theme,
+            width,
+            hyperlinks,
+        ),
         Activity::Error { text, .. } => {
             push_styled_prefixed_lines(
                 projection,
@@ -5932,6 +5916,60 @@ fn push_agent_message(
     }
 }
 
+/// Projects a Route's decision. A review's account of itself can run to pages, so it folds beneath
+/// its verdict as a Compaction's summary does beneath its row; what any other decision says of
+/// itself is a line or two, and the reason it stands at all.
+fn push_route_row(
+    projection: &mut ActivityProjection<'_>,
+    decision: &RouteDecision,
+    folded: bool,
+    theme: &Theme,
+    width: u16,
+    hyperlinks: bool,
+) -> Option<UnitAnchor> {
+    const GUTTER: ContentGutter<'_> = ContentGutter {
+        lead: "  ",
+        indent: "  ",
+    };
+    let style = match decision {
+        RouteDecision::Fallback { .. } | RouteDecision::Discarded { .. } => theme.feedback.warning,
+        _ => theme.text.subdued,
+    };
+    let sentence = decision.sentence(provider_name);
+    let RouteDecision::Verdict {
+        detail: Some(account),
+        ..
+    } = decision
+    else {
+        let row = match decision.detail() {
+            Some(detail) => format!("{sentence}\n{detail}"),
+            None => sentence,
+        };
+        push_styled_prefixed_lines(projection, GUTTER, &row, style, theme);
+        return None;
+    };
+    let header_start = projection.lines.len();
+    push_styled_prefixed_lines(projection, GUTTER, &sentence, style, theme);
+    let header_source_lines = projection.lines.len() - header_start;
+    if !folded {
+        projection
+            .lines
+            .extend(subdued_prose_lines(account, None, theme, width, hyperlinks));
+        return Some(UnitAnchor::binary(header_source_lines, false));
+    }
+    let hidden = subdued_prose_line_count(account, false, theme, width, hyperlinks);
+    let header_line = projection
+        .lines
+        .last_mut()
+        .expect("a Route's decision always projects its sentence");
+    header_line.spans.push(StyledSpan::chrome(" · ", style));
+    header_line.spans.push(StyledSpan::chrome(
+        fold_marker_text(hidden, "lines"),
+        theme.action.primary,
+    ));
+    Some(UnitAnchor::binary(header_source_lines, true))
+}
+
 /// Projects a Superseded Message where it was written: labelled as passed over
 /// and dimmed, so it is not taken for the answer, its words still as readable
 /// and as selectable as any.
@@ -7862,6 +7900,130 @@ mod tests {
             "All red.",
             "its words stay the words a selection copies"
         );
+        assert_eq!(
+            lines[0].written_text().trim(),
+            "Passed over",
+            "and so does what it is, which those words alone do not say (ADR 0061)"
+        );
+    }
+
+    /// A Verdict's sentence stands outside any fold; what the reviewer said behind it folds, so a
+    /// long rationale costs a settled Turn one line.
+    #[test]
+    fn a_verdicts_account_folds_beneath_its_sentence() {
+        let render = |step| {
+            let mut lines = Vec::new();
+            let anchor = render_activity(
+                &mut ActivityProjection {
+                    lines: &mut lines,
+                    strips: &mut Vec::new(),
+                },
+                &route_row(RouteDecision::Verdict {
+                    reviewer: crate::protocol::ModelId::new("gpt-judge"),
+                    verdict: crate::protocol::RouteVerdict::Rejected,
+                    detail: Some("It is not fixed.\n\nThe test still fails.".to_owned()),
+                }),
+                step,
+                &Theme::system(),
+                80,
+                false,
+                std::path::Path::new(""),
+            );
+            (
+                lines.iter().map(projected_text).collect::<Vec<_>>(),
+                anchor.expect("a press opens and closes it"),
+            )
+        };
+
+        let (folded, anchor) = render(FoldStep::Folded);
+        assert_eq!(folded, ["  gpt-judge rejected the work · +3 lines"]);
+        assert!(anchor.hides_content);
+        assert_eq!(anchor.header_source_lines, 1);
+
+        let (expanded, anchor) = render(FoldStep::Expanded);
+        assert_eq!(expanded[0], "  gpt-judge rejected the work");
+        assert!(
+            expanded
+                .iter()
+                .any(|line| line.contains("It is not fixed.")),
+            "{expanded:?}"
+        );
+        assert!(!anchor.hides_content);
+    }
+
+    /// A closed Turn Fold leaves the verdict's sentence standing with its account folded beneath
+    /// it, and the row's own Fold opens that account without opening the Turn's.
+    #[test]
+    fn a_closed_turn_fold_keeps_a_verdicts_sentence_and_its_fold_opens_the_account() {
+        let verdict = route_row(RouteDecision::Verdict {
+            reviewer: crate::protocol::ModelId::new("gpt-judge"),
+            verdict: crate::protocol::RouteVerdict::Rejected,
+            detail: Some("It is not fixed.".to_owned()),
+        });
+        let verdict_id = verdict.id();
+        let mut entries = vec![Entry::Message(user_message("run the tests"))];
+        entries.extend(hidden_work());
+        entries.extend([
+            Entry::Activity(verdict),
+            Entry::Message(agent_message("All green.")),
+        ]);
+        let (snapshot, _) = turn_snapshot(vec![(TurnStatus::Completed, entries)]);
+        let shown = |folds: &TranscriptFolds| {
+            projected_rows(&snapshot, folds, &TranscriptGroups::default())
+                .into_iter()
+                .filter(|row| !row.trim().is_empty())
+                .collect::<Vec<_>>()
+        };
+
+        let mut folds = TranscriptFolds::default();
+        assert_eq!(
+            shown(&folds),
+            [
+                "┃ run the tests",
+                "  ✓ Worked",
+                "  gpt-judge rejected the work · +1 lines",
+                "  All green.",
+            ]
+        );
+
+        folds.set_step(verdict_id, FoldStep::Expanded);
+        assert_eq!(
+            shown(&folds),
+            [
+                "┃ run the tests",
+                "  ✓ Worked",
+                "  gpt-judge rejected the work",
+                "    It is not fixed.",
+                "  All green.",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_verdict_with_no_account_has_nothing_to_fold() {
+        let mut lines = Vec::new();
+        let anchor = render_activity(
+            &mut ActivityProjection {
+                lines: &mut lines,
+                strips: &mut Vec::new(),
+            },
+            &route_row(RouteDecision::Verdict {
+                reviewer: crate::protocol::ModelId::new("gpt-judge"),
+                verdict: crate::protocol::RouteVerdict::Accepted,
+                detail: None,
+            }),
+            FoldStep::Folded,
+            &Theme::system(),
+            80,
+            false,
+            std::path::Path::new(""),
+        );
+
+        assert!(anchor.is_none());
+        assert_eq!(
+            lines.iter().map(projected_text).collect::<Vec<_>>(),
+            ["  gpt-judge accepted the work"]
+        );
     }
 
     #[test]
@@ -7908,7 +8070,7 @@ mod tests {
         );
         assert_eq!(
             render(RouteDecision::Discarded {
-                by: "Copilot".to_owned(),
+                provider: crate::protocol::ProviderId::new("copilot"),
             }),
             [
                 "  Copilot discarded this Route's conversation: its file changes remain, and the \
@@ -10194,6 +10356,11 @@ mod tests {
                 summary: Some("What the Agent keeps.\n\n- a\n- b".to_owned()),
                 summary_truncated: false,
             },
+            route_row(RouteDecision::Verdict {
+                reviewer: crate::protocol::ModelId::new("gpt-judge"),
+                verdict: crate::protocol::RouteVerdict::Rejected,
+                detail: Some("A long **rationale**.\n\n- a\n- b".to_owned()),
+            }),
         ];
         for activity in &activities {
             for hyperlinks in [false, true] {

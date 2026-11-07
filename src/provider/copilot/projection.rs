@@ -149,7 +149,8 @@ use super::{
     COPILOT_FAILURE_FALLBACK, COPILOT_HARNESS_NAME, copilot_error,
     event_drain::EventDrainCheckpoint,
     pricing::CopilotPricing,
-    routes::{self, Conversation, Routes},
+    reported,
+    routes::{self, Routes},
     session::until_crash,
     skills::CopilotSkills,
     tools::{PresentedToolCall, ToolDisposition, presented_tool_call, tool_activity_id},
@@ -491,6 +492,9 @@ impl ManualCompactionAnswers {
 struct WorkingSubagent {
     stretch: Stretch,
     streams: ConversationStreams,
+    /// What this stretch has shown of any Route it stages, which tells its committed copies from
+    /// new work and speaks for nothing else: its owner's Turn answers only to its own.
+    routes: Routes,
 }
 
 impl WorkingSubagent {
@@ -498,6 +502,7 @@ impl WorkingSubagent {
         Self {
             stretch,
             streams: ConversationStreams::default(),
+            routes: Routes::default(),
         }
     }
 }
@@ -1008,7 +1013,7 @@ impl CopilotCorrelation {
     /// Projects one of Copilot's reports on a Route, in the stretch it stands in. Only a report
     /// beginning a Route opens one: the rest find their Route there, or stand nowhere.
     fn project_route_lifecycle(&mut self, event: &SessionEvent) -> Vec<AttributedProviderEvent> {
-        let open = if routes::begins_route(event) {
+        let open = if routes::files_a_route(event) {
             self.open_main_turn().is_some()
         } else {
             self.turn.is_some()
@@ -1689,7 +1694,6 @@ fn project_session_event(
             working.stretch.answer(no_tools);
         }
         let streams = &mut working.streams;
-        let stretch = correlation.stretches;
         if event.parsed_type() == SessionEventType::AssistantUsage {
             let model = reported::<AssistantUsageData>(&event)
                 .and_then(|usage| (!usage.model.is_empty()).then_some(usage.model));
@@ -1716,8 +1720,8 @@ fn project_session_event(
             streams,
             &mut correlation.delegations,
             &correlation.execution_directory,
-            &mut correlation.routes,
-            (Conversation::Subagent, stretch),
+            &mut working.routes,
+            correlation.stretches,
             &event,
         )?
         .into_iter()
@@ -1806,7 +1810,7 @@ fn project_session_event(
                 &mut correlation.delegations,
                 &correlation.execution_directory,
                 &mut correlation.routes,
-                (Conversation::Main, stretch),
+                stretch,
                 &event,
             )?
             .into_iter()
@@ -1967,18 +1971,17 @@ fn is_conversation_content(event_type: &SessionEventType) -> bool {
 /// for as long as it runs — onto the Provider events that carry it. `delegations` is the roster
 /// of spawning tool calls whose Subagent row already answers for them, which is what tells a
 /// withheld spawn's settle apart from a delegation that never happened; `execution_directory` is
-/// where the Session works, which every conversation in it shares. `routes` and `place` — which
-/// conversation this is, and the stretch of the loop it falls in — tell the first copy of a Route's
-/// staged item from its committed twin.
+/// where the Session works, which every conversation in it shares. `routes` is this conversation's
+/// own, and with `stretch`, the stretch of the loop the event falls in, tells the first copy of a
+/// Route's staged item from its committed twin.
 fn project_conversation_event(
     streams: &mut ConversationStreams,
     delegations: &mut HashSet<String>,
     execution_directory: &Path,
     routes: &mut Routes,
-    place: (Conversation, u64),
+    stretch: u64,
     event: &SessionEvent,
 ) -> Result<Vec<ProviderEvent>, ProviderError> {
-    let (conversation, stretch) = place;
     let fusion = routes::attribution(event);
     match event.parsed_type() {
         SessionEventType::AssistantMessageStart => {
@@ -2004,13 +2007,7 @@ fn project_conversation_event(
             let Some(fusion) = fusion else {
                 return project_message_completed(streams, &message.message_id, &message.content);
             };
-            if !routes.admit_message(
-                &fusion,
-                &message.message_id,
-                !message.content.is_empty(),
-                conversation,
-                stretch,
-            ) {
+            if !routes.admit_message(&fusion, &message, stretch) {
                 return Ok(Vec::new());
             }
             project_routed_message(streams, &message)
@@ -3198,6 +3195,9 @@ fn project_routed_message(
     // open will never finish now: this one is whole, and the Transcript holds one open at a time.
     match streams.message.as_ref() {
         Some(open) if open.message_id == message.message_id => {
+            projected.push(ProviderEvent::AgentMessageIdentified {
+                message: ProviderMessageId::new(message.message_id.clone()),
+            });
             projected.extend(project_message_completed(
                 streams,
                 &message.message_id,
@@ -3751,21 +3751,6 @@ fn reasoning_segment_events(reasoning_id: &str, segment: ReasoningSegment) -> Ve
     projected
 }
 
-/// Reads an event that reports on the work rather than carrying the answer, giving up on one Suru
-/// cannot read. The Turn keeps going without it: the reader loses that report, which is what an
-/// unreadable report costs, rather than the Turn it belongs to. The Log says one went, without the
-/// conversation content it was carrying.
-pub(super) fn reported<T: serde::de::DeserializeOwned>(event: &SessionEvent) -> Option<T> {
-    let decoded = event.typed_data();
-    if decoded.is_none() {
-        tracing::warn!(
-            event = %event.event_type,
-            "dropped a Copilot event Suru could not read"
-        );
-    }
-    decoded
-}
-
 fn decode<T: serde::de::DeserializeOwned>(event: &SessionEvent) -> Result<T, ProviderError> {
     event.typed_data().ok_or_else(|| {
         copilot_error(format!(
@@ -3780,6 +3765,7 @@ mod tests {
     use super::*;
     use crate::protocol::{RouteAction, RouteDecision, RouteStep, RouteVerdict};
     use crate::provider::ToolCallInput;
+    use crate::provider::copilot::COPILOT_PROVIDER_ID;
     use serde_json::json;
 
     fn event(event_type: &str, data: serde_json::Value) -> SessionEvent {
@@ -8687,11 +8673,15 @@ mod tests {
                 staged_message("m1", "Done", fusion("r", "primary", false))
             ),
             [
+                ProviderEvent::AgentMessageIdentified {
+                    message: ProviderMessageId::new("m1"),
+                },
                 ProviderEvent::AgentMessageDelta {
                     content: "ne".to_owned()
                 },
                 ProviderEvent::AgentMessageCompleted,
-            ]
+            ],
+            "named while it is still open, which is what naming it reads"
         );
     }
 
@@ -8955,7 +8945,7 @@ mod tests {
     fn discarded() -> ProviderEvent {
         ProviderEvent::RouteDecided {
             decision: RouteDecision::Discarded {
-                by: "Copilot".to_owned(),
+                provider: crate::protocol::ProviderId::new(COPILOT_PROVIDER_ID),
             },
         }
     }
@@ -9243,5 +9233,84 @@ mod tests {
             ),
             []
         );
+    }
+
+    /// How many rows `events` say a conversation was discarded in.
+    fn discards(events: &[AttributedProviderEvent]) -> usize {
+        events
+            .iter()
+            .filter(|projected| {
+                matches!(
+                    &projected.event,
+                    ProviderEvent::RouteDecided {
+                        decision: RouteDecision::Discarded { .. }
+                    }
+                )
+            })
+            .count()
+    }
+
+    /// A Subagent's stages are its own Transcript's. An interrupt of its owner discards the Route
+    /// the owner ran, once, however many a Subagent's events named.
+    #[test]
+    fn an_interrupted_owner_says_nothing_of_a_route_only_its_subagent_staged() {
+        let mut correlation = in_route("owner");
+        project_attributed(&mut correlation, spawn_started("agent-1", "spawn-1"));
+        project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "assistant.message",
+                staged_message("m1", "Sub", fusion("sub", "primary", false)),
+            ),
+        );
+        let settled = project_attributed(
+            &mut correlation,
+            event("assistant.idle", json!({ "aborted": true })),
+        );
+        assert_eq!(discards(&settled), 1, "{settled:?}");
+
+        let mut correlation = in_turn();
+        project_attributed(&mut correlation, spawn_started("agent-1", "spawn-1"));
+        project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "tool.execution_start",
+                staged_start(
+                    "t1",
+                    "bash",
+                    json!({ "command": "ls" }),
+                    fusion("sub", "primary", false),
+                ),
+            ),
+        );
+        let settled = project_attributed(
+            &mut correlation,
+            event("assistant.idle", json!({ "aborted": true })),
+        );
+        assert_eq!(discards(&settled), 0, "the owner ran no Route: {settled:?}");
+    }
+
+    /// A Subagent working past its owner's settle runs nothing of the owner's, so the owner's next
+    /// Turn has no Route for its close to stop.
+    #[test]
+    fn a_subagent_staging_past_its_owners_settle_leaves_the_next_turn_no_route_to_stop() {
+        let mut correlation = in_turn();
+        project_attributed(&mut correlation, spawn_started("agent-1", "spawn-1"));
+        project_attributed(&mut correlation, event("assistant.idle", json!({})));
+        assert!(!correlation.is_turn_running());
+        project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "assistant.message",
+                staged_message("m1", "Sub", fusion("sub", "primary", false)),
+            ),
+        );
+
+        correlation.begin_turn().expect("open the next Turn");
+
+        assert!(!correlation.is_route_running());
     }
 }

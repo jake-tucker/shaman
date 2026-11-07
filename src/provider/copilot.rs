@@ -47,6 +47,21 @@ pub use runtime::CopilotRuntime;
 use super::{ProviderError, concise_remote_message};
 use crate::protocol::ProviderUnavailability;
 
+/// Reads an event that reports on the work rather than carrying the answer, giving up on one Suru
+/// cannot read. The Turn keeps going without it: the reader loses that report, which is what an
+/// unreadable report costs, rather than the Turn it belongs to. The Log says one went, without the
+/// conversation content it was carrying.
+fn reported<T: serde::de::DeserializeOwned>(event: &github_copilot_sdk::SessionEvent) -> Option<T> {
+    let decoded = event.typed_data();
+    if decoded.is_none() {
+        tracing::warn!(
+            event = %event.event_type,
+            "dropped a Copilot event Suru could not read"
+        );
+    }
+    decoded
+}
+
 /// What the Log and failures call the Copilot harness server process.
 const COPILOT_HARNESS_NAME: &str = "Copilot CLI server";
 

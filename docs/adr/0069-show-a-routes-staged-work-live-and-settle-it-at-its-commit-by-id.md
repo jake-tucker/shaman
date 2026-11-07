@@ -18,7 +18,7 @@ A Message is identified to the store with a new event beside its start rather th
 
 ## Consequences
 
-- A Route's rows stay outside a closed Turn Fold, so a one-Model Route costs a settled Turn one line, every time.
+- A Route's rows stay outside a closed Turn Fold, so a one-Model Route costs a settled Turn one line, every time. A verdict's account can run to 4 KB, so only its sentence stands there, with the account folded beneath it.
 - A person who denies a review's Approval may spend more rather than less: the one denial seen failed the judge, and the Route escalated to its repair, passing over the solver's answer though nothing rejected it.
 - A Tool a losing phase leaves running hears nothing further, so it settles with the Turn as `Failed` (ADR 0039) rather than by anything Copilot said. That was never seen outside an abort.
 - A restart of Suru itself, unlike a crash of the CLI, settles a Route's Turn without the discarded-conversation row, since the projection that would add it went with the process.

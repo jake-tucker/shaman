@@ -5,20 +5,25 @@
 //! Messages and Tools arrive staged, as ephemeral events attributed to the phase, and show as they
 //! arrive, because a Route can run for minutes. Its commit then names the phase that won and
 //! re-sends every staged item of that phase, once, in order, under the `messageId` or `toolCallId`
-//! it had. So the first copy of an item stands and any later one adds nothing: a staged row is never
-//! reopened, reset or doubled by its committed twin, whichever reaches Suru first, and a Tool still
-//! running when its twin completes settles on that.
+//! it had. So the first copy of an item stands and any later one adds nothing: a staged row is
+//! never reopened, reset or doubled by its committed twin, whichever reaches Suru first, and a Tool
+//! still running when its twin completes settles on that.
 //!
-//! Nothing retracts a losing phase. The commit's `sourcePhaseId` is the only word on it, and it marks
-//! the Messages of the Route's other phases Superseded. Its Tools and Reasoning stay as they are,
-//! since that work happened. A Route that ends without a commit marks nothing: an interrupt, a
+//! Nothing retracts a losing phase. The commit's `sourcePhaseId` is the only word on it, and it
+//! marks the Messages of the Route's other phases Superseded. Its Tools and Reasoning stay as they
+//! are, since that work happened. A Route that ends without a commit marks nothing: an interrupt, a
 //! failure or a crash leaves a row saying Copilot discarded its conversation, since a staged phase
 //! is in no history the Model sees again, however much of it the reader watched.
 //!
-//! `turnId` restarts at each phase, so nothing here keys on it, and `session.fusion_completed` closes
-//! a Route rather than a Turn: one Turn can hold two, when a steer waits out an accepting judge. A
-//! failed Route's fallback runs live, with deltas, no commit and no completion, so its Turn simply
-//! ends at idle.
+//! `turnId` restarts at each phase, so nothing here keys on it, and `session.fusion_completed`
+//! closes a Route rather than a Turn: one Turn can hold two, when a steer waits out an accepting
+//! judge. A failed Route's fallback runs live, with deltas, no commit and no completion, so its
+//! Turn simply ends at idle.
+//!
+//! A conversation keeps its own [`Routes`]. The main conversation's answer for its Turn: its
+//! lifecycle, what a commit passes over and what an interrupt discards. A Subagent's only tell its
+//! committed copies from new work, and go when its stretch does, so nothing it stages reaches its
+//! owner's Route, or a Turn it works past.
 
 use std::collections::{HashMap, HashSet};
 
@@ -26,21 +31,18 @@ use github_copilot_sdk::{
     SessionEvent,
     session_events::{
         AssistantFusionPhaseCompletedData, AssistantFusionPhaseFailedData,
-        AssistantFusionPhaseStartedData, FusionAttribution, FusionPhaseKind, FusionPhaseStatus,
-        SessionEventType, SessionFusionCompletedData, SessionFusionResolvedData,
+        AssistantFusionPhaseStartedData, AssistantMessageData, FusionAttribution, FusionPhaseKind,
+        FusionPhaseStatus, SessionEventType, SessionFusionCompletedData, SessionFusionResolvedData,
         SessionFusionRouteFailedData,
     },
 };
 use serde::Deserialize;
 
-use super::projection::reported;
+use super::{COPILOT_PROVIDER_ID, reported};
 use crate::{
-    protocol::{ModelId, RouteAction, RouteDecision, RouteStep, RouteVerdict},
+    protocol::{ModelId, ProviderId, RouteAction, RouteDecision, RouteStep, RouteVerdict},
     provider::{ProviderEvent, ProviderMessageId},
 };
-
-/// Which Provider a discarded conversation is told of as discarded by.
-const DISCARDING_PROVIDER: &str = "Copilot";
 
 /// Copilot's name for a Route handing its work to another Model, which this SDK types no data for.
 const HANDOFF: &str = "session.fusion_handoff";
@@ -116,20 +118,12 @@ impl Route {
 /// One Message a Route carried, and whether a commit of another phase passes it over.
 struct RoutedMessage {
     message_id: String,
-    /// The phase it was written in, where it stands in the main Transcript with something in it. A
-    /// Message with nothing in it never reached the Transcript, and a Subagent's stands in the
-    /// Subagent's own, so neither is the commit's to mark.
+    /// The phase it was written in, where it has something in it. A Message with nothing in it
+    /// never reached the Transcript, so it is no commit's to mark.
     supersedable_in: Option<String>,
 }
 
-/// Which conversation a staged item belongs to.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Conversation {
-    Main,
-    Subagent,
-}
-
-/// The Routes the running stretches of one Copilot Session's loop hold, by `fusionId`.
+/// The Routes the running stretches of one conversation's loop hold, by `fusionId`.
 #[derive(Default)]
 pub(super) struct Routes {
     /// Copilot is deciding a Route, which has no `fusionId` to file it under yet.
@@ -160,9 +154,10 @@ pub(super) fn is_lifecycle(event: &SessionEvent) -> bool {
     ) || matches!(event.event_type.as_str(), HANDOFF | COMMIT_STARTED)
 }
 
-/// Whether `event` begins a Route, which is the only lifecycle report that opens a stretch to stand
-/// in. Any other finds its Route where the stretch that began it left it, or lands nowhere.
-pub(super) fn begins_route(event: &SessionEvent) -> bool {
+/// Whether `event` files a Route under its `fusionId`, which is the only lifecycle report that
+/// opens a stretch to stand in. Any other finds its Route where the stretch that filed it left it,
+/// or lands nowhere.
+pub(super) fn files_a_route(event: &SessionEvent) -> bool {
     matches!(
         event.parsed_type(),
         SessionEventType::SessionFusionRouteFailed | SessionEventType::SessionFusionResolved
@@ -310,23 +305,20 @@ impl Routes {
     }
 
     /// Takes a Message `fusion` attributes to its Route, answering whether it is new: its first
-    /// copy, which stands, rather than a committed twin. `shows` says the Message has something in
-    /// it for the Transcript to show.
+    /// copy, which stands, rather than a committed twin.
     pub(super) fn admit_message(
         &mut self,
         fusion: &FusionAttribution,
-        message_id: &str,
-        shows: bool,
-        conversation: Conversation,
+        message: &AssistantMessageData,
         stretch: u64,
     ) -> bool {
         let route = self.route_of(fusion, stretch);
-        if route.holds_message(message_id) {
+        if route.holds_message(&message.message_id) {
             return false;
         }
         route.messages.push(RoutedMessage {
-            message_id: message_id.to_owned(),
-            supersedable_in: (shows && conversation == Conversation::Main)
+            message_id: message.message_id.clone(),
+            supersedable_in: (!message.content.is_empty())
                 .then(|| fusion.source_phase_id.clone().or(fusion.phase_id.clone()))
                 .flatten(),
         });
@@ -369,7 +361,7 @@ impl Routes {
                 route.stretch == stretch && route.stage == Stage::Staging && route.worked;
             if cut_short && discarded {
                 lost.push(decided(RouteDecision::Discarded {
-                    by: DISCARDING_PROVIDER.to_owned(),
+                    provider: ProviderId::new(COPILOT_PROVIDER_ID),
                 }));
             } else if cut_short {
                 tracing::warn!("a Copilot Route ended with neither a commit nor an interruption");

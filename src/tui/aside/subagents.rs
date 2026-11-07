@@ -17,10 +17,10 @@ use ratatui::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::protocol::{
-    ActivityStatus, Outlook, ProviderId, SessionReference, SessionTimestamp, SubagentTreeEntry,
+    ActivityStatus, Outlook, SessionReference, SessionTimestamp, SubagentTreeEntry,
     SubagentTreeSession,
 };
-use crate::provider::built_in_providers;
+use crate::provider::provider_name;
 use crate::theme::Theme;
 
 use super::super::{
@@ -365,7 +365,7 @@ fn session_row(
             .flatten(),
         name: origin
             .and_then(|origin| context.catalog_names.provider(origin, provider))
-            .map_or_else(|| built_in_provider_name(provider), ToOwned::to_owned),
+            .map_or_else(|| provider_name(provider), ToOwned::to_owned),
     });
     let model = session.model.as_ref().map(|model| {
         origin
@@ -696,18 +696,6 @@ struct ProviderPart {
     glyph: Option<char>,
     /// Its name as the reader reads it.
     name: String,
-}
-
-/// What a Provider no catalog in hand names is called: the name its runtime
-/// declares, where Suru knows the Provider, and its identifier otherwise.
-fn built_in_provider_name(provider: &ProviderId) -> String {
-    built_in_providers()
-        .iter()
-        .find(|candidate| &candidate.id == provider)
-        .map_or_else(
-            || provider.to_string(),
-            |candidate| candidate.display_name.clone(),
-        )
 }
 
 /// How long live work has been running, read the way the Sidebar's Working

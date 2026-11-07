@@ -251,6 +251,18 @@ pub fn built_in_providers() -> &'static [BuiltInProvider] {
     })
 }
 
+/// What a Provider no catalog in hand names is called: the name its runtime
+/// declares, where Suru knows the Provider, and its identifier otherwise.
+pub fn provider_name(provider: &ProviderId) -> String {
+    built_in_providers()
+        .iter()
+        .find(|candidate| &candidate.id == provider)
+        .map_or_else(
+            || provider.to_string(),
+            |candidate| candidate.display_name.clone(),
+        )
+}
+
 /// A Provider-authored message is user-visible once it surfaces as a Provider failure, so it is
 /// capped.
 const MAX_REMOTE_ERROR_CHARS: usize = 1_024;

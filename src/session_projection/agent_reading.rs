@@ -52,6 +52,7 @@
 //! Server, and how entries are numbered is part of what Servers say to each
 //! other.
 
+use crate::provider::provider_name;
 use crate::shown_text::short_fingerprint;
 use std::{collections::HashMap, path::Path};
 
@@ -61,8 +62,8 @@ use crate::protocol::{
     Activity, ActivityStatus, Answer, Approval, ApprovalOutcome, ApprovalSubject, Author,
     CompactionTrigger, Decision, ExcerptQuestionnaire, FileChange, Message, MessageRole,
     MessageStatus, Question, QuestionAnswer, Questionnaire, QuestionnaireOutcome, ReadingSpan,
-    ServerReference, SessionSnapshot, SessionTimestamp, TranscriptItem, Turn, TurnId, TurnStatus,
-    WatchOutcomeStatus,
+    RouteDecision, ServerReference, SessionSnapshot, SessionTimestamp, TranscriptItem, Turn,
+    TurnId, TurnStatus, WatchOutcomeStatus,
 };
 pub(crate) use crate::protocol::{
     DEFAULT_MAX_CHARS, DEFAULT_TURNS, Detail, EntryNumber, Position, ReadRefusal, ReadRequest,
@@ -1038,7 +1039,7 @@ impl<'a> Transcript<'a> {
                 whole.push_str(text);
             }
             Activity::Route { decision, .. } => {
-                whole.push_str(&decision.sentence());
+                whole.push_str(&decision.sentence(provider_name));
                 if let Some(detail) = decision.detail() {
                     whole.push('\n');
                     whole.push_str(detail);
@@ -1316,10 +1317,11 @@ fn activity_label(activity: &Activity) -> Spans {
 }
 
 /// A Route's decision on one line, with what the Provider said of it.
-fn route_summary(decision: &crate::protocol::RouteDecision) -> String {
+fn route_summary(decision: &RouteDecision) -> String {
+    let sentence = decision.sentence(provider_name);
     match decision.detail() {
-        Some(detail) => format!("{} — {detail}", decision.sentence()),
-        None => decision.sentence(),
+        Some(detail) => format!("{sentence} — {detail}"),
+        None => sentence,
     }
 }
 
@@ -1946,7 +1948,7 @@ mod tests {
         fixture.activity(Activity::Route {
             id: ActivityId::new(),
             turn_id: turn,
-            decision: crate::protocol::RouteDecision::Verdict {
+            decision: RouteDecision::Verdict {
                 reviewer: crate::protocol::ModelId::new("gpt-judge"),
                 verdict: crate::protocol::RouteVerdict::Rejected,
                 detail: Some("It is not.".to_owned()),
