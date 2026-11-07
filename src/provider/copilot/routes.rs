@@ -1,5 +1,5 @@
 //! Copilot Fusion's Routes: what the projection reads of one, and what it must remember to show a
-//! Route's work once (ADR 0062, docs/validation/copilot-fusion-routes.md).
+//! Route's work once (ADR 0069, docs/validation/copilot-fusion-routes.md).
 //!
 //! On a Routing Tier a Turn holds one or more Routes, each named by its `fusionId`. A phase's
 //! Messages and Tools arrive staged, as ephemeral events attributed to the phase, and show as they

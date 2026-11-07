@@ -2,7 +2,7 @@
 
 Captured 2026-11-05 against GitHub Copilot CLI 1.0.105 and `github-copilot-sdk` 1.0.29-preview.5, on
 the assignment ADR 0060 writes, with `examples/copilot_fusion_capture.rs` driving ten scripted
-scenarios across 32 commits. ADR 0062 records what Suru decided from it; #604 and #605 build on it.
+scenarios across 32 commits. ADR 0069 records what Suru decided from it; #604 and #605 build on it.
 
 Everything under a heading "Observed" was read from captures. "Inferred" is a reading of them. The
 captures themselves are not committed. `tests/copilot_integration/fixtures/fusion-*.jsonl` are

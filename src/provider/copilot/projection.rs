@@ -116,7 +116,7 @@
 //!
 //! On a Routing Tier the conversation's work arrives staged, and [`routes`] says what stands of it:
 //! the first copy of each item, with the Messages of a Route's other phases passed over at its
-//! commit (ADR 0062).
+//! commit (ADR 0069).
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},

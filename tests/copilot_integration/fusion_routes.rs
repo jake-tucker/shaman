@@ -1,4 +1,4 @@
-//! A Route on a Routing Tier in the Transcript (ADR 0062): staged work shows as it arrives, each
+//! A Route on a Routing Tier in the Transcript (ADR 0069): staged work shows as it arrives, each
 //! piece once however the commit repeats it, and a Route's commit settles it, passing over the
 //! Messages of its other phases. Each replay is a scrubbed capture from a live CLI, committed under
 //! `fixtures/` (docs/validation/copilot-fusion-routes.md).
