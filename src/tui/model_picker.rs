@@ -439,11 +439,19 @@ impl ModelPicker {
             let Some(descriptor) = model.options.iter().find(|option| option.role == role) else {
                 continue;
             };
-            let Some(selected) = selection
+            // Naming no option only the user chooses is naming its default, as their picker shows.
+            let selected = selection
                 .options
                 .iter()
                 .find(|selected| selected.id == descriptor.id)
-            else {
+                .cloned()
+                .or_else(|| {
+                    descriptor
+                        .role
+                        .is_the_users_alone()
+                        .then(|| descriptor.default_selection())
+                });
+            let Some(selected) = selected else {
                 continue;
             };
             let value = match (&descriptor.kind, &selected.value) {

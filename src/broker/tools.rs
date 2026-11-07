@@ -1569,7 +1569,7 @@ pub(super) fn requested_selection_on(
             listed(choosable_models(hosted).map(|descriptor| descriptor.id.as_str()))
         )));
     };
-    let mut selection = descriptor.default_selection_for_an_agent();
+    let mut selection = descriptor.default_agent_selection();
     let offered = || {
         descriptor
             .options

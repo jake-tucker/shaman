@@ -348,7 +348,10 @@ fn tiered_arms(timeline: &str) -> String {
         connect_arm(),
         signed_in_arm(),
         models_arm(COPILOT_MODELS),
-        assigned_session_arms(AUTO_TIERS),
+        assigned_session_arms(&AUTO_TIERS.replace(
+            r#""defaultTier":"hydrafusion""#,
+            r#""defaultTier":"balance""#
+        )),
         tiered_model_arms(),
         create_session_arm(),
         resume_session_arm(),
@@ -507,11 +510,11 @@ async fn a_chosen_tier_reaches_copilot_and_the_selection_follows_it_there_and_ba
         "a Selection already in force is not asked for again"
     );
 
-    let another = turn_under(&client, session_id, on_auto(Some("balance")), 2).await;
-    assert_eq!(ran_under(&another, 2), Some(&on_auto(Some("balance"))));
+    let another = turn_under(&client, session_id, on_auto(Some("efficiency")), 2).await;
+    assert_eq!(ran_under(&another, 2), Some(&on_auto(Some("efficiency"))));
     assert_eq!(
         switches(&copilot)[1..],
-        [switch("auto", Some(json!("balance")))]
+        [switch("auto", Some(json!("efficiency")))]
     );
 
     let concrete_turn = turn_under(&client, session_id, concrete(), 3).await;
@@ -632,15 +635,15 @@ async fn a_change_copilot_refuses_at_once_corrects_the_selection_and_fails_no_tu
     let home = Home::new("routing-tier-refused-at-once");
     let (server, client) = home.host(&copilot).await;
     pin(&client, Some(true)).await;
-    let first = begun_on(&client, &home, on_auto(Some("balance"))).await;
+    let first = begun_on(&client, &home, on_auto(Some("hydrafusion"))).await;
     let session_id = first.session.id;
 
     let refused = turn_under(&client, session_id, on_auto(Some("not-a-tier")), 1).await;
 
     assert_eq!(refused.turns[1].status, TurnStatus::Completed);
     assert_eq!(errors(&refused), Vec::<&str>::new());
-    assert_eq!(selected(&refused), Some(&on_auto(Some("balance"))));
-    assert_eq!(ran_under(&refused, 1), Some(&on_auto(Some("balance"))));
+    assert_eq!(selected(&refused), Some(&on_auto(Some("hydrafusion"))));
+    assert_eq!(ran_under(&refused, 1), Some(&on_auto(Some("hydrafusion"))));
     let [status] = statuses(&refused)[..] else {
         panic!("one Status row: {:?}", statuses(&refused));
     };
@@ -649,7 +652,7 @@ async fn a_change_copilot_refuses_at_once_corrects_the_selection_and_fails_no_tu
         "it says what Copilot said: {status}"
     );
 
-    let carried_on = turn_under(&client, session_id, on_auto(Some("balance")), 2).await;
+    let carried_on = turn_under(&client, session_id, on_auto(Some("hydrafusion")), 2).await;
     assert_eq!(carried_on.turns[2].status, TurnStatus::Completed);
     assert_eq!(
         statuses(&carried_on).len(),
@@ -977,6 +980,60 @@ async fn an_update_naming_a_tier_on_a_concrete_model_is_refused() {
         .await;
 
     assert!(refused.is_err(), "{refused:?}");
+    drop(client);
+    server.shutdown().await.expect("stop server");
+}
+
+/// The tier Copilot would route on anyway is no choice: a Selection naming it names none, so the
+/// Setting going off later has nothing to say of it.
+#[tokio::test]
+async fn choosing_copilots_default_tier_stores_none_and_tells_nothing_when_the_setting_goes_off() {
+    let copilot = tiered_conversation(SETTLES);
+    let home = Home::new("routing-tier-default-chosen");
+    let (server, mut client) = home.host(&copilot).await;
+    pin(&client, Some(true)).await;
+    pushed_catalog_offering(&mut client, 3).await;
+
+    let first = begun_on(&client, &home, on_auto(Some("balance"))).await;
+    assert_eq!(selected(&first), Some(&on_auto(None)));
+    assert_eq!(ran_under(&first, 0), Some(&on_auto(None)));
+    assert_eq!(switches(&copilot), [switch("auto", None)]);
+
+    pin(&client, Some(false)).await;
+    continued_session(&client, first.session.id).await;
+    let later = settled_session(&client, first.session.id, 1).await;
+    assert_eq!(later.turns[1].status, TurnStatus::Completed);
+    assert_eq!(statuses(&later), Vec::<&str>::new());
+    assert_eq!(switches(&copilot).len(), 1);
+
+    drop(client);
+    server.shutdown().await.expect("stop server");
+}
+
+/// Coming back to the default from a tier Copilot holds is a change, though the Selection names
+/// none: without a clearing, a switch naming no tier would leave the Session on High.
+#[tokio::test]
+async fn going_back_to_copilots_default_tier_clears_the_one_copilot_holds() {
+    let copilot = tiered_conversation(SETTLES);
+    let home = Home::new("routing-tier-back-to-default");
+    let (server, mut client) = home.host(&copilot).await;
+    pin(&client, Some(true)).await;
+    pushed_catalog_offering(&mut client, 3).await;
+    let first = begun_on(&client, &home, on_auto(Some("hydrafusion"))).await;
+
+    let back = turn_under(&client, first.session.id, on_auto(Some("balance")), 1).await;
+
+    assert_eq!(selected(&back), Some(&on_auto(None)));
+    assert_eq!(ran_under(&back, 1), Some(&on_auto(None)));
+    assert_eq!(
+        switches(&copilot),
+        [
+            switch("auto", Some(json!("hydrafusion"))),
+            switch("auto", Some(Value::Null))
+        ]
+    );
+    assert_eq!(statuses(&back), Vec::<&str>::new());
+
     drop(client);
     server.shutdown().await.expect("stop server");
 }

@@ -6,8 +6,9 @@ use tokio::sync::watch;
 use crate::{
     protocol::{
         AgentSelection, AgentSelectionMaterializationError, ModelAvailability, ModelCatalog,
-        ModelDescriptor, ProviderCatalogStatus, ProviderId, ProviderModelCatalog,
-        ProviderUnavailability, ROUTING_TIER_OPTION_ID, SessionTimestamp, SettingsSnapshot,
+        ModelDescriptor, ModelOptionSelection, ProviderCatalogStatus, ProviderId,
+        ProviderModelCatalog, ProviderUnavailability, ROUTING_TIER_OPTION_ID, SessionTimestamp,
+        SettingsSnapshot,
     },
     provider::{ProviderError, ProviderRuntime, validate_models},
 };
@@ -368,7 +369,17 @@ impl ModelCatalogService {
         let mut normalized = model
             .materialize_agent_selection(Some(&selection.clone().without_routing_tier()))
             .map_err(|error| error.to_string())?;
-        normalized.options.extend(tier);
+        // The tier the Provider routes on anyway is no choice, and a Selection
+        // naming it names none, so nothing later has to tell it was taken away.
+        let default = |tier: &ModelOptionSelection| {
+            model
+                .options
+                .iter()
+                .any(|option| option.id == tier.id && option.default_selection() == *tier)
+        };
+        normalized
+            .options
+            .extend(tier.filter(|tier| !default(tier)));
         Ok(normalized)
     }
 
@@ -736,7 +747,7 @@ fn errand_selection_in(
         .or_else(|| {
             default_model(models)
                 .filter(|model| model.availability == ModelAvailability::Available)
-                .map(ModelDescriptor::default_selection_for_an_agent)
+                .map(ModelDescriptor::default_agent_selection)
         })
 }
 
@@ -761,7 +772,7 @@ fn admitted_selection(
         return None;
     }
     let mut options = declared.options.clone();
-    for default in model.default_selection_for_an_agent().options {
+    for default in model.default_agent_selection().options {
         if !options.iter().any(|option| option.id == default.id) {
             options.push(default);
         }
@@ -1344,6 +1355,21 @@ mod tests {
             service.normalize_selection(&selecting(Vec::new())),
             Ok(selecting(Vec::new()))
         );
+    }
+
+    /// The tier the Provider routes on anyway is no choice, so a Selection naming it names none, and
+    /// a fresh Landing starts from none.
+    #[tokio::test]
+    async fn a_selection_naming_a_models_default_routing_tier_names_none() {
+        let (service, _settings) = normalizing_service(vec![routing_tier()]);
+        assert_eq!(
+            service.normalize_selection(&selecting(vec![chosen(
+                crate::protocol::ROUTING_TIER_OPTION_ID,
+                "low"
+            )])),
+            Ok(selecting(Vec::new()))
+        );
+        assert_eq!(service.default_selection(), Some(selecting(Vec::new())));
     }
 
     /// Whether a tier can be had is the Provider's to say when a Turn claims it, and what it says

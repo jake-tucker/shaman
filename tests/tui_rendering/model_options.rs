@@ -1322,6 +1322,53 @@ fn a_routing_tier_is_chosen_beside_the_model_and_a_disabled_one_says_why_and_can
     );
 }
 
+/// The picker shows Copilot's default as the choice in force, and taking it stores no tier, because
+/// no tier already means Copilot's default. The Selection still reads as what the picker showed.
+#[test]
+fn taking_the_default_routing_tier_stores_none_and_reads_as_the_picker_showed_it() {
+    let mut application = landing_on_the_routed_model();
+    let options = rendered_application_rows_at(&application, 140, 18).join("\n");
+    assert!(options.contains("Routing tier · Standard"), "{options}");
+
+    let ApplicationTransition::ConfirmLandingAgentSelection(confirmed) =
+        press(&mut application, KeyCode::Enter, KeyModifiers::CONTROL)
+    else {
+        panic!("the Landing confirms its Selection");
+    };
+
+    assert_eq!(confirmed.routing_tier(), None);
+    assert_eq!(confirmed.options, Vec::new());
+    let summary = rendered_application_rows_at(&application, 140, 16).join("\n");
+    assert!(summary.contains("Copilot · Auto · Standard"), "{summary}");
+}
+
+/// High and back again: the picker marks what is in force, and the way back stores no tier, which is
+/// how the Session learns to clear the one Copilot holds.
+#[test]
+fn going_back_to_the_default_routing_tier_stores_none() {
+    let mut application = landing_on_the_routed_model();
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    let choices = rendered_application_rows_at(&application, 140, 18).join("\n");
+    assert!(choices.contains("Standard [current]"), "{choices}");
+    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    let options = rendered_application_rows_at(&application, 140, 18).join("\n");
+    assert!(options.contains("Routing tier · High"), "{options}");
+
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    press(&mut application, KeyCode::Up, KeyModifiers::NONE);
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    let options = rendered_application_rows_at(&application, 140, 18).join("\n");
+    assert!(options.contains("Routing tier · Standard"), "{options}");
+
+    let ApplicationTransition::ConfirmLandingAgentSelection(confirmed) =
+        press(&mut application, KeyCode::Enter, KeyModifiers::CONTROL)
+    else {
+        panic!("the Landing confirms its Selection");
+    };
+    assert_eq!(confirmed.options, Vec::new());
+}
+
 #[test]
 fn a_chosen_routing_tier_stands_in_the_selection_summary() {
     let mut application = landing_on_the_routed_model();

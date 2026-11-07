@@ -219,15 +219,17 @@ impl ModelOptions {
             .iter()
             .enumerate()
             .map(|(index, descriptor)| {
-                let value = selected_value(staged, &descriptor.id);
+                let value = shown_value(staged, descriptor);
                 ModelOptionRow {
                     label: descriptor.label.clone(),
                     description: descriptor.description.clone(),
                     value: value
+                        .as_ref()
                         .map(|value| option_value_label(descriptor, value))
                         .unwrap_or_else(|| "Provider default".to_owned()),
                     selected: self.choices.is_none() && index == self.selected,
                     available: value
+                        .as_ref()
                         .is_none_or(|value| option_value_is_available(descriptor, value)),
                 }
             })
@@ -246,7 +248,8 @@ impl ModelOptions {
         else {
             return Vec::new();
         };
-        let current = selected_value(staged, &descriptor.id);
+        let current = shown_value(staged, descriptor);
+        let current = current.as_ref();
         choice_values(descriptor, current, self.purpose)
             .into_iter()
             .map(|candidate| {
@@ -295,10 +298,12 @@ impl ModelOptions {
         let Some(descriptor) = model.options.get(self.selected) else {
             return;
         };
-        let value = selected_value(staged, &descriptor.id);
+        let value = shown_value(staged, descriptor);
         self.choices = Some(ChoicePicker {
             option: descriptor.id.clone(),
-            selected: value.map_or(ChoiceValue::ProviderDefault, ChoiceValue::from),
+            selected: value
+                .as_ref()
+                .map_or(ChoiceValue::ProviderDefault, ChoiceValue::from),
         });
         self.choices_window.open();
     }
@@ -318,7 +323,7 @@ impl ModelOptions {
         };
         let values = choice_values(
             descriptor,
-            selected_value(staged, &descriptor.id),
+            shown_value(staged, descriptor).as_ref(),
             self.purpose,
         );
         if values.is_empty() {
@@ -350,7 +355,12 @@ impl ModelOptions {
         if !available {
             return;
         }
-        if let Some(value) = picker.selected.clone().into_value() {
+        // Taking the default of an option only the user chooses names none, which already means
+        // the Provider's default.
+        let value = picker.selected.clone().into_value().filter(|value| {
+            !descriptor.role.is_the_users_alone() || *value != descriptor.default_selection().value
+        });
+        if let Some(value) = value {
             if let Some(selection) = staged.options.iter_mut().find(|s| s.id == descriptor.id) {
                 selection.value = value;
             } else {
@@ -485,28 +495,51 @@ fn stage_selection(
     staged
 }
 
+/// `current` on `model`, with every option it leaves out at the Model's default, but for an option
+/// only the user chooses: leaving that out is naming the Provider's default, as naming the default
+/// itself is.
 fn selection_preserving_current_values(
     model: &ModelDescriptor,
     current: &AgentSelection,
 ) -> AgentSelection {
-    let defaults = model.default_agent_selection();
     AgentSelection {
         provider: model.provider.clone(),
         model: model.id.clone(),
         options: model
             .options
             .iter()
-            .zip(defaults.options)
-            .map(|(descriptor, default)| {
-                current
+            .filter_map(|descriptor| {
+                let default = descriptor.default_selection();
+                let named = current
                     .options
                     .iter()
                     .find(|selection| selection.id == descriptor.id)
-                    .cloned()
-                    .unwrap_or(default)
+                    .cloned();
+                if descriptor.role.is_the_users_alone() {
+                    named.filter(|named| *named != default)
+                } else {
+                    Some(named.unwrap_or(default))
+                }
             })
             .collect(),
     }
+}
+
+/// What a reader is shown `descriptor` standing at: what `selection` names, or the default of an
+/// option only the user chooses, which naming none means. Nothing where it follows the Model's
+/// default without pinning a value.
+fn shown_value(
+    selection: &AgentSelection,
+    descriptor: &ModelOptionDescriptor,
+) -> Option<ModelOptionValue> {
+    selected_value(selection, &descriptor.id)
+        .cloned()
+        .or_else(|| {
+            descriptor
+                .role
+                .is_the_users_alone()
+                .then(|| descriptor.default_selection().value)
+        })
 }
 
 fn selected_value<'a>(

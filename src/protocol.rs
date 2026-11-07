@@ -363,16 +363,24 @@ impl fmt::Display for AgentSelectionMaterializationError {
 impl std::error::Error for AgentSelectionMaterializationError {}
 
 impl ModelDescriptor {
+    /// The Selection this Model starts from. It names no option only the user
+    /// may choose, since naming none leaves that to the Provider's own default.
     pub fn default_agent_selection(&self) -> AgentSelection {
         AgentSelection {
             provider: self.provider.clone(),
             model: self.id.clone(),
             options: self
-                .options
-                .iter()
+                .options_for_an_agent()
                 .map(ModelOptionDescriptor::default_selection)
                 .collect(),
         }
+    }
+
+    /// The options anyone but the user may choose.
+    pub fn options_for_an_agent(&self) -> impl Iterator<Item = &ModelOptionDescriptor> {
+        self.options
+            .iter()
+            .filter(|option| !option.role.is_the_users_alone())
     }
 
     /// This Model as it is offered wherever only an Agent or an Errand will run
@@ -382,21 +390,6 @@ impl ModelDescriptor {
         self.options
             .retain(|option| !option.role.is_the_users_alone());
         self
-    }
-
-    /// [`Self::default_agent_selection`] for an Agent or an Errand, which leaves
-    /// out every option only the user may choose.
-    pub fn default_selection_for_an_agent(&self) -> AgentSelection {
-        AgentSelection {
-            provider: self.provider.clone(),
-            model: self.id.clone(),
-            options: self
-                .options
-                .iter()
-                .filter(|option| !option.role.is_the_users_alone())
-                .map(ModelOptionDescriptor::default_selection)
-                .collect(),
-        }
     }
 
     pub fn materialize_agent_selection(
@@ -462,7 +455,8 @@ impl ModelDescriptor {
 }
 
 impl ModelOptionDescriptor {
-    fn default_selection(&self) -> ModelOptionSelection {
+    /// This option at its default.
+    pub fn default_selection(&self) -> ModelOptionSelection {
         ModelOptionSelection {
             id: self.id.clone(),
             value: match &self.kind {

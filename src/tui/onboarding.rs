@@ -1040,7 +1040,7 @@ impl DerivationStep {
                     .all(|option| option.role.is_the_users_alone()) =>
             {
                 self.saving
-                    .send(pinned_selection(model.default_selection_for_an_agent()))
+                    .send(pinned_selection(model.default_agent_selection()))
             }
             Some(AgentSelectionAction::Select(model)) => {
                 let current = match &self.in_force {
