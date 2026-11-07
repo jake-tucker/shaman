@@ -2328,7 +2328,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: PROVIDER_COPILOT_FUSION_TIERS,
         label: "Copilot Fusion tiers",
-        description: "Whether Copilot's Auto Model offers Fusion's Routing Tiers, by asserting an experiment assignment Copilot's service did not issue to Sessions opened or resumed from now on. Turned off, a Session on a Routing Tier runs on plain Auto from its next Turn",
+        description: "Whether Copilot's Auto Model offers Fusion's Routing Tiers, by asserting from now on, on each Session opened or resumed, an experiment assignment Copilot's service did not issue. Turned off, a Session on a Routing Tier runs on plain Auto from its next Turn",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadOnly {

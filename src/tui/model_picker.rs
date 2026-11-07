@@ -278,10 +278,9 @@ impl ModelPicker {
         CatalogStatuses(self.catalog_of(outlook))
     }
 
-    /// The Provider as the latest catalog lists it: the live list first, then
-    /// the current Outlook's cache. Nothing while no catalog has named it.
     /// A Provider's Models as the picker has them, from the listing on screen while it is open.
     /// Closed, that listing goes stale, and the catalog last pushed is the newer word.
+    /// Nothing while no catalog has named it.
     fn listed_provider(&self, provider: &ProviderId) -> Option<&ProviderModels> {
         let cached = || {
             self.cache()

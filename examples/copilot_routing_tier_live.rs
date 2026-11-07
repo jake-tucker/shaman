@@ -4,7 +4,7 @@
 //! spends real AI Credits, so it runs somewhere disposable:
 //!
 //! ```sh
-//! cd scratch-project && copilot_routing_tier_live > report.txt
+//! cd scratch-project && SURU_ROUTING_TIER_LIVE=1 copilot_routing_tier_live > report.txt
 //! ```
 //!
 //! The Sessions it leaves behind in Copilot's own state are listed at its end, for
@@ -26,6 +26,8 @@ use suru::{
 
 type Failure = Box<dyn std::error::Error>;
 
+/// Set to `1` to run: a bare `cargo run --example` spends nothing.
+const GATE: &str = "SURU_ROUTING_TIER_LIVE";
 const CHANNEL: &str = "routing-tier-live";
 const PROMPT: &str = "Ping";
 
@@ -197,6 +199,10 @@ fn copilot_sessions() -> BTreeSet<String> {
 
 #[tokio::main]
 async fn main() -> Result<(), Failure> {
+    if std::env::var(GATE).as_deref() != Ok("1") {
+        eprintln!("copilot_routing_tier_live spends real AI Credits; set {GATE}=1 to run it.");
+        return Ok(());
+    }
     let home = Home {
         state: tempfile::tempdir()?,
         data: tempfile::tempdir()?,
