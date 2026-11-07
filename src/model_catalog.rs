@@ -5,9 +5,9 @@ use tokio::sync::watch;
 
 use crate::{
     protocol::{
-        AgentSelection, ModelAvailability, ModelCatalog, ModelDescriptor, ProviderCatalogStatus,
-        ProviderId, ProviderModelCatalog, ProviderUnavailability, ROUTING_TIER_OPTION_ID,
-        SessionTimestamp, SettingsSnapshot,
+        AgentSelection, AgentSelectionMaterializationError, ModelAvailability, ModelCatalog,
+        ModelDescriptor, ProviderCatalogStatus, ProviderId, ProviderModelCatalog,
+        ProviderUnavailability, ROUTING_TIER_OPTION_ID, SessionTimestamp, SettingsSnapshot,
     },
     provider::{ProviderError, ProviderRuntime, validate_models},
 };
@@ -340,6 +340,23 @@ impl ModelCatalogService {
         &self,
         selection: &AgentSelection,
     ) -> Result<AgentSelection, String> {
+        // A Routing Tier is refused here on a Model that can never take one. On
+        // one that can, whether it can be had is the Provider's to say when a
+        // Turn claims it, and what it says fails no Turn, so one this catalog
+        // no longer offers is carried to it instead.
+        let tier = selection
+            .options
+            .iter()
+            .find(|option| option.id.as_str() == ROUTING_TIER_OPTION_ID)
+            .cloned();
+        if let Some(tier) = &tier
+            && !self.takes_routing_tier(selection)
+        {
+            return Err(AgentSelectionMaterializationError::UnknownOption {
+                option: tier.id.clone(),
+            }
+            .to_string());
+        }
         let Some(model) = self.cached_models(&selection.provider).and_then(|models| {
             models
                 .iter()
@@ -348,19 +365,18 @@ impl ModelCatalogService {
         }) else {
             return Ok(selection.clone());
         };
-        // Whether a Routing Tier can be had is the Provider's to say when a
-        // Turn claims it, and what it says fails no Turn, so one this catalog
-        // no longer offers is carried to it rather than refused here.
-        let tier = selection
-            .options
-            .iter()
-            .find(|option| option.id.as_str() == ROUTING_TIER_OPTION_ID)
-            .cloned();
         let mut normalized = model
             .materialize_agent_selection(Some(&selection.clone().without_routing_tier()))
             .map_err(|error| error.to_string())?;
         normalized.options.extend(tier);
         Ok(normalized)
+    }
+
+    fn takes_routing_tier(&self, selection: &AgentSelection) -> bool {
+        self.providers
+            .iter()
+            .find(|catalog| catalog.provider == selection.provider)
+            .is_some_and(|catalog| catalog.runtime.takes_routing_tier(&selection.model))
     }
 
     fn cached_models(&self, provider: &ProviderId) -> Option<Vec<ModelDescriptor>> {
@@ -996,6 +1012,10 @@ mod tests {
                 .store(settings.provider.copilot.fusion_tiers, Ordering::SeqCst);
         }
 
+        fn takes_routing_tier(&self, model: &ModelId) -> bool {
+            model.as_str() == "conversing"
+        }
+
         fn catalog_settings(&self, settings: &crate::protocol::EffectiveSettings) -> u64 {
             u64::from(settings.provider.copilot.fusion_tiers)
         }
@@ -1273,6 +1293,46 @@ mod tests {
             model: ModelId::new("conversing"),
             options,
         }
+    }
+
+    /// A tier on a Model no one routes is refused where it is asked for, by a Peer or a stale client
+    /// as much as anyone, rather than at the Prompt the Selection then fails.
+    #[tokio::test]
+    async fn a_selection_naming_a_routing_tier_on_a_model_that_takes_none_is_refused() {
+        let names = |model: &str| AgentSelection {
+            provider: ProviderId::new("stub"),
+            model: ModelId::new(model),
+            options: vec![chosen(crate::protocol::ROUTING_TIER_OPTION_ID, "high")],
+        };
+        let refusal = "Model Option `routing_tier` is unknown";
+
+        let (gated, _settings) = normalizing_service(vec![routing_tier()]);
+        assert_eq!(
+            gated
+                .normalize_selection(&names("unlisted"))
+                .err()
+                .as_deref(),
+            Some(refusal),
+            "a Model the catalog does not list takes none either"
+        );
+
+        let (_settings, settings_rx) = watch::channel(SettingsSnapshot::default());
+        let takes_none = ModelCatalogService::new(
+            [Arc::new(FailingAfterFirstRuntime::new()) as Arc<dyn ProviderRuntime>],
+            settings_rx,
+            CatalogMemory {
+                remembered: vec![remembered("Stub")],
+                remember: None,
+            },
+        );
+        assert_eq!(
+            takes_none
+                .normalize_selection(&names("stub-model"))
+                .err()
+                .as_deref(),
+            Some(refusal),
+            "nor does any Model of a Provider that routes none"
+        );
     }
 
     /// A Selection with no tier on a Model that offers them has chosen none: it is what a Session

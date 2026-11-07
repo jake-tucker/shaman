@@ -1872,6 +1872,16 @@ pub trait ProviderRuntime: Send + Sync + 'static {
         let _ = settings;
     }
 
+    /// Whether a Selection on `model` may name a Routing Tier at all, whether or
+    /// not the catalog offers one now: a Setting may have taken them away, or
+    /// the Provider marked the choice disabled, and either is the Provider's to
+    /// answer as a Turn claims it. Runtimes offering no Routing Tier need not
+    /// implement it.
+    fn takes_routing_tier(&self, model: &ModelId) -> bool {
+        let _ = model;
+        false
+    }
+
     /// The part of `settings` this Provider's Model discovery answers
     /// differently under, read as a value that changes when it does. The Model
     /// Catalog asks this Provider again when it changes. Runtimes whose catalog

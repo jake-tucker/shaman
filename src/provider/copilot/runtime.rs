@@ -255,6 +255,11 @@ impl ProviderRuntime for CopilotRuntime {
             .expect("Copilot Settings lock is not poisoned") = settings.provider.copilot;
     }
 
+    /// `auto` is the one Model Copilot routes, with the Setting on or off.
+    fn takes_routing_tier(&self, model: &ModelId) -> bool {
+        model.as_str() == AUTO_MODEL_ID
+    }
+
     fn catalog_settings(&self, settings: &EffectiveSettings) -> u64 {
         u64::from(settings.provider.copilot.fusion_tiers)
     }

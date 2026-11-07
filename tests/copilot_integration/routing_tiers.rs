@@ -912,3 +912,29 @@ async fn a_discovery_on_the_harness_a_turn_is_running_on_leaves_the_turn_alone()
     drop(client);
     server.shutdown().await.expect("stop server");
 }
+
+/// A concrete Model takes no tier, which the update says, before a Prompt could find out.
+#[tokio::test]
+async fn an_update_naming_a_tier_on_a_concrete_model_is_refused() {
+    let copilot = tiered_conversation(SETTLES);
+    let home = Home::new("routing-tier-concrete-refused");
+    let (server, client) = home.host(&copilot).await;
+    let first = begun_on(&client, &home, on_auto(None)).await;
+
+    let refused = client
+        .update_agent_selection(
+            first.session.id,
+            UpdateAgentSelectionRequest {
+                operation_id: AgentSelectionOperationId::new(),
+                selection: AgentSelection {
+                    options: on_auto(Some("hydrafusion")).options,
+                    ..concrete()
+                },
+            },
+        )
+        .await;
+
+    assert!(refused.is_err(), "{refused:?}");
+    drop(client);
+    server.shutdown().await.expect("stop server");
+}
