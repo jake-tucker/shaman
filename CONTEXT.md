@@ -41,7 +41,7 @@ A Provider-advertised, Model-specific configuration dimension such as reasoning 
 _Avoid_: Variant, trait, model setting
 
 **Routing Tier**:
-A Model Option by which a Provider that routes on the user's behalf is told how to weigh capability against cost. Only the user chooses one: an Agent is neither offered one nor able to name one, whatever it spawns or begins runs without one, and an Errand never runs under one. A Selection names one only where it differs from the Provider's default: naming none leaves the routing to that default, which a picker shows as the choice in force. Whether a tier can be had is the Provider's to say as a Turn claims it, and what it says fails no Turn: the Turn runs on what the Provider has in force, and the Agent Selection and a Status row say so.
+A Model Option by which a Provider that routes on the user's behalf is told how to weigh capability against cost. Only the user chooses one: an Agent is neither offered one nor able to name one, whatever it spawns or begins runs without one, and an Errand never runs under one. Choosing the Provider's own default names none, which leaves the routing to that default, and a picker shows it as the choice in force; a Selection comes to name the default only where the Provider itself reported it as what ran. Whether a tier can be had is the Provider's to say as a Turn claims it, and what it says fails no Turn: the Turn runs on what the Provider has in force, and the Agent Selection and a Status row say so.
 _Avoid_: Auto preference, routing profile, Fusion tier
 
 **Session**:
