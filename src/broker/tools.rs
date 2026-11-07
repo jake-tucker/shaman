@@ -44,7 +44,7 @@ use crate::{
         AgentSelection, ModelAvailability, ModelCatalog, ModelDescriptor, ModelId,
         ModelOptionChoiceId, ModelOptionDescriptor, ModelOptionId, ModelOptionKind,
         ModelOptionValue, ProviderCatalogStatus, ProviderId, ProviderModelCatalog,
-        ProviderUnavailability, SessionId, SettingsSnapshot, TurnStatus,
+        ProviderUnavailability, ROUTING_TIER_OPTION_ID, SessionId, SettingsSnapshot, TurnStatus,
     },
     provider::{
         BrokeredDelivery, BrokeredSendRefusal, BrokeredSpawnRefusal, BrokeredStop,
@@ -1569,19 +1569,33 @@ pub(super) fn requested_selection_on(
             listed(choosable_models(hosted).map(|descriptor| descriptor.id.as_str()))
         )));
     };
-    let mut selection = descriptor.default_agent_selection();
-    for (option_id, value) in options {
-        let Some(option) = descriptor
+    let mut selection = descriptor.default_selection_for_an_agent();
+    let offered = || {
+        descriptor
             .options
             .iter()
-            .find(|option| option.id.as_str() == option_id)
-        else {
-            return Err(ToolRefusal::new(if descriptor.options.is_empty() {
+            .filter(|option| !option.role.is_the_users_alone())
+    };
+    for (option_id, value) in options {
+        // Told alike whether the user has one on offer or not, which is no Agent's business.
+        if option_id == ROUTING_TIER_OPTION_ID
+            || descriptor
+                .options
+                .iter()
+                .any(|option| option.id.as_str() == option_id && option.role.is_the_users_alone())
+        {
+            return Err(ToolRefusal::new(format!(
+                "Model Option `{option_id}` is the user's alone to choose; leave it out, and \
+                 Model `{model}` runs without one."
+            )));
+        }
+        let Some(option) = offered().find(|option| option.id.as_str() == option_id) else {
+            return Err(ToolRefusal::new(if offered().next().is_none() {
                 format!("Model `{model}` has no Model Options; leave out `{option_id}`.")
             } else {
                 format!(
                     "Model `{model}` has no Model Option `{option_id}`; its Model Options are {}.",
-                    listed(descriptor.options.iter().map(|option| option.id.as_str()))
+                    listed(offered().map(|option| option.id.as_str()))
                 )
             }));
         };
@@ -1864,7 +1878,12 @@ fn listed_model(model: &ModelDescriptor) -> ListedModel {
         name: model.display_name.clone(),
         description: model.description.clone(),
         default: model.is_default,
-        options: model.options.iter().map(listed_option).collect(),
+        options: model
+            .options
+            .iter()
+            .filter(|option| !option.role.is_the_users_alone())
+            .map(listed_option)
+            .collect(),
     }
 }
 
@@ -1940,6 +1959,97 @@ mod tests {
             }],
             details: Default::default(),
         }
+    }
+
+    /// `runs`, whose Provider offers the user a Routing Tier on it.
+    fn with_routing_tier() -> ModelCatalog {
+        let mut runs = model("runs", ModelAvailability::Available);
+        runs.options.push(ModelOptionDescriptor {
+            id: ModelOptionId::new(crate::protocol::ROUTING_TIER_OPTION_ID),
+            label: "Routing tier".to_owned(),
+            description: None,
+            role: ModelOptionRole::RoutingTier,
+            kind: ModelOptionKind::Select {
+                choices: vec![
+                    ModelOptionChoice {
+                        id: ModelOptionChoiceId::new("standard"),
+                        label: "Standard".to_owned(),
+                        description: None,
+                        availability: ModelAvailability::Available,
+                    },
+                    ModelOptionChoice {
+                        id: ModelOptionChoiceId::new("high"),
+                        label: "High".to_owned(),
+                        description: None,
+                        availability: ModelAvailability::Available,
+                    },
+                ],
+                default: ModelOptionChoiceId::new("standard"),
+            },
+        });
+        catalog(ProviderCatalogStatus::Fresh, vec![runs])
+    }
+
+    /// Only the user chooses a Routing Tier, so an Agent's fan-out cannot spend at the highest one
+    /// without them. An Agent never hears of one, and whatever it spawns runs without.
+    #[test]
+    fn an_agent_is_offered_no_routing_tier_and_its_subagents_run_without_one() {
+        let listing = serde_json::to_value(provider_listing(with_routing_tier()))
+            .expect("a Provider listing serializes");
+        assert_eq!(
+            listing["providers"][0]["models"][0]["options"]
+                .as_array()
+                .expect("a Model lists its options")
+                .iter()
+                .map(|option| option["id"].clone())
+                .collect::<Vec<_>>(),
+            [json!("effort")]
+        );
+        assert!(
+            !listing.to_string().contains("routing_tier"),
+            "nothing listed names it: {listing}"
+        );
+
+        let spawned =
+            requested_selection(&with_routing_tier(), "codex", "runs", &options(json!({})))
+                .expect("a spawn naming no option is fine");
+        assert_eq!(spawned.routing_tier(), None);
+        assert_eq!(
+            spawned
+                .options
+                .iter()
+                .map(|option| option.id.as_str())
+                .collect::<Vec<_>>(),
+            ["effort"],
+            "the Model's other defaults stand"
+        );
+    }
+
+    #[test]
+    fn an_agent_naming_a_routing_tier_is_told_it_is_the_users_alone() {
+        let named = options(json!({ "routing_tier": "high" }));
+        let offered = requested_selection(&with_routing_tier(), "codex", "runs", &named)
+            .expect_err("a tier on offer to the user is refused to an Agent");
+        assert_eq!(
+            offered.to_string(),
+            "Model Option `routing_tier` is the user's alone to choose; leave it out, and Model \
+             `runs` runs without one."
+        );
+        let not_offered = requested_selection(
+            &catalog(
+                ProviderCatalogStatus::Fresh,
+                vec![model("runs", ModelAvailability::Available)],
+            ),
+            "codex",
+            "runs",
+            &named,
+        )
+        .expect_err("a tier on offer to no one is refused too");
+        assert_eq!(
+            not_offered.to_string(),
+            offered.to_string(),
+            "and an Agent learns nothing of whether the user has them turned on"
+        );
     }
 
     /// A Sidekick never adds, logs in to or removes a Relay, nor changes

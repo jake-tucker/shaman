@@ -537,7 +537,7 @@ fn landing_agent(
         }
         Choosable::Models(mut models) => {
             if models.any(|model| model.id == selection.model) {
-                Ok(selection)
+                Ok(selection.without_routing_tier())
             } else {
                 Err(ToolRefusal::new(format!(
                     "The user's Landing would begin the Session with Model `{}`, which Provider \
@@ -1017,6 +1017,50 @@ mod tests {
                 .to_string(),
             "No Provider the Remote `workstation` hosts can begin a Session now: each is turned \
              off or cannot be used. Ask the user to turn one on there."
+        );
+    }
+
+    /// A Sidekick begins a Session under the Landing's Agent where it names none. The user chose
+    /// the Landing's tier for their own Prompts, and only the user chooses one, so it stays there.
+    #[test]
+    fn a_session_a_sidekick_begins_under_the_landing_takes_no_routing_tier_from_it() {
+        use crate::protocol::{
+            ModelDescriptor, ModelId, ModelOptionSelection, ProviderCatalogStatus, ProviderId,
+            ProviderModelCatalog,
+        };
+        let chosen = ModelOptionSelection {
+            id: crate::protocol::ModelOptionId::new(crate::protocol::ROUTING_TIER_OPTION_ID),
+            value: crate::protocol::ModelOptionValue::Select {
+                choice: crate::protocol::ModelOptionChoiceId::new("high"),
+            },
+        };
+        let held = AgentSelection {
+            provider: ProviderId::new("codex"),
+            model: ModelId::new("codex-default"),
+            options: vec![chosen],
+        };
+        let catalog = ModelCatalog {
+            providers: vec![ProviderModelCatalog {
+                provider: ProviderId::new("codex"),
+                display_name: "Codex".to_owned(),
+                status: ProviderCatalogStatus::Fresh,
+                models: vec![ModelDescriptor {
+                    provider: ProviderId::new("codex"),
+                    id: ModelId::new("codex-default"),
+                    display_name: "Default".to_owned(),
+                    description: String::new(),
+                    is_default: true,
+                    availability: crate::protocol::ModelAvailability::Available,
+                    options: Vec::new(),
+                    details: Default::default(),
+                }],
+            }],
+        };
+        assert_eq!(
+            landing_agent(ChosenOn::Here, &catalog, Some(held))
+                .expect("the Landing's Agent can be used")
+                .options,
+            Vec::new()
         );
     }
 
