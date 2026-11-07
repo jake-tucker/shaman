@@ -819,9 +819,10 @@ impl TestRelay {
             },
         )
         .await;
-        let login: suru::protocol::RelayLogin = http
-            .post(self.route_of(server, &["login"]))
+        let lead: suru::protocol::RelayLoginLead = http
+            .put(self.route_of(server, &["login"]))
             .bearer_auth(&server.token)
+            .json(&suru::protocol::RelayLoginRequest { afresh: false })
             .send()
             .await
             .and_then(reqwest::Response::error_for_status)
@@ -829,6 +830,9 @@ impl TestRelay {
             .json()
             .await
             .expect("decode the login");
+        let suru::protocol::RelayLoginStanding::Begun { login } = lead.standing else {
+            panic!("no Login stands there, and none is under way: {lead:?}");
+        };
         assert!(self.provider.approve(
             &login.user_code,
             suru_relay::Identity {
