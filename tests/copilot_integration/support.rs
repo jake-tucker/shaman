@@ -338,9 +338,9 @@ pub fn assigned_session_arms(auto: &str) -> String {
     )
 }
 
-/// `session.model.switchTo` and `session.model.getCurrent` arms keeping a Session's Model and Auto
-/// preference as the CLI does: a switch naming no preference leaves it alone, and it stays even
-/// while a concrete Model is selected. A switch to `autoTier` `not-a-tier` is refused.
+/// `session.model.switchTo` and `session.model.getCurrent` arms keeping a Session's Model and tier as
+/// the CLI does: a switch naming no tier leaves it alone, and it stays even while a concrete Model is
+/// selected. A switch to `autoTier` `not-a-tier` is refused.
 pub fn tiered_model_arms() -> String {
     r#"    *'"method":"session.model.switchTo"'*'"autoTier":"not-a-tier"'*)
       reply '{"jsonrpc":"2.0","id":'"$id"',"error":{"code":-32603,"message":"Auto preference not-a-tier is unavailable for this account"}}'

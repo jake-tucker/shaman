@@ -430,8 +430,8 @@ async fn turn_under(
     settled_session(client, session_id, turn_index).await
 }
 
-/// What each `session.model.switchTo` asked for: its Model, and the Auto preference it named, which
-/// is `null` for a clearing and absent for one that leaves the preference alone.
+/// What each `session.model.switchTo` asked for: its Model, and the tier it named, which is `null`
+/// for a clearing and absent for one that leaves the tier Copilot holds alone.
 fn switches(copilot: &ScriptedCopilot) -> Vec<(String, Option<Value>)> {
     requests_of(&copilot.requests(), "session.model.switchTo")
         .iter()
@@ -522,7 +522,7 @@ async fn a_chosen_tier_reaches_copilot_and_the_selection_follows_it_there_and_ba
     assert_eq!(
         switches(&copilot)[2..],
         [switch("incomplete-cache-fixture", None)],
-        "a concrete Model takes no preference, and Copilot keeps the one it had"
+        "a concrete Model takes no tier, and Copilot keeps the one it held"
     );
 
     let plain = turn_under(&client, session_id, on_auto(None), 4).await;
@@ -530,7 +530,7 @@ async fn a_chosen_tier_reaches_copilot_and_the_selection_follows_it_there_and_ba
     assert_eq!(
         switches(&copilot)[3..],
         [switch("auto", Some(Value::Null))],
-        "plain Auto clears the preference Copilot kept, or it would carry on on that tier"
+        "plain Auto clears the tier Copilot kept, or it would carry on on it"
     );
 
     let back = turn_under(&client, session_id, on_auto(Some("hydrafusion")), 5).await;
@@ -694,7 +694,7 @@ async fn with_the_setting_off_a_resumed_session_on_a_tier_falls_back_to_plain_au
     assert_eq!(
         switches(&copilot)[1..],
         [switch("auto", Some(Value::Null))],
-        "cleared explicitly, since a switch naming no preference would leave it standing"
+        "cleared explicitly, since a switch naming no tier would leave it standing"
     );
     let [status] = statuses(&resumed)[..] else {
         panic!("one Status row: {:?}", statuses(&resumed));
@@ -752,7 +752,7 @@ async fn with_the_setting_off_a_new_session_naming_a_tier_runs_on_plain_auto() {
     assert_eq!(
         switches(&copilot),
         [switch("auto", None)],
-        "nothing to clear on a Session that holds no preference: the same switch as without one"
+        "nothing to clear on a Session that holds no tier: the same switch as without one"
     );
     assert_eq!(statuses(&first).len(), 1);
     assert_eq!(
@@ -789,7 +789,7 @@ async fn a_session_opened_before_the_setting_came_on_stays_on_plain_auto_until_i
 
 /// With the Setting off, nothing on the wire says a Routing Tier exists.
 #[tokio::test]
-async fn with_the_setting_off_other_models_ask_for_no_preference() {
+async fn with_the_setting_off_other_models_ask_for_no_tier() {
     let copilot = tiered_conversation(SETTLES);
     let home = Home::new("routing-tier-off-wire");
     let (server, client) = home.host(&copilot).await;

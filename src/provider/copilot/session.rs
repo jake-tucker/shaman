@@ -339,9 +339,9 @@ pub(super) async fn until_crash<T>(
 
 /// The Agent Selection the Copilot Session is running under, read back from the CLI so the
 /// Selection Suru reports is the one Copilot actually resolved rather than the one Suru guessed —
-/// or nothing, for a fresh Session the CLI has resolved no Model on yet. The preference Copilot
-/// holds counts only on `auto`: it keeps one while a concrete Model is selected, which that Model
-/// does not run under.
+/// or nothing, for a fresh Session the CLI has resolved no Model on yet. The tier Copilot holds
+/// counts only on `auto`: it keeps one while a concrete Model is selected, which that Model does
+/// not run under.
 fn agent_selection(current: CurrentModel) -> Option<AgentSelection> {
     let tier = committed_tier(&current);
     let model = current.model_id.filter(|model| !model.is_empty())?;
@@ -369,7 +369,7 @@ fn agent_selection(current: CurrentModel) -> Option<AgentSelection> {
     })
 }
 
-/// The Auto preference Copilot has committed for the Session, whichever Model is selected.
+/// The tier Copilot holds committed for the Session, whichever Model is selected.
 fn committed_tier(current: &CurrentModel) -> Option<String> {
     current
         .auto_tier
@@ -646,9 +646,19 @@ impl CopilotInterrupter {
 struct SelectionInForce {
     /// Nothing until the CLI has resolved a Model.
     selection: Option<AgentSelection>,
-    /// The Auto preference Copilot holds, which it keeps while a concrete Model is selected and
-    /// takes back up on a switch to `auto` that names none.
+    /// The tier Copilot holds, which it keeps while a concrete Model is selected and takes back up
+    /// on a switch to `auto` that names none.
     held_tier: Option<String>,
+}
+
+impl SelectionInForce {
+    /// `selection` is in force now. It says what tier Copilot holds only on `auto`.
+    fn adopt(&mut self, selection: AgentSelection) {
+        if selection.model.as_str() == AUTO_MODEL_ID {
+            self.held_tier = selection.routing_tier().map(ToString::to_string);
+        }
+        self.selection = Some(selection);
+    }
 }
 
 /// A Selection as far as it could be put in force, and what the reader is told where that is short
@@ -757,36 +767,35 @@ impl CopilotSession {
     /// Routing Tier it cannot. Suru clears one itself rather than let Copilot fail the Turn: a
     /// resume with no assignment still reports its tier and each Prompt then errors, and a switch
     /// to one fails by RPC (docs/validation/copilot-routing-tier-selection.md).
-    fn selection_on_offer(&self, requested: &AgentSelection) -> (AgentSelection, Option<String>) {
-        let Some(tier) = requested.routing_tier() else {
-            return (requested.clone(), None);
+    fn selection_on_offer(&self, requested: &AgentSelection) -> AppliedSelection {
+        let as_asked = || AppliedSelection {
+            selection: requested.clone(),
+            why: None,
         };
-        let plain = requested.clone().without_routing_tier();
+        let Some(tier) = requested.routing_tier() else {
+            return as_asked();
+        };
         let tiers_on = self
             .settings
             .lock()
             .expect("Copilot Settings lock is not poisoned")
             .fusion_tiers;
-        if requested.model.as_str() != AUTO_MODEL_ID {
-            let why = format!(
-                "Model `{}` takes no Routing Tier, so Routing Tier `{tier}` was left out.",
-                requested.model
-            );
-            (plain, Some(why))
-        } else if !tiers_on {
-            let why = format!(
+        let why = if !tiers_on {
+            format!(
                 "Copilot's Routing Tiers are turned off, so this Session runs on plain Auto \
                  rather than Routing Tier `{tier}`."
-            );
-            (plain, Some(why))
+            )
         } else if !self.assigned {
-            let why = format!(
+            format!(
                 "This Session opened before Copilot's Routing Tiers were turned on, so it runs \
                  on plain Auto rather than Routing Tier `{tier}` until it reopens."
-            );
-            (plain, Some(why))
+            )
         } else {
-            (requested.clone(), None)
+            return as_asked();
+        };
+        AppliedSelection {
+            selection: requested.clone().without_routing_tier(),
+            why: Some(why),
         }
     }
 
@@ -796,7 +805,8 @@ impl CopilotSession {
         &self,
         requested: &AgentSelection,
     ) -> Result<AppliedSelection, ProviderError> {
-        let (wanted, why) = self.selection_on_offer(requested);
+        let on_offer = self.selection_on_offer(requested);
+        let wanted = &on_offer.selection;
         let held_tier = {
             let mut in_force = self
                 .selection
@@ -810,20 +820,16 @@ impl CopilotSession {
                 .expect("Copilot correlation lock is not poisoned")
                 .take_tier_correction()
             {
-                in_force.held_tier = corrected.routing_tier().map(ToString::to_string);
-                in_force.selection = Some(corrected);
+                in_force.adopt(corrected);
             }
-            if in_force.selection.as_ref() == Some(&wanted) {
-                return Ok(AppliedSelection {
-                    selection: wanted,
-                    why,
-                });
+            if in_force.selection.as_ref() == Some(wanted) {
+                return Ok(on_offer);
             }
             in_force.held_tier.clone()
         };
-        let mut options = lower_selection_options(&wanted)?;
-        // A switch to `auto` naming no preference takes back up the one Copilot holds, which
-        // would have a Selection naming no tier run on one.
+        let mut options = lower_selection_options(wanted)?;
+        // A switch to `auto` naming no tier takes back up the one Copilot holds, which would have
+        // a Selection naming none run on it.
         let clearing = wanted.model.as_str() == AUTO_MODEL_ID
             && options.auto_tier.is_none()
             && held_tier.is_some();
@@ -862,48 +868,31 @@ impl CopilotSession {
             done = self.native.set_model(wanted.model.as_str(), Some(options.clone())) => done,
         };
         let applied = match switched {
-            Ok(()) => {
-                let held_tier = if wanted.model.as_str() == AUTO_MODEL_ID {
-                    wanted.routing_tier().map(ToString::to_string)
-                } else {
-                    held_tier
-                };
-                (
-                    AppliedSelection {
-                        selection: wanted,
-                        why,
-                    },
-                    held_tier,
-                )
-            }
+            Ok(()) => on_offer,
             Err(error) if wanted.routing_tier().is_some() && error.rpc_code().is_some() => {
                 options.auto_tier = None;
-                self.tier_refused_at_once(wanted, options, &error, held_tier)
+                self.tier_refused_at_once(on_offer.selection, options, &error, held_tier)
                     .await?
             }
             Err(error) => return Err(self.handle.connection().failure(SWITCH_CONTEXT, error)),
         };
-        let (applied, held_tier) = applied;
-        *self
-            .selection
+        self.selection
             .lock()
-            .expect("Copilot Agent Selection lock is not poisoned") = SelectionInForce {
-            selection: Some(applied.selection.clone()),
-            held_tier,
-        };
+            .expect("Copilot Agent Selection lock is not poisoned")
+            .adopt(applied.selection.clone());
         Ok(applied)
     }
 
     /// Copilot refused the tier `wanted` names outright, as it does one it does not know, leaving
-    /// the Session as it was. The Turn goes on all the same, on `auto` under whatever preference
-    /// Copilot holds, as it says when asked.
+    /// the Session as it was. The Turn goes on all the same, on `auto` under whatever tier Copilot
+    /// holds, as it says when asked.
     async fn tier_refused_at_once(
         &self,
         wanted: AgentSelection,
         without_the_tier: SetModelOptions,
         refusal: &github_copilot_sdk::Error,
         held_tier: Option<String>,
-    ) -> Result<(AppliedSelection, Option<String>), ProviderError> {
+    ) -> Result<AppliedSelection, ProviderError> {
         let refused = wanted
             .routing_tier()
             .map_or_else(String::new, ToString::to_string);
@@ -935,17 +924,14 @@ impl CopilotSession {
             said.trim_end_matches('.'),
             running_on(held_tier.as_deref()),
         );
-        Ok((
-            AppliedSelection {
-                selection,
-                why: Some(why),
-            },
-            held_tier,
-        ))
+        Ok(AppliedSelection {
+            selection,
+            why: Some(why),
+        })
     }
 }
 
-/// What a reader is told a Turn runs on, given the Auto preference in force.
+/// What a reader is told a Turn runs on, given the tier Copilot holds.
 pub(super) fn running_on(tier: Option<&str>) -> String {
     tier.map_or_else(
         || "plain Auto".to_owned(),
@@ -1453,7 +1439,7 @@ mod tests {
     }
 
     #[test]
-    fn the_selection_reported_names_the_preference_copilot_holds_only_on_auto() {
+    fn the_selection_reported_names_the_tier_copilot_holds_only_on_auto() {
         let on_auto = agent_selection(current(
             "auto",
             Some(AutoTier::Custom("hydrafusion".to_owned())),
