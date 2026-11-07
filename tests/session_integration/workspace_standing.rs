@@ -699,7 +699,8 @@ async fn a_root_spelled_another_way_is_the_same_root() {
 /// A change of any Setting takes nothing away on account of Roots the
 /// Config Document no longer names whole: here the Roots are spoiled by
 /// hand while the Server runs, and the next change, of another Setting
-/// altogether, finds them gone from what it reads.
+/// altogether, leaves the Roots in force as they were, the edit waiting for the
+/// next start (ADR 0067), and says so.
 #[tokio::test]
 async fn a_change_of_another_setting_takes_nothing_away_for_roots_spoiled_by_hand() {
     const CHANNEL: &str = "workspace-standing-roots-spoiled";
@@ -727,14 +728,22 @@ async fn a_change_of_another_setting_takes_nothing_away_for_roots_spoiled_by_han
         .expect("change another Setting");
     assert_eq!(
         changed.settings.workspace.roots,
-        Vec::<String>::new(),
-        "the change reads no Roots from the spoiled document"
+        [spelled(&projects)],
+        "the change adopts nothing of the spoiled document"
+    );
+    assert!(
+        changed
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.key.as_deref() == Some("workspace.roots")),
+        "and what the document came to say of them is told of: {:?}",
+        changed.diagnostics
     );
 
     assert_eq!(
         standings(&server, &client).await,
         [(atlas.clone(), None)],
-        "and takes away nothing discovered under the Roots it no longer reads"
+        "and takes away nothing discovered under the Roots in force"
     );
     assert_eq!(
         description_at(&server, &client, &atlas).await,
