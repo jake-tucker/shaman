@@ -11,14 +11,17 @@
 use std::collections::HashMap;
 
 use github_copilot_sdk::{
-    CopilotExpAssignmentResponse, ExpConfigEntry, ExpFlagValue, SessionConfig, SessionId,
+    CopilotExpAssignmentResponse, ExpConfigEntry, ExpFlagValue,
     rpc::{AutoTierDescriptor, AutoTierMetadata, AutoTierStatus},
 };
-use tokio::time::{Duration, timeout};
+use tokio::{
+    sync::oneshot,
+    time::{Duration, Instant, timeout_at},
+};
 
 use super::{
+    copilot_error, copilot_error_context,
     errand::{DiscardedSession, least_capable_session_config},
-    session::until_crash,
     transport::CopilotConnection,
 };
 use crate::{
@@ -71,14 +74,52 @@ pub(super) fn fusion_tier_assignment() -> CopilotExpAssignmentResponse {
 ///
 /// Copilot lists the tiers only to a Session, and only to one opened with the assignment, so this
 /// opens one for the purpose, least-capable as an Errand's, and discards it however this ends: it
-/// runs no Turn, costs nothing, and leaves nothing in Copilot's picker or its store. The Session's
-/// Workspace is the system's temporary directory, so that the listing depends on no directory this
+/// runs no Turn, costs nothing, and leaves nothing in Copilot's picker or its store. Its working
+/// directory is the system's temporary directory, so that the listing depends on no directory this
 /// Server happens to run in. Whatever goes wrong costs `auto` its option alone, never the catalog
 /// it sits in nor Copilot's Availability, because Copilot's Models are all there without it.
+///
+/// The Session lives on a task of its own, and only the wait for the answer is bounded here. A
+/// delete sent ahead of a create the CLI answers late would find nothing, and leave what the create
+/// then filed, so the discard always follows the create, however long that takes.
 pub(super) async fn routing_tier_option(
     handle: &SharedHarnessHandle<CopilotConnection>,
     limit: Duration,
 ) -> Option<ModelOptionDescriptor> {
+    let connection = handle.connection().clone();
+    let deadline = Instant::now() + limit;
+    let (answer, answered) = oneshot::channel();
+    tokio::spawn(async move {
+        let _ = answer.send(listed_tiers(&connection, deadline).await);
+    });
+    let answered = tokio::select! {
+        biased;
+        crashed = handle.crashed() => {
+            tracing::warn!("{}", copilot_error_context(DISCOVERY_CONTEXT, crashed));
+            return None;
+        }
+        answered = timeout_at(deadline, answered) => answered,
+    };
+    match answered {
+        Ok(Ok(Ok(auto))) => auto.and_then(tier_option),
+        Ok(Ok(Err(error))) => {
+            tracing::warn!("{error}");
+            None
+        }
+        Ok(Err(_)) | Err(_) => {
+            tracing::warn!("{DISCOVERY_CONTEXT}: the Copilot CLI did not answer within {limit:?}");
+            None
+        }
+    }
+}
+
+/// What a Session opened for the purpose is told of `auto`, by `deadline`, leaving no Session
+/// behind. A create the CLI refused may still have filed a directory under the identifier, so that
+/// is deleted too.
+async fn listed_tiers(
+    connection: &CopilotConnection,
+    deadline: Instant,
+) -> Result<Option<AutoTierMetadata>, ProviderError> {
     let config = least_capable_session_config()
         .with_working_directory(std::env::temp_dir())
         .with_exp_assignments(fusion_tier_assignment());
@@ -86,55 +127,29 @@ pub(super) async fn routing_tier_option(
         .session_id
         .clone()
         .expect("a Session Suru opens for itself is given its identifier");
-    match timeout(limit, listed_tiers(handle, config, &session_id)).await {
-        Ok(Ok(auto)) => auto.and_then(tier_option),
-        Ok(Err(error)) => {
-            tracing::warn!("{error}");
-            None
-        }
-        // Whatever the deadline abandoned is deleted once the CLI gets to it. A Session opened by
-        // then is on its way out already, and the second deletion finds nothing.
-        Err(_) => {
-            tracing::warn!("{DISCOVERY_CONTEXT}: the Copilot CLI did not answer within {limit:?}");
-            let client = handle.connection().client().clone();
-            tokio::spawn(async move {
-                if let Err(error) = client.delete_session(&session_id).await {
-                    tracing::debug!(
-                        "an abandoned Routing Tier discovery Session outlived it: {error}"
-                    );
-                }
-            });
-            None
-        }
-    }
-}
-
-/// What a Session opened under `config` is told of `auto`, leaving no Session behind. A create the
-/// CLI refused may still have filed a directory under the identifier, so that is deleted too.
-async fn listed_tiers(
-    handle: &SharedHarnessHandle<CopilotConnection>,
-    config: SessionConfig,
-    session_id: &SessionId,
-) -> Result<Option<AutoTierMetadata>, ProviderError> {
-    let client = handle.connection().client();
-    let native = match until_crash(handle, DISCOVERY_CONTEXT, client.create_session(config)).await {
+    let client = connection.client();
+    let native = match client.create_session(config).await {
         Ok(native) => native,
         Err(error) => {
-            if let Err(error) = client.delete_session(session_id).await {
+            if let Err(error) = client.delete_session(&session_id).await {
                 tracing::debug!("a refused Routing Tier discovery Session outlived it: {error}");
             }
-            return Err(error);
+            return Err(connection.failure(DISCOVERY_CONTEXT, error));
         }
     };
     let mut session = DiscardedSession::holding(native);
-    let listed = until_crash(
-        handle,
-        DISCOVERY_CONTEXT,
-        session.native().rpc().model().list(),
-    )
-    .await;
+    let rpc = session.native().rpc();
+    let model = rpc.model();
+    let listed = timeout_at(deadline, model.list()).await;
     session.discard().await;
-    Ok(listed?.auto)
+    match listed {
+        Ok(listed) => listed
+            .map(|listed| listed.auto)
+            .map_err(|error| connection.failure(DISCOVERY_CONTEXT, error)),
+        Err(_) => Err(copilot_error(format!(
+            "{DISCOVERY_CONTEXT}: the Copilot CLI did not list its Models in time"
+        ))),
+    }
 }
 
 /// The tiers Copilot marks visible, in its order and wording, as a Model Option, with Copilot's own

@@ -256,10 +256,7 @@ async fn a_discovery_that_gives_up_still_deletes_its_session() {
       reply '{"jsonrpc":"2.0","id":'"$id"',"error":{"code":-32603,"message":"no"}}'
       ;;
 "#;
-    let unanswered_create = r#"    *'"method":"session.create"'*)
-      ;;
-"#;
-    for arms in [unanswered_list, refused_create, unanswered_create] {
+    for arms in [unanswered_list, refused_create] {
         let copilot = discovering_copilot(arms);
         let runtime = CopilotRuntime::new(copilot.executable())
             .with_routing_tier_discovery_timeout(Duration::from_millis(50));
@@ -282,6 +279,51 @@ async fn a_discovery_that_gives_up_still_deletes_its_session() {
         }
         runtime.shutdown().await.expect("shut the runtime down");
     }
+}
+
+/// The deadline passes while the CLI is still making the Session. Its delete follows the create
+/// however late that answers, because one sent ahead of it finds nothing and leaves the directory
+/// the create then files, and the SDK holding the Session's registration.
+#[tokio::test]
+async fn a_create_answered_after_the_bound_is_still_closed_and_deleted() {
+    // On a subshell, so the CLI goes on reading requests while it makes the Session.
+    let answered_late = r#"    *'"method":"session.create"'*)
+      sid=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
+      (
+        wait_for "$COPILOT_FIXTURE_RELEASE"
+        reply '{"jsonrpc":"2.0","id":'"$id"',"result":{"sessionId":"'"$sid"'"}}'
+      ) &
+      ;;
+"#;
+    let copilot = discovering_copilot(answered_late);
+    let runtime = CopilotRuntime::new(copilot.executable())
+        .with_routing_tier_discovery_timeout(Duration::from_millis(50));
+    runtime.apply_settings(&with_fusion_tiers(true));
+
+    let discovery = runtime
+        .list_models()
+        .await
+        .expect("a deadline passing fails no catalog");
+    assert!(auto(&discovery).options.is_empty());
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(
+        !copilot
+            .methods()
+            .iter()
+            .any(|method| method == "session.delete"),
+        "nothing is deleted ahead of the create: {:?}",
+        copilot.methods()
+    );
+
+    copilot.release();
+    copilot.wait_for_request("session.delete").await;
+    let methods = copilot.methods();
+    let position = |method: &str| methods.iter().position(|called| called == method);
+    assert!(
+        position("session.detach") < position("session.delete"),
+        "the Session is closed first, which releases the SDK's registration: {methods:?}"
+    );
+    runtime.shutdown().await.expect("shut the runtime down");
 }
 
 /// The CLI's report of a Turn that claimed a Fusion tier: its change of Model comes at the Turn's
