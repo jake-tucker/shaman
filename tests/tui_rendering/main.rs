@@ -30,6 +30,7 @@ mod model_picker;
 mod monitoring;
 mod moves;
 mod onboarding;
+mod pairing_back;
 mod prompts;
 mod provisional_session;
 mod reasoning_cycle;

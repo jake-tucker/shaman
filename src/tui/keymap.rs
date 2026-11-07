@@ -748,12 +748,18 @@ pub(super) fn command_for_connect_overlay_event(
             CommandId::InvokeSemantic(SemanticCommandId::ConnectScrollDown),
         ),
         (
-            ConnectInputMode::Confirm | ConnectInputMode::Name | ConnectInputMode::Ways,
+            ConnectInputMode::Confirm
+            | ConnectInputMode::Name
+            | ConnectInputMode::Ways
+            | ConnectInputMode::PairBack,
             KeyCode::PageUp,
             KeyModifiers::NONE,
         ) => Some(CommandId::InvokeSemantic(SemanticCommandId::ConnectPageUp)),
         (
-            ConnectInputMode::Confirm | ConnectInputMode::Name | ConnectInputMode::Ways,
+            ConnectInputMode::Confirm
+            | ConnectInputMode::Name
+            | ConnectInputMode::Ways
+            | ConnectInputMode::PairBack,
             KeyCode::PageDown,
             KeyModifiers::NONE,
         ) => Some(CommandId::InvokeSemantic(
@@ -785,6 +791,15 @@ pub(super) fn command_for_connect_overlay_event(
         (ConnectInputMode::Picker, KeyCode::Char('x'), KeyModifiers::NONE) => Some(
             CommandId::InvokeSemantic(SemanticCommandId::ConnectRemoveRemote),
         ),
+        (ConnectInputMode::Picker, KeyCode::Char('w'), KeyModifiers::NONE) => Some(
+            CommandId::InvokeSemantic(SemanticCommandId::ConnectWithdrawOffer),
+        ),
+        (ConnectInputMode::PairBack, KeyCode::Char(' '), KeyModifiers::NONE) => Some(
+            CommandId::InvokeSemantic(SemanticCommandId::ConnectPairBackAct),
+        ),
+        (ConnectInputMode::PairBack, KeyCode::Char('a'), KeyModifiers::NONE) => Some(
+            CommandId::InvokeSemantic(SemanticCommandId::ConnectPairBackAddRelay),
+        ),
         (ConnectInputMode::Picker, KeyCode::Enter, KeyModifiers::NONE) => {
             Some(CommandId::InvokeSemantic(SemanticCommandId::OutlookSelect))
         }
@@ -792,32 +807,46 @@ pub(super) fn command_for_connect_overlay_event(
         // screen it is where the keys start: a reader who reaches for Down to
         // get at the ways would otherwise press a dead key.
         (
-            ConnectInputMode::Picker | ConnectInputMode::Name | ConnectInputMode::Ways,
+            ConnectInputMode::Picker
+            | ConnectInputMode::Name
+            | ConnectInputMode::Ways
+            | ConnectInputMode::PairBack,
             KeyCode::Up,
             KeyModifiers::NONE,
         )
         | (
-            ConnectInputMode::Picker | ConnectInputMode::Name | ConnectInputMode::Ways,
+            ConnectInputMode::Picker
+            | ConnectInputMode::Name
+            | ConnectInputMode::Ways
+            | ConnectInputMode::PairBack,
             KeyCode::Char('p'),
             KeyModifiers::CONTROL,
         ) => Some(CommandId::InvokeSemantic(
             SemanticCommandId::ConnectPrevious,
         )),
         (
-            ConnectInputMode::Picker | ConnectInputMode::Name | ConnectInputMode::Ways,
+            ConnectInputMode::Picker
+            | ConnectInputMode::Name
+            | ConnectInputMode::Ways
+            | ConnectInputMode::PairBack,
             KeyCode::Down,
             KeyModifiers::NONE,
         )
         | (
-            ConnectInputMode::Picker | ConnectInputMode::Name | ConnectInputMode::Ways,
+            ConnectInputMode::Picker
+            | ConnectInputMode::Name
+            | ConnectInputMode::Ways
+            | ConnectInputMode::PairBack,
             KeyCode::Char('n'),
             KeyModifiers::CONTROL,
         ) => Some(CommandId::InvokeSemantic(SemanticCommandId::ConnectNext)),
-        (ConnectInputMode::Name | ConnectInputMode::Ways, KeyCode::Tab, KeyModifiers::NONE) => {
-            Some(CommandId::InvokeSemantic(
-                SemanticCommandId::ConnectFocusNext,
-            ))
-        }
+        (
+            ConnectInputMode::Name | ConnectInputMode::Ways | ConnectInputMode::PairBack,
+            KeyCode::Tab,
+            KeyModifiers::NONE,
+        ) => Some(CommandId::InvokeSemantic(
+            SemanticCommandId::ConnectFocusNext,
+        )),
         // Reordering reaches the marked way from the name field too: the
         // reader who opened the screen to fix the priority order should not
         // have to arrive at the list before the keys that reorder it answer.
@@ -837,6 +866,7 @@ pub(super) fn command_for_connect_overlay_event(
             | ConnectInputMode::Confirm
             | ConnectInputMode::Name
             | ConnectInputMode::Ways
+            | ConnectInputMode::PairBack
             | ConnectInputMode::Login,
             KeyCode::Enter,
             KeyModifiers::NONE,

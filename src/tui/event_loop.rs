@@ -1107,6 +1107,14 @@ impl RunLoop {
     /// has heard asked for, once a frame that could show it is drawn, to
     /// raise it where the Server gives it this Client.
     fn claim_relay_notices(&mut self) {
+        for id in self.application.take_offer_notice_claims() {
+            spawn_offer_notice_claim(
+                self.client.session_commands(),
+                id,
+                self.notice_claimant,
+                self.channels.relays.clone(),
+            );
+        }
         for (address, lapse) in self.application.take_relay_notice_claims() {
             spawn_relay_notice_claim(
                 self.client.session_commands(),
@@ -1620,6 +1628,21 @@ impl RunLoop {
                     self.channels.pairing.clone(),
                 );
             }
+            ApplicationTransition::AnswerOffer { id, answer } => {
+                spawn_offer_answer(
+                    self.client.session_commands(),
+                    id,
+                    answer,
+                    self.channels.relays.clone(),
+                );
+            }
+            ApplicationTransition::WithdrawOffer(id) => {
+                spawn_offer_withdrawal(
+                    self.client.session_commands(),
+                    id,
+                    self.channels.relays.clone(),
+                );
+            }
             ApplicationTransition::ListRelays(request) => {
                 spawn_relay_listing(
                     self.client.session_commands(),
@@ -2014,6 +2037,8 @@ impl RunLoop {
             | ApplicationTransition::OpenHyperlink(_)
             | ApplicationTransition::RemovePeer(_)
             | ApplicationTransition::RemoveRemote(_)
+            | ApplicationTransition::AnswerOffer { .. }
+            | ApplicationTransition::WithdrawOffer(_)
             | ApplicationTransition::ListRelays(_)
             | ApplicationTransition::AddRelay { .. }
             | ApplicationTransition::BeginRelayLogin { .. }
@@ -3450,7 +3475,8 @@ const TELLING_PACE: TellingPace = TellingPace {
 /// What came of telling the Server once.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Told {
-    /// It heard, or there is nothing left to tell it: the Relay is gone.
+    /// It heard, or there is nothing left to tell it: the Relay or the offer
+    /// is gone.
     Heard,
     /// It did not hear — it could not store it, or was not reached — and is
     /// to be told again.
@@ -3465,7 +3491,11 @@ impl Told {
                 if error
                     .downcast_ref::<crate::protocol::SessionError>()
                     .is_some_and(|refused| {
-                        refused.code == crate::protocol::SessionErrorCode::RelayNotFound
+                        matches!(
+                            refused.code,
+                            crate::protocol::SessionErrorCode::RelayNotFound
+                                | crate::protocol::SessionErrorCode::OfferNotFound
+                        )
                     }) =>
             {
                 Self::Heard
@@ -3487,6 +3517,64 @@ where
         tokio::time::sleep(wait).await;
         wait = (wait * 2).min(pace.longest);
     }
+}
+
+/// Claims of the Client's own Server, as the Client run `claimant`, the Notice
+/// of the offer to pair back `id`, again and again while it does not hear, as a
+/// Relay's is, answering on `answers` whether it gave it this Client.
+fn spawn_offer_notice_claim(
+    commands: SessionCommandClient,
+    id: uuid::Uuid,
+    claimant: uuid::Uuid,
+    answers: UnboundedSender<ApplicationEvent>,
+) {
+    tokio::spawn(tell_until_heard(
+        move || {
+            let commands = commands.clone();
+            let answers = answers.clone();
+            async move {
+                let claim = commands.claim_offer_notice(id, claimant).await;
+                if let Ok(claimed) = claim {
+                    let _ = answers.send(ApplicationEvent::OfferNoticeClaimed { id, claimed });
+                }
+                Told::of(&claim)
+            }
+        },
+        TELLING_PACE,
+    ));
+}
+
+/// Answers the offer to pair back `id` as the reader did.
+fn spawn_offer_answer(
+    commands: SessionCommandClient,
+    id: uuid::Uuid,
+    answer: crate::protocol::AnswerOfferRequest,
+    answers: UnboundedSender<ApplicationEvent>,
+) {
+    tokio::spawn(async move {
+        let error = commands
+            .answer_offer(id, answer)
+            .await
+            .err()
+            .map(|error| error.to_string());
+        let _ = answers.send(ApplicationEvent::OfferAnswered { id, error });
+    });
+}
+
+/// Withdraws the offer to pair back `id`.
+fn spawn_offer_withdrawal(
+    commands: SessionCommandClient,
+    id: uuid::Uuid,
+    answers: UnboundedSender<ApplicationEvent>,
+) {
+    tokio::spawn(async move {
+        let error = commands
+            .withdraw_offer(id)
+            .await
+            .err()
+            .map(|error| error.to_string());
+        let _ = answers.send(ApplicationEvent::OfferWithdrawn { error });
+    });
 }
 
 /// Claims of the Client's own Server, as the Client run `claimant`, the

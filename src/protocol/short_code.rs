@@ -292,6 +292,7 @@ mod tests {
             hostname: "workstation".to_owned(),
             fingerprint: "aaaa".to_owned(),
             ways: Vec::new(),
+            reaches_here: false,
         };
         for said in [
             format!("{text:?}"),

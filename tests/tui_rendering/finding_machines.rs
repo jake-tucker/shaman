@@ -788,6 +788,7 @@ fn an_answer_landing_behind_an_invites_preview_moves_nothing() {
                 hostname: "studio".to_owned(),
                 fingerprint: WORKSTATION.to_owned(),
                 ways: vec![Way::Relay(RELAY.to_owned())],
+                reaches_here: false,
             },
         })
         .expect("show the preview");
@@ -841,6 +842,7 @@ fn delivered_invite() -> DeliveredInvite {
             hostname: "workstation".to_owned(),
             fingerprint: WORKSTATION.to_owned(),
             ways: vec![Way::Relay(RELAY.to_owned())],
+            reaches_here: false,
         },
     }
 }

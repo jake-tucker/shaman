@@ -24,6 +24,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     protocol::{SettingsDiagnostic, SettingsDiagnosticSeverity, ShortCodeState},
+    shown_text::shown,
     theme::{Theme, ThemeDiagnostic},
 };
 
@@ -41,6 +42,9 @@ pub(super) const RELAY_LOGIN_POINTER: &str = "/relay to log in";
 
 /// Where a reader told a short code is dead goes for a new one.
 const NEW_CODE_POINTER: &str = "/serve for a new one";
+
+/// Where the Notice of an offer to pair back has its reader answer it.
+const ANSWER_OFFER_POINTER: &str = "/connect to answer";
 
 /// What the Application has to say, and whether the reader has seen it. The
 /// identity of a dismissed Notice keeps that condition from returning without
@@ -156,6 +160,36 @@ impl ApplicationNotice {
             SettingsDiagnosticSeverity::Warning,
             format!("{attempt}; short code dead"),
         );
+    }
+
+    /// Reports that the Peer named `peer` offered to be reached, by the offer
+    /// `id`, which this Client was given the Notice of. Each is said once.
+    pub(super) fn receive_pair_back_offered(&mut self, id: Uuid, peer: &str) {
+        self.raise(
+            NoticeIdentity::PairBackOffered(id),
+            SettingsDiagnosticSeverity::Warning,
+            format!("{} offers to be reached from this machine", shown(peer, 40)),
+        );
+    }
+
+    /// Takes back the Notice of each offer `ended` says no longer stands,
+    /// where no frame has drawn it yet: an offer gone before its reader could
+    /// see it is nothing to tell them.
+    pub(super) fn withdraw_unshown_pair_back_offered(&mut self, ended: impl Fn(Uuid) -> bool) {
+        let Some(notice) = self.showing.as_mut() else {
+            return;
+        };
+        if notice.shown.get() {
+            return;
+        }
+        notice.parts.retain(|part| {
+            !part.identities.iter().any(
+                |identity| matches!(identity, NoticeIdentity::PairBackOffered(id) if ended(*id)),
+            )
+        });
+        if notice.parts.is_empty() {
+            self.showing = None;
+        }
     }
 
     /// Takes back the Notice of each Relay coming to need a login in a lapse
@@ -293,6 +327,8 @@ pub(super) enum NoticeIdentity {
     },
     /// An attempt used up the short code so numbered.
     ShortCodeBurned(u64),
+    /// A Peer offered to be reached, by this offer.
+    PairBackOffered(Uuid),
 }
 
 impl NoticeIdentity {
@@ -513,17 +549,23 @@ impl Notice {
         let logged = self.identities().any(|identity| {
             !matches!(
                 identity,
-                NoticeIdentity::RelayLoginNeeded { .. } | NoticeIdentity::ShortCodeBurned(_)
+                NoticeIdentity::RelayLoginNeeded { .. }
+                    | NoticeIdentity::ShortCodeBurned(_)
+                    | NoticeIdentity::PairBackOffered(_)
             )
         });
         let relay = !self.relays_needing_login().is_empty();
         let code = self
             .identities()
             .any(|identity| matches!(identity, NoticeIdentity::ShortCodeBurned(_)));
+        let offer = self
+            .identities()
+            .any(|identity| matches!(identity, NoticeIdentity::PairBackOffered(_)));
         [
             logged.then_some(LOG_POINTER),
             relay.then_some(RELAY_LOGIN_POINTER),
             code.then_some(NEW_CODE_POINTER),
+            offer.then_some(ANSWER_OFFER_POINTER),
         ]
         .into_iter()
         .flatten()

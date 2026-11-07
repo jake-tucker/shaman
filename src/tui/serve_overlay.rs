@@ -82,7 +82,8 @@ pub(super) const NO_RELAY: &str = "This Server holds no Relay; press a to add on
 
 /// What a row not Served through says before its key is pressed: the one thing
 /// the key opens the machine to.
-const REACHABLE: &str = "Serving through it makes this machine reachable through this Relay";
+pub(super) const REACHABLE: &str =
+    "Serving through it makes this machine reachable through this Relay";
 
 /// What the picker says where a frame has too few Rows to say all of
 /// [`REACHABLE`] on the row the keys are on, which the key then does not act on.
@@ -343,7 +344,7 @@ pub(super) enum WayAction {
 }
 
 impl WayAction {
-    fn of(withheld: Option<Withheld>, login_under_way: bool) -> Self {
+    pub(super) fn of(withheld: Option<Withheld>, login_under_way: bool) -> Self {
         match withheld {
             None => Self::ToggleOffered,
             Some(Withheld::LoginNeeded) if login_under_way => Self::ShowLogin,
@@ -494,7 +495,7 @@ pub(super) enum Withheld {
 }
 
 impl Withheld {
-    fn of(relay: &Relay) -> Option<Self> {
+    pub(super) fn of(relay: &Relay) -> Option<Self> {
         if relay.state == RelayState::LoginNeeded {
             Some(Self::LoginNeeded)
         } else if !relay.serve_through {

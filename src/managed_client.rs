@@ -251,7 +251,7 @@ pub enum ManagedEvent {
     /// whenever that changes. Never the code.
     ShortCode(crate::protocol::ShortCodeStanding),
     /// The offers to pair back the Server holds and has made, as it connects
-    /// and again whenever they change.
+    /// where there are any, and again whenever they change.
     PairBack(crate::protocol::PairBackOffers),
     /// The Server's Workspace listing, as its `GET /v1/workspaces` answers
     /// it: pushed on its Session catalog stream after the Model Catalog on

@@ -801,6 +801,28 @@ Remote through it from elsewhere later needs that Relay added and logged in at i
 Servers logged in under the same Account, so both Servers must be logged in there as the same GitHub user; where they
 are not, Suru says so, and to log in as that user or pair the two directly.
 
+A Pairing is one-way, so **Configure Remote** also offers *Also let* the Remote *reach this machine*, off by default, for
+two machines that should reach each other: it asks that other machine's user to pair back in one step. Off, you have the
+one-way Pairing you asked for, and nothing is sent. It says why where it cannot be offered, since this machine must have
+a way to offer: Serving on and its listener listening, or a Relay it Serves through. Its row puts that right, a choice
+of its own as in `/serve`, and says first what Serving through a Relay opens.
+
+The offer is a record on both machines and no Invite, and carries no token, so it lasts however long the answer takes,
+across restarts of either. On the other machine a Notice is raised once, to the first Client that can show it, and the
+offer stands in `/connect` until answered: Enter names the Remote and accepts it, and `x` twice declines. Nothing is
+added there on its own. Since a Pairing is one-way, that machine cannot call this one with its answer, so this machine
+acts on it when it next connects, which a Client looking at that Remote has it do; until then `/connect` there says it
+is waiting. Then this machine issues an Invite for that machine's key alone, shown nowhere, which leaves any Invite you
+issued from `/serve` good and is left good by one issued later, and that machine redeems it at once through whichever
+way answers, Relays it logged in at among them. Where this machine has no way to offer by then, it issues nothing, the
+offer stands, and both say why; once it has one the rest takes no further step. Where the redemption fails, that
+machine says why and it is tried again from time to time while the two are connected. The result is an ordinary second
+Pairing: each is ended on its own.
+
+`/connect` shows the offer with its Remote, and `w` withdraws it, which reaches the other machine when this one next
+connects; nothing is issued for it from then on. Ending the Pairing from either side ends the offer. See
+[ADR-0066](../adr/0066-offer-to-pair-back-by-a-standing-record-and-a-token-bound-to-one-key.md).
+
 ### Reaching a Remote
 
 Suru reaches a paired Remote directly where it can, and through a Relay where it cannot, trying the direct ways first.

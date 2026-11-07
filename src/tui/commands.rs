@@ -320,6 +320,13 @@ pub enum SemanticCommandId {
     /// Arms the selected Remote's removal, and removes it when it is already
     /// armed: ending a Pairing is asked for twice.
     ConnectRemoveRemote,
+    /// Takes what the option to pair back offers: chooses it where it can be
+    /// chosen, and otherwise puts right what stands in its way.
+    ConnectPairBackAct,
+    /// Adds a Relay, for the option to pair back to have a way to offer.
+    ConnectPairBackAddRelay,
+    /// Withdraws the offer to pair back the selected Remote stands under.
+    ConnectWithdrawOffer,
     /// Scrolls what overflows the Connect step the reader is on — an
     /// Invite's preview, or why a redemption was refused — a Row back, or a
     /// Row on, so every way an Invite offers is read before it is trusted.
@@ -914,6 +921,9 @@ impl SemanticCommandId {
             Self::ConnectPairAnother => "connect.pair-another",
             Self::ConnectLookAgain => "connect.look-again",
             Self::ConnectRemoveRemote => "connect.remove",
+            Self::ConnectPairBackAct => "connect.pair-back.act",
+            Self::ConnectPairBackAddRelay => "connect.pair-back.add-relay",
+            Self::ConnectWithdrawOffer => "connect.offer.withdraw",
             Self::ConnectScrollUp => "connect.scroll.up",
             Self::ConnectScrollDown => "connect.scroll.down",
             Self::ConnectPageUp => "connect.scroll.page-up",
@@ -2717,6 +2727,30 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         title: "Remove Remote",
         reach: SemanticReach::Client,
         description: "End the Pairing with the selected Remote",
+        slash: None,
+        keybinding: None,
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::ConnectPairBackAct,
+        title: "Offer To Pair Back",
+        reach: SemanticReach::Client,
+        description: "Choose whether the Remote is offered this machine too, or put right what stands in the way",
+        slash: None,
+        keybinding: None,
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::ConnectPairBackAddRelay,
+        title: "Add Relay To Offer",
+        reach: SemanticReach::Client,
+        description: "Add a Relay this machine could be offered through",
+        slash: None,
+        keybinding: None,
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::ConnectWithdrawOffer,
+        title: "Withdraw Offer To Pair Back",
+        reach: SemanticReach::Client,
+        description: "Withdraw the offer the selected Remote was made to reach this machine",
         slash: None,
         keybinding: None,
     },

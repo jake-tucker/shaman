@@ -86,6 +86,7 @@ use super::{
     model_picker::{ModelPicker, ModelPickerPurpose},
     notice::{ApplicationNotice, AttachmentDemotion, Notice, PasteFailure},
     onboarding::{Advance, DerivationMove, Heard, Onboarding, Opening, OwnServer, RootsEdit},
+    pair_back::{OfferFix, PairBackOption},
     relay_overlay::{
         ListingLanded, RedemptionLoginLead, RelayLoginAct, RelayLoginFollow, RelayLoginLead,
         RelayOverlay, RelayRequest, RelaySurface,
@@ -95,7 +96,7 @@ use super::{
     selection::{
         SelectionCell, SelectionFrame, SelectionGranularity, SelectionSurface, TextSelection,
     },
-    serve_overlay::{ServeOverlay, ServeRequest, ServeWays},
+    serve_overlay::{ServeOverlay, ServeRequest, ServeWays, WayAction},
     session_picker::{SessionPicker, SessionPickerListing},
     settings_panel::{AvailabilityRead, SettingsPanel},
     sidebar::{Sidebar, SidebarActivation, SidebarPress},
@@ -690,6 +691,13 @@ pub struct TuiState {
     /// frame that could show it is drawn, so a Client that cannot show it
     /// leaves it to one that can.
     relay_notice_claims: Vec<(String, uuid::Uuid)>,
+    /// The offers to pair back whose Notice this Client has heard asked of a
+    /// Client, so each is claimed once however often it is told.
+    offer_notices_heard: HashSet<uuid::Uuid>,
+    /// Those yet to be claimed of the Server.
+    offer_notice_claims: Vec<uuid::Uuid>,
+    /// Those claimed, whose answer is awaited.
+    offer_notices_claiming: HashSet<uuid::Uuid>,
     /// The lapses whose Notice this Client has claimed, and has yet to hear
     /// whether it was given.
     relay_notices_claiming: HashSet<(String, uuid::Uuid)>,
@@ -1114,6 +1122,9 @@ impl TuiState {
             application_notice: ApplicationNotice::default(),
             relay_notices_heard: HashSet::new(),
             relay_notice_claims: Vec::new(),
+            offer_notices_heard: HashSet::new(),
+            offer_notice_claims: Vec::new(),
+            offer_notices_claiming: HashSet::new(),
             relay_notices_claiming: HashSet::new(),
             relay_retries: Vec::new(),
             resumed_redemption: None,
@@ -2390,7 +2401,24 @@ impl TuiState {
     /// may be anywhere in this Client to hear of. The Server stops saying so
     /// once the Invite has ended, so a Client attaching later hears nothing of
     /// what can no longer be put right, and a Client hears of each code once.
+    /// Takes the offers to pair back the Client's own Server holds and has
+    /// made, as it told them. Each offer whose Notice the Server asks of a
+    /// Client is claimed once, as a frame that could show it is drawn, and
+    /// raised by the one Client the Server gives it, as a Relay coming to need
+    /// a login is; one gone before that says nothing.
     fn receive_offers(&mut self, offers: crate::protocol::PairBackOffers) {
+        for offer in offers.held.iter().filter(|offer| offer.notice) {
+            if self.offer_notices_heard.insert(offer.id) {
+                self.offer_notice_claims.push(offer.id);
+                self.notice_presentable.set(false);
+            }
+        }
+        let standing = |id: uuid::Uuid| offers.held.iter().any(|offer| offer.id == id);
+        self.offer_notice_claims.retain(|id| standing(*id));
+        self.offer_notices_claiming.retain(|id| standing(*id));
+        self.application_notice
+            .withdraw_unshown_pair_back_offered(|id| !standing(id));
+        self.connect_overlay.take_offers(offers.clone());
         self.offers = offers;
     }
 
@@ -2450,6 +2478,15 @@ impl TuiState {
             });
     }
 
+    /// How Configure Remote's option to pair back stands, as things do now.
+    pub(super) fn pair_back_option(&self) -> PairBackOption {
+        PairBackOption::of(
+            self.connect_overlay.reaches_here(),
+            self.settings.serving.enabled,
+            self.serve_ways(),
+        )
+    }
+
     /// What the ways `/serve` may offer stand on, as they stand now.
     pub(super) fn serve_ways(&self) -> ServeWays<'_> {
         ServeWays::of(&self.serving_listener, &self.relay_overlay)
@@ -2476,6 +2513,7 @@ impl TuiState {
         if let Some(outcome) = self.relay_overlay.take_outcome() {
             match outcome.surface {
                 RelaySurface::Serve => self.serve_overlay.take_relay_outcome(outcome),
+                RelaySurface::Connect => self.connect_overlay.take_relay_outcome(outcome),
             }
         }
     }
@@ -2603,6 +2641,11 @@ impl TuiState {
                 self.fatal_error = None;
             }
             ManagedEvent::Connected(health) => {
+                // The Server tells of the offers it holds right after this,
+                // and says nothing where none stand. Nothing in hand is given
+                // up for that: one that has ended says so as it is answered.
+                self.offers = crate::protocol::PairBackOffers::default();
+                self.connect_overlay.forget_offers();
                 if self.outlook == Outlook::Local {
                     self.workspace_picker
                         .adopt_workspace_paths(health.workspace_paths.clone());
@@ -5751,6 +5794,22 @@ pub enum ApplicationEvent {
         lapse: uuid::Uuid,
         claimed: bool,
     },
+    /// The Server answered this Client's claim of the Notice of the offer `id`:
+    /// `claimed` where it gave this Client that Notice, which it then raises.
+    OfferNoticeClaimed {
+        id: uuid::Uuid,
+        claimed: bool,
+    },
+    /// The Server took, or refused for `error`, this Client's reader's answer
+    /// to the offer `id`.
+    OfferAnswered {
+        id: uuid::Uuid,
+        error: Option<String>,
+    },
+    /// The Server took, or refused for `error`, the withdrawal of an offer.
+    OfferWithdrawn {
+        error: Option<String>,
+    },
     /// The Server stored the Serve-through choice `request` asked for, and
     /// the Relay stood as `relay` once it had.
     RelayServeThroughSet {
@@ -6240,6 +6299,13 @@ pub enum ApplicationTransition {
     /// End the Pairing with the named Remote, which the reader confirmed by
     /// pressing the removal key a second time.
     RemoveRemote(String),
+    /// Answers the offer to pair back `id` as its reader did.
+    AnswerOffer {
+        id: uuid::Uuid,
+        answer: crate::protocol::AnswerOfferRequest,
+    },
+    /// Withdraws the offer to pair back `id`.
+    WithdrawOffer(uuid::Uuid),
     /// Ask the Client's own Server for its Relays, whichever way the Outlook
     /// is turned.
     ListRelays(RelayRequest),
@@ -7046,7 +7112,9 @@ impl Application {
             // The refusal of an edit Onboarding awaits is said there, where
             // the reader can try it again.
             ApplicationEvent::SettingMutationFailed { request, error } => {
-                if !self.state.onboarding.edit_refused(request, &error) {
+                if !self.state.onboarding.edit_refused(request, &error)
+                    && !self.state.connect_overlay.setting_refused(&error)
+                {
                     self.state.settings_panel.report_failure(error);
                 }
                 Ok(ApplicationTransition::Continue)
@@ -7338,6 +7406,27 @@ impl Application {
                         .application_notice
                         .receive_relay_login_needed(&address, lapse);
                 }
+                Ok(ApplicationTransition::Continue)
+            }
+            ApplicationEvent::OfferNoticeClaimed { id, claimed } => {
+                let awaited = self.state.offer_notices_claiming.remove(&id);
+                if claimed
+                    && awaited
+                    && let Some(offer) = self.state.offers.held.iter().find(|offer| offer.id == id)
+                {
+                    let peer = offer.peer.clone();
+                    self.state
+                        .application_notice
+                        .receive_pair_back_offered(id, &peer);
+                }
+                Ok(ApplicationTransition::Continue)
+            }
+            ApplicationEvent::OfferAnswered { id, error } => {
+                self.state.connect_overlay.offer_answered(id, error);
+                Ok(ApplicationTransition::Continue)
+            }
+            ApplicationEvent::OfferWithdrawn { error } => {
+                self.state.connect_overlay.offer_withdrawn(error);
                 Ok(ApplicationTransition::Continue)
             }
             ApplicationEvent::RelayServeThroughSet { request, relay } => {
@@ -11821,6 +11910,15 @@ impl Application {
                 Ok(ApplicationTransition::BeginPairing(machines))
             }
             SemanticCommandId::ConnectConfirm => {
+                if let Some((id, name)) = self.state.connect_overlay.accept_offer() {
+                    return Ok(ApplicationTransition::AnswerOffer {
+                        id,
+                        answer: crate::protocol::AnswerOfferRequest::Accept { name },
+                    });
+                }
+                if self.state.connect_overlay.accepting().is_some() {
+                    return Ok(ApplicationTransition::Continue);
+                }
                 if self.state.connect_overlay.confirm()
                     || self.state.connect_overlay.choose_machine()
                 {
@@ -11861,6 +11959,9 @@ impl Application {
                 Ok(ApplicationTransition::Continue)
             }
             SemanticCommandId::OutlookSelect => {
+                if self.state.connect_overlay.begin_accepting() {
+                    return Ok(ApplicationTransition::Continue);
+                }
                 let Some(outlook) = self.state.connect_overlay.selected_outlook() else {
                     return Ok(ApplicationTransition::Continue);
                 };
@@ -11896,10 +11997,34 @@ impl Application {
                 ))
             }
             SemanticCommandId::ConnectRemoveRemote => {
+                if self.state.connect_overlay.selected_offer().is_some() {
+                    return Ok(self.state.connect_overlay.decline_selected().map_or(
+                        ApplicationTransition::Continue,
+                        |id| ApplicationTransition::AnswerOffer {
+                            id,
+                            answer: crate::protocol::AnswerOfferRequest::Decline,
+                        },
+                    ));
+                }
                 Ok(self.state.connect_overlay.remove_remote().map_or(
                     ApplicationTransition::Continue,
                     ApplicationTransition::RemoveRemote,
                 ))
+            }
+            SemanticCommandId::ConnectWithdrawOffer => {
+                Ok(self.state.connect_overlay.offer_to_withdraw().map_or(
+                    ApplicationTransition::Continue,
+                    ApplicationTransition::WithdrawOffer,
+                ))
+            }
+            SemanticCommandId::ConnectPairBackAct => Ok(self.act_on_pair_back()),
+            SemanticCommandId::ConnectPairBackAddRelay => {
+                if self.state.connect_overlay.pair_back_has_keys()
+                    && self.state.pair_back_option() != PairBackOption::Offerable
+                {
+                    self.state.relay_overlay.add_for(RelaySurface::Connect);
+                }
+                Ok(ApplicationTransition::Continue)
             }
             SemanticCommandId::ConnectScrollUp => {
                 self.state.connect_overlay.scroll_by(-1);
@@ -13702,6 +13827,7 @@ impl Application {
         changed |= self
             .state
             .with_serve_ways(ServeOverlay::put_down_relay_note);
+        changed |= self.state.connect_overlay.put_down_relay_notes();
         changed
     }
 
@@ -13718,6 +13844,66 @@ impl Application {
         is_reader_interaction(event)
             && !self.state.onboarding.is_open()
             && self.state.application_notice.dismiss()
+    }
+
+    /// What the key on Configure Remote's option to pair back does as it stands:
+    /// chooses it where it can be, and otherwise what puts that right, each a
+    /// choice of its own made only on what the reader was shown of it.
+    fn act_on_pair_back(&mut self) -> ApplicationTransition {
+        if !self.state.connect_overlay.pair_back_has_keys() {
+            return ApplicationTransition::Continue;
+        }
+        let option = self.state.pair_back_option();
+        let fix = match option {
+            PairBackOption::Offerable => {
+                self.state.connect_overlay.toggle_pair_back(true);
+                return ApplicationTransition::Continue;
+            }
+            PairBackOption::Withheld { fix, .. } => fix,
+        };
+        // Whatever stands in the way, leaving it unchosen is always there.
+        self.state.connect_overlay.toggle_pair_back(false);
+        let Some(fix) = fix else {
+            return ApplicationTransition::Continue;
+        };
+        if fix.statement().is_some() && !self.state.connect_overlay.pair_back_statement_drawn() {
+            return ApplicationTransition::Continue;
+        }
+        match fix {
+            OfferFix::TurnServingOn => ApplicationTransition::MutateSetting {
+                mutation: SettingMutation::ServingEnabled { value: Some(true) },
+                request: SettingRequest::new(),
+            },
+            OfferFix::AtRelay { address, action } => match action {
+                WayAction::BeginLogin | WayAction::ShowLogin => relay_login_transition(
+                    self.state
+                        .relay_overlay
+                        .log_in_for(RelaySurface::Connect, &address),
+                ),
+                WayAction::ServeThrough => serve_through_transition(
+                    self.state
+                        .relay_overlay
+                        .serve_through_for(RelaySurface::Connect, &address),
+                ),
+                WayAction::ToggleOffered => ApplicationTransition::Continue,
+            },
+        }
+    }
+
+    /// The offers to pair back whose Notice this Client has heard asked for
+    /// since last asked, for the run loop to claim of the Server, answering each
+    /// with [`ApplicationEvent::OfferNoticeClaimed`] — only once the last frame
+    /// drawn could show a Notice, so a Client that cannot leaves it to one that
+    /// can.
+    pub fn take_offer_notice_claims(&mut self) -> Vec<uuid::Uuid> {
+        if !self.state.notice_presentable.get() {
+            return Vec::new();
+        }
+        let claims = std::mem::take(&mut self.state.offer_notice_claims);
+        self.state
+            .offer_notices_claiming
+            .extend(claims.iter().copied());
+        claims
     }
 
     /// The lapses of a Relay's Login whose Notice this Client has heard asked

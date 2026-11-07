@@ -392,7 +392,6 @@ pub async fn receive_managed_client_initial_state(client: &mut ManagedClient) {
     crate::support::receive_model_catalog(client).await;
     crate::support::receive_relays(client).await;
     crate::support::receive_serving_listener(client).await;
-    crate::support::receive_offers(client).await;
     crate::support::receive_onboarded(client).await;
 }
 

@@ -19,6 +19,9 @@
 //! what it is told, its direct ways staying as its Invite gave them. A Relay
 //! way is dialled only at a Relay the redeeming Server's user has chosen by
 //! adding it; one at any other is listed with the Remote and nothing more.
+//!
+//! The ceremony that forms one Pairing may offer the opposite one, by a record
+//! kept on each side's own record of the Pairing ([`pair_back`], ADR-0066).
 
 use std::{
     collections::{HashMap, HashSet},
@@ -1291,7 +1294,11 @@ impl ServingController {
             )
             .await;
             match attempt {
-                Attempt::Delivered(invite) => return delivered(&invite, &listed),
+                Attempt::Delivered(invite) => {
+                    let mut delivered = delivered(&invite, &listed)?;
+                    delivered.preview.reaches_here = self.is_enrolled_peer(&listed);
+                    return Ok(delivered);
+                }
                 Attempt::Dead(why) => return Err(code_dead(why)),
                 Attempt::Refused(refused) => {
                     // An answer no guess went into: it says the same whoever
@@ -1366,6 +1373,7 @@ impl ServingController {
         Ok(InvitePreview {
             hostname: invite.hostname,
             fingerprint: fingerprint(&invite.server_key),
+            reaches_here: self.is_enrolled_peer(&invite.server_key),
             ways: invite.ways,
         })
     }
@@ -2892,6 +2900,7 @@ fn delivered(invite: &str, listed: &[u8]) -> std::result::Result<DeliveredInvite
             hostname: shown(&parsed.hostname, MAX_PEER_NAME_CHARS),
             fingerprint: fingerprint(&parsed.server_key),
             ways: parsed.ways,
+            reaches_here: false,
         },
     })
 }

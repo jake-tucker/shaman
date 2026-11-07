@@ -191,31 +191,24 @@ pub async fn receive_connect_state(
     receive_model_catalog(client).await;
     let relays = receive_relays(client).await;
     let listener = receive_serving_listener(client).await;
-    receive_offers(client).await;
     receive_onboarded(client).await;
     (identity, relays, listener)
 }
 
-/// Reads the offers to pair back the Server holds and has made, which follow
-/// how its Serving listener stands on every connect.
-pub async fn receive_offers(client: &mut ManagedClient) -> suru::protocol::PairBackOffers {
-    let event = timeout(PROGRESS_DEADLINE, next_event(client))
-        .await
-        .expect("the offers to pair back arrive")
-        .expect("managed client remains open");
-    let ManagedEvent::PairBack(offers) = event else {
-        panic!("expected the offers to pair back, got {event:?}");
-    };
-    offers
-}
-
-/// Reads whether the Server has been onboarded, which follows the offers to
-/// pair back it holds on every connect.
+/// Reads whether the Server has been onboarded, which follows how its Serving
+/// listener stands on every connect, and the offers to pair back it holds,
+/// where there are any.
 pub async fn receive_onboarded(client: &mut ManagedClient) -> bool {
-    let event = timeout(PROGRESS_DEADLINE, next_event(client))
+    let mut event = timeout(PROGRESS_DEADLINE, next_event(client))
         .await
         .expect("whether the Server has been onboarded arrives")
         .expect("managed client remains open");
+    if matches!(event, ManagedEvent::PairBack(_)) {
+        event = timeout(PROGRESS_DEADLINE, next_event(client))
+            .await
+            .expect("whether the Server has been onboarded arrives")
+            .expect("managed client remains open");
+    }
     let ManagedEvent::Onboarded(onboarded) = event else {
         panic!("expected whether the Server has been onboarded, got {event:?}");
     };

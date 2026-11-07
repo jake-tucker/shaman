@@ -14,7 +14,7 @@ This is why there is no offer window. A window opened by enrollment and closed b
 
 **The record lives on the Pairing's own record.** `B`'s offer is a field of its stored Peer, and `A`'s a field of its stored Remote, both written whole through the existing atomic replace of `peers.json` and `remotes.json`. So a Peer holds one at most by its type, a removed Peer's record goes in the same write, and no separate file can strand one.
 
-**What `B` holds of an offer**: its id, when `B` took it, by `B`'s clock, the name `B`'s user gave it once accepted, whether a redemption of it was under way as last written, and whether its Notice has been given and to which Client run. There is no text from `A` in it. `B` names the offer by the name the Peer is already known by, held to what can be shown as it enrolled, with its fingerprint beside it, and the Remote's offered name comes from that through `shown`. A hostile `A` gets to choose nothing a reader sees that it could not already say by being a Peer. Each Peer is one record of bounded size.
+**What `B` holds of an offer**: its id, when `B` took it, by `B`'s clock, the name `B`'s user gave it once accepted (which they can change, while it waits), whether a redemption of it was under way as last written, and whether its Notice has been given and to which Client run. There is no text from `A` in it. `B` names the offer by the name the Peer is already known by, held to what can be shown as it enrolled, with its fingerprint beside it, and the Remote's offered name comes from that through `shown`. A hostile `A` gets to choose nothing a reader sees that it could not already say by being a Peer. Each Peer is one record of bounded size.
 
 ## Who holds what, and every transition
 
@@ -61,7 +61,7 @@ Every other route this work adds is server administration on the loopback listen
 1. The stream of `OFFERED_RELAYS_PATH`, which a Peer already holds open, also tells it its own offer's id and whether it is accepted. Nothing about any other Peer's offers can be said on it.
 2. `POST /v1/pairing/offer` takes one of three words about the caller's own offer: *withdrawn*, *cannot offer* (a reason from a closed set), and the *Invite*. It can make nothing, name no other Peer, and a word about an id that is not the caller's is answered as no offer.
 
-The rate of what a Peer can make `B` do is bound: one redemption under way at once for each offer, and `pair_back_retry_interval` between one that failed and the next, on `B`'s side as well as `A`'s, so a hostile `A` cannot have `B` dial at will. A reason from `A` is kept in `B`'s memory, so a Peer has no way to spend `B`'s disk.
+The rate of what a Peer can make `B` do is bound: one redemption under way at once for each offer, and `pair_back_retry_interval` between one that failed and the next, on `B`'s side as well as `A`'s, so a hostile `A` cannot have `B` dial at will. A redemption is held to `pair_back_invite_ttl`, so a machine that takes the handshake and falls silent holds nothing up, and what it left is taken back. A reason from `A` is kept in `B`'s memory, so a Peer has no way to spend `B`'s disk.
 
 These routes live on the Serving listener, not under `/v1/pairing/proxy`, and only `A`'s Server speaks them.
 
@@ -92,7 +92,7 @@ A Remote already holding `A`'s key on `B`, by `/serve` and a paste for instance,
 
 ## Consequences
 
-- `A`'s user must have a way to offer, or be told why not, to choose the option: it says so on Configure Remote and offers to put it right.
+- `A`'s user must have a way to offer, or be told why not, to choose the option: its row on Configure Remote shows `[-]`, and says why and offers to put it right once the keys come to it, so a reader pairing one way is asked to read nothing more. The Server refuses it as well, before spending anything, so nothing rests on what a Client showed.
 - `B`'s user sees a Notice once and an entry in `/connect` until answered, on a machine they may not visit for weeks: nothing here can assume a reader on either side.
 - An acceptance with `A` away waits, and `B` says so. A machine started at login with no Client attached connects to nothing, so an offer it made waits for a Client too.
 - A second Pairing arising this way is ordinary in every respect: each is ended on its own, and removing one leaves the other standing.

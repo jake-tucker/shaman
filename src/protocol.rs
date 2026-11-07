@@ -2102,6 +2102,10 @@ pub struct InvitePreview {
     pub hostname: String,
     pub fingerprint: String,
     pub ways: Vec<Way>,
+    /// Whether that machine already reaches this one, as one of its Peers, so
+    /// there is nothing to offer it.
+    #[serde(default)]
+    pub reaches_here: bool,
 }
 
 /// A pasted Invite to inspect locally. Inspection validates and decodes the

@@ -1150,6 +1150,7 @@ fn pairing_another_remote_refuses_a_duplicate_prefilled_name_in_the_draft() {
                 hostname: "studio".to_owned(),
                 fingerprint: "new".to_owned(),
                 ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
+                reaches_here: false,
             },
         })
         .unwrap();
@@ -1265,6 +1266,7 @@ fn redemption_in_flight() -> (Application, ConnectRequest) {
                 hostname: "studio".to_owned(),
                 fingerprint: "fingerprint".to_owned(),
                 ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
+                reaches_here: false,
             },
         })
         .unwrap();
@@ -1383,6 +1385,7 @@ fn pairing_another_remote_keeps_every_paired_remote_in_the_picker() {
                 hostname: "laptop".to_owned(),
                 fingerprint: "laptop-fingerprint".to_owned(),
                 ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
+                reaches_here: false,
             },
         })
         .unwrap();
@@ -1433,6 +1436,7 @@ fn pasted_invite_shows_its_fingerprint_before_pairing_can_advance() {
                 hostname: "studio".to_owned(),
                 fingerprint: "0123456789abcdef".repeat(4),
                 ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
+                reaches_here: false,
             },
         })
         .expect("show Invite fingerprint");
@@ -1475,6 +1479,7 @@ fn remote_name_is_editable_and_ways_are_redeemed_in_the_visible_priority_order()
                 hostname: "studio".to_owned(),
                 fingerprint: "fingerprint".to_owned(),
                 ways: vec![first.clone(), preferred.clone()],
+                reaches_here: false,
             },
         })
         .unwrap();
@@ -1783,20 +1788,30 @@ fn arrows_carry_the_keys_from_the_name_field_into_the_address_list() {
 fn arrows_wrap_between_the_address_list_and_the_name_field() {
     let mut application = configure_remote_draft();
 
+    // The option to pair back stands between the end of the addresses and the
+    // name field, so the column leads around through it.
+    press(&mut application, KeyCode::Up);
+    assert!(
+        connect_text_on(&application, Color::Blue)
+            .trim()
+            .starts_with("› [-] Also let studio"),
+        "Up from the name field comes to the option at the foot of the column"
+    );
     press(&mut application, KeyCode::Up);
     assert_eq!(
         connect_text_on(&application, Color::Blue).trim(),
         "› 2. 192.168.1.24:7777",
-        "Up from the name field enters the address list at its last row"
+        "and Up again enters the address list at its last row"
     );
 
+    press(&mut application, KeyCode::Down);
     press(&mut application, KeyCode::Down);
     press(&mut application, KeyCode::Char('!'));
     assert!(
         rendered_application_rows(&application)
             .join("\n")
             .contains("> studio!"),
-        "Down past the last address hands the keys back to the name field"
+        "Down past the last address and the option hands the keys back to the name field"
     );
 
     press(&mut application, KeyCode::Down);
@@ -1869,6 +1884,7 @@ fn configure_remote_draft() -> Application {
                     Way::Direct("10.0.0.8:7777".parse().unwrap()),
                     Way::Direct("192.168.1.24:7777".parse().unwrap()),
                 ],
+                reaches_here: false,
             },
         })
         .unwrap();

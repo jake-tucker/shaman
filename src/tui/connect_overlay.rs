@@ -23,21 +23,27 @@
 //! (ADR-0065), since the code gets one try, and a try that fails is not made
 //! again: it is taken from the field, and the reader told to get a new one. What
 //! the code delivers goes on as any Invite does, through the preview.
+//!
+//! Configure Remote offers to pair back as well, off by default, by whichever way
+//! of delivering an Invite the reader came, saying why where it cannot be offered
+//! (ADR-0066). The offers the Server holds stand in the picker as rows of their
+//! own until answered, and one it made stands with the Remote it was made to,
+//! until it is withdrawn or settled.
 
-use std::collections::HashMap;
+use std::{cell::Cell, collections::HashMap};
 
 use zeroize::Zeroizing;
 
 use crate::protocol::{
-    DeliveredInvite, FetchShortInviteRequest, InvitePreview, InviteText, Outlook,
-    RedeemInviteRequest, RelayLogin, RelayLoginOutcome, Remote, RemoteHealth, RemoteStatus,
-    ShortCode, UnreachableReason, Way, opens_as_an_invite,
+    DeliveredInvite, FetchShortInviteRequest, HeldOffer, InvitePreview, InviteText, MadeOffer,
+    Outlook, PairBackOffers, RedeemInviteRequest, RelayLogin, RelayLoginOutcome, Remote,
+    RemoteHealth, RemoteStatus, ShortCode, UnreachableReason, Way, opens_as_an_invite,
 };
 
 use super::{
     found_machines::{FoundMachine, FoundMachines, MachineChoice},
     list_window::ListWindow,
-    relay_overlay::RelayRequest,
+    relay_overlay::{ListNote, RelayOutcome, RelayRequest},
     unreachable_reason,
 };
 
@@ -83,6 +89,11 @@ pub(super) struct ConnectOverlay {
     /// The machines found at the Server's Relays, beside Invite entry.
     machines: FoundMachines,
     last_request: u64,
+    /// The offers to pair back the Server holds and has made, as it last said.
+    offers: PairBackOffers,
+    /// Whether the last frame drew what the option to pair back must say
+    /// before its key acts. Given up as every frame begins.
+    pair_back_said: Cell<bool>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -138,6 +149,20 @@ enum ConnectOverlayState {
     Removing {
         selected: usize,
     },
+    /// An offer the Server holds being accepted, its Remote being named.
+    Accepting(Accepting),
+}
+
+/// An offer being accepted, and what it is being named.
+#[derive(Clone, Debug)]
+struct Accepting {
+    offer: HeldOffer,
+    name: String,
+    error: Option<String>,
+    /// Whether the Server has been asked, and has yet to answer.
+    asked: bool,
+    /// Where in the picker to go back to.
+    selected: usize,
 }
 
 /// The code being typed for a machine chosen from those found.
@@ -217,6 +242,7 @@ pub(super) enum LoginStep {
 enum ConnectFocus {
     Name,
     Ways,
+    PairBack,
 }
 
 #[derive(Clone, Debug)]
@@ -227,20 +253,28 @@ struct ConnectDraft {
     selected: usize,
     focus: ConnectFocus,
     error: Option<String>,
+    /// Whether the Remote is offered this machine too. Off by default, since a
+    /// Pairing lets the other machine run commands here.
+    pair_back: bool,
+    /// Whether that machine reaches this one already, by its key.
+    reaches_here: bool,
+    /// What the Relay list last handed back, of what it did for the option.
+    relay_notes: Vec<ListNote>,
 }
 
-/// The name field and the rows of ways are one column the arrows walk, so a
-/// reader who never reaches for Tab still arrives at the ways, and leaves them
-/// by walking off either end. An Invite carrying no way to order leaves the
-/// keys in the name field, where the only thing left to say is the Remote's
-/// name.
+/// The name field, the rows of ways and the option to pair back are one column
+/// the arrows walk, so a reader who never reaches for Tab still arrives at
+/// each, and walking off either end leads around. An Invite carrying no way to
+/// order leaves the keys in the name field, where the only thing left to say
+/// is the Remote's name.
 impl ConnectDraft {
     fn select_previous(&mut self) {
         let Some(last) = self.ways.len().checked_sub(1) else {
             return;
         };
         match self.focus {
-            ConnectFocus::Name => {
+            ConnectFocus::Name => self.focus = ConnectFocus::PairBack,
+            ConnectFocus::PairBack => {
                 self.focus = ConnectFocus::Ways;
                 self.selected = last;
             }
@@ -259,9 +293,10 @@ impl ConnectDraft {
                 self.selected = 0;
             }
             ConnectFocus::Ways if self.selected + 1 >= self.ways.len() => {
-                self.focus = ConnectFocus::Name;
+                self.focus = ConnectFocus::PairBack;
             }
             ConnectFocus::Ways => self.selected += 1,
+            ConnectFocus::PairBack => self.focus = ConnectFocus::Name,
         }
     }
 }
@@ -271,6 +306,12 @@ pub(super) struct ConnectDetails<'a> {
     pub(super) ways: &'a [Way],
     pub(super) selected: usize,
     pub(super) name_focused: bool,
+    pub(super) ways_focused: bool,
+    pub(super) pair_back_focused: bool,
+    /// Whether the option to pair back is chosen.
+    pub(super) pair_back: bool,
+    /// What the Relay list last handed back, of what it did for the option.
+    pub(super) relay_notes: &'a [ListNote],
     pub(super) error: Option<&'a str>,
     /// What has changed since the reader left a login the redemption waited
     /// on, where anything has.
@@ -287,6 +328,8 @@ pub(super) enum ConnectInputMode {
     Confirm,
     Name,
     Ways,
+    /// The option to pair back, whose row takes a key of its own.
+    PairBack,
     Picker,
     /// The login a redemption waits on, shown or stopped.
     Login,
@@ -483,6 +526,9 @@ impl ConnectOverlay {
             ConnectOverlayState::Inspecting { .. } => Some("Inspecting Invite…"),
             ConnectOverlayState::Redeeming { .. } => Some("Pairing Remote…"),
             ConnectOverlayState::Removing { .. } => Some("Removing Remote…"),
+            ConnectOverlayState::Accepting(Accepting { asked: true, .. }) => {
+                Some("Accepting the offer…")
+            }
             _ => None,
         }
     }
@@ -525,10 +571,14 @@ impl ConnectOverlay {
             ConnectOverlayState::InviteEntry { .. } => ConnectInputMode::Invite,
             ConnectOverlayState::CodeEntry(_) => ConnectInputMode::Code,
             ConnectOverlayState::Confirming { .. } => ConnectInputMode::Confirm,
-            ConnectOverlayState::Details(draft) if draft.focus == ConnectFocus::Name => {
+            ConnectOverlayState::Details(draft) => match draft.focus {
+                ConnectFocus::Name => ConnectInputMode::Name,
+                ConnectFocus::Ways => ConnectInputMode::Ways,
+                ConnectFocus::PairBack => ConnectInputMode::PairBack,
+            },
+            ConnectOverlayState::Accepting(Accepting { asked: false, .. }) => {
                 ConnectInputMode::Name
             }
-            ConnectOverlayState::Details(_) => ConnectInputMode::Ways,
             ConnectOverlayState::RemotePicker { .. } => ConnectInputMode::Picker,
             ConnectOverlayState::LoggingIn {
                 step: LoginStep::Waiting(_) | LoginStep::Stopped(_),
@@ -540,6 +590,7 @@ impl ConnectOverlay {
             | ConnectOverlayState::Inspecting { .. }
             | ConnectOverlayState::Redeeming { .. }
             | ConnectOverlayState::LoggingIn { .. }
+            | ConnectOverlayState::Accepting(_)
             | ConnectOverlayState::Removing { .. } => ConnectInputMode::Waiting,
         }
     }
@@ -611,6 +662,12 @@ impl ConnectOverlay {
                     .extend(text.chars().filter(|character| !character.is_control()));
                 draft.error = None;
             }
+            ConnectOverlayState::Accepting(accepting) if !accepting.asked => {
+                accepting
+                    .name
+                    .extend(text.chars().filter(|character| !character.is_control()));
+                accepting.error = None;
+            }
             _ => {}
         }
     }
@@ -629,6 +686,10 @@ impl ConnectOverlay {
             ConnectOverlayState::Details(draft) if draft.focus == ConnectFocus::Name => {
                 draft.name.pop();
                 draft.error = None;
+            }
+            ConnectOverlayState::Accepting(accepting) if !accepting.asked => {
+                accepting.name.pop();
+                accepting.error = None;
             }
             _ => {}
         }
@@ -739,6 +800,9 @@ impl ConnectOverlay {
             selected: 0,
             focus: ConnectFocus::Name,
             error: None,
+            pair_back: false,
+            reaches_here: preview.reaches_here,
+            relay_notes: Vec::new(),
         });
         self.ways_window.open();
         true
@@ -749,7 +813,8 @@ impl ConnectOverlay {
             ConnectOverlayState::Details(draft) => {
                 draft.focus = match draft.focus {
                     ConnectFocus::Name => ConnectFocus::Ways,
-                    ConnectFocus::Ways => ConnectFocus::Name,
+                    ConnectFocus::Ways => ConnectFocus::PairBack,
+                    ConnectFocus::PairBack => ConnectFocus::Name,
                 };
             }
             ConnectOverlayState::InviteEntry { .. } => self.machines.focus_next(),
@@ -765,7 +830,8 @@ impl ConnectOverlay {
                 self.ways_window.reveal();
             }
             ConnectOverlayState::RemotePicker { selected, .. } => {
-                *selected = selected.checked_sub(1).unwrap_or(self.known_remotes.len());
+                let last = self.known_remotes.len() + self.offers.held.len();
+                *selected = selected.checked_sub(1).unwrap_or(last);
                 self.remotes_window.reveal();
             }
             _ => {}
@@ -780,7 +846,8 @@ impl ConnectOverlay {
                 self.ways_window.reveal();
             }
             ConnectOverlayState::RemotePicker { selected, .. } => {
-                *selected = (*selected + 1) % (self.known_remotes.len() + 1);
+                let rows = self.known_remotes.len() + self.offers.held.len() + 1;
+                *selected = (*selected + 1) % rows;
                 self.remotes_window.reveal();
             }
             _ => {}
@@ -856,7 +923,7 @@ impl ConnectOverlay {
             invite: draft.invite.clone(),
             name: Some(draft.name.trim().to_owned()),
             ways: draft.ways.clone(),
-            pair_back: false,
+            pair_back: draft.pair_back,
         };
         self.logged_in_at = None;
         self.left_login = None;
@@ -1246,6 +1313,14 @@ impl ConnectOverlay {
                 self.refusal_window.scroll_to(0);
                 ConnectOverlayState::Details(draft)
             }
+            ConnectOverlayState::Accepting(accepting) if accepting.asked => {
+                ConnectOverlayState::Accepting(accepting)
+            }
+            ConnectOverlayState::Accepting(accepting) => ConnectOverlayState::RemotePicker {
+                selected: accepting.selected,
+                armed: false,
+                note: None,
+            },
             ConnectOverlayState::CodeEntry(entry) => ConnectOverlayState::InviteEntry {
                 invite: entry.invite,
                 error: None,
@@ -1344,7 +1419,7 @@ impl ConnectOverlay {
             _ => return,
         };
         self.state = ConnectOverlayState::RemotePicker {
-            selected: selected.min(self.known_remotes.len()),
+            selected: selected.min(self.known_remotes.len() + self.offers.held.len()),
             armed: false,
             note: Some(note),
         };
@@ -1400,6 +1475,10 @@ impl ConnectOverlay {
                 ways: &draft.ways,
                 selected: draft.selected,
                 name_focused: draft.focus == ConnectFocus::Name,
+                ways_focused: draft.focus == ConnectFocus::Ways,
+                pair_back_focused: draft.focus == ConnectFocus::PairBack,
+                pair_back: draft.pair_back,
+                relay_notes: &draft.relay_notes,
                 error: draft.error.as_deref(),
                 note: self
                     .logged_in_at
@@ -1408,6 +1487,269 @@ impl ConnectOverlay {
             }),
             _ => None,
         }
+    }
+
+    /// Takes how the offers to pair back stand. An offer being accepted that no
+    /// longer stands has its reader told so, back at the picker; where its
+    /// answer is awaited, that answer says.
+    pub(super) fn take_offers(&mut self, offers: PairBackOffers) {
+        self.offers = offers;
+        let gone = matches!(
+            &self.state,
+            ConnectOverlayState::Accepting(accepting)
+                if !accepting.asked
+                    && !self.offers.held.iter().any(|offer| offer.id == accepting.offer.id)
+        );
+        if gone {
+            let ConnectOverlayState::Accepting(accepting) = std::mem::take(&mut self.state) else {
+                return;
+            };
+            self.state = ConnectOverlayState::RemotePicker {
+                selected: accepting.selected,
+                armed: false,
+                note: Some(PickerNote {
+                    text: "That offer no longer stands".to_owned(),
+                    failed: true,
+                }),
+            };
+        }
+        let rows = self.known_remotes.len() + self.offers.held.len();
+        if let ConnectOverlayState::RemotePicker { selected, .. } = &mut self.state {
+            *selected = (*selected).min(rows);
+        }
+    }
+
+    /// Gives up what was last said of the offers, as the Server is connected
+    /// to again, leaving whatever the reader has in hand as it is.
+    pub(super) fn forget_offers(&mut self) {
+        self.offers = PairBackOffers::default();
+        if let ConnectOverlayState::RemotePicker { selected, .. } = &mut self.state {
+            *selected = (*selected).min(self.known_remotes.len());
+        }
+    }
+
+    /// Says a change to a Setting was refused where it was asked for by the
+    /// option to pair back having the keys, answering whether it was.
+    pub(super) fn setting_refused(&mut self, error: &str) -> bool {
+        if let ConnectOverlayState::Details(draft) = &mut self.state
+            && draft.focus == ConnectFocus::PairBack
+        {
+            draft.relay_notes = vec![ListNote {
+                text: error.to_owned(),
+                failed: true,
+            }];
+            return true;
+        }
+        false
+    }
+
+    /// The offers the picker offers to answer.
+    pub(super) fn held_offers(&self) -> &[HeldOffer] {
+        match &self.state {
+            ConnectOverlayState::RemotePicker { .. } => &self.offers.held,
+            _ => &[],
+        }
+    }
+
+    /// The offer the selected row is, where it is one.
+    pub(super) fn selected_offer(&self) -> Option<&HeldOffer> {
+        let ConnectOverlayState::RemotePicker { selected, .. } = self.state else {
+            return None;
+        };
+        self.offers
+            .held
+            .get(selected.checked_sub(1 + self.known_remotes.len())?)
+    }
+
+    /// The offer the selected Remote was made, where one stands.
+    pub(super) fn selected_made_offer(&self) -> Option<&MadeOffer> {
+        let ConnectOverlayState::RemotePicker { selected, .. } = self.state else {
+            return None;
+        };
+        let remote = self.known_remotes.get(selected.checked_sub(1)?)?;
+        self.made_offer_of(&remote.name)
+    }
+
+    /// The offer the Remote `name` was made, where one stands.
+    pub(super) fn made_offer_of(&self, name: &str) -> Option<&MadeOffer> {
+        self.offers.made.iter().find(|offer| offer.remote == name)
+    }
+
+    /// Begins accepting the offer the selected row is, its name offered for
+    /// the reader to change, answering whether it is one.
+    pub(super) fn begin_accepting(&mut self) -> bool {
+        let Some(offer) = self.selected_offer().cloned() else {
+            return false;
+        };
+        let name = offer
+            .answer
+            .as_ref()
+            .map_or_else(|| offer.offered_name.clone(), |answer| answer.name.clone());
+        self.state = ConnectOverlayState::Accepting(Accepting {
+            offer,
+            name,
+            error: None,
+            asked: false,
+            selected: self.selected(),
+        });
+        true
+    }
+
+    /// What is being accepted: the offer, the name, and why it was refused.
+    pub(super) fn accepting(&self) -> Option<(&HeldOffer, &str, Option<&str>)> {
+        match &self.state {
+            ConnectOverlayState::Accepting(accepting) if !accepting.asked => Some((
+                &accepting.offer,
+                &accepting.name,
+                accepting.error.as_deref(),
+            )),
+            _ => None,
+        }
+    }
+
+    /// Asks for the offer being accepted to be, under the name typed, where it
+    /// names anything.
+    pub(super) fn accept_offer(&mut self) -> Option<(uuid::Uuid, String)> {
+        let ConnectOverlayState::Accepting(accepting) = &mut self.state else {
+            return None;
+        };
+        if accepting.asked {
+            return None;
+        }
+        let name = accepting.name.trim().to_owned();
+        if name.is_empty() {
+            accepting.error = Some("Remote name cannot be empty".to_owned());
+            return None;
+        }
+        if self.known_names.iter().any(|known| known == &name) {
+            accepting.error = Some(format!("A Remote named `{name}` already exists"));
+            return None;
+        }
+        accepting.asked = true;
+        Some((accepting.offer.id, name))
+    }
+
+    /// Takes the Server's answer to accepting or declining `id`, back at the
+    /// picker where it took and on the name where it did not.
+    pub(super) fn offer_answered(&mut self, id: uuid::Uuid, error: Option<String>) {
+        if let ConnectOverlayState::Accepting(accepting) = &mut self.state
+            && accepting.offer.id == id
+        {
+            accepting.asked = false;
+            if error.is_some() {
+                accepting.error = error;
+                return;
+            }
+            let selected = accepting.selected;
+            self.state = ConnectOverlayState::RemotePicker {
+                selected,
+                armed: false,
+                note: None,
+            };
+            return;
+        }
+        if let (Some(error), ConnectOverlayState::RemotePicker { note, .. }) =
+            (error, &mut self.state)
+        {
+            *note = Some(PickerNote {
+                text: error,
+                failed: true,
+            });
+        }
+    }
+
+    /// Declining is asked for twice, as ending a Pairing is: the first press
+    /// arms it, and the second answers the offer the selected row is.
+    pub(super) fn decline_selected(&mut self) -> Option<uuid::Uuid> {
+        let id = self.selected_offer()?.id;
+        let ConnectOverlayState::RemotePicker { armed, .. } = &mut self.state else {
+            return None;
+        };
+        if std::mem::replace(armed, true) {
+            *armed = false;
+            return Some(id);
+        }
+        None
+    }
+
+    /// The offer the selected Remote was made, where it stands to be withdrawn.
+    pub(super) fn offer_to_withdraw(&self) -> Option<uuid::Uuid> {
+        self.selected_made_offer()
+            .filter(|offer| !offer.withdrawn)
+            .map(|offer| offer.id)
+    }
+
+    /// Says what came of withdrawing an offer.
+    pub(super) fn offer_withdrawn(&mut self, error: Option<String>) {
+        if let ConnectOverlayState::RemotePicker { note, .. } = &mut self.state {
+            *note = Some(match error {
+                Some(error) => PickerNote {
+                    text: error,
+                    failed: true,
+                },
+                None => PickerNote {
+                    text: "Offer withdrawn".to_owned(),
+                    failed: false,
+                },
+            });
+        }
+    }
+
+    /// Whether the option to pair back has the keys.
+    pub(super) fn pair_back_has_keys(&self) -> bool {
+        matches!(
+            &self.state,
+            ConnectOverlayState::Details(draft) if draft.focus == ConnectFocus::PairBack
+        )
+    }
+
+    /// Whether the machine being paired with reaches this one already.
+    pub(super) fn reaches_here(&self) -> bool {
+        matches!(&self.state, ConnectOverlayState::Details(draft) if draft.reaches_here)
+    }
+
+    /// Chooses or leaves the option to pair back, where it has the keys. It can
+    /// be left however it stands; choosing it is what `offerable` bounds.
+    pub(super) fn toggle_pair_back(&mut self, offerable: bool) {
+        if let ConnectOverlayState::Details(draft) = &mut self.state
+            && draft.focus == ConnectFocus::PairBack
+        {
+            draft.pair_back = !draft.pair_back && offerable;
+            draft.error = None;
+        }
+    }
+
+    /// Takes what the Relay list did for the option to pair back, to say so.
+    pub(super) fn take_relay_outcome(&mut self, outcome: RelayOutcome) {
+        if let ConnectOverlayState::Details(draft) = &mut self.state {
+            draft.relay_notes = outcome.notes;
+        }
+    }
+
+    /// Puts down what the Relay list last handed back.
+    pub(super) fn put_down_relay_notes(&mut self) -> bool {
+        match &mut self.state {
+            ConnectOverlayState::Details(draft) if !draft.relay_notes.is_empty() => {
+                draft.relay_notes.clear();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Gives up what the last frame drew, as a frame begins.
+    pub(super) fn forget_frame(&self) {
+        self.pair_back_said.set(false);
+    }
+
+    /// Notes that this frame drew all the option to pair back must say.
+    pub(super) fn drew_pair_back_statement(&self) {
+        self.pair_back_said.set(true);
+    }
+
+    /// Whether the last frame drew all the option to pair back must say.
+    pub(super) fn pair_back_statement_drawn(&self) -> bool {
+        self.pair_back_said.get()
     }
 
     pub(super) fn remotes_window(&self) -> &ListWindow {

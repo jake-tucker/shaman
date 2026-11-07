@@ -3552,6 +3552,7 @@ fn previewed(
                 hostname: "studio".to_owned(),
                 fingerprint: fingerprint.to_owned(),
                 ways,
+                reaches_here: false,
             },
         })
         .expect("show the preview");

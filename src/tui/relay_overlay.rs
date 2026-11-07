@@ -113,6 +113,8 @@ pub(super) struct RelayOverlay {
 pub(super) enum RelaySurface {
     /// `/serve`'s picker of the ways an Invite offers.
     Serve,
+    /// Configure Remote's option to pair back, which needs a way to offer.
+    Connect,
 }
 
 /// What the list did at the Relay at `address` for `surface`, handed to it as

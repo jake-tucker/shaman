@@ -2506,10 +2506,13 @@ fn event_stream(
         let standing = short_code.borrow_and_update();
         (standing.serial > 0).then(|| short_code_event(&standing))
     };
-    // The offers to pair back it holds and has made follow, and then each
-    // change of them, for as long as they stand, whichever Client is first
-    // to hear of them.
-    let offering = offers_event(&offers.borrow_and_update());
+    // The offers to pair back it holds and has made follow where there are
+    // any, and then each change of them: a Client takes hearing nothing, as it
+    // connects, to mean none stand.
+    let offering = {
+        let offers = offers.borrow_and_update();
+        (!offers.held.is_empty() || !offers.made.is_empty()).then(|| offers_event(&offers))
+    };
     // Whether the Server has been onboarded comes last, and then each change
     // of it. A Client read it in its health before the stream opened, so
     // another Client may have marked the Server between the two: what the
@@ -2533,9 +2536,9 @@ fn event_stream(
     .chain(stream::iter(
         short_code_standing.map(Ok::<_, std::convert::Infallible>),
     ))
-    .chain(stream::once(async move {
-        Ok::<_, std::convert::Infallible>(offering)
-    }))
+    .chain(stream::iter(
+        offering.map(Ok::<_, std::convert::Infallible>),
+    ))
     .chain(stream::once(async move {
         Ok::<_, std::convert::Infallible>(onboarding)
     }));

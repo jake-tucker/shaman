@@ -4,6 +4,8 @@ _Amended by ADR-0064: logged-in machines can now find each other through their R
 
 _Extended by ADR-0065: that Invite may now be delivered by a short code, a password-authenticated key exchange the Relay carries and cannot read, which is as strong as this decision asks._
 
+_Extended by ADR-0066: an offer to pair back ends in an Invite's redemption too, of an Invite bound to one key._
+
 A Relay (ADR-0045) serves many users, so it requires a login and joins two Servers only where both are logged in as the same user: each user reaches their own machines through it and no one else's. Login decides who may use the Relay and nothing more. A Pairing is still formed only by redeeming an Invite, whether it travels through the Relay or directly, and no Server trusts another on the word of the Relay, or of an identity provider, that the two belong to one user. Login is by GitHub first, behind an interface other identity providers — Okta, Google — can later stand behind.
 
 Were login to form trust, a stolen GitHub login, or a Relay that lied about which key is whose, would hold what a Peer holds on every machine of that user. The price is that a machine joining through a Relay is both logged in and paired by Invite; that was judged worth paying for a step taken once per machine.

@@ -5,6 +5,8 @@
 
 use std::time::Duration;
 
+use eventsource_stream::Eventsource as _;
+use futures_util::StreamExt as _;
 use http_body_util::Full;
 use hyper::{Method, Request, StatusCode};
 use suru::{
@@ -323,6 +325,22 @@ async fn an_acceptance_forms_it_through_a_relay_the_offerer_serves_through() {
     assert_eq!(remote.ways, vec![Way::Relay(relay.address())]);
     workstation.offers_clear().await;
     laptop.offers_clear().await;
+
+    // The second Pairing shows up where machines are found, by its key.
+    let suru::protocol::RelayMachinesAnswer::Listed { machines, .. } = workstation
+        .client
+        .list_relay_machines(&relay.address())
+        .await
+        .expect("ask the Relay")
+        .answer
+    else {
+        panic!("the Relay lists its machines");
+    };
+    let found = machines
+        .iter()
+        .find(|machine| machine.fingerprint == laptop.fingerprint())
+        .expect("the laptop is listed");
+    assert_eq!(found.remote.as_deref(), Some(LAPTOP));
 
     workstation.shutdown().await;
     laptop.shutdown().await;
@@ -904,9 +922,34 @@ async fn a_client_is_told_of_offers_as_it_connects_and_as_they_change() {
     .expect("told of the offer");
     assert_eq!(told.held[0].offered_name, super::machine_hostname());
 
-    // A Client attaching later is told as it connects, which its helper reads
-    // for it, and told again of what changes.
+    // A Client attaching later is told as it connects, and told again of what
+    // changes.
     workstation.restart().await;
+    let descriptor = workstation.server.as_ref().unwrap().descriptor().clone();
+    let mut events = crate::support::loopback_client()
+        .get(format!("{}/v1/events", descriptor.base_url))
+        .bearer_auth(&descriptor.token)
+        .send()
+        .await
+        .expect("open the event stream")
+        .bytes_stream()
+        .eventsource();
+    let told_again = timeout(PROGRESS_DEADLINE, async {
+        loop {
+            let event = events
+                .next()
+                .await
+                .expect("the stream stays open")
+                .expect("an event");
+            if event.event == suru::protocol::PAIR_BACK_EVENT {
+                return serde_json::from_str::<PairBackOffers>(&event.data).unwrap();
+            }
+        }
+    })
+    .await
+    .expect("told as it connects");
+    assert_eq!(told_again.held.len(), 1);
+    drop(events);
     workstation.accept_offer().await;
     let told = timeout(PROGRESS_DEADLINE, async {
         loop {
@@ -1042,7 +1085,7 @@ async fn pairing_again_replaces_what_the_last_ceremony_offered_on_both() {
 }
 
 #[tokio::test]
-async fn no_log_carries_a_token_of_an_offer() {
+async fn no_record_holds_an_invite_once_it_has_formed_a_pairing() {
     let (workstation, laptop) = offered_directly("logs").await;
     workstation.accept_offer().await;
     laptop.looks_at_remote().await;
@@ -1054,6 +1097,118 @@ async fn no_log_carries_a_token_of_an_offer() {
             "no Invite is written where a Server keeps its records"
         );
     }
+
+    workstation.shutdown().await;
+    laptop.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_withdrawal_with_the_other_connected_reaches_it_at_once() {
+    let (workstation, laptop) = offered_directly("withdraw-connected").await;
+    let offer = laptop.made_offer().await;
+    let mut held_open = laptop
+        .client
+        .outlook(Outlook::Remote(REMOTE.to_owned()))
+        .subscribe_catalog();
+    assert!(matches!(
+        next_catalog_event(&mut held_open).await,
+        Some(ManagedEvent::SessionCatalogReconciled(_))
+    ));
+
+    laptop
+        .client
+        .withdraw_offer(offer.id)
+        .await
+        .expect("withdraw");
+
+    workstation.offers_clear().await;
+    laptop.offers_clear().await;
+    drop(held_open);
+
+    workstation.shutdown().await;
+    laptop.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_delivery_whose_answer_was_lost_is_settled_by_the_next_telling_with_one_pairing() {
+    let (workstation, laptop) = offered_directly("answer-lost").await;
+    workstation.accept_offer().await;
+    let offer = workstation.held_offer().await;
+    let invite = laptop.invite(vec![laptop.way()]).await;
+
+    // The workstation is sent what the laptop's Server would send, and redeems
+    // it, while the laptop's Server has no idea: as if the answer never came.
+    let mut hostile = hostile(&laptop, &workstation).await;
+    let (_, body) = hostile
+        .ask(said(serde_json::json!({
+            "invite": { "id": offer.id, "invite": invite }
+        })))
+        .await
+        .unwrap();
+    assert_eq!(answer(&body), "formed");
+    assert_eq!(laptop.made_offer().await.id, offer.id, "it has yet to hear");
+
+    // Told on its next connection that no offer stands, it clears its record
+    // and issues nothing, and a second delivery finds nothing to redeem for.
+    laptop.looks_at_remote().await;
+    laptop.offers_clear().await;
+    assert_eq!(workstation.client.list_remotes().await.unwrap().len(), 1);
+    assert_eq!(laptop.peer_count().await, 1);
+    let again = laptop.invite(vec![laptop.way()]).await;
+    let (_, body) = hostile
+        .ask(said(serde_json::json!({
+            "invite": { "id": offer.id, "invite": again }
+        })))
+        .await
+        .unwrap();
+    assert_eq!(answer(&body), "gone");
+    assert_eq!(workstation.client.list_remotes().await.unwrap().len(), 1);
+
+    workstation.shutdown().await;
+    laptop.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_relay_the_accepting_machine_holds_no_login_at_is_said_and_it_forms_once_it_does() {
+    let relay = TestRelay::start().await;
+    let (workstation, laptop) = serving_directly("no-login").await;
+    // The laptop is reached through the Relay alone, where only it is logged in.
+    laptop.log_in(&relay, "583231", "octocat").await;
+    laptop.serve_through(&relay, true).await;
+    laptop.listen(false).await.expect("close the listener");
+    laptop.relay_is_offered(&relay).await;
+    offer(&workstation, &laptop).await;
+    workstation.accept_offer().await;
+    let mut held_open = laptop
+        .client
+        .outlook(Outlook::Remote(REMOTE.to_owned()))
+        .subscribe_catalog();
+    assert!(matches!(
+        next_catalog_event(&mut held_open).await,
+        Some(ManagedEvent::SessionCatalogReconciled(_))
+    ));
+
+    let failed = workstation
+        .offers_become(|offers| {
+            offers
+                .held
+                .first()
+                .and_then(|held| held.answer.as_ref())
+                .is_some_and(|answer| {
+                    matches!(answer.held_up, Some(OfferHeldUp::RedemptionFailed { .. }))
+                })
+        })
+        .await;
+    assert_eq!(failed.held.len(), 1, "the offer stands: {failed:?}");
+    assert!(workstation.remote_named(LAPTOP).await.is_none());
+
+    // Logging in there takes nothing further: it is tried again while the two
+    // are connected.
+    workstation.log_in(&relay, "583231", "octocat").await;
+    workstation.remote_comes_to_be(LAPTOP).await;
+    workstation.offers_clear().await;
+    laptop.offers_clear().await;
+    drop(held_open);
 
     workstation.shutdown().await;
     laptop.shutdown().await;

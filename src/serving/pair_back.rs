@@ -648,9 +648,10 @@ impl ServingController {
         let made = self.made_offers(key);
         match settling(&made, told.offer) {
             Settle::Nothing => {
-                if let Some(id) = told.offer.map(|offer| offer.id)
-                    && self.pair_back.held_up().remove(&id).is_some()
-                {
+                let said = told
+                    .offer
+                    .and_then(|offer| self.pair_back.held_up().remove(&offer.id));
+                if said.is_some() {
                     self.offers_changed();
                 }
                 Settled::Done

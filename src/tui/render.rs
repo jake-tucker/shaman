@@ -34,7 +34,7 @@ use super::{
     commands::{SemanticCommandId, SemanticInvocation},
     completion::CompletionRow,
     composer::{ComposerBindings, ComposerKey, ComposerMemory},
-    connect_overlay::{ConnectOverlay, LoginStep},
+    connect_overlay::{ConnectDetails, ConnectOverlay, LoginStep},
     context_overlay::{ContextOverlayView, ContextRow},
     directory_browser::{DirectoryBrowserRow, DirectoryBrowserRowKind},
     found_machines::{FoundMachine, FoundMachines, GroupState, MachineGroup, MachineState},
@@ -44,6 +44,7 @@ use super::{
     model_details::{self, DetailsPane},
     model_options::ModelOptionChoiceRow,
     onboarding::OwnServer,
+    pair_back::{self, OfferFix, PairBackOption},
     provider_icons::provider_label,
     relay_overlay::{ListNote, RelaySurface, serve_through_status},
     rename_dialog::RenameGeometry,
@@ -215,6 +216,7 @@ pub(super) fn render_with_slots(
     // terms, and only on a frame that drew the Landing.
     state.landing_readings.borrow_mut().clear();
     state.notice_presentable.set(false);
+    state.connect_overlay.forget_frame();
     // Current-Session animation is likewise a fact about this frame, not the
     // Session in the abstract: its transient tail may have scrolled away.
     state.session_animation_on_screen.set(false);
@@ -808,13 +810,15 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             (None, Some(note)) => wrapped_lines(note, content_width, theme.text.subdued),
             (None, None) => Vec::new(),
         };
+        let option = state.pair_back_option();
         let keys = wrapped_lines(
-            "↑↓ move · Shift+↑↓ reorder · Tab field · Enter pair · Esc cancel",
+            &pair_back_keys(&details, &option),
             content_width,
             theme.text.subdued,
         );
-        let capacity =
-            usize::from(area.height.saturating_sub(2)).saturating_sub(lines.len() + keys.len());
+        let offered = pair_back_lines(&details, &option, content_width, theme);
+        let capacity = usize::from(area.height.saturating_sub(2))
+            .saturating_sub(lines.len() + keys.len() + offered.len());
         let groups = details
             .ways
             .iter()
@@ -826,12 +830,17 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
                     &way.to_string(),
                     None,
                     content_width,
-                    selection_style(selected, !details.name_focused, theme)
+                    selection_style(selected, details.ways_focused, theme)
                         .unwrap_or(theme.text.primary),
                 )
             })
             .collect::<Vec<_>>();
         let least = groups.get(details.selected).map_or(0, Vec::len);
+        // The key that opens something acts only where the frame showed all
+        // the option says of that: the ways leave it room, or it cannot be sure.
+        if least <= capacity {
+            overlay.drew_pair_back_statement();
+        }
         let (way_capacity, said) = if said.len() + least <= capacity {
             (capacity - said.len(), said)
         } else {
@@ -862,8 +871,50 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
                 .flatten()
                 .take(way_capacity),
         );
+        lines.extend(offered);
         lines.extend(said);
         lines.extend(keys);
+        render_overlay_box(
+            frame,
+            state,
+            SelectionSurface::Connect,
+            area,
+            lines,
+            " Connect ",
+            theme,
+        );
+        return;
+    }
+    if let Some((offer, name, error)) = overlay.accepting() {
+        let content_width = area.width.saturating_sub(2);
+        let mut lines = vec![Line::styled(
+            format!(
+                "Reach {} from this machine?",
+                pair_back::said_name(&offer.peer)
+            ),
+            theme.text.primary.add_modifier(Modifier::BOLD),
+        )];
+        lines.push(Line::styled("Fingerprint", theme.text.subdued));
+        lines.extend(wrapped_lines(
+            &offer.fingerprint,
+            content_width,
+            theme.text.primary,
+        ));
+        lines.extend(wrapped_lines(
+            &pair_back::held_detail(offer).join(". "),
+            content_width,
+            theme.text.subdued,
+        ));
+        lines.push(Line::styled("Remote name", theme.text.subdued));
+        lines.push(Line::styled(format!("> {name}"), theme.selection.focused));
+        if let Some(error) = error {
+            lines.extend(wrapped_lines(error, content_width, theme.feedback.error));
+        }
+        lines.extend(wrapped_lines(
+            "Enter accept · Esc back",
+            content_width,
+            theme.text.subdued,
+        ));
         render_overlay_box(
             frame,
             state,
@@ -912,8 +963,21 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             theme.text.primary,
         ));
     }
+    let now = SessionTimestamp::now();
+    let offer_detail = overlay
+        .selected_offer()
+        .map(pair_back::held_detail)
+        .or_else(|| {
+            overlay
+                .selected_made_offer()
+                .map(|offer| pair_back::made_detail(offer, now))
+        })
+        .unwrap_or_default()
+        .iter()
+        .flat_map(|said| wrapped_lines(said, area.width.saturating_sub(2), theme.text.subdued))
+        .collect::<Vec<_>>();
     let remote_capacity = usize::from(area.height.saturating_sub(2))
-        .saturating_sub(2 + note_rows + detail.len() + through.len());
+        .saturating_sub(2 + note_rows + detail.len() + through.len() + offer_detail.len());
     let mut remote_rows = vec![Line::styled(
         if overlay.selected() == 0 {
             "› Local"
@@ -933,9 +997,12 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         } else {
             "  "
         };
+        let offered = overlay
+            .made_offer_of(&remote.name)
+            .map_or("", |_| " · offered to pair back");
         Line::styled(
             format!(
-                "{prefix}{}  {}",
+                "{prefix}{}  {}{offered}",
                 remote.name,
                 overlay.status_label(&remote.name)
             ),
@@ -946,6 +1013,29 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             },
         )
     }));
+    let offer_rows_from = overlay.remotes().len() + 1;
+    remote_rows.extend(
+        overlay
+            .held_offers()
+            .iter()
+            .enumerate()
+            .map(|(index, offer)| {
+                let selected = index + offer_rows_from == overlay.selected();
+                let answered = offer.answer.as_ref().map_or("", |_| " · waiting on it");
+                Line::styled(
+                    format!(
+                        "{}{}{answered}",
+                        if selected { "› " } else { "  " },
+                        pair_back::held_row(offer, now),
+                    ),
+                    if selected {
+                        theme.selection.focused
+                    } else {
+                        theme.text.primary
+                    },
+                )
+            }),
+    );
     lines.extend(overlay.remotes_window().show(
         remote_rows,
         remote_capacity,
@@ -953,6 +1043,7 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
     ));
     lines.extend(detail);
     lines.extend(through);
+    lines.extend(offer_detail);
     if let Some((note, failed)) = overlay.picker_note() {
         lines.push(Line::styled(
             note.to_owned(),
@@ -966,10 +1057,18 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
     // An armed removal says so where the keys are taught, so the second press
     // is the reader's own and every other key is plainly the way out.
     lines.push(Line::styled(
-        if overlay.removal_armed() {
-            "x confirm removal · any other key cancels"
-        } else {
-            "↑↓ choose · a pair another · x remove · Esc close"
+        match (
+            overlay.removal_armed(),
+            overlay.selected_offer().is_some(),
+            overlay.offer_to_withdraw().is_some(),
+        ) {
+            (true, true, _) => "x confirm declining · any other key cancels",
+            (true, false, _) => "x confirm removal · any other key cancels",
+            (false, true, _) => "↑↓ choose · Enter accept · x decline · Esc close",
+            (false, false, true) => {
+                "↑↓ choose · a pair another · w withdraw offer · x remove · Esc close"
+            }
+            (false, false, false) => "↑↓ choose · a pair another · x remove · Esc close",
         },
         theme.text.subdued,
     ));
@@ -982,6 +1081,87 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         " Connect ",
         theme,
     );
+}
+
+/// What Configure Remote's keys say, the option to pair back having them or not.
+fn pair_back_keys(details: &ConnectDetails<'_>, option: &PairBackOption) -> String {
+    if !details.pair_back_focused {
+        return "↑↓ move · Shift+↑↓ reorder · Tab field · Enter pair · Esc cancel".to_owned();
+    }
+    let acting = match option {
+        PairBackOption::Offerable => "Space toggle · ".to_owned(),
+        PairBackOption::Withheld { fix, .. } => {
+            let fix = fix
+                .as_ref()
+                .map_or(String::new(), |fix| format!("Space {} · ", fix.label()));
+            format!("{fix}a add a Relay · ")
+        }
+    };
+    format!("{acting}↑↓ move · Tab field · Enter pair · Esc cancel")
+}
+
+/// Configure Remote's option to pair back, off by default, and all it says: why
+/// it cannot be offered where it cannot, what the Relay list did for it, and,
+/// with its key on it, what that key opens. The key acts only where the frame
+/// showed that whole, which the caller judges.
+fn pair_back_lines(
+    details: &ConnectDetails<'_>,
+    option: &PairBackOption,
+    width: u16,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let offerable = *option == PairBackOption::Offerable;
+    let mark = match (details.pair_back, offerable) {
+        (true, _) => "[x]",
+        (false, true) => "[ ]",
+        (false, false) => "[-]",
+    };
+    let cursor = if details.pair_back_focused {
+        "› "
+    } else {
+        "  "
+    };
+    let mut lines = wrapped_lines(
+        &format!(
+            "{cursor}{mark} Also let {} reach this machine",
+            pair_back::said_name(details.name.trim()),
+        ),
+        width,
+        if details.pair_back_focused {
+            theme.selection.focused
+        } else {
+            theme.text.primary
+        },
+    );
+    // All it has to say waits for the keys to come to it, so a reader pairing
+    // one way is not asked to read past it, and a refusal keeps its room.
+    if details.pair_back_focused {
+        match option {
+            PairBackOption::Offerable => lines.extend(wrapped_lines(
+                "It lets that machine run commands here, once its user accepts",
+                width,
+                theme.text.subdued,
+            )),
+            PairBackOption::Withheld { why, fix } => {
+                lines.extend(wrapped_lines(why, width, theme.feedback.warning));
+                if let Some(statement) = fix.as_ref().and_then(OfferFix::statement) {
+                    lines.extend(wrapped_lines(statement, width, theme.text.subdued));
+                }
+            }
+        }
+    }
+    for note in details.relay_notes {
+        lines.extend(wrapped_lines(
+            &note.text,
+            width,
+            if note.failed {
+                theme.feedback.error
+            } else {
+                theme.text.subdued
+            },
+        ));
+    }
+    lines
 }
 
 /// `/pair`: the Invite field, and the machines found at the Server's Relays,
@@ -1444,6 +1624,7 @@ fn render_relay_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         // What a surface asked for stands where the reader is, in that surface.
         match overlay.asked_by() {
             Some(RelaySurface::Serve) => " Serve ",
+            Some(RelaySurface::Connect) => " Connect ",
             None => " Relay ",
         },
         theme,
