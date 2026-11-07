@@ -62,7 +62,7 @@ use crate::{
     protocol::{
         Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginOutcome, RelayLoginRefusal,
         RelayMachines, RelayMachinesAnswer, RelayRemoval, RelaySide, RelayState, RelayUnreachable,
-        SessionErrorCode, UnreachableReason, relay_pinned_message,
+        SessionErrorCode, UnreachableReason, WorkspacePaths, relay_pinned_message,
     },
     runtime::replace_private_file,
     serving::{
@@ -110,6 +110,8 @@ pub(crate) struct RelayTimings {
 #[derive(Clone)]
 pub(crate) struct RelayController {
     data_dir: PathBuf,
+    /// How a Config Document pinning a Relay is spelled to whoever reads of it.
+    paths: WorkspacePaths,
     serving: ServingController,
     /// The identity key the Server proves itself by.
     identity: IdentityKey,
@@ -188,9 +190,9 @@ struct HeldRelay {
     /// while the other does: no login can be begun once removal has, and
     /// none begun before it can finish once removal asks the Relay to forget.
     operations: Arc<AsyncMutex<()>>,
-    /// The Config Document pinning the Relay, as the Settings last adopted
-    /// say. Never stored.
-    pinned_in: Option<PathBuf>,
+    /// The Config Document pinning the Relay, as the Settings last adopted say
+    /// and as its reader spells it. Never stored.
+    pinned_in: Option<String>,
 }
 
 struct HeldLogin {
@@ -261,6 +263,7 @@ impl RelayController {
     /// to its Clients as those of `instance`, the run of the Server it is.
     pub(crate) fn new(
         data_dir: &Path,
+        paths: WorkspacePaths,
         serving: ServingController,
         timings: RelayTimings,
         instance: Uuid,
@@ -293,6 +296,7 @@ impl RelayController {
         };
         let controller = Self {
             data_dir: data_dir.to_path_buf(),
+            paths,
             identity: serving.identity_key(),
             serving,
             dialer: Dialer::default(),
@@ -491,19 +495,13 @@ impl RelayController {
     /// is made again by each start while the document still pins it.
     pub(crate) fn adopt_pins(&self, addresses: &[String], document: Option<&Path>) {
         let mut relays = self.lock();
-        let pinned_in = |address: &str| {
-            document
-                .filter(|_| addresses.iter().any(|pinned| pinned == address))
-                .map(Path::to_path_buf)
-        };
         for held in relays.iter_mut() {
-            held.pinned_in = pinned_in(&held.stored.address);
+            held.pinned_in = None;
         }
         let mut added = false;
-        for address in addresses {
-            if !relays.iter().any(|held| &held.stored.address == address) {
-                relays.push(HeldRelay::first_at(address.clone(), pinned_in(address)));
-                added = true;
+        if let Some(document) = document.map(|document| self.paths.label(document)) {
+            for address in addresses {
+                added |= pin_entry(&mut relays, address, &document);
             }
         }
         if (added || self.unstored.load(Ordering::Acquire))
@@ -746,14 +744,11 @@ impl RelayController {
         };
         let removed = relays.remove(index);
         if let Some(document) = &removed.pinned_in {
-            relays.insert(
-                index,
-                HeldRelay::first_at(address.clone(), Some(document.clone())),
-            );
+            pin_entry(&mut relays, &address, document);
         }
         if let Err(error) = self.persist(&relays) {
             if removed.pinned_in.is_some() {
-                relays.remove(index);
+                relays.pop();
             }
             relays.insert(index, removed);
             let held = &mut relays[index];
@@ -1618,7 +1613,7 @@ fn told(relays: &[HeldRelay]) -> Vec<String> {
 
 impl HeldRelay {
     /// The entry for a Relay the Server has yet to do anything at.
-    fn first_at(address: String, pinned_in: Option<PathBuf>) -> Self {
+    fn first_at(address: String, pinned_in: Option<String>) -> Self {
         Self {
             stored: StoredRelay {
                 address,
@@ -1685,6 +1680,27 @@ impl HeldRelay {
     }
 }
 
+/// Pins the entry at `address` as `document` does, making one after those there
+/// are where there is none, and answers whether it made one.
+fn pin_entry(relays: &mut Vec<HeldRelay>, address: &str, document: &str) -> bool {
+    match relays
+        .iter_mut()
+        .find(|held| held.stored.address == address)
+    {
+        Some(held) => {
+            held.pinned_in = Some(document.to_owned());
+            false
+        }
+        None => {
+            relays.push(HeldRelay::first_at(
+                address.to_owned(),
+                Some(document.to_owned()),
+            ));
+            true
+        }
+    }
+}
+
 /// The entry at `address` that `operations` serialises. An entry removed and
 /// added again at the same address is another, with operations of its own,
 /// so what was asked of the one before finds no entry here.
@@ -1732,7 +1748,7 @@ fn stopped_answering() -> RelayFailure {
 
 /// The address `address` names a Relay by, written the one way a Relay's
 /// address is, where it is one a Server can hold an entry for: what a Config
-/// Document's list is held to, as `add` is.
+/// Document's list is held to, as everything asked of a Relay by its address is.
 pub(crate) fn holdable_address(address: &str) -> Option<String> {
     relay_protocol::canonical_address(address).filter(|address| address.len() <= MAX_TOLD_RELAY_LEN)
 }
@@ -1740,21 +1756,17 @@ pub(crate) fn holdable_address(address: &str) -> Option<String> {
 /// The address `address` names a Relay by, written the one way a Relay's
 /// address is (see [`relay_protocol::canonical_address`]).
 fn relay_address(address: &str) -> std::result::Result<String, RelayFailure> {
-    let address = relay_protocol::canonical_address(address).ok_or_else(|| {
+    holdable_address(address).ok_or_else(|| {
+        // A Relay the Server Serves through is told to its Peers by its
+        // address, whole, which bounds how long one may run.
         RelayFailure::new(
             SessionErrorCode::InvalidRelayAddress,
-            "a Relay's address is an https:// or http:// address naming its host",
+            format!(
+                "a Relay's address is an https:// or http:// address naming its host, of at most \
+                 {MAX_TOLD_RELAY_LEN} characters"
+            ),
         )
-    })?;
-    // A Relay the Server Serves through is told to its Peers by its address,
-    // whole.
-    if address.len() > MAX_TOLD_RELAY_LEN {
-        return Err(RelayFailure::new(
-            SessionErrorCode::InvalidRelayAddress,
-            format!("a Relay's address runs to at most {MAX_TOLD_RELAY_LEN} characters"),
-        ));
-    }
-    Ok(address)
+    })
 }
 
 /// Opens connections to Relays: WebSockets over HTTP or HTTPS, taken through
@@ -2451,6 +2463,7 @@ mod tests {
         .unwrap();
         RelayController::new(
             directory,
+            WorkspacePaths::default(),
             serving,
             RelayTimings {
                 answer_timeout,
@@ -2495,6 +2508,7 @@ mod tests {
             });
             RelayController::new(
                 directory.path(),
+                WorkspacePaths::default(),
                 serving,
                 RelayTimings {
                     answer_timeout: Duration::from_secs(1),

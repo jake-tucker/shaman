@@ -1184,7 +1184,7 @@ impl ServingController {
             if active.is_none() {
                 // Serving its Settings ask for that could not start as they
                 // were adopted is started at this use of it instead.
-                let Some(settings) = *self.unstarted() else {
+                let Some(settings) = self.unstarted().clone() else {
                     return Err(PairingFailure::new(
                         SessionErrorCode::ServingListenerFailed,
                         "Serving is disabled",
@@ -1872,7 +1872,7 @@ impl ServingController {
             return Ok(());
         }
         if active.is_none() {
-            match self.start_serving(settings).await {
+            match self.start_serving(settings.clone()).await {
                 Ok(started) => {
                     *self.unstarted() = None;
                     *active = Some(started);
@@ -1956,7 +1956,7 @@ impl ServingController {
     /// since they may offer Relays besides. One that stopped on its own is
     /// opened anew.
     async fn adopt_listener(&self, running: &mut ActiveServing) -> Result<()> {
-        let settings = running.settings;
+        let settings = &running.settings;
         if !settings.listener {
             stop_listening(&mut running.listener).await;
             tell(&self.listening, ListenerState::Off);
@@ -7045,6 +7045,7 @@ mod tests {
             listener: true,
             port: 0,
             bind_address: std::net::Ipv4Addr::LOCALHOST.into(),
+            relays: Vec::new(),
         };
         // Whether the Serving side took the connection whose far end is
         // `far`: a connection it drops ends there and then.
@@ -7103,6 +7104,7 @@ mod tests {
             listener,
             port: 0,
             bind_address: std::net::Ipv4Addr::LOCALHOST.into(),
+            relays: Vec::new(),
         };
         // Whether the far end of a connection the Serving side took is still
         // open: a connection it lets go ends there and then.
@@ -7122,6 +7124,18 @@ mod tests {
         serving.adopt(settings(true)).await.unwrap();
         let address = serving.address().expect("the listener opens");
         let mut handshaking = tokio::net::TcpStream::connect(address).await.unwrap();
+
+        // What a Config Document pins of the Relays is nothing the listener
+        // follows, so a change of it leaves the listener, and Serving, alone.
+        serving
+            .adopt(ServingSettings {
+                relays: vec!["https://relay.example.com".to_owned()],
+                ..settings(true)
+            })
+            .await
+            .unwrap();
+        assert_eq!(serving.address(), Some(address), "it listens where it did");
+        assert_eq!(*serving.serving().borrow(), stretch, "and Serving stands");
 
         serving.adopt(settings(false)).await.unwrap();
         assert_eq!(serving.address(), None);
@@ -7191,6 +7205,7 @@ mod tests {
             listener,
             port: 0,
             bind_address: std::net::Ipv4Addr::LOCALHOST.into(),
+            relays: Vec::new(),
         };
         let open = |far: &mut tokio::io::DuplexStream| {
             let mut byte = [0];
@@ -7276,8 +7291,9 @@ mod tests {
             listener: true,
             port: 0,
             bind_address: std::net::Ipv4Addr::LOCALHOST.into(),
+            relays: Vec::new(),
         };
-        serving.adopt(settings).await.unwrap();
+        serving.adopt(settings.clone()).await.unwrap();
         let address = serving.address().expect("the listener opens");
         let mut told = serving.listener();
         assert_eq!(*told.borrow_and_update(), ListenerState::Open { address });
@@ -7308,7 +7324,7 @@ mod tests {
         );
         assert_eq!(serving.address(), None);
 
-        serving.adopt(settings).await.unwrap();
+        serving.adopt(settings.clone()).await.unwrap();
         let reopened = serving.address().expect("the next adoption opens it anew");
         assert_eq!(
             *serving.listener().borrow(),
@@ -8099,12 +8115,13 @@ mod tests {
             listener: true,
             port: 0,
             bind_address: std::net::Ipv4Addr::LOCALHOST.into(),
+            relays: Vec::new(),
         };
 
         store.set_available(false);
         let serving = controller();
         let not_serving = serving
-            .adopt(settings)
+            .adopt(settings.clone())
             .await
             .expect_err("nothing Serves without the identity key");
         let told = serving.listener().borrow().clone();
@@ -8133,7 +8150,7 @@ mod tests {
         serving
             .adopt(ServingSettings {
                 enabled: false,
-                ..settings
+                ..settings.clone()
             })
             .await
             .unwrap();
@@ -8156,6 +8173,7 @@ mod tests {
             listener: true,
             port: 0,
             bind_address: std::net::Ipv4Addr::LOCALHOST.into(),
+            relays: Vec::new(),
         };
         let serving = ServingController::new(
             serving_data.path(),
@@ -8165,7 +8183,7 @@ mod tests {
             "token".to_owned(),
         )
         .unwrap();
-        serving.adopt(settings).await.unwrap();
+        serving.adopt(settings.clone()).await.unwrap();
         let invite = serving
             .issue_invite(IssueInviteRequest {
                 ways: vec![Way::Direct(serving.address().unwrap())],
@@ -8215,7 +8233,7 @@ mod tests {
             failure.message
         );
         let not_serving = redeeming
-            .adopt(settings)
+            .adopt(settings.clone())
             .await
             .expect_err("nothing Serves without the identity key");
         assert_eq!(not_serving.to_string(), failure.message);

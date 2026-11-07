@@ -2672,8 +2672,10 @@ fn deliver_settings(application: &mut Application, settings: EffectiveSettings, 
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings,
-                pinned: pinned.iter().map(|key| (*key).to_owned()).collect(),
-                pinned_in: Default::default(),
+                pinned: pinned
+                    .iter()
+                    .map(|key| ((*key).to_owned(), std::path::PathBuf::new()))
+                    .collect(),
                 diagnostics: Vec::new(),
             },
         )))

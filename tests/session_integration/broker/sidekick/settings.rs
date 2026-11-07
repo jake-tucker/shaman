@@ -387,7 +387,7 @@ async fn set_setting_edits_the_config_document_in_place_as_the_panel_does_and_re
         let told = next_settings(attached).await;
         assert_eq!(told.settings.appearance.mode, AppearanceMode::Light);
         assert!(
-            told.pinned.contains(&"appearance.mode".to_owned()),
+            told.pinned.contains_key("appearance.mode"),
             "{:?}",
             told.pinned
         );
@@ -422,7 +422,7 @@ async fn set_setting_edits_the_config_document_in_place_as_the_panel_does_and_re
     for attached in [&mut client, &mut onlooker] {
         let told = next_settings(attached).await;
         assert_eq!(told.settings.appearance.mode, AppearanceMode::System);
-        assert!(!told.pinned.contains(&"appearance.mode".to_owned()));
+        assert!(!told.pinned.contains_key("appearance.mode"));
     }
     write_config_document(config_dir.path(), &pinned);
     client
@@ -788,7 +788,10 @@ async fn a_relay_a_config_document_pins_is_told_to_no_sidekick_and_set_by_none()
         "the Config Document is left as the user wrote it"
     );
     let (_client, in_force) = attached_client(state_dir.path(), channel).await;
-    assert_eq!(in_force.settings.relays, [format!("https://{PINNED}")]);
+    assert_eq!(
+        in_force.settings.serving.relays,
+        [format!("https://{PINNED}")]
+    );
 
     server.shutdown().await.expect("shut down server");
 }
@@ -1119,15 +1122,14 @@ async fn set_setting_pins_and_unpins_numbers_text_and_agent_selections() {
         let document = config_document(config_dir.path()).expect("the pin is written");
         let name = key.rsplit('.').next().expect("a key names its Setting");
         assert!(document.contains(name), "{key}: {document}");
-        let pinned = key.to_owned();
-        settings_until(&mut client, |told| told.pinned.contains(&pinned)).await;
+        settings_until(&mut client, |told| told.pinned.contains_key(key)).await;
 
         assert_eq!(
             set(&mut sidekick, json!({ "key": key })).await,
             json!({ "key": key, "value": default, "pinned": false }),
             "{key}'s pin is removed and its default in force again"
         );
-        settings_until(&mut client, |told| !told.pinned.contains(&pinned)).await;
+        settings_until(&mut client, |told| !told.pinned.contains_key(key)).await;
     }
     assert_eq!(
         config_document(config_dir.path()).as_deref(),

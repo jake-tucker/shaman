@@ -139,8 +139,10 @@ fn content_width_snapshot(
             },
             ..EffectiveSettings::default()
         },
-        pinned,
-        pinned_in: Default::default(),
+        pinned: pinned
+            .into_iter()
+            .map(|key| (key, std::path::PathBuf::new()))
+            .collect(),
         diagnostics: Vec::new(),
     }
 }

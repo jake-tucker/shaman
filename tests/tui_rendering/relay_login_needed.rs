@@ -372,8 +372,7 @@ fn a_relay_notice_stands_through_a_settings_snapshot() {
                     },
                     ..EffectiveSettings::default()
                 },
-                pinned: Vec::new(),
-                pinned_in: Default::default(),
+                pinned: Default::default(),
                 diagnostics: Vec::new(),
             },
         )))

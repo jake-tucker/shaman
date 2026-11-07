@@ -17,13 +17,19 @@
 //! since the user's own panel may change every Setting there is.
 //!
 //! The document may also change by any other hand: a user's editor, their
-//! dotfiles, a company's rollout. The Server looks at it again every so often,
-//! and what it then says is put in force as one change more, so a value pinned
-//! by hand is adopted exactly as one set from the panel is. What it reads must
-//! say the same twice running first, since nothing stops another writer being
-//! seen partway through a save.
+//! dotfiles, a company's rollout. This module follows that too (ADR 0067): the
+//! Server looks at the document every so often, and what it then says is put in
+//! force as one change more, so a value pinned by hand is adopted exactly as
+//! one set from the panel is. A look costs a `stat` of each name a document may
+//! go by, and reads a document only where [`Looks`] says that could tell
+//! anything new. What is read must say the same twice running first, since
+//! nothing stops another writer being seen partway through a save.
 
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use tokio::sync::{Mutex, watch};
 
@@ -35,7 +41,7 @@ use crate::{
     relays::RelayController,
     serving::ServingController,
     sessions::SessionStore,
-    settings::{ConfigDocuments, SettingsMutationError},
+    settings::{ConfigDocuments, DocumentStamps, SettingsMutationError},
 };
 
 /// The Config Documents this Server alone writes, and everything that runs
@@ -57,6 +63,25 @@ pub(crate) struct SettingsAdoption {
 }
 
 impl SettingsAdoption {
+    /// Puts a freshly loaded effective-settings view in force: its problems
+    /// reach the Log, every hosted Provider runtime takes the Server Settings
+    /// it now runs under, the Server holds an entry for each Relay it pins, the
+    /// Serving listener moves to what its Settings say, and every attached
+    /// client receives the snapshot. Startup and every change adopt a view
+    /// this one way. Answers why the listener could not follow, where it could
+    /// not, and everything else has followed all the same.
+    pub(in crate::server) async fn adopt(&self, snapshot: &SettingsSnapshot) -> anyhow::Result<()> {
+        crate::settings::log_diagnostics(&snapshot.diagnostics);
+        for runtime in self.runtimes.iter() {
+            runtime.apply_settings(&snapshot.settings);
+        }
+        let (pinned_relays, pinned_in) = crate::settings::relay_pins(snapshot);
+        self.relays.adopt_pins(pinned_relays, pinned_in);
+        let serving = self.serving.adopt(snapshot.settings.serving.clone()).await;
+        self.snapshot.send_replace(snapshot.clone());
+        serving
+    }
+
     pub(in crate::server) fn new(
         documents: ConfigDocuments,
         snapshot: Arc<watch::Sender<SettingsSnapshot>>,
@@ -147,7 +172,7 @@ impl SessionOperations {
     ) {
         let operations = self.clone();
         tokio::spawn(async move {
-            let mut reads = SuccessiveReads::default();
+            let mut looks = Looks::default();
             loop {
                 tokio::select! {
                     biased;
@@ -155,17 +180,27 @@ impl SessionOperations {
                     () = tokio::time::sleep(interval) => {}
                 }
                 let adoption = &operations.settings_adoption;
+                // Stamped before anything is read, so an edit landing between
+                // the two is told by the next look's stamp.
+                let documents = adoption.documents.clone();
+                let stamps = tokio::task::spawn_blocking(move || documents.stamps()).await;
+                // Only the Server stopping leaves a look unfinished.
+                let Ok(stamps) = stamps else {
+                    break;
+                };
+                if !looks.call_for_a_read(stamps, SystemTime::now()) {
+                    continue;
+                }
                 let documents = adoption.documents.clone();
                 let in_force = adoption.snapshot.borrow().clone();
                 let said = {
                     let in_force = in_force.clone();
                     tokio::task::spawn_blocking(move || documents.read_again(&in_force)).await
                 };
-                // Only the Server stopping leaves a read unfinished.
                 let Ok(said) = said else {
                     break;
                 };
-                if !reads.settled_on_another(said, &in_force) {
+                if !looks.reads.settled_on_another(said, &in_force) {
                     continue;
                 }
                 // Read again once no other change is running, whose own write
@@ -228,12 +263,56 @@ impl SessionOperations {
     }
 }
 
+/// How long after a document was modified its stamp is too soon to trust: at
+/// least a tick of the coarsest modification time a document may live under, two
+/// seconds on FAT, and a look's interval, so a look falls after any edit made in
+/// the tick that stamp speaks for.
+const STAMP_SETTLES_AFTER: Duration = Duration::from_secs(5);
+
+/// How many looks may pass without a read, whatever the stamps say, which bounds
+/// how long what no stamp tells goes unnoticed: an edit in place of the same
+/// length that sets the time back, say, or a file swapped where the platform
+/// gives no number to tell it by.
+const LOOKS_BETWEEN_READS: u32 = 60;
+
+/// What the Server has seen of the Config Documents in looking at them.
+#[derive(Default)]
+struct Looks {
+    stamps: Option<DocumentStamps>,
+    /// How many looks have passed since the last read.
+    unread: u32,
+    reads: SuccessiveReads,
+}
+
+impl Looks {
+    /// Takes `stamps`, the latest look, answering whether reading the documents
+    /// could say anything new: their stamps changed, or are too recent to trust,
+    /// or a read has yet to be agreed with, or it has been long enough.
+    fn call_for_a_read(&mut self, stamps: DocumentStamps, now: SystemTime) -> bool {
+        self.unread += 1;
+        let read = self.stamps.as_ref() != Some(&stamps)
+            || stamps.modified_within(STAMP_SETTLES_AFTER, now)
+            || self.reads.awaits_another()
+            || self.unread >= LOOKS_BETWEEN_READS;
+        self.stamps = Some(stamps);
+        if read {
+            self.unread = 0;
+        }
+        read
+    }
+}
+
 /// What the Config Documents were last read to say, for what is read to be
 /// believed only once two reads running agree on it.
 #[derive(Default)]
 struct SuccessiveReads(Option<SettingsSnapshot>);
 
 impl SuccessiveReads {
+    /// Whether a read has said something else and no later one has agreed.
+    fn awaits_another(&self) -> bool {
+        self.0.is_some()
+    }
+
     /// Takes `said`, the latest read, answering whether it is what the read
     /// before it said too, and differs from what is `in_force`.
     fn settled_on_another(&mut self, said: SettingsSnapshot, in_force: &SettingsSnapshot) -> bool {
@@ -298,16 +377,7 @@ impl SettingsAdoption {
         // The snapshot is in force, and every Client told of it, whether or
         // not the Serving listener could follow it, so the postures it makes
         // are reconciled either way.
-        let serving = crate::server::adopt_settings(
-            &self.snapshot,
-            &self.runtimes,
-            &self.serving,
-            &self.relays,
-            &snapshot,
-        )
-        .await
-        .err()
-        .map(|error| {
+        let serving = self.adopt(&snapshot).await.err().map(|error| {
             tracing::error!("could not adopt Serving settings: {error:#}");
             ServingNotAdopted(error)
         });
@@ -393,6 +463,63 @@ mod tests {
             "a read agreeing with what is in force forgets what came before it"
         );
         assert!(!reads.settled_on_another(another("blip"), &in_force));
+    }
+
+    /// A look reads a document only where that could say anything new: a stamp
+    /// long settled and unchanged asks nothing, for up to the bound on looks
+    /// between reads.
+    #[test]
+    fn a_look_reads_only_where_that_could_say_anything_new() {
+        let root = tempfile::tempdir().expect("create a config root");
+        let document = root.path().join(crate::settings::PRIMARY_CONFIG_FILE);
+        let documents = ConfigDocuments::new(Some(root.path()));
+        std::fs::write(&document, "{}\n").unwrap();
+        let settled = documents.stamps();
+        // A clock long past the document's time, so its stamp is settled.
+        let later = SystemTime::now() + Duration::from_secs(3600);
+        let mut looks = Looks::default();
+
+        assert!(
+            looks.call_for_a_read(settled.clone(), later),
+            "the first look"
+        );
+        for _ in 1..LOOKS_BETWEEN_READS {
+            assert!(!looks.call_for_a_read(settled.clone(), later));
+        }
+        assert!(
+            looks.call_for_a_read(settled.clone(), later),
+            "however settled, it is read every so often"
+        );
+        assert!(!looks.call_for_a_read(settled.clone(), later));
+
+        assert!(
+            looks.call_for_a_read(settled.clone(), SystemTime::now()),
+            "a stamp modified a moment ago is too soon to trust"
+        );
+        assert!(!looks.call_for_a_read(settled.clone(), later));
+
+        looks.reads.settled_on_another(
+            {
+                let mut said = SettingsSnapshot::default();
+                said.settings.appearance.theme = "saved".to_owned();
+                said
+            },
+            &SettingsSnapshot::default(),
+        );
+        assert!(
+            looks.call_for_a_read(settled.clone(), later),
+            "a read yet to be agreed with is read again, however settled the stamp"
+        );
+        looks
+            .reads
+            .settled_on_another(SettingsSnapshot::default(), &SettingsSnapshot::default());
+        assert!(!looks.call_for_a_read(settled.clone(), later));
+
+        std::fs::write(&document, "{  }\n").unwrap();
+        assert!(
+            looks.call_for_a_read(documents.stamps(), later),
+            "a stamp that changed"
+        );
     }
 
     /// `awaited`, failing the test rather than hanging it where a change never

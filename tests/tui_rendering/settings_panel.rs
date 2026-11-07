@@ -153,8 +153,10 @@ fn with_sidebar_scope(initial_scope: SidebarScope) -> EffectiveSettings {
 fn snapshot(settings: EffectiveSettings, pinned: &[&str]) -> SettingsSnapshot {
     SettingsSnapshot {
         settings,
-        pinned: pinned.iter().map(|key| (*key).to_owned()).collect(),
-        pinned_in: Default::default(),
+        pinned: pinned
+            .iter()
+            .map(|key| ((*key).to_owned(), std::path::PathBuf::new()))
+            .collect(),
         diagnostics: Vec::new(),
     }
 }
@@ -912,7 +914,10 @@ fn the_experimental_tab_presents_and_edits_the_relays_pinned() {
     let mut application = client_showing(
         workspace.path(),
         EffectiveSettings {
-            relays: vec![COMPANY.to_owned()],
+            serving: suru::protocol::ServingSettings {
+                relays: vec![COMPANY.to_owned()],
+                ..Default::default()
+            },
             ..EffectiveSettings::default()
         },
         &["serving.relays"],
@@ -5267,8 +5272,7 @@ fn a_diagnostic_naming_the_focused_setting_leads_the_pane_with_its_file() {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
-                pinned: Vec::new(),
-                pinned_in: Default::default(),
+                pinned: Default::default(),
                 diagnostics: vec![
                     diagnostic(
                         "transcript.groups",
@@ -5444,8 +5448,7 @@ fn a_diagnostic_naming_one_of_a_providers_own_settings_leads_its_pane() {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
-                pinned: Vec::new(),
-                pinned_in: Default::default(),
+                pinned: Default::default(),
                 diagnostics: vec![suru::protocol::SettingsDiagnostic {
                     severity: suru::protocol::SettingsDiagnosticSeverity::Warning,
                     file: file.clone(),
@@ -5584,8 +5587,7 @@ fn leads_however_long_never_push_the_setting_the_keys_are_on_out_of_the_pane() {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
-                pinned: Vec::new(),
-                pinned_in: Default::default(),
+                pinned: Default::default(),
                 diagnostics: vec![suru::protocol::SettingsDiagnostic {
                     severity: suru::protocol::SettingsDiagnosticSeverity::Warning,
                     file,
@@ -5782,8 +5784,7 @@ fn a_diagnostic_names_its_config_document_from_the_readers_home() {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
-                pinned: Vec::new(),
-                pinned_in: Default::default(),
+                pinned: Default::default(),
                 diagnostics: vec![suru::protocol::SettingsDiagnostic {
                     severity: suru::protocol::SettingsDiagnosticSeverity::Warning,
                     file,

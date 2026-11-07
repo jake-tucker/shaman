@@ -24,8 +24,7 @@ fn settings(application: &mut Application) {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings,
-                pinned: Vec::new(),
-                pinned_in: Default::default(),
+                pinned: Default::default(),
                 diagnostics: Vec::new(),
             },
         )))
@@ -41,8 +40,7 @@ fn enable_icons(application: &mut Application) {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings,
-                pinned: vec!["appearance.showIcons".to_owned()],
-                pinned_in: Default::default(),
+                pinned: [("appearance.showIcons".to_owned(), std::path::PathBuf::new())].into(),
                 diagnostics: Vec::new(),
             },
         )))

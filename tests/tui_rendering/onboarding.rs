@@ -557,8 +557,7 @@ fn the_launch_notice_waits_beneath_onboarding_and_is_read_once_it_closes() {
                     },
                     ..EffectiveSettings::default()
                 },
-                pinned: Vec::new(),
-                pinned_in: Default::default(),
+                pinned: Default::default(),
                 diagnostics: vec![startup_diagnostic()],
             },
         )))
@@ -3134,8 +3133,7 @@ fn acknowledge(
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings: with_show_icons(show_icons),
-                pinned: vec!["appearance.showIcons".to_owned()],
-                pinned_in: Default::default(),
+                pinned: [("appearance.showIcons".to_owned(), std::path::PathBuf::new())].into(),
                 diagnostics: Vec::new(),
             },
         )))
@@ -3712,8 +3710,7 @@ fn the_derivation_step_waits_on_its_pin_landing_before_it_moves_on() {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings: settings.clone(),
-                pinned: vec!["derivation.errand".to_owned()],
-                pinned_in: Default::default(),
+                pinned: [("derivation.errand".to_owned(), std::path::PathBuf::new())].into(),
                 diagnostics: Vec::new(),
             },
         )))

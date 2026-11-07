@@ -298,10 +298,7 @@ fn described(
 }
 
 fn is_pinned(descriptor: &SettingDescriptor, snapshot: &SettingsSnapshot) -> bool {
-    snapshot
-        .pinned
-        .iter()
-        .any(|pinned| pinned == descriptor.key)
+    snapshot.pinned.contains_key(descriptor.key)
 }
 
 /// The Setting a Sidekick may read that `key` names, or a refusal saying why
@@ -602,8 +599,10 @@ mod tests {
     fn snapshot(settings: EffectiveSettings, pinned: &[&str]) -> SettingsSnapshot {
         SettingsSnapshot {
             settings,
-            pinned: pinned.iter().map(|key| (*key).to_owned()).collect(),
-            pinned_in: Default::default(),
+            pinned: pinned
+                .iter()
+                .map(|key| ((*key).to_owned(), std::path::PathBuf::new()))
+                .collect(),
             diagnostics: Vec::new(),
         }
     }

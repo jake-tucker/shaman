@@ -5357,8 +5357,7 @@ mod tests {
             .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
                 SettingsSnapshot {
                     settings: EffectiveSettings::default(),
-                    pinned: Vec::new(),
-                    pinned_in: Default::default(),
+                    pinned: Default::default(),
                     diagnostics: Vec::new(),
                 },
             )))
@@ -6417,8 +6416,7 @@ mod tests {
                 .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
                     SettingsSnapshot {
                         settings,
-                        pinned: vec![],
-                        pinned_in: Default::default(),
+                        pinned: Default::default(),
                         diagnostics: vec![],
                     },
                 )))

@@ -393,7 +393,7 @@ fn an_address_that_cannot_be_used_is_refused_where_the_reader_can_see_it() {
 
     type_terminal_text(&mut application, "relay.example.com");
     let request = addition(press(&mut application, KeyCode::Enter), "relay.example.com");
-    let refusal = "a Relay's address is an https:// or http:// address naming its host";
+    let refusal = "a Relay's address is an https:// or http:// address";
     application
         .handle_event(ApplicationEvent::RelayAdditionFailed {
             request,
@@ -996,7 +996,7 @@ fn x_on_a_pinned_relay_is_refused_saying_where_it_is_pinned() {
 
     let said = prose(&application);
     assert!(
-        said.contains(&document().display().to_string()) && said.contains("serving.relays"),
+        said.contains(DOCUMENT) && said.contains("serving.relays") && said.contains("/settings"),
         "{said}"
     );
     assert!(
@@ -1474,19 +1474,13 @@ fn relay(address: &str) -> Relay {
     }
 }
 
-/// The Config Document a test's pinned Relay is pinned by, rooted for the
-/// platform.
-fn document() -> std::path::PathBuf {
-    std::path::PathBuf::from(if cfg!(windows) {
-        r"C:\Users\ada\.config\suru\suru.jsonc"
-    } else {
-        "/home/ada/.config/suru/suru.jsonc"
-    })
-}
+/// The Config Document a test's pinned Relay is pinned by, as a Server spells
+/// it.
+const DOCUMENT: &str = "~/.config/suru/suru.jsonc";
 
 fn pinned(relay: Relay) -> Relay {
     Relay {
-        pinned_in: Some(document()),
+        pinned_in: Some(DOCUMENT.to_owned()),
         ..relay
     }
 }

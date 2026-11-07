@@ -1410,6 +1410,7 @@ mod tests {
                 listener: true,
                 port: 0,
                 bind_address: std::net::Ipv4Addr::LOCALHOST.into(),
+                relays: Vec::new(),
             })
             .await
             .unwrap();

@@ -3038,7 +3038,7 @@ impl TuiState {
         // and moves what the reader is looking at.
         self.settings = snapshot.settings;
         self.settings_received = true;
-        self.pinned_settings = snapshot.pinned;
+        self.pinned_settings = snapshot.pinned.into_keys().collect();
         if self
             .settings
             .transcript

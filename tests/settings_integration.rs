@@ -84,7 +84,7 @@ async fn appearance_theme_round_trips_byte_preservingly_and_reaches_every_client
 
     assert_eq!(opening.settings.appearance.theme, "catppuccin");
     assert_eq!(
-        opening.pinned,
+        opening.pinned_keys(),
         ["appearance.theme", "transcript.reasoningVisibility"]
     );
     assert_eq!(opening.diagnostics, []);
@@ -134,7 +134,7 @@ async fn appearance_mode_round_trips_byte_preservingly_and_reaches_every_client(
 
     assert_eq!(opening.settings.appearance.mode, AppearanceMode::Light);
     assert_eq!(
-        opening.pinned,
+        opening.pinned_keys(),
         ["appearance.mode", "transcript.reasoningVisibility"]
     );
     assert_eq!(opening.diagnostics, []);
@@ -191,7 +191,7 @@ async fn nerd_font_icons_round_trip_byte_preservingly_and_reach_every_client() {
 
     assert!(opening.settings.appearance.show_icons);
     assert_eq!(
-        opening.pinned,
+        opening.pinned_keys(),
         ["appearance.showIcons", "transcript.reasoningVisibility"]
     );
     assert_eq!(opening.diagnostics, []);
@@ -241,7 +241,7 @@ async fn an_invalid_appearance_mode_is_ignored_alone_and_names_all_three_accepte
         snapshot.settings.transcript.reasoning_visibility,
         ReasoningVisibility::Shown
     );
-    assert_eq!(snapshot.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(snapshot.pinned_keys(), ["transcript.reasoningVisibility"]);
     let [diagnostic] = snapshot.diagnostics.as_slice() else {
         panic!("expected one diagnostic, got {:?}", snapshot.diagnostics);
     };
@@ -277,7 +277,7 @@ async fn an_unknown_theme_name_is_a_valid_open_setting_pin() {
     let (_, snapshot) = attach(state_dir.path(), "settings-open-theme").await;
     assert_eq!(snapshot.settings.appearance.theme, "my-missing-theme");
     assert_eq!(
-        snapshot.pinned,
+        snapshot.pinned_keys(),
         ["appearance.theme", "transcript.reasoningVisibility"]
     );
     assert_eq!(
@@ -322,7 +322,7 @@ async fn a_pinned_setting_reaches_every_connecting_client_and_the_rest_default()
             ReasoningSummaryDetail::Auto,
             "an unpinned Setting keeps its built-in default"
         );
-        assert_eq!(snapshot.pinned, ["transcript.defaultFoldPosture"]);
+        assert_eq!(snapshot.pinned_keys(), ["transcript.defaultFoldPosture"]);
         assert_eq!(snapshot.diagnostics, []);
     }
 
@@ -369,7 +369,7 @@ async fn serving_settings_pin_from_the_config_document_with_dual_stack_defaults(
         IpAddr::from([0, 0, 0, 0])
     );
     assert_eq!(
-        opening.pinned,
+        opening.pinned_keys(),
         ["serving.bindAddress", "serving.enabled", "serving.port"]
     );
     assert_eq!(opening.diagnostics, []);
@@ -424,7 +424,7 @@ async fn the_serving_listener_is_on_by_default_and_pins_beside_the_other_serving
 
     assert!(!opening.settings.serving.listener);
     assert_eq!(opening.settings.serving.port, 8443);
-    assert_eq!(opening.pinned, ["serving.listener", "serving.port"]);
+    assert_eq!(opening.pinned_keys(), ["serving.listener", "serving.port"]);
     assert_eq!(opening.diagnostics, []);
 
     let answered = editor
@@ -446,7 +446,7 @@ async fn the_serving_listener_is_on_by_default_and_pins_beside_the_other_serving
         .await
         .expect("leave the Serving listener to its default");
     assert!(reset.settings.serving.listener);
-    assert_eq!(reset.pinned, ["serving.port"]);
+    assert_eq!(reset.pinned_keys(), ["serving.port"]);
 
     drop(editor);
     drop(onlooker);
@@ -483,7 +483,7 @@ async fn showing_reasoning_pins_from_a_document_and_resets_to_the_hidden_default
         ReasoningSummaryDetail::Auto,
         "what a Transcript draws is presentation and asks Codex for nothing different"
     );
-    assert_eq!(opening.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(opening.pinned_keys(), ["transcript.reasoningVisibility"]);
     assert_eq!(opening.diagnostics, []);
 
     let answered = client
@@ -495,7 +495,7 @@ async fn showing_reasoning_pins_from_a_document_and_resets_to_the_hidden_default
         ReasoningVisibility::Hidden,
         "unpinning it lets the built-in default resume"
     );
-    assert_eq!(answered.pinned, [] as [String; 0]);
+    assert_eq!(answered.pinned_keys(), [] as [String; 0]);
 
     drop(client);
     server.shutdown().await.expect("shut down server");
@@ -542,8 +542,7 @@ async fn hiding_tool_calls_pins_from_a_document_and_resets_to_the_shown_default(
         ReasoningVisibility::Shown,
         "each kind's visibility is its own Setting"
     );
-    let mut pinned = opening.pinned.clone();
-    pinned.sort();
+    let pinned = opening.pinned_keys();
     assert_eq!(
         pinned,
         [
@@ -562,7 +561,7 @@ async fn hiding_tool_calls_pins_from_a_document_and_resets_to_the_shown_default(
         ToolCallVisibility::Shown,
         "unpinning it lets the built-in default resume"
     );
-    assert_eq!(answered.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(answered.pinned_keys(), ["transcript.reasoningVisibility"]);
     let document = config_document(config_dir.path());
     assert!(
         !document.contains("toolCallVisibility"),
@@ -647,8 +646,7 @@ async fn tool_call_visibility_mutations_land_in_the_document_and_reach_every_cli
         shown.settings.transcript.tool_call_visibility,
         ToolCallVisibility::Shown
     );
-    let mut pinned = shown.pinned.clone();
-    pinned.sort();
+    let pinned = shown.pinned_keys();
     assert_eq!(
         pinned,
         [
@@ -693,7 +691,7 @@ async fn an_invalid_tool_call_visibility_is_ignored_alone_and_names_both_accepte
         snapshot.settings.transcript.tool_call_visibility,
         ToolCallVisibility::Shown
     );
-    assert_eq!(snapshot.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(snapshot.pinned_keys(), ["transcript.reasoningVisibility"]);
     let [diagnostic] = snapshot.diagnostics.as_slice() else {
         panic!("expected one diagnostic, got {:?}", snapshot.diagnostics);
     };
@@ -737,7 +735,7 @@ async fn image_previews_default_on_pin_off_through_the_config_document_and_reset
         opening.settings.transcript.image_previews,
         "previews are drawn wherever the terminal can draw them unless the user says otherwise"
     );
-    assert_eq!(opening.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(opening.pinned_keys(), ["transcript.reasoningVisibility"]);
 
     let pinned = editor
         .mutate_setting(SettingMutation::TranscriptImagePreviews { value: Some(false) })
@@ -749,8 +747,7 @@ async fn image_previews_default_on_pin_off_through_the_config_document_and_reset
         ReasoningVisibility::Shown,
         "the rest of the Transcript's Settings stand"
     );
-    let mut pinned_keys = pinned.pinned.clone();
-    pinned_keys.sort();
+    let pinned_keys = pinned.pinned_keys();
     assert_eq!(
         pinned_keys,
         ["transcript.imagePreviews", "transcript.reasoningVisibility"]
@@ -777,7 +774,7 @@ async fn image_previews_default_on_pin_off_through_the_config_document_and_reset
         reset.settings.transcript.image_previews,
         "unpinning it lets the built-in default resume"
     );
-    assert_eq!(reset.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(reset.pinned_keys(), ["transcript.reasoningVisibility"]);
     let document = config_document(config_dir.path());
     assert!(
         !document.contains("imagePreviews"),
@@ -822,7 +819,7 @@ async fn hiding_subsessions_defaults_on_pins_off_through_the_config_document_and
         opening.settings.sidekick.hide_subsessions,
         "Subsessions are hidden unless the user says otherwise"
     );
-    assert_eq!(opening.pinned, ["sidebar.autoSettle"]);
+    assert_eq!(opening.pinned_keys(), ["sidebar.autoSettle"]);
 
     let pinned = editor
         .mutate_setting(SettingMutation::SidekickHideSubsessions { value: Some(false) })
@@ -834,8 +831,7 @@ async fn hiding_subsessions_defaults_on_pins_off_through_the_config_document_and
         AutoSettle::Off,
         "the Sidebar's own Settings stand"
     );
-    let mut pinned_keys = pinned.pinned.clone();
-    pinned_keys.sort();
+    let pinned_keys = pinned.pinned_keys();
     assert_eq!(
         pinned_keys,
         ["sidebar.autoSettle", "sidekick.hideSubsessions"]
@@ -862,7 +858,7 @@ async fn hiding_subsessions_defaults_on_pins_off_through_the_config_document_and
         reset.settings.sidekick.hide_subsessions,
         "unpinning it lets the built-in default resume"
     );
-    assert_eq!(reset.pinned, ["sidebar.autoSettle"]);
+    assert_eq!(reset.pinned_keys(), ["sidebar.autoSettle"]);
     let document = config_document(config_dir.path());
     assert!(
         !document.contains("hideSubsessions"),
@@ -896,7 +892,7 @@ async fn command_auto_expansion_pins_a_millisecond_delay_and_resets_to_off() {
         opening.settings.transcript.command_auto_expand,
         CommandAutoExpand::AfterMillis(275)
     );
-    assert_eq!(opening.pinned, ["transcript.commandAutoExpand"]);
+    assert_eq!(opening.pinned_keys(), ["transcript.commandAutoExpand"]);
     assert_eq!(opening.diagnostics, []);
 
     let reset = client
@@ -907,7 +903,7 @@ async fn command_auto_expansion_pins_a_millisecond_delay_and_resets_to_off() {
         reset.settings.transcript.command_auto_expand,
         CommandAutoExpand::Off
     );
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
 
     drop(client);
     server.shutdown().await.expect("shut down server");
@@ -941,7 +937,7 @@ async fn transcript_groups_pin_from_a_document_move_by_mutation_and_reset_to_col
 
     let (client, opening) = attach(state_dir.path(), "settings-transcript-groups").await;
     assert_eq!(opening.settings.transcript.groups, GroupPosture::Off);
-    assert_eq!(opening.pinned, ["transcript.groups"]);
+    assert_eq!(opening.pinned_keys(), ["transcript.groups"]);
     assert_eq!(opening.diagnostics, []);
 
     let expanded = client
@@ -961,7 +957,7 @@ async fn transcript_groups_pin_from_a_document_move_by_mutation_and_reset_to_col
         .await
         .expect("reset Groups");
     assert_eq!(reset.settings.transcript.groups, GroupPosture::Collapsed);
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
 
     drop(client);
     server.shutdown().await.expect("shut down server");
@@ -992,7 +988,7 @@ async fn a_hidden_sidebar_pins_from_a_document_and_resets_to_the_shown_default()
         opening.settings.sidebar.initial_visibility,
         SidebarVisibility::Hidden
     );
-    assert_eq!(opening.pinned, ["sidebar.initialVisibility"]);
+    assert_eq!(opening.pinned_keys(), ["sidebar.initialVisibility"]);
     assert_eq!(opening.diagnostics, []);
 
     let answered = client
@@ -1004,7 +1000,7 @@ async fn a_hidden_sidebar_pins_from_a_document_and_resets_to_the_shown_default()
         SidebarVisibility::Shown,
         "unpinning it lets the built-in default resume"
     );
-    assert_eq!(answered.pinned, [] as [String; 0]);
+    assert_eq!(answered.pinned_keys(), [] as [String; 0]);
 
     drop(client);
     server.shutdown().await.expect("shut down server");
@@ -1029,7 +1025,7 @@ async fn sidebar_initial_width_loads_without_a_product_level_maximum_and_resets(
 
     let (client, opening) = attach(state_dir.path(), "settings-sidebar-width").await;
     assert_eq!(opening.settings.sidebar.initial_width, 1_000_000);
-    assert_eq!(opening.pinned, ["sidebar.initialWidth"]);
+    assert_eq!(opening.pinned_keys(), ["sidebar.initialWidth"]);
     assert_eq!(opening.diagnostics, []);
 
     let minimum = client
@@ -1037,14 +1033,14 @@ async fn sidebar_initial_width_loads_without_a_product_level_maximum_and_resets(
         .await
         .expect("pin the minimum Sidebar width");
     assert_eq!(minimum.settings.sidebar.initial_width, 24);
-    assert_eq!(minimum.pinned, ["sidebar.initialWidth"]);
+    assert_eq!(minimum.pinned_keys(), ["sidebar.initialWidth"]);
 
     let reset = client
         .mutate_setting(SettingMutation::SidebarInitialWidth { value: None })
         .await
         .expect("reset Sidebar width at launch");
     assert_eq!(reset.settings.sidebar.initial_width, 40);
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
 
     drop(client);
     server.shutdown().await.expect("shut down server");
@@ -1077,7 +1073,7 @@ async fn a_sidebar_width_below_the_floor_is_ignored_individually_with_a_diagnost
         ReasoningVisibility::Shown,
         "the unrelated valid pin still applies"
     );
-    assert_eq!(snapshot.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(snapshot.pinned_keys(), ["transcript.reasoningVisibility"]);
     let [diagnostic] = snapshot.diagnostics.as_slice() else {
         panic!("the invalid width should produce one diagnostic");
     };
@@ -1116,7 +1112,7 @@ async fn a_hidden_aside_pins_from_a_document_and_resets_to_the_shown_default() {
         opening.settings.aside.initial_visibility,
         AsideVisibility::Hidden
     );
-    assert_eq!(opening.pinned, ["aside.initialVisibility"]);
+    assert_eq!(opening.pinned_keys(), ["aside.initialVisibility"]);
     assert_eq!(opening.diagnostics, []);
 
     let answered = client
@@ -1128,7 +1124,7 @@ async fn a_hidden_aside_pins_from_a_document_and_resets_to_the_shown_default() {
         AsideVisibility::Shown,
         "unpinning it lets the built-in default resume"
     );
-    assert_eq!(answered.pinned, [] as [String; 0]);
+    assert_eq!(answered.pinned_keys(), [] as [String; 0]);
 
     drop(client);
     server.shutdown().await.expect("shut down server");
@@ -1157,7 +1153,7 @@ async fn aside_initial_width_pins_from_a_document_and_resets_to_its_default() {
         opening.settings.sidebar.initial_width, 40,
         "the Aside's width is its own, not the Sidebar's"
     );
-    assert_eq!(opening.pinned, ["aside.initialWidth"]);
+    assert_eq!(opening.pinned_keys(), ["aside.initialWidth"]);
     assert_eq!(opening.diagnostics, []);
 
     let minimum = client
@@ -1165,14 +1161,14 @@ async fn aside_initial_width_pins_from_a_document_and_resets_to_its_default() {
         .await
         .expect("pin the minimum Aside width");
     assert_eq!(minimum.settings.aside.initial_width, 24);
-    assert_eq!(minimum.pinned, ["aside.initialWidth"]);
+    assert_eq!(minimum.pinned_keys(), ["aside.initialWidth"]);
 
     let reset = client
         .mutate_setting(SettingMutation::AsideInitialWidth { value: None })
         .await
         .expect("reset Aside width at launch");
     assert_eq!(reset.settings.aside.initial_width, 40);
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
 
     drop(client);
     server.shutdown().await.expect("shut down server");
@@ -1205,7 +1201,7 @@ async fn an_aside_width_below_the_floor_is_ignored_individually_with_a_diagnosti
         ReasoningVisibility::Shown,
         "the unrelated valid pin still applies"
     );
-    assert_eq!(snapshot.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(snapshot.pinned_keys(), ["transcript.reasoningVisibility"]);
     let [diagnostic] = snapshot.diagnostics.as_slice() else {
         panic!("the invalid width should produce one diagnostic");
     };
@@ -1244,7 +1240,7 @@ async fn an_everywhere_sidebar_at_launch_pins_from_a_document_and_resets_to_ever
         opening.settings.sidebar.initial_scope,
         SidebarScope::Everywhere
     );
-    assert_eq!(opening.pinned, ["sidebar.initialScope"]);
+    assert_eq!(opening.pinned_keys(), ["sidebar.initialScope"]);
     assert_eq!(opening.diagnostics, []);
 
     let narrowed = client
@@ -1282,7 +1278,7 @@ async fn an_everywhere_sidebar_at_launch_pins_from_a_document_and_resets_to_ever
         SidebarScope::AllWorkspaces,
         "unpinning it lets the whole body of work resume"
     );
-    assert_eq!(answered.pinned, [] as [String; 0]);
+    assert_eq!(answered.pinned_keys(), [] as [String; 0]);
 
     drop(client);
     server.shutdown().await.expect("shut down server");
@@ -1347,7 +1343,7 @@ async fn the_auto_settle_setting_pins_from_a_document_and_resets_to_its_default(
 
     let (client, opening) = attach(state_dir.path(), "settings-auto-settle").await;
     assert_eq!(opening.settings.sidebar.auto_settle, AutoSettle::Idle(7));
-    assert_eq!(opening.pinned, ["sidebar.autoSettle"]);
+    assert_eq!(opening.pinned_keys(), ["sidebar.autoSettle"]);
     assert_eq!(opening.diagnostics, []);
 
     let answered = client
@@ -1361,7 +1357,7 @@ async fn the_auto_settle_setting_pins_from_a_document_and_resets_to_its_default(
         AutoSettle::Off,
         "one Setting holds both the threshold and the word that suspends it"
     );
-    assert_eq!(answered.pinned, ["sidebar.autoSettle"]);
+    assert_eq!(answered.pinned_keys(), ["sidebar.autoSettle"]);
 
     let answered = client
         .mutate_setting(SettingMutation::SidebarAutoSettle { value: None })
@@ -1372,7 +1368,7 @@ async fn the_auto_settle_setting_pins_from_a_document_and_resets_to_its_default(
         AutoSettle::Idle(3),
         "unpinning it lets the built-in three days resume"
     );
-    assert_eq!(answered.pinned, [] as [String; 0]);
+    assert_eq!(answered.pinned_keys(), [] as [String; 0]);
 
     drop(client);
     server.shutdown().await.expect("shut down server");
@@ -1400,7 +1396,7 @@ async fn the_auto_reclaim_setting_round_trips_both_scalar_forms_and_defaults_to_
         opening.settings.worktree.auto_reclaim,
         AutoReclaim::AfterDays(7)
     );
-    assert_eq!(opening.pinned, ["worktree.autoReclaim"]);
+    assert_eq!(opening.pinned_keys(), ["worktree.autoReclaim"]);
 
     let off = client
         .mutate_setting(SettingMutation::WorktreeAutoReclaim {
@@ -1512,7 +1508,7 @@ async fn workspace_roots_pin_from_a_document_round_trip_whole_and_reach_every_cl
 
     assert_eq!(opening.settings.workspace.roots, ["~/src", ABSOLUTE_ROOT]);
     assert_eq!(
-        opening.pinned,
+        opening.pinned_keys(),
         ["transcript.reasoningVisibility", "workspace.roots"]
     );
     assert_eq!(opening.diagnostics, []);
@@ -1547,7 +1543,7 @@ async fn workspace_roots_pin_from_a_document_round_trip_whole_and_reach_every_cl
         .await
         .expect("take the Workspace Roots out of the document");
     assert!(reset.settings.workspace.roots.is_empty());
-    assert_eq!(reset.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(reset.pinned_keys(), ["transcript.reasoningVisibility"]);
     for client in [&mut editor, &mut onlooker] {
         assert_eq!(next_snapshot(client).await, reset);
     }
@@ -1596,7 +1592,7 @@ async fn a_workspace_root_neither_absolute_nor_beginning_with_a_tilde_is_ignored
         ReasoningVisibility::Shown
     );
     assert_eq!(
-        snapshot.pinned,
+        snapshot.pinned_keys(),
         ["transcript.reasoningVisibility", "workspace.roots"]
     );
     let refusals = snapshot
@@ -1713,7 +1709,7 @@ async fn invalid_auto_settle_pins_are_ignored_individually_with_diagnostics() {
             ReasoningVisibility::Shown,
             "{case} ignores only the invalid pin"
         );
-        assert_eq!(snapshot.pinned, ["transcript.reasoningVisibility"]);
+        assert_eq!(snapshot.pinned_keys(), ["transcript.reasoningVisibility"]);
         let [diagnostic] = snapshot.diagnostics.as_slice() else {
             panic!(
                 "{case} should produce one diagnostic: {:?}",
@@ -1753,7 +1749,7 @@ async fn fill_session_content_width_loads_from_a_config_document() {
         snapshot.settings.session.content_width,
         SessionContentWidth::Fill
     );
-    assert_eq!(snapshot.pinned, ["session.contentWidth"]);
+    assert_eq!(snapshot.pinned_keys(), ["session.contentWidth"]);
     assert_eq!(snapshot.diagnostics, []);
 
     server.shutdown().await.expect("shut down server");
@@ -1781,7 +1777,7 @@ async fn minimum_session_content_width_loads_from_a_config_document() {
         snapshot.settings.session.content_width,
         SessionContentWidth::Maximum(50)
     );
-    assert_eq!(snapshot.pinned, ["session.contentWidth"]);
+    assert_eq!(snapshot.pinned_keys(), ["session.contentWidth"]);
     assert_eq!(snapshot.diagnostics, []);
 
     server.shutdown().await.expect("shut down server");
@@ -1811,7 +1807,7 @@ async fn session_content_width_has_no_product_level_maximum() {
         snapshot.settings.session.content_width,
         SessionContentWidth::Maximum(1_000_000)
     );
-    assert_eq!(snapshot.pinned, ["session.contentWidth"]);
+    assert_eq!(snapshot.pinned_keys(), ["session.contentWidth"]);
     assert_eq!(snapshot.diagnostics, []);
 
     server.shutdown().await.expect("shut down server");
@@ -1857,7 +1853,7 @@ async fn invalid_session_content_width_pins_are_ignored_individually_with_diagno
             ReasoningVisibility::Shown,
             "{case} ignores only the invalid pin"
         );
-        assert_eq!(snapshot.pinned, ["transcript.reasoningVisibility"]);
+        assert_eq!(snapshot.pinned_keys(), ["transcript.reasoningVisibility"]);
         let [diagnostic] = snapshot.diagnostics.as_slice() else {
             panic!(
                 "{case} should produce one diagnostic: {:?}",
@@ -1900,7 +1896,7 @@ async fn suru_json_alone_works_and_is_parsed_just_as_leniently() {
         snapshot.settings.provider.codex.reasoning_summary,
         ReasoningSummaryDetail::Detailed
     );
-    assert_eq!(snapshot.pinned, ["provider.codex.reasoningSummary"]);
+    assert_eq!(snapshot.pinned_keys(), ["provider.codex.reasoningSummary"]);
     assert_eq!(snapshot.diagnostics, []);
 
     server.shutdown().await.expect("shut down server");
@@ -1970,7 +1966,7 @@ async fn a_syntax_broken_document_never_blocks_startup_and_defaults_apply_loudly
 
     let snapshot = attach(state_dir.path(), "settings-broken").await.1;
     assert_eq!(snapshot.settings, Default::default());
-    assert_eq!(snapshot.pinned, [] as [String; 0]);
+    assert_eq!(snapshot.pinned_keys(), [] as [String; 0]);
     let [diagnostic] = snapshot.diagnostics.as_slice() else {
         panic!("expected one diagnostic, got {:?}", snapshot.diagnostics);
     };
@@ -2015,7 +2011,7 @@ async fn unknown_and_mistyped_keys_are_ignored_alone_while_the_rest_applies() {
         FoldPosture::Folded,
         "the mistyped Setting keeps its built-in default"
     );
-    assert_eq!(snapshot.pinned, ["provider.codex.reasoningSummary"]);
+    assert_eq!(snapshot.pinned_keys(), ["provider.codex.reasoningSummary"]);
     let keys: Vec<_> = snapshot
         .diagnostics
         .iter()
@@ -2060,7 +2056,7 @@ async fn without_a_config_root_every_setting_is_its_built_in_default() {
         SessionContentWidth::Maximum(80),
         "the Session Content Column defaults to an 80-column maximum"
     );
-    assert_eq!(snapshot.pinned, [] as [String; 0]);
+    assert_eq!(snapshot.pinned_keys(), [] as [String; 0]);
     assert_eq!(snapshot.diagnostics, []);
 
     server.shutdown().await.expect("shut down server");
@@ -2089,7 +2085,7 @@ async fn a_flat_dotted_spelling_is_not_a_second_way_to_pin() {
         FoldPosture::Folded,
         "only the nested spelling the schema defines can pin a Setting"
     );
-    assert_eq!(snapshot.pinned, [] as [String; 0]);
+    assert_eq!(snapshot.pinned_keys(), [] as [String; 0]);
     let [diagnostic] = snapshot.diagnostics.as_slice() else {
         panic!("expected one diagnostic, got {:?}", snapshot.diagnostics);
     };
@@ -2150,7 +2146,7 @@ async fn session_content_width_mutations_preserve_bytes_broadcast_and_reset() {
         SessionContentWidth::Maximum(80)
     );
     assert_eq!(
-        maximum.pinned,
+        maximum.pinned_keys(),
         ["session.contentWidth", "transcript.reasoningVisibility"]
     );
     for client in [&mut editor, &mut onlooker] {
@@ -2184,7 +2180,7 @@ async fn session_content_width_mutations_preserve_bytes_broadcast_and_reset() {
         reset.settings.session.content_width,
         SessionContentWidth::Maximum(80)
     );
-    assert_eq!(reset.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(reset.pinned_keys(), ["transcript.reasoningVisibility"]);
     for client in [&mut editor, &mut onlooker] {
         assert_eq!(next_snapshot(client).await, reset);
     }
@@ -2228,7 +2224,7 @@ async fn a_set_reaches_the_document_the_mutating_client_and_a_second_client() {
         answered.settings.transcript.default_fold_posture,
         FoldPosture::Expanded
     );
-    assert_eq!(answered.pinned, ["transcript.defaultFoldPosture"]);
+    assert_eq!(answered.pinned_keys(), ["transcript.defaultFoldPosture"]);
     for client in [&mut editor, &mut onlooker] {
         let pushed = next_snapshot(client).await;
         assert_eq!(
@@ -2356,7 +2352,7 @@ async fn pinning_the_built_in_default_still_writes_it_and_unset_takes_it_back_ou
         ReasoningSummaryDetail::Auto
     );
     assert_eq!(
-        pinned.pinned,
+        pinned.pinned_keys(),
         ["provider.codex.reasoningSummary"],
         "a deliberate choice is pinned even when it equals the default"
     );
@@ -2372,7 +2368,7 @@ async fn pinning_the_built_in_default_still_writes_it_and_unset_takes_it_back_ou
         ReasoningSummaryDetail::Auto,
         "the built-in default resumes"
     );
-    assert_eq!(unpinned.pinned, [] as [String; 0]);
+    assert_eq!(unpinned.pinned_keys(), [] as [String; 0]);
     assert_eq!(
         config_document(config_dir.path()),
         "{}\n",
@@ -2424,16 +2420,8 @@ async fn codex_posture_defaults_pin_through_the_config_document_and_reset() {
         pinned.settings.provider.codex.sandbox_mode,
         CodexSandboxMode::DangerFullAccess
     );
-    assert!(
-        pinned
-            .pinned
-            .contains(&"provider.codex.approvalPolicy".to_owned())
-    );
-    assert!(
-        pinned
-            .pinned
-            .contains(&"provider.codex.sandboxMode".to_owned())
-    );
+    assert!(pinned.pinned.contains_key("provider.codex.approvalPolicy"));
+    assert!(pinned.pinned.contains_key("provider.codex.sandboxMode"));
     let document = config_document(config_dir.path());
     assert!(document.contains("\"approvalPolicy\": \"never\""));
     assert!(document.contains("\"sandboxMode\": \"danger-full-access\""));
@@ -2454,7 +2442,7 @@ async fn codex_posture_defaults_pin_through_the_config_document_and_reset() {
         reset.settings.provider.codex.sandbox_mode,
         CodexSandboxMode::WorkspaceWrite
     );
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
 
     drop(client);
     server.shutdown().await.unwrap();
@@ -2479,7 +2467,7 @@ async fn copilot_fusion_tiers_stay_off_until_pinned_through_the_config_document_
         .await
         .unwrap();
     assert!(pinned.settings.provider.copilot.fusion_tiers);
-    assert_eq!(pinned.pinned, ["provider.copilot.fusionTiers"]);
+    assert_eq!(pinned.pinned_keys(), ["provider.copilot.fusionTiers"]);
     assert!(config_document(config_dir.path()).contains("\"fusionTiers\": true"));
 
     let reset = client
@@ -2487,7 +2475,7 @@ async fn copilot_fusion_tiers_stay_off_until_pinned_through_the_config_document_
         .await
         .unwrap();
     assert!(!reset.settings.provider.copilot.fusion_tiers);
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
     drop(client);
     server.shutdown().await.unwrap();
 }
@@ -2521,7 +2509,7 @@ async fn copilot_permissions_default_pins_through_the_config_document_and_resets
             .await
             .unwrap();
         assert_eq!(pinned.settings.provider.copilot.permissions, permissions);
-        assert_eq!(pinned.pinned, ["provider.copilot.permissions"]);
+        assert_eq!(pinned.pinned_keys(), ["provider.copilot.permissions"]);
         assert!(
             config_document(config_dir.path()).contains(&format!("\"permissions\": \"{wire}\""))
         );
@@ -2535,7 +2523,7 @@ async fn copilot_permissions_default_pins_through_the_config_document_and_resets
         reset.settings.provider.copilot.permissions,
         CopilotPermissions::Auto
     );
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
     drop(client);
     server.shutdown().await.unwrap();
 }
@@ -2569,11 +2557,7 @@ async fn claude_permission_mode_defaults_pins_through_the_config_document_and_re
             .await
             .unwrap();
         assert_eq!(pinned.settings.provider.claude.permission_mode, mode);
-        assert!(
-            pinned
-                .pinned
-                .contains(&"provider.claude.permissionMode".to_owned())
-        );
+        assert!(pinned.pinned.contains_key("provider.claude.permissionMode"));
         assert!(
             config_document(config_dir.path()).contains(&format!("\"permissionMode\": \"{wire}\""))
         );
@@ -2587,7 +2571,7 @@ async fn claude_permission_mode_defaults_pins_through_the_config_document_and_re
         reset.settings.provider.claude.permission_mode,
         ClaudePermissionMode::Auto
     );
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
     drop(client);
     server.shutdown().await.unwrap();
 }
@@ -2617,7 +2601,7 @@ async fn broker_enabled_defaults_on_pins_through_the_config_document_and_resets(
         .await
         .unwrap();
     assert!(!pinned.settings.broker.enabled);
-    assert_eq!(pinned.pinned, ["broker.enabled"]);
+    assert_eq!(pinned.pinned_keys(), ["broker.enabled"]);
     assert!(config_document(config_dir.path()).contains("\"broker\": {"));
     assert!(config_document(config_dir.path()).contains("\"enabled\": false"));
 
@@ -2626,7 +2610,7 @@ async fn broker_enabled_defaults_on_pins_through_the_config_document_and_resets(
         .await
         .unwrap();
     assert!(reset.settings.broker.enabled);
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
     drop(client);
     server.shutdown().await.unwrap();
 }
@@ -2656,7 +2640,7 @@ async fn broker_max_depth_defaults_to_three_pins_through_the_config_document_and
         .await
         .unwrap();
     assert_eq!(pinned.settings.broker.max_depth, 2);
-    assert_eq!(pinned.pinned, ["broker.maxDepth"]);
+    assert_eq!(pinned.pinned_keys(), ["broker.maxDepth"]);
     assert!(config_document(config_dir.path()).contains("\"broker\": {"));
     assert!(config_document(config_dir.path()).contains("\"maxDepth\": 2"));
 
@@ -2665,7 +2649,7 @@ async fn broker_max_depth_defaults_to_three_pins_through_the_config_document_and
         .await
         .unwrap();
     assert_eq!(reset.settings.broker.max_depth, 3);
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
     drop(client);
     server.shutdown().await.unwrap();
 }
@@ -2696,7 +2680,7 @@ async fn broker_max_concurrent_subagents_defaults_to_six_pins_through_the_config
         .await
         .unwrap();
     assert_eq!(pinned.settings.broker.max_concurrent_subagents, 12);
-    assert_eq!(pinned.pinned, ["broker.maxConcurrentSubagents"]);
+    assert_eq!(pinned.pinned_keys(), ["broker.maxConcurrentSubagents"]);
     assert!(config_document(config_dir.path()).contains("\"broker\": {"));
     assert!(config_document(config_dir.path()).contains("\"maxConcurrentSubagents\": 12"));
 
@@ -2705,7 +2689,7 @@ async fn broker_max_concurrent_subagents_defaults_to_six_pins_through_the_config
         .await
         .unwrap();
     assert_eq!(reset.settings.broker.max_concurrent_subagents, 6);
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
     drop(client);
     server.shutdown().await.unwrap();
 }
@@ -2738,7 +2722,7 @@ async fn broker_caps_load_without_a_product_level_maximum_and_pin_down_to_one() 
         "the largest count the Broker keeps is a cap like any other"
     );
     assert_eq!(
-        opening.pinned,
+        opening.pinned_keys(),
         ["broker.maxConcurrentSubagents", "broker.maxDepth"]
     );
     assert_eq!(opening.diagnostics, []);
@@ -2754,7 +2738,7 @@ async fn broker_caps_load_without_a_product_level_maximum_and_pin_down_to_one() 
         .unwrap();
     assert_eq!(concurrency.settings.broker.max_concurrent_subagents, 1);
     assert_eq!(
-        concurrency.pinned,
+        concurrency.pinned_keys(),
         ["broker.maxConcurrentSubagents", "broker.maxDepth"]
     );
     assert_eq!(
@@ -2804,7 +2788,7 @@ async fn a_broker_cap_outside_its_bound_is_ignored_alone_naming_the_bound() {
             !snapshot.settings.broker.enabled,
             "{case} ignores only the invalid caps"
         );
-        assert_eq!(snapshot.pinned, ["broker.enabled"], "{case}");
+        assert_eq!(snapshot.pinned_keys(), ["broker.enabled"], "{case}");
         assert_eq!(
             snapshot.settings.broker.max_depth, 3,
             "{case} keeps the built-in depth cap"
@@ -2860,7 +2844,7 @@ async fn an_unset_keeps_the_comments_that_outlive_the_pin_it_removes() {
         snapshot.settings.transcript.default_fold_posture,
         FoldPosture::Folded
     );
-    assert_eq!(snapshot.pinned, ["provider.codex.reasoningSummary"]);
+    assert_eq!(snapshot.pinned_keys(), ["provider.codex.reasoningSummary"]);
     let document = config_document(config_dir.path());
     assert!(
         document.contains("// I read my Sessions folded."),
@@ -2892,7 +2876,7 @@ async fn the_first_set_creates_the_config_document_under_the_config_root() {
     .await
     .expect("spawn server");
     let (client, opening) = attach(state_dir.path(), "settings-create").await;
-    assert_eq!(opening.pinned, [] as [String; 0]);
+    assert_eq!(opening.pinned_keys(), [] as [String; 0]);
     assert!(!config_dir.exists(), "nothing scaffolds the file up front");
 
     client
@@ -3039,7 +3023,7 @@ async fn a_provider_pinned_off_round_trips_and_the_rest_default_to_enabled() {
         snapshot.settings.provider.codex.enabled && snapshot.settings.provider.claude.enabled,
         "a Provider with no pin is enabled, so a fresh install works without finding the Setting"
     );
-    assert_eq!(snapshot.pinned, ["provider.copilot.enabled"]);
+    assert_eq!(snapshot.pinned_keys(), ["provider.copilot.enabled"]);
     assert_eq!(snapshot.diagnostics, []);
 
     server.shutdown().await.expect("shut down server");
@@ -3065,11 +3049,7 @@ async fn turning_a_provider_off_and_resetting_it_leaves_the_rest_of_the_document
         .await
         .expect("turn the Provider off");
     assert!(!disabled.settings.provider.claude.enabled);
-    assert!(
-        disabled
-            .pinned
-            .contains(&"provider.claude.enabled".to_owned())
-    );
+    assert!(disabled.pinned.contains_key("provider.claude.enabled"));
     let document = config_document(config_dir.path());
     assert!(
         document.contains("\"enabled\": false"),
@@ -3122,7 +3102,7 @@ async fn pinning_a_provider_on_explicitly_still_writes_it() {
 
     assert!(pinned.settings.provider.codex.enabled);
     assert_eq!(
-        pinned.pinned,
+        pinned.pinned_keys(),
         ["provider.codex.enabled"],
         "a deliberate choice is pinned even when it equals the default"
     );
@@ -3169,7 +3149,7 @@ async fn a_mistyped_enablement_is_diagnosed_with_unquoted_booleans_and_ignored_a
         !snapshot.settings.provider.copilot.enabled,
         "one mistake does not void the rest of the document"
     );
-    assert_eq!(snapshot.pinned, ["provider.copilot.enabled"]);
+    assert_eq!(snapshot.pinned_keys(), ["provider.copilot.enabled"]);
 
     let diagnostics: Vec<_> = snapshot
         .diagnostics
@@ -3281,7 +3261,7 @@ async fn a_pinned_derivation_errand_selection_round_trips_through_a_config_docum
         opening.settings.derivation.errand,
         DerivationErrand::Pinned(pinned_title_selection())
     );
-    assert_eq!(opening.pinned, ["derivation.errand"]);
+    assert_eq!(opening.pinned_keys(), ["derivation.errand"]);
     assert_eq!(opening.diagnostics, []);
 
     let off = client
@@ -3318,7 +3298,7 @@ async fn a_pinned_derivation_errand_selection_round_trips_through_a_config_docum
         DerivationErrand::FollowSession,
         "the built-in default follows the Session's own Provider"
     );
-    assert_eq!(reset.pinned, [] as [String; 0]);
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
     let emptied = config_document(config_dir.path());
     assert!(
         !emptied.contains("derivation"),
@@ -3366,7 +3346,7 @@ async fn a_mistyped_derivation_errand_is_ignored_alone_and_says_what_it_accepts(
         ReasoningVisibility::Shown,
         "one mistake does not void the rest of the document"
     );
-    assert_eq!(snapshot.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(snapshot.pinned_keys(), ["transcript.reasoningVisibility"]);
 
     let [diagnostic] = snapshot.diagnostics.as_slice() else {
         panic!("expected one diagnostic, got {:?}", snapshot.diagnostics);
@@ -3414,7 +3394,7 @@ async fn the_retired_title_derivation_key_is_no_longer_a_known_setting() {
         DerivationErrand::FollowSession,
         "the retired key pins nothing, so the built-in default stands"
     );
-    assert_eq!(snapshot.pinned, [] as [String; 0]);
+    assert_eq!(snapshot.pinned_keys(), [] as [String; 0]);
     let [diagnostic] = snapshot.diagnostics.as_slice() else {
         panic!("expected one diagnostic, got {:?}", snapshot.diagnostics);
     };
@@ -3448,7 +3428,7 @@ async fn a_reset_on_a_fresh_install_leaves_the_config_root_empty() {
         .expect("remove a pin that was never written");
 
     assert_eq!(snapshot.settings, Default::default());
-    assert_eq!(snapshot.pinned, [] as [String; 0]);
+    assert_eq!(snapshot.pinned_keys(), [] as [String; 0]);
     assert!(
         !config_dir.path().join("suru.jsonc").exists(),
         "an edit with nothing to remove writes no document"
@@ -3485,7 +3465,7 @@ async fn text_selection_plain_text_defaults_to_visible_and_pins_markdown() {
         pinned.settings.text_selection.plain_text,
         TextSelectionPlainText::Markdown
     );
-    assert_eq!(pinned.pinned, ["textSelection.plainText"]);
+    assert_eq!(pinned.pinned_keys(), ["textSelection.plainText"]);
     let reset = editor
         .mutate_setting(SettingMutation::TextSelectionPlainText { value: None })
         .await
@@ -3523,7 +3503,7 @@ async fn text_selection_copy_pins_resets_and_reaches_every_client() {
         opening.settings.text_selection.copy,
         TextSelectionCopy::Manual
     );
-    assert_eq!(opening.pinned, ["textSelection.copy"]);
+    assert_eq!(opening.pinned_keys(), ["textSelection.copy"]);
     assert!(opening.diagnostics.is_empty());
     let pinned = editor
         .mutate_setting(SettingMutation::TextSelectionCopy {
@@ -3641,7 +3621,7 @@ async fn a_config_root_that_cannot_be_searched_is_an_error_and_takes_no_change()
         ReasoningVisibility::default(),
         "nothing is read from a config root that cannot be searched"
     );
-    assert_eq!(snapshot.pinned, Vec::<String>::new());
+    assert_eq!(snapshot.pinned_keys(), Vec::<String>::new());
     assert!(
         !snapshot.diagnostics.is_empty()
             && snapshot.diagnostics.iter().all(|diagnostic| {
@@ -3695,7 +3675,7 @@ async fn a_config_document_changed_by_another_hand_is_adopted_with_no_restart() 
     .await
     .expect("spawn server");
     let (mut client, opening) = attach(state_dir.path(), channel).await;
-    assert_eq!(opening.pinned, [] as [String; 0]);
+    assert_eq!(opening.pinned_keys(), [] as [String; 0]);
 
     std::fs::write(
         &document,
@@ -3707,11 +3687,8 @@ async fn a_config_document_changed_by_another_hand_is_adopted_with_no_restart() 
         adopted.settings.transcript.reasoning_visibility,
         ReasoningVisibility::Hidden
     );
-    assert_eq!(adopted.pinned, ["transcript.reasoningVisibility"]);
-    assert_eq!(
-        adopted.pinned_in["transcript.reasoningVisibility"],
-        document
-    );
+    assert_eq!(adopted.pinned_keys(), ["transcript.reasoningVisibility"]);
+    assert_eq!(adopted.pinned["transcript.reasoningVisibility"], document);
 
     std::fs::write(&document, "{ \"transcript\": ").expect("write the Config Document");
     let troubled = next_snapshot(&mut client).await;
@@ -3724,7 +3701,7 @@ async fn a_config_document_changed_by_another_hand_is_adopted_with_no_restart() 
 
     std::fs::write(&document, "{}\n").expect("write the Config Document");
     let mended = next_snapshot(&mut client).await;
-    assert_eq!(mended.pinned, [] as [String; 0]);
+    assert_eq!(mended.pinned_keys(), [] as [String; 0]);
     assert_eq!(mended.diagnostics, []);
 
     drop(client);

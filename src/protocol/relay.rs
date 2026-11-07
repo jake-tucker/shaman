@@ -4,8 +4,6 @@
 //! logged in there under the same Account (ADR-0064). This is server
 //! administration, refused to Peers and offered to no Sidekick.
 
-use std::path::{Path, PathBuf};
-
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -56,22 +54,23 @@ pub struct Relay {
     /// claim it is given it, and this reads `None` from then until the Relay
     /// comes to need a login anew.
     pub login_needed_notice: Option<Uuid>,
-    /// The Config Document pinning the Relay, where one does: read off the
-    /// Settings in force and never stored, so it is only ever what the document
-    /// says now. Being pinned makes the entry and nothing more: the Login there
-    /// and the choice to Serve through it stay this machine's user's, and the
-    /// entry outlasts the pin.
-    pub pinned_in: Option<PathBuf>,
+    /// The Config Document pinning the Relay, where one does, spelled from
+    /// the home of the Server's user as a path is wherever it is read: read
+    /// off the Settings in force and never stored, so it is only ever what the
+    /// document says now. Being pinned makes the entry and nothing more: the
+    /// Login there and the choice to Serve through it stay this machine's
+    /// user's, and the entry outlasts the pin.
+    pub pinned_in: Option<String>,
 }
 
-/// What a reader is told of removing the pinned Relay at `address`, which a
-/// Server refuses and a Client need not ask: where it is pinned, so it does not
-/// simply come back, and what to do about that.
-pub fn relay_pinned_message(address: &str, document: &Path) -> String {
+/// What a reader is told of removing the Relay at `address`, pinned by
+/// `document` as [`Relay::pinned_in`] spells it, which a Server refuses and a
+/// Client need not ask: where it is pinned, so it does not simply come back,
+/// and the two places it can be taken out of the list.
+pub fn relay_pinned_message(address: &str, document: &str) -> String {
     format!(
-        "The Relay at {address} is pinned by serving.relays in {}, so it would only come back; \
-         take it out of there first",
-        document.display()
+        "The Relay at {address} is pinned by serving.relays in {document}, so it would only come \
+         back; take it out there, or in /settings, first"
     )
 }
 

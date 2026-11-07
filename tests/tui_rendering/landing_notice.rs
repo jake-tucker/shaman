@@ -42,8 +42,7 @@ fn deliver_snapshot(application: &mut Application, diagnostics: Vec<SettingsDiag
                     },
                     ..EffectiveSettings::default()
                 },
-                pinned: Vec::new(),
-                pinned_in: Default::default(),
+                pinned: Default::default(),
                 diagnostics,
             },
         )))

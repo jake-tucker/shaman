@@ -51,8 +51,7 @@ fn application_with(
                     },
                     ..EffectiveSettings::default()
                 },
-                pinned: Vec::new(),
-                pinned_in: Default::default(),
+                pinned: Default::default(),
                 diagnostics: Vec::new(),
             },
         )))

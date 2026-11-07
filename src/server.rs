@@ -1706,6 +1706,7 @@ async fn start(
     });
     let relays = crate::relays::RelayController::new(
         config.data_dir(),
+        crate::protocol::WorkspacePaths::from_home(config.home_dir().as_deref()),
         serving.clone(),
         crate::relays::RelayTimings {
             answer_timeout: timings.relay_answer_timeout,
@@ -1721,9 +1722,15 @@ async fn start(
     // After all fallible local-server setup, so an error returning from spawn
     // can never leave a detached Serving listener behind; still before any
     // Session starts, so the first Turn runs under the pinned Server Settings.
-    if let Err(error) =
-        adopt_settings(&settings, &runtimes, &serving, &relays, &opening_settings).await
-    {
+    let runtimes = Arc::new(runtimes);
+    let settings_adoption = operations::SettingsAdoption::new(
+        config_documents,
+        settings.clone(),
+        runtimes.clone(),
+        serving.clone(),
+        relays.clone(),
+    );
+    if let Err(error) = settings_adoption.adopt(&opening_settings).await {
         tracing::error!("could not adopt Serving settings at startup: {error:#}");
     }
 
@@ -1874,7 +1881,6 @@ async fn start(
             })),
         },
     );
-    let runtimes = Arc::new(runtimes);
     let skill_catalog = SkillCatalogService::new(runtimes.clone(), settings.subscribe());
     // The Workspace Roots a Clone may go in are told apart from Suru's own
     // data directory, which is none, alike for a Clone and for what a
@@ -1967,13 +1973,7 @@ async fn start(
             timings.remote_reach_timeout,
             timings.remote_reach_budget,
         ),
-        operations::SettingsAdoption::new(
-            config_documents,
-            settings.clone(),
-            runtimes.clone(),
-            serving.clone(),
-            relays.clone(),
-        ),
+        settings_adoption,
         root_discovery.clone(),
         registry_standing.clone(),
         memories,
@@ -2979,29 +2979,6 @@ fn pairing_error_response(error: crate::serving::PairingFailure) -> Response {
             unreachable: error.unreachable,
         },
     )
-}
-
-/// Puts a freshly loaded effective-settings view in force: its problems reach
-/// the Log, every hosted Provider runtime takes the Server Settings it now
-/// runs under, the Server holds an entry for each Relay it pins, and every
-/// attached client receives the snapshot. Startup, an accepted mutation, and
-/// a Config Document changed by another hand all adopt a view the same way.
-async fn adopt_settings(
-    settings: &watch::Sender<SettingsSnapshot>,
-    runtimes: &[Arc<dyn ProviderRuntime>],
-    serving: &ServingController,
-    relays: &crate::relays::RelayController,
-    snapshot: &SettingsSnapshot,
-) -> Result<()> {
-    crate::settings::log_diagnostics(&snapshot.diagnostics);
-    for runtime in runtimes {
-        runtime.apply_settings(&snapshot.settings);
-    }
-    let (pinned_relays, pinned_in) = crate::settings::relay_pins(snapshot);
-    relays.adopt_pins(pinned_relays, pinned_in);
-    let serving_result = serving.adopt(snapshot.settings.serving).await;
-    settings.send_replace(snapshot.clone());
-    serving_result
 }
 
 fn model_catalog_event(catalog: &ModelCatalog) -> Event {

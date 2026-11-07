@@ -78,8 +78,7 @@ fn application_in(home: &Home) -> Application {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings,
-                pinned: Vec::new(),
-                pinned_in: Default::default(),
+                pinned: Default::default(),
                 diagnostics: Vec::new(),
             },
         )))

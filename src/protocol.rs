@@ -1928,7 +1928,7 @@ pub struct ProviderSettings {
 /// exposed while it is. Keeping the bind address typed means malformed
 /// addresses are rejected by Settings loading before anything reaches the
 /// network boundary.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServingSettings {
     /// Whether the Server accepts paired Servers at all, by whichever ways
@@ -1940,6 +1940,10 @@ pub struct ServingSettings {
     pub listener: bool,
     pub port: u16,
     pub bind_address: IpAddr,
+    /// The Relays a Config Document pins, each address written the one way a
+    /// Relay's is and held once. The Relay entries follow this, and the
+    /// listener never does.
+    pub relays: Vec<String>,
 }
 
 /// How the Serving listener stands, as a Server tells its own Clients after
@@ -2301,6 +2305,7 @@ impl Default for ServingSettings {
             // machine's non-loopback addresses: a listener that cannot answer
             // on them would strand every Invite it issues.
             bind_address: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+            relays: Vec::new(),
         }
     }
 }
@@ -2353,11 +2358,6 @@ pub struct EffectiveSettings {
     pub workspace: WorkspaceSettings,
     pub provider: ProviderSettings,
     pub serving: ServingSettings,
-    /// The Relays a Config Document pins, each address written the one way a
-    /// Relay's is and held once. Keyed under `serving` with the Settings it
-    /// keeps company with, it is kept apart from them because those are what
-    /// the Serving listener follows, and this is what the Relay entries do.
-    pub relays: Vec<String>,
     pub broker: BrokerSettings,
 }
 
@@ -2679,12 +2679,18 @@ pub struct SettingsDiagnostic {
 pub struct SettingsSnapshot {
     pub settings: EffectiveSettings,
     /// Dotted schema key paths a Config Document pins, so a client can tell a
-    /// deliberate choice from a built-in default without reading the file.
-    pub pinned: Vec<String>,
-    /// The Config Document pinning each of those keys: the one that wins, where
-    /// the stack comes to hold several.
-    pub pinned_in: BTreeMap<String, PathBuf>,
+    /// deliberate choice from a built-in default without reading the file, and
+    /// the document pinning each: the one that wins, where the stack comes to
+    /// hold several.
+    pub pinned: BTreeMap<String, PathBuf>,
     pub diagnostics: Vec<SettingsDiagnostic>,
+}
+
+impl SettingsSnapshot {
+    /// The keys pinned, in their order as keys.
+    pub fn pinned_keys(&self) -> Vec<&str> {
+        self.pinned.keys().map(String::as_str).collect()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

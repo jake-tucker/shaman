@@ -86,8 +86,8 @@ async fn an_address_pinned_as_a_server_starts_is_an_entry_needing_a_login_from_t
     assert_eq!(relay.address, NOWHERE);
     assert_eq!(relay.state, RelayState::LoginNeeded);
     assert_eq!(
-        relay.pinned_in.as_deref(),
-        Some(document_of(&server).as_path())
+        relay.pinned_in,
+        Some(document_of(&server).display().to_string())
     );
     assert_eq!((&relay.account, &relay.login), (&None, &None));
     assert!(
@@ -169,8 +169,8 @@ async fn a_change_of_the_config_document_is_adopted_with_no_restart() {
         })
         .await
         .expect("/settings edits the list");
-    assert_eq!(answered.settings.relays, [OTHER]);
-    assert!(answered.pinned.iter().any(|key| key == "serving.relays"));
+    assert_eq!(answered.settings.serving.relays, [OTHER]);
+    assert!(answered.pinned.contains_key("serving.relays"));
     let told = server.told(OTHER, |relay| relay.pinned_in.is_some()).await;
     assert_eq!(
         told.relays
@@ -186,7 +186,7 @@ async fn a_change_of_the_config_document_is_adopted_with_no_restart() {
         .mutate_setting(SettingMutation::ServingRelays { value: None })
         .await
         .expect("/settings resets the list");
-    assert_eq!(reset.settings.relays, [] as [String; 0]);
+    assert_eq!(reset.settings.serving.relays, [] as [String; 0]);
     server.told(OTHER, |relay| relay.pinned_in.is_none()).await;
 
     server.shutdown().await;
@@ -337,6 +337,7 @@ async fn removing_a_pinned_relay_is_refused_saying_where_and_forgets_nothing() {
     let said = refused_saying(&refused);
     assert!(said.contains(&document.display().to_string()), "{said}");
     assert!(said.contains("serving.relays"), "{said}");
+    assert!(said.contains("/settings"), "{said}");
     assert!(server.relay(&address).await.is_some());
     assert_eq!(relay.running().store().logins().await.unwrap().len(), 1);
     assert_eq!(
@@ -436,7 +437,7 @@ async fn an_address_written_two_ways_is_one_entry() {
         .await
         .unwrap();
     assert_eq!(
-        answered.settings.relays,
+        answered.settings.serving.relays,
         [NOWHERE, "https://held.example.test"]
     );
 
@@ -495,8 +496,8 @@ async fn an_unusable_address_is_refused_alone_and_the_others_still_apply() {
         .mutate_setting(SettingMutation::ServingPort { value: Some(0) })
         .await
         .unwrap();
-    assert_eq!(snapshot.settings.relays, [NOWHERE]);
-    assert!(snapshot.pinned.iter().any(|key| key == "serving.relays"));
+    assert_eq!(snapshot.settings.serving.relays, [NOWHERE]);
+    assert!(snapshot.pinned.contains_key("serving.relays"));
     let refused = snapshot
         .diagnostics
         .iter()
@@ -577,7 +578,7 @@ async fn a_document_that_stops_parsing_says_so_and_leaves_the_pins_standing() {
     })
     .await
     .expect("the document's trouble is told");
-    assert_eq!(held.settings.relays, [NOWHERE]);
+    assert_eq!(held.settings.serving.relays, [NOWHERE]);
     assert!(
         server
             .relay(NOWHERE)
@@ -586,6 +587,121 @@ async fn a_document_that_stops_parsing_says_so_and_leaves_the_pins_standing() {
     );
 
     server.shutdown().await;
+}
+
+/// A modification time far outside any window in which a look is too soon to
+/// trust a document's stamp.
+fn long_ago() -> std::time::SystemTime {
+    std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000)
+}
+
+fn age(path: &Path) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .expect("open the file")
+        .set_modified(long_ago())
+        .expect("set its modification time");
+}
+
+/// An edit no document's stamp can tell — in place, of the same length, its
+/// time set back to what it was — is still followed, by the read a Server makes
+/// every so often whatever the stamps say.
+#[tokio::test]
+async fn an_edit_of_the_same_length_and_time_is_followed_within_a_bound() {
+    const FIRST: &str = "https://first.example.test";
+    const OTHER: &str = "https://other.example.test";
+    let server = pinning_server("relay-pin-same-stamp").await;
+    let document = document_of(&server);
+    pin_by_hand(&document, json!([FIRST]));
+    age(&document);
+    server
+        .wait_for_relay(FIRST, |relay| relay.pinned_in.is_some())
+        .await;
+
+    pin_by_hand(&document, json!([OTHER]));
+    age(&document);
+    server
+        .wait_for_relay(OTHER, |relay| relay.pinned_in.is_some())
+        .await;
+
+    server.shutdown().await;
+}
+
+/// A document a dotfile manager links here is followed through the link: saved
+/// atomically by a rename over what the link reaches, and with the link pointed
+/// at another file altogether, whatever that file's time and length.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_document_linked_here_is_followed_through_the_link() {
+    const FIRST: &str = "https://first.example.test";
+    const SAVED: &str = "https://saved.example.test";
+    const OTHER: &str = "https://other.example.test";
+    let dotfiles = tempfile::tempdir().expect("create a dotfiles directory");
+    let server = pinning_server("relay-pin-linked").await;
+    let link = document_of(&server);
+    let target = dotfiles.path().join("suru.jsonc");
+    pin_by_hand(&target, json!([FIRST]));
+    age(&target);
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    server
+        .wait_for_relay(FIRST, |relay| relay.pinned_in.is_some())
+        .await;
+
+    let saved = dotfiles.path().join("saved");
+    pin_by_hand(&saved, json!([SAVED]));
+    age(&saved);
+    std::fs::rename(&saved, &target).unwrap();
+    server
+        .wait_for_relay(SAVED, |relay| relay.pinned_in.is_some())
+        .await;
+
+    let generation = dotfiles.path().join("generation");
+    pin_by_hand(&generation, json!([OTHER]));
+    age(&generation);
+    let pointing = dotfiles.path().join("pointing");
+    std::os::unix::fs::symlink(&generation, &pointing).unwrap();
+    std::fs::rename(&pointing, &link).unwrap();
+    server
+        .wait_for_relay(OTHER, |relay| relay.pinned_in.is_some())
+        .await;
+
+    server.shutdown().await;
+}
+
+/// The refusal and the listing spell the document from the home of the Server's
+/// user, as the settings panel does, and the refusal says where else the entry
+/// can be taken out of the list.
+#[tokio::test]
+async fn a_pin_is_spelled_from_the_home_of_the_servers_user() {
+    let state = tempfile::tempdir().expect("create the Server's state directory");
+    let home = tempfile::tempdir().expect("create the Server's home");
+    let home_path = suru::paths::canonical(home.path()).expect("resolve the Server's home");
+    let config_root = home_path.join(".config").join("suru");
+    std::fs::create_dir_all(&config_root).unwrap();
+    pin_by_hand(&config_root.join("suru.jsonc"), json!([NOWHERE]));
+    let channel = "relay-pin-spelled";
+    let config = ServerConfig::new(state.path(), channel)
+        .expect("configure the Server")
+        .with_config_dir(&config_root)
+        .with_home_dir(&home_path);
+    let timings = pinning_timings();
+    let (server, client) = run_server(&config, &timings, state.path(), channel).await;
+
+    let separator = std::path::MAIN_SEPARATOR;
+    let spelled = format!("~{separator}.config{separator}suru{separator}suru.jsonc");
+    let relay = client.list_relays().await.unwrap().relays.remove(0);
+    assert_eq!(relay.pinned_in.as_deref(), Some(spelled.as_str()));
+    let refused = client
+        .remove_relay(NOWHERE)
+        .await
+        .expect_err("it is pinned");
+    let said = refused_saying(&refused);
+    assert!(said.contains(&spelled), "{said}");
+    assert!(said.contains("/settings"), "{said}");
+
+    drop(client);
+    server.shutdown().await.expect("stop the Server");
 }
 
 /// The fenced `jsonc` block beneath the heading a reader is told to copy from
@@ -626,7 +742,10 @@ async fn the_rollout_the_relay_readme_shows_pins_what_it_says() {
         .mutate_setting(SettingMutation::ServingPort { value: Some(0) })
         .await
         .unwrap();
-    assert_eq!(snapshot.settings.relays, ["https://relay.example.com"]);
+    assert_eq!(
+        snapshot.settings.serving.relays,
+        ["https://relay.example.com"]
+    );
     assert_eq!(snapshot.diagnostics, []);
 
     server.shutdown().await;

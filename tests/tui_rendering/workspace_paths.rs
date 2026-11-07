@@ -18,8 +18,7 @@ fn hide_sidebar(application: &mut Application) {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings,
-                pinned: Vec::new(),
-                pinned_in: Default::default(),
+                pinned: Default::default(),
                 diagnostics: Vec::new(),
             },
         )))

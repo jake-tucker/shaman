@@ -32,6 +32,7 @@ use std::{
     num::IntErrorKind,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::{Duration, SystemTime},
 };
 
 use jsonc_parser::{
@@ -537,7 +538,7 @@ const SERVING_RELAYS_LIST: TextListSettingChoice = TextListSettingChoice::new(
     "an http:// or https:// address of at most 512 characters naming a Relay's host, with no \
      credentials, query or fragment",
     |address| holdable_address(address).is_some(),
-    |settings| settings.relays.clone(),
+    |settings| settings.serving.relays.clone(),
     |addresses| SettingMutation::ServingRelays {
         value: Some(one_entry_each(addresses)),
     },
@@ -1011,7 +1012,7 @@ fn in_force(mutation: &SettingMutation, settings: &EffectiveSettings) -> Setting
             value: Some(settings.workspace.roots.clone()),
         },
         SettingMutation::ServingRelays { .. } => SettingMutation::ServingRelays {
-            value: Some(settings.relays.clone()),
+            value: Some(settings.serving.relays.clone()),
         },
         SettingMutation::ProviderCodexEnabled { .. } => SettingMutation::ProviderCodexEnabled {
             value: Some(settings.provider.codex.enabled),
@@ -2174,7 +2175,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         values: SettingValues::Open {
             named: &[],
             accepts: "a list of http:// or https:// addresses each naming a Relay's host",
-            spell: |settings| match settings.relays.as_slice() {
+            spell: |settings| match settings.serving.relays.as_slice() {
                 [] => "none".to_owned(),
                 relays => relays.join(", "),
             },
@@ -2182,7 +2183,9 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         },
         reset: SettingMutation::ServingRelays { value: None },
         apply: |settings, value| {
-            SERVING_RELAYS_LIST.apply(value, |relays| settings.relays = one_entry_each(relays))
+            SERVING_RELAYS_LIST.apply(value, |relays| {
+                settings.serving.relays = one_entry_each(relays);
+            })
         },
     },
     SettingDescriptor {
@@ -2380,6 +2383,16 @@ impl ConfigDocuments {
         load(self.root.as_deref())
     }
 
+    /// What the filesystem says of the stack's documents now, without reading
+    /// one, for telling cheaply whether reading them could say anything new.
+    pub fn stamps(&self) -> DocumentStamps {
+        DocumentStamps(self.root.as_deref().map_or_else(Vec::new, |root| {
+            [PRIMARY_CONFIG_FILE, FALLBACK_CONFIG_FILE]
+                .map(|name| DocumentStamp::of(&root.join(name)))
+                .into()
+        }))
+    }
+
     /// What the stack says now, for the Settings in force to follow. A document
     /// that cannot be read whole says nothing of what it pins, so that is left
     /// in force and only the trouble told: a save half-done or an edit mistyped
@@ -2417,6 +2430,68 @@ impl ConfigDocuments {
         let (key, value) = pin_for(mutation);
         write_pin(root, key, value.as_ref())?;
         Ok(load(Some(root)))
+    }
+}
+
+/// What the filesystem says of every name a Config Document may go by. Two that
+/// differ say the documents may have changed; two that agree do not say they
+/// have not, since an edit of the same length within one tick of a file's
+/// modification time, or one that sets that time back, leaves a stamp as it was.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentStamps(Vec<DocumentStamp>);
+
+impl DocumentStamps {
+    /// Whether a document was modified within `recently` of `now`, which is
+    /// too soon to trust a stamp: an edit still to come may fall in the same
+    /// tick of its modification time. A time that cannot be told, or that
+    /// stands ahead of `now`, counts as recent.
+    pub fn modified_within(&self, recently: Duration, now: SystemTime) -> bool {
+        self.0.iter().any(|stamp| match stamp {
+            DocumentStamp::Absent => false,
+            DocumentStamp::Untold(_) => true,
+            DocumentStamp::Present { modified, .. } => modified.is_none_or(|modified| {
+                now.duration_since(modified)
+                    .map_or(true, |since| since < recently)
+            }),
+        })
+    }
+}
+
+/// What the filesystem says of one name a Config Document may go by, following
+/// symlinks, so a document a dotfile manager links here is judged by what the
+/// link reaches.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum DocumentStamp {
+    Absent,
+    /// Whether it exists could not be told.
+    Untold(std::io::ErrorKind),
+    Present {
+        modified: Option<SystemTime>,
+        len: u64,
+        /// Tells one file from another where a link is pointed elsewhere or a
+        /// file renamed over this one, whose time and length may well match:
+        /// a Nix store gives every file one modification time. Where no such
+        /// number is to be had, only the next read regardless tells them apart.
+        #[cfg(unix)]
+        file: (u64, u64),
+    },
+}
+
+impl DocumentStamp {
+    fn of(path: &Path) -> Self {
+        match fs::metadata(path) {
+            Ok(metadata) => Self::Present {
+                modified: metadata.modified().ok(),
+                len: metadata.len(),
+                #[cfg(unix)]
+                file: {
+                    use std::os::unix::fs::MetadataExt;
+                    (metadata.dev(), metadata.ino())
+                },
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self::Absent,
+            Err(error) => Self::Untold(error.kind()),
+        }
     }
 }
 
@@ -2733,8 +2808,8 @@ pub(crate) fn workspace_roots_named_whole(snapshot: &SettingsSnapshot) -> Option
 /// The Relays `snapshot` pins, and the Config Document pinning them.
 pub(crate) fn relay_pins(snapshot: &SettingsSnapshot) -> (&[String], Option<&Path>) {
     (
-        &snapshot.settings.relays,
-        snapshot.pinned_in.get(SERVING_RELAYS).map(PathBuf::as_path),
+        &snapshot.settings.serving.relays,
+        snapshot.pinned.get(SERVING_RELAYS).map(PathBuf::as_path),
     )
 }
 
@@ -2749,8 +2824,6 @@ fn load(config_dir: Option<&Path>) -> SettingsSnapshot {
     for document in discover_documents(config_dir, &mut snapshot.diagnostics) {
         apply_document(&document, &mut snapshot);
     }
-    // A set of keys, so it reads the same however the documents happen to order their properties.
-    snapshot.pinned.sort();
     snapshot
 }
 
@@ -2919,10 +2992,7 @@ fn apply_key(
             ),
         };
         if pins {
-            if !snapshot.pinned.contains(&key) {
-                snapshot.pinned.push(key.clone());
-            }
-            snapshot.pinned_in.insert(key.clone(), path.to_path_buf());
+            snapshot.pinned.insert(key.clone(), path.to_path_buf());
         }
         snapshot
             .diagnostics
@@ -3525,6 +3595,109 @@ mod tests {
         }
     }
 
+    /// A file's old modification time, far outside any window in which a stamp
+    /// is too recent to trust.
+    fn long_ago() -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000)
+    }
+
+    fn age(path: &Path) {
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .expect("open the file")
+            .set_modified(long_ago())
+            .expect("set its modification time");
+    }
+
+    /// A stamp tells apart what a document's length, time, or being there at all
+    /// tells apart, and an edit of the same length and time in place it cannot.
+    #[test]
+    fn a_stamp_tells_apart_what_a_documents_time_and_length_do_and_nothing_else() {
+        let root = tempfile::tempdir().expect("create a config root");
+        let documents = ConfigDocuments::new(Some(root.path()));
+        let document = root.path().join(PRIMARY_CONFIG_FILE);
+        let absent = documents.stamps();
+        assert_eq!(absent, documents.stamps());
+        assert!(!absent.modified_within(Duration::from_secs(5), SystemTime::now()));
+
+        fs::write(&document, "{}\n").unwrap();
+        age(&document);
+        let stamped = documents.stamps();
+        assert_ne!(stamped, absent, "a document appearing changes it");
+        assert_eq!(stamped, documents.stamps());
+
+        fs::write(&document, "{ }\n").unwrap();
+        age(&document);
+        assert_ne!(documents.stamps(), stamped, "another length changes it");
+        let longer = documents.stamps();
+
+        fs::write(&document, "{  }").unwrap();
+        age(&document);
+        assert_eq!(
+            documents.stamps(),
+            longer,
+            "an edit in place of the same length and time cannot be told from none, which is what \
+             reading regardless every so often is for"
+        );
+    }
+
+    /// A stamp modified a moment ago is too soon to trust, and one modified
+    /// long ago is not, nor is one whose time stands ahead of the clock.
+    #[test]
+    fn a_stamp_modified_recently_or_ahead_of_the_clock_is_too_soon_to_trust() {
+        let root = tempfile::tempdir().expect("create a config root");
+        let documents = ConfigDocuments::new(Some(root.path()));
+        let document = root.path().join(PRIMARY_CONFIG_FILE);
+        fs::write(&document, "{}\n").unwrap();
+        let recently = Duration::from_secs(5);
+        assert!(
+            documents
+                .stamps()
+                .modified_within(recently, SystemTime::now())
+        );
+
+        age(&document);
+        let stamps = documents.stamps();
+        assert!(!stamps.modified_within(recently, SystemTime::now()));
+        assert!(
+            stamps.modified_within(recently, long_ago() - Duration::from_secs(60)),
+            "a clock behind the file's time cannot say how long ago it was"
+        );
+    }
+
+    /// A document a dotfile manager links here is judged by what the link
+    /// reaches: a file renamed over the target, and the link pointed at another
+    /// file of the same length and time, each say it changed.
+    #[cfg(unix)]
+    #[test]
+    fn a_stamp_follows_a_link_and_tells_apart_the_files_it_reaches() {
+        let root = tempfile::tempdir().expect("create a config root");
+        let dotfiles = tempfile::tempdir().expect("create a dotfiles directory");
+        let documents = ConfigDocuments::new(Some(root.path()));
+        let link = root.path().join(PRIMARY_CONFIG_FILE);
+        let target = dotfiles.path().join("suru.jsonc");
+        fs::write(&target, "{}\n").unwrap();
+        age(&target);
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let first = documents.stamps();
+
+        let saved = dotfiles.path().join("saved");
+        fs::write(&saved, "{}\n").unwrap();
+        age(&saved);
+        fs::rename(&saved, &target).unwrap();
+        let renamed = documents.stamps();
+        assert_ne!(renamed, first, "a file renamed over what the link reaches");
+
+        let generation = dotfiles.path().join("generation");
+        fs::write(&generation, "{}\n").unwrap();
+        age(&generation);
+        let pointing = root.path().join("pointing");
+        std::os::unix::fs::symlink(&generation, &pointing).unwrap();
+        fs::rename(&pointing, &link).unwrap();
+        assert_ne!(documents.stamps(), renamed, "the link pointed elsewhere");
+    }
+
     /// What the list of Relays says it takes is what a Server can hold, and
     /// it takes that the way every other surface taking a Relay's address does.
     #[test]
@@ -3551,13 +3724,16 @@ mod tests {
         );
         let descriptor = setting(SERVING_RELAYS);
         let in_force = EffectiveSettings {
-            relays: vec!["https://a.example.test".to_owned()],
+            serving: crate::protocol::ServingSettings {
+                relays: vec!["https://a.example.test".to_owned()],
+                ..Default::default()
+            },
             ..EffectiveSettings::default()
         };
         assert_eq!(
             descriptor.pin(&descriptor.value(&in_force)),
             Some(SettingMutation::ServingRelays {
-                value: Some(in_force.relays),
+                value: Some(in_force.serving.relays),
             }),
             "what is in force is spelled as a pin of itself"
         );
@@ -3590,12 +3766,11 @@ mod tests {
             .collect()
     }
 
-    /// Every Setting the Serving listener follows — read off the Serving
-    /// settings it is moved to, whatever its key — is hidden from a Sidekick,
-    /// so a Setting added there under another key fails here rather than
-    /// reaching one (ADR 0043).
+    /// Every Setting among the Serving settings — read off them, whatever its
+    /// key — is hidden from a Sidekick, so a Setting added there under another
+    /// key fails here rather than reaching one (ADR 0043).
     #[test]
-    fn every_setting_the_serving_listener_follows_is_hidden_from_a_sidekick() {
+    fn every_setting_among_the_serving_settings_is_hidden_from_a_sidekick() {
         let defaults = EffectiveSettings::default();
         // Every field moved off its default, written out whole so a field
         // added to the Serving settings must be moved here too.
@@ -3609,6 +3784,7 @@ mod tests {
                 } else {
                     IpAddr::V4(Ipv4Addr::LOCALHOST)
                 },
+                relays: vec!["https://relay.example.com".to_owned()],
             },
             ..defaults.clone()
         };
@@ -3630,7 +3806,8 @@ mod tests {
                 SERVING_ENABLED,
                 SERVING_LISTENER,
                 SERVING_PORT,
-                SERVING_BIND_ADDRESS
+                SERVING_BIND_ADDRESS,
+                SERVING_RELAYS
             ]
         );
     }

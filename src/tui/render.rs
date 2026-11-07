@@ -8933,8 +8933,7 @@ mod tests {
                         },
                         ..EffectiveSettings::default()
                     },
-                    pinned: vec!["session.contentWidth".to_owned()],
-                    pinned_in: Default::default(),
+                    pinned: [("session.contentWidth".to_owned(), PathBuf::new())].into(),
                     diagnostics: Vec::new(),
                 },
             )))

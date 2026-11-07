@@ -212,8 +212,7 @@ fn serve_enables_serving_and_invites_only_the_selected_candidate_ways() {
             request,
             settings: Some(SettingsSnapshot {
                 settings,
-                pinned: vec!["serving.enabled".to_owned()],
-                pinned_in: Default::default(),
+                pinned: [("serving.enabled".to_owned(), std::path::PathBuf::new())].into(),
                 diagnostics: Vec::new(),
             }),
             candidates: vec![
