@@ -23,5 +23,5 @@ The Setting is Experimental and off by default. With it off, `session.create` an
 - Routing is confirmed only for one-word Turns. The other parameters the CLI's issued assignment carries stay out, and their effect on a hard Prompt or a multi-turn Session is untested, so turning the Setting on may spend differently from the CLI on the same work.
 - The account is treated as assigned whether or not the service would have assigned it. What that does on a plan without Fusion is unknown.
 - The SDK marks `exp_assignments` `#[doc(hidden)]`, so an SDK upgrade may move or remove it.
-- Turning the Setting off does not reach an open Session until it resumes, and a resume without the assignment lists no tiers. Should Suru later select a tier, it will have to decide what such a Session does.
+- Turning the Setting off does not take the assignment from an open Session until it resumes, and a resume without the assignment lists no tiers. ADR 0070 decides what such a Session does: it falls back to plain `auto` at its next Turn.
 - A tier picker, lowering a tier onto a Session, and the Fusion projection are separate work. Until a committed phase stops doubling in the Transcript, this Setting stays off by default.
