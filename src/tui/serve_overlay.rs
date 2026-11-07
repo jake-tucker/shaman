@@ -44,10 +44,12 @@ use std::{
     ops::Range,
 };
 
-pub(super) use crate::protocol::RelayWithheld as Withheld;
-use crate::protocol::{
-    IssueInviteRequest, IssuedInvite, IssuedShortCode, ListenerState, Peer, ShortCodeStanding,
-    ShortCodeState, Way,
+use crate::{
+    protocol::{
+        IssueInviteRequest, IssuedInvite, IssuedShortCode, ListenerState, Peer, ShortCodeStanding,
+        ShortCodeState, Way,
+    },
+    relay_said::{REACHABLE, RelayWithheld},
 };
 
 use super::{
@@ -91,8 +93,6 @@ pub(super) const NO_WAY_FROM_LOOPBACK: &str = "An Invite has no way to offer unt
 /// What the picker says where the Server holds no Relay, for the reader to
 /// begin there.
 pub(super) const NO_RELAY: &str = "This Server holds no Relay; press a to add one";
-
-pub(super) use crate::relay_said::REACHABLE;
 
 /// What the picker says where a frame has too few Rows to say all of
 /// [`REACHABLE`] on the row the keys are on, which the key then does not act on.
@@ -267,7 +267,7 @@ impl Choice {
             });
         let relays = ways.relays.held_relays().iter().map(|relay| {
             let way = Way::Relay(relay.address.clone());
-            let withheld = Withheld::of(relay);
+            let withheld = RelayWithheld::of(relay);
             CandidateWay {
                 chosen: withheld.is_none() && !self.left_out.contains(&way),
                 withheld,
@@ -285,10 +285,10 @@ impl Choice {
     fn notes_on(
         &self,
         address: &str,
-        withheld: Option<Withheld>,
+        withheld: Option<RelayWithheld>,
         relays: &RelayOverlay,
     ) -> Vec<ListNote> {
-        let standing = (withheld == Some(Withheld::LoginNeeded))
+        let standing = (withheld == Some(RelayWithheld::LoginNeeded))
             .then(|| relays.login_standing(address))
             .flatten();
         self.relay_note
@@ -323,7 +323,7 @@ pub(super) struct CandidateWay {
     pub(super) way: Way,
     pub(super) chosen: bool,
     /// Why an Invite cannot offer it, where it cannot.
-    pub(super) withheld: Option<Withheld>,
+    pub(super) withheld: Option<RelayWithheld>,
     /// What can be done on its row.
     pub(super) action: WayAction,
     /// What its row says beneath it of what was done there and how a login
@@ -353,12 +353,12 @@ pub(super) enum WayAction {
 }
 
 impl WayAction {
-    pub(super) fn of(withheld: Option<Withheld>, login_under_way: bool) -> Self {
+    pub(super) fn of(withheld: Option<RelayWithheld>, login_under_way: bool) -> Self {
         match withheld {
             None => Self::ToggleOffered,
-            Some(Withheld::LoginNeeded) if login_under_way => Self::ShowLogin,
-            Some(Withheld::LoginNeeded) => Self::BeginLogin,
-            Some(Withheld::NotServedThrough) => Self::ServeThrough,
+            Some(RelayWithheld::LoginNeeded) if login_under_way => Self::ShowLogin,
+            Some(RelayWithheld::LoginNeeded) => Self::BeginLogin,
+            Some(RelayWithheld::NotServedThrough) => Self::ServeThrough,
         }
     }
 

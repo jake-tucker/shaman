@@ -18,8 +18,9 @@ use serde::Serialize;
 use crate::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
-        InviteRelays, OfferInviteRequest, OfferedInvite, Relay, RelayLogin, RelayLoginOutcome,
-        RelayLoginRefusal, RelayLoginStanding, RelayState, SessionError, SessionErrorCode, Way,
+        InviteOfferAnswer, InviteRelays, OfferInviteRequest, OfferedInvite, Relay, RelayLogin,
+        RelayLoginOutcome, RelayLoginRefusal, RelayLoginStanding, RelayState, ServingChange,
+        SessionError, SessionErrorCode, Way, WayLeftOut,
     },
     relay_said,
 };
@@ -160,15 +161,112 @@ pub async fn serve(config: ManagedClientConfig, command: ServeCommand) -> u8 {
         return FAILED;
     };
     match client.offer_invite(request).await {
-        Ok(offered) => print_invite(
+        Ok(InviteOfferAnswer::Issued(offered)) => print_invite(
             &offered,
             arguments.json,
             std::io::stderr().is_terminal(),
             &mut out,
             &mut err,
         ),
+        Ok(refused) => invite_refused(&refused, &mut err),
         Err(error) => failed(&error, &mut err),
     }
+}
+
+/// What is said of what asking for an Invite did to Serving.
+fn serving_change_said(change: ServingChange) -> &'static str {
+    match change {
+        ServingChange::TurnedOn => {
+            "Serving is now on: this machine can be reached by the Servers paired with it"
+        }
+        ServingChange::Recovered => "The Serving listener, which had failed, is listening again",
+        ServingChange::CouldNotStart => {
+            "Serving is asked for now (serving.enabled), and could not start"
+        }
+    }
+}
+
+/// Why a way is not offered, and what to run to put it right: what `/relay` and
+/// `/serve` say of it, with this command line's commands for their keys.
+fn way_left_out_said(way: &WayLeftOut) -> String {
+    match way {
+        WayLeftOut::NoRelayAt { address, held } => {
+            let holds = if held.is_empty() {
+                "it holds none".to_owned()
+            } else {
+                format!("it holds {}", held.join(", "))
+            };
+            format!(
+                "This Server holds no Relay at {address}: {holds}. `suru relay add {address}` \
+                 adds it"
+            )
+        }
+        WayLeftOut::NoRelayHeld => {
+            "This Server holds no Relay; `suru relay add <address>` adds one".to_owned()
+        }
+        WayLeftOut::RelayLoginNeeded { relay } if pending(relay) => format!(
+            "The Relay at {address} needs a login, and one is under way: `suru relay login \
+             {address}` shows it",
+            address = relay.address
+        ),
+        WayLeftOut::RelayLoginNeeded { relay } => format!(
+            "The Relay at {address} cannot be offered: {standing}. `suru relay login {address}` \
+             logs in there",
+            address = relay.address,
+            standing = relay_said::relay_standing(relay)
+        ),
+        WayLeftOut::RelayNotServedThrough { address } => format!(
+            "This Server does not Serve through the Relay at {address}, so an Invite cannot \
+             offer it. `suru relay serve-through {address} on` makes this machine reachable \
+             through it"
+        ),
+        WayLeftOut::ListenerOff => "The Serving listener is off (serving.listener), so this \
+                                    offers none of this machine's addresses"
+            .to_owned(),
+        WayLeftOut::ListenerNotListening { reason } => format!(
+            "The Serving listener is not listening, so this offers none of this machine's \
+             addresses: {reason}"
+        ),
+        WayLeftOut::ListenerLoopback { at } => format!(
+            "The Serving listener listens at {at}, which only this machine can reach \
+             (serving.bindAddress), so this offers none of its addresses"
+        ),
+        WayLeftOut::NoAddress => {
+            "This machine has no address another machine could reach it at, so this offers none"
+                .to_owned()
+        }
+        WayLeftOut::AddressesUnknown { reason } => {
+            format!("This machine's addresses could not be found: {reason}")
+        }
+    }
+}
+
+/// Says why no Invite was issued, and what asking for one did to Serving.
+fn invite_refused(refused: &InviteOfferAnswer, err: &mut dyn Write) -> u8 {
+    let serving = match refused {
+        InviteOfferAnswer::Issued(_) => return SUCCESS,
+        InviteOfferAnswer::RelayWithheld { why } => {
+            for way in why {
+                say(err, &format!("Error: {}", way_left_out_said(way)));
+            }
+            None
+        }
+        InviteOfferAnswer::NothingToOffer { serving, why } => {
+            say(err, "Error: An Invite has no way to offer");
+            for way in why {
+                say(err, &way_left_out_said(way));
+            }
+            *serving
+        }
+        InviteOfferAnswer::Failed { serving, message } => {
+            say(err, &format!("Error: {message}"));
+            *serving
+        }
+    };
+    if let Some(serving) = serving {
+        say(err, serving_change_said(serving));
+    }
+    FAILED
 }
 
 /// Says `line` on `err`. Nobody reading it is no reason to stop.
@@ -629,13 +727,33 @@ fn print_invite(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
-    for note in &offered.notes {
-        say(err, note);
+    if let Some(serving) = offered.serving {
+        say(err, serving_change_said(serving));
+    }
+    for way in &offered.left_out {
+        say(err, &way_left_out_said(way));
+    }
+    for relay in &offered.not_answering {
+        say(
+            err,
+            &format!(
+                "The Relay at {} is offered but not answering now: {}",
+                relay.address,
+                relay_said::relay_standing(relay)
+            ),
+        );
     }
     let issued = &offered.issued;
     for way in &issued.ways {
         say(err, &format!("It offers {way}"));
     }
+    say(
+        err,
+        &format!(
+            "It can be redeemed once, within {} minutes, and replaces any Invite issued before it",
+            offered.expires_in_seconds / 60
+        ),
+    );
     let short_code = issued.short_code.as_ref().map(|code| code.code.grouped());
     let mut printed = if json {
         let printed = PrintedInvite {
@@ -813,7 +931,10 @@ mod tests {
                 ways: vec![Way::Relay("https://a.example".to_owned())],
                 short_code: short_code.map(|code| IssuedShortCode { code, serial: 1 }),
             },
-            notes: vec!["Serving is now on".to_owned()],
+            serving: Some(ServingChange::TurnedOn),
+            left_out: Vec::new(),
+            not_answering: Vec::new(),
+            expires_in_seconds: 600,
         }
     }
 

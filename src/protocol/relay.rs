@@ -63,38 +63,6 @@ pub struct Relay {
     pub pinned_in: Option<String>,
 }
 
-/// Why an Invite cannot offer a Relay.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RelayWithheld {
-    /// The Server holds no Login there that stands.
-    LoginNeeded,
-    /// The Server does not Serve through it.
-    NotServedThrough,
-}
-
-impl RelayWithheld {
-    /// Why an Invite cannot offer `relay`, where it cannot: what the Server asks
-    /// of a Relay an Invite offers, so every surface that lists one says so
-    /// before the Server is asked.
-    pub fn of(relay: &Relay) -> Option<Self> {
-        if relay.state == RelayState::LoginNeeded {
-            Some(Self::LoginNeeded)
-        } else if !relay.serve_through {
-            Some(Self::NotServedThrough)
-        } else {
-            None
-        }
-    }
-
-    /// What a row says of it.
-    pub fn brief(self) -> &'static str {
-        match self {
-            Self::LoginNeeded => "login needed",
-            Self::NotServedThrough => "not Served through",
-        }
-    }
-}
-
 /// What a reader is told of removing the Relay at `address`, pinned by
 /// `document` as [`Relay::pinned_in`] spells it, which a Server refuses and a
 /// Client need not ask: where it is pinned, so it does not simply come back,

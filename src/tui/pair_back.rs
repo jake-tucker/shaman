@@ -20,7 +20,7 @@ use crate::{
 
 use super::{
     relay_overlay::{ListNote, RelayOutcome},
-    serve_overlay::{NO_RELAY, NO_WAY, NO_WAY_UNTIL_LISTENING, ServeWays, WayAction, Withheld},
+    serve_overlay::{NO_RELAY, NO_WAY, NO_WAY_UNTIL_LISTENING, ServeWays, WayAction},
 };
 
 /// How long a name is in anything said here.
@@ -52,7 +52,7 @@ impl OfferFix {
             Self::AtRelay {
                 action: WayAction::ServeThrough,
                 ..
-            } => Some(super::serve_overlay::REACHABLE),
+            } => Some(crate::relay_said::REACHABLE),
             Self::AtRelay { .. } => None,
         }
     }
@@ -118,11 +118,14 @@ impl PairBackOption {
             return Self::Offerable;
         }
         let held = ways.relays.held_relays();
-        if held.iter().any(|relay| Withheld::of(relay).is_none()) {
+        if held
+            .iter()
+            .any(|relay| crate::relay_said::RelayWithheld::of(relay).is_none())
+        {
             return Self::Offerable;
         }
         let at_a_relay = held.iter().find_map(|relay| {
-            let withheld = Withheld::of(relay)?;
+            let withheld = crate::relay_said::RelayWithheld::of(relay)?;
             let login_under_way = ways.relays.under_way(&relay.address).is_some();
             Some((relay.address.clone(), withheld, login_under_way))
         });

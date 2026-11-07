@@ -7,6 +7,38 @@ use crate::protocol::{Relay, RelayLoginOutcome, RelayLoginRefusal, RelayState};
 /// the machine to.
 pub const REACHABLE: &str = "Serving through it makes this machine reachable through this Relay";
 
+/// Why an Invite cannot offer a Relay.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RelayWithheld {
+    /// The Server holds no Login there that stands.
+    LoginNeeded,
+    /// The Server does not Serve through it.
+    NotServedThrough,
+}
+
+impl RelayWithheld {
+    /// Why an Invite cannot offer `relay`, where it cannot: what the Server asks
+    /// of a Relay an Invite offers, so every surface that lists one says so
+    /// before the Server is asked.
+    pub fn of(relay: &Relay) -> Option<Self> {
+        if relay.state == RelayState::LoginNeeded {
+            Some(Self::LoginNeeded)
+        } else if !relay.serve_through {
+            Some(Self::NotServedThrough)
+        } else {
+            None
+        }
+    }
+
+    /// What a row says of it.
+    pub fn brief(self) -> &'static str {
+        match self {
+            Self::LoginNeeded => "login needed",
+            Self::NotServedThrough => "not Served through",
+        }
+    }
+}
+
 /// What is said of a login that ended.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoginEnded {

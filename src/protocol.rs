@@ -2126,8 +2126,8 @@ pub struct ServingStanding {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServingPreparation {
-    /// Whether Serving was off and this turned it on.
-    pub turned_on: bool,
+    /// What this did to Serving, where it did anything.
+    pub change: Option<ServingChange>,
     /// The Settings in force as they then stand, where this changed them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<SettingsSnapshot>,
@@ -2160,15 +2160,80 @@ pub enum InviteRelays {
     Only(Vec<String>),
 }
 
+/// What making a Server ready to issue an Invite did to Serving.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServingChange {
+    /// It was off, and is on.
+    TurnedOn,
+    /// Its listener had failed, and tried again it listens.
+    Recovered,
+    /// It is asked for, and could not start, as an identity key that cannot be
+    /// read keeps it from doing (ADR-0050).
+    CouldNotStart,
+}
+
+/// Why a way an Invite might have offered is not offered, for each Client to say
+/// in its own words what would put that right.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WayLeftOut {
+    /// The Server holds no Relay at `address`, as it holds those at `held`.
+    NoRelayAt { address: String, held: Vec<String> },
+    /// The Server holds no Relay at all.
+    NoRelayHeld,
+    /// It holds no Login that stands at this Relay.
+    RelayLoginNeeded { relay: Box<Relay> },
+    /// It does not Serve through the Relay at `address`.
+    RelayNotServedThrough { address: String },
+    /// The listener Setting has its listener off.
+    ListenerOff,
+    /// Its listener is asked to listen and does not, for `reason`.
+    ListenerNotListening { reason: String },
+    /// Its listener is bound to `at`, which only this machine can reach.
+    ListenerLoopback { at: std::net::IpAddr },
+    /// This machine has no address another machine could reach it at.
+    NoAddress,
+    /// This machine's addresses could not be found, for `reason`.
+    AddressesUnknown { reason: String },
+}
+
 /// An Invite issued by the Server's say of which ways to offer, and what its
 /// reader should be told of how that went.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OfferedInvite {
     pub issued: IssuedInvite,
-    /// Each thing worth saying beside the Invite, which is never in them: that
-    /// Serving was turned on, a way left out and why, and how long it lasts.
-    pub notes: Vec<String>,
+    /// What issuing it did to Serving, where it did anything.
+    pub serving: Option<ServingChange>,
+    /// Each way of the kinds asked for that it does not offer.
+    pub left_out: Vec<WayLeftOut>,
+    /// The Relays it offers that are not answering now.
+    pub not_answering: Vec<Relay>,
+    pub expires_in_seconds: u64,
+}
+
+/// What came of asking for an Invite by the kinds of way it is to offer. Why none
+/// was issued is typed, where it can be, for each Client to word.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InviteOfferAnswer {
+    Issued(Box<OfferedInvite>),
+    /// A Relay asked for by name cannot be offered. Nothing was changed.
+    RelayWithheld {
+        why: Vec<WayLeftOut>,
+    },
+    /// None of the kinds asked for has a way to offer.
+    NothingToOffer {
+        serving: Option<ServingChange>,
+        why: Vec<WayLeftOut>,
+    },
+    /// Issuing it failed for a reason of Serving's own, as `message` says, in the
+    /// words every surface has of it.
+    Failed {
+        serving: Option<ServingChange>,
+        message: String,
+    },
 }
 
 /// The non-secret facts a local Client may show before the reader decides to

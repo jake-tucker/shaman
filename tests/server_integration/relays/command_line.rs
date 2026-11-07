@@ -4,8 +4,8 @@
 //!
 //! Nothing here reaches the real user's Server. Each machine is its own state
 //! directory, config root, home and Channel, keeps its identity key in a file
-//! and Serves on a port of the system's choosing, and everything launched
-//! against it goes with it.
+//! and Serves on a port of the system's choosing, on loopback unless a test says
+//! why not, and everything launched against it goes with it.
 
 use std::{
     path::{Path, PathBuf},
@@ -14,8 +14,9 @@ use std::{
 
 use serde_json::{Value, json};
 use suru::protocol::{
-    InviteRelays, OfferInviteRequest, RedeemInviteRequest, RelayLoginLead, RelayLoginOutcome,
-    RelayLoginStanding, RelayMachinesAnswer, SettingMutation, Way,
+    InviteOfferAnswer, InviteRelays, OfferInviteRequest, RedeemInviteRequest, RelayLoginLead,
+    RelayLoginOutcome, RelayLoginStanding, RelayMachinesAnswer, ServingChange, SettingMutation,
+    Way, WayLeftOut,
 };
 use suru_relay::{SCRIPTED_VERIFICATION_URI, ScriptedProvider};
 use tokio::{
@@ -299,7 +300,12 @@ async fn a_headless_machine_goes_from_nothing_to_an_invite_that_redeems() {
         .await;
     let told = said(&issued.stderr);
     assert!(told.contains("Serving is now on"), "{told}");
-    assert!(told.contains(&format!("Relay {address}")), "{told}");
+    let offers = told.find(&format!("It offers Relay {address}"));
+    let lasts = told.find("It can be redeemed once");
+    assert!(
+        offers.is_some() && lasts.is_some() && offers < lasts,
+        "what it offers, then how long: {told}"
+    );
     let invite = said(&issued.stdout);
     let invite = invite
         .strip_suffix('\n')
@@ -906,6 +912,9 @@ async fn an_invite_offers_every_way_unless_told_otherwise() {
     let other = TestRelay::start().await;
     let (address, other_address) = (relay.address(), other.address());
     let machine = Machine::new("every-way");
+    // Every interface, unlike the rest here: only a listener another machine
+    // could reach has addresses to offer, which is what this looks at. Nothing
+    // connects to it, and a listener admits only pinned Peers.
     machine.pin(json!({ "serving": { "port": 0 } }));
     machine.log_in(&relay, &address).await;
     machine.log_in(&other, &other_address).await;
@@ -1067,9 +1076,13 @@ async fn asking_for_a_relay_the_server_cannot_offer_fails_naming_why_and_opens_n
     );
 }
 
+/// That a listener can reach nobody else can be told from the Settings alone, so
+/// asking for it opens nothing: no listener, and nothing written to the document.
 #[tokio::test]
-async fn a_listener_only_this_machine_can_reach_is_not_offered() {
+async fn a_listener_only_this_machine_can_reach_is_not_offered_and_opens_nothing() {
     let machine = Machine::new("loopback-listener");
+    machine.succeed(&["relay", "list"]).await;
+    let before = std::fs::read_to_string(machine.document()).unwrap();
 
     let refused = machine
         .exits(FAILED, &["serve", "invite", "--no-relays"])
@@ -1081,20 +1094,54 @@ async fn a_listener_only_this_machine_can_reach_is_not_offered() {
         told.contains("127.0.0.1"),
         "names what it listens at: {told}"
     );
-    assert!(
-        told.contains("Serving is now on"),
-        "says what was done on the way: {told}"
+    assert!(!told.contains("Serving is now on"), "{told}");
+    assert_eq!(machine.listing().await["serving"], false);
+    assert_eq!(
+        std::fs::read_to_string(machine.document()).unwrap(),
+        before,
+        "what cannot be offered changes no Setting"
     );
-    assert_eq!(machine.listing().await["serving"], true);
 
-    let again = machine
+    // Offered nothing else either, asked for every way.
+    let every = machine.exits(FAILED, &["serve", "invite"]).await;
+    assert!(said(&every.stderr).contains("relay add"));
+    assert_eq!(machine.listing().await["serving"], false);
+}
+
+/// So too of a listener its Settings turn off.
+#[tokio::test]
+async fn a_listener_turned_off_is_not_offered_and_opens_nothing() {
+    let machine = Machine::new("listener-off");
+    machine.pin(json!({ "serving": { "listener": false, "port": 0 } }));
+    let refused = machine
         .exits(FAILED, &["serve", "invite", "--no-relays"])
         .await;
-    assert!(
-        !said(&again.stderr).contains("Serving is now on"),
-        "it was on already: {}",
-        said(&again.stderr)
-    );
+    assert!(said(&refused.stderr).contains("serving.listener"));
+    assert_eq!(machine.listing().await["serving"], false);
+}
+
+/// Only trying can tell that a port is taken, so this one does turn Serving on,
+/// and says so. It binds every interface, unlike the rest here, since a loopback
+/// listener is refused beforehand; nothing connects, and a listener admits only
+/// pinned Peers.
+#[tokio::test]
+async fn a_listener_that_cannot_listen_is_said_where_nothing_else_is_offered() {
+    let machine = Machine::new("failed-listener-alone");
+    let taken = std::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, 0)).unwrap();
+    let port = taken.local_addr().unwrap().port();
+    machine.pin(json!({ "serving": { "port": port, "bindAddress": "0.0.0.0" } }));
+
+    let refused = machine
+        .exits(FAILED, &["serve", "invite", "--no-relays"])
+        .await;
+    assert_eq!(said(&refused.stdout), "");
+    let told = said(&refused.stderr);
+    assert!(told.contains("no way to offer"), "{told}");
+    // A machine with no address another could reach is told so beforehand.
+    if !told.contains("no address another machine could reach") {
+        assert!(told.contains("not listening"), "{told}");
+        assert!(told.contains("Serving is now on"), "{told}");
+    }
 }
 
 #[tokio::test]
@@ -1111,34 +1158,46 @@ async fn a_listener_that_cannot_listen_is_said_and_a_relay_is_offered_all_the_sa
     machine.pin(json!({ "serving": { "port": port, "bindAddress": "127.0.0.1" } }));
     machine.succeed(&["server", "stop"]).await;
 
-    let refused = machine
-        .exits(FAILED, &["serve", "invite", "--no-relays"])
-        .await;
-    let told = said(&refused.stderr);
-    assert!(told.contains("not listening"), "{told}");
-
     let issued = machine.succeed(&["serve", "invite", "--json"]).await;
     let told = said(&issued.stderr);
     assert!(told.contains("not listening"), "{told}");
     let issued: Value = serde_json::from_slice(&issued.stdout).unwrap();
     assert_eq!(ways_of(&issued), vec![format!("relay {address}")]);
+    assert!(
+        !told.contains("listening again"),
+        "tried again, and it still is not: {told}"
+    );
+
+    // Tried again where it now can, it says so.
+    drop(taken);
+    let recovered = machine
+        .succeed(&["serve", "invite", "--relay", &address])
+        .await;
+    let told = said(&recovered.stderr);
+    assert!(told.contains("listening again"), "{told}");
+    assert!(!told.contains("Serving is now on"), "it was on: {told}");
 }
 
 /// ADR-0067: a document may say Serving is on while it is not in force. Serving
 /// is off, so it is turned on; what the document said on its own does nothing.
 #[tokio::test]
 async fn an_outside_edit_turning_serving_on_is_not_taken_for_serving_being_on() {
+    let relay = TestRelay::start().await;
+    let address = relay.address();
     let machine = Machine::new("outside-edit");
-    machine.succeed(&["relay", "list"]).await;
+    machine.log_in(&relay, &address).await;
+    machine
+        .succeed(&["relay", "serve-through", &address, "on"])
+        .await;
     machine.pin(json!({
         "serving": { "enabled": true, "port": 0, "bindAddress": "127.0.0.1" },
     }));
     assert_eq!(machine.listing().await["serving"], false);
 
-    let refused = machine
-        .exits(FAILED, &["serve", "invite", "--no-relays"])
+    let issued = machine
+        .succeed(&["serve", "invite", "--no-addresses"])
         .await;
-    assert!(said(&refused.stderr).contains("Serving is now on"));
+    assert!(said(&issued.stderr).contains("Serving is now on"));
     assert_eq!(machine.listing().await["serving"], true);
 }
 
@@ -1147,11 +1206,11 @@ async fn an_outside_edit_turning_serving_on_is_not_taken_for_serving_being_on() 
 #[tokio::test]
 async fn an_identity_key_that_cannot_be_read_fails_as_it_does_everywhere() {
     let machine = Machine::new("unreadable-key");
+    // A Server started Serving makes the key.
+    machine.pin(json!({
+        "serving": { "enabled": true, "port": 0, "bindAddress": "127.0.0.1" },
+    }));
     machine.succeed(&["relay", "list"]).await;
-    let turned_on = machine
-        .exits(FAILED, &["serve", "invite", "--no-relays"])
-        .await;
-    assert!(said(&turned_on.stderr).contains("no way to offer"));
     machine.succeed(&["server", "stop"]).await;
 
     let data_dir = machine.servers.state_dir().join(machine.channel);
@@ -1159,7 +1218,8 @@ async fn an_identity_key_that_cannot_be_read_fails_as_it_does_everywhere() {
         .expect("take the key away from under its marker");
     assert!(data_dir.join("server-identity.json").exists());
 
-    // Serving was left on, so this is what the next start finds.
+    // Listening where another machine could, so nothing refuses it beforehand.
+    machine.pin(json!({ "serving": { "enabled": true, "port": 0 } }));
     let refused = machine.exits(FAILED, &["serve", "invite"]).await;
     assert_eq!(said(&refused.stdout), "");
     let told = said(&refused.stderr);
@@ -1168,9 +1228,7 @@ async fn an_identity_key_that_cannot_be_read_fails_as_it_does_everywhere() {
 
     // With Serving off to begin with, what is asked for is not taken for done.
     machine.succeed(&["server", "stop"]).await;
-    machine.pin(json!({
-        "serving": { "enabled": false, "port": 0, "bindAddress": "127.0.0.1" },
-    }));
+    machine.pin(json!({ "serving": { "enabled": false, "port": 0 } }));
     let refused = machine.exits(FAILED, &["serve", "invite"]).await;
     assert_eq!(said(&refused.stdout), "");
     let told = said(&refused.stderr);
@@ -1283,7 +1341,7 @@ async fn the_server_decides_what_preparing_to_issue_an_invite_turns_on_and_lists
     }
 
     let first = server.client.prepare_serving().await.unwrap();
-    assert!(first.turned_on);
+    assert_eq!(first.change, Some(ServingChange::TurnedOn));
     assert!(
         first
             .settings
@@ -1299,21 +1357,113 @@ async fn the_server_decides_what_preparing_to_issue_an_invite_turns_on_and_lists
     );
 
     let again = server.client.prepare_serving().await.unwrap();
-    assert!(!again.turned_on);
+    assert_eq!(again.change, None);
     assert_eq!(again.settings, None, "nothing changed");
     assert!(server.client.serving_standing().await.unwrap().enabled);
+    server.shutdown().await;
+}
 
-    let offered = server
+/// The Server says why typed, for each Client to word what to do about it: the
+/// Server's answer has no Client's commands in it, and a Relay's standing is its
+/// row's.
+#[tokio::test]
+async fn the_server_says_why_an_invite_cannot_be_issued_in_no_clients_words() {
+    let relay = TestRelay::start().await;
+    let address = relay.address();
+    let server = TestServer::start("typed-refusals").await;
+    for mutation in [
+        SettingMutation::ServingPort { value: Some(0) },
+        SettingMutation::ServingBindAddress {
+            value: Some(std::net::Ipv4Addr::LOCALHOST.into()),
+        },
+    ] {
+        server.client.mutate_setting(mutation).await.unwrap();
+    }
+    let offer = |addresses, relays| OfferInviteRequest { addresses, relays };
+
+    let nothing = server
         .client
-        .offer_invite(OfferInviteRequest {
-            addresses: true,
-            relays: InviteRelays::Every,
-        })
+        .offer_invite(offer(true, InviteRelays::Every))
         .await
-        .expect_err("nothing to offer");
+        .unwrap();
+    let InviteOfferAnswer::NothingToOffer { why, .. } = &nothing else {
+        panic!("{nothing:?}");
+    };
     assert_eq!(
-        super::error_code(&offered),
-        suru::protocol::SessionErrorCode::InvalidInviteWays
+        why,
+        &vec![
+            WayLeftOut::ListenerLoopback {
+                at: std::net::Ipv4Addr::LOCALHOST.into()
+            },
+            WayLeftOut::NoRelayHeld,
+        ]
+    );
+    assert!(!format!("{nothing:?}").contains("suru "), "{nothing:?}");
+
+    let not_held = server
+        .client
+        .offer_invite(offer(true, InviteRelays::Only(vec![address.clone()])))
+        .await
+        .unwrap();
+    assert_eq!(
+        not_held,
+        InviteOfferAnswer::RelayWithheld {
+            why: vec![WayLeftOut::NoRelayAt {
+                address: address.clone(),
+                held: Vec::new(),
+            }],
+        }
+    );
+
+    server.client.add_relay(address.clone()).await.unwrap();
+    let login_needed = server
+        .client
+        .offer_invite(offer(false, InviteRelays::Every))
+        .await
+        .unwrap();
+    let InviteOfferAnswer::NothingToOffer { serving, why } = login_needed else {
+        panic!("{login_needed:?}");
+    };
+    assert_eq!(serving, None, "told beforehand, so nothing was turned on");
+    assert!(
+        matches!(&why[..], [WayLeftOut::RelayLoginNeeded { relay }] if relay.address == address)
+    );
+
+    server.log_in(&relay, "1", "octocat").await;
+    let not_served_through = server
+        .client
+        .offer_invite(offer(false, InviteRelays::Only(vec![address.clone()])))
+        .await
+        .unwrap();
+    assert_eq!(
+        not_served_through,
+        InviteOfferAnswer::RelayWithheld {
+            why: vec![WayLeftOut::RelayNotServedThrough {
+                address: address.clone()
+            }],
+        }
+    );
+
+    server
+        .client
+        .set_relay_serve_through(&address, true)
+        .await
+        .unwrap();
+    let issued = server
+        .client
+        .offer_invite(offer(true, InviteRelays::Every))
+        .await
+        .unwrap();
+    let InviteOfferAnswer::Issued(issued) = issued else {
+        panic!("{issued:?}");
+    };
+    assert_eq!(issued.serving, Some(ServingChange::TurnedOn));
+    assert_eq!(issued.issued.ways, vec![Way::Relay(address.clone())]);
+    assert_eq!(
+        issued.left_out,
+        vec![WayLeftOut::ListenerLoopback {
+            at: std::net::Ipv4Addr::LOCALHOST.into()
+        }]
     );
     server.shutdown().await;
 }

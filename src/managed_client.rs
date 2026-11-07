@@ -645,7 +645,7 @@ impl ManagedClient {
     pub async fn offer_invite(
         &self,
         request: crate::protocol::OfferInviteRequest,
-    ) -> Result<crate::protocol::OfferedInvite> {
+    ) -> Result<crate::protocol::InviteOfferAnswer> {
         self.session_commands().offer_invite(request).await
     }
 
@@ -1987,7 +1987,7 @@ impl SessionCommandClient {
     pub(crate) async fn offer_invite(
         &self,
         request: crate::protocol::OfferInviteRequest,
-    ) -> Result<crate::protocol::OfferedInvite> {
+    ) -> Result<crate::protocol::InviteOfferAnswer> {
         self.post_session_command("/v1/pairing/invites/offered", &request, "Invite issuance")
             .await
     }

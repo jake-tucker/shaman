@@ -945,8 +945,9 @@ through a Relay does, and why something was left out. Nothing carries colour.
   `/serve` does. It offers every way `/serve` would tick: this machine's own addresses and each Relay it can offer, saying of each
   left out why. `--no-addresses` offers Relays alone, `--no-relays` addresses alone, and `--relay <address>`, repeated,
   exactly the Relays named, however each is written. Naming one the Server cannot offer fails, saying why and turning
-  nothing on; so does asking for nothing that could be offered. A listener that cannot listen is said, and the Invite offers the
-  Relays all the same where there are any.
+  nothing on; so does asking for nothing that could be offered, such as a listener bound to loopback with no Relay to offer.
+  A listener found unable to listen, its port taken say, is said, and the Invite offers the Relays all the same where there
+  are any; where there are none it fails, with Serving left on, as it says.
 
 An Invite lasts ten minutes, is redeemed once, and **replaces any issued before it**, so running `serve invite` twice kills
 the first. Its **short code** goes to standard error only where that is a terminal, because it is as secret as the Invite
