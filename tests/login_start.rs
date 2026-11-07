@@ -57,6 +57,12 @@ impl Machine {
         }
     }
 
+    /// What `XDG_CONFIG_HOME` is for this machine's processes.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn config_home(&self) -> PathBuf {
+        self.home.path().join(".config")
+    }
+
     /// A process isolated to this machine's home, with all a program needs on
     /// the platform it runs on to run at all, and nothing a shell would add.
     fn sparse(&self, program: impl AsRef<std::ffi::OsStr>) -> Command {
@@ -126,7 +132,9 @@ impl Machine {
             data_base_dir: self.servers.state_dir().to_path_buf(),
             config_dir: Some(self.servers.state_dir().to_path_buf()),
             channel: channel.to_owned(),
-            identity_store: None,
+            // As every process a test runs here keeps it: no Server of its may
+            // depend on a desktop session, or touch the real keyring.
+            identity_store: Some(suru::IdentityStoreChoice::File),
             carried: self
                 .servers
                 .isolated_environment()
@@ -241,6 +249,7 @@ fn write_stand_in_service_manager(home: &Path) -> PathBuf {
         std::fs::write(
             &path,
             r#"#!/bin/sh
+PATH=/usr/bin:/bin
 units="$XDG_CONFIG_HOME/systemd/user"
 case "$2" in
   enable) mkdir -p "$units/default.target.wants" && ln -sf "../$3" "$units/default.target.wants/$3" ;;
@@ -518,8 +527,16 @@ async fn installing_from_a_build_directory_warns_that_it_will_not_survive_an_upg
     let installed = machine.succeed("login-start-warns", &["install"]).await;
     assert!(installed.contains("Warning"), "{installed}");
     assert!(installed.contains("build directory"), "{installed}");
+    // As the running binary names itself, which on Linux has every link in its
+    // path resolved, and a target directory may be reached through one.
+    let executable = Path::new(env!("CARGO_BIN_EXE_suru"));
+    let resolved = std::fs::canonicalize(executable).expect("resolve the binary's path");
+    let resolved = resolved.to_string_lossy();
     assert!(
-        installed.contains(env!("CARGO_BIN_EXE_suru")),
+        installed.contains(&*executable.to_string_lossy())
+            || installed.contains(&*resolved)
+            // Windows resolves a path into its form with no length limit.
+            || installed.contains(resolved.trim_start_matches(r"\\?\")),
         "{installed}"
     );
 }

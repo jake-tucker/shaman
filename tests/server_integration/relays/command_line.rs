@@ -80,7 +80,6 @@ impl Machine {
             self.servers
                 .isolated_on_channel(program, self.channel, &self.config_root());
         command
-            .env("SURU_IDENTITY_STORE", "file")
             .env("USERPROFILE", self.servers.state_dir())
             .env("NO_PROXY", "127.0.0.1,localhost");
         command

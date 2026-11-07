@@ -118,12 +118,21 @@ const CARRIED_THROUGH: &[&str] = if cfg!(windows) {
 /// a test gave it, and never the real user's. This is what keeps every test's
 /// command from the real home and the Server on the machine, so each goes through
 /// here and adds what its own needs.
+///
+/// Windows reads a user's home from the system, whatever `HOME` says, so there a
+/// command still knows the real one. What Suru does with it: `suru server install`
+/// writes it as text into a Task's definition, in a temporary file handed to the
+/// stand-in; a Workspace Root beginning with `~` expands beneath it, and these
+/// commands' Config Documents name none; and paths are spelled from it. Nothing
+/// is read or written there on a test's account, so this stops at that.
 pub fn isolated_command(program: impl AsRef<OsStr>, home: &Path) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(program);
     command
         .env_clear()
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
+        // With no session's bus to reach, and never the real user's keyring.
+        .env("SURU_IDENTITY_STORE", "file")
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
     for name in CARRIED_THROUGH {
