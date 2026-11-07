@@ -638,6 +638,8 @@ Relay's operator can change it.
 
 Logging in opens nothing: it makes no Server reachable, and nobody can reach it through the Relay for it.
 
+A machine with no one at its screen does all of this [from the command line](#from-the-command-line).
+
 ### Pinning a Relay in a Config Document
 
 So that nobody types the address on each machine, your dotfiles or your company's rollout can pin it in Suru's Config
@@ -722,7 +724,8 @@ where you can see it until the store answers.
 ### Issuing an Invite
 
 On the Server to be reached, `/serve` turns Serving on and lists the ways an Invite may offer: this machine's own
-addresses, while its Serving listener listens, and `Relay <address>` for each Relay the Server holds. Each one an Invite
+addresses, while its Serving listener listens where another machine could reach it, and `Relay <address>` for each
+Relay the Server holds. A listener bound to loopback offers none, and `/serve` says so. Each one an Invite
 can offer is ticked, and offered, unless you leave it out with Space. Enter issues the Invite, offering exactly the ways
 ticked: leave the addresses out for an Invite reached only through the Relay, or leave both kinds in, and the other
 machine reaches the Server directly where it can and through the Relay where it cannot.
@@ -886,3 +889,127 @@ A Server Serving through a Relay needs no listening port at all. The **Serving l
 Experimental tab of the settings panel (`/settings`), is on unless turned off: off, the Server binds no port while it
 Serves, and is reached only through the Relays it Serves through, and `/serve` offers none of the machine's own
 addresses.
+
+### From the command line
+
+A machine with no one at its screen, a container or a provisioning script drives the same Server with commands, which
+do what `/relay` and `/serve` do and differ only in how they say it:
+
+```
+suru relay list [--json]
+suru relay add <address>
+suru relay login <address>
+suru relay serve-through <address> on|off
+suru relay remove <address>
+suru serve invite [--no-addresses] [--no-relays] [--relay <address>]... [--json]
+```
+
+A headless set-up, from nothing to an issued Invite:
+
+```sh
+suru relay add https://relay.example.com
+suru relay login https://relay.example.com
+#   Visit https://github.com/login/device and enter the code WDJB-MJHT
+#   ... someone does, on any device, and the command ends
+suru relay serve-through https://relay.example.com on
+INVITE=$(suru serve invite --no-addresses)
+```
+
+The Invite is redeemed in `/pair` on the other machine. Redeeming from the command line is left out on purpose: it
+involves a trust decision the preview exists for.
+
+Each command runs against this Channel's Server, chosen as Suru itself chooses it (`SURU_CHANNEL` and the state
+directory), with the same token, so it works for the same user and nobody else. Where none runs, it starts one as a
+Client would and says so on standard error, even one stopped by `suru server stop`: a stop holds a Keeper back, not a
+person running a command. A command from a build other than the running Server's replaces that Server, as any Client
+does, so keep to one install. `SURU_CONFIG_DIR` matters only where a command starts a Server.
+
+**What goes where.** What was asked for goes to standard output, and only that: the listing, the Invite, or the line
+saying where to log in. Everything else goes to standard error, including that Serving was turned on, what Serving
+through a Relay does, and why something was left out. Nothing carries colour.
+
+- **`relay add`** writes the address the one way a Relay's is written, as `/relay` does. Adding one held already, or
+  pinned, is success, because running a script twice is normal.
+- **`relay login`** prints `Visit <address> and enter the code <code>` as one line, so `| head -1` has both, and stays
+  until the login ends. A login already under way, begun by anyone, is followed rather than begun again, and a Login that
+  stands is said to and exits at once. The login is the Server's: interrupting the command, or losing whatever read its
+  output, leaves it under way, where `relay login` and `/relay` find it. It ends with its Server.
+- **`relay serve-through on`** makes this machine reachable through that Relay, and says so, and what it still waits on:
+  as in `/relay`, the choice is remembered ahead of a login or of Serving being on, and turns neither on. **`off`** stops
+  waiting there and leaves the Login.
+- **`relay remove`** forgets the Login at the Relay as well, and does not ask. A Relay a Config Document pins refuses, naming the
+  document. Removing an address the Server does not hold is a failure, since a mistyped one would leave the machine logged
+  in where the script took it to have left.
+- **`serve invite`** turns Serving on as `/serve` does and says so, which writes `serving.enabled` to the Config Document as
+  `/serve` does. It offers every way `/serve` would tick: this machine's own addresses and each Relay it can offer, saying of each
+  left out why. `--no-addresses` offers Relays alone, `--no-relays` addresses alone, and `--relay <address>`, repeated,
+  exactly the Relays named, however each is written. Naming one the Server cannot offer fails, saying why and turning
+  nothing on; so does asking for nothing that could be offered. A listener that cannot listen is said, and the Invite offers the
+  Relays all the same where there are any.
+
+An Invite lasts ten minutes, is redeemed once, and **replaces any issued before it**, so running `serve invite` twice kills
+the first. Its **short code** goes to standard error only where that is a terminal, because it is as secret as the Invite
+and standard error is what a script's log keeps; `--json` carries it on standard output for whoever wants it. An Invite and
+its code reach no Log, and neither is ever an argument.
+
+#### Exit status
+
+| Status | Meaning |
+| --- | --- |
+| 0 | It did as asked, or that already held |
+| 1 | It could not, saying why on standard error: the Server could not be reached, a Relay refused or could not be reached as a login began, a refusal of any other kind, or the Server stopped while `relay login` followed it |
+| 2 | Its command line cannot be read, an address no Relay could be at among that |
+| 3 | `relay remove` removed the Relay here, but the Relay did not answer, so it may still hold a Login for this Server until its operator removes it |
+| 4 | `relay login` was refused: by you at the identity provider, or by the Relay, whose operator is the one to ask |
+| 5 | `relay login` ended with no one refusing it: it expired or the Relay stopped answering, and trying again may help |
+| 130 | `relay login` was interrupted, which leaves the login under way |
+
+#### JSON
+
+`suru relay list --json` prints one line:
+
+```json
+{
+  "serving": true,
+  "relays": [
+    {
+      "address": "https://relay.example.com",
+      "state": "logged_in",
+      "account": { "provider": "github", "username": "octocat" },
+      "unreachable_reason": null,
+      "serve_through": true,
+      "login_under_way": false,
+      "pinned_in": null
+    }
+  ]
+}
+```
+
+`serving` says whether Serving is on, in force. `state` is `logged_in`, `login_needed` or `unreachable`. `account` is null
+until the Relay has named one, `unreachable_reason` says why it reads `unreachable`, and `pinned_in` names the Config
+Document pinning it. A login's code is never listed: `login_under_way` says there is one, and `relay login` shows it.
+
+`suru serve invite --json` prints one line, its secrets on standard output as the plain form's Invite is:
+
+```json
+{
+  "invite": "suru-v1-...",
+  "ways": [
+    { "kind": "direct", "address": "192.0.2.8:7777" },
+    { "kind": "relay", "address": "https://relay.example.com" }
+  ],
+  "short_code": "K7QF-2MXP"
+}
+```
+
+`short_code` is null where the Invite offers no Relay. Fields may be added; those here keep their meanings. These shapes belong to
+the command line and do not follow the Server's own API.
+
+#### Agents
+
+These commands are bound by what any process of your user can do, and an Agent's shell is one: it can read the same token,
+so it could already issue an Invite by asking the Server directly, and now has one obvious command for it. An Agent that runs
+`suru serve invite` gets an Invite it can send anywhere, and whoever redeems it can run commands here. It also lands in the
+Agent's Transcript and goes to its Provider. Suru's Tools withhold all this from a Sidekick, and that bound stops at the
+shell: what stands in the way is the Provider's own gate on the command. Suru cannot tell an Agent's shell from yours. ADR-0068
+says what is known and what is not.
