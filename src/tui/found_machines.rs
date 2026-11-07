@@ -301,7 +301,8 @@ impl FoundMachines {
             MachineState::NotServing => format!(
                 "{name} is logged in but not waiting to be reached, which may mean Serving is \
                  off, it is not Served through this Relay, or the machine is off; run /serve \
-                 there, then issue an Invite to paste here"
+                 there, or `suru serve invite`, with this Relay offered, then press Ctrl+R here \
+                 and type its code"
             ),
             MachineState::RemoteAlready(remote) => {
                 format!("Already paired as the Remote {remote}; /connect turns toward it")
@@ -859,7 +860,10 @@ mod tests {
         assert!(found.note().unwrap().contains("Already paired"));
         found.walk(true);
         assert_eq!(found.choose(), MachineChoice::Told);
-        assert!(found.note().unwrap().contains("run /serve there"));
+        let note = found.note().unwrap();
+        assert!(note.contains("run /serve there"), "{note}");
+        assert!(note.contains("suru serve invite"), "{note}");
+        assert!(note.contains("Ctrl+R here and type its code"), "{note}");
         found.focus_invite();
         assert_eq!(
             found.choose(),

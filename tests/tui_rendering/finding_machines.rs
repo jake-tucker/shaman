@@ -61,6 +61,28 @@ fn row<'a>(rows: &'a [String], needle: &str) -> &'a str {
         .unwrap_or_else(|| panic!("no row shows {needle}: {rows:#?}"))
 }
 
+/// A first `/pair` on a machine holding no Relay says what one would give it,
+/// beneath the field, which still comes first: pasting is how that reader pairs.
+#[test]
+fn pair_with_no_relay_points_to_one_beneath_the_invite_field() {
+    let mut application = Application::default();
+    let asked = open_pair(&mut application);
+    relays_known(&mut application, asked, &[]);
+    let rows = rendered_application_rows_at(&application, 100, 30);
+    let field = line_of(&rows, "Invite");
+    let pointer = line_of(&rows, "add a Relay");
+    assert!(field < pointer, "{rows:#?}");
+    assert!(rows[pointer].contains("/relay"), "{rows:#?}");
+    assert!(rows[pointer].contains("short code"), "{rows:#?}");
+
+    // Holding one, the list says what there is to say.
+    let mut application = Application::default();
+    let asked = open_pair(&mut application);
+    relays_known(&mut application, asked, &["https://relay.example.com"]);
+    let shown = rendered_application_rows_at(&application, 100, 30).join("\n");
+    assert!(!shown.contains("add a Relay"), "{shown}");
+}
+
 fn line_of(rows: &[String], needle: &str) -> usize {
     rows.iter()
         .position(|row| row.contains(needle))

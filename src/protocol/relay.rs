@@ -70,7 +70,7 @@ pub struct Relay {
 pub fn relay_pinned_message(address: &str, document: &str) -> String {
     format!(
         "The Relay at {address} is pinned by serving.relays in {document}, so it would only come \
-         back; take it out there, or in /settings, first"
+         back; take it out there first, by hand or from Suru's /settings"
     )
 }
 

@@ -1057,6 +1057,11 @@ async fn a_pinned_relay_is_listed_as_pinned_and_refuses_its_removal() {
         .await;
     let told = said(&refused.stderr);
     assert!(told.contains("is pinned by serving.relays"), "{told}");
+    assert!(told.contains("take it out there"), "{told}");
+    assert!(
+        !told.contains(" in /settings,"),
+        "a screenless machine has no /settings to be sent to first: {told}"
+    );
     assert!(told.contains(&pinned_in), "{told}");
 }
 

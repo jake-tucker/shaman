@@ -571,6 +571,11 @@ async fn a_code_is_superseded_with_its_invite_by_the_next() {
         SessionErrorCode::ShortCodeNotLive,
         "the code the attempt with the old one spent"
     );
+    // It says how to get one where nobody is at a screen, and what it means if
+    // the other machine does show one.
+    let said = error_message(&refused);
+    assert!(said.contains("suru serve invite"), "{said}");
+    assert!(said.contains("does not offer this Relay"), "{said}");
     laptop
         .redeem_as(second_invite.invite, REMOTE)
         .await

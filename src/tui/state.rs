@@ -871,7 +871,7 @@ pub struct TuiState {
     /// How the Server's latest short code stands, as it last said.
     pub(super) short_code: crate::protocol::ShortCodeStanding,
     /// How the Client's own Server's latest Invite stands, as it last said.
-    invite_standing: crate::protocol::InviteStanding,
+    pub(super) invite_standing: crate::protocol::InviteStanding,
     /// The offers to pair back the Client's own Server holds and has made, as
     /// it last said.
     pub(super) offers: crate::protocol::PairBackOffers,

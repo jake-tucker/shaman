@@ -832,6 +832,41 @@ fn an_invite_said_to_have_ended_before_it_was_shown_is_shown_ended() {
     assert!(!shown.contains("suru-v1-direct-string"), "{shown}");
 }
 
+/// Reopening `/serve` says an Invite stands however it was issued, having no code
+/// to say it by, since Enter replaces it; and not once it has ended.
+#[test]
+fn reopening_serve_says_an_invite_with_no_code_stands() {
+    let reopened = |state| {
+        let mut application = showing_a_direct_invite(7);
+        told_invite(&mut application, 7, state);
+        press(&mut application, KeyCode::Esc);
+        type_terminal_text(&mut application, "/serve");
+        let ApplicationTransition::BeginServing { request } =
+            press(&mut application, KeyCode::Enter)
+        else {
+            panic!("/serve has the Server prepare Serving");
+        };
+        application
+            .handle_event(ApplicationEvent::ServingPrepared {
+                request,
+                settings: None,
+                candidates: vec![Way::Direct(SocketAddr::from((
+                    Ipv4Addr::new(10, 0, 0, 8),
+                    7777,
+                )))],
+            })
+            .expect("load Serving candidates");
+        rendered_application_rows(&application).join(" ")
+    };
+    let shown = reopened(InviteState::Standing);
+    assert!(
+        shown.contains("The Invite issued last still stands"),
+        "{shown}"
+    );
+    let shown = reopened(InviteState::Spent);
+    assert!(!shown.contains("still stands"), "{shown}");
+}
+
 /// A code shown beside an Invite that ended goes with it, whatever the code's own
 /// standing has yet to say.
 #[test]

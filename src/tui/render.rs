@@ -1250,6 +1250,14 @@ fn invite_entry_lines(
     if let Some(note) = machines.note() {
         below.extend(wrapped_lines(note, width, theme.text.primary));
     }
+    if !machines.any_relays() {
+        below.extend(wrapped_lines(
+            "To pair by a short code instead, add a Relay in /relay or /serve: your machines \
+             logged in there are then listed here",
+            width,
+            theme.text.subdued,
+        ));
+    }
     let walking = match (on_the_field, machines.any_relays()) {
         (false, _) => "↑↓ choose · Enter choose · Tab Invite · ",
         (true, true) => "↑↓ machines · Enter inspect · ",
@@ -1386,7 +1394,9 @@ fn found_machine_lines(
             GroupState::Listed { elsewhere: 0 } => Some("no other machines".to_owned()),
             GroupState::Listed { .. } => Some("none but those under another Relay".to_owned()),
             GroupState::NotListed => Some("cannot list machines; paste an Invite".to_owned()),
-            GroupState::LoginNeeded => Some("login needed; log in from /relay".to_owned()),
+            GroupState::LoginNeeded => {
+                Some("login needed; log in from /relay or /serve".to_owned())
+            }
             GroupState::Unreachable(why) => Some(format!("Unreachable · {why}")),
         };
         let heading = match saying {
@@ -2092,7 +2102,7 @@ fn serve_picker_lines(state: &TuiState, area: Rect, theme: &Theme) -> Vec<Line<'
     if let Some(error) = overlay.error() {
         said.extend(wrapped_lines(error, content_width, theme.feedback.error));
     }
-    if let Some(last_code) = overlay.last_code_said(&state.short_code) {
+    if let Some(last_code) = overlay.last_code_said(&state.short_code, &state.invite_standing) {
         let style = if state.short_code.state.burned() {
             theme.feedback.error
         } else {

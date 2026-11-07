@@ -1010,13 +1010,21 @@ impl ServeOverlay {
         })
     }
 
-    /// What the picker says of the last Invite with a short code, while it
-    /// stands. Enter would replace it, and the reader may have closed `/serve`
-    /// or be in another Client, so what became of its code is said as well until
-    /// that goes.
-    pub(super) fn last_code_said(&self, standing: &ShortCodeStanding) -> Option<String> {
-        if !self.is_choosing() || !standing.state.invite_stands() {
+    /// What the picker says of the last Invite, while it stands. Enter would
+    /// replace it, and the reader may have closed `/serve` or be in another
+    /// Client, so what became of a code it had is said as well until that goes.
+    pub(super) fn last_code_said(
+        &self,
+        standing: &ShortCodeStanding,
+        invite: &InviteStanding,
+    ) -> Option<String> {
+        if !self.is_choosing() {
             return None;
+        }
+        if !standing.state.invite_stands() {
+            return (invite.serial > 0 && invite.state == InviteState::Standing).then(|| {
+                "The Invite issued last still stands, until Enter replaces it".to_owned()
+            });
         }
         Some(match attempt_said(standing.state) {
             Some(attempt) => format!(

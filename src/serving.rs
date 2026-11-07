@@ -1454,12 +1454,8 @@ impl ServingController {
         invite: &str,
     ) -> std::result::Result<InvitePreview, PairingFailure> {
         let invite = parse_invite(invite)?;
-        Ok(InvitePreview {
-            hostname: invite.hostname,
-            fingerprint: fingerprint(&invite.server_key),
-            reaches_here: self.is_enrolled_peer(&invite.server_key),
-            ways: invite.ways,
-        })
+        let reaches_here = self.is_enrolled_peer(&invite.server_key);
+        Ok(previewed(invite, reaches_here))
     }
 
     pub(crate) async fn redeem_invite(
@@ -2989,15 +2985,27 @@ fn delivered(
     }
     Ok(DeliveredInvite {
         invite: invite.into(),
-        preview: InvitePreview {
-            // Believed no more for having been delivered: whoever knew the
-            // code wrote it.
-            hostname: shown(&parsed.hostname, MAX_PEER_NAME_CHARS),
-            fingerprint: fingerprint(&parsed.server_key),
-            ways: parsed.ways,
-            reaches_here,
-        },
+        preview: previewed(parsed, reaches_here),
     })
+}
+
+/// What a reader is shown of `invite`, however it reached them, before trusting
+/// it. Its hostname is whatever its issuer wrote, believed no more for having been
+/// delivered by a code, and what could only mislead is taken out of it; where
+/// nothing is left it goes by its fingerprint, as a machine a Relay lists does.
+fn previewed(invite: ParsedInvite, reaches_here: bool) -> InvitePreview {
+    let fingerprint = fingerprint(&invite.server_key);
+    let hostname = shown(&invite.hostname, MAX_PEER_NAME_CHARS);
+    InvitePreview {
+        hostname: if hostname.is_empty() {
+            format!("machine {}", short_fingerprint(&fingerprint))
+        } else {
+            hostname
+        },
+        fingerprint,
+        reaches_here,
+        ways: invite.ways,
+    }
 }
 
 /// What a reader is told of an attempt whose guess is gone. It tells them not to
@@ -3012,7 +3020,10 @@ fn code_dead(why: Dead) -> PairingFailure {
     };
     PairingFailure::new(
         SessionErrorCode::ShortCodeDead,
-        format!("{said}. Do not type it again: get a new one from /serve there. {AFTER}"),
+        format!(
+            "{said}. Do not type it again: get a new one from /serve there, or `suru serve \
+             invite`. {AFTER}"
+        ),
     )
 }
 
@@ -3021,7 +3032,10 @@ fn code_refused(refused: RefusedAtOnce) -> PairingFailure {
     match refused {
         RefusedAtOnce::NoCode => PairingFailure::new(
             SessionErrorCode::ShortCodeNotLive,
-            "No code is live on that machine for this Relay. Issue an Invite there with /serve",
+            "No code is live on that machine for this Relay. Issue an Invite there offering it, \
+             with /serve or `suru serve invite`. If that machine shows a code all the same, its \
+             Invite does not offer this Relay, and a code works only over a Relay its Invite \
+             offers: issue one that does, or log in here at one it does",
         ),
         RefusedAtOnce::Version | RefusedAtOnce::Malformed => PairingFailure::new(
             SessionErrorCode::PairingProtocolMismatch,
@@ -8222,6 +8236,73 @@ mod tests {
             .unwrap();
         assert_eq!(*serving.listener().borrow(), ListenerState::Off);
         serving.shutdown().await;
+    }
+
+    /// An Invite as a machine's hostname would come to be written, any of whose
+    /// hostnames a hostile party could have put there.
+    fn invite_from(hostname: &str) -> String {
+        let payload = InvitePayload {
+            ways: vec![Way::Relay("https://relay.example.com".to_owned())],
+            server_key: URL_SAFE_NO_PAD.encode(b"a key"),
+            token: URL_SAFE_NO_PAD.encode([7_u8; 32]),
+            hostname: hostname.to_owned(),
+        };
+        format!(
+            "{INVITE_OPENING}1-{}",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap())
+        )
+    }
+
+    /// A pasted Invite and one delivered by a code are shown alike, believing the
+    /// hostname no more for either. Nothing that was previewed before is refused
+    /// now, what could only mislead a reader is taken out of what is shown, and
+    /// what is left can name a Remote, as the preview's name offers to.
+    #[tokio::test]
+    async fn an_invites_hostname_is_shown_safely_however_it_came_and_refuses_nothing_more() {
+        let data = tempfile::tempdir().unwrap();
+        let serving = ServingController::new(
+            data.path(),
+            tokio::time::Duration::from_secs(60),
+            crate::protocol::PROTOCOL_VERSION,
+            "http://127.0.0.1:9".to_owned(),
+            "token".to_owned(),
+        )
+        .unwrap();
+        let long = "n".repeat(255);
+        let unseen_alone = "\u{202e}\u{200b}\u{2066}";
+        for (hostname, shown_as) in [
+            ("workstation", "workstation"),
+            ("Büro-Rechner", "Büro-Rechner"),
+            ("evil\u{202e}txt.exe", "eviltxt.exe"),
+            ("\u{2066}laptop\u{2069}\u{200b}", "laptop"),
+            (long.as_str(), "n".repeat(MAX_PEER_NAME_CHARS).leak()),
+        ] {
+            let invite = invite_from(hostname);
+            let pasted = serving
+                .preview_invite(&invite)
+                .unwrap_or_else(|failure| panic!("{hostname:?}: {}", failure.message));
+            assert_eq!(pasted.hostname, shown_as);
+            validate_remote_name(&pasted.hostname)
+                .unwrap_or_else(|failure| panic!("{hostname:?}: {}", failure.message));
+            let delivered = delivered(&invite, b"a key", false)
+                .unwrap_or_else(|failure| panic!("{hostname:?}: {}", failure.message));
+            assert_eq!(delivered.preview, pasted, "one path");
+        }
+
+        // Nothing of it can be shown, so it goes by its fingerprint.
+        let unseen = serving
+            .preview_invite(&invite_from(unseen_alone))
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+        assert!(
+            unseen.hostname.starts_with("machine "),
+            "{}",
+            unseen.hostname
+        );
+        assert!(validate_remote_name(&unseen.hostname).is_ok());
+
+        // What the Invite's own form refuses, it still refuses.
+        assert!(serving.preview_invite(&invite_from("a\nb")).is_err());
+        assert!(serving.preview_invite(&invite_from(" outer ")).is_err());
     }
 
     /// Redeeming an Invite while the platform credential store this
