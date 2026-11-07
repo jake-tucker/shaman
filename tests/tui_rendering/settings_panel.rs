@@ -4429,6 +4429,70 @@ fn the_title_derivation_row_cycles_its_named_values_and_spells_a_pinned_selectio
     );
 }
 
+/// An Errand never runs on a Routing Tier, so the Setting pinning its Agent offers none: `auto`,
+/// which has no other option, is pinned as chosen.
+#[test]
+fn pinning_title_derivation_offers_no_routing_tier() {
+    let workspace = workspace_dir();
+    let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
+    open_panel(&mut application);
+    focus_setting(&mut application, "derivation.errand");
+    let ApplicationTransition::ListModels(request) =
+        press(&mut application, KeyCode::Enter, KeyModifiers::NONE)
+    else {
+        panic!("opening the row opens the Model picker onto a fresh catalog listing");
+    };
+    let tier = |id: &str| ModelOptionChoice {
+        id: ModelOptionChoiceId::new(id),
+        label: id.to_owned(),
+        description: None,
+        availability: ModelAvailability::Available,
+    };
+    let auto = suru::protocol::ModelDescriptor {
+        provider: ProviderId::new("copilot"),
+        id: ModelId::new("auto"),
+        display_name: "Auto".to_owned(),
+        description: String::new(),
+        is_default: true,
+        availability: ModelAvailability::Available,
+        options: vec![ModelOptionDescriptor {
+            id: ModelOptionId::new(suru::protocol::ROUTING_TIER_OPTION_ID),
+            label: "Routing tier".to_owned(),
+            description: None,
+            role: ModelOptionRole::RoutingTier,
+            kind: ModelOptionKind::Select {
+                choices: vec![tier("balance"), tier("hydrafusion")],
+                default: ModelOptionChoiceId::new("balance"),
+            },
+        }],
+        details: Default::default(),
+    };
+    application
+        .handle_event(ApplicationEvent::ModelsListed {
+            request,
+            catalog: ModelCatalog {
+                providers: vec![ProviderModelCatalog {
+                    provider: ProviderId::new("copilot"),
+                    display_name: "Copilot".to_owned(),
+                    models: vec![auto],
+                    status: ProviderCatalogStatus::Fresh,
+                }],
+            },
+        })
+        .expect("receive the catalog the picker asked for");
+
+    assert_eq!(
+        press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
+        MutatesSetting(SettingMutation::DerivationErrand {
+            value: Some(DerivationErrand::Pinned(AgentSelection {
+                provider: ProviderId::new("copilot"),
+                model: ModelId::new("auto"),
+                options: Vec::new(),
+            })),
+        })
+    );
+}
+
 #[test]
 fn opening_the_title_derivation_row_pins_the_model_chosen_at_the_picker() {
     let workspace = workspace_dir();

@@ -1033,9 +1033,15 @@ impl DerivationStep {
             Some(AgentSelectionAction::Named(index)) => self
                 .saving
                 .send(derivation_pin(NAMED_DERIVATIONS[index].0.clone())),
-            Some(AgentSelectionAction::Select(model)) if model.options.is_empty() => self
-                .saving
-                .send(pinned_selection(model.default_agent_selection())),
+            Some(AgentSelectionAction::Select(model))
+                if model
+                    .options
+                    .iter()
+                    .all(|option| option.role.is_the_users_alone()) =>
+            {
+                self.saving
+                    .send(pinned_selection(model.default_selection_for_an_agent()))
+            }
             Some(AgentSelectionAction::Select(model)) => {
                 let current = match &self.in_force {
                     DerivationErrand::Pinned(selection) => Some(selection.clone()),

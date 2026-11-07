@@ -1199,3 +1199,178 @@ fn short_options_panel_keeps_focused_option_above_confirm() {
             .contains("› Confirm")
     );
 }
+
+/// `auto` as Copilot offers it with the Setting on: a Routing Tier and nothing else, one tier
+/// disabled with Copilot's reason.
+fn routed_model() -> suru::protocol::ModelDescriptor {
+    let mut model = model_descriptor(
+        "copilot",
+        "auto",
+        "Auto",
+        true,
+        ModelAvailability::Available,
+    );
+    let tier = |id: &str, label: &str, description: &str, availability| ModelOptionChoice {
+        id: ModelOptionChoiceId::new(id),
+        label: label.to_owned(),
+        description: Some(description.to_owned()),
+        availability,
+    };
+    model.options = vec![ModelOptionDescriptor {
+        id: ModelOptionId::new(suru::protocol::ROUTING_TIER_OPTION_ID),
+        label: "Routing tier".to_owned(),
+        description: None,
+        role: ModelOptionRole::RoutingTier,
+        kind: ModelOptionKind::Select {
+            choices: vec![
+                tier(
+                    "balance",
+                    "Standard",
+                    "Versatile models.",
+                    ModelAvailability::Available,
+                ),
+                tier(
+                    "hydrafusion",
+                    "High",
+                    "Capable models.",
+                    ModelAvailability::Available,
+                ),
+                tier(
+                    "hydrafusion-max",
+                    "Max",
+                    "Not on your plan. The most capable models.",
+                    ModelAvailability::Unavailable,
+                ),
+            ],
+            default: ModelOptionChoiceId::new("balance"),
+        },
+    }];
+    model
+}
+
+fn landing_on_the_routed_model() -> Application {
+    let mut application = Application::default();
+    let ApplicationTransition::ListModels(request) = application
+        .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
+            suru::tui::SemanticCommandId::ModelList,
+        )))
+        .expect("open the landing Model picker")
+    else {
+        panic!("the Model picker should request the catalog");
+    };
+    application
+        .handle_event(ApplicationEvent::ModelsListed {
+            request,
+            catalog: ModelCatalog {
+                providers: vec![ProviderModelCatalog {
+                    provider: ProviderId::new("copilot"),
+                    display_name: "Copilot".to_owned(),
+                    models: vec![routed_model()],
+                    status: ProviderCatalogStatus::Fresh,
+                }],
+            },
+        })
+        .expect("load the landing Models");
+    application
+        .handle_terminal_event(InputEvent::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )))
+        .expect("select the routed Model");
+    application
+}
+
+fn press(
+    application: &mut Application,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> ApplicationTransition {
+    application
+        .handle_terminal_event(InputEvent::Key(KeyEvent::new(code, modifiers)))
+        .expect("handle a key")
+}
+
+/// Copilot's wording in Copilot's order, Copilot's default preselected, and a disabled tier shown
+/// with Copilot's reason but not to be had.
+#[test]
+fn a_routing_tier_is_chosen_beside_the_model_and_a_disabled_one_says_why_and_cannot_be() {
+    let mut application = landing_on_the_routed_model();
+    let options = rendered_application_rows_at(&application, 140, 18).join("\n");
+    assert!(
+        options.contains("Routing tier") && options.contains("Standard"),
+        "the default is preselected: {options}"
+    );
+
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    let choices = rendered_application_rows_at(&application, 140, 18).join("\n");
+    let standard = choices.find("Standard").expect("Standard is listed");
+    let high = choices.find("High").expect("High is listed");
+    let max = choices.find("Max").expect("Max is listed");
+    assert!(standard < high && high < max, "Copilot's order: {choices}");
+    assert!(
+        choices.contains("Max [unavailable] · Not on your plan."),
+        "{choices}"
+    );
+
+    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    let still = rendered_application_rows_at(&application, 140, 18).join("\n");
+    assert!(
+        still.contains("Max [unavailable]"),
+        "choosing a disabled tier leaves the choices standing: {still}"
+    );
+}
+
+#[test]
+fn a_chosen_routing_tier_stands_in_the_selection_summary() {
+    let mut application = landing_on_the_routed_model();
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    let ApplicationTransition::ConfirmLandingAgentSelection(confirmed) =
+        press(&mut application, KeyCode::Enter, KeyModifiers::CONTROL)
+    else {
+        panic!("the Landing confirms its Selection");
+    };
+
+    assert_eq!(
+        confirmed.routing_tier().map(ToString::to_string).as_deref(),
+        Some("hydrafusion")
+    );
+    let summary = rendered_application_rows_at(&application, 140, 16).join("\n");
+    assert!(
+        summary.contains("Copilot · Auto · High"),
+        "the footer names the tier: {summary}"
+    );
+}
+
+/// A Landing's Selection names a tier the catalog no longer offers, with the Setting turned off: the
+/// Agent reads as plain Auto, and it is the next Turn that tells the reader so.
+#[test]
+fn a_selection_naming_a_routing_tier_no_longer_on_offer_reads_as_its_model() {
+    let mut application = landing_on_the_routed_model();
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    press(&mut application, KeyCode::Enter, KeyModifiers::CONTROL);
+    let mut plain = routed_model();
+    plain.options.clear();
+    application
+        .handle_event(ApplicationEvent::Managed(
+            suru::managed_client::ManagedEvent::ModelCatalog(ModelCatalog {
+                providers: vec![ProviderModelCatalog {
+                    provider: ProviderId::new("copilot"),
+                    display_name: "Copilot".to_owned(),
+                    models: vec![plain],
+                    status: ProviderCatalogStatus::Fresh,
+                }],
+            }),
+        ))
+        .expect("take in the catalog as the Setting left it");
+
+    let summary = rendered_application_rows_at(&application, 140, 16).join("\n");
+    assert!(summary.contains("Copilot · Auto"), "{summary}");
+    assert!(!summary.contains("High"), "{summary}");
+    assert!(!summary.contains("hydrafusion"), "{summary}");
+}

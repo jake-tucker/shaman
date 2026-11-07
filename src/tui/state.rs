@@ -10065,6 +10065,7 @@ impl Application {
                     .model_picker
                     .selection_in_force(self.state.agent_selection());
                 self.state.model_picker.close();
+                let model = Box::new(super::model_options::on_offer(*model, purpose));
                 if model.options.is_empty() {
                     return self.apply_chosen_selection(model.default_agent_selection(), purpose);
                 }

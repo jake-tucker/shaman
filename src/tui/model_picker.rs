@@ -280,12 +280,19 @@ impl ModelPicker {
 
     /// The Provider as the latest catalog lists it: the live list first, then
     /// the current Outlook's cache. Nothing while no catalog has named it.
+    /// A Provider's Models as the picker has them, from the listing on screen while it is open.
+    /// Closed, that listing goes stale, and the catalog last pushed is the newer word.
     fn listed_provider(&self, provider: &ProviderId) -> Option<&ProviderModels> {
-        self.list.provider(provider).or_else(|| {
+        let cached = || {
             self.cache()
                 .iter()
                 .find(|candidate| &candidate.provider == provider)
-        })
+        };
+        if self.open {
+            self.list.provider(provider).or_else(cached)
+        } else {
+            cached().or_else(|| self.list.provider(provider))
+        }
     }
 
     /// Puts focus back on the Selection in force, which another client
@@ -427,6 +434,7 @@ impl ModelPicker {
             ModelOptionRole::ReasoningEffort,
             ModelOptionRole::Context,
             ModelOptionRole::Speed,
+            ModelOptionRole::RoutingTier,
         ] {
             let Some(descriptor) = model.options.iter().find(|option| option.role == role) else {
                 continue;

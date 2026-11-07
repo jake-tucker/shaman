@@ -82,6 +82,7 @@ impl ModelOptions {
         purpose: ModelPickerPurpose,
         owner: ModelOptionsOwner,
     ) {
+        let model = on_offer(model, purpose);
         let staged = stage_selection(&model, current, purpose);
         self.purpose = purpose;
         self.owner = owner;
@@ -116,6 +117,7 @@ impl ModelOptions {
         if staged.provider != model.provider || staged.model != model.id {
             return;
         }
+        let model = on_offer(model, self.purpose);
         self.staged = Some(stage_selection(&model, Some(staged), self.purpose));
         self.selected = if self.is_confirm_selected() {
             model.options.len()
@@ -451,6 +453,15 @@ impl ChoiceValue {
             Self::Select(choice) => Some(ModelOptionValue::Select { choice }),
             Self::Toggle(enabled) => Some(ModelOptionValue::Toggle { enabled }),
         }
+    }
+}
+
+/// `model` as a reader choosing for `purpose` is offered it: a Setting pins an Errand's Selection,
+/// which runs under no option only the user may choose for a Turn of their own.
+pub(super) fn on_offer(model: ModelDescriptor, purpose: ModelPickerPurpose) -> ModelDescriptor {
+    match purpose {
+        ModelPickerPurpose::Setting(_) => model.without_the_users_own_options(),
+        ModelPickerPurpose::AgentSelection => model,
     }
 }
 
