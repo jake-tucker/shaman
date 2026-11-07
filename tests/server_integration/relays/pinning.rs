@@ -396,10 +396,25 @@ async fn a_pin_landing_while_a_removal_is_under_way_leaves_a_fresh_entry() {
                 if !greet(&mut socket, &relay).await {
                     return;
                 }
-                if matches!(heard(&mut socket).await, Some(ServerMessage::Forget)) {
-                    heard_forget.notify_one();
-                    answer_forget.notified().await;
-                    tell(&mut socket, &RelayMessage::Forgotten).await;
+                match heard(&mut socket).await {
+                    Some(ServerMessage::BeginLogin { .. }) => {
+                        tell(
+                            &mut socket,
+                            &RelayMessage::LoginStarted {
+                                verification_uri: suru_relay::SCRIPTED_VERIFICATION_URI.to_owned(),
+                                user_code: "CODE-HELD".to_owned(),
+                                expires_in_seconds: 900,
+                            },
+                        )
+                        .await;
+                        while heard(&mut socket).await.is_some() {}
+                    }
+                    Some(ServerMessage::Forget) => {
+                        heard_forget.notify_one();
+                        answer_forget.notified().await;
+                        tell(&mut socket, &RelayMessage::Forgotten).await;
+                    }
+                    _ => {}
                 }
             }
         })
@@ -407,6 +422,8 @@ async fn a_pin_landing_while_a_removal_is_under_way_leaves_a_fresh_entry() {
     };
     let server = pinning_server("relay-pin-removal").await;
     server.client.add_relay(address.clone()).await.unwrap();
+    // What may have formed a Login, so the removal asks the Relay to forget.
+    server.client.begin_relay_login(&address).await.unwrap();
     let pin_during_it = async {
         timeout(PROGRESS_DEADLINE, heard_forget.notified())
             .await

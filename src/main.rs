@@ -38,14 +38,14 @@ enum CliCommand {
     },
     /// Manages this Server's Relays, as `/relay` does, for a machine with no one
     /// at its screen.
-    #[command(after_help = cli::EXIT_STATUS)]
+    #[command(after_help = cli::exit_status_help())]
     Relay {
         #[command(subcommand)]
         command: RelayCommand,
     },
     /// Issues Invites to this Server, as `/serve` does, for a machine with no one
     /// at its screen.
-    #[command(after_help = cli::EXIT_STATUS)]
+    #[command(after_help = cli::exit_status_help())]
     Serve {
         #[command(subcommand)]
         command: ServeCommand,
@@ -128,24 +128,25 @@ enum ServerCommand {
     },
 }
 
+/// What a stop holds back, and what it does not.
+const STAYS_STOPPED: &str = "None is restarted until the next login or `suru server start`, and \
+                             opening Suru or running `suru relay` or `suru serve` starts one.";
+
 #[tokio::main]
 async fn main() -> Result<ExitCode> {
     std::hint::black_box(&BUILD_ID);
-    match Cli::parse().command {
-        Some(CliCommand::Relay { command }) => Ok(ExitCode::from(
-            cli::relay(default_client_config()?, command).await,
-        )),
-        Some(CliCommand::Serve { command }) => Ok(ExitCode::from(
-            cli::serve(default_client_config()?, command).await,
-        )),
-        command => run(command).await.map(|()| ExitCode::SUCCESS),
-    }
-}
-
-async fn run(command: Option<CliCommand>) -> Result<()> {
-    match command {
-        // `main` takes these, which alone say how they exit.
-        Some(CliCommand::Relay { .. } | CliCommand::Serve { .. }) => Ok(()),
+    let finished: Result<()> = match Cli::parse().command {
+        // These alone say how they exit.
+        Some(CliCommand::Relay { command }) => {
+            return Ok(ExitCode::from(
+                cli::relay(default_client_config()?, command).await,
+            ));
+        }
+        Some(CliCommand::Serve { command }) => {
+            return Ok(ExitCode::from(
+                cli::serve(default_client_config()?, command).await,
+            ));
+        }
         Some(CliCommand::Server {
             command:
                 ServerCommand::Start {
@@ -202,12 +203,12 @@ async fn run(command: Option<CliCommand>) -> Result<()> {
             }
             match stop_server(&config).await? {
                 ServerStop::Stopped(health) => println!(
-                    "Suru server stopped (pid {}, instance {})",
+                    "Suru server stopped (pid {}, instance {}). {STAYS_STOPPED}",
                     health.identity.pid, health.identity.instance_id
                 ),
                 ServerStop::NoneRunning => println!(
-                    "No Suru server was running on the `{}` Channel. A stop is recorded, so none \
-                     is restarted until the next login or `suru server start`.",
+                    "No Suru server was running on the `{}` Channel. A stop is recorded. \
+                     {STAYS_STOPPED}",
                     config.channel()
                 ),
             }
@@ -319,7 +320,8 @@ async fn run(command: Option<CliCommand>) -> Result<()> {
                 .context("prepare the managed Suru server connection")?;
             tui::run(client).await
         }
-    }
+    };
+    finished.map(|()| ExitCode::SUCCESS)
 }
 
 fn default_client_config() -> Result<ManagedClientConfig> {

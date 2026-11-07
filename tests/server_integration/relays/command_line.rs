@@ -13,6 +13,7 @@ use std::{
 };
 
 use serde_json::{Value, json};
+use suru::cli;
 use suru::protocol::{
     InviteOfferAnswer, InviteRelays, OfferInviteRequest, RedeemInviteRequest, RelayLoginLead,
     RelayLoginOutcome, RelayLoginStanding, RelayMachinesAnswer, ServingChange, SettingMutation,
@@ -29,13 +30,14 @@ use super::{TestRelay, TestServer};
 use crate::support::{PROGRESS_DEADLINE, detached_servers::DetachedServers};
 
 /// How the commands exit, as `docs/relay/README.md` says.
-const FAILED: i32 = 1;
-const BAD_COMMAND_LINE: i32 = 2;
-const REMOVAL_UNCONFIRMED: i32 = 3;
-const LOGIN_REFUSED: i32 = 4;
-const LOGIN_LAPSED: i32 = 5;
+const SUCCESS: i32 = cli::SUCCESS as i32;
+const FAILED: i32 = cli::FAILED as i32;
+const BAD_COMMAND_LINE: i32 = cli::BAD_COMMAND_LINE as i32;
+const REMOVAL_UNCONFIRMED: i32 = cli::REMOVAL_UNCONFIRMED as i32;
+const LOGIN_REFUSED: i32 = cli::LOGIN_REFUSED as i32;
+const LOGIN_LAPSED: i32 = cli::LOGIN_LAPSED as i32;
 #[cfg(unix)]
-const INTERRUPTED: i32 = 130;
+const INTERRUPTED: i32 = cli::INTERRUPTED as i32;
 
 /// A machine with no one at its screen: a home and a Channel of its own, whose
 /// Config Document has it Serve on a loopback port of the system's choosing, so
@@ -103,7 +105,7 @@ impl Machine {
         let output = self.run(arguments).await;
         assert_eq!(
             output.status.code(),
-            Some(0),
+            Some(SUCCESS),
             "`suru {arguments:?}` failed: {}",
             said(&output.stderr)
         );
@@ -167,7 +169,12 @@ impl Machine {
         let (_, code) = shown_login(&mut login).await;
         relay.approve(&code, "1", "octocat");
         let output = settled(login).await;
-        assert_eq!(output.status.code(), Some(0), "{}", said(&output.stderr));
+        assert_eq!(
+            output.status.code(),
+            Some(SUCCESS),
+            "{}",
+            said(&output.stderr)
+        );
     }
 
     /// Every Log this machine's Servers have written, as one text.
@@ -278,7 +285,7 @@ async fn a_headless_machine_goes_from_nothing_to_an_invite_that_redeems() {
     assert_eq!(visit, SCRIPTED_VERIFICATION_URI);
     relay.approve(&code, "1", "octocat");
     let logged_in = settled(login).await;
-    assert_eq!(logged_in.status.code(), Some(0));
+    assert_eq!(logged_in.status.code(), Some(SUCCESS));
     let told = said(&logged_in.stderr);
     assert!(
         told.contains(&format!("Logged in at {address} as octocat")),
@@ -356,24 +363,23 @@ fn the_docs_show_the_commands_and_the_statuses_that_are_tested() {
     ] {
         assert!(docs.lines().any(|shown| shown == line), "{line}");
     }
-    for status in [
-        0,
-        FAILED,
-        BAD_COMMAND_LINE,
-        REMOVAL_UNCONFIRMED,
-        LOGIN_REFUSED,
-        LOGIN_LAPSED,
-        130,
-    ] {
-        assert!(
-            docs.contains(&format!("\n| {status} | ")),
-            "status {status}"
-        );
-        assert!(
-            suru::cli::EXIT_STATUS.contains(&format!("\n  {status} ")),
-            "status {status}"
-        );
+    // Each status means in the docs what it means in the help: both say one
+    // list's words, whole, on a row of their own.
+    for (status, meaning) in cli::EXIT_STATUSES {
+        let row = format!("| {status} | {meaning} |");
+        assert!(docs.lines().any(|shown| shown == row), "{row}");
     }
+    assert_eq!(
+        docs.lines()
+            .skip_while(|line| *line != "#### Exit status")
+            .take_while(|line| !line.starts_with("#### JSON"))
+            .filter(|line| line.starts_with("| ") && !line.starts_with("| Status"))
+            .filter(|line| !line.starts_with("| ---"))
+            .count(),
+        cli::EXIT_STATUSES.len(),
+        "the docs' table holds these statuses alone"
+    );
+    assert!(docs.contains(cli::EXIT_BY_SIGNAL));
 }
 
 #[tokio::test]
@@ -562,7 +568,12 @@ async fn a_login_already_under_way_is_followed_and_a_standing_login_is_said_to_s
     relay.approve(&code, "1", "octocat");
     for login in [first, second] {
         let output = settled(login).await;
-        assert_eq!(output.status.code(), Some(0), "{}", said(&output.stderr));
+        assert_eq!(
+            output.status.code(),
+            Some(SUCCESS),
+            "{}",
+            said(&output.stderr)
+        );
     }
 
     let standing = machine.succeed(&["relay", "login", &address]).await;
@@ -682,7 +693,7 @@ async fn killing_the_command_leaves_the_login_under_way_where_a_client_finds_it(
     assert_eq!(under_way.outcome, RelayLoginOutcome::Pending);
 
     relay.approve(&code, "1", "octocat");
-    assert_eq!(settled(found).await.status.code(), Some(0));
+    assert_eq!(settled(found).await.status.code(), Some(SUCCESS));
 }
 
 #[cfg(unix)]
@@ -712,7 +723,7 @@ async fn interrupting_the_command_says_the_login_goes_on_and_exits_as_interrupte
     let mut found = machine.begin_login(&address);
     assert_eq!(shown_login(&mut found).await.1, code);
     relay.approve(&code, "1", "octocat");
-    assert_eq!(settled(found).await.status.code(), Some(0));
+    assert_eq!(settled(found).await.status.code(), Some(SUCCESS));
 }
 
 /// `suru relay login | head -1`: whatever reads the line goes, and the command
@@ -730,7 +741,12 @@ async fn a_reader_that_goes_after_the_line_costs_the_login_nothing() {
     drop(login.stdout.take());
     relay.approve(&code, "1", "octocat");
     let output = settled(login).await;
-    assert_eq!(output.status.code(), Some(0), "{}", said(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(SUCCESS),
+        "{}",
+        said(&output.stderr)
+    );
     assert!(!said(&output.stderr).contains("panicked"));
 }
 
@@ -766,7 +782,7 @@ async fn a_standard_output_closed_before_the_line_leaves_it_on_standard_error() 
         .await
         .expect("the command ends with the login")
         .expect("wait for suru relay login");
-    assert_eq!(status.code(), Some(0));
+    assert_eq!(status.code(), Some(SUCCESS));
 }
 
 /// A Server stopped by its user takes the login with it, and the command leaves
@@ -872,6 +888,73 @@ async fn removing_a_relay_says_what_became_of_the_login_at_it() {
     let told = said(&unconfirmed.stderr);
     assert!(told.contains("the Relay did not answer"), "{told}");
     assert_eq!(machine.listing().await["relays"], json!([]));
+}
+
+/// A Relay never logged in at holds nothing of this Server, so removing one whose
+/// address is dead leaves nothing for its operator: it is no case for status 3,
+/// and nothing is dialled for it.
+#[tokio::test]
+async fn removing_a_relay_never_logged_in_at_asks_nothing_of_it() {
+    let machine = Machine::new("removal-never-logged-in");
+    // Port 9 answers nothing, and a route that counted a dial would say the same.
+    machine
+        .succeed(&["relay", "add", "http://127.0.0.1:9"])
+        .await;
+    let removed = machine
+        .succeed(&["relay", "remove", "http://127.0.0.1:9"])
+        .await;
+    let told = said(&removed.stderr);
+    assert!(told.contains("held no Login"), "{told}");
+    assert!(!told.contains("did not answer"), "{told}");
+    assert_eq!(machine.listing().await["relays"], json!([]));
+}
+
+/// A Login the Relay came to refuse may still stand there, one fresh login from
+/// any Server of its Account restoring it, so that is asked of it all the same.
+#[tokio::test]
+async fn removing_a_relay_whose_login_lapsed_still_asks_it_to_forget() {
+    let mut relay = TestRelay::start().await;
+    let address = relay.address();
+    let machine = Machine::new("removal-lapsed");
+    machine.log_in(&relay, &address).await;
+    relay.provider.set_admitted("1", false);
+    machine.wait_for_state(&address, "login_needed").await;
+
+    let removed = machine.succeed(&["relay", "remove", &address]).await;
+    assert!(
+        said(&removed.stderr).contains("forgot this Server's Login"),
+        "{}",
+        said(&removed.stderr)
+    );
+    assert!(relay.running().store().logins().await.unwrap().is_empty());
+
+    // The same lapsed Login at a Relay that does not answer may be left there.
+    relay.provider.set_admitted("1", true);
+    machine.log_in(&relay, &address).await;
+    relay.provider.set_admitted("1", false);
+    machine.wait_for_state(&address, "login_needed").await;
+    relay.stop().await;
+    machine
+        .exits(REMOVAL_UNCONFIRMED, &["relay", "remove", &address])
+        .await;
+}
+
+/// A login given up as its Relay is removed may have formed a Login there at the
+/// last moment, so the Relay is asked to forget, though none was ever recorded.
+#[tokio::test]
+async fn removing_a_relay_with_a_login_under_way_still_asks_it_to_forget() {
+    let mut relay = TestRelay::start().await;
+    let address = relay.address();
+    let machine = Machine::new("removal-under-way");
+    machine.succeed(&["relay", "add", &address]).await;
+    let mut login = machine.begin_login(&address);
+    shown_login(&mut login).await;
+    relay.route.set_online(false).await;
+    machine
+        .exits(REMOVAL_UNCONFIRMED, &["relay", "remove", &address])
+        .await;
+    drop(login);
+    relay.stop().await;
 }
 
 #[tokio::test]

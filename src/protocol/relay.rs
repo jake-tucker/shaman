@@ -297,11 +297,15 @@ pub struct RelayServeThroughRequest {
 }
 
 /// The outcome of removing a Relay. Removal always forgets the entry here;
-/// `acknowledged` says whether the Relay answered in time and forgot the
-/// Server's Login as well.
+/// `acknowledged` says that nothing is left at the Relay for it: it answered in
+/// time and forgot the Server's Login, or `held_login` says there was none to
+/// forget and it was not asked.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RelayRemoval {
     pub address: String,
     pub acknowledged: bool,
+    /// Whether the Server may have held a Login there: it has logged in there,
+    /// or a login was begun there that could have formed one at the last moment.
+    pub held_login: bool,
 }

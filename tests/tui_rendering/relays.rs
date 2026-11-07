@@ -1461,6 +1461,7 @@ fn removed(
             result: Ok(RelayRemoval {
                 address: address.to_owned(),
                 acknowledged,
+                held_login: true,
             }),
         })
         .expect("take the removal")

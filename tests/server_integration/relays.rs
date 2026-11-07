@@ -1123,33 +1123,23 @@ async fn removing_a_relay_asks_it_to_forget_the_login_and_forgets_the_entry_eith
 
 #[tokio::test]
 async fn removing_a_relay_that_takes_connections_and_says_nothing_waits_only_its_answer_budget() {
-    let server = TestServer::with_timings(
-        "relay-removal-silent",
-        relay_timings().with_relay_answer_timeout(Duration::from_millis(100)),
-    )
-    .await;
-    // The budget is what the Relay's silence may cost, not the making of the
-    // key the Server proves itself with.
-    server.make_identity_key().await;
-    let unanswered = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-        .await
-        .unwrap();
-    let mut silent = ObservedTcpProxy::start(unanswered.local_addr().unwrap()).await;
-    silent.swallow_connections().await;
-    let address = format!("http://{}", silent.address);
-    server.client.add_relay(address.clone()).await.unwrap();
+    let mut relay = TestRelay::start().await;
+    let address = relay.address();
+    let mut server = TestServer::start("relay-removal-silent").await;
+    server.log_in(&relay, "583231", "octocat").await;
+    // The budget is what the Relay's silence may cost, not the login before it.
+    server.timings = relay_timings().with_relay_answer_timeout(Duration::from_millis(100));
+    relay.route.swallow_connections().await;
+    server.restart().await;
 
     let removal = server
         .client
         .remove_relay(&address)
         .await
         .expect("remove a Relay that never answers");
+    assert!(removal.held_login);
     assert!(!removal.acknowledged);
     assert!(server.client.list_relays().await.unwrap().relays.is_empty());
-    // The Server's connect completes in the kernel's backlog before the
-    // route's accept loop counts it, and a Relay that answers nothing gives
-    // the removal no reason to wait for that count, so wait for it here.
-    silent.wait_for_opened_connections(1).await;
 
     server.shutdown().await;
 }
@@ -2297,6 +2287,8 @@ async fn no_login_begun_while_a_relay_is_removed_outlives_the_removal() {
     .await;
     let server = TestServer::start("relay-removal-racing").await;
     server.client.add_relay(address.clone()).await.unwrap();
+    // What may have formed a Login, so the removal asks the Relay to forget.
+    server.client.begin_relay_login(&address).await.unwrap();
 
     let racing = async {
         timeout(PROGRESS_DEADLINE, async {
@@ -2324,7 +2316,7 @@ async fn no_login_begun_while_a_relay_is_removed_outlives_the_removal() {
     assert_eq!(error_code(&refused), SessionErrorCode::RelayNotFound);
     assert_eq!(
         *notes.lock().unwrap(),
-        vec!["forget"],
+        vec!["begin login", "login ended", "forget"],
         "no login reached the Relay once it was asked to forget"
     );
 

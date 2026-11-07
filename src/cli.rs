@@ -6,7 +6,7 @@
 //! What a command was asked for goes to standard output, and only that, so a
 //! script can capture it. Everything else goes to standard error, and neither
 //! carries colour. An Invite and its short code reach no Log (ADR-0008) and are
-//! never taken as arguments. How each command exits is [`EXIT_STATUS`], which
+//! never taken as arguments. How each command exits is [`EXIT_STATUSES`], which
 //! `docs/relay/README.md` repeats.
 
 use std::io::{IsTerminal as _, Write};
@@ -25,24 +25,57 @@ use crate::{
     relay_said,
 };
 
-/// How the commands exit, as their help says.
-pub const EXIT_STATUS: &str = "\
-Exit status:
-  0    it did as asked, or that already held
-  1    it could not, saying why on standard error
-  2    its command line cannot be read, an address no Relay could be at among that
-  3    `relay remove` removed the Relay here, but the Relay did not answer to forget the Login
-  4    `relay login` was refused: by you at the identity provider, or by the Relay
-  5    `relay login` ended with no one refusing it: it expired, or the Relay stopped answering
-  130  `relay login` was interrupted, which leaves the login under way at the Server";
+pub const SUCCESS: u8 = 0;
+pub const FAILED: u8 = 1;
+pub const BAD_COMMAND_LINE: u8 = 2;
+pub const REMOVAL_UNCONFIRMED: u8 = 3;
+pub const LOGIN_REFUSED: u8 = 4;
+pub const LOGIN_LAPSED: u8 = 5;
+pub const INTERRUPTED: u8 = 130;
 
-const SUCCESS: u8 = 0;
-const FAILED: u8 = 1;
-const BAD_COMMAND_LINE: u8 = 2;
-const REMOVAL_UNCONFIRMED: u8 = 3;
-const LOGIN_REFUSED: u8 = 4;
-const LOGIN_LAPSED: u8 = 5;
-const INTERRUPTED: u8 = 130;
+/// How the commands exit and what each status means: the one source for their
+/// help and for `docs/relay/README.md`, which a test holds to these words.
+pub const EXIT_STATUSES: [(u8, &str); 7] = [
+    (SUCCESS, "It did as asked, or that already held"),
+    (FAILED, "It could not, saying why on standard error"),
+    (
+        BAD_COMMAND_LINE,
+        "Its command line cannot be read, an address no Relay could be at among that",
+    ),
+    (
+        REMOVAL_UNCONFIRMED,
+        "`relay remove` removed the Relay here, but the Relay did not answer, so it may still \
+         hold a Login for this Server until its operator removes it",
+    ),
+    (
+        LOGIN_REFUSED,
+        "`relay login` was refused: by you at the identity provider, or by the Relay, whose \
+         operator is the one to ask",
+    ),
+    (
+        LOGIN_LAPSED,
+        "`relay login` ended with no one refusing it: it expired or the Relay stopped answering, \
+         and trying again may help",
+    ),
+    (
+        INTERRUPTED,
+        "`relay login` was interrupted by Ctrl+C, which leaves the login under way",
+    ),
+];
+
+/// What the exit statuses leave out, in their help and in the docs alike.
+pub const EXIT_BY_SIGNAL: &str = "SIGTERM and SIGHUP end a command by the signal, with no status \
+                                  of these, and leave a login under way at the Server as well.";
+
+/// How the commands exit, as their help says.
+pub fn exit_status_help() -> String {
+    let statuses = EXIT_STATUSES
+        .iter()
+        .map(|(status, meaning)| format!("  {status:<4} {meaning}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("Exit status:\n{statuses}\n\n{EXIT_BY_SIGNAL}")
+}
 
 /// What turns Serving on, for a reader at a command line.
 const TURNS_SERVING_ON: &str = "`suru serve invite`";
@@ -85,7 +118,7 @@ pub enum ServeCommand {
     /// standard error. It turns Serving on where it is off, and offers every way
     /// `/serve` would tick unless told otherwise. The Invite replaces any issued
     /// before it, so running this twice kills the first.
-    #[command(after_help = EXIT_STATUS)]
+    #[command(after_help = exit_status_help())]
     Invite(InviteArguments),
 }
 
@@ -96,7 +129,7 @@ pub struct InviteArguments {
     #[arg(long)]
     no_addresses: bool,
     /// Offers no Relay.
-    #[arg(long, conflicts_with = "relay")]
+    #[arg(long)]
     no_relays: bool,
     /// Offers this Relay, and among Relays only those named; repeatable. It fails
     /// where the Server cannot offer one.
@@ -108,10 +141,14 @@ pub struct InviteArguments {
 }
 
 impl InviteArguments {
-    /// What the Server is asked for, or why nothing could come of asking.
+    /// What the Server is asked for, or why nothing could come of asking, which
+    /// says more than clap's own word on arguments that conflict would.
     fn request(&self) -> std::result::Result<OfferInviteRequest, &'static str> {
         if self.no_addresses && self.no_relays {
             return Err("--no-addresses and --no-relays together leave an Invite no way to offer");
+        }
+        if self.no_relays && !self.relay.is_empty() {
+            return Err("--no-relays offers no Relay, and --relay names one to offer");
         }
         Ok(OfferInviteRequest {
             addresses: !self.no_addresses,
@@ -666,7 +703,13 @@ async fn remove(client: &ManagedClient, address: &str, err: &mut dyn Write) -> R
             });
         }
     };
-    if removal.acknowledged {
+    if !removal.held_login {
+        say(
+            err,
+            &format!("Removed {}, which held no Login", removal.address),
+        );
+        Ok(SUCCESS)
+    } else if removal.acknowledged {
         say(
             err,
             &format!(
@@ -1033,6 +1076,15 @@ mod tests {
             said(&err),
             "Visit https://example.com/device and enter the code WDJB-MJHT\n"
         );
+    }
+
+    #[test]
+    fn the_exit_statuses_help_says_are_the_ones_the_commands_use() {
+        let help = exit_status_help();
+        for (status, meaning) in EXIT_STATUSES {
+            assert!(help.contains(&format!("{status:<4} {meaning}")), "{help}");
+        }
+        assert!(help.contains(EXIT_BY_SIGNAL), "{help}");
     }
 
     #[test]

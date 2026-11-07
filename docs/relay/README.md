@@ -693,7 +693,8 @@ masked unit. `suru server uninstall` removes it. Neither touches a Server runnin
 login, and `suru server start` starts one before then.
 
 From then on a Server that crashes is restarted, within about ten seconds. One stopped by `suru server stop` stays stopped
-until the next login or `suru server start`, and that holds for a stop issued just after a crash, when there is nothing
+until the next login or `suru server start`, or until something starts one as a Client does: opening Suru, or running a
+[`suru relay` or `suru serve` command](#from-the-command-line). That holds for a stop issued just after a crash, when there is nothing
 to stop and `suru server stop` says so. A plain `kill` is taken as a stop too; only something like `kill -9` reads as a
 crash. A Server that hangs is neither restarted nor stoppable this way: `suru server stop` reports it unreachable.
 
@@ -950,7 +951,8 @@ through a Relay does, and why something was left out. Nothing carries colour.
   are any; where there are none it fails, with Serving left on, as it says.
 
 An Invite lasts ten minutes, is redeemed once, and **replaces any issued before it**, so running `serve invite` twice kills
-the first. Its **short code** goes to standard error only where that is a terminal, because it is as secret as the Invite
+the first. Standard output closed outright (`>&-`) cannot be told from `> /dev/null`, so the command exits 0 having shown the
+Invite to nobody, and has still replaced the last one; a pipe closed by its reader does fail. Its **short code** goes to standard error only where that is a terminal, because it is as secret as the Invite
 and standard error is what a script's log keeps; `--json` carries it on standard output for whoever wants it. An Invite and
 its code reach no Log, and neither is ever an argument.
 
@@ -959,12 +961,18 @@ its code reach no Log, and neither is ever an argument.
 | Status | Meaning |
 | --- | --- |
 | 0 | It did as asked, or that already held |
-| 1 | It could not, saying why on standard error: the Server could not be reached, a Relay refused or could not be reached as a login began, a refusal of any other kind, or the Server stopped while `relay login` followed it |
+| 1 | It could not, saying why on standard error |
 | 2 | Its command line cannot be read, an address no Relay could be at among that |
 | 3 | `relay remove` removed the Relay here, but the Relay did not answer, so it may still hold a Login for this Server until its operator removes it |
 | 4 | `relay login` was refused: by you at the identity provider, or by the Relay, whose operator is the one to ask |
 | 5 | `relay login` ended with no one refusing it: it expired or the Relay stopped answering, and trying again may help |
-| 130 | `relay login` was interrupted, which leaves the login under way |
+| 130 | `relay login` was interrupted by Ctrl+C, which leaves the login under way |
+
+SIGTERM and SIGHUP end a command by the signal, with no status of these, and leave a login under way at the Server as well.
+
+Status 1 covers a Server that could not be reached, a Relay that refused or could not be reached as a login began, and a
+Server that stopped while `relay login` followed it. Removing a Relay never logged in at asks nothing of it and exits 0,
+since it can have left nothing there.
 
 #### JSON
 

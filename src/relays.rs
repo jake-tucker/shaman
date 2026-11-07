@@ -737,7 +737,7 @@ impl RelayController {
         operations: Arc<AsyncMutex<()>>,
     ) -> std::result::Result<RelayRemoval, RelayFailure> {
         let _serialised = operations.lock().await;
-        let login = {
+        let (login, held_login) = {
             let mut relays = self.lock();
             let held = owning(&mut relays, &address, &operations).ok_or_else(relay_not_found)?;
             if let Some(document) = &held.pinned_in {
@@ -746,9 +746,14 @@ impl RelayController {
                     relay_pinned_message(&address, document),
                 ));
             }
-            held.login
+            // A Login the Relay came to refuse is one it may still hold, and a
+            // login begun may have formed one nothing here has heard of.
+            let held_login = held.stored.logged_in || held.login.is_some();
+            let login = held
+                .login
                 .as_mut()
-                .and_then(|login| Some((login.give_up.clone(), login.task.take()?)))
+                .and_then(|login| Some((login.give_up.clone(), login.task.take()?)));
+            (login, held_login)
         };
         if let Some((give_up, task)) = login {
             give_up.notify_one();
@@ -763,8 +768,10 @@ impl RelayController {
                 connection.task.abort();
             }
         }
-        let acknowledged =
-            tokio::time::timeout(self.timings.answer_timeout, self.ask_to_forget(&address))
+        // Where it never held a Login there is nothing to ask of it, and an
+        // address that is dead costs nothing and leaves nothing.
+        let acknowledged = !held_login
+            || tokio::time::timeout(self.timings.answer_timeout, self.ask_to_forget(&address))
                 .await
                 .unwrap_or(false);
         let mut relays = self.lock();
@@ -786,7 +793,7 @@ impl RelayController {
             let serve_through = held.stored.serve_through;
             held.serve_through
                 .send_modify(|choice| *choice = choice.made_again(serve_through));
-            if acknowledged {
+            if held_login && acknowledged {
                 held.refused();
             }
             if held.stored.logged_in {
@@ -799,6 +806,7 @@ impl RelayController {
         Ok(RelayRemoval {
             address,
             acknowledged,
+            held_login,
         })
     }
 

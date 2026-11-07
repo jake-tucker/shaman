@@ -433,6 +433,7 @@ fn a_late_answer_to_a_removal_takes_away_no_relay_added_again_since() {
             result: Ok(RelayRemoval {
                 address,
                 acknowledged: true,
+                held_login: true,
             }),
         })
         .expect("take the late removal");

@@ -10,7 +10,7 @@ use crate::protocol::{
 };
 
 use super::{
-    ManagedClient, ManagedClientConfig, ManagedEvent, RecoveryStatus,
+    ManagedClient, ManagedClientConfig, ManagedEvent, RecoveryStatus, Upkeep,
     event_stream::{self, StreamOutcome},
     launcher,
     lifecycle::{self, Registration},
@@ -65,31 +65,23 @@ pub(super) async fn connect(config: ManagedClientConfig) -> Result<ManagedClient
     let deadline = tokio::time::Instant::now() + config.startup_timeout;
     let http = crate::runtime::loopback_http_client();
     let connection = establish_connection(&config, &http, deadline, baseline).await?;
-    let (events_tx, events_rx) = mpsc::channel(32);
-    let (descriptor_tx, descriptor_rx) = watch::channel(connection.descriptor.clone());
-    let managed_http = http.clone();
-    let initial_recovery_backoff = config.initial_recovery_backoff;
-    let max_recovery_backoff = config.max_recovery_backoff;
-    let attachment_fetch_timeout = config.attachment_fetch_timeout;
-    let config_dir = config.runtime.config_dir().map(ToOwned::to_owned);
+    let (events_tx, events) = mpsc::channel(32);
+    let (descriptor_tx, descriptor) = watch::channel(connection.descriptor.clone());
     let task = tokio::spawn(run_managed_client(
-        config,
-        managed_http,
+        config.clone(),
+        http.clone(),
         connection,
         baseline,
         events_tx,
         descriptor_tx,
     ));
-    Ok(ManagedClient {
-        events: events_rx,
+    Ok(client_of(
+        &config,
         http,
-        descriptor: descriptor_rx,
-        initial_recovery_backoff,
-        max_recovery_backoff,
-        attachment_fetch_timeout,
-        config_dir,
-        task,
-    })
+        events,
+        descriptor,
+        Upkeep::Following(task),
+    ))
 }
 
 /// A client that reaches the Channel's Server as [`connect`] does and opens
@@ -103,23 +95,39 @@ pub(super) async fn for_one_command(
     let Registration { descriptor, health } =
         launcher::ensure_server(&config, deadline, baseline).await?;
     let brought_about = published != Some(descriptor.identity.instance_id);
-    // Nothing reports events to it, and the descriptor stays as found.
+    // Nothing reports events to it.
     let (_, events) = mpsc::channel(1);
     let (descriptor_tx, descriptor) = watch::channel(descriptor);
-    let client = ManagedClient {
+    let client = client_of(
+        &config,
+        crate::runtime::loopback_http_client(),
         events,
-        http: crate::runtime::loopback_http_client(),
+        descriptor,
+        Upkeep::Found {
+            _descriptor: descriptor_tx,
+        },
+    );
+    Ok((client, brought_about.then_some(health)))
+}
+
+/// A client as `config` has it, and what keeps its Server named to it.
+fn client_of(
+    config: &ManagedClientConfig,
+    http: reqwest::Client,
+    events: mpsc::Receiver<ManagedEvent>,
+    descriptor: watch::Receiver<RuntimeDescriptor>,
+    upkeep: Upkeep,
+) -> ManagedClient {
+    ManagedClient {
+        events,
+        http,
         descriptor,
         initial_recovery_backoff: config.initial_recovery_backoff,
         max_recovery_backoff: config.max_recovery_backoff,
         attachment_fetch_timeout: config.attachment_fetch_timeout,
         config_dir: config.runtime.config_dir().map(ToOwned::to_owned),
-        task: tokio::spawn(async move {
-            let _descriptor = descriptor_tx;
-            std::future::pending::<()>().await;
-        }),
-    };
-    Ok((client, brought_about.then_some(health)))
+        upkeep,
+    }
 }
 
 async fn establish_connection(

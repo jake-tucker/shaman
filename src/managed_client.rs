@@ -389,7 +389,19 @@ pub struct ManagedClient {
     max_recovery_backoff: Duration,
     attachment_fetch_timeout: Duration,
     config_dir: Option<PathBuf>,
-    task: JoinHandle<()>,
+    upkeep: Upkeep,
+}
+
+/// What keeps a client's Server named to it for as long as the client stands.
+enum Upkeep {
+    /// A task following the Server, naming each new one, for a client that
+    /// stays attached.
+    Following(JoinHandle<()>),
+    /// The Server as found, which names no other, for one that does not. Held,
+    /// since a stream gives up reconnecting once nothing can name a new Server.
+    Found {
+        _descriptor: watch::Sender<RuntimeDescriptor>,
+    },
 }
 
 #[derive(Clone)]
@@ -503,12 +515,9 @@ impl ManagedClient {
             max_recovery_backoff: Duration::from_millis(1),
             attachment_fetch_timeout: ATTACHMENT_FETCH_TIMEOUT,
             config_dir: None,
-            // A stream gives up reconnecting once nothing can name a new
-            // Server, so the descriptor's sender lives as long as the client.
-            task: tokio::spawn(async move {
-                let _descriptor = descriptor_tx;
-                std::future::pending::<()>().await;
-            }),
+            upkeep: Upkeep::Found {
+                _descriptor: descriptor_tx,
+            },
         }
     }
 
@@ -2750,7 +2759,9 @@ fn remote_removal_url(base_url: &str, name: &str) -> Result<reqwest::Url> {
 
 impl Drop for ManagedClient {
     fn drop(&mut self) {
-        self.task.abort();
+        if let Upkeep::Following(task) = &self.upkeep {
+            task.abort();
+        }
     }
 }
 
