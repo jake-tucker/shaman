@@ -86,71 +86,10 @@ impl SessionStore {
             turn_id,
             agent: effective_agent,
         });
-        if let Some(why) = why {
-            changes.push(SessionChange::ActivityAdded {
-                activity: Activity::Status {
-                    id: ActivityId::new(),
-                    turn_id,
-                    text: why,
-                },
-            });
-        } else {
-            if requested.selection.model != selection.model {
-                changes.push(SessionChange::ActivityAdded {
-                    activity: Activity::Status {
-                        id: ActivityId::new(),
-                        turn_id,
-                        text: format!(
-                            "Provider used Model `{}` instead of requested Model `{}`.",
-                            selection.model, requested.selection.model
-                        ),
-                    },
-                });
-            }
-            for effective in &selection.options {
-                let requested_value = requested
-                    .selection
-                    .options
-                    .iter()
-                    .find(|candidate| candidate.id == effective.id)
-                    .map(|candidate| &candidate.value);
-                if requested_value == Some(&effective.value) {
-                    continue;
-                }
-                let requested_value = requested_value
-                    .map(model_option_value_text)
-                    .unwrap_or_else(|| "no value".to_owned());
-                changes.push(SessionChange::ActivityAdded {
-                    activity: Activity::Status {
-                        id: ActivityId::new(),
-                        turn_id,
-                        text: format!(
-                            "Provider used Model Option `{}` value `{}` instead of requested value `{requested_value}`.",
-                            effective.id,
-                            model_option_value_text(&effective.value),
-                        ),
-                    },
-                });
-            }
-            for omitted in requested.selection.options.iter().filter(|requested| {
-                !selection
-                    .options
-                    .iter()
-                    .any(|effective| effective.id == requested.id)
-            }) {
-                changes.push(SessionChange::ActivityAdded {
-                    activity: Activity::Status {
-                        id: ActivityId::new(),
-                        turn_id,
-                        text: format!(
-                            "Provider omitted requested Model Option `{}` value `{}`.",
-                            omitted.id,
-                            model_option_value_text(&omitted.value),
-                        ),
-                    },
-                });
-            }
-        }
+        changes.extend(match why {
+            Some(why) => vec![status_row(turn_id, why)],
+            None => difference_told(turn_id, &requested.selection, &selection),
+        });
         let update = state.commit(&self.storage, session_id, changes)?;
         Ok(Some(update))
     }
@@ -367,6 +306,64 @@ impl SessionRecord {
             .any(|prompt| prompt.id == prompt_id && prompt.status == PromptStatus::Pending)
             .then_some(prompt_id)
     }
+}
+
+fn status_row(turn_id: TurnId, text: String) -> SessionChange {
+    SessionChange::ActivityAdded {
+        activity: Activity::Status {
+            id: ActivityId::new(),
+            turn_id,
+            text,
+        },
+    }
+}
+
+/// A Status row for each way the Selection a Provider ran differs from the one a Turn asked for.
+fn difference_told(
+    turn_id: TurnId,
+    requested: &AgentSelection,
+    effective: &AgentSelection,
+) -> Vec<SessionChange> {
+    let mut told = Vec::new();
+    if requested.model != effective.model {
+        told.push(format!(
+            "Provider used Model `{}` instead of requested Model `{}`.",
+            effective.model, requested.model
+        ));
+    }
+    for option in &effective.options {
+        let requested_value = requested
+            .options
+            .iter()
+            .find(|candidate| candidate.id == option.id)
+            .map(|candidate| &candidate.value);
+        if requested_value == Some(&option.value) {
+            continue;
+        }
+        let requested_value = requested_value
+            .map(model_option_value_text)
+            .unwrap_or_else(|| "no value".to_owned());
+        told.push(format!(
+            "Provider used Model Option `{}` value `{}` instead of requested value `{requested_value}`.",
+            option.id,
+            model_option_value_text(&option.value),
+        ));
+    }
+    for omitted in requested.options.iter().filter(|requested| {
+        !effective
+            .options
+            .iter()
+            .any(|option| option.id == requested.id)
+    }) {
+        told.push(format!(
+            "Provider omitted requested Model Option `{}` value `{}`.",
+            omitted.id,
+            model_option_value_text(&omitted.value),
+        ));
+    }
+    told.into_iter()
+        .map(|text| status_row(turn_id, text))
+        .collect()
 }
 
 fn model_option_value_text(value: &ModelOptionValue) -> String {
