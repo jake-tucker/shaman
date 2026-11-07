@@ -49,7 +49,8 @@ use super::{
     relay_overlay::{ListNote, RelaySurface, serve_through_status},
     rename_dialog::RenameGeometry,
     serve_overlay::{
-        CandidateWay, LISTENER_FAILED, LISTENER_OFF, ServePickerLayout, ServePickerNeeds, TOO_SMALL,
+        CandidateWay, LISTENER_FAILED, LISTENER_LOOPBACK, LISTENER_OFF, ServePickerLayout,
+        ServePickerNeeds, TOO_SMALL,
     },
     session_picker::SessionPickerRow,
     setting_details,
@@ -2049,7 +2050,10 @@ fn serve_picker_lines(state: &TuiState, area: Rect, theme: &Theme) -> Vec<Line<'
     let statement_fits = ServePickerLayout::statement_fits(focused_way, statement, height);
 
     let listener = match ways.listener {
-        ListenerState::Open { .. } => Vec::new(),
+        ListenerState::Open { .. } if ways.listener.reachable_by_others() => Vec::new(),
+        ListenerState::Open { .. } => {
+            wrapped_lines(LISTENER_LOOPBACK, content_width, theme.text.subdued)
+        }
         ListenerState::Off => wrapped_lines(LISTENER_OFF, content_width, theme.text.subdued),
         ListenerState::Failed { reason } => wrapped_lines(
             &format!("{LISTENER_FAILED}{reason}"),

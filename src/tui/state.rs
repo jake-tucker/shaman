@@ -6245,14 +6245,11 @@ pub enum ApplicationTransition {
     RecheckProviders {
         recheck: uuid::Uuid,
     },
-    /// Prepare the `/serve` surface, enabling the durable Setting first when
-    /// it was off — or asking for it on again where the Serving listener has
-    /// failed, so the Server tries once more to Serve — before discovering
-    /// the ways an Invite may offer.
+    /// Prepare the `/serve` surface: the Server turns Serving on where it was
+    /// off, or asks for it again where it could not start, and says which of
+    /// this machine's addresses an Invite may offer.
     BeginServing {
         request: ServeRequest,
-        enable: bool,
-        port: u16,
     },
     /// Issue a fresh Invite offering exactly the ways the reader chose, and
     /// answer with [`ApplicationEvent::InviteIssued`] or
@@ -12048,23 +12045,9 @@ impl Application {
                 Ok(ApplicationTransition::Continue)
             }
             SemanticCommandId::ServeOpen => {
-                // Serving whose listener failed — Serving itself could not
-                // start, say, its identity key's store not answering — is
-                // asked for again, as one off is turned on: the Server tries
-                // once more, and says why where it still cannot.
-                let enable = !self.state.settings.serving.enabled
-                    || matches!(
-                        self.state.serving_listener,
-                        crate::protocol::ListenerState::Failed { .. }
-                    );
-                let port = self.state.settings.serving.port;
                 let request = self.state.serve_overlay.open();
                 self.state.command_mode = CommandMode::Composer;
-                Ok(ApplicationTransition::BeginServing {
-                    request,
-                    enable,
-                    port,
-                })
+                Ok(ApplicationTransition::BeginServing { request })
             }
             SemanticCommandId::ServePrevious => {
                 self.state.with_serve_ways(ServeOverlay::select_previous);

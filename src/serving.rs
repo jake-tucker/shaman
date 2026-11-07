@@ -524,7 +524,7 @@ pub(crate) fn offerable_ip(ip: std::net::IpAddr) -> bool {
 }
 
 /// This machine's own addresses, as an Invite may offer them, at `port`.
-pub(crate) fn machine_addresses(port: u16) -> std::io::Result<Vec<SocketAddr>> {
+fn machine_addresses(port: u16) -> std::io::Result<Vec<SocketAddr>> {
     let mut addresses = if_addrs::get_if_addrs()?
         .into_iter()
         .filter(if_addrs::Interface::is_oper_up)
@@ -1154,6 +1154,17 @@ impl ServingController {
     pub(crate) fn with_joined_keepalive(mut self, keepalive: JoinedKeepalive) -> Self {
         self.joined_keepalive = keepalive;
         self
+    }
+
+    /// Whether Serving has started, whatever becomes of its listener: its Setting
+    /// being on says nothing of this where it could not start.
+    pub(crate) fn is_serving(&self) -> bool {
+        self.serving.borrow().serving
+    }
+
+    /// How long an Invite this Server issues lasts.
+    pub(crate) fn invite_ttl(&self) -> tokio::time::Duration {
+        self.invite_ttl
     }
 
     /// Sets how this Server's identity key is kept.

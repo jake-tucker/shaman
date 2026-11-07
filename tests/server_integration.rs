@@ -3140,6 +3140,20 @@ async fn refuses_server_administration_to_peers(
             "/v1/relays/https:%2F%2Frelay.example.com/login-needed-notice",
             None,
         ),
+        // The command line's routes are as much its administration as those
+        // of `/relay` and `/serve`.
+        (
+            reqwest::Method::PUT,
+            "/v1/relays/https:%2F%2Frelay.example.com/login",
+            None,
+        ),
+        (reqwest::Method::GET, "/v1/pairing/serving", None),
+        (reqwest::Method::POST, "/v1/pairing/serving", None),
+        (
+            reqwest::Method::POST,
+            "/v1/pairing/invites/offered",
+            Some(serde_json::json!({ "addresses": true, "relays": "every" })),
+        ),
         // A short code is its Server's own: neither a new one nor another
         // Server's Invite fetched by one is a Peer's to ask for.
         (

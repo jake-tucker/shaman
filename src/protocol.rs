@@ -13,7 +13,7 @@ use uuid::Uuid;
 mod workspace_paths;
 pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths};
 
-pub const PROTOCOL_VERSION: u32 = 109;
+pub const PROTOCOL_VERSION: u32 = 110;
 mod attachment;
 mod pair_back;
 mod reading;
@@ -2107,6 +2107,68 @@ pub struct IssuedInvite {
     /// it offers a Relay; none where it offers direct ways alone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub short_code: Option<IssuedShortCode>,
+}
+
+/// Whether a Server is Serving, and how its listener stands, as its user's own
+/// surfaces read that without changing anything.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServingStanding {
+    /// Whether Serving is on, in force: what a Config Document says is not this
+    /// until it is put in force (ADR-0067).
+    pub enabled: bool,
+    pub listener: ListenerState,
+}
+
+/// What came of making a Server ready to issue an Invite, as every surface that
+/// issues one does first: Serving turned on where it was off, or asked for again
+/// where it could not start.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServingPreparation {
+    /// Whether Serving was off and this turned it on.
+    pub turned_on: bool,
+    /// The Settings in force as they then stand, where this changed them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<SettingsSnapshot>,
+    /// This machine's own addresses another machine could reach its listener
+    /// at, as an Invite may offer them. A listener bound to loopback has none.
+    pub addresses: Vec<Way>,
+}
+
+/// An Invite asked for by the kinds of way it is to offer, for the Server to say
+/// which ways those are: what its user would have ticked in `/serve`, unless
+/// told otherwise.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OfferInviteRequest {
+    /// Whether it offers this machine's own addresses.
+    pub addresses: bool,
+    pub relays: InviteRelays,
+}
+
+/// Which Relays an Invite asked for by kind is to offer.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InviteRelays {
+    /// Every Relay it can offer.
+    Every,
+    /// None of them.
+    None,
+    /// Exactly these, however each is written, and failing where it cannot
+    /// offer any one of them.
+    Only(Vec<String>),
+}
+
+/// An Invite issued by the Server's say of which ways to offer, and what its
+/// reader should be told of how that went.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OfferedInvite {
+    pub issued: IssuedInvite,
+    /// Each thing worth saying beside the Invite, which is never in them: that
+    /// Serving was turned on, a way left out and why, and how long it lasts.
+    pub notes: Vec<String>,
 }
 
 /// The non-secret facts a local Client may show before the reader decides to

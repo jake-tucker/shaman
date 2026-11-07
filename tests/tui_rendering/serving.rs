@@ -40,13 +40,9 @@ fn serving_shows_a_fresh_copyable_invite_and_removes_enrolled_peers() {
     deliver_listener(&mut application, open_at(7777));
 
     type_terminal_text(&mut application, "/serve");
-    let ApplicationTransition::BeginServing {
-        request,
-        enable: false,
-        port: 7777,
-    } = press(&mut application, KeyCode::Enter)
+    let ApplicationTransition::BeginServing { request } = press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve prepares Serving on the port set, already on");
+        panic!("/serve has the Server prepare Serving");
     };
     application
         .handle_event(ApplicationEvent::ServingPrepared {
@@ -162,13 +158,9 @@ fn serve_asks_for_serving_again_where_its_listener_has_failed() {
     );
 
     type_terminal_text(&mut application, "/serve");
-    let ApplicationTransition::BeginServing {
-        request,
-        enable: true,
-        port: 7777,
-    } = press(&mut application, KeyCode::Enter)
+    let ApplicationTransition::BeginServing { request } = press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve asks for Serving again where its listener has failed");
+        panic!("/serve has the Server try Serving again where its listener has failed");
     };
     let still = "this Server's identity key is kept in the platform credential store, which did \
                  not answer";
@@ -197,13 +189,9 @@ fn serve_enables_serving_and_invites_only_the_selected_candidate_ways() {
     assert!(completion.contains("/serve"));
     assert!(completion.contains("Serve this machine"));
     assert_eq!(SemanticCommandId::ServeOpen.as_str(), "serve.open");
-    let ApplicationTransition::BeginServing {
-        request,
-        enable: true,
-        port: 7443,
-    } = press(&mut application, KeyCode::Enter)
+    let ApplicationTransition::BeginServing { request } = press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve turns Serving on, on the port set");
+        panic!("/serve has the Server turn Serving on");
     };
 
     settings.serving.enabled = true;

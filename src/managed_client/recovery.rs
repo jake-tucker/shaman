@@ -92,6 +92,36 @@ pub(super) async fn connect(config: ManagedClientConfig) -> Result<ManagedClient
     })
 }
 
+/// A client that reaches the Channel's Server as [`connect`] does and opens
+/// nothing else, answering its health where it was not the one found published.
+pub(super) async fn for_one_command(
+    config: ManagedClientConfig,
+) -> Result<(ManagedClient, Option<Health>)> {
+    let baseline = launcher::StopBaseline::read(&config);
+    let published = lifecycle::published_instance(&config);
+    let deadline = tokio::time::Instant::now() + config.startup_timeout;
+    let Registration { descriptor, health } =
+        launcher::ensure_server(&config, deadline, baseline).await?;
+    let brought_about = published != Some(descriptor.identity.instance_id);
+    // Nothing reports events to it, and the descriptor stays as found.
+    let (_, events) = mpsc::channel(1);
+    let (descriptor_tx, descriptor) = watch::channel(descriptor);
+    let client = ManagedClient {
+        events,
+        http: crate::runtime::loopback_http_client(),
+        descriptor,
+        initial_recovery_backoff: config.initial_recovery_backoff,
+        max_recovery_backoff: config.max_recovery_backoff,
+        attachment_fetch_timeout: config.attachment_fetch_timeout,
+        config_dir: config.runtime.config_dir().map(ToOwned::to_owned),
+        task: tokio::spawn(async move {
+            let _descriptor = descriptor_tx;
+            std::future::pending::<()>().await;
+        }),
+    };
+    Ok((client, brought_about.then_some(health)))
+}
+
 async fn establish_connection(
     config: &ManagedClientConfig,
     http: &reqwest::Client,

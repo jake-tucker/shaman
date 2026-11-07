@@ -1,0 +1,129 @@
+//! What every surface says of a Relay, so `/relay`, `/serve` and the command
+//! line say one thing of it, whoever is reading.
+
+use crate::protocol::{Relay, RelayLoginOutcome, RelayLoginRefusal, RelayState};
+
+/// What a Relay not Served through says before it is: the one thing that opens
+/// the machine to.
+pub const REACHABLE: &str = "Serving through it makes this machine reachable through this Relay";
+
+/// What is said of a login that ended.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoginEnded {
+    pub text: String,
+    /// Whether it says the login formed no Login.
+    pub failed: bool,
+}
+
+/// What is said of a login at `address` that ended in `outcome`; nothing of one
+/// still under way.
+pub fn login_ended(address: &str, outcome: &RelayLoginOutcome) -> Option<LoginEnded> {
+    let refused = |text: String| LoginEnded { text, failed: true };
+    Some(match outcome {
+        RelayLoginOutcome::Pending => return None,
+        RelayLoginOutcome::Done { account } => LoginEnded {
+            text: format!("Logged in at {address} as {}", account.username),
+            failed: false,
+        },
+        RelayLoginOutcome::Refused {
+            reason: RelayLoginRefusal::NotAdmitted,
+            ..
+        } => refused(format!(
+            "You are not admitted to {address}; ask the Relay's operator to admit you"
+        )),
+        RelayLoginOutcome::Refused {
+            reason: RelayLoginRefusal::LoginsCapReached { limit },
+            ..
+        } => refused(format!(
+            "Your Account already has {} logged in at {address}, as many as the Relay's \
+             operator allows; remove the Relay from a Server that no longer needs it, or ask \
+             the operator to raise the cap",
+            servers(*limit)
+        )),
+        RelayLoginOutcome::Refused { message, .. } => {
+            refused(format!("The login at {address} ended: {message}"))
+        }
+    })
+}
+
+/// How a Relay stands, as its row says it, leaving out a login under way there,
+/// which each surface says in its own way.
+pub fn relay_standing(relay: &Relay) -> String {
+    match relay.state {
+        RelayState::LoggedIn => relay.account.as_ref().map_or_else(
+            || "Logged in".to_owned(),
+            |account| format!("Logged in as {} ({})", account.username, account.provider),
+        ),
+        RelayState::LoginNeeded => match relay.login.as_ref().map(|login| &login.outcome) {
+            Some(RelayLoginOutcome::Refused {
+                reason: RelayLoginRefusal::NotAdmitted,
+                ..
+            }) => "Login needed · not admitted; ask the Relay's operator".to_owned(),
+            Some(RelayLoginOutcome::Refused {
+                reason: RelayLoginRefusal::LoginsCapReached { limit },
+                ..
+            }) => format!(
+                "Login needed · at the cap of {}; ask the Relay's operator",
+                servers(*limit)
+            ),
+            Some(RelayLoginOutcome::Refused { message, .. }) => {
+                format!("Login needed · {message}")
+            }
+            _ => "Login needed".to_owned(),
+        },
+        RelayState::Unreachable => relay.unreachable.as_ref().map_or_else(
+            || "Unreachable".to_owned(),
+            |unreachable| format!("Unreachable · {}", unreachable.message),
+        ),
+    }
+}
+
+/// What a row says of the Server Serving through `relay`, where it does — and
+/// of what it waits on, where that is anything: a login there, or Serving
+/// itself, which `serving` says is on.
+pub fn serve_through_status(relay: &Relay, serving: bool) -> Option<String> {
+    if !relay.serve_through {
+        return None;
+    }
+    Some(match waits_on(relay, serving) {
+        Some(waits) => format!("Serves through once {waits}"),
+        None => "Serving through".to_owned(),
+    })
+}
+
+/// What the Server Serving through `relay` waits on, where it waits.
+fn waits_on(relay: &Relay, serving: bool) -> Option<&'static str> {
+    match (relay.state == RelayState::LoginNeeded, serving) {
+        (true, true) => Some("logged in"),
+        (true, false) => Some("logged in and Serving is on"),
+        (false, false) => Some("Serving is on"),
+        (false, true) => None,
+    }
+}
+
+/// What is said of the Server choosing whether it Serves through `relay`, as the
+/// Server answered it, `turning_on` naming what turns Serving on for this reader.
+pub fn serve_through_said(relay: &Relay, serving: bool, turning_on: &str) -> String {
+    let address = &relay.address;
+    if !relay.serve_through {
+        return format!("This Server no longer Serves through {address}");
+    }
+    let once = match (relay.state == RelayState::LoginNeeded, serving) {
+        (true, true) => " once it is logged in there".to_owned(),
+        (true, false) => {
+            format!(" once it is logged in there and Serving is on; {turning_on} turns Serving on")
+        }
+        (false, false) => format!(" once Serving is on; {turning_on} turns Serving on"),
+        (false, true) => String::new(),
+    };
+    format!("This Server Serves through {address}{once}")
+}
+
+/// `count` Servers, said as a reader says it.
+fn servers(count: u32) -> String {
+    if count == 1 {
+        "1 Server".to_owned()
+    } else {
+        format!("{count} Servers")
+    }
+}

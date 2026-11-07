@@ -458,6 +458,15 @@ impl ManagedClient {
         recovery::connect(config).await
     }
 
+    /// A client for one command: it reaches the Channel's Server just as
+    /// [`Self::connect`] does, launching or replacing one where it must, and
+    /// opens no stream and recovers nothing, so a Server going away ends what
+    /// the command was doing and the next command starts another. Answers the
+    /// Server's health too, where this is what brought it about.
+    pub async fn for_one_command(config: ManagedClientConfig) -> Result<(Self, Option<Health>)> {
+        recovery::for_one_command(config).await
+    }
+
     pub async fn next(&mut self) -> Option<ManagedEvent> {
         self.events.recv().await
     }
@@ -620,6 +629,26 @@ impl ManagedClient {
         self.session_commands().issue_invite(request).await
     }
 
+    /// Makes the Client's own Server ready to issue an Invite: Serving turned on
+    /// where it was off, or asked for again where it could not start.
+    pub async fn prepare_serving(&self) -> Result<crate::protocol::ServingPreparation> {
+        self.session_commands().prepare_serving().await
+    }
+
+    /// Whether the Client's own Server is Serving, changing nothing.
+    pub async fn serving_standing(&self) -> Result<crate::protocol::ServingStanding> {
+        self.session_commands().serving_standing().await
+    }
+
+    /// An Invite from the Client's own Server offering the kinds of way asked
+    /// for, for the Server to say which those are, turning Serving on first.
+    pub async fn offer_invite(
+        &self,
+        request: crate::protocol::OfferInviteRequest,
+    ) -> Result<crate::protocol::OfferedInvite> {
+        self.session_commands().offer_invite(request).await
+    }
+
     /// A fresh short code for the Invite that stands, leaving that Invite as
     /// it is.
     pub async fn new_short_code(&self) -> Result<crate::protocol::IssuedShortCode> {
@@ -729,6 +758,12 @@ impl ManagedClient {
     /// where its user goes to log in, and what they enter there.
     pub async fn begin_relay_login(&self, address: &str) -> Result<RelayLogin> {
         self.session_commands().begin_relay_login(address).await
+    }
+
+    /// Has the Client's own Server logged in at the Relay at `address`, beginning
+    /// a login only where its Login does not stand and none is under way.
+    pub async fn log_in_at_relay(&self, address: &str) -> Result<crate::protocol::RelayLoginLead> {
+        self.session_commands().log_in_at_relay(address).await
     }
 
     /// Waits for the latest login begun at the Relay at `address` to end,
@@ -1915,6 +1950,35 @@ impl SessionCommandClient {
             .await
     }
 
+    pub(crate) async fn prepare_serving(&self) -> Result<crate::protocol::ServingPreparation> {
+        self.post_session_command_without_body("/v1/pairing/serving", "Serving preparation")
+            .await
+    }
+
+    pub(crate) async fn serving_standing(&self) -> Result<crate::protocol::ServingStanding> {
+        let descriptor = self.descriptor.borrow().clone();
+        let response = self
+            .http
+            .get(server_url(
+                &descriptor.base_url,
+                &self.outlook,
+                "/v1/pairing/serving",
+            )?)
+            .bearer_auth(&descriptor.token)
+            .send()
+            .await
+            .context("ask how Serving stands")?;
+        decode_api_response(response, "Serving standing").await
+    }
+
+    pub(crate) async fn offer_invite(
+        &self,
+        request: crate::protocol::OfferInviteRequest,
+    ) -> Result<crate::protocol::OfferedInvite> {
+        self.post_session_command("/v1/pairing/invites/offered", &request, "Invite issuance")
+            .await
+    }
+
     pub(crate) async fn new_short_code(&self) -> Result<crate::protocol::IssuedShortCode> {
         self.post_session_command_without_body("/v1/pairing/invites/short-code", "New short code")
             .await
@@ -2119,6 +2183,21 @@ impl SessionCommandClient {
             .send()
             .await
             .context("send Relay login")?;
+        decode_api_response(response, "Relay login").await
+    }
+
+    pub(crate) async fn log_in_at_relay(
+        &self,
+        address: &str,
+    ) -> Result<crate::protocol::RelayLoginLead> {
+        let descriptor = self.descriptor.borrow().clone();
+        let response = self
+            .http
+            .put(relay_url(&descriptor.base_url, &[address, "login"])?)
+            .bearer_auth(&descriptor.token)
+            .send()
+            .await
+            .context("ask for a Relay login")?;
         decode_api_response(response, "Relay login").await
     }
 

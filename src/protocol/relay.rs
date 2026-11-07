@@ -63,6 +63,38 @@ pub struct Relay {
     pub pinned_in: Option<String>,
 }
 
+/// Why an Invite cannot offer a Relay.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RelayWithheld {
+    /// The Server holds no Login there that stands.
+    LoginNeeded,
+    /// The Server does not Serve through it.
+    NotServedThrough,
+}
+
+impl RelayWithheld {
+    /// Why an Invite cannot offer `relay`, where it cannot: what the Server asks
+    /// of a Relay an Invite offers, so every surface that lists one says so
+    /// before the Server is asked.
+    pub fn of(relay: &Relay) -> Option<Self> {
+        if relay.state == RelayState::LoginNeeded {
+            Some(Self::LoginNeeded)
+        } else if !relay.serve_through {
+            Some(Self::NotServedThrough)
+        } else {
+            None
+        }
+    }
+
+    /// What a row says of it.
+    pub fn brief(self) -> &'static str {
+        match self {
+            Self::LoginNeeded => "login needed",
+            Self::NotServedThrough => "not Served through",
+        }
+    }
+}
+
 /// What a reader is told of removing the Relay at `address`, pinned by
 /// `document` as [`Relay::pinned_in`] spells it, which a Server refuses and a
 /// Client need not ask: where it is pinned, so it does not simply come back,
@@ -247,6 +279,30 @@ pub struct RelayMachine {
     /// it is. Matching opens nothing, so a Relay lying about a key has a
     /// machine named as something it is not, and no more.
     pub remote: Option<String>,
+}
+
+/// Where logging in at a Relay got to, asked of the Server only where a login is
+/// wanted: it begins one only where it holds no Login that stands and none is
+/// under way, so a Client following on from another never ends that one's.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RelayLoginLead {
+    /// The Relay's address, written the one way a Relay's is.
+    pub address: String,
+    pub standing: RelayLoginStanding,
+}
+
+/// See [`RelayLoginLead`].
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayLoginStanding {
+    /// The Server's Login there stands: nothing was begun. It may read
+    /// Unreachable, which a login cannot help.
+    Standing { relay: Box<Relay> },
+    /// A login was under way already, and goes on.
+    UnderWay { login: RelayLogin },
+    /// This began one.
+    Begun { login: RelayLogin },
 }
 
 /// A Relay to add, by the address it is reached at.

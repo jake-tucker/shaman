@@ -44,9 +44,10 @@ use std::{
     ops::Range,
 };
 
+pub(super) use crate::protocol::RelayWithheld as Withheld;
 use crate::protocol::{
-    IssueInviteRequest, IssuedInvite, IssuedShortCode, ListenerState, Peer, Relay, RelayState,
-    ShortCodeStanding, ShortCodeState, Way,
+    IssueInviteRequest, IssuedInvite, IssuedShortCode, ListenerState, Peer, ShortCodeStanding,
+    ShortCodeState, Way,
 };
 
 use super::{
@@ -65,6 +66,12 @@ pub(super) const LISTENER_OFF: &str =
 pub(super) const LISTENER_FAILED: &str = "The Serving listener is not listening, so an Invite offers none of this machine's \
      addresses: ";
 
+/// What the picker says in place of the machine's addresses while the Serving
+/// listener listens where only this machine can reach it.
+pub(super) const LISTENER_LOOPBACK: &str = "The Serving listener listens where only this machine \
+                                            can reach it, so an Invite offers none of this \
+                                            machine's addresses";
+
 /// What the picker says where the Serving listener is off and no Relay can be
 /// offered either, so an Invite has no way at all to offer.
 pub(super) const NO_WAY: &str = "An Invite has no way to offer: turn the Serving listener on in \
@@ -73,17 +80,14 @@ pub(super) const NO_WAY: &str = "An Invite has no way to offer: turn the Serving
 
 /// What the picker says where the Serving listener is not listening and no
 /// Relay can be offered either.
-pub(super) const NO_WAY_UNTIL_LISTENING: &str = "An Invite has no way to offer until the Serving listener listens, or this Server Serves \
-     through a Relay from here";
+pub(super) const NO_WAY_UNTIL_LISTENING: &str = "An Invite has no way to offer until the Serving listener listens where another machine \
+     can reach it, or this Server Serves through a Relay from here";
 
 /// What the picker says where the Server holds no Relay, for the reader to
 /// begin there.
 pub(super) const NO_RELAY: &str = "This Server holds no Relay; press a to add one";
 
-/// What a row not Served through says before its key is pressed: the one thing
-/// the key opens the machine to.
-pub(super) const REACHABLE: &str =
-    "Serving through it makes this machine reachable through this Relay";
+pub(super) use crate::relay_said::REACHABLE;
 
 /// What the picker says where a frame has too few Rows to say all of
 /// [`REACHABLE`] on the row the keys are on, which the key then does not act on.
@@ -485,35 +489,6 @@ impl ServePickerLayout {
     }
 }
 
-/// Why an Invite cannot offer a Relay.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Withheld {
-    /// The Server holds no Login there that stands.
-    LoginNeeded,
-    /// The Server does not Serve through it.
-    NotServedThrough,
-}
-
-impl Withheld {
-    pub(super) fn of(relay: &Relay) -> Option<Self> {
-        if relay.state == RelayState::LoginNeeded {
-            Some(Self::LoginNeeded)
-        } else if !relay.serve_through {
-            Some(Self::NotServedThrough)
-        } else {
-            None
-        }
-    }
-
-    /// What its row says of it.
-    pub(super) fn brief(self) -> &'static str {
-        match self {
-            Self::LoginNeeded => "login needed",
-            Self::NotServedThrough => "not Served through",
-        }
-    }
-}
-
 impl ServeOverlay {
     /// Opens the picker, answering the preparation it asks for.
     pub(super) fn open(&mut self) -> ServeRequest {
@@ -598,7 +573,8 @@ impl ServeOverlay {
             return None;
         }
         match ways.listener {
-            ListenerState::Open { .. } => None,
+            ListenerState::Open { .. } if ways.listener.reachable_by_others() => None,
+            ListenerState::Open { .. } => Some(NO_WAY_UNTIL_LISTENING),
             ListenerState::Off => Some(NO_WAY),
             ListenerState::Failed { .. } => Some(NO_WAY_UNTIL_LISTENING),
         }

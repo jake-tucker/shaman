@@ -51,9 +51,9 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::protocol::{
-    Relay, RelayListing, RelayLogin, RelayLoginOutcome, RelayLoginRefusal, RelayState,
-    relay_pinned_message,
+    Relay, RelayListing, RelayLogin, RelayLoginOutcome, RelayState, relay_pinned_message,
 };
+pub(super) use crate::relay_said::serve_through_status;
 
 use super::list_window::ListWindow;
 
@@ -242,29 +242,9 @@ impl ListNote {
 /// What is said of a login at `address` that ended in `outcome`, and whether
 /// it says the login formed no Login; nothing of one still under way.
 fn login_ended(address: &str, outcome: &RelayLoginOutcome) -> Option<ListNote> {
-    Some(match outcome {
-        RelayLoginOutcome::Pending => return None,
-        RelayLoginOutcome::Done { account } => {
-            ListNote::said(format!("Logged in at {address} as {}", account.username))
-        }
-        RelayLoginOutcome::Refused {
-            reason: RelayLoginRefusal::NotAdmitted,
-            ..
-        } => ListNote::failed(format!(
-            "You are not admitted to {address}; ask the Relay's operator to admit you"
-        )),
-        RelayLoginOutcome::Refused {
-            reason: RelayLoginRefusal::LoginsCapReached { limit },
-            ..
-        } => ListNote::failed(format!(
-            "Your Account already has {} logged in at {address}, as many as the Relay's \
-             operator allows; remove the Relay from a Server that no longer needs it, or ask \
-             the operator to raise the cap",
-            servers(*limit)
-        )),
-        RelayLoginOutcome::Refused { message, .. } => {
-            ListNote::failed(format!("The login at {address} ended: {message}"))
-        }
+    crate::relay_said::login_ended(address, outcome).map(|ended| ListNote {
+        text: ended.text,
+        failed: ended.failed,
     })
 }
 
@@ -1104,7 +1084,9 @@ impl RelayOverlay {
         serving: bool,
     ) -> RelayRequest {
         if self.awaits_serve_through(request) {
-            let note = ListNote::said(serve_through_said(relay, serving));
+            let note = ListNote::said(crate::relay_said::serve_through_said(
+                relay, serving, "/serve",
+            ));
             return self.returned_on_listing(&relay.address, Some(note));
         }
         self.ask_for_listing()
@@ -1261,72 +1243,7 @@ fn relay_status(relay: &Relay) -> String {
     if let Some(login) = relay.login.as_ref().filter(|login| is_pending(Some(login))) {
         return logging_in(login);
     }
-    match relay.state {
-        RelayState::LoggedIn => relay.account.as_ref().map_or_else(
-            || "Logged in".to_owned(),
-            |account| format!("Logged in as {} ({})", account.username, account.provider),
-        ),
-        RelayState::LoginNeeded => match relay.login.as_ref().map(|login| &login.outcome) {
-            Some(RelayLoginOutcome::Refused {
-                reason: RelayLoginRefusal::NotAdmitted,
-                ..
-            }) => "Login needed · not admitted; ask the Relay's operator".to_owned(),
-            Some(RelayLoginOutcome::Refused {
-                reason: RelayLoginRefusal::LoginsCapReached { limit },
-                ..
-            }) => format!(
-                "Login needed · at the cap of {}; ask the Relay's operator",
-                servers(*limit)
-            ),
-            Some(RelayLoginOutcome::Refused { message, .. }) => {
-                format!("Login needed · {message}")
-            }
-            _ => "Login needed".to_owned(),
-        },
-        RelayState::Unreachable => relay.unreachable.as_ref().map_or_else(
-            || "Unreachable".to_owned(),
-            |unreachable| format!("Unreachable · {}", unreachable.message),
-        ),
-    }
-}
-
-/// What a row says of the Server Serving through `relay`, where it does —
-/// and of what it waits on, where that is anything: a login there, or
-/// Serving itself, which `serving` says is on.
-pub(super) fn serve_through_status(relay: &Relay, serving: bool) -> Option<String> {
-    if !relay.serve_through {
-        return None;
-    }
-    Some(match waits_on(relay, serving) {
-        Some(waits) => format!("Serves through once {waits}"),
-        None => "Serving through".to_owned(),
-    })
-}
-
-/// What the Server Serving through `relay` waits on, where it waits.
-fn waits_on(relay: &Relay, serving: bool) -> Option<&'static str> {
-    match (relay.state == RelayState::LoginNeeded, serving) {
-        (true, true) => Some("logged in"),
-        (true, false) => Some("logged in and Serving is on"),
-        (false, false) => Some("Serving is on"),
-        (false, true) => None,
-    }
-}
-
-/// What the list says of the Server choosing whether it Serves through
-/// `relay`, as the Server answered it.
-fn serve_through_said(relay: &Relay, serving: bool) -> String {
-    let address = &relay.address;
-    if !relay.serve_through {
-        return format!("This Server no longer Serves through {address}");
-    }
-    let once = match (relay.state == RelayState::LoginNeeded, serving) {
-        (true, true) => " once it is logged in there",
-        (true, false) => " once it is logged in there and Serving is on; /serve turns Serving on",
-        (false, false) => " once Serving is on; /serve turns Serving on",
-        (false, true) => "",
-    };
-    format!("This Server Serves through {address}{once}")
+    crate::relay_said::relay_standing(relay)
 }
 
 /// A login under way, with what its user does to finish it.
@@ -1335,15 +1252,6 @@ fn logging_in(login: &RelayLogin) -> String {
         "Logging in · enter {} at {}",
         login.user_code, login.verification_uri
     )
-}
-
-/// `count` Servers, said as a reader says it.
-fn servers(count: u32) -> String {
-    if count == 1 {
-        "1 Server".to_owned()
-    } else {
-        format!("{count} Servers")
-    }
 }
 
 fn is_pending(login: Option<&RelayLogin>) -> bool {

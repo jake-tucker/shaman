@@ -60,9 +60,10 @@ use uuid::Uuid;
 use crate::serving::SOCKET_USER_TIMEOUT;
 use crate::{
     protocol::{
-        Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginOutcome, RelayLoginRefusal,
-        RelayMachines, RelayMachinesAnswer, RelayRemoval, RelaySide, RelayState, RelayUnreachable,
-        SessionErrorCode, UnreachableReason, WorkspacePaths, relay_pinned_message,
+        Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginLead, RelayLoginOutcome,
+        RelayLoginRefusal, RelayLoginStanding, RelayMachines, RelayMachinesAnswer, RelayRemoval,
+        RelaySide, RelayState, RelayUnreachable, SessionErrorCode, UnreachableReason,
+        WorkspacePaths, relay_pinned_message,
     },
     runtime::replace_private_file,
     serving::{
@@ -574,6 +575,43 @@ impl RelayController {
         self.begin_login_holding(address, operations).await
     }
 
+    /// Has the Server logged in at the Relay at `address`, where it wants that
+    /// at all: a login under way there is left to go on and answered, a Login
+    /// that stands is answered, and only otherwise is one begun. It is decided
+    /// with the entry's `operations` held, so two asking at once share one
+    /// login rather than the second giving up the first.
+    pub(crate) async fn log_in(
+        &self,
+        address: &str,
+    ) -> std::result::Result<RelayLoginLead, RelayFailure> {
+        let address = relay_address(address)?;
+        let operations = self.operations(&address)?;
+        let _serialised = operations.lock().await;
+        let standing = {
+            let mut relays = self.lock();
+            let held = owning(&mut relays, &address, &operations).ok_or_else(relay_not_found)?;
+            let under_way = held
+                .login
+                .as_ref()
+                .map(|login| login.progress.borrow().clone())
+                .filter(|login| !login.outcome.is_settled());
+            match under_way {
+                Some(login) => Some(RelayLoginStanding::UnderWay { login }),
+                None if held.state == RelayState::LoginNeeded => None,
+                None => Some(RelayLoginStanding::Standing {
+                    relay: Box::new(held.relay()),
+                }),
+            }
+        };
+        let standing = match standing {
+            Some(standing) => standing,
+            None => RelayLoginStanding::Begun {
+                login: self.begin_login_with(&address, &operations).await?,
+            },
+        };
+        Ok(RelayLoginLead { address, standing })
+    }
+
     /// Begins a login at the Relay at `address` once nothing else holds the
     /// entry's `operations`.
     async fn begin_login_holding(
@@ -582,15 +620,24 @@ impl RelayController {
         operations: Arc<AsyncMutex<()>>,
     ) -> std::result::Result<RelayLogin, RelayFailure> {
         let _serialised = operations.lock().await;
+        self.begin_login_with(&address, &operations).await
+    }
+
+    /// Begins a login at the Relay at `address`, the entry's `operations` held.
+    async fn begin_login_with(
+        &self,
+        address: &str,
+        operations: &Arc<AsyncMutex<()>>,
+    ) -> std::result::Result<RelayLogin, RelayFailure> {
         // A removal this waited on has taken the entry with it, whatever has
         // been added at its address since.
-        if owning(&mut self.lock(), &address, &operations).is_none() {
+        if owning(&mut self.lock(), address, operations).is_none() {
             return Err(relay_not_found());
         }
         let answer_timeout = self.timings.answer_timeout;
         let (mut conversation, _) = self
             .dialer
-            .open(&address, &self.identity, answer_timeout)
+            .open(address, &self.identity, answer_timeout)
             .await
             .map_err(DialFailure::into_failure)?;
         conversation
@@ -630,7 +677,7 @@ impl RelayController {
         let progress = watch::Sender::new(login.clone());
         let give_up = Arc::new(Notify::new());
         let mut relays = self.lock();
-        let Some(held) = owning(&mut relays, &address, &operations) else {
+        let Some(held) = owning(&mut relays, address, operations) else {
             return Err(relay_not_found());
         };
         if let Some(previous) = held.login.take() {
@@ -644,7 +691,7 @@ impl RelayController {
         }
         held.login = Some(HeldLogin {
             task: Some(tokio::spawn(self.clone().finish_login(
-                address,
+                address.to_owned(),
                 conversation,
                 progress.clone(),
                 budget,
@@ -1755,7 +1802,7 @@ pub(crate) fn holdable_address(address: &str) -> Option<String> {
 
 /// The address `address` names a Relay by, written the one way a Relay's
 /// address is (see [`relay_protocol::canonical_address`]).
-fn relay_address(address: &str) -> std::result::Result<String, RelayFailure> {
+pub(crate) fn relay_address(address: &str) -> std::result::Result<String, RelayFailure> {
     holdable_address(address).ok_or_else(|| {
         // A Relay the Server Serves through is told to its Peers by its
         // address, whole, which bounds how long one may run.

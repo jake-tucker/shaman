@@ -1593,16 +1593,10 @@ impl RunLoop {
                     self.channels.providers.clone(),
                 );
             }
-            ApplicationTransition::BeginServing {
-                request,
-                enable,
-                port,
-            } => {
+            ApplicationTransition::BeginServing { request } => {
                 spawn_serving_preparation(
                     self.client.session_commands(),
                     request,
-                    enable,
-                    port,
                     self.channels.pairing.clone(),
                 );
             }
@@ -3253,36 +3247,20 @@ fn spawn_everywhere_remote_listing(
 fn spawn_serving_preparation(
     commands: SessionCommandClient,
     request: crate::tui::ServeRequest,
-    enable: bool,
-    port: u16,
     results: UnboundedSender<PairingResult>,
 ) {
     tokio::spawn(async move {
-        let result = async {
-            let settings = if enable {
-                Some(Box::new(
-                    commands
-                        .mutate_setting(SettingMutation::ServingEnabled { value: Some(true) })
-                        .await?,
-                ))
-            } else {
-                None
-            };
-            let candidates = crate::serving::machine_addresses(port)?
-                .into_iter()
-                .map(crate::protocol::Way::Direct)
-                .collect::<Vec<_>>();
-            Ok::<_, anyhow::Error>(PairingResult::Prepared {
+        let result = match commands.prepare_serving().await {
+            Ok(preparation) => PairingResult::Prepared {
                 request,
-                settings,
-                candidates,
-            })
-        }
-        .await
-        .unwrap_or_else(|error| PairingResult::PreparationFailed {
-            request,
-            error: error.to_string(),
-        });
+                settings: preparation.settings.map(Box::new),
+                candidates: preparation.addresses,
+            },
+            Err(error) => PairingResult::PreparationFailed {
+                request,
+                error: error.to_string(),
+            },
+        };
         let _ = results.send(result);
     });
 }

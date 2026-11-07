@@ -82,6 +82,7 @@ mod registry_standing;
 mod relays;
 mod root_directories;
 mod root_discovery;
+mod serve;
 mod signals;
 
 use operations::{
@@ -2180,6 +2181,7 @@ async fn start(
         )
         .route("/v1/server/stop", post(stop_server))
         .merge(relays::routes())
+        .merge(serve::routes())
         .layer(DefaultBodyLimit::max(COMMAND_BODY_LIMIT))
         .with_state(state)
         .merge(broker_routes);
@@ -2715,17 +2717,24 @@ async fn mutate_setting(State(state): State<AppState>, request: Request) -> Resp
             SessionErrorCode::ServingListenerFailed,
             not_adopted.detail(),
         ),
-        Err(error @ SettingsMutationError::NoConfigRoot) => session_error_response(
+        Err(error) => settings_mutation_response(&error),
+    }
+}
+
+/// Why a change of a Setting never landed, as every route making one answers.
+fn settings_mutation_response(error: &SettingsMutationError) -> Response {
+    match error {
+        SettingsMutationError::NoConfigRoot => session_error_response(
             StatusCode::CONFLICT,
             SessionErrorCode::ConfigRootUnavailable,
             error.to_string(),
         ),
-        Err(error @ SettingsMutationError::NotEditable { .. }) => session_error_response(
+        SettingsMutationError::NotEditable { .. } => session_error_response(
             StatusCode::CONFLICT,
             SessionErrorCode::ConfigDocumentNotEditable,
             error.to_string(),
         ),
-        Err(error @ SettingsMutationError::Io { .. }) => session_error_response(
+        SettingsMutationError::Io { .. } => session_error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             SessionErrorCode::ConfigDocumentWriteFailed,
             error.to_string(),

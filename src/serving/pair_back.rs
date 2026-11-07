@@ -499,6 +499,24 @@ impl ServingController {
         })
     }
 
+    /// This machine's own addresses another machine could reach its listener at,
+    /// wherever it listens or else wherever `settings` would have it, as `/serve`
+    /// lists them and an Invite asked for by kind offers them.
+    pub(crate) fn own_addresses(
+        &self,
+        settings: &crate::protocol::ServingSettings,
+    ) -> std::io::Result<Vec<Way>> {
+        let listening = match &*self.listening.borrow() {
+            ListenerState::Open { address } => Some(*address),
+            ListenerState::Off | ListenerState::Failed { .. } => None,
+        };
+        listened_ways(
+            listening
+                .unwrap_or_else(|| std::net::SocketAddr::new(settings.bind_address, settings.port)),
+            self.offers_loopback,
+        )
+    }
+
     /// Every way this Server can offer now, as `/serve` would have them ticked:
     /// its listener's address where it is bound to one another machine could
     /// reach, or its machine's addresses at its port, and each Relay it Serves
@@ -509,10 +527,11 @@ impl ServingController {
             return Err(CannotOffer::ServingOff);
         }
         let mut ways = match &*self.listening.borrow() {
-            ListenerState::Open { address } => listened_ways(*address, self.offers_loopback),
+            ListenerState::Open { address } => {
+                listened_ways(*address, self.offers_loopback).unwrap_or_default()
+            }
             ListenerState::Off | ListenerState::Failed { .. } => Vec::new(),
         };
-        ways.truncate(MOST_DIRECT_WAYS);
         if let Some(relays) = self.relays.get() {
             ways.extend(
                 self.offered_relays
@@ -1321,21 +1340,27 @@ pub(super) fn take_back_redemptions_caught_midway(
 
 /// The ways of reaching a listener at `address` from another machine: that
 /// address where it is bound to one that could, and at any address, those of the
-/// machine at its port. A loopback address is none, as `/serve` never offers one,
+/// machine at its port of the kinds it listens for. A loopback address is none,
 /// but for tests whose machines are all one (`loopback`).
-fn listened_ways(address: std::net::SocketAddr, loopback: bool) -> Vec<Way> {
+fn listened_ways(address: std::net::SocketAddr, loopback: bool) -> std::io::Result<Vec<Way>> {
     let ip = address.ip().to_canonical();
     if ip.is_unspecified() {
-        return crate::serving::machine_addresses(address.port())
-            .unwrap_or_default()
-            .into_iter()
-            .map(Way::Direct)
-            .collect();
+        let mut ways = crate::serving::machine_addresses(address.port())?;
+        // Bound to the unspecified address of IPv6 it answers on both; to that
+        // of IPv4, on IPv4 alone.
+        if ip.is_ipv4() {
+            ways.retain(std::net::SocketAddr::is_ipv4);
+        }
+        ways.truncate(MOST_DIRECT_WAYS);
+        return Ok(ways.into_iter().map(Way::Direct).collect());
     }
-    if crate::serving::offerable_ip(ip) || (loopback && ip.is_loopback()) {
-        return vec![Way::Direct(address)];
-    }
-    Vec::new()
+    Ok(
+        if crate::serving::offerable_ip(ip) || (loopback && ip.is_loopback()) {
+            vec![Way::Direct(address)]
+        } else {
+            Vec::new()
+        },
+    )
 }
 
 /// The name a Remote is offered under for the Peer named `peer`, fingerprinted
@@ -1795,7 +1820,7 @@ mod tests {
     fn a_listener_is_a_way_to_offer_only_where_another_machine_could_reach_it() {
         let direct = |address: &str| {
             let address = address.parse().unwrap();
-            listened_ways(address, false) == vec![Way::Direct(address)]
+            listened_ways(address, false).unwrap() == vec![Way::Direct(address)]
         };
         assert!(direct("192.0.2.1:7000"));
         assert!(direct("[2001:db8::1]:7000"));
@@ -1806,8 +1831,21 @@ mod tests {
             "loopback however written"
         );
         assert!(
-            listened_ways("127.0.0.1:7000".parse().unwrap(), true).len() == 1,
+            listened_ways("127.0.0.1:7000".parse().unwrap(), true)
+                .unwrap()
+                .len()
+                == 1,
             "but for a test's machines, all of them one"
+        );
+    }
+
+    #[test]
+    fn a_listener_at_ipv4s_unspecified_address_is_offered_at_ipv4_addresses_alone() {
+        let ways = listened_ways("0.0.0.0:7000".parse().unwrap(), false).unwrap();
+        assert!(
+            ways.iter()
+                .all(|way| matches!(way, Way::Direct(address) if address.is_ipv4())),
+            "{ways:?}"
         );
     }
 
