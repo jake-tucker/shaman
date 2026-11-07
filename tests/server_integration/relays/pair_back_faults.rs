@@ -977,3 +977,54 @@ async fn a_formed_pairing_whose_offer_cannot_be_cleared_from_store_does_not_stic
     workstation.shutdown().await;
     laptop.shutdown().await;
 }
+
+/// One look at the Remote inside the bound on tries is owed a try once the bound
+/// has passed, with nothing more asked of anyone: it is the connection the
+/// acceptance was waiting on, though what looked has let the Remote go by then.
+#[tokio::test]
+async fn a_look_inside_the_bound_on_tries_is_owed_a_try_when_it_passes() {
+    let (workstation, laptop) = serving_directly_by(
+        "look-in-bound",
+        timings().with_pair_back_retry_interval(Duration::from_millis(250)),
+    )
+    .await;
+    offer(&workstation, &laptop).await;
+    let third = TestServer::with_timings("look-in-bound-third", timings()).await;
+    third.serve().await;
+    workstation.accept_offer().await;
+    let taken = third.invite(vec![third.way()]).await;
+    workstation
+        .redeem_as(taken, LAPTOP)
+        .await
+        .expect("that name comes to be taken");
+    laptop.looks_at_remote().await;
+    laptop
+        .offers_become(|offers| {
+            offers
+                .made
+                .first()
+                .is_some_and(|made| made.held_up == Some(OfferHeldUp::NotRedeemed))
+        })
+        .await;
+    let offer = workstation.held_offer().await;
+    workstation
+        .client
+        .answer_offer(
+            offer.id,
+            AnswerOfferRequest::Accept {
+                name: "free-name".to_owned(),
+            },
+        )
+        .await
+        .expect("accept under a free name");
+
+    laptop.looks_at_remote().await;
+
+    workstation.remote_comes_to_be("free-name").await;
+    workstation.offers_clear().await;
+    laptop.offers_clear().await;
+
+    workstation.shutdown().await;
+    laptop.shutdown().await;
+    third.shutdown().await;
+}

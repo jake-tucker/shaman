@@ -215,7 +215,15 @@ pub(super) struct PairBack {
     /// What is under way of each offer, on either side, by its id.
     under_way: std::sync::Mutex<HashMap<Uuid, UnderWay>>,
     /// What settles each key's offer here, and what it last heard.
-    settling: std::sync::Mutex<HashMap<Vec<u8>, watch::Sender<LastHeard>>>,
+    settling: std::sync::Mutex<HashMap<Vec<u8>, Settling>>,
+}
+
+/// What settles one key's offers, as it stands.
+struct Settling {
+    told: watch::Sender<LastHeard>,
+    /// What the last look through it asked through, held for it to take up: what
+    /// looked may let the Remote go at once, and that look is still owed a try.
+    owed: Option<StrongClient>,
 }
 
 /// What is under way of one offer.
@@ -256,12 +264,22 @@ impl PairBack {
             .expect("what is under way of offers is not poisoned")
     }
 
-    /// Whether a try at `id` came to nothing too lately to try again yet.
-    fn too_soon(&self, id: Uuid) -> bool {
+    /// When `id` may be tried again, where a try came to nothing too lately for
+    /// it to be yet.
+    fn next_try(&self, id: Uuid) -> Option<tokio::time::Instant> {
         self.under_way()
             .get(&id)
             .and_then(|under_way| under_way.next_try)
-            .is_some_and(|at| tokio::time::Instant::now() < at)
+            .filter(|at| tokio::time::Instant::now() < *at)
+    }
+
+    /// Takes the client the last look at `key` asked through, where one is owed.
+    fn take_owed(&self, key: &[u8]) -> Option<StrongClient> {
+        self.settling
+            .lock()
+            .expect("settling lock is not poisoned")
+            .get_mut(key)
+            .and_then(|settling| settling.owed.take())
     }
 
     /// Notes that a try at `id` came to nothing, just now.
@@ -348,8 +366,12 @@ fn settling(made: &[StoredMadeOffer], told: Option<ToldOffer>) -> Settle {
 enum Settled {
     /// There is nothing more to do until it is told otherwise.
     Done,
-    /// It stands as it was: look again after a while, or at any change.
+    /// A try was made and it stands as it was: tried again after a while, while
+    /// something else keeps the Remote in view, or at any change.
     TryAgain,
+    /// No try was made, for a try came to nothing too lately: one is owed at this
+    /// moment, what looked or not.
+    NotYet(tokio::time::Instant),
     /// It was changed, so what stands should be looked at once more.
     LookAgain,
 }
@@ -614,28 +636,36 @@ impl ServingController {
             .settling
             .lock()
             .expect("settling lock is not poisoned");
-        if let Some(settling) = running.get(&remote.public_key) {
-            settling.send_replace(told);
+        if let Some(settling) = running.get_mut(&remote.public_key) {
+            settling.owed = Some(client.clone());
+            settling.told.send_replace(told);
             return;
         }
         if offer.is_none() && self.made_offers(&remote.public_key).is_empty() {
             return;
         }
         let (telling, told) = watch::channel(told);
-        running.insert(remote.public_key.clone(), telling);
-        drop(running);
-        tokio::spawn(
-            self.clone()
-                .settle(remote.public_key.clone(), told, client.clone()),
+        running.insert(
+            remote.public_key.clone(),
+            Settling {
+                told: telling,
+                owed: Some(client.clone()),
+            },
         );
+        drop(running);
+        tokio::spawn(self.clone().settle(remote.public_key.clone(), told));
     }
 
-    /// Settles the offers under `key` for as long as it takes and anything
-    /// asks that Remote, holding `first` for the first look at it. It is what
-    /// has a Server turning Serving on for this need no further step: a change
-    /// to what it can offer has it look again.
-    async fn settle(self, key: Vec<u8>, mut told: watch::Receiver<LastHeard>, first: StrongClient) {
-        let mut first = Some(first);
+    /// Settles the offers under `key` for as long as it takes and anything asks
+    /// that Remote. Each look at it is owed one try: the client it asked through
+    /// is held until that is made, a bound on tries standing in its way included,
+    /// so a look that lets the Remote go at once is not lost, and no connection is
+    /// kept past a retry interval for it. Tries beyond that are made only while
+    /// something else keeps the Remote in view. It is what has a Server turning
+    /// Serving on for this need no further step: a change to what it can offer has
+    /// it look again.
+    async fn settle(self, key: Vec<u8>, mut told: watch::Receiver<LastHeard>) {
+        let mut owed = None;
         let mut listening = self.listening.subscribe();
         let mut relays = self.offered_relays.subscribe();
         let mut serving = self.serving.subscribe();
@@ -644,33 +674,39 @@ impl ServingController {
             listening.borrow_and_update();
             relays.borrow_and_update();
             serving.borrow_and_update();
-            let Some(client) = first.take().or_else(|| telling.client.upgrade()) else {
+            owed = self.pair_back.take_owed(&key).or(owed);
+            let Some(client) = owed.clone().or_else(|| telling.client.upgrade()) else {
                 break;
             };
             let settled = self.settle_once(&key, &telling, &client).await;
             drop(client);
-            match settled {
-                Settled::LookAgain => {}
+            let until = match settled {
+                Settled::LookAgain => continue,
                 Settled::Done => {
-                    if !told.has_changed().unwrap_or(false) {
-                        break;
+                    owed = None;
+                    if told.has_changed().unwrap_or(false) {
+                        continue;
                     }
+                    break;
                 }
                 Settled::TryAgain => {
-                    // What this Server can offer changing is worth trying
-                    // at once: a stale way may be why the last try failed.
-                    let ways_changed = tokio::select! {
-                        _ = told.changed() => false,
-                        _ = listening.changed() => true,
-                        _ = relays.changed() => true,
-                        _ = serving.changed() => true,
-                        () = tokio::time::sleep(self.pair_back.retry_interval) => false,
-                    };
-                    if ways_changed {
-                        for made in self.made_offers(&key) {
-                            self.pair_back.start_afresh(made.id);
-                        }
-                    }
+                    owed = None;
+                    tokio::time::Instant::now() + self.pair_back.retry_interval
+                }
+                Settled::NotYet(until) => until,
+            };
+            // What this Server can offer changing is worth trying at once: a
+            // stale way may be why the last try failed.
+            let ways_changed = tokio::select! {
+                _ = told.changed() => false,
+                _ = listening.changed() => true,
+                _ = relays.changed() => true,
+                _ = serving.changed() => true,
+                () = tokio::time::sleep_until(until) => false,
+            };
+            if ways_changed {
+                for made in self.made_offers(&key) {
+                    self.pair_back.start_afresh(made.id);
                 }
             }
         }
@@ -680,13 +716,16 @@ impl ServingController {
             .lock()
             .expect("settling lock is not poisoned");
         let left_unlooked_at = told.has_changed().unwrap_or(false);
-        running.remove(&key);
+        let settling = running.remove(&key);
         drop(running);
         // Told something as this let go: whatever comes next starts anew, and
         // this telling starts it now.
         if left_unlooked_at {
             let telling = told.borrow_and_update().clone();
-            if let Some(client) = telling.client.upgrade() {
+            let client = settling
+                .and_then(|settling| settling.owed)
+                .or_else(|| telling.client.upgrade());
+            if let Some(client) = client {
                 self.take_up_told_offer(&telling.remote, &client, telling.offer);
             }
         }
@@ -726,8 +765,8 @@ impl ServingController {
     async fn meet(&self, key: &[u8], told: &LastHeard, client: &StrongClient, id: Uuid) -> Settled {
         // However often it connects, a try that came to nothing is not made
         // again before its time.
-        if self.pair_back.too_soon(id) {
-            return Settled::TryAgain;
+        if let Some(at) = self.pair_back.next_try(id) {
+            return Settled::NotYet(at);
         }
         let ways = match self.offerable_ways() {
             Ok(ways) => ways,
@@ -1056,7 +1095,7 @@ impl ServingController {
     /// each offer, and none is begun sooner after the last came to nothing than
     /// the interval allows, so a Peer cannot have this Server dial at will.
     async fn redeem_offered(&self, key: Vec<u8>, id: Uuid, invite: InviteText) -> OfferAnswer {
-        if self.pair_back.too_soon(id) {
+        if self.pair_back.next_try(id).is_some() {
             return OfferAnswer::TooSoon;
         }
         let parsed = match parse_invite(&invite) {
