@@ -811,9 +811,9 @@ The offer is a record on both machines and no Invite, and carries no token, so i
 across restarts of either. On the other machine a Notice is raised once, to the first Client that can show it, and the
 offer stands in `/connect` until answered: Enter names the Remote and accepts it, and `x` twice declines. Nothing is
 added there on its own. Since a Pairing is one-way, that machine cannot call this one with its answer, so this machine
-acts on it when it next connects, which a Client looking at that Remote has it do; until then `/connect` there says it
-is waiting. Then this machine issues an Invite for that machine's key alone, shown nowhere, which leaves any Invite you
-issued from `/serve` good and is left good by one issued later, and that machine redeems it at once through whichever
+acts on it when it next connects, which takes someone on this machine opening `/connect` or looking at that Remote;
+until then `/connect` there says it is waiting on that. Then this machine issues an Invite for that machine's key alone, shown nowhere and offering every way it has, rather
+than those `/serve` would let you pick, which leaves any Invite you issued from `/serve` good and is left good by one issued later, and that machine redeems it at once through whichever
 way answers, Relays it logged in at among them. Where this machine has no way to offer by then, it issues nothing, the
 offer stands, and both say why; once it has one the rest takes no further step. Where the redemption fails, that
 machine says why and it is tried again from time to time while the two are connected. The result is an ordinary second

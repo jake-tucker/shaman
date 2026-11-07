@@ -8,8 +8,9 @@ use uuid::Uuid;
 
 use super::SessionTimestamp;
 
-/// The event a Server pushes its offers on, as a Client connects and again
-/// whenever they change.
+/// The event a Server pushes its offers on: as a Client connects where any stand,
+/// as how a short code stands is, so a Client takes hearing nothing to mean none
+/// do; and again whenever they change.
 pub const PAIR_BACK_EVENT: &str = "pair_back";
 
 /// Every offer to pair back a Server has to do with: those its Peers made it,

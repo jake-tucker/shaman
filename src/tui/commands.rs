@@ -325,6 +325,10 @@ pub enum SemanticCommandId {
     ConnectPairBackAct,
     /// Adds a Relay, for the option to pair back to have a way to offer.
     ConnectPairBackAddRelay,
+    /// Names and accepts the offer to pair back the selected row is.
+    ConnectAcceptOffer,
+    /// Declines the offer to pair back the selected row is, asked twice.
+    ConnectDeclineOffer,
     /// Withdraws the offer to pair back the selected Remote stands under.
     ConnectWithdrawOffer,
     /// Scrolls what overflows the Connect step the reader is on — an
@@ -923,7 +927,9 @@ impl SemanticCommandId {
             Self::ConnectRemoveRemote => "connect.remove",
             Self::ConnectPairBackAct => "connect.pair-back.act",
             Self::ConnectPairBackAddRelay => "connect.pair-back.add-relay",
-            Self::ConnectWithdrawOffer => "connect.offer.withdraw",
+            Self::ConnectAcceptOffer => "connect.pair-back.accept",
+            Self::ConnectDeclineOffer => "connect.pair-back.decline",
+            Self::ConnectWithdrawOffer => "connect.pair-back.withdraw",
             Self::ConnectScrollUp => "connect.scroll.up",
             Self::ConnectScrollDown => "connect.scroll.down",
             Self::ConnectPageUp => "connect.scroll.page-up",
@@ -2743,6 +2749,22 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         title: "Add Relay To Offer",
         reach: SemanticReach::Client,
         description: "Add a Relay this machine could be offered through",
+        slash: None,
+        keybinding: None,
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::ConnectAcceptOffer,
+        title: "Accept Offer To Pair Back",
+        reach: SemanticReach::Client,
+        description: "Name the Remote the selected offer would be, and accept it",
+        slash: None,
+        keybinding: None,
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::ConnectDeclineOffer,
+        title: "Decline Offer To Pair Back",
+        reach: SemanticReach::Client,
+        description: "Decline the selected offer to be reached",
         slash: None,
         keybinding: None,
     },

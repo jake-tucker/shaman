@@ -1629,17 +1629,18 @@ impl RunLoop {
                 );
             }
             ApplicationTransition::AnswerOffer { id, answer } => {
-                spawn_offer_answer(
-                    self.client.session_commands(),
-                    id,
-                    answer,
+                let commands = self.client.session_commands();
+                spawn_offer_act(
+                    async move { commands.answer_offer(id, answer).await },
+                    move |error| ApplicationEvent::OfferAnswered { id, error },
                     self.channels.relays.clone(),
                 );
             }
             ApplicationTransition::WithdrawOffer(id) => {
-                spawn_offer_withdrawal(
-                    self.client.session_commands(),
-                    id,
+                let commands = self.client.session_commands();
+                spawn_offer_act(
+                    async move { commands.withdraw_offer(id).await },
+                    |error| ApplicationEvent::OfferWithdrawn { error },
                     self.channels.relays.clone(),
                 );
             }
@@ -3544,36 +3545,16 @@ fn spawn_offer_notice_claim(
     ));
 }
 
-/// Answers the offer to pair back `id` as the reader did.
-fn spawn_offer_answer(
-    commands: SessionCommandClient,
-    id: uuid::Uuid,
-    answer: crate::protocol::AnswerOfferRequest,
+/// Does what a reader asked of an offer to pair back, answering on `answers` as
+/// `answered` says of why it was refused, if it was.
+fn spawn_offer_act(
+    act: impl Future<Output = Result<()>> + Send + 'static,
+    answered: impl FnOnce(Option<String>) -> ApplicationEvent + Send + 'static,
     answers: UnboundedSender<ApplicationEvent>,
 ) {
     tokio::spawn(async move {
-        let error = commands
-            .answer_offer(id, answer)
-            .await
-            .err()
-            .map(|error| error.to_string());
-        let _ = answers.send(ApplicationEvent::OfferAnswered { id, error });
-    });
-}
-
-/// Withdraws the offer to pair back `id`.
-fn spawn_offer_withdrawal(
-    commands: SessionCommandClient,
-    id: uuid::Uuid,
-    answers: UnboundedSender<ApplicationEvent>,
-) {
-    tokio::spawn(async move {
-        let error = commands
-            .withdraw_offer(id)
-            .await
-            .err()
-            .map(|error| error.to_string());
-        let _ = answers.send(ApplicationEvent::OfferWithdrawn { error });
+        let error = act.await.err().map(|error| error.to_string());
+        let _ = answers.send(answered(error));
     });
 }
 

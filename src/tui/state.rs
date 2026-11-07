@@ -11959,9 +11959,6 @@ impl Application {
                 Ok(ApplicationTransition::Continue)
             }
             SemanticCommandId::OutlookSelect => {
-                if self.state.connect_overlay.begin_accepting() {
-                    return Ok(ApplicationTransition::Continue);
-                }
                 let Some(outlook) = self.state.connect_overlay.selected_outlook() else {
                     return Ok(ApplicationTransition::Continue);
                 };
@@ -11996,16 +11993,20 @@ impl Application {
                     ApplicationTransition::FindMachines,
                 ))
             }
+            SemanticCommandId::ConnectAcceptOffer => {
+                self.state.connect_overlay.begin_accepting();
+                Ok(ApplicationTransition::Continue)
+            }
+            SemanticCommandId::ConnectDeclineOffer => {
+                Ok(self.state.connect_overlay.decline_selected().map_or(
+                    ApplicationTransition::Continue,
+                    |id| ApplicationTransition::AnswerOffer {
+                        id,
+                        answer: crate::protocol::AnswerOfferRequest::Decline,
+                    },
+                ))
+            }
             SemanticCommandId::ConnectRemoveRemote => {
-                if self.state.connect_overlay.selected_offer().is_some() {
-                    return Ok(self.state.connect_overlay.decline_selected().map_or(
-                        ApplicationTransition::Continue,
-                        |id| ApplicationTransition::AnswerOffer {
-                            id,
-                            answer: crate::protocol::AnswerOfferRequest::Decline,
-                        },
-                    ));
-                }
                 Ok(self.state.connect_overlay.remove_remote().map_or(
                     ApplicationTransition::Continue,
                     ApplicationTransition::RemoveRemote,
@@ -12019,7 +12020,7 @@ impl Application {
             }
             SemanticCommandId::ConnectPairBackAct => Ok(self.act_on_pair_back()),
             SemanticCommandId::ConnectPairBackAddRelay => {
-                if self.state.connect_overlay.pair_back_has_keys()
+                if self.state.connect_overlay.pair_back_with_keys().is_some()
                     && self.state.pair_back_option() != PairBackOption::Offerable
                 {
                     self.state.relay_overlay.add_for(RelaySurface::Connect);
@@ -12114,21 +12115,13 @@ impl Application {
             }
             SemanticCommandId::ServeRelayLogin => {
                 let address = self.state.with_serve_ways(ServeOverlay::relay_to_log_in);
-                Ok(relay_login_transition(address.and_then(|address| {
-                    self.state
-                        .relay_overlay
-                        .log_in_for(RelaySurface::Serve, &address)
-                })))
+                Ok(self.log_in_for(RelaySurface::Serve, address))
             }
             SemanticCommandId::ServeRelayServeThrough => {
                 let address = self
                     .state
                     .with_serve_ways(ServeOverlay::relay_to_serve_through);
-                Ok(serve_through_transition(address.and_then(|address| {
-                    self.state
-                        .relay_overlay
-                        .serve_through_for(RelaySurface::Serve, &address)
-                })))
+                Ok(self.serve_through_for(RelaySurface::Serve, address))
             }
             SemanticCommandId::ServeRelayAdd => {
                 if self.state.serve_overlay.is_choosing() {
@@ -13815,7 +13808,9 @@ impl Application {
     fn settle_armed_removals(&mut self, command: Option<&CommandId>) -> bool {
         let aims = |aimed: SemanticCommandId| matches!(command, Some(CommandId::InvokeSemantic(id)) if *id == aimed);
         let mut changed = false;
-        if !aims(SemanticCommandId::ConnectRemoveRemote) {
+        if !aims(SemanticCommandId::ConnectRemoveRemote)
+            && !aims(SemanticCommandId::ConnectDeclineOffer)
+        {
             changed |= self.state.connect_overlay.disarm_removal();
         }
         if !aims(SemanticCommandId::ServeRemovePeer) {
@@ -13850,23 +13845,23 @@ impl Application {
     /// chooses it where it can be, and otherwise what puts that right, each a
     /// choice of its own made only on what the reader was shown of it.
     fn act_on_pair_back(&mut self) -> ApplicationTransition {
-        if !self.state.connect_overlay.pair_back_has_keys() {
-            return ApplicationTransition::Continue;
-        }
         let option = self.state.pair_back_option();
+        let Some(choice) = self.state.connect_overlay.pair_back_with_keys() else {
+            return ApplicationTransition::Continue;
+        };
         let fix = match option {
             PairBackOption::Offerable => {
-                self.state.connect_overlay.toggle_pair_back(true);
+                choice.toggle(true);
                 return ApplicationTransition::Continue;
             }
             PairBackOption::Withheld { fix, .. } => fix,
         };
         // Whatever stands in the way, leaving it unchosen is always there.
-        self.state.connect_overlay.toggle_pair_back(false);
+        choice.toggle(false);
         let Some(fix) = fix else {
             return ApplicationTransition::Continue;
         };
-        if fix.statement().is_some() && !self.state.connect_overlay.pair_back_statement_drawn() {
+        if fix.statement().is_some() && !self.state.connect_overlay.offers().statement_drawn() {
             return ApplicationTransition::Continue;
         }
         match fix {
@@ -13875,19 +13870,41 @@ impl Application {
                 request: SettingRequest::new(),
             },
             OfferFix::AtRelay { address, action } => match action {
-                WayAction::BeginLogin | WayAction::ShowLogin => relay_login_transition(
-                    self.state
-                        .relay_overlay
-                        .log_in_for(RelaySurface::Connect, &address),
-                ),
-                WayAction::ServeThrough => serve_through_transition(
-                    self.state
-                        .relay_overlay
-                        .serve_through_for(RelaySurface::Connect, &address),
-                ),
+                WayAction::BeginLogin | WayAction::ShowLogin => {
+                    self.log_in_for(RelaySurface::Connect, Some(address))
+                }
+                WayAction::ServeThrough => {
+                    self.serve_through_for(RelaySurface::Connect, Some(address))
+                }
                 WayAction::ToggleOffered => ApplicationTransition::Continue,
             },
         }
+    }
+
+    /// Has the Relay list log in at the Relay at `address` for `surface`, where a
+    /// row asks for that.
+    fn log_in_for(
+        &mut self,
+        surface: RelaySurface,
+        address: Option<String>,
+    ) -> ApplicationTransition {
+        relay_login_transition(
+            address.and_then(|address| self.state.relay_overlay.log_in_for(surface, &address)),
+        )
+    }
+
+    /// Has the Relay list Serve through the Relay at `address` for `surface`,
+    /// where a row asks for that.
+    fn serve_through_for(
+        &mut self,
+        surface: RelaySurface,
+        address: Option<String>,
+    ) -> ApplicationTransition {
+        serve_through_transition(address.and_then(|address| {
+            self.state
+                .relay_overlay
+                .serve_through_for(surface, &address)
+        }))
     }
 
     /// The offers to pair back whose Notice this Client has heard asked for

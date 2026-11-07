@@ -1,20 +1,26 @@
-//! What a reader is told of an offer to pair back, on either side of it
-//! (ADR-0066): on Configure Remote, whether the machine they are pairing with
-//! can be offered it, and if not why and what would put that right, in the
-//! manner of `/serve`'s rows; and in `/connect`, how each offer stands.
+//! What a reader meets of an offer to pair back, on either side of it
+//! (ADR-0066): on Configure Remote, the option and how it stands, with what
+//! would put it right in the manner of `/serve`'s rows; and in `/connect`, the
+//! offers as rows beside the Remotes, one being accepted, and how each stands.
 //!
-//! A Peer's name is another machine's word, and so is why its Invite could not
-//! be redeemed, so both reach a reader as what can be shown.
+//! The Connect overlay holds these as it holds [`super::found_machines`], and
+//! says when each is shown. A Peer's name is another machine's word, so it
+//! reaches a reader as what can be shown; why a redemption failed is from a
+//! closed set, in this machine's own words.
+
+use std::cell::Cell;
 
 use crate::{
     protocol::{
-        HeldOffer, ListenerState, MadeOffer, OfferHeldUp, RedemptionFailure, SessionTimestamp,
+        HeldOffer, ListenerState, MadeOffer, OfferHeldUp, PairBackOffers, RedemptionFailure,
+        Remote, SessionTimestamp,
     },
     shown_text::{short_fingerprint, shown},
 };
 
-use super::serve_overlay::{
-    NO_RELAY, NO_WAY, NO_WAY_UNTIL_LISTENING, ServeWays, WayAction, Withheld,
+use super::{
+    relay_overlay::{ListNote, RelayOutcome},
+    serve_overlay::{NO_RELAY, NO_WAY, NO_WAY_UNTIL_LISTENING, ServeWays, WayAction, Withheld},
 };
 
 /// How long a name is in anything said here.
@@ -61,12 +67,29 @@ const LOOPBACK_ONLY: &str = "This machine has no way to offer: its Serving liste
                              loopback, which other machines cannot reach, and it Serves through \
                              no Relay";
 
+/// What the option's row says of it withheld, where that fits the row.
+const NOT_SERVING: &str = "not Serving";
+const NO_WAY_TO_OFFER: &str = "no way to offer";
+const ALREADY_REACHES: &str = "already reaches here";
+
+/// What the option says with the keys on it where the frame has no room for what
+/// its key opens, which the key then does not act on.
+pub(super) const TOO_SMALL: &str =
+    "This terminal is too small to show what that opens; enlarge it to do it";
+
+/// What the option says of itself with the keys on it, where it can be chosen.
+pub(super) const WHAT_IT_DOES: &str = "It lets that machine run commands here, once its user \
+                                       accepts. Every address and Relay this machine has is \
+                                       offered then, rather than those /serve would let you pick";
+
 /// How the option to pair back stands on Configure Remote.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum PairBackOption {
     Offerable,
-    /// It cannot be chosen: why, and what would put that right, if anything.
+    /// It cannot be chosen: in a word on its row, in full with the keys on it,
+    /// and what would put that right, if anything.
     Withheld {
+        brief: &'static str,
         why: String,
         fix: Option<OfferFix>,
     },
@@ -79,12 +102,14 @@ impl PairBackOption {
     pub(super) fn of(reaches_here: bool, serving: bool, ways: ServeWays<'_>) -> Self {
         if reaches_here {
             return Self::Withheld {
+                brief: ALREADY_REACHES,
                 why: "That machine can reach this one already".to_owned(),
                 fix: None,
             };
         }
         if !serving {
             return Self::Withheld {
+                brief: NOT_SERVING,
                 why: "This machine is not Serving, so it has no way to offer".to_owned(),
                 fix: Some(OfferFix::TurnServingOn),
             };
@@ -103,6 +128,7 @@ impl PairBackOption {
         });
         match at_a_relay {
             Some((address, withheld, login_under_way)) => Self::Withheld {
+                brief: NO_WAY_TO_OFFER,
                 why: format!(
                     "This machine has no way to offer: {address} is {}",
                     withheld.brief()
@@ -113,6 +139,7 @@ impl PairBackOption {
                 }),
             },
             None => Self::Withheld {
+                brief: NO_WAY_TO_OFFER,
                 why: match (ways.listener, held.is_empty()) {
                     (ListenerState::Open { .. }, _) => LOOPBACK_ONLY.to_owned(),
                     (ListenerState::Failed { .. }, _) => NO_WAY_UNTIL_LISTENING.to_owned(),
@@ -122,6 +149,243 @@ impl PairBackOption {
                 fix: None,
             },
         }
+    }
+}
+
+/// The offers to pair back as the Connect overlay holds them, whatever it shows
+/// just now, and what the last frame said of the option.
+#[derive(Clone, Debug, Default)]
+pub(super) struct OfferBook {
+    offers: PairBackOffers,
+    statement_drawn: Cell<bool>,
+}
+
+impl OfferBook {
+    pub(super) fn take(&mut self, offers: PairBackOffers) {
+        self.offers = offers;
+    }
+
+    /// Gives up what was last said of them, as the Server is connected to again.
+    pub(super) fn forget(&mut self) {
+        self.offers = PairBackOffers::default();
+    }
+
+    pub(super) fn holds(&self, id: uuid::Uuid) -> bool {
+        self.offers.held.iter().any(|offer| offer.id == id)
+    }
+
+    /// The offer the Remote `name` was made, where one stands.
+    pub(super) fn made_to(&self, name: &str) -> Option<&MadeOffer> {
+        self.offers.made.iter().find(|offer| offer.remote == name)
+    }
+
+    /// The rows the picker walks, among `remotes`.
+    pub(super) fn rows<'a>(&'a self, remotes: &'a [Remote]) -> PickerRows<'a> {
+        PickerRows {
+            remotes,
+            offers: &self.offers.held,
+        }
+    }
+
+    /// Gives up what the last frame drew, as a frame begins.
+    pub(super) fn forget_frame(&self) {
+        self.statement_drawn.set(false);
+    }
+
+    /// Notes that this frame drew all the option must say before its key acts.
+    pub(super) fn drew_statement(&self) {
+        self.statement_drawn.set(true);
+    }
+
+    /// Whether the last frame drew all the option must say before its key acts.
+    pub(super) fn statement_drawn(&self) -> bool {
+        self.statement_drawn.get()
+    }
+}
+
+/// The Connect picker's rows: this machine, each Remote, and each offer held.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct PickerRows<'a> {
+    remotes: &'a [Remote],
+    offers: &'a [HeldOffer],
+}
+
+/// One of the picker's rows.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum PickerRow<'a> {
+    Local,
+    Remote(&'a Remote),
+    Offer(&'a HeldOffer),
+}
+
+impl<'a> PickerRows<'a> {
+    /// The index of the last row: there is always this machine's.
+    pub(super) fn last(&self) -> usize {
+        self.remotes.len() + self.offers.len()
+    }
+
+    pub(super) fn at(&self, index: usize) -> Option<PickerRow<'a>> {
+        let Some(index) = index.checked_sub(1) else {
+            return Some(PickerRow::Local);
+        };
+        match self.remotes.get(index) {
+            Some(remote) => Some(PickerRow::Remote(remote)),
+            None => self
+                .offers
+                .get(index - self.remotes.len())
+                .map(PickerRow::Offer),
+        }
+    }
+
+    /// The offers among them, each with its index.
+    pub(super) fn offers(&self) -> impl Iterator<Item = (usize, &'a HeldOffer)> {
+        let first = self.remotes.len() + 1;
+        self.offers
+            .iter()
+            .enumerate()
+            .map(move |(index, offer)| (first + index, offer))
+    }
+}
+
+/// The option as chosen on a draft of a Remote.
+#[derive(Clone, Debug, Default)]
+pub(super) struct PairBackChoice {
+    chosen: bool,
+    /// Whether that machine reaches this one already, by its key.
+    reaches_here: bool,
+    /// What was last handed back of what was done for it.
+    notes: Vec<ListNote>,
+}
+
+impl PairBackChoice {
+    /// Off by default, since a Pairing lets the other machine run commands here.
+    pub(super) fn off_for(reaches_here: bool) -> Self {
+        Self {
+            reaches_here,
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn chosen(&self) -> bool {
+        self.chosen
+    }
+
+    pub(super) fn reaches_here(&self) -> bool {
+        self.reaches_here
+    }
+
+    pub(super) fn notes(&self) -> &[ListNote] {
+        &self.notes
+    }
+
+    /// Chooses or leaves it: it can be left however it stands, and `offerable`
+    /// bounds choosing it.
+    pub(super) fn toggle(&mut self, offerable: bool) {
+        self.chosen = !self.chosen && offerable;
+    }
+
+    /// Takes what the Relay list did for it, to say so.
+    pub(super) fn take_relay_outcome(&mut self, outcome: RelayOutcome) {
+        self.notes = outcome.notes;
+    }
+
+    /// Says a change it asked for was refused.
+    pub(super) fn refused(&mut self, error: &str) {
+        self.notes = vec![ListNote {
+            text: error.to_owned(),
+            failed: true,
+        }];
+    }
+
+    /// Puts down what was handed back, answering whether there was anything.
+    pub(super) fn put_down_notes(&mut self) -> bool {
+        !std::mem::take(&mut self.notes).is_empty()
+    }
+}
+
+/// An offer the Server holds being accepted, its Remote being named.
+#[derive(Clone, Debug)]
+pub(super) struct Accepting {
+    offer: HeldOffer,
+    name: String,
+    error: Option<String>,
+    /// Whether the Server has been asked, and has yet to answer.
+    asked: bool,
+    /// Where in the picker to go back to.
+    selected: usize,
+}
+
+impl Accepting {
+    /// Begins on `offer`, its row at `selected`, under the name it stands
+    /// accepted by or is offered under, for the reader to change.
+    pub(super) fn of(offer: HeldOffer, selected: usize) -> Self {
+        let name = offer
+            .answer
+            .as_ref()
+            .map_or_else(|| offer.offered_name.clone(), |answer| answer.name.clone());
+        Self {
+            offer,
+            name,
+            error: None,
+            asked: false,
+            selected,
+        }
+    }
+
+    pub(super) fn offer(&self) -> &HeldOffer {
+        &self.offer
+    }
+
+    pub(super) fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub(super) fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
+    pub(super) fn asked(&self) -> bool {
+        self.asked
+    }
+
+    pub(super) fn selected(&self) -> usize {
+        self.selected
+    }
+
+    pub(super) fn insert(&mut self, text: &str) {
+        self.name
+            .extend(text.chars().filter(|character| !character.is_control()));
+        self.error = None;
+    }
+
+    pub(super) fn delete_backward(&mut self) {
+        self.name.pop();
+        self.error = None;
+    }
+
+    /// Asks for it to be accepted under the name typed, where that can name a
+    /// Remote among those `known`.
+    pub(super) fn ask(&mut self, known: &[String]) -> Option<(uuid::Uuid, String)> {
+        if self.asked {
+            return None;
+        }
+        let name = self.name.trim().to_owned();
+        if name.is_empty() {
+            self.error = Some("Remote name cannot be empty".to_owned());
+            return None;
+        }
+        if known.iter().any(|known| known == &name) {
+            self.error = Some(format!("A Remote named `{name}` already exists"));
+            return None;
+        }
+        self.asked = true;
+        Some((self.offer.id, name))
+    }
+
+    /// Takes that the Server refused it for `error`, with the name to change.
+    pub(super) fn refused(&mut self, error: String) {
+        self.asked = false;
+        self.error = Some(error);
     }
 }
 
@@ -196,7 +460,8 @@ pub(super) fn held_detail(offer: &HeldOffer) -> Vec<String> {
         )];
     };
     let waiting = format!(
-        "Accepted as {}. Waiting on {peer}: it pairs when that machine next connects here",
+        "Accepted as {}. Waiting on {peer}: it pairs once someone on that machine opens /connect \
+         or looks at this one",
         said_name(&answer.name)
     );
     let held_up = answer.held_up.as_ref().map(|why| match why {

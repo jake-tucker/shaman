@@ -44,7 +44,7 @@ use super::{
     model_details::{self, DetailsPane},
     model_options::ModelOptionChoiceRow,
     onboarding::OwnServer,
-    pair_back::{self, OfferFix, PairBackOption},
+    pair_back::{self, OfferFix, PairBackOption, PickerRow},
     provider_icons::provider_label,
     relay_overlay::{ListNote, RelaySurface, serve_through_status},
     rename_dialog::RenameGeometry,
@@ -216,7 +216,7 @@ pub(super) fn render_with_slots(
     // terms, and only on a frame that drew the Landing.
     state.landing_readings.borrow_mut().clear();
     state.notice_presentable.set(false);
-    state.connect_overlay.forget_frame();
+    state.connect_overlay.offers().forget_frame();
     // Current-Session animation is likewise a fact about this frame, not the
     // Session in the abstract: its transient tail may have scrolled away.
     state.session_animation_on_screen.set(false);
@@ -819,6 +819,33 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         let offered = pair_back_lines(&details, &option, content_width, theme);
         let capacity = usize::from(area.height.saturating_sub(2))
             .saturating_sub(lines.len() + keys.len() + offered.len());
+        // What the key opens is shown whole before it acts, and a frame with no
+        // room for that says so, with nothing else in its way.
+        let statement_due = details.pair_back_focused
+            && matches!(
+                &option,
+                PairBackOption::Withheld { fix: Some(fix), .. } if fix.statement().is_some()
+            );
+        let least_of_the_ways = details.ways.get(details.selected).map_or(0, |_| 1);
+        if statement_due && capacity < least_of_the_ways {
+            lines.truncate(1);
+            lines.extend(wrapped_lines(
+                pair_back::TOO_SMALL,
+                content_width,
+                theme.feedback.warning,
+            ));
+            lines.extend(keys);
+            render_overlay_box(
+                frame,
+                state,
+                SelectionSurface::Connect,
+                area,
+                lines,
+                " Connect ",
+                theme,
+            );
+            return;
+        }
         let groups = details
             .ways
             .iter()
@@ -839,7 +866,7 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         // The key that opens something acts only where the frame showed all
         // the option says of that: the ways leave it room, or it cannot be sure.
         if least <= capacity {
-            overlay.drew_pair_back_statement();
+            overlay.offers().drew_statement();
         }
         let (way_capacity, said) = if said.len() + least <= capacity {
             (capacity - said.len(), said)
@@ -885,7 +912,8 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         );
         return;
     }
-    if let Some((offer, name, error)) = overlay.accepting() {
+    if let Some(accepting) = overlay.accepting() {
+        let (offer, name, error) = (accepting.offer(), accepting.name(), accepting.error());
         let content_width = area.width.saturating_sub(2);
         let mut lines = vec![Line::styled(
             format!(
@@ -964,15 +992,17 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         ));
     }
     let now = SessionTimestamp::now();
-    let offer_detail = overlay
-        .selected_offer()
-        .map(pair_back::held_detail)
-        .or_else(|| {
-            overlay
-                .selected_made_offer()
-                .map(|offer| pair_back::made_detail(offer, now))
-        })
-        .unwrap_or_default()
+    let selected_row = overlay.selected_row();
+    let said_of_offer = match selected_row {
+        Some(PickerRow::Offer(offer)) => pair_back::held_detail(offer),
+        Some(PickerRow::Remote(remote)) => overlay
+            .offers()
+            .made_to(&remote.name)
+            .map(|offer| pair_back::made_detail(offer, now))
+            .unwrap_or_default(),
+        Some(PickerRow::Local) | None => Vec::new(),
+    };
+    let offer_detail = said_of_offer
         .iter()
         .flat_map(|said| wrapped_lines(said, area.width.saturating_sub(2), theme.text.subdued))
         .collect::<Vec<_>>();
@@ -998,7 +1028,8 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             "  "
         };
         let offered = overlay
-            .made_offer_of(&remote.name)
+            .offers()
+            .made_to(&remote.name)
             .map_or("", |_| " · offered to pair back");
         Line::styled(
             format!(
@@ -1013,29 +1044,24 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             },
         )
     }));
-    let offer_rows_from = overlay.remotes().len() + 1;
-    remote_rows.extend(
-        overlay
-            .held_offers()
-            .iter()
-            .enumerate()
-            .map(|(index, offer)| {
-                let selected = index + offer_rows_from == overlay.selected();
-                let answered = offer.answer.as_ref().map_or("", |_| " · waiting on it");
-                Line::styled(
-                    format!(
-                        "{}{}{answered}",
-                        if selected { "› " } else { "  " },
-                        pair_back::held_row(offer, now),
-                    ),
-                    if selected {
-                        theme.selection.focused
-                    } else {
-                        theme.text.primary
-                    },
-                )
-            }),
-    );
+    if let Some(rows) = overlay.picker_rows() {
+        remote_rows.extend(rows.offers().map(|(index, offer)| {
+            let selected = index == overlay.selected();
+            let answered = offer.answer.as_ref().map_or("", |_| " · waiting on it");
+            Line::styled(
+                format!(
+                    "{}{}{answered}",
+                    if selected { "› " } else { "  " },
+                    pair_back::held_row(offer, now),
+                ),
+                if selected {
+                    theme.selection.focused
+                } else {
+                    theme.text.primary
+                },
+            )
+        }));
+    }
     lines.extend(overlay.remotes_window().show(
         remote_rows,
         remote_capacity,
@@ -1059,16 +1085,23 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
     lines.push(Line::styled(
         match (
             overlay.removal_armed(),
-            overlay.selected_offer().is_some(),
+            selected_row,
             overlay.offer_to_withdraw().is_some(),
         ) {
-            (true, true, _) => "x confirm declining · any other key cancels",
-            (true, false, _) => "x confirm removal · any other key cancels",
-            (false, true, _) => "↑↓ choose · Enter accept · x decline · Esc close",
-            (false, false, true) => {
+            (true, Some(PickerRow::Offer(_)), _) => "x confirm declining · any other key cancels",
+            (true, Some(PickerRow::Remote(remote)), _)
+                if overlay.offers().made_to(&remote.name).is_some() =>
+            {
+                "x confirm removal, which ends the offer too · any other key cancels"
+            }
+            (true, _, _) => "x confirm removal · any other key cancels",
+            (false, Some(PickerRow::Offer(_)), _) => {
+                "↑↓ choose · Enter name & accept · x decline · Esc close"
+            }
+            (false, _, true) => {
                 "↑↓ choose · a pair another · w withdraw offer · x remove · Esc close"
             }
-            (false, false, false) => "↑↓ choose · a pair another · x remove · Esc close",
+            (false, _, false) => "↑↓ choose · a pair another · x remove · Esc close",
         },
         theme.text.subdued,
     ));
@@ -1111,7 +1144,7 @@ fn pair_back_lines(
     theme: &Theme,
 ) -> Vec<Line<'static>> {
     let offerable = *option == PairBackOption::Offerable;
-    let mark = match (details.pair_back, offerable) {
+    let mark = match (details.pair_back.chosen(), offerable) {
         (true, _) => "[x]",
         (false, true) => "[ ]",
         (false, false) => "[-]",
@@ -1121,11 +1154,23 @@ fn pair_back_lines(
     } else {
         "  "
     };
+    let row = format!(
+        "{cursor}{mark} Also let {} reach this machine",
+        pair_back::said_name(details.name.trim())
+    );
+    // Why it cannot be chosen is on the row, so a reader pairing one way is told
+    // without coming to it, wrapping if it must unless a refusal needs the room;
+    // the rest waits for the keys.
+    let row = match option {
+        PairBackOption::Withheld { brief, .. }
+            if details.error.is_none() || row.width() + brief.width() + 3 <= usize::from(width) =>
+        {
+            format!("{row} · {brief}")
+        }
+        _ => row,
+    };
     let mut lines = wrapped_lines(
-        &format!(
-            "{cursor}{mark} Also let {} reach this machine",
-            pair_back::said_name(details.name.trim()),
-        ),
+        &row,
         width,
         if details.pair_back_focused {
             theme.selection.focused
@@ -1133,16 +1178,14 @@ fn pair_back_lines(
             theme.text.primary
         },
     );
-    // All it has to say waits for the keys to come to it, so a reader pairing
-    // one way is not asked to read past it, and a refusal keeps its room.
     if details.pair_back_focused {
         match option {
             PairBackOption::Offerable => lines.extend(wrapped_lines(
-                "It lets that machine run commands here, once its user accepts",
+                pair_back::WHAT_IT_DOES,
                 width,
                 theme.text.subdued,
             )),
-            PairBackOption::Withheld { why, fix } => {
+            PairBackOption::Withheld { why, fix, .. } => {
                 lines.extend(wrapped_lines(why, width, theme.feedback.warning));
                 if let Some(statement) = fix.as_ref().and_then(OfferFix::statement) {
                     lines.extend(wrapped_lines(statement, width, theme.text.subdued));
@@ -1150,7 +1193,7 @@ fn pair_back_lines(
             }
         }
     }
-    for note in details.relay_notes {
+    for note in details.pair_back.notes() {
         lines.extend(wrapped_lines(
             &note.text,
             width,

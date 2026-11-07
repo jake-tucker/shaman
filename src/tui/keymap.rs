@@ -785,8 +785,18 @@ pub(super) fn command_for_connect_overlay_event(
         (ConnectInputMode::Invite, KeyCode::Char('r'), KeyModifiers::CONTROL) => Some(
             CommandId::InvokeSemantic(SemanticCommandId::ConnectLookAgain),
         ),
-        (ConnectInputMode::Picker, KeyCode::Char('a'), KeyModifiers::NONE) => Some(
-            CommandId::InvokeSemantic(SemanticCommandId::ConnectPairAnother),
+        (
+            ConnectInputMode::Picker | ConnectInputMode::PickerOnOffer,
+            KeyCode::Char('a'),
+            KeyModifiers::NONE,
+        ) => Some(CommandId::InvokeSemantic(
+            SemanticCommandId::ConnectPairAnother,
+        )),
+        (ConnectInputMode::PickerOnOffer, KeyCode::Enter, KeyModifiers::NONE) => Some(
+            CommandId::InvokeSemantic(SemanticCommandId::ConnectAcceptOffer),
+        ),
+        (ConnectInputMode::PickerOnOffer, KeyCode::Char('x'), KeyModifiers::NONE) => Some(
+            CommandId::InvokeSemantic(SemanticCommandId::ConnectDeclineOffer),
         ),
         (ConnectInputMode::Picker, KeyCode::Char('x'), KeyModifiers::NONE) => Some(
             CommandId::InvokeSemantic(SemanticCommandId::ConnectRemoveRemote),
@@ -808,6 +818,7 @@ pub(super) fn command_for_connect_overlay_event(
         // get at the ways would otherwise press a dead key.
         (
             ConnectInputMode::Picker
+            | ConnectInputMode::PickerOnOffer
             | ConnectInputMode::Name
             | ConnectInputMode::Ways
             | ConnectInputMode::PairBack,
@@ -816,6 +827,7 @@ pub(super) fn command_for_connect_overlay_event(
         )
         | (
             ConnectInputMode::Picker
+            | ConnectInputMode::PickerOnOffer
             | ConnectInputMode::Name
             | ConnectInputMode::Ways
             | ConnectInputMode::PairBack,
@@ -826,6 +838,7 @@ pub(super) fn command_for_connect_overlay_event(
         )),
         (
             ConnectInputMode::Picker
+            | ConnectInputMode::PickerOnOffer
             | ConnectInputMode::Name
             | ConnectInputMode::Ways
             | ConnectInputMode::PairBack,
@@ -834,6 +847,7 @@ pub(super) fn command_for_connect_overlay_event(
         )
         | (
             ConnectInputMode::Picker
+            | ConnectInputMode::PickerOnOffer
             | ConnectInputMode::Name
             | ConnectInputMode::Ways
             | ConnectInputMode::PairBack,

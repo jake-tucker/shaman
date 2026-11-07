@@ -1104,7 +1104,7 @@ async fn pairing_again_replaces_what_the_last_ceremony_offered_on_both() {
 
 #[tokio::test]
 async fn no_record_holds_an_invite_once_it_has_formed_a_pairing() {
-    let (workstation, laptop) = offered_directly("logs").await;
+    let (workstation, laptop) = offered_directly("records").await;
     workstation.accept_offer().await;
     laptop.looks_at_remote().await;
     workstation.remote_comes_to_be(LAPTOP).await;

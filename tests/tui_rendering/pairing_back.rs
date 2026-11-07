@@ -15,7 +15,7 @@ use suru::{
         OfferAcceptance, OfferHeldUp, PairBackOffers, RedemptionFailure, Relay, RelayListing,
         RelayState, Remote, RemoteStatus, SessionTimestamp, SettingMutation, Way,
     },
-    tui::{Application, ApplicationEvent, ApplicationTransition},
+    tui::{Application, ApplicationEvent, ApplicationTransition, CommandId, SemanticCommandId},
 };
 use uuid::Uuid;
 
@@ -145,6 +145,10 @@ fn choosing_the_option_offers_and_says_what_it_lets_that_machine_do() {
 
     let shown = prose(&application);
     assert!(shown.contains("run commands here"), "{shown}");
+    assert!(
+        shown.contains("Every address and Relay this machine has is offered then"),
+        "the reader is told it is not the choice /serve gives: {shown}"
+    );
     assert!(shown.contains("Space toggle"), "{shown}");
     press(&mut application, KeyCode::Char(' '));
     assert!(prose(&application).contains("[x] Also let studio reach this machine"));
@@ -304,7 +308,7 @@ fn an_offer_held_stands_in_connect_until_answered_and_accepting_names_the_remote
     );
     press(&mut application, KeyCode::Down);
     let shown = prose(&application);
-    assert!(shown.contains("Enter accept · x decline"), "{shown}");
+    assert!(shown.contains("Enter name & accept · x decline"), "{shown}");
     assert!(shown.contains("It gives laptop nothing here"), "{shown}");
 
     press(&mut application, KeyCode::Enter);
@@ -348,7 +352,10 @@ fn an_offer_held_stands_in_connect_until_answered_and_accepting_names_the_remote
     let shown = prose(&application);
     assert!(shown.contains("waiting on it"), "{shown}");
     assert!(
-        shown.contains("Accepted as lapto2. Waiting on laptop: it pairs when that machine next"),
+        shown.contains(
+            "Accepted as lapto2. Waiting on laptop: it pairs once someone on that machine opens \
+             /connect or looks at this one"
+        ),
         "{shown}"
     );
 }
@@ -645,4 +652,148 @@ fn a_reader_naming_an_offer_as_the_client_reconnects_keeps_what_they_have_in_han
     let shown = prose(&application);
     assert!(shown.contains("> laptop"), "{shown}");
     assert!(!shown.contains("no longer stands"), "{shown}");
+}
+
+/// Each reason stands on the row itself, keys on it or not.
+#[test]
+fn the_row_says_why_it_cannot_be_offered_with_the_keys_elsewhere() {
+    let mut application = Application::default();
+    serving(&mut application, false, ListenerState::Off);
+    configure_remote(&mut application, false);
+    assert!(
+        prose(&application).contains("[-] Also let studio reach this machine · not Serving"),
+        "{}",
+        prose(&application)
+    );
+
+    let mut application = Application::default();
+    serving(&mut application, true, ListenerState::Off);
+    configure_remote(&mut application, false);
+    assert!(prose(&application).contains("reach this machine · no way to offer"));
+
+    let mut application = Application::default();
+    serving(&mut application, true, listening());
+    configure_remote(&mut application, true);
+    assert!(prose(&application).contains("reach this machine · already reaches here"));
+}
+
+/// A listener on loopback is no way to offer, as the Server holds it, and says
+/// what to do rather than let a reader choose it to be refused.
+#[test]
+fn a_listener_on_loopback_reads_as_no_way_to_offer() {
+    let mut application = Application::default();
+    serving(
+        &mut application,
+        true,
+        ListenerState::Open {
+            address: "127.0.0.1:7777".parse().unwrap(),
+        },
+    );
+    on_the_option(&mut application, false);
+
+    let shown = prose(&application);
+    assert!(shown.contains("· no way to offer"), "{shown}");
+    assert!(shown.contains("bound to loopback"), "{shown}");
+    press(&mut application, KeyCode::Char(' '));
+    assert!(!redeemed_offering(press(&mut application, KeyCode::Enter)));
+}
+
+/// A frame with no room for what the key opens says so, rather than leave Space
+/// doing nothing with no word as to why.
+#[test]
+fn a_terminal_too_small_to_say_what_the_key_opens_says_so_and_does_nothing() {
+    let mut application = Application::default();
+    serving(&mut application, false, ListenerState::Off);
+    on_the_option(&mut application, false);
+
+    let shown = rendered_application_rows_at(&application, 60, 12)
+        .join(" ")
+        .replace('│', " ");
+    let shown = shown.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        shown.contains("too small to show what that opens"),
+        "{shown}"
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Char(' ')),
+        ApplicationTransition::Continue
+    );
+
+    // With room, the same key takes it.
+    prose(&application);
+    assert!(matches!(
+        press(&mut application, KeyCode::Char(' ')),
+        ApplicationTransition::MutateSetting { .. }
+    ));
+}
+
+#[test]
+fn arming_the_removal_of_a_remote_says_it_ends_the_offer_it_stands_under() {
+    let mut application = Application::default();
+    offers(&mut application, Vec::new(), vec![made(false, None)]);
+    connect(&mut application, vec![studio()]);
+    press(&mut application, KeyCode::Down);
+
+    press(&mut application, KeyCode::Char('x'));
+
+    assert!(
+        prose(&application).contains("x confirm removal, which ends the offer too"),
+        "{}",
+        prose(&application)
+    );
+}
+
+/// What a row does has a command of its own, so a plugin or a mouse invokes the
+/// same behaviour: removing a Remote and turning the Outlook do neither to an
+/// offer, whichever row is selected.
+#[test]
+fn accepting_and_declining_are_commands_of_their_own() {
+    let invoke = |application: &mut Application, id: SemanticCommandId| {
+        application
+            .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(id)))
+            .expect("invoke the command")
+    };
+    let mut application = Application::default();
+    offers(&mut application, vec![held("laptop", None)], Vec::new());
+    connect(&mut application, Vec::new());
+    press(&mut application, KeyCode::Down);
+
+    assert_eq!(
+        invoke(&mut application, SemanticCommandId::ConnectRemoveRemote),
+        ApplicationTransition::Continue
+    );
+    assert_eq!(
+        invoke(&mut application, SemanticCommandId::ConnectRemoveRemote),
+        ApplicationTransition::Continue,
+        "removing a Remote declines no offer, however often asked"
+    );
+    assert_eq!(
+        invoke(&mut application, SemanticCommandId::OutlookSelect),
+        ApplicationTransition::Continue
+    );
+    assert!(prose(&application).contains("offers to be reached"));
+
+    invoke(&mut application, SemanticCommandId::ConnectDeclineOffer);
+    assert_eq!(
+        invoke(&mut application, SemanticCommandId::ConnectDeclineOffer),
+        ApplicationTransition::AnswerOffer {
+            id: OFFER,
+            answer: AnswerOfferRequest::Decline
+        }
+    );
+
+    invoke(&mut application, SemanticCommandId::ConnectAcceptOffer);
+    assert!(prose(&application).contains("> laptop"));
+    assert_eq!(
+        SemanticCommandId::ConnectAcceptOffer.as_str(),
+        "connect.pair-back.accept"
+    );
+    assert_eq!(
+        SemanticCommandId::ConnectDeclineOffer.as_str(),
+        "connect.pair-back.decline"
+    );
+    assert_eq!(
+        SemanticCommandId::ConnectWithdrawOffer.as_str(),
+        "connect.pair-back.withdraw"
+    );
 }
