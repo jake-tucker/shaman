@@ -313,6 +313,10 @@ pub struct ServerTimings {
     /// How soon, at the least, an accepted offer whose last try came to
     /// nothing is tried again, on either side, while the two are connected.
     pub pair_back_retry_interval: Duration,
+    /// Whether a listener bound to a loopback address counts as a way to offer
+    /// another machine. It never does, but for tests whose Servers are all on
+    /// one machine.
+    pub pair_back_offers_loopback: bool,
     /// Server-to-Server protocol version, injectable for compatibility tests.
     pub pairing_protocol_version: u32,
     /// Which proxy, if any, each direct way of a Remote is dialled through:
@@ -436,6 +440,7 @@ impl Default for ServerTimings {
             told_relays_store_interval: Duration::from_secs(5),
             pair_back_invite_ttl: Duration::from_secs(2 * 60),
             pair_back_retry_interval: Duration::from_secs(60),
+            pair_back_offers_loopback: false,
             pairing_protocol_version: PROTOCOL_VERSION,
             direct_proxies: DirectProxies::from_environment(),
             identity_store_timeout: crate::serving::IDENTITY_STORE_TIMEOUT,
@@ -547,6 +552,13 @@ impl ServerTimings {
     /// given up without waiting out the default.
     pub fn with_pair_back_invite_ttl(mut self, ttl: Duration) -> Self {
         self.pair_back_invite_ttl = ttl;
+        self
+    }
+
+    /// Has a listener bound to a loopback address count as a way to offer, for
+    /// tests whose Servers are all on one machine.
+    pub fn with_pair_back_offering_loopback(mut self) -> Self {
+        self.pair_back_offers_loopback = true;
         self
     }
 
@@ -1670,6 +1682,7 @@ async fn start(
         timings.pair_back_invite_ttl,
         timings.pair_back_retry_interval,
     )
+    .offering_loopback(timings.pair_back_offers_loopback)
     .with_joined_keepalive(crate::serving::JoinedKeepalive {
         interval: timings.joined_stream_keepalive_interval,
         timeout: timings.joined_stream_keepalive_timeout,

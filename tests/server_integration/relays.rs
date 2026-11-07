@@ -43,6 +43,8 @@ mod offering;
 mod operator;
 #[path = "relays/pair_back.rs"]
 mod pair_back;
+#[path = "relays/pair_back_faults.rs"]
+mod pair_back_faults;
 #[path = "relays/pairing.rs"]
 mod pairing;
 #[path = "relays/serving.rs"]

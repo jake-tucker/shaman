@@ -389,6 +389,8 @@ pub(crate) struct ServingController {
     /// What is under way of the offers to pair back this Server holds and has
     /// made, beside the records of them on its Peers and Remotes.
     pair_back: Arc<PairBack>,
+    /// Whether a listener bound to a loopback address counts as a way to offer.
+    offers_loopback: bool,
 }
 
 /// How what a Server's Remotes tell of the Relays they Serve through is
@@ -516,6 +518,11 @@ fn relay_refusal<'error>(
 /// A held client a Serving Server is asked through.
 type StrongClient = Arc<PairingHttpClient>;
 
+/// Whether another machine could be offered this one at `ip`.
+pub(crate) fn offerable_ip(ip: std::net::IpAddr) -> bool {
+    !ip.is_loopback() && !ip.is_unspecified() && !ip.is_multicast()
+}
+
 /// This machine's own addresses, as an Invite may offer them, at `port`.
 pub(crate) fn machine_addresses(port: u16) -> std::io::Result<Vec<SocketAddr>> {
     let mut addresses = if_addrs::get_if_addrs()?
@@ -530,15 +537,7 @@ pub(crate) fn machine_addresses(port: u16) -> std::io::Result<Vec<SocketAddr>> {
 
 fn machine_address(interface: &if_addrs::Interface, port: u16) -> Option<SocketAddr> {
     let address = interface.ip();
-    let is_candidate = match address {
-        std::net::IpAddr::V4(address) => {
-            !address.is_loopback() && !address.is_unspecified() && !address.is_multicast()
-        }
-        std::net::IpAddr::V6(address) => {
-            !address.is_loopback() && !address.is_unspecified() && !address.is_multicast()
-        }
-    };
-    if !is_candidate {
+    if !offerable_ip(address) {
         return None;
     }
     Some(match address {
@@ -937,7 +936,9 @@ impl PairingFailure {
             SessionErrorCode::PeerNotFound
             | SessionErrorCode::RemoteNotFound
             | SessionErrorCode::OfferNotFound => StatusCode::NOT_FOUND,
-            SessionErrorCode::PairBackNotOfferable => StatusCode::CONFLICT,
+            SessionErrorCode::PairBackNotOfferable | SessionErrorCode::OfferBeingRedeemed => {
+                StatusCode::CONFLICT
+            }
             _ => StatusCode::BAD_REQUEST,
         }
     }
@@ -1042,6 +1043,7 @@ impl ServingController {
                 crate::server::ServerTimings::default().pair_back_invite_ttl,
                 crate::server::ServerTimings::default().pair_back_retry_interval,
             )),
+            offers_loopback: false,
         }
         .with_offers_published())
     }
@@ -1055,6 +1057,13 @@ impl ServingController {
     ) -> Self {
         self.pair_back = Arc::new(PairBack::new(invite_ttl, retry_interval));
         self.with_offers_published()
+    }
+
+    /// Has a listener bound to a loopback address count as a way to offer, for
+    /// the tests whose machines are one machine.
+    pub(crate) fn offering_loopback(mut self, loopback: bool) -> Self {
+        self.offers_loopback = loopback;
+        self
     }
 
     /// Bounds how long removing a Remote waits for that Remote to drop its
@@ -3619,7 +3628,58 @@ fn takes_an_author(method: &Method, path: &str) -> bool {
     )
 }
 
+/// `path` as a router might be taken to mean it, however it is spelled: percent
+/// decoded until it no longer changes, in lower case, with empty and dot segments
+/// resolved. The guard judges this rather than the spelling, so what it refuses
+/// does not rest on the router declining to read `%70airing`, `/V1/` or `//`; a
+/// Session API route it lets through is still asked for as it was spelled.
+fn route_as_meant(path: &str) -> String {
+    let mut decoded = path.to_owned();
+    loop {
+        let next = percent_decoded(&decoded);
+        if next == decoded {
+            break;
+        }
+        decoded = next;
+    }
+    let lowered = decoded.to_lowercase();
+    let mut segments = Vec::new();
+    for segment in lowered.split(['/', '\\']) {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            segment => segments.push(segment),
+        }
+    }
+    format!("/{}", segments.join("/"))
+}
+
+/// `text` with each `%XX` read as the byte it says.
+fn percent_decoded(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let escape = (bytes[index] == b'%')
+            .then(|| text.get(index + 1..index + 3))
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        if let Some(byte) = escape {
+            decoded.push(byte);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
 fn peer_route_class(method: &Method, path: &str) -> PeerRouteClass {
+    let path = route_as_meant(path);
+    let path = path.as_str();
     let settings_mutation = *method == Method::POST && path == "/v1/settings";
     let stop = *method == Method::POST && path == "/v1/server/stop";
     let pairing_management = path == "/v1/pairing" || path.starts_with("/v1/pairing/");
@@ -7459,6 +7519,54 @@ mod tests {
             "a Relay way still told stays where it was, and one told newly comes after"
         );
         assert_eq!(kept_up(&ways, &[]), [direct], "the direct ways stay");
+    }
+
+    #[test]
+    fn a_route_is_classed_by_what_it_means_however_it_is_spelled() {
+        for (method, spelled) in [
+            (Method::GET, "/v1/%70airing/remotes"),
+            (Method::GET, "/v1/pa%69ring/offers"),
+            (Method::GET, "/V1/pairing/remotes"),
+            (Method::GET, "/v1/PAIRING/offers"),
+            (Method::GET, "/v1//pairing/offers"),
+            (Method::GET, "//v1/pairing/peers"),
+            (Method::GET, "/%2576%31/pairing/peers"),
+            (Method::GET, "/v1%2Fpairing%2Fpeers"),
+            (Method::GET, "/v1/pairing/"),
+            (Method::GET, "/v1/sessions/../pairing/peers"),
+            (Method::GET, "/V1/RELAYS"),
+            (Method::GET, "/v1/%72elays/x"),
+            (Method::GET, "/v1/EVENTS"),
+            (Method::GET, "/v1/%6Fnboarded"),
+            (Method::POST, "/V1/settings"),
+            (Method::POST, "/v1/%73ettings"),
+            (Method::POST, "/v1/settings/"),
+            (Method::POST, "/v1/server//stop"),
+        ] {
+            assert!(
+                peer_route_class(&method, spelled) == PeerRouteClass::Administration,
+                "{method} {spelled}"
+            );
+        }
+        for (method, route) in [
+            (Method::GET, "/health"),
+            (Method::GET, "/v1/session-events"),
+            (Method::GET, "/v1/settings"),
+            (Method::GET, "/v1/models"),
+            (Method::GET, "/v1/workspaces"),
+            (Method::GET, "/v1/workspaces/directory"),
+            (Method::POST, "/v1/sessions"),
+            (Method::POST, "/v1/checkouts/prepare"),
+            (Method::GET, "/v1/sessions/Session%20One/subagents"),
+            (Method::POST, "/v1/sessions/abc/prompts"),
+            (Method::POST, "/v1/attachments"),
+            (Method::GET, "/v1/attachments/abc"),
+        ] {
+            assert!(
+                peer_route_class(&method, route) == PeerRouteClass::Api,
+                "{method} {route}"
+            );
+        }
     }
 
     #[test]

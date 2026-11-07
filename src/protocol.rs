@@ -1962,6 +1962,17 @@ pub enum ListenerState {
     Failed { reason: String },
 }
 
+impl ListenerState {
+    /// Whether it listens anywhere another machine could reach it: a loopback
+    /// address reaches this machine alone.
+    pub fn reachable_by_others(&self) -> bool {
+        match self {
+            Self::Open { address } => !address.ip().to_canonical().is_loopback(),
+            Self::Off | Self::Failed { .. } => false,
+        }
+    }
+}
+
 /// Whether Provider Sessions are offered the Broker: Suru's own Tools, served
 /// on the Server's loopback listener, through which an Agent reaches any
 /// Provider Suru hosts. Off means no Provider start is handed the endpoint and
@@ -5826,6 +5837,8 @@ pub enum SessionErrorCode {
     PairBackNotOfferable,
     /// No offer to pair back stands under the id asked of.
     OfferNotFound,
+    /// An offer to pair back is being redeemed, so its answer cannot change.
+    OfferBeingRedeemed,
     InvalidRemoteName,
     RemoteNameConflict,
     RemoteNotFound,

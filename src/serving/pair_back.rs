@@ -43,7 +43,7 @@ use super::{
 use crate::{
     protocol::{
         AnswerOfferRequest, HeldOffer, InviteText, ListenerState, MadeOffer, OfferAcceptance,
-        OfferHeldUp, PairBackOffers, Remote, SessionErrorCode, SessionTimestamp,
+        OfferHeldUp, PairBackOffers, RedemptionFailure, Remote, SessionErrorCode, SessionTimestamp,
     },
     shown_text::{fingerprint_prefixes, short_fingerprint, shown},
 };
@@ -51,9 +51,13 @@ use crate::{
 /// Where a Peer speaks of its own offer to pair back.
 pub(super) const OFFER_PATH: &str = "/v1/pairing/offer";
 
-/// The most of why a redemption failed that is kept for a reader: more than
-/// any failure says, what it says naming what the Invite offered.
-const MAX_FAILURE_CHARS: usize = 400;
+/// The most of a machine's own addresses an offer's Invite carries.
+const MOST_DIRECT_WAYS: usize = 16;
+
+/// The most ways an Invite sent for an offer may offer, and be dialled: as many
+/// as a Server sends. Past it the Invite is refused undialled, since each way
+/// is one more address another machine could have this one dial in turn.
+const MOST_WAYS_DIALLED: usize = MOST_DIRECT_WAYS + super::MAX_TOLD_RELAYS;
 
 /// An offer as the Server it was made to holds it, on the Peer that made it.
 /// Nothing in it came from that Peer but its id: a reader knows it by the name
@@ -221,6 +225,9 @@ struct UnderWay {
     held_up: Option<OfferHeldUp>,
     /// How soon it may be tried again after coming to nothing.
     next_try: Option<tokio::time::Instant>,
+    /// How soon a Peer may say again why it cannot be met, each change of which
+    /// is told to every Client here.
+    next_reason: Option<tokio::time::Instant>,
 }
 
 impl PairBack {
@@ -261,6 +268,19 @@ impl PairBack {
     fn came_to_nothing(&self, id: Uuid) {
         self.under_way().entry(id).or_default().next_try =
             Some(tokio::time::Instant::now() + self.retry_interval);
+    }
+
+    /// Takes that a Peer says now why `id` cannot be met, answering whether it
+    /// may yet: once for each interval, however fast it says so.
+    fn may_say_why(&self, id: Uuid) -> bool {
+        let now = tokio::time::Instant::now();
+        let mut under_way = self.under_way();
+        let under_way = under_way.entry(id).or_default();
+        if under_way.next_reason.is_some_and(|at| now < at) {
+            return false;
+        }
+        under_way.next_reason = Some(now + self.retry_interval);
+        true
     }
 
     /// Why `id` has not formed its Pairing, where that is known.
@@ -458,17 +478,19 @@ impl ServingController {
     }
 
     /// Every way this Server can offer now, as `/serve` would have them ticked:
-    /// its listener's address where it is bound to one, or its machine's
-    /// addresses at its port, and each Relay it Serves through with a Login not
-    /// known to need renewing. Turning any of those on is not done here.
+    /// its listener's address where it is bound to one another machine could
+    /// reach, or its machine's addresses at its port, and each Relay it Serves
+    /// through with a Login not known to need renewing. Turning any of those on
+    /// is not done here.
     fn offerable_ways(&self) -> std::result::Result<Vec<Way>, CannotOffer> {
         if !self.serving.borrow().serving {
             return Err(CannotOffer::ServingOff);
         }
         let mut ways = match &*self.listening.borrow() {
-            ListenerState::Open { address } => listened_ways(*address),
+            ListenerState::Open { address } => listened_ways(*address, self.offers_loopback),
             ListenerState::Off | ListenerState::Failed { .. } => Vec::new(),
         };
+        ways.truncate(MOST_DIRECT_WAYS);
         if let Some(relays) = self.relays.get() {
             ways.extend(
                 self.offered_relays
@@ -922,16 +944,31 @@ impl ServingController {
                 "This machine holds that one as a Remote already, so the offer has ended",
             ));
         }
-        self.pair_back.start_afresh(id);
-        self.change_held(id, |offer| {
-            if let Some(offer) = offer.as_mut() {
+        let accepted = self
+            .change_held(id, |offer| {
+                let offer = offer.as_mut()?;
+                // The Remote coming of a redemption goes by the name it began
+                // under, and is known by it should this Server stop midway.
+                if matches!(offer.standing, Standing::Redeeming { .. }) {
+                    return None;
+                }
                 offer.standing = Standing::Accepted { name };
                 if offer.notice == Notice::Untold {
                     offer.notice = Notice::Passed;
                 }
-            }
-        })?
-        .ok_or_else(offer_not_found)
+                Some(())
+            })?
+            .ok_or_else(offer_not_found)?;
+        if accepted.is_none() {
+            return Err(PairingFailure::new(
+                SessionErrorCode::OfferBeingRedeemed,
+                "This machine is pairing with that one right now, under the name it was given. \
+                 Look again in a moment",
+            ));
+        }
+        self.pair_back.start_afresh(id);
+        self.offers_changed();
+        Ok(())
     }
 
     /// Gives the Client run `claimant` the Notice of the offer `id`, where no
@@ -993,6 +1030,9 @@ impl ServingController {
                 if offer.standing == Standing::Waiting {
                     return OfferAnswer::NotAccepted;
                 }
+                if !self.pair_back.may_say_why(id) {
+                    return OfferAnswer::TooSoon;
+                }
                 self.note_held_up(id, why.into());
                 OfferAnswer::Noted
             }
@@ -1021,19 +1061,14 @@ impl ServingController {
         }
         let parsed = match parse_invite(&invite) {
             Ok(parsed) => parsed,
-            Err(error) => {
-                self.pair_back.came_to_nothing(id);
-                self.note_failed(id, &error.message);
-                return OfferAnswer::NotFormed;
-            }
+            Err(_) => return self.not_redeemed(id, RedemptionFailure::Malformed),
         };
         if parsed.server_key != key {
-            self.pair_back.came_to_nothing(id);
-            self.note_failed(
-                id,
-                "It sent an Invite naming another key than its own, so it was refused",
-            );
+            self.not_redeemed(id, RedemptionFailure::WrongKey);
             return OfferAnswer::WrongKey;
+        }
+        if parsed.ways.len() > MOST_WAYS_DIALLED {
+            return self.not_redeemed(id, RedemptionFailure::TooManyWays);
         }
         let begun = self.change_held(id, |offer| {
             let offer = offer.as_mut()?;
@@ -1065,58 +1100,90 @@ impl ServingController {
                 },
             ),
         )
-        .await
-        .unwrap_or_else(|_| {
-            // Given up midway, where it may have left its Remote to commit.
-            if self
-                .stored_remote(&name)
-                .is_ok_and(|stored| stored.public_key == key)
-            {
-                let _ = self.delete_remote(&name);
-            }
-            Err(PairingFailure::new(
-                SessionErrorCode::PairingConnectionFailed,
-                "That machine did not finish pairing in time",
-            ))
-        });
-        match redeemed {
-            Ok(remote) => {
-                let ended = self.change_held(id, |offer| *offer = None);
-                match ended {
-                    Ok(Some(())) => OfferAnswer::Formed,
-                    // Declined, or the Peer gone, as this was under way: what
-                    // came of it goes too, saying so to the Peer.
-                    Ok(None) | Err(_) => {
-                        if let Err(error) = self.remove_remote(&remote.name).await {
-                            tracing::warn!(
-                                "could not take back a Pairing no longer wanted: {}",
-                                error.message
-                            );
-                        }
-                        OfferAnswer::Gone
-                    }
+        .await;
+        let failure = match redeemed {
+            Ok(Ok(remote)) => return self.redeemed_for_offer(id, &remote, &key).await,
+            Ok(Err(failure)) => RedemptionFailure::of(&failure),
+            Err(_) => {
+                // Given up midway, where it may have left its Remote to commit.
+                if self
+                    .stored_remote(&name)
+                    .is_ok_and(|stored| stored.public_key == key)
+                {
+                    let _ = self.delete_remote(&name);
                 }
+                RedemptionFailure::TimedOut
             }
-            Err(error) => {
-                let _ = self.change_held(id, |offer| {
-                    if let Some(offer) = offer.as_mut() {
-                        offer.standing = Standing::Accepted { name };
-                    }
-                });
-                self.pair_back.came_to_nothing(id);
-                self.note_failed(id, &error.message);
-                OfferAnswer::NotFormed
+        };
+        let _ = self.change_held(id, |offer| {
+            if let Some(offer) = offer.as_mut() {
+                offer.standing = Standing::Accepted { name };
             }
-        }
+        });
+        self.not_redeemed(id, failure)
     }
 
-    fn note_failed(&self, id: Uuid, why: &str) {
-        self.note_held_up(
-            id,
-            OfferHeldUp::RedemptionFailed {
-                why: shown(why, MAX_FAILURE_CHARS),
-            },
-        );
+    /// The offer `id` came to nothing, as `why` says, for a reader to be told.
+    fn not_redeemed(&self, id: Uuid, why: RedemptionFailure) -> OfferAnswer {
+        self.pair_back.came_to_nothing(id);
+        self.note_held_up(id, OfferHeldUp::RedemptionFailed { why });
+        OfferAnswer::NotFormed
+    }
+
+    /// The Remote `remote` stands by redeeming what was sent for the offer `id`,
+    /// which ends with it. Where the offer went meanwhile, declined or its Peer
+    /// gone, the Remote goes too. The Peer is told so only where nothing else
+    /// here rests on what it holds for this key: a Remote of that key paired by
+    /// hand meanwhile reaches it by that very Peer.
+    async fn redeemed_for_offer(&self, id: Uuid, remote: &Remote, key: &[u8]) -> OfferAnswer {
+        match self.change_held(id, |offer| *offer = None) {
+            Ok(Some(())) => OfferAnswer::Formed,
+            Ok(None) => {
+                let another_stands = self
+                    .remotes
+                    .read()
+                    .expect("Remote record lock is not poisoned")
+                    .iter()
+                    .any(|stored| stored.public_key == key && stored.remote.name != remote.name);
+                let taken_back = if another_stands {
+                    self.delete_remote(&remote.name)
+                } else {
+                    self.remove_remote(&remote.name).await.map(|_| ())
+                };
+                if let Err(error) = taken_back {
+                    tracing::warn!(
+                        "could not take back a Pairing no longer wanted: {}",
+                        error.message
+                    );
+                }
+                OfferAnswer::Gone
+            }
+            // Left to stand: taken back or kept as the Server next starts, where
+            // it could not be said here how it came out.
+            Err(_) => OfferAnswer::Failed,
+        }
+    }
+}
+
+impl RedemptionFailure {
+    /// What `failure` comes to, in this Server's own terms. The code may be the
+    /// other machine's word, which chooses among these and no further, and what
+    /// it or a way it named says goes no further than this.
+    fn of(failure: &PairingFailure) -> Self {
+        match failure.code {
+            SessionErrorCode::PairingConnectionFailed => Self::NotReached,
+            SessionErrorCode::RelayLoginNeeded => Self::RelayLoginNeeded,
+            SessionErrorCode::RelayDifferentAccounts => Self::RelayAccountsDiffer,
+            SessionErrorCode::RelayCapReached => Self::RelayFull,
+            SessionErrorCode::PairingAuthenticationFailed => Self::WrongKey,
+            SessionErrorCode::RemoteNameConflict | SessionErrorCode::InvalidRemoteName => {
+                Self::NameTaken
+            }
+            SessionErrorCode::InvalidInvite
+            | SessionErrorCode::InvalidInviteWays
+            | SessionErrorCode::UnsupportedInviteVersion => Self::Malformed,
+            _ => Self::Refused,
+        }
     }
 }
 
@@ -1184,17 +1251,23 @@ pub(super) fn take_back_redemptions_caught_midway(
     Ok(())
 }
 
-/// The ways of reaching a listener at `address`: that address where it is bound
-/// to one, and at any address, those of the machine at its port.
-fn listened_ways(address: std::net::SocketAddr) -> Vec<Way> {
-    if !address.ip().is_unspecified() {
+/// The ways of reaching a listener at `address` from another machine: that
+/// address where it is bound to one that could, and at any address, those of the
+/// machine at its port. A loopback address is none, as `/serve` never offers one,
+/// but for tests whose machines are all one (`loopback`).
+fn listened_ways(address: std::net::SocketAddr, loopback: bool) -> Vec<Way> {
+    let ip = address.ip().to_canonical();
+    if ip.is_unspecified() {
+        return crate::serving::machine_addresses(address.port())
+            .unwrap_or_default()
+            .into_iter()
+            .map(Way::Direct)
+            .collect();
+    }
+    if crate::serving::offerable_ip(ip) || (loopback && ip.is_loopback()) {
         return vec![Way::Direct(address)];
     }
-    crate::serving::machine_addresses(address.port())
-        .unwrap_or_default()
-        .into_iter()
-        .map(Way::Direct)
-        .collect()
+    Vec::new()
 }
 
 /// The name a Remote is offered under for the Peer named `peer`, fingerprinted
@@ -1646,6 +1719,26 @@ mod tests {
                 keep: Some(Uuid::from_u128(2))
             },
             "only the offer the other side holds stands"
+        );
+    }
+
+    #[test]
+    fn a_listener_is_a_way_to_offer_only_where_another_machine_could_reach_it() {
+        let direct = |address: &str| {
+            let address = address.parse().unwrap();
+            listened_ways(address, false) == vec![Way::Direct(address)]
+        };
+        assert!(direct("192.0.2.1:7000"));
+        assert!(direct("[2001:db8::1]:7000"));
+        assert!(!direct("127.0.0.1:7000"));
+        assert!(!direct("[::1]:7000"));
+        assert!(
+            !direct("[::ffff:127.0.0.1]:7000"),
+            "loopback however written"
+        );
+        assert!(
+            listened_ways("127.0.0.1:7000".parse().unwrap(), true).len() == 1,
+            "but for a test's machines, all of them one"
         );
     }
 

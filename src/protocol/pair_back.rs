@@ -76,10 +76,38 @@ pub enum OfferHeldUp {
     ServingOff,
     /// The machine that made it Serves, and has no way to offer.
     NoWay,
-    /// The accepting machine could not redeem what it was given, as said.
-    RedemptionFailed { why: String },
+    /// The accepting machine could not redeem what it was given. A closed set,
+    /// so nothing the other machine chose reaches a reader here.
+    RedemptionFailed { why: RedemptionFailure },
     /// The machine accepting it did not redeem what this one gave it.
     NotRedeemed,
+}
+
+/// Why an Invite sent for an offer could not be redeemed, in terms the Server
+/// redeeming it judged for itself.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RedemptionFailure {
+    /// No way it offers answered.
+    NotReached,
+    /// It offers only Relays this Server holds no Login at that stands.
+    RelayLoginNeeded,
+    /// A Relay it offers holds the two Servers under different Accounts.
+    RelayAccountsDiffer,
+    /// A Relay it offers carries no more for the Account.
+    RelayFull,
+    /// It proved, or its Invite named, another key than the one held for it.
+    WrongKey,
+    /// The name its reader gave the Remote cannot be used now.
+    NameTaken,
+    /// What it sent is no Invite this Server can read.
+    Malformed,
+    /// Its Invite offers more ways than this Server dials for one.
+    TooManyWays,
+    /// It did not finish pairing in time.
+    TimedOut,
+    /// It refused, for whatever it said.
+    Refused,
 }
 
 /// A reader's answer to an offer their Server holds.

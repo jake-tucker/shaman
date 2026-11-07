@@ -29,22 +29,27 @@ use super::{
 use crate::support::PROGRESS_DEADLINE;
 
 /// What `workstation` is offered to call `laptop`, once it accepts.
-const LAPTOP: &str = "laptop-back";
+pub(super) const LAPTOP: &str = "laptop-back";
 
 /// A try that came to nothing is tried again soon, so tests wait on no default.
-fn timings() -> ServerTimings {
-    relay_timings().with_pair_back_retry_interval(Duration::from_millis(25))
+pub(super) fn timings() -> ServerTimings {
+    relay_timings()
+        .with_pair_back_retry_interval(Duration::from_millis(25))
+        .with_pair_back_offering_loopback()
 }
 
 impl TestServer {
     /// The way this Server's Serving listener is reached.
-    fn way(&self) -> Way {
+    pub(super) fn way(&self) -> Way {
         Way::Direct(self.serving_address())
     }
 
     /// Redeems `invite`, naming the Remote [`REMOTE`] and offering to pair
     /// back, as Configure Remote does with its option on.
-    async fn redeem_offering(&self, invite: impl Into<InviteText>) -> anyhow::Result<Remote> {
+    pub(super) async fn redeem_offering(
+        &self,
+        invite: impl Into<InviteText>,
+    ) -> anyhow::Result<Remote> {
         self.client
             .redeem_invite(RedeemInviteRequest {
                 invite: invite.into(),
@@ -55,12 +60,15 @@ impl TestServer {
             .await
     }
 
-    async fn offers(&self) -> PairBackOffers {
+    pub(super) async fn offers(&self) -> PairBackOffers {
         self.client.list_offers().await.expect("list the offers")
     }
 
     /// Waits until this Server's offers stand as `reached` says.
-    async fn offers_become(&self, reached: impl Fn(&PairBackOffers) -> bool) -> PairBackOffers {
+    pub(super) async fn offers_become(
+        &self,
+        reached: impl Fn(&PairBackOffers) -> bool,
+    ) -> PairBackOffers {
         let waiting = timeout(PROGRESS_DEADLINE, async {
             loop {
                 let offers = self.offers().await;
@@ -81,27 +89,27 @@ impl TestServer {
     }
 
     /// Waits until this Server holds no offers of either kind.
-    async fn offers_clear(&self) {
+    pub(super) async fn offers_clear(&self) {
         self.offers_become(|offers| offers.held.is_empty() && offers.made.is_empty())
             .await;
     }
 
     /// The offer this Server holds, there being one.
-    async fn held_offer(&self) -> HeldOffer {
+    pub(super) async fn held_offer(&self) -> HeldOffer {
         let offers = self.offers().await;
         assert_eq!(offers.held.len(), 1, "one offer held: {offers:?}");
         offers.held.into_iter().next().unwrap()
     }
 
     /// The offer this Server made, there being one.
-    async fn made_offer(&self) -> MadeOffer {
+    pub(super) async fn made_offer(&self) -> MadeOffer {
         let offers = self.offers().await;
         assert_eq!(offers.made.len(), 1, "one offer made: {offers:?}");
         offers.made.into_iter().next().unwrap()
     }
 
     /// Answers the offer this Server holds by accepting it.
-    async fn accept_offer(&self) {
+    pub(super) async fn accept_offer(&self) {
         let offer = self.held_offer().await;
         self.client
             .answer_offer(
@@ -115,7 +123,7 @@ impl TestServer {
     }
 
     /// Connects to its Remote, as a Client looking at it does.
-    async fn looks_at_remote(&self) {
+    pub(super) async fn looks_at_remote(&self) {
         self.client
             .probe_remote(REMOTE)
             .await
@@ -123,7 +131,7 @@ impl TestServer {
     }
 
     /// Whether it holds a Remote named `name`, and as what.
-    async fn remote_named(&self, name: &str) -> Option<Remote> {
+    pub(super) async fn remote_named(&self, name: &str) -> Option<Remote> {
         self.client
             .list_remotes()
             .await
@@ -132,7 +140,7 @@ impl TestServer {
             .find(|remote| remote.name == name)
     }
 
-    async fn remote_comes_to_be(&self, name: &str) -> Remote {
+    pub(super) async fn remote_comes_to_be(&self, name: &str) -> Remote {
         timeout(PROGRESS_DEADLINE, async {
             loop {
                 if let Some(remote) = self.remote_named(name).await {
@@ -163,7 +171,7 @@ impl TestServer {
         .expect("the Relay comes to be offered");
     }
 
-    async fn peer_count(&self) -> usize {
+    pub(super) async fn peer_count(&self) -> usize {
         self.client
             .list_peers()
             .await
@@ -174,11 +182,14 @@ impl TestServer {
 
 /// A workstation and a laptop each Serving directly, not paired yet, the laptop
 /// able to offer.
-async fn serving_directly(channel: &str) -> (TestServer, TestServer) {
+pub(super) async fn serving_directly(channel: &str) -> (TestServer, TestServer) {
     serving_directly_by(channel, timings()).await
 }
 
-async fn serving_directly_by(channel: &str, timings: ServerTimings) -> (TestServer, TestServer) {
+pub(super) async fn serving_directly_by(
+    channel: &str,
+    timings: ServerTimings,
+) -> (TestServer, TestServer) {
     let workstation =
         TestServer::with_timings(&format!("{channel}-workstation"), timings.clone()).await;
     let laptop = TestServer::with_timings(&format!("{channel}-laptop"), timings).await;
@@ -188,13 +199,13 @@ async fn serving_directly_by(channel: &str, timings: ServerTimings) -> (TestServ
 }
 
 /// The same, paired, with the laptop's offer standing on both.
-async fn offered_directly(channel: &str) -> (TestServer, TestServer) {
+pub(super) async fn offered_directly(channel: &str) -> (TestServer, TestServer) {
     let (workstation, laptop) = serving_directly(channel).await;
     offer(&workstation, &laptop).await;
     (workstation, laptop)
 }
 
-async fn offer(workstation: &TestServer, laptop: &TestServer) {
+pub(super) async fn offer(workstation: &TestServer, laptop: &TestServer) {
     let invite = workstation.invite(vec![workstation.way()]).await;
     laptop
         .redeem_offering(invite)
@@ -610,9 +621,16 @@ async fn a_failed_redemption_says_why_there_and_is_tried_again_at_a_bounded_pace
     laptop.looks_at_remote().await;
     let failed = workstation
         .offers_become(|offers| {
-            offers.held.first().and_then(|held| held.answer.as_ref()).is_some_and(|answer| {
-                matches!(&answer.held_up, Some(OfferHeldUp::RedemptionFailed { why }) if why.contains(LAPTOP))
-            })
+            offers
+                .held
+                .first()
+                .and_then(|held| held.answer.as_ref())
+                .is_some_and(|answer| {
+                    answer.held_up
+                        == Some(OfferHeldUp::RedemptionFailed {
+                            why: suru::protocol::RedemptionFailure::NameTaken,
+                        })
+                })
         })
         .await;
     assert_eq!(failed.held.len(), 1, "the offer stands");
@@ -682,7 +700,7 @@ async fn a_try_that_came_to_nothing_is_not_made_again_soon_however_a_peer_asks()
 
 /// A connection to `workstation`, speaking as `laptop`'s key does: a hostile
 /// laptop, which says what it likes over the Pairing it really holds.
-async fn hostile(laptop: &TestServer, workstation: &TestServer) -> Multiplexed {
+pub(super) async fn hostile(laptop: &TestServer, workstation: &TestServer) -> Multiplexed {
     let stream = tokio::net::TcpStream::connect(workstation.serving_address())
         .await
         .expect("dial the Serving listener");
@@ -692,7 +710,7 @@ async fn hostile(laptop: &TestServer, workstation: &TestServer) -> Multiplexed {
     Multiplexed::over(tls).await.expect("speak HTTP/2")
 }
 
-fn said(body: serde_json::Value) -> Request<Full<axum::body::Bytes>> {
+pub(super) fn said(body: serde_json::Value) -> Request<Full<axum::body::Bytes>> {
     Request::builder()
         .method(Method::POST)
         .uri("/v1/pairing/offer")
@@ -702,7 +720,7 @@ fn said(body: serde_json::Value) -> Request<Full<axum::body::Bytes>> {
         .unwrap()
 }
 
-fn answer(said: &[u8]) -> String {
+pub(super) fn answer(said: &[u8]) -> String {
     serde_json::from_slice::<String>(said).expect("an answer in one word")
 }
 

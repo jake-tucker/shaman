@@ -12,8 +12,8 @@ use suru::{
     managed_client::ManagedEvent,
     protocol::{
         AnswerOfferRequest, EffectiveSettings, HeldOffer, InvitePreview, ListenerState, MadeOffer,
-        OfferAcceptance, OfferHeldUp, PairBackOffers, Relay, RelayListing, RelayState, Remote,
-        RemoteStatus, SessionTimestamp, SettingMutation, Way,
+        OfferAcceptance, OfferHeldUp, PairBackOffers, RedemptionFailure, Relay, RelayListing,
+        RelayState, Remote, RemoteStatus, SessionTimestamp, SettingMutation, Way,
     },
     tui::{Application, ApplicationEvent, ApplicationTransition},
 };
@@ -432,9 +432,9 @@ fn it_says_why_an_accepted_offer_has_not_formed_in_words_of_its_own() {
         (OfferHeldUp::NoWay, "laptop Serves, and has no way to offer"),
         (
             OfferHeldUp::RedemptionFailed {
-                why: "could not reach an offered address".to_owned(),
+                why: RedemptionFailure::NotReached,
             },
-            "The last try failed, and is tried again by itself: could not reach",
+            "The last try failed, and is tried again by itself: no way laptop offers answered",
         ),
     ] {
         offers(

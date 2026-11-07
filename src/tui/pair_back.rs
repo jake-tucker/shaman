@@ -7,7 +7,9 @@
 //! be redeemed, so both reach a reader as what can be shown.
 
 use crate::{
-    protocol::{HeldOffer, ListenerState, MadeOffer, OfferHeldUp, SessionTimestamp},
+    protocol::{
+        HeldOffer, ListenerState, MadeOffer, OfferHeldUp, RedemptionFailure, SessionTimestamp,
+    },
     shown_text::{short_fingerprint, shown},
 };
 
@@ -53,6 +55,12 @@ impl OfferFix {
 /// What turning Serving on opens, said before its key is taken.
 const SERVING_OPENS: &str = "Turning Serving on has this machine accept the Servers paired with it";
 
+/// What is said where the listener listens on a loopback address, which other
+/// machines cannot reach, and nothing else could be offered.
+const LOOPBACK_ONLY: &str = "This machine has no way to offer: its Serving listener is bound to \
+                             loopback, which other machines cannot reach, and it Serves through \
+                             no Relay";
+
 /// How the option to pair back stands on Configure Remote.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum PairBackOption {
@@ -81,7 +89,7 @@ impl PairBackOption {
                 fix: Some(OfferFix::TurnServingOn),
             };
         }
-        if matches!(ways.listener, ListenerState::Open { .. }) {
+        if ways.listener.reachable_by_others() {
             return Self::Offerable;
         }
         let held = ways.relays.held_relays();
@@ -106,6 +114,7 @@ impl PairBackOption {
             },
             None => Self::Withheld {
                 why: match (ways.listener, held.is_empty()) {
+                    (ListenerState::Open { .. }, _) => LOOPBACK_ONLY.to_owned(),
                     (ListenerState::Failed { .. }, _) => NO_WAY_UNTIL_LISTENING.to_owned(),
                     (_, true) => format!("{NO_WAY}. {NO_RELAY}"),
                     (_, false) => NO_WAY.to_owned(),
@@ -148,6 +157,35 @@ pub(super) fn held_row(offer: &HeldOffer, now: SessionTimestamp) -> String {
     )
 }
 
+/// Why a redemption failed, in this machine's own words: `peer` is the one name
+/// in them that came from elsewhere, and that as can be shown.
+fn failure_said(why: RedemptionFailure, peer: &str) -> String {
+    match why {
+        RedemptionFailure::NotReached => format!("no way {peer} offers answered"),
+        RedemptionFailure::RelayLoginNeeded => {
+            format!("{peer} offers only a Relay this machine is not logged in at; see /relay")
+        }
+        RedemptionFailure::RelayAccountsDiffer => {
+            format!("a Relay {peer} offers holds the two machines under different Accounts")
+        }
+        RedemptionFailure::RelayFull => {
+            format!("a Relay {peer} offers carries no more for this Account just now")
+        }
+        RedemptionFailure::WrongKey => {
+            format!("what answered did not prove the key held for {peer}")
+        }
+        RedemptionFailure::NameTaken => {
+            "a Remote goes by that name now; press Enter to give it another".to_owned()
+        }
+        RedemptionFailure::Malformed => format!("{peer} sent nothing this machine could read"),
+        RedemptionFailure::TooManyWays => {
+            format!("{peer} offered more ways than this machine tries")
+        }
+        RedemptionFailure::TimedOut => format!("{peer} did not finish pairing in time"),
+        RedemptionFailure::Refused => format!("{peer} refused it"),
+    }
+}
+
 /// What is said of an offer this Server holds, its row selected.
 pub(super) fn held_detail(offer: &HeldOffer) -> Vec<String> {
     let peer = said_name(&offer.peer);
@@ -167,7 +205,7 @@ pub(super) fn held_detail(offer: &HeldOffer) -> Vec<String> {
         OfferHeldUp::RedemptionFailed { why } => {
             format!(
                 "The last try failed, and is tried again by itself: {}",
-                shown(why, 400)
+                failure_said(*why, &peer)
             )
         }
         OfferHeldUp::NotRedeemed => "The last try failed; it is tried again by itself".to_owned(),
