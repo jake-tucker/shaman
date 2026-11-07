@@ -662,12 +662,13 @@ at all until a user logs in there. Each machine's Login is still formed by its o
 [Logging in](#logging-in), and Serving through the Relay is still chosen on each machine and off until chosen. So a
 rollout to a thousand machines costs the Relay nothing, and admits nobody the admission rules do not.
 
-A running Server notices a change to the document within a couple of seconds, with no restart. An address written two
-ways (`relay.example.com` and `https://RELAY.example.com/`) is one entry, though a host name's trailing dot makes it
-another address, and an entry a user already holds is pinned as it stands, keeping its Login and its choice to Serve
-through it. An address no Relay is reached at is ignored alone,
-saying which entry of the list it was, and the others still apply. A document that stops parsing while a Server runs
-says so and takes nothing away until it is mended.
+A running Server follows a change to this list within a couple of seconds, with no restart. That goes for this list
+alone, since a pin opens nothing: anything else changed in the file takes effect at the next start, and until then Suru
+names each key that differs, in a Notice and in `/settings`. An address written two ways (`relay.example.com` and
+`https://RELAY.example.com/`) is one entry, though a host name's trailing dot makes it another address, and an entry a
+user already holds is pinned as it stands, keeping its Login and its choice to Serve through it. An address no Relay is
+reached at is ignored alone, saying which entry of the list it was, and the others still apply. Deleting the document
+unpins its addresses, and one that stops parsing while a Server runs says so and takes nothing away until it is mended.
 
 `x` on a pinned Relay is refused, saying which Config Document pins it, since it would only come back. Taking an address
 out of the document, or out of the list in `/settings`, unpins it and leaves the entry, and any Login there, standing, because removing a Relay also has
