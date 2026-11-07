@@ -106,7 +106,11 @@ pub(super) async fn routing_tier_option(
             tracing::warn!("{error}");
             None
         }
-        Ok(Err(_)) | Err(_) => {
+        Ok(Err(_)) => {
+            tracing::warn!("{DISCOVERY_CONTEXT}: its task ended without an answer");
+            None
+        }
+        Err(_) => {
             tracing::warn!("{DISCOVERY_CONTEXT}: the Copilot CLI did not answer within {limit:?}");
             None
         }
