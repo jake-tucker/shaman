@@ -74,6 +74,8 @@ The Session's `totalNanoAiu` came to 397,542,100 across eight Turns, 0.40 credit
 
 - **A disabled tier.** Every tier reported itself enabled on this account, so a disabled one was never
   refused live. Suru treats it as either refusal above.
+- **A disabled default tier.** Nor was one seen, so what Copilot routes on with no tier set and its
+  default disabled is unknown. Suru offers no option then, which only the scripted CLI exercises.
 - **A hung or failing discovery.** Only the scripted CLI exercises one.
 - **A Subagent on a tier's Session, live.** Its Selection is built without one, which the tests read.
 - **Windows and Linux.** Every observation above is from macOS.

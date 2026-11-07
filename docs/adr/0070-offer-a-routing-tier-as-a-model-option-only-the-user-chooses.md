@@ -2,7 +2,7 @@
 
 ADR 0060 has Suru assert the assignment that makes Copilot offer Fusion's tiers. We decided a Routing Tier is a Model Option on Copilot's `auto`, present only while `provider.copilot.fusionTiers` is on, under a new `ModelOptionRole::RoutingTier` that always goes by the ID `routing_tier`, and no other option does, so that what reads a Selection can tell one with no catalog at hand.
 
-A Selection names a tier only where it differs from the Provider's default. Naming none already means that default, so taking it stores none: the picker still shows it in force and the Selection text names it, a fresh Selection starts from none, and going back to it from another tier clears the one Copilot holds. So the Setting going off never has to say a Session left a tier nobody chose.
+A Selection names a tier only where it differs from the Provider's default. Naming none already means that default, so taking it stores none: the picker still shows it in force and the Selection text names it, a fresh Selection starts from none, and going back to it from another tier clears the one Copilot holds. So the Setting going off never has to say a Session left a tier nobody chose. The option's default is therefore always Copilot's own: where Copilot's default cannot be chosen, because it is disabled for the account or kept from a picker, `auto` offers no option at all.
 
 The role itself carries who may choose it. Everything that takes a Selection from an Agent asks `is_the_users_alone` rather than knowing about Copilot: `list_providers` lists no such option, `spawn_subagent` and `begin_session` refuse one named, alike whether the user has any on offer, and a Session an Agent begins under the Landing takes none from it. A Subagent therefore runs on plain `auto`, an Errand never carries one, and the Setting pinning an Errand's Agent offers none.
 
@@ -23,11 +23,13 @@ Whether a tier can be had is left to Copilot on a Model that can take one. `norm
 - **Act on `session.model_change`.** Rejected: `set_model` emits one at once, ahead of the Turn that claims the tier and naming no tier, so reading it as Copilot's word on the tier would take every switch for a refusal. A refusal has an event of its own.
 - **Offer no default until a tier is chosen.** Rejected: the spec has Copilot's default preselected. A Selection naming none stays valid all the same, for a Subagent and for a Session from before the Setting.
 - **Store the default the picker preselects.** Rejected: every new Session would name `balance`, and tell a fallback from a tier nobody chose once the Setting went off. Skipping that row instead would leave a Selection that says more than anyone chose.
+- **Preselect the first tier that can be chosen when Copilot's default cannot, and store that one by name.** Rejected: a fresh Selection names none, and what Copilot routes on with none and its default disabled is unknown, so the picker would still show a tier in force that may not be what runs. Telling the two defaults apart would also take a new field on the option and a change to everything that reads it.
 - **A field on `ModelDescriptor` saying a Model can take a tier.** Rejected: it would go on the wire and into the remembered catalog for the sake of a question only the Server hosting the Provider asks.
 
 ## Consequences
 
 - A Session on the default follows Copilot's default if Copilot changes it. Only a tier that differed from the default when chosen stays put.
+- An account whose default tier is disabled is offered no tier, even with others enabled. A Selection already naming one is still carried to Copilot, and reads as plain Auto, as it does while a discovery has failed. No such account has been seen.
 - A Selection naming the default where no catalog can say so, as a script might with the Setting off, is carried like any tier and tells its Status row. So does one Copilot's refusal corrected onto a tier it reported, whatever the default.
 - Each refresh opens and deletes a Session. It costs no credits, about 150ms the first time plus the listing, and leaves nothing in Copilot's picker or its store.
 - A Selection naming a tier with the Setting off tells one Status row per Session, so a Landing that remembers one tells each new Session in turn.

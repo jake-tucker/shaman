@@ -244,6 +244,37 @@ async fn a_discovery_the_cli_refuses_or_leaves_unanswered_is_auto_with_no_option
     }
 }
 
+/// The option's default is what a Selection naming no tier means, and that is Copilot's own default
+/// or nothing: preselecting another tier would show one in force while Copilot routes on whatever it
+/// does with none, which here it never said. So a default Copilot keeps from being chosen, or from
+/// a picker, offers no option, even with other tiers enabled.
+#[tokio::test]
+async fn a_default_tier_that_cannot_be_chosen_offers_no_option() {
+    let enabled = concat!(
+        r#"{"id":"hydrafusion","displayName":"High","type":"fusion","#,
+        r#""description":"d","status":{"enabled":true}}"#
+    );
+    let default_tier = |status: &str| {
+        assigned_session_arms(&format!(
+            r#"{{"defaultTier":"balance","tiers":[{{"id":"balance","displayName":"Standard","type":"auto","description":"d","status":{status}}},{enabled}]}}"#
+        ))
+    };
+    let flat = without_routing_tier(discovered(&discovering_copilot(""), false).await);
+    for arms in [
+        default_tier(r#"{"enabled":false,"message":"Not on your plan."}"#),
+        default_tier(r#"{"enabled":true,"pickerVisible":false}"#),
+        assigned_session_arms(&format!(
+            r#"{{"defaultTier":"balance","tiers":[{enabled}]}}"#
+        )),
+    ] {
+        let copilot = discovering_copilot(&arms);
+
+        let discovery = discovered(&copilot, true).await;
+
+        assert_eq!(discovery.models, flat, "{arms}");
+    }
+}
+
 /// A Session a refused create filed anyway, and one the deadline abandoned, are not left behind.
 #[tokio::test]
 async fn a_discovery_that_gives_up_still_deletes_its_session() {

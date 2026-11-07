@@ -153,8 +153,9 @@ async fn listed_tiers(
 }
 
 /// The tiers Copilot marks visible, in its order and wording, as a Model Option, with Copilot's own
-/// default preselected where it is on offer and the first tier that is otherwise: a default that
-/// cannot be chosen would reject the whole catalog. Nothing where no tier can be chosen.
+/// default preselected. Nothing where that default cannot be chosen: naming no tier means the
+/// option's default, so preselecting another would show one in force while Copilot routes on
+/// whatever it does with none.
 fn tier_option(auto: AutoTierMetadata) -> Option<ModelOptionDescriptor> {
     let choices = auto
         .tiers
@@ -162,15 +163,17 @@ fn tier_option(auto: AutoTierMetadata) -> Option<ModelOptionDescriptor> {
         .filter(|tier| tier.status.picker_visible != Some(false) && tier.id != FAST_TIER)
         .map(tier_choice)
         .collect::<Vec<_>>();
-    let chooseable =
-        |choice: &&ModelOptionChoice| choice.availability == ModelAvailability::Available;
-    let default = choices
-        .iter()
-        .filter(chooseable)
-        .find(|choice| choice.id.as_str() == auto.default_tier)
-        .or_else(|| choices.iter().find(chooseable))?
-        .id
-        .clone();
+    let Some(default) = choices.iter().find(|choice| {
+        choice.id.as_str() == auto.default_tier
+            && choice.availability == ModelAvailability::Available
+    }) else {
+        tracing::warn!(
+            default = auto.default_tier,
+            "Copilot's default Routing Tier cannot be chosen, so `auto` offers none"
+        );
+        return None;
+    };
+    let default = default.id.clone();
     Some(ModelOptionDescriptor {
         id: ModelOptionId::new(ROUTING_TIER_OPTION_ID),
         label: "Routing tier".to_owned(),
