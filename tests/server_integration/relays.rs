@@ -31,6 +31,8 @@ use crate::support::{
     PROGRESS_DEADLINE, observed_tcp_proxy::ObservedTcpProxy, receive_initial_state,
 };
 
+#[path = "relays/command_line.rs"]
+mod command_line;
 #[path = "relays/dialling.rs"]
 mod dialling;
 #[path = "relays/finding.rs"]
@@ -105,9 +107,22 @@ impl TestRelay {
         Self::starting(SPOKEN.to_vec(), configure).await
     }
 
+    /// A Relay whose logins `provider` carries out.
+    async fn with_provider(provider: ScriptedProvider) -> Self {
+        Self::starting_with(provider, SPOKEN.to_vec(), |config| config).await
+    }
+
     async fn starting(versions: Vec<Version>, configure: fn(RelayConfig) -> RelayConfig) -> Self {
+        Self::starting_with(ScriptedProvider::new(), versions, configure).await
+    }
+
+    async fn starting_with(
+        provider: ScriptedProvider,
+        versions: Vec<Version>,
+        configure: fn(RelayConfig) -> RelayConfig,
+    ) -> Self {
         let directory = tempfile::tempdir().expect("create the Relay's directory");
-        let provider = Arc::new(ScriptedProvider::new());
+        let provider = Arc::new(provider);
         let clock_ahead = Arc::new(AtomicU64::new(0));
         let connection_log = ConnectionLog::default();
         // The route comes first, since the Relay is known by the address

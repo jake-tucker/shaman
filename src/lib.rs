@@ -4,6 +4,7 @@ mod attachments;
 mod broker;
 pub mod build_identity;
 mod change_count;
+pub mod cli;
 mod clock;
 mod errands;
 mod icon_catalog;

@@ -1,9 +1,11 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, process::ExitCode};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use suru::{
-    IdentityStoreChoice, LastStop, logging,
+    IdentityStoreChoice, LastStop,
+    cli::{self, RelayCommand, ServeCommand},
+    logging,
     login_start::{self, KeeperArguments, LoginStart, ServiceManagerStandIn},
     managed_client::{
         ManagedClient, ManagedClientConfig, ServerStatus, ServerStop, server_status, start_server,
@@ -29,9 +31,24 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum CliCommand {
+    /// Starts and stops this Channel's Server, and says how it stands.
     Server {
         #[command(subcommand)]
         command: ServerCommand,
+    },
+    /// Manages this Server's Relays, as `/relay` does, for a machine with no one
+    /// at its screen.
+    #[command(after_help = cli::EXIT_STATUS)]
+    Relay {
+        #[command(subcommand)]
+        command: RelayCommand,
+    },
+    /// Issues Invites to this Server, as `/serve` does, for a machine with no one
+    /// at its screen.
+    #[command(after_help = cli::EXIT_STATUS)]
+    Serve {
+        #[command(subcommand)]
+        command: ServeCommand,
     },
     #[command(name = "__server", hide = true)]
     InternalServer {
@@ -112,9 +129,23 @@ enum ServerCommand {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<ExitCode> {
     std::hint::black_box(&BUILD_ID);
     match Cli::parse().command {
+        Some(CliCommand::Relay { command }) => Ok(ExitCode::from(
+            cli::relay(default_client_config()?, command).await,
+        )),
+        Some(CliCommand::Serve { command }) => Ok(ExitCode::from(
+            cli::serve(default_client_config()?, command).await,
+        )),
+        command => run(command).await.map(|()| ExitCode::SUCCESS),
+    }
+}
+
+async fn run(command: Option<CliCommand>) -> Result<()> {
+    match command {
+        // `main` takes these, which alone say how they exit.
+        Some(CliCommand::Relay { .. } | CliCommand::Serve { .. }) => Ok(()),
         Some(CliCommand::Server {
             command:
                 ServerCommand::Start {
