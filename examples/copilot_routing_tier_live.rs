@@ -1,6 +1,6 @@
 //! Walks one Session on a Routing Tier through a real Suru Server and the installed Copilot CLI: the
 //! catalog with the Setting on, a Turn on the tier, a tier Copilot refuses at once and one it
-//! refuses as a Turn claims it, a resume, and the Setting off. Each Turn is a one-word Prompt and
+//! refuses as a Turn claims it, a resume, going back to Copilot's default, and the Setting off. Each Turn is a one-word Prompt and
 //! spends real AI Credits, so it runs somewhere disposable:
 //!
 //! ```sh
@@ -275,6 +275,22 @@ async fn main() -> Result<(), Failure> {
         4,
     );
 
+    report(
+        "back to Copilot's default, which names no tier",
+        &next_turn(&client, session_id, 5, Some(on_auto(Some("balance")))).await?,
+        5,
+    );
+
+    // Chosen again with no Turn to spend, so the Setting going off has a tier to take away.
+    client
+        .update_agent_selection(
+            session_id,
+            UpdateAgentSelectionRequest {
+                operation_id: AgentSelectionOperationId::new(),
+                selection: on_auto(Some("hydrafusion")),
+            },
+        )
+        .await?;
     drop(client);
     server.shutdown().await?;
     let (server, client) = home.host().await?;
@@ -283,13 +299,13 @@ async fn main() -> Result<(), Failure> {
         .await?;
     report(
         "resumed with the Setting off",
-        &next_turn(&client, session_id, 5, None).await?,
-        5,
+        &next_turn(&client, session_id, 6, None).await?,
+        6,
     );
     report(
         "and the Turn after",
-        &next_turn(&client, session_id, 6, None).await?,
-        6,
+        &next_turn(&client, session_id, 7, None).await?,
+        7,
     );
 
     drop(client);
