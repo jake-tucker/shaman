@@ -1213,7 +1213,10 @@ async fn a_relay_the_accepting_machine_holds_no_login_at_is_said_and_it_forms_on
                 .first()
                 .and_then(|held| held.answer.as_ref())
                 .is_some_and(|answer| {
-                    matches!(answer.held_up, Some(OfferHeldUp::RedemptionFailed { .. }))
+                    answer.held_up
+                        == Some(OfferHeldUp::RedemptionFailed {
+                            why: suru::protocol::RedemptionFailure::RelayLoginNeeded,
+                        })
                 })
         })
         .await;

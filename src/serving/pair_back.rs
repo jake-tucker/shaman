@@ -190,7 +190,7 @@ enum OfferAnswer {
     WrongKey,
     /// The last try came to nothing too lately to try again yet.
     TooSoon,
-    /// A try is under way.
+    /// A redemption of it is under way here now.
     Busy,
     /// It could not be taken just now, and may be said again.
     Failed,
@@ -1115,12 +1115,42 @@ impl ServingController {
                 RedemptionFailure::TimedOut
             }
         };
-        let _ = self.change_held(id, |offer| {
-            if let Some(offer) = offer.as_mut() {
-                offer.standing = Standing::Accepted { name };
-            }
-        });
+        self.settle_held(id, Some(&Standing::Accepted { name }));
         self.not_redeemed(id, failure)
+    }
+
+    /// Settles the offer `id` as a redemption ended: standing as `standing` says,
+    /// or gone. It holds from here on whether or not it can be stored, so an end
+    /// no write would take leaves nothing waiting on a redemption long over, and
+    /// the next write of the Peers stores it with them. Answers whether the offer
+    /// stood. Should the Server stop before that write, what it left stored says a
+    /// redemption was caught midway, which it takes back as it starts: a Remote
+    /// formed so is formed again, or ends as the Peer next says.
+    fn settle_held(&self, id: Uuid, standing: Option<&Standing>) -> bool {
+        let settle = |offer: &mut Option<StoredHeldOffer>| match (standing, offer.as_mut()) {
+            (Some(standing), Some(offer)) => offer.standing = standing.clone(),
+            (Some(_), None) => {}
+            (None, _) => *offer = None,
+        };
+        match self.change_held(id, settle) {
+            Ok(stood) => stood.is_some(),
+            Err(failure) => {
+                tracing::warn!(
+                    "could not store how a redemption ended: {}",
+                    failure.message
+                );
+                let stood = self
+                    .peers
+                    .write()
+                    .expect("Peer record lock is not poisoned")
+                    .iter_mut()
+                    .find(|peer| peer.offer.as_ref().is_some_and(|offer| offer.id == id))
+                    .map(|peer| settle(&mut peer.offer))
+                    .is_some();
+                self.offers_changed();
+                stood
+            }
+        }
     }
 
     /// The offer `id` came to nothing, as `why` says, for a reader to be told.
@@ -1136,40 +1166,39 @@ impl ServingController {
     /// here rests on what it holds for this key: a Remote of that key paired by
     /// hand meanwhile reaches it by that very Peer.
     async fn redeemed_for_offer(&self, id: Uuid, remote: &Remote, key: &[u8]) -> OfferAnswer {
-        match self.change_held(id, |offer| *offer = None) {
-            Ok(Some(())) => OfferAnswer::Formed,
-            Ok(None) => {
-                let another_stands = self
-                    .remotes
-                    .read()
-                    .expect("Remote record lock is not poisoned")
-                    .iter()
-                    .any(|stored| stored.public_key == key && stored.remote.name != remote.name);
-                let taken_back = if another_stands {
-                    self.delete_remote(&remote.name)
-                } else {
-                    self.remove_remote(&remote.name).await.map(|_| ())
-                };
-                if let Err(error) = taken_back {
-                    tracing::warn!(
-                        "could not take back a Pairing no longer wanted: {}",
-                        error.message
-                    );
-                }
-                OfferAnswer::Gone
-            }
-            // Left to stand: taken back or kept as the Server next starts, where
-            // it could not be said here how it came out.
-            Err(_) => OfferAnswer::Failed,
+        if self.settle_held(id, None) {
+            return OfferAnswer::Formed;
         }
+        let another_stands = self
+            .remotes
+            .read()
+            .expect("Remote record lock is not poisoned")
+            .iter()
+            .any(|stored| stored.public_key == key && stored.remote.name != remote.name);
+        let taken_back = if another_stands {
+            self.delete_remote(&remote.name)
+        } else {
+            self.remove_remote(&remote.name).await.map(|_| ())
+        };
+        if let Err(error) = taken_back {
+            tracing::warn!(
+                "could not take back a Pairing no longer wanted: {}",
+                error.message
+            );
+        }
+        OfferAnswer::Gone
     }
 }
 
 impl RedemptionFailure {
-    /// What `failure` comes to, in this Server's own terms. The code may be the
-    /// other machine's word, which chooses among these and no further, and what
-    /// it or a way it named says goes no further than this.
+    /// What `failure` comes to, in this Server's own terms. Each says what this
+    /// Server judged for itself. What the other machine said, code and all, is a
+    /// refusal and no more, since a code of its choosing could send a reader to
+    /// log in somewhere or round a rename for nothing.
     fn of(failure: &PairingFailure) -> Self {
+        if failure.said_by_the_other {
+            return Self::Refused;
+        }
         match failure.code {
             SessionErrorCode::PairingConnectionFailed => Self::NotReached,
             SessionErrorCode::RelayLoginNeeded => Self::RelayLoginNeeded,

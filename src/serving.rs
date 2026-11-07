@@ -888,6 +888,9 @@ pub(crate) struct PairingFailure {
     /// Why the Remote could not be reached, where its user can do something
     /// about it rather than wait.
     pub(crate) unreachable: Option<UnreachableReason>,
+    /// Whether the Server asked is who said this, its code among it, rather
+    /// than this one having judged it for itself.
+    pub(crate) said_by_the_other: bool,
 }
 
 impl PairingFailure {
@@ -896,6 +899,15 @@ impl PairingFailure {
             code,
             message: message.into(),
             unreachable: None,
+            said_by_the_other: false,
+        }
+    }
+
+    /// The failure the Server asked said, as it said it.
+    fn said_by_the_other(code: SessionErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            said_by_the_other: true,
+            ..Self::new(code, message)
         }
     }
 
@@ -905,6 +917,7 @@ impl PairingFailure {
             code: refusal.code,
             message: refusal.message,
             unreachable: refusal.unreachable,
+            said_by_the_other: false,
         }
     }
 
@@ -3628,19 +3641,23 @@ fn takes_an_author(method: &Method, path: &str) -> bool {
     )
 }
 
+/// How many times a path is percent decoded to see what it means.
+const MOST_ROUTE_DECODES: usize = 3;
+
 /// `path` as a router might be taken to mean it, however it is spelled: percent
 /// decoded until it no longer changes, in lower case, with empty and dot segments
 /// resolved. The guard judges this rather than the spelling, so what it refuses
 /// does not rest on the router declining to read `%70airing`, `/V1/` or `//`; a
-/// Session API route it lets through is still asked for as it was spelled.
-fn route_as_meant(path: &str) -> String {
+/// Session API route it lets through is still asked for as it was spelled. None
+/// where it is still encoded past [`MOST_ROUTE_DECODES`]: decoding on would cost
+/// a pass of the whole path for each layer, which no route needs.
+fn route_as_meant(path: &str) -> Option<String> {
     let mut decoded = path.to_owned();
-    loop {
-        let next = percent_decoded(&decoded);
-        if next == decoded {
-            break;
-        }
-        decoded = next;
+    for _ in 0..MOST_ROUTE_DECODES {
+        decoded = percent_decoded(&decoded);
+    }
+    if percent_decoded(&decoded) != decoded {
+        return None;
     }
     let lowered = decoded.to_lowercase();
     let mut segments = Vec::new();
@@ -3653,7 +3670,7 @@ fn route_as_meant(path: &str) -> String {
             segment => segments.push(segment),
         }
     }
-    format!("/{}", segments.join("/"))
+    Some(format!("/{}", segments.join("/")))
 }
 
 /// `text` with each `%XX` read as the byte it says.
@@ -3678,7 +3695,9 @@ fn percent_decoded(text: &str) -> String {
 }
 
 fn peer_route_class(method: &Method, path: &str) -> PeerRouteClass {
-    let path = route_as_meant(path);
+    let Some(path) = route_as_meant(path) else {
+        return PeerRouteClass::Administration;
+    };
     let path = path.as_str();
     let settings_mutation = *method == Method::POST && path == "/v1/settings";
     let stop = *method == Method::POST && path == "/v1/server/stop";
@@ -6002,6 +6021,7 @@ where
                 code: SessionErrorCode::PairingConnectionFailed,
                 message: refusal.message,
                 unreachable: refusal.unreachable,
+                said_by_the_other: false,
             })
         }
         Err(NoAnswer::Unreached { .. }) => Err(PairingFailure::new(
@@ -6073,8 +6093,8 @@ fn enrollment_certificate(identity: &IdentityMaterial, token: &str) -> Result<Ve
 async fn decode_pairing_response(response: Answer) -> PairingFailure {
     let status = response.status();
     match small_answer::<SessionError>(response).await {
-        Some(error) => PairingFailure::new(error.code, error.message),
-        None => PairingFailure::new(
+        Some(error) => PairingFailure::said_by_the_other(error.code, error.message),
+        None => PairingFailure::said_by_the_other(
             SessionErrorCode::PairingConnectionFailed,
             format!("Serving Server refused enrollment with HTTP {status}"),
         ),
@@ -7567,6 +7587,35 @@ mod tests {
                 "{method} {route}"
             );
         }
+    }
+
+    /// However deep a path is encoded, deciding what it means takes a few passes:
+    /// one still encoded past them is refused, whatever it would come to mean, so
+    /// a route a Peer may ask spelled so is refused rather than decoded at length.
+    #[test]
+    fn a_path_still_encoded_past_a_few_passes_is_refused() {
+        let encoded = |path: &str, passes: usize| {
+            (0..passes).fold(path.to_owned(), |path, _| path.replace('%', "%25"))
+        };
+        let allowed = "/v1/workspace%73";
+        assert!(
+            peer_route_class(&Method::GET, &encoded(allowed, MOST_ROUTE_DECODES - 1))
+                == PeerRouteClass::Api,
+            "as far as a few passes go, it means what it means"
+        );
+        assert!(
+            peer_route_class(&Method::GET, &encoded(allowed, MOST_ROUTE_DECODES))
+                == PeerRouteClass::Administration,
+            "a route a Peer may ask is refused, encoded past them"
+        );
+        // A long one at a Peer's reach, which would come to mean a route it may
+        // ask if it were decoded to its end: at one layer for each pass, as many
+        // passes as there are layers.
+        let long = format!("/v1/workspace%{}73", "25".repeat(30_000));
+        assert!(
+            peer_route_class(&Method::GET, &long) == PeerRouteClass::Administration,
+            "it is refused undecoded"
+        );
     }
 
     #[test]

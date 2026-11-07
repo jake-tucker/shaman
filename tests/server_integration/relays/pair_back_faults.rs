@@ -819,3 +819,161 @@ async fn a_stale_address_is_said_and_the_next_try_forms_the_pairing() {
     workstation.shutdown().await;
     laptop.shutdown().await;
 }
+
+/// A refusal's code is the other machine's word as much as its message is, so it
+/// sends no reader to `/relay` or round a rename: those are said only of what
+/// this Server judged for itself.
+#[tokio::test]
+async fn a_code_the_offering_machine_refuses_with_picks_no_sentence() {
+    let (workstation, laptop) = offered_directly("refusal-code").await;
+    workstation.accept_offer().await;
+    let offer = workstation.held_offer().await;
+    for code in [
+        "relay_login_needed",
+        "relay_different_accounts",
+        "relay_cap_reached",
+        "remote_name_conflict",
+        "invalid_remote_name",
+        "pairing_authentication_failed",
+        "pairing_connection_failed",
+        "invalid_invite",
+    ] {
+        let at = standing_in(
+            &laptop.identity(),
+            Router::new().route("/v1/pairing/enroll", post(move || refuses_saying(code))),
+        )
+        .await;
+        let invite = invite_offering(
+            &laptop.identity(),
+            serde_json::json!([{ "direct": at.to_string() }]),
+        );
+        timeout(PROGRESS_DEADLINE, async {
+            while saying(&laptop, &workstation, invite.clone(), offer.id)
+                .await
+                .await
+                .unwrap()
+                == "too_soon"
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("it is tried");
+        assert_eq!(
+            held_up(&workstation).await,
+            Some(OfferHeldUp::RedemptionFailed {
+                why: RedemptionFailure::Refused
+            }),
+            "{code}"
+        );
+    }
+
+    workstation.shutdown().await;
+    laptop.shutdown().await;
+}
+
+/// Puts a directory where `server` keeps its Peers' records, so they cannot be
+/// written, answering what puts them back as they were.
+fn peers_cannot_be_stored(server: &TestServer) -> impl FnOnce() {
+    let records = server.config.data_dir().join("peers.json");
+    let aside = server.config.data_dir().join("peers.json.aside");
+    std::fs::rename(&records, &aside).expect("set the records aside");
+    std::fs::create_dir(&records).expect("put a directory in their place");
+    move || {
+        std::fs::remove_dir(&records).expect("take the directory away");
+        std::fs::rename(&aside, &records).expect("put the records back");
+    }
+}
+
+/// A failed redemption whose standing cannot be stored leaves the offer accepted
+/// all the same: nothing later is told one is under way, and the next Invite
+/// forms the Pairing, storing what could not be.
+#[tokio::test]
+async fn a_failed_redemption_that_cannot_be_stored_does_not_stick() {
+    let (mut workstation, laptop) = offered_directly("stuck-failed").await;
+    let route = HoldingRoute::to(laptop.serving_address(), 1).await;
+    workstation.accept_offer().await;
+    let offer = workstation.held_offer().await;
+    let invite = laptop.invite(vec![Way::Direct(route.address)]).await;
+    let told = saying(&laptop, &workstation, invite, offer.id).await;
+    route.holds_someone().await;
+    let put_back = peers_cannot_be_stored(&workstation);
+
+    route.cut();
+
+    assert_eq!(told.await.unwrap(), "not_formed");
+    assert_eq!(
+        held_up(&workstation).await,
+        Some(OfferHeldUp::RedemptionFailed {
+            why: RedemptionFailure::NotReached
+        })
+    );
+    put_back();
+
+    // What is stored still says a redemption is under way, and nothing here
+    // believes it.
+    let another = laptop.invite(vec![Way::Direct(nothing_at().await)]).await;
+    timeout(PROGRESS_DEADLINE, async {
+        loop {
+            let told = saying(&laptop, &workstation, another.clone(), offer.id)
+                .await
+                .await
+                .unwrap();
+            assert_ne!(told, "busy", "no redemption is under way");
+            if told != "too_soon" {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("it is tried");
+    timeout(PROGRESS_DEADLINE, async {
+        while workstation.remote_named(LAPTOP).await.is_none() {
+            laptop.looks_at_remote().await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the next try forms it");
+    laptop.offers_clear().await;
+
+    // And what came of it was stored, for a Server starting again.
+    workstation.restart().await;
+    assert!(workstation.offers().await.held.is_empty());
+    assert!(workstation.remote_named(LAPTOP).await.is_some());
+
+    workstation.shutdown().await;
+    laptop.shutdown().await;
+}
+
+/// A redemption that forms its Pairing with the offer's end unstored has formed
+/// it, and says so: the offer goes here whether or not that could be written.
+#[tokio::test]
+async fn a_formed_pairing_whose_offer_cannot_be_cleared_from_store_does_not_stick() {
+    let (workstation, laptop) = offered_directly("stuck-formed").await;
+    let route = HoldingRoute::to(laptop.serving_address(), 2).await;
+    workstation.accept_offer().await;
+    let offer = workstation.held_offer().await;
+    let invite = laptop.invite(vec![Way::Direct(route.address)]).await;
+    let told = saying(&laptop, &workstation, invite.clone(), offer.id).await;
+    route.holds_someone().await;
+    let put_back = peers_cannot_be_stored(&workstation);
+
+    route.release();
+
+    assert_eq!(told.await.unwrap(), "formed");
+    put_back();
+    assert!(workstation.offers().await.held.is_empty());
+    assert!(workstation.remote_named(LAPTOP).await.is_some());
+    assert_eq!(
+        saying(&laptop, &workstation, invite, offer.id)
+            .await
+            .await
+            .unwrap(),
+        "gone"
+    );
+
+    workstation.shutdown().await;
+    laptop.shutdown().await;
+}
