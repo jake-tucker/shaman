@@ -93,6 +93,47 @@ impl Default for DetachedServers {
     }
 }
 
+/// What a Windows process needs to run at all, and that a test's temporary
+/// directories be where they are; nothing a shell adds, and none of it a way to
+/// the real user's Suru.
+const CARRIED_THROUGH: &[&str] = if cfg!(windows) {
+    &[
+        "SystemRoot",
+        "SystemDrive",
+        "USERNAME",
+        "USERDOMAIN",
+        "USERPROFILE",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "TEMP",
+        "TMP",
+        "ComSpec",
+    ]
+} else {
+    &["TMPDIR"]
+};
+
+/// `program` isolated to `home`, with the whole environment cleared but for what
+/// [`CARRIED_THROUGH`] carries: whatever Suru comes to read from it is then what
+/// a test gave it, and never the real user's. This is what keeps every test's
+/// command from the real home and the Server on the machine, so each goes through
+/// here and adds what its own needs.
+pub fn isolated_command(program: impl AsRef<OsStr>, home: &Path) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(program);
+    command
+        .env_clear()
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
+    for name in CARRIED_THROUGH {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
+    }
+    command
+}
+
 impl DetachedServers {
     pub fn new() -> Self {
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
@@ -126,6 +167,26 @@ impl DetachedServers {
             .fold(config, |config, (key, value)| {
                 config.with_server_env(key, value)
             })
+    }
+
+    /// `program` as [`isolated_command`] has it, on `channel` under
+    /// [`Self::state_dir`], which is its home too, with no Provider installed on
+    /// the machine to find and `config_root` for its Config Documents.
+    pub fn isolated_on_channel(
+        &self,
+        program: impl AsRef<OsStr>,
+        channel: &str,
+        config_root: &Path,
+    ) -> tokio::process::Command {
+        let state_dir = self.state_dir();
+        let mut command = isolated_command(program, state_dir);
+        command
+            .env("SURU_STATE_DIR", state_dir)
+            .env("SURU_DATA_DIR", state_dir)
+            .env("SURU_CONFIG_DIR", config_root)
+            .env("SURU_CHANNEL", channel)
+            .envs(self.isolated_environment());
+        command
     }
 
     /// How many `suru __server` processes launched against the state

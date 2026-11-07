@@ -72,24 +72,22 @@ impl Machine {
         std::fs::write(self.document(), settings.to_string()).expect("write the Config Document");
     }
 
+    /// `program` as this machine runs it, knowing nothing of the real user's.
+    fn isolated(&self, program: impl AsRef<std::ffi::OsStr>) -> Command {
+        let mut command =
+            self.servers
+                .isolated_on_channel(program, self.channel, &self.config_root());
+        command
+            .env("SURU_IDENTITY_STORE", "file")
+            .env("USERPROFILE", self.servers.state_dir())
+            .env("NO_PROXY", "127.0.0.1,localhost");
+        command
+    }
+
     /// `suru <arguments>` on this machine, as a script there would run it.
     fn suru(&self, arguments: &[&str]) -> Command {
-        let state_dir = self.servers.state_dir();
-        let mut command = Command::new(env!("CARGO_BIN_EXE_suru"));
-        command
-            .args(arguments)
-            .env("SURU_STATE_DIR", state_dir)
-            .env("SURU_DATA_DIR", state_dir)
-            .env("SURU_CONFIG_DIR", self.config_root())
-            .env("SURU_CHANNEL", self.channel)
-            .env("SURU_IDENTITY_STORE", "file")
-            .env("HOME", state_dir)
-            .env("USERPROFILE", state_dir)
-            .env("XDG_CONFIG_HOME", state_dir.join("xdg"))
-            .env("NO_PROXY", "127.0.0.1,localhost")
-            .envs(self.servers.isolated_environment())
-            .stdin(Stdio::null())
-            .kill_on_drop(true);
+        let mut command = self.isolated(env!("CARGO_BIN_EXE_suru"));
+        command.args(arguments);
         command
     }
 
@@ -347,6 +345,52 @@ async fn a_headless_machine_goes_from_nothing_to_an_invite_that_redeems() {
         "an Invite reaches no Log (ADR-0008)"
     );
     laptop.shutdown().await;
+}
+
+/// This is what keeps these commands from the real home and the Server on this
+/// machine: a command here has exactly what it was given, so a variable Suru
+/// comes to read cannot reach the real user's by being forgotten.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_machines_commands_carry_nothing_of_the_shell_that_ran_the_test() {
+    let machine = Machine::new("isolation");
+    let output = machine
+        .isolated("/usr/bin/env")
+        .output()
+        .await
+        .expect("run env");
+    let printed = said(&output.stdout);
+    let mut names = printed
+        .lines()
+        .filter_map(|line| line.split_once('=').map(|(name, _)| name))
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    names.retain(|name| *name != "TMPDIR");
+    assert_eq!(
+        names,
+        vec![
+            "HOME",
+            "NO_PROXY",
+            "SURU_CHANNEL",
+            "SURU_CLAUDE_PATH",
+            "SURU_CODEX_PATH",
+            "SURU_CONFIG_DIR",
+            "SURU_COPILOT_PATH",
+            "SURU_DATA_DIR",
+            "SURU_IDENTITY_STORE",
+            "SURU_STATE_DIR",
+            "USERPROFILE",
+            "XDG_CONFIG_HOME",
+        ],
+        "{printed}"
+    );
+    let state_dir = machine.servers.state_dir().to_string_lossy().into_owned();
+    for name in ["HOME", "SURU_STATE_DIR", "SURU_DATA_DIR", "SURU_CONFIG_DIR"] {
+        assert!(
+            printed.contains(&format!("{name}={state_dir}")),
+            "{name} is this machine's: {printed}"
+        );
+    }
 }
 
 /// What `docs/relay/README.md` shows is what [`Machine`]s here are run through,
@@ -955,6 +999,31 @@ async fn removing_a_relay_with_a_login_under_way_still_asks_it_to_forget() {
         .await;
     drop(login);
     relay.stop().await;
+}
+
+/// A pipe closed by its reader takes no Invite, which goes nowhere else and fails.
+#[tokio::test]
+async fn an_invite_no_reader_takes_is_a_failure_and_goes_nowhere_else() {
+    let relay = TestRelay::start().await;
+    let address = relay.address();
+    let machine = Machine::new("invite-unread");
+    machine.log_in(&relay, &address).await;
+    machine
+        .succeed(&["relay", "serve-through", &address, "on"])
+        .await;
+
+    let mut issuing = machine
+        .suru(&["serve", "invite", "--no-addresses"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run suru serve invite");
+    drop(issuing.stdout.take());
+    let output = settled(issuing).await;
+    assert_eq!(output.status.code(), Some(FAILED));
+    let told = said(&output.stderr);
+    assert!(told.contains("could not print the Invite"), "{told}");
+    assert!(!told.contains("suru-v"), "{told}");
 }
 
 #[tokio::test]

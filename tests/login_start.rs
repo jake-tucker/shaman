@@ -57,38 +57,10 @@ impl Machine {
         }
     }
 
-    fn config_home(&self) -> PathBuf {
-        self.home.path().join(".config")
-    }
-
     /// A process isolated to this machine's home, with all a program needs on
     /// the platform it runs on to run at all, and nothing a shell would add.
     fn sparse(&self, program: impl AsRef<std::ffi::OsStr>) -> Command {
-        let mut command = Command::new(program);
-        command
-            .env_clear()
-            .env("HOME", self.home.path())
-            .env("XDG_CONFIG_HOME", self.config_home())
-            .stdin(Stdio::null())
-            .kill_on_drop(true);
-        #[cfg(windows)]
-        for name in [
-            "SystemRoot",
-            "SystemDrive",
-            "USERNAME",
-            "USERDOMAIN",
-            "USERPROFILE",
-            "LOCALAPPDATA",
-            "APPDATA",
-            "TEMP",
-            "TMP",
-            "ComSpec",
-        ] {
-            if let Some(value) = std::env::var_os(name) {
-                command.env(name, value);
-            }
-        }
-        command
+        crate::support::detached_servers::isolated_command(program, self.home.path())
     }
 
     /// `suru server <subcommand>` for `channel`, as a user's shell runs it.

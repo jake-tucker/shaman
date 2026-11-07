@@ -2305,7 +2305,8 @@ pub(crate) fn server_cli_with_home(
         "status" | "install" | "uninstall" => vec!["--service-manager", &service_manager_path],
         _ => vec![],
     };
-    let mut process = tokio::process::Command::new(env!("CARGO_BIN_EXE_suru"));
+    let mut process =
+        crate::support::detached_servers::isolated_command(env!("CARGO_BIN_EXE_suru"), home);
     process
         .arg("server")
         .arg(command)
@@ -2314,13 +2315,7 @@ pub(crate) fn server_cli_with_home(
         .env("SURU_DATA_DIR", servers.state_dir())
         .env("SURU_CONFIG_DIR", servers.state_dir())
         .env("SURU_CHANNEL", channel)
-        .envs(servers.isolated_environment())
-        .kill_on_drop(true);
-    if matches!(command, "status" | "install" | "uninstall") {
-        process
-            .env("HOME", home)
-            .env("XDG_CONFIG_HOME", home.join(".config"));
-    }
+        .envs(servers.isolated_environment());
     process
 }
 
