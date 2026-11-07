@@ -7035,17 +7035,20 @@ fn fail_invalid_provider_event(
 }
 
 /// `decision` as it is stored: what the Provider said of it normalized like any
-/// of its text, and cut to the cap.
+/// of its text and cut to the cap, or nothing where that says nothing.
 fn stored_route_decision(mut decision: RouteDecision) -> RouteDecision {
     if let RouteDecision::Verdict { detail: said, .. }
     | RouteDecision::Fallback { reason: said, .. } = &mut decision
     {
-        *said = said.take().map(|said| {
-            normalize_provider_text(&said)
-                .chars()
-                .take(MAX_STORED_ROUTE_DETAIL_CHARS)
-                .collect()
-        });
+        *said = said
+            .take()
+            .map(|said| {
+                normalize_provider_text(&said)
+                    .chars()
+                    .take(MAX_STORED_ROUTE_DETAIL_CHARS)
+                    .collect::<String>()
+            })
+            .filter(|said| !said.trim().is_empty());
     }
     decision
 }
@@ -7195,6 +7198,53 @@ mod tests {
                 session_id: fixture.routed,
                 turn: turn_state(fixture.routed_turn),
             },
+        );
+    }
+
+    /// An account saying nothing is no account: stored as one, a Verdict reads "+0 lines" and
+    /// prints a blank line beneath its sentence.
+    #[test]
+    fn a_route_decision_whose_account_says_nothing_stores_none() {
+        for said in ["", "   ", "\n\t "] {
+            assert_eq!(
+                stored_route_decision(RouteDecision::Verdict {
+                    reviewer: ModelId::new("reviewer"),
+                    verdict: crate::protocol::RouteVerdict::Accepted,
+                    detail: Some(said.to_owned()),
+                }),
+                RouteDecision::Verdict {
+                    reviewer: ModelId::new("reviewer"),
+                    verdict: crate::protocol::RouteVerdict::Accepted,
+                    detail: None,
+                },
+                "{said:?} is no account of a Verdict"
+            );
+            assert_eq!(
+                stored_route_decision(RouteDecision::Fallback {
+                    failed: None,
+                    stand_in: None,
+                    reason: Some(said.to_owned()),
+                }),
+                RouteDecision::Fallback {
+                    failed: None,
+                    stand_in: None,
+                    reason: None,
+                },
+                "{said:?} is no account of a Fallback"
+            );
+        }
+        assert_eq!(
+            stored_route_decision(RouteDecision::Verdict {
+                reviewer: ModelId::new("reviewer"),
+                verdict: crate::protocol::RouteVerdict::Rejected,
+                detail: Some("Needs work".to_owned()),
+            }),
+            RouteDecision::Verdict {
+                reviewer: ModelId::new("reviewer"),
+                verdict: crate::protocol::RouteVerdict::Rejected,
+                detail: Some("Needs work".to_owned()),
+            },
+            "an account that says something stands"
         );
     }
 
