@@ -53,20 +53,22 @@ way.
 
 ## A real Suru Session
 
-`copilot_routing_tier_live`, from a scratch directory, with a one-word Prompt each Turn:
+`copilot_routing_tier_live`, from a scratch directory, with a one-word Prompt each Turn, on the code
+that stores no tier for Copilot's default:
 
 | Step | Turn | Selection after | Status row | Route row |
 | --- | --- | --- | --- | --- |
-| Setting on | none | catalog 5s later: `balance` Standard, `hydrafusion` High, `hydrafusion-max` Max, default `balance`; `fast` absent; no discovery Session left in `session-state` | | |
+| Setting on | none | catalog 3s later: `balance` Standard, `hydrafusion` High, `hydrafusion-max` Max, default `balance`; `fast` absent; no discovery Session left in `session-state` | | |
 | Create on `hydrafusion` | Completed | `hydrafusion` | | `gpt-6-luna` |
 | `not-a-real-tier` | Completed | `hydrafusion` | Copilot refused it, in Copilot's words | `gpt-6-luna` |
 | `efficiency` | Completed | `hydrafusion` | Copilot refused it (the request failed) | `gpt-6-luna` |
 | `hydrafusion` | Completed | `hydrafusion` | | `gpt-6-luna` |
 | Restart, Setting on | Completed | `hydrafusion` | | `gpt-6-luna` |
-| Restart, Setting off | Completed | none | Routing Tiers are turned off | none: plain Auto |
+| Asks for `balance`, Copilot's default | Completed | none, and `session.model_change {autoTier: null}` | | none: plain Auto |
+| Restart, Setting off, `hydrafusion` chosen again | Completed | none | Routing Tiers are turned off | none: plain Auto |
 | Next Prompt | Completed | none | | none |
 
-The Session's `totalNanoAiu` came to 381,557,900 across seven Turns, 0.38 credits.
+The Session's `totalNanoAiu` came to 397,542,100 across eight Turns, 0.40 credits.
 
 ## Not verified
 
