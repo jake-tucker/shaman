@@ -229,6 +229,10 @@ async fn a_login_address_is_shown_as_the_relay_gave_it_or_refused() {
         addresses.lock().unwrap().push(given.to_owned());
         let login = laptop.client.begin_relay_login(&address).await.unwrap();
         assert_eq!(login.verification_uri, shown);
+        // A login under way is left to go on, so this one goes with its entry
+        // for the next to begin.
+        laptop.client.remove_relay(&address).await.unwrap();
+        laptop.client.add_relay(address.clone()).await.unwrap();
     }
     laptop.shutdown().await;
 }

@@ -1,6 +1,6 @@
 //! The Relay routes: listing the Server's Relays, adding one by address,
-//! beginning a login there or finding one under way, and following it,
-//! choosing whether the Server
+//! logging in there, which begins a login or finds one under way, and following
+//! it, choosing whether the Server
 //! Serves through one, saying a Client has raised its Notice of one coming to
 //! need a login, removing one, and asking one which other machines are logged
 //! in there, as a Client asks and never of the Server's own accord. They are
@@ -26,7 +26,7 @@ use super::{AppState, decode_session_command, is_authenticated, session_error_re
 use crate::{
     protocol::{
         AddRelayRequest, RELAY_LOGIN_EVENT, RelayLogin, RelayLoginNeededNotice,
-        RelayLoginNeededNoticeClaim, RelayServeThroughRequest, ServerShutdown,
+        RelayLoginNeededNoticeClaim, RelayLoginRequest, RelayServeThroughRequest, ServerShutdown,
     },
     relays::RelayFailure,
 };
@@ -37,9 +37,7 @@ pub(super) fn routes() -> Router<AppState> {
         .route("/v1/relays/{address}", axum::routing::delete(remove_relay))
         .route(
             "/v1/relays/{address}/login",
-            get(follow_relay_login)
-                .post(begin_relay_login)
-                .put(log_in_at_relay),
+            get(follow_relay_login).put(log_in_at_relay),
         )
         .route("/v1/relays/{address}/machines", get(list_relay_machines))
         .route(
@@ -71,31 +69,19 @@ async fn add_relay(State(state): State<AppState>, request: Request) -> Response 
     }
 }
 
-async fn begin_relay_login(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    AxumPath(address): AxumPath<String>,
-) -> Response {
-    if !is_authenticated(&headers, &state.descriptor.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-    match state.relays.begin_login(&address).await {
-        Ok(login) => Json(login).into_response(),
-        Err(failure) => failure_response(failure),
-    }
-}
-
-/// Has the Server logged in at a Relay, beginning a login only where it holds no
-/// Login that stands and none is under way.
+/// Has the Server log in at a Relay, the one way a login is begun: it decides,
+/// so no Client's asking ends a login another's began.
 async fn log_in_at_relay(
     State(state): State<AppState>,
-    headers: HeaderMap,
     AxumPath(address): AxumPath<String>,
+    request: Request,
 ) -> Response {
-    if !is_authenticated(&headers, &state.descriptor.token) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-    match state.relays.log_in(&address).await {
+    let request =
+        match decode_session_command::<RelayLoginRequest>(&state, request, "Relay login").await {
+            Ok(request) => request,
+            Err(response) => return response,
+        };
+    match state.relays.log_in(&address, request.afresh).await {
         Ok(lead) => Json(lead).into_response(),
         Err(failure) => failure_response(failure),
     }

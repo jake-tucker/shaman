@@ -393,20 +393,14 @@ async fn log_in(
     err: &mut dyn Write,
 ) -> Result<u8> {
     let mut interrupt = Interrupt::listen();
-    let lead = match client.log_in_at_relay(address).await {
+    let lead = match client.log_in_at_relay(address, false).await {
         Ok(lead) => lead,
         Err(error) => return Ok(login_not_begun(&error, address, err)),
     };
     let address = &lead.address;
     let login = match lead.standing {
         RelayLoginStanding::Standing { relay } => {
-            say(
-                err,
-                &format!(
-                    "Nothing to do at {address}: {}",
-                    relay_said::relay_standing(&relay)
-                ),
-            );
+            say(err, &relay_said::login_stands(&relay));
             return Ok(SUCCESS);
         }
         RelayLoginStanding::UnderWay { login } => {

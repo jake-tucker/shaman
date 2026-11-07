@@ -653,6 +653,48 @@ fn a_login_that_cannot_begin_is_said_on_the_list() {
     assert!(entry(&list, COMPANY).contains("Login needed"), "{list}");
 }
 
+/// What Enter asks of the Server says what the reader saw: a row needing a login
+/// wants one, which another Client's may already answer, and only a row whose
+/// Login stands asks for one afresh, to stand under another Account.
+#[test]
+fn enter_asks_for_a_login_afresh_only_on_a_row_whose_login_stands() {
+    let mut application = open_on(vec![relay(COMPANY)]);
+    assert!(matches!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::BeginRelayLogin { afresh: false, .. }
+    ));
+
+    let mut application = open_on(vec![logged_in(COMPANY)]);
+    assert!(matches!(
+        press(&mut application, KeyCode::Enter),
+        ApplicationTransition::BeginRelayLogin { afresh: true, .. }
+    ));
+}
+
+/// Another Client finished the login first: the Server begins none, and the list
+/// says so and asks afresh how the Relay stands.
+#[test]
+fn a_login_the_server_finds_unneeded_says_so_on_the_list() {
+    let mut application = open_on(vec![relay(COMPANY)]);
+    let request = beginning(press(&mut application, KeyCode::Enter), COMPANY);
+    let ApplicationTransition::ListRelays(refresh) = application
+        .handle_event(ApplicationEvent::RelayLoginStands {
+            request,
+            relay: Box::new(logged_in(COMPANY)),
+        })
+        .expect("take the Login that stands")
+    else {
+        panic!("how the Relay stands is asked for afresh");
+    };
+    list(&mut application, refresh, vec![logged_in(COMPANY)]);
+    let shown = prose(&application);
+    assert!(
+        shown.contains(&format!("{COMPANY} needs no login"))
+            && shown.contains("Logged in as octocat"),
+        "{shown}"
+    );
+}
+
 #[test]
 fn a_late_beginning_lands_nowhere() {
     let mut application = open_on(vec![relay(COMPANY)]);
@@ -1326,6 +1368,7 @@ fn beginning(transition: ApplicationTransition, address: &str) -> RelayRequest {
         ApplicationTransition::BeginRelayLogin {
             request,
             address: asked,
+            ..
         } if asked == address => request,
         other => panic!("expected a login begun at {address}, got {other:?}"),
     }

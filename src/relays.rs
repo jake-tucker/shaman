@@ -562,33 +562,35 @@ impl RelayController {
         Ok(relays[index].relay())
     }
 
-    /// Begins a login at the Relay at `address`, proving the Server's key and
-    /// reporting its hostname there, and answers where its user goes to log
-    /// in and what they enter. The Server waits for the login to end on its
-    /// own, so it outlives the Client that began it.
-    pub(crate) async fn begin_login(
-        &self,
-        address: &str,
-    ) -> std::result::Result<RelayLogin, RelayFailure> {
-        let address = relay_address(address)?;
-        let operations = self.operations(&address)?;
-        self.begin_login_holding(address, operations).await
-    }
-
-    /// Has the Server logged in at the Relay at `address`, where it wants that
-    /// at all: a login under way there is left to go on and answered, a Login
-    /// that stands is answered, and only otherwise is one begun. It is decided
-    /// with the entry's `operations` held, so two asking at once share one
-    /// login rather than the second giving up the first.
+    /// Has the Server log in at the Relay at `address`: a login under way there
+    /// is left to go on and answered, whatever is asked; a Login that stands is
+    /// answered unless `afresh` asks for one regardless; and only otherwise is
+    /// one begun, which outlives the Client that asked. It is decided with the
+    /// entry's `operations` held, so two asking at once share one login rather
+    /// than the second giving up the first.
     pub(crate) async fn log_in(
         &self,
         address: &str,
+        afresh: bool,
     ) -> std::result::Result<RelayLoginLead, RelayFailure> {
         let address = relay_address(address)?;
         let operations = self.operations(&address)?;
+        self.log_in_holding(address, afresh, operations).await
+    }
+
+    /// Has the Server log in at the Relay at `address`, as [`Self::log_in`] does,
+    /// once nothing else holds the entry's `operations`.
+    async fn log_in_holding(
+        &self,
+        address: String,
+        afresh: bool,
+        operations: Arc<AsyncMutex<()>>,
+    ) -> std::result::Result<RelayLoginLead, RelayFailure> {
         let _serialised = operations.lock().await;
         let standing = {
             let mut relays = self.lock();
+            // A removal this waited on has taken the entry with it, whatever
+            // has been added at its address since.
             let held = owning(&mut relays, &address, &operations).ok_or_else(relay_not_found)?;
             let under_way = held
                 .login
@@ -597,7 +599,7 @@ impl RelayController {
                 .filter(|login| !login.outcome.is_settled());
             match under_way {
                 Some(login) => Some(RelayLoginStanding::UnderWay { login }),
-                None if held.state == RelayState::LoginNeeded => None,
+                None if afresh || held.state == RelayState::LoginNeeded => None,
                 None => Some(RelayLoginStanding::Standing {
                     relay: Box::new(held.relay()),
                 }),
@@ -606,34 +608,21 @@ impl RelayController {
         let standing = match standing {
             Some(standing) => standing,
             None => RelayLoginStanding::Begun {
-                login: self.begin_login_with(&address, &operations).await?,
+                login: self.begin_login(&address, &operations).await?,
             },
         };
         Ok(RelayLoginLead { address, standing })
     }
 
-    /// Begins a login at the Relay at `address` once nothing else holds the
-    /// entry's `operations`.
-    async fn begin_login_holding(
-        &self,
-        address: String,
-        operations: Arc<AsyncMutex<()>>,
-    ) -> std::result::Result<RelayLogin, RelayFailure> {
-        let _serialised = operations.lock().await;
-        self.begin_login_with(&address, &operations).await
-    }
-
-    /// Begins a login at the Relay at `address`, the entry's `operations` held.
-    async fn begin_login_with(
+    /// Begins a login at the Relay at `address`, proving the Server's key and
+    /// reporting its hostname there, and answers where its user goes to log in
+    /// and what they enter. The caller holds the entry's `operations`, and found
+    /// none under way, so this ends no login.
+    async fn begin_login(
         &self,
         address: &str,
         operations: &Arc<AsyncMutex<()>>,
     ) -> std::result::Result<RelayLogin, RelayFailure> {
-        // A removal this waited on has taken the entry with it, whatever has
-        // been added at its address since.
-        if owning(&mut self.lock(), address, operations).is_none() {
-            return Err(relay_not_found());
-        }
         let answer_timeout = self.timings.answer_timeout;
         let (mut conversation, _) = self
             .dialer
@@ -680,14 +669,9 @@ impl RelayController {
         let Some(held) = owning(&mut relays, address, operations) else {
             return Err(relay_not_found());
         };
-        if let Some(previous) = held.login.take() {
-            if let Some(task) = previous.task {
-                task.abort();
-            }
-            settle_abandoned(
-                &previous.progress,
-                "the login was given up for a later one at the same Relay",
-            );
+        // The one before has ended, or this would not have begun.
+        if let Some(task) = held.login.take().and_then(|previous| previous.task) {
+            task.abort();
         }
         held.login = Some(HeldLogin {
             task: Some(tokio::spawn(self.clone().finish_login(
@@ -2574,7 +2558,7 @@ mod tests {
         let relays = relays();
         let address = unanswered_address();
         relays.add(&address).unwrap();
-        let Err(failure) = relays.begin_login(&address).await else {
+        let Err(failure) = relays.log_in(&address, false).await else {
             panic!("no login is begun without the identity key");
         };
         assert_eq!(failure.code, SessionErrorCode::RelayRefused);
@@ -2608,7 +2592,7 @@ mod tests {
             Some(SessionErrorCode::RelayNotFound)
         );
         let stale_login = relays
-            .begin_login_holding(address.clone(), removed_entry)
+            .log_in_holding(address.clone(), false, removed_entry)
             .await;
         assert_eq!(
             stale_login.err().map(|failure| failure.code),

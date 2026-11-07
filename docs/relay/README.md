@@ -932,7 +932,8 @@ through a Relay does, and why something was left out. Nothing carries colour.
   pinned, is success, because running a script twice is normal.
 - **`relay login`** prints `Visit <address> and enter the code <code>` as one line, so `| head -1` has both, and stays
   until the login ends. A login already under way, begun by anyone, is followed rather than begun again, and a Login that
-  stands is said to and exits at once. The login is the Server's: interrupting the command, or losing whatever read its
+  stands is said to and exits at once; to stand under another Account, `relay remove` and start again, or press Enter on its
+  row in `/relay`. The login is the Server's: interrupting the command, or losing whatever read its
   output, leaves it under way, where `relay login` and `/relay` find it. It ends with its Server.
 - **`relay serve-through on`** makes this machine reachable through that Relay, and says so, and what it still waits on:
   as in `/relay`, the choice is remembered ahead of a login or of Serving being on, and turns neither on. **`off`** stops

@@ -3110,11 +3110,6 @@ async fn refuses_server_administration_to_peers(
             Some(serde_json::json!({ "address": "https://relay.example.com" })),
         ),
         (
-            reqwest::Method::POST,
-            "/v1/relays/https:%2F%2Frelay.example.com/login",
-            None,
-        ),
-        (
             reqwest::Method::GET,
             "/v1/relays/https:%2F%2Frelay.example.com/login",
             None,
@@ -3145,7 +3140,7 @@ async fn refuses_server_administration_to_peers(
         (
             reqwest::Method::PUT,
             "/v1/relays/https:%2F%2Frelay.example.com/login",
-            None,
+            Some(serde_json::json!({ "afresh": false })),
         ),
         (reqwest::Method::GET, "/v1/pairing/serving", None),
         (reqwest::Method::POST, "/v1/pairing/serving", None),

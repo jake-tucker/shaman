@@ -6,7 +6,7 @@ A machine with no one at its screen has to reach a Relay and issue an Invite wit
 
 **The logic stays in the Server.** Anything that would make a command differ from `/relay` or `/serve` is behind a route they share. `/serve` used to decide for itself whether to turn Serving on and to list the machine's addresses from its own process, so those moved to `POST /v1/pairing/serving`. Which ways an Invite offers by default is decided by `POST /v1/pairing/invites/offered`, and whether a Relay can be offered at all by one rule, `RelayWithheld::of`, that the picker and the route both read. Only the Client's rendering of each differs. Moving this fixed a fault in passing: `/serve` listed every interface address even for a listener bound to loopback, so an Invite could offer ways that could not work. Now the Server lists only what another machine could reach.
 
-`PUT /v1/relays/{address}/login` begins a login only where none is under way and no Login stands, deciding that with the entry's operations held. So a command never gives up a login another Client began, as listing first and then beginning could.
+`PUT /v1/relays/{address}/login` is the one way a login begins, for every Client, and the Server decides with the entry's operations held. A login under way is left to go on and answered, whatever is asked, so no Client's asking ever ends another's code, as listing first and then beginning could. A Login that stands is answered, and none begun, unless the request says `afresh`: `/relay`'s Enter on a row whose Login stands, for a reader who would stand under another Account, as a Relay joining no two Accounts tells them to. The command line never asks that; it says the Login stands, and `relay remove` is its way to another Account. There was a `POST` that began one regardless and replaced any under way. Nothing needed that replacing, so it went.
 
 **Output is for a script.** What was asked for goes to standard output, and only that; everything else goes to standard error, with no colour anywhere. `relay login`'s address and code share one line, so `| head -1` has both.
 
@@ -42,7 +42,7 @@ The issue says "there is no new way in". That is true of authority and misleadin
 
 - **Refuse these commands from an Agent's shell by an environment marker.** Rejected, as above.
 - **Put the default ways in the command.** Rejected: it is the very divergence the issue warns of. Two copies of "what `/serve` ticks" would drift without a test noticing.
-- **`relay login` reuses the existing begin route after listing.** Rejected: two commands at once would have the second end the first.
+- **Keep a route that begins a login regardless, for `/relay`.** Rejected: two Clients opening `/relay` at once would have the second end the first's code, for a replacing nobody needs.
 - **Print the short code on standard error always.** Rejected, as above.
 
 ## Consequences

@@ -306,10 +306,12 @@ pub(super) enum RedemptionLoginLead {
 /// What logging in at the selected Relay asks of the Client's own Server.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum RelayLoginAct {
-    /// Begin a login at the Relay at `address`.
+    /// Have the Server log in at the Relay at `address`, `afresh` where a
+    /// reader asked for a login at a Relay whose Login stands.
     Begin {
         request: RelayRequest,
         address: String,
+        afresh: bool,
     },
     /// Follow the login already under way there, which nothing here follows.
     Follow(RelayLoginFollow),
@@ -334,7 +336,7 @@ impl RelayOverlay {
         {
             self.selected = index;
             self.window.reveal();
-            return RelayLoginLead::Now(self.log_in());
+            return RelayLoginLead::Now(self.log_in_to(address, false));
         }
         let request = self.open();
         self.log_in_at = Some(address);
@@ -386,7 +388,7 @@ impl RelayOverlay {
             return None;
         }
         self.asked_by = Some(surface);
-        self.log_in_to(address.to_owned())
+        self.log_in_to(address.to_owned(), false)
     }
 
     /// Asks for the Relay at `address` to be Served through for `surface`,
@@ -519,7 +521,7 @@ impl RelayOverlay {
                 Some(index) => {
                     self.selected = index;
                     self.window.reveal();
-                    if let Some(act) = self.log_in() {
+                    if let Some(act) = self.log_in_to(address, false) {
                         return ListingLanded::LogIn(act);
                     }
                 }
@@ -760,18 +762,25 @@ impl RelayOverlay {
     }
 
     /// Logs in at the selected Relay. A login already under way there is
-    /// shown again rather than begun anew, since its code still stands.
+    /// shown again rather than begun anew, since its code still stands. On a row
+    /// whose Login stands, the reader asks for one regardless, to stand under
+    /// another Account, as a Relay joining no two Accounts tells them to.
     pub(super) fn log_in(&mut self) -> Option<RelayLoginAct> {
         if !matches!(self.state, RelayOverlayState::Listing { .. }) {
             return None;
         }
-        let address = self.relays.get(self.selected)?.address.clone();
-        self.log_in_to(address)
+        let relay = self.relays.get(self.selected)?;
+        let (address, afresh) = (
+            relay.address.clone(),
+            relay.state != RelayState::LoginNeeded,
+        );
+        self.log_in_to(address, afresh)
     }
 
     /// Logs in at the Relay at `address`, showing again a login already under
-    /// way there.
-    fn log_in_to(&mut self, address: String) -> Option<RelayLoginAct> {
+    /// way there. Whether another is begun is the Server's to decide, so a
+    /// picture from before another Client began one ends nothing.
+    fn log_in_to(&mut self, address: String, afresh: bool) -> Option<RelayLoginAct> {
         if let Some(login) = self.under_way(&address) {
             self.state = RelayOverlayState::LoginDisplay {
                 address: address.clone(),
@@ -784,7 +793,11 @@ impl RelayOverlay {
             request,
             address: address.clone(),
         };
-        Some(RelayLoginAct::Begin { request, address })
+        Some(RelayLoginAct::Begin {
+            request,
+            address,
+            afresh,
+        })
     }
 
     /// Takes the login the Server began for the beginning awaited, answering
@@ -808,6 +821,28 @@ impl RelayOverlay {
         let follow = self.follow(&address, &login);
         self.state = RelayOverlayState::LoginDisplay { address, login };
         follow
+    }
+
+    /// The Server began no login for the beginning awaited, the Relay's Login
+    /// standing after all: says so, answering the listing that shows it.
+    pub(super) fn login_stands(
+        &mut self,
+        request: RelayRequest,
+        relay: &Relay,
+    ) -> Option<RelayRequest> {
+        let RelayOverlayState::BeginningLogin {
+            request: awaited,
+            address,
+        } = &self.state
+        else {
+            return None;
+        };
+        if *awaited != request {
+            return None;
+        }
+        let address = address.clone();
+        let note = ListNote::said(crate::relay_said::login_stands(relay));
+        Some(self.returned_on_listing(&address, Some(note)))
     }
 
     pub(super) fn login_not_begun(&mut self, request: RelayRequest, error: &str) {
@@ -926,8 +961,7 @@ impl RelayOverlay {
     /// Returns a display whose login the Relays held show ended to wherever it
     /// was asked for from, saying how. Only that login ending resolves it: a
     /// picture of the Relay from before it began, or one showing a later login
-    /// begun elsewhere — whose follower reports the one on display given up —
-    /// leaves it be.
+    /// begun elsewhere, leaves it be.
     fn resolve_display(&mut self) {
         let RelayOverlayState::LoginDisplay { address, login } = &self.state else {
             return;

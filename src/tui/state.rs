@@ -5757,11 +5757,16 @@ pub enum ApplicationEvent {
         request: RelayRequest,
         error: String,
     },
-    /// The Server began the login `request` asked for: where its user goes
-    /// and what they enter there.
+    /// The login `request` asked for, begun or found under way: where its user
+    /// goes and what they enter there.
     RelayLoginBegun {
         request: RelayRequest,
         login: crate::protocol::RelayLogin,
+    },
+    /// The Server found the Login `request` asked for standing, and began none.
+    RelayLoginStands {
+        request: RelayRequest,
+        relay: Box<crate::protocol::Relay>,
     },
     RelayLoginNotBegun {
         request: RelayRequest,
@@ -6312,10 +6317,13 @@ pub enum ApplicationTransition {
         request: RelayRequest,
         address: String,
     },
-    /// Have the Client's own Server begin a login at the Relay at `address`.
+    /// Have the Client's own Server log in at the Relay at `address`, which it
+    /// decides: `afresh` asks for a login where one stands, for a reader who
+    /// would stand under another Account.
     BeginRelayLogin {
         request: RelayRequest,
         address: String,
+        afresh: bool,
     },
     /// Follow the latest login at each of these Relays until it ends, in
     /// place of whatever followed an earlier one there, and answer each with
@@ -7319,6 +7327,7 @@ impl Application {
                     return Ok(ApplicationTransition::BeginRelayLogin {
                         request: beginning,
                         address,
+                        afresh: false,
                     });
                 }
                 Ok(ApplicationTransition::ListRelays(
@@ -7345,6 +7354,28 @@ impl Application {
                     None => self.state.relay_overlay.login_begun(request, login),
                 };
                 Ok(follow_relay_logins(follows.into_iter().collect()))
+            }
+            ApplicationEvent::RelayLoginStands { request, relay } => {
+                if self
+                    .state
+                    .connect_overlay
+                    .awaited_beginning(request)
+                    .is_some()
+                    && let Some((request, redemption)) = self.state.connect_overlay.carry_on()
+                {
+                    return Ok(ApplicationTransition::RedeemInvite {
+                        request,
+                        redemption,
+                    });
+                }
+                Ok(self
+                    .state
+                    .relay_overlay
+                    .login_stands(request, &relay)
+                    .map_or(
+                        ApplicationTransition::Continue,
+                        ApplicationTransition::ListRelays,
+                    ))
             }
             ApplicationEvent::RelayLoginNotBegun { request, error } => {
                 self.state.connect_overlay.login_not_begun(request, &error);
@@ -8370,6 +8401,7 @@ impl Application {
                 ApplicationTransition::BeginRelayLogin {
                     request,
                     address: relay.clone(),
+                    afresh: false,
                 },
             ),
         };
@@ -14473,9 +14505,15 @@ fn workspace_reading(workspace: &Path) -> PathBuf {
 /// anything.
 fn relay_login_transition(act: Option<RelayLoginAct>) -> ApplicationTransition {
     match act {
-        Some(RelayLoginAct::Begin { request, address }) => {
-            ApplicationTransition::BeginRelayLogin { request, address }
-        }
+        Some(RelayLoginAct::Begin {
+            request,
+            address,
+            afresh,
+        }) => ApplicationTransition::BeginRelayLogin {
+            request,
+            address,
+            afresh,
+        },
         Some(RelayLoginAct::Follow(follow)) => {
             ApplicationTransition::FollowRelayLogins(vec![follow])
         }

@@ -14,8 +14,8 @@ use std::{
 
 use serde_json::{Value, json};
 use suru::protocol::{
-    InviteRelays, OfferInviteRequest, RedeemInviteRequest, RelayLoginOutcome, RelayMachinesAnswer,
-    SettingMutation, Way,
+    InviteRelays, OfferInviteRequest, RedeemInviteRequest, RelayLoginLead, RelayLoginOutcome,
+    RelayLoginStanding, RelayMachinesAnswer, SettingMutation, Way,
 };
 use suru_relay::{SCRIPTED_VERIFICATION_URI, ScriptedProvider};
 use tokio::{
@@ -1316,4 +1316,91 @@ async fn the_server_decides_what_preparing_to_issue_an_invite_turns_on_and_lists
         suru::protocol::SessionErrorCode::InvalidInviteWays
     );
     server.shutdown().await;
+}
+
+/// Two Clients asking at once share one login, whichever gets there first, and
+/// no asking ever ends one under way: ADR-0048 has it that a login is the
+/// Server's, so a Client's code never dies by another's opening `/relay`.
+#[tokio::test]
+async fn clients_asking_for_a_login_at_once_share_it_and_only_afresh_replaces_a_login() {
+    let relay = TestRelay::start().await;
+    let address = relay.address();
+    let server = TestServer::start("login-lead").await;
+    server.client.add_relay(address.clone()).await.unwrap();
+
+    let (first, second) = tokio::join!(
+        server.client.log_in_at_relay(&address, false),
+        server.client.log_in_at_relay(&address, false),
+    );
+    let code_of = |lead: RelayLoginLead| match lead.standing {
+        RelayLoginStanding::Begun { login } => (true, login.user_code),
+        RelayLoginStanding::UnderWay { login } => (false, login.user_code),
+        RelayLoginStanding::Standing { relay } => panic!("no Login stands yet: {relay:?}"),
+    };
+    let (first, second) = (code_of(first.unwrap()), code_of(second.unwrap()));
+    assert_eq!(first.1, second.1, "one login");
+    assert_ne!(first.0, second.0, "begun once");
+
+    // Nor does asking afresh end one under way.
+    let afresh = server.client.log_in_at_relay(&address, true).await.unwrap();
+    assert_eq!(code_of(afresh), (false, first.1.clone()));
+
+    relay.approve(&first.1, "1", "octocat");
+    let ended = server.client.follow_relay_login(&address).await.unwrap();
+    assert!(matches!(ended.outcome, RelayLoginOutcome::Done { .. }));
+
+    let standing = server
+        .client
+        .log_in_at_relay(&address, false)
+        .await
+        .unwrap();
+    let RelayLoginStanding::Standing { relay: stands } = standing.standing else {
+        panic!("a Login stands, and none is begun: {standing:?}");
+    };
+    assert_eq!(stands.account.unwrap().username, "octocat");
+
+    // To stand under another Account a reader asks for one where a Login stands.
+    let afresh = server.client.log_in_at_relay(&address, true).await.unwrap();
+    let (begun, code) = code_of(afresh);
+    assert!(begun);
+    relay.approve(&code, "2", "hubot");
+    let ended = server.client.follow_relay_login(&address).await.unwrap();
+    assert!(matches!(ended.outcome, RelayLoginOutcome::Done { .. }));
+    assert_eq!(
+        server
+            .relay(&address)
+            .await
+            .unwrap()
+            .account
+            .unwrap()
+            .username,
+        "hubot"
+    );
+    server.shutdown().await;
+}
+
+/// The one way to begin a login is the one that cannot end another.
+#[tokio::test]
+async fn no_route_begins_a_login_regardless() {
+    let machine = Machine::new("no-other-route");
+    machine
+        .succeed(&["relay", "add", "https://relay.example.com"])
+        .await;
+    let descriptor = crate::support::read_runtime_descriptor(
+        machine
+            .servers
+            .state_dir()
+            .join(machine.channel)
+            .join("runtime.json"),
+    );
+    let begun = crate::support::loopback_client()
+        .post(format!(
+            "{}/v1/relays/https:%2F%2Frelay.example.com/login",
+            descriptor.base_url
+        ))
+        .bearer_auth(&descriptor.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(begun.status(), reqwest::StatusCode::METHOD_NOT_ALLOWED);
 }

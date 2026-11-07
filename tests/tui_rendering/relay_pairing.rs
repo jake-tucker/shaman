@@ -1431,6 +1431,61 @@ fn a_login_restored_while_its_login_is_being_begun_carries_the_redemption_on_and
     redeemed(&mut application, second);
 }
 
+/// The Server, deciding with the entry held, finds another Client's login formed
+/// the Login the redemption waited on: it carries on, and no code is shown.
+#[test]
+fn a_login_the_server_finds_standing_as_it_is_asked_carries_the_redemption_on() {
+    let mut application = Application::default();
+    push(&mut application, 1, vec![relay(COMPANY)]);
+    let (first, _) = pair(&mut application, vec![Way::Relay(COMPANY.to_owned())]);
+    let request = beginning(refused_for_login(&mut application, first), COMPANY);
+    let ApplicationTransition::RedeemInvite { .. } = application
+        .handle_event(ApplicationEvent::RelayLoginStands {
+            request,
+            relay: Box::new(logged_in(COMPANY)),
+        })
+        .expect("take the Login that stands")
+    else {
+        panic!("the redemption carries on");
+    };
+    assert!(!prose(&application).contains(CODE));
+}
+
+/// `/serve`'s row, asked to log in, is answered by another Client's login under
+/// way as by its own, and by a Login that stands with what the row then says.
+#[test]
+fn a_rows_login_shows_one_found_under_way_and_says_of_one_found_standing() {
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    let request = beginning(press(&mut application, KeyCode::Char(' ')), COMPANY);
+    followed_at(begun(&mut application, request, pending()), COMPANY);
+    let shown = prose(&application);
+    assert!(shown.contains(VISIT) && shown.contains(CODE), "{shown}");
+
+    let mut application = serve_on(vec![serving_through(relay(COMPANY))]);
+    let request = beginning(press(&mut application, KeyCode::Char(' ')), COMPANY);
+    let ApplicationTransition::ListRelays(refresh) = application
+        .handle_event(ApplicationEvent::RelayLoginStands {
+            request,
+            relay: Box::new(serving_through(logged_in(COMPANY))),
+        })
+        .expect("take the Login that stands")
+    else {
+        panic!("how the Relay stands is asked for afresh");
+    };
+    list(
+        &mut application,
+        refresh,
+        2,
+        vec![serving_through(logged_in(COMPANY))],
+    );
+    let shown = prose(&application);
+    assert!(
+        shown.contains(&format!("{COMPANY} needs no login")),
+        "{shown}"
+    );
+    assert!(shown.contains("[x]"), "offered now: {shown}");
+}
+
 #[test]
 fn a_login_restored_while_its_relay_is_being_added_carries_the_redemption_on() {
     let mut application = Application::default();
@@ -3651,6 +3706,7 @@ fn beginning(transition: ApplicationTransition, address: &str) -> RelayRequest {
         ApplicationTransition::BeginRelayLogin {
             request,
             address: asked,
+            ..
         } if asked == address => request,
         other => panic!("expected a login begun at {address}, got {other:?}"),
     }

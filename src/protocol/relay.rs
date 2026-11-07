@@ -281,9 +281,18 @@ pub struct RelayMachine {
     pub remote: Option<String>,
 }
 
-/// Where logging in at a Relay got to, asked of the Server only where a login is
-/// wanted: it begins one only where it holds no Login that stands and none is
-/// under way, so a Client following on from another never ends that one's.
+/// A login asked for at a Relay. Whatever is asked, one under way there is left
+/// to go on and answered, so no Client's asking ever ends another's. `afresh`
+/// asks for one where a Login stands, as a reader does who would stand under
+/// another Account; otherwise a Login that stands is answered and none begun.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RelayLoginRequest {
+    pub afresh: bool,
+}
+
+/// Where logging in at a Relay got to, as [`RelayLoginRequest`] asked: the Server
+/// decides, with the entry held, so two Clients asking at once share one login.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RelayLoginLead {

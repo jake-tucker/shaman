@@ -1653,11 +1653,16 @@ impl RunLoop {
                     self.channels.relays.clone(),
                 );
             }
-            ApplicationTransition::BeginRelayLogin { request, address } => {
+            ApplicationTransition::BeginRelayLogin {
+                request,
+                address,
+                afresh,
+            } => {
                 spawn_relay_login(
                     self.client.session_commands(),
                     request,
                     address,
+                    afresh,
                     self.channels.relays.clone(),
                 );
             }
@@ -3358,17 +3363,26 @@ fn spawn_relay_addition(
     });
 }
 
-/// Has the Client's own Server begin a login at a Relay. The Server carries
-/// it out from there, so it outlives this Client.
+/// Has the Client's own Server log in at a Relay. It decides whether that begins
+/// a login, and carries one out from there, so it outlives this Client.
 fn spawn_relay_login(
     commands: SessionCommandClient,
     request: crate::tui::RelayRequest,
     address: String,
+    afresh: bool,
     answers: UnboundedSender<ApplicationEvent>,
 ) {
     tokio::spawn(async move {
-        let answer = match commands.begin_relay_login(&address).await {
-            Ok(login) => ApplicationEvent::RelayLoginBegun { request, login },
+        let answer = match commands.log_in_at_relay(&address, afresh).await {
+            Ok(lead) => match lead.standing {
+                crate::protocol::RelayLoginStanding::Begun { login }
+                | crate::protocol::RelayLoginStanding::UnderWay { login } => {
+                    ApplicationEvent::RelayLoginBegun { request, login }
+                }
+                crate::protocol::RelayLoginStanding::Standing { relay } => {
+                    ApplicationEvent::RelayLoginStands { request, relay }
+                }
+            },
             Err(error) => ApplicationEvent::RelayLoginNotBegun {
                 request,
                 error: error.to_string(),

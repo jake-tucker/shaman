@@ -78,6 +78,16 @@ pub fn relay_standing(relay: &Relay) -> String {
     }
 }
 
+/// What is said where a login was asked for at `relay` and its Login stands, so
+/// the Server began none.
+pub fn login_stands(relay: &Relay) -> String {
+    format!(
+        "{} needs no login: {}",
+        relay.address,
+        relay_standing(relay)
+    )
+}
+
 /// What a row says of the Server Serving through `relay`, where it does — and
 /// of what it waits on, where that is anything: a login there, or Serving
 /// itself, which `serving` says is on.

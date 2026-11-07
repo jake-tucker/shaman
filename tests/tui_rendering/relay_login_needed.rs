@@ -584,7 +584,12 @@ fn the_notice_leads_to_the_login_at_its_relay() {
         1,
         vec![logged_in(HOME), lapsed(COMPANY, None)],
     );
-    let ApplicationTransition::BeginRelayLogin { request, address } = transition else {
+    let ApplicationTransition::BeginRelayLogin {
+        request,
+        address,
+        afresh: false,
+    } = transition
+    else {
         panic!("the list, landed, logs in at the Relay the Notice named: {transition:?}");
     };
     assert_eq!(address, COMPANY);

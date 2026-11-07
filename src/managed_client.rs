@@ -754,16 +754,29 @@ impl ManagedClient {
         self.session_commands().list_relay_machines(address).await
     }
 
-    /// Has the Client's own Server begin a login at the Relay at `address`:
-    /// where its user goes to log in, and what they enter there.
+    /// A login at the Relay at `address`, as a reader asks for one where a Login
+    /// may stand: the one under way there, or one the Client's own Server begins.
     pub async fn begin_relay_login(&self, address: &str) -> Result<RelayLogin> {
-        self.session_commands().begin_relay_login(address).await
+        match self.log_in_at_relay(address, true).await?.standing {
+            crate::protocol::RelayLoginStanding::UnderWay { login }
+            | crate::protocol::RelayLoginStanding::Begun { login } => Ok(login),
+            crate::protocol::RelayLoginStanding::Standing { .. } => {
+                bail!("the Server began no login at the Relay")
+            }
+        }
     }
 
-    /// Has the Client's own Server logged in at the Relay at `address`, beginning
-    /// a login only where its Login does not stand and none is under way.
-    pub async fn log_in_at_relay(&self, address: &str) -> Result<crate::protocol::RelayLoginLead> {
-        self.session_commands().log_in_at_relay(address).await
+    /// Has the Client's own Server log in at the Relay at `address`, which it
+    /// decides: a login under way is left to go on, and one is begun only where
+    /// no Login stands, or `afresh` asks for one regardless.
+    pub async fn log_in_at_relay(
+        &self,
+        address: &str,
+        afresh: bool,
+    ) -> Result<crate::protocol::RelayLoginLead> {
+        self.session_commands()
+            .log_in_at_relay(address, afresh)
+            .await
     }
 
     /// Waits for the latest login begun at the Relay at `address` to end,
@@ -2174,27 +2187,17 @@ impl SessionCommandClient {
         decode_api_response(response, "Relay machine listing").await
     }
 
-    pub(crate) async fn begin_relay_login(&self, address: &str) -> Result<RelayLogin> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(relay_url(&descriptor.base_url, &[address, "login"])?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Relay login")?;
-        decode_api_response(response, "Relay login").await
-    }
-
     pub(crate) async fn log_in_at_relay(
         &self,
         address: &str,
+        afresh: bool,
     ) -> Result<crate::protocol::RelayLoginLead> {
         let descriptor = self.descriptor.borrow().clone();
         let response = self
             .http
             .put(relay_url(&descriptor.base_url, &[address, "login"])?)
             .bearer_auth(&descriptor.token)
+            .json(&crate::protocol::RelayLoginRequest { afresh })
             .send()
             .await
             .context("ask for a Relay login")?;
