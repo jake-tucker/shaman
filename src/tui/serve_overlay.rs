@@ -80,8 +80,13 @@ pub(super) const NO_WAY: &str = "An Invite has no way to offer: turn the Serving
 
 /// What the picker says where the Serving listener is not listening and no
 /// Relay can be offered either.
-pub(super) const NO_WAY_UNTIL_LISTENING: &str = "An Invite has no way to offer until the Serving listener listens where another machine \
-     can reach it, or this Server Serves through a Relay from here";
+pub(super) const NO_WAY_UNTIL_LISTENING: &str = "An Invite has no way to offer until the Serving listener listens, or this Server Serves \
+     through a Relay from here";
+
+/// What the picker says where the Serving listener listens where only this
+/// machine can reach it and no Relay can be offered either.
+pub(super) const NO_WAY_FROM_LOOPBACK: &str = "An Invite has no way to offer until the Serving listener listens where another machine can \
+     reach it, or this Server Serves through a Relay from here";
 
 /// What the picker says where the Server holds no Relay, for the reader to
 /// begin there.
@@ -574,7 +579,7 @@ impl ServeOverlay {
         }
         match ways.listener {
             ListenerState::Open { .. } if ways.listener.reachable_by_others() => None,
-            ListenerState::Open { .. } => Some(NO_WAY_UNTIL_LISTENING),
+            ListenerState::Open { .. } => Some(NO_WAY_FROM_LOOPBACK),
             ListenerState::Off => Some(NO_WAY),
             ListenerState::Failed { .. } => Some(NO_WAY_UNTIL_LISTENING),
         }

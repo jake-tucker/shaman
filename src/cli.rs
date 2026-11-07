@@ -392,6 +392,7 @@ async fn log_in(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8> {
+    let mut interrupt = Interrupt::listen();
     let lead = match client.log_in_at_relay(address).await {
         Ok(lead) => lead,
         Err(error) => return Ok(login_not_begun(&error, address, err)),
@@ -430,7 +431,7 @@ async fn log_in(
                 FAILED
             }
         }),
-        () = interrupted() => {
+        () = interrupt.arrives() => {
             say(err, &format!(
                 "Left the login at {address} under way: it goes on at the Server, where `suru \
                  relay login {address}` and /relay find it"
@@ -440,10 +441,34 @@ async fn log_in(
     }
 }
 
-/// Resolves on Ctrl+C, on every platform; never, should that not be listened for.
-async fn interrupted() {
-    if tokio::signal::ctrl_c().await.is_err() {
-        std::future::pending::<()>().await;
+/// Ctrl+C, listened for from the moment this is made. It must be made before a
+/// login's line is printed: whoever read the line may interrupt at once, and
+/// nothing listening then would end the process by the signal instead.
+struct Interrupt {
+    #[cfg(unix)]
+    signal: Option<tokio::signal::unix::Signal>,
+    #[cfg(windows)]
+    signal: Option<tokio::signal::windows::CtrlC>,
+}
+
+impl Interrupt {
+    fn listen() -> Self {
+        Self {
+            #[cfg(unix)]
+            signal: tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).ok(),
+            #[cfg(windows)]
+            signal: tokio::signal::windows::ctrl_c().ok(),
+        }
+    }
+
+    /// Resolves on Ctrl+C; never, should that not be listened for.
+    async fn arrives(&mut self) {
+        match &mut self.signal {
+            Some(signal) => {
+                signal.recv().await;
+            }
+            None => std::future::pending::<()>().await,
+        }
     }
 }
 

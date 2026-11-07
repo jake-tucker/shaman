@@ -588,6 +588,26 @@ fn serve_says_an_invite_has_no_way_to_offer_until_the_listener_listens() {
     );
 }
 
+/// The Server lists no address for a listener only this machine can reach, so
+/// the picker says why it lists none, rather than nothing at all.
+#[test]
+fn serve_says_a_listener_only_this_machine_can_reach_offers_none_of_its_addresses() {
+    let mut application = listening_application(ListenerState::Open {
+        address: "127.0.0.1:7777".parse().unwrap(),
+    });
+    push(&mut application, 1, vec![logged_in(OTHER)]);
+    open_serve(&mut application, Vec::new());
+    let shown = prose(&application);
+    assert!(
+        shown.contains("listens where only this machine can reach it"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("until the Serving listener listens where another machine can reach it"),
+        "{shown}"
+    );
+}
+
 #[test]
 fn an_invite_the_server_refuses_says_why_and_keeps_the_ways_chosen() {
     let refusal = format!(
