@@ -361,6 +361,9 @@ pub struct ServerTimings {
     /// not removed from under it, and that no other instance is published in
     /// its place — and stops once it does not. See `election` for what counts.
     pub state_dir_check_interval: Duration,
+    /// How often a running Server reads its Config Documents again, to follow
+    /// what they come to say by any hand but its own.
+    pub config_document_check_interval: Duration,
     /// How long one of the seconds a Broker wait's `timeout_seconds` counts
     /// lasts, so a test observes a wait's bounds without waiting them out.
     pub broker_wait_second: Duration,
@@ -453,6 +456,7 @@ impl Default for ServerTimings {
             joined_stream_keepalive_timeout: Duration::from_secs(30),
             election_handoff: Duration::from_secs(1),
             state_dir_check_interval: STATE_DIR_CHECK_INTERVAL,
+            config_document_check_interval: Duration::from_secs(1),
             broker_wait_second: broker::WaitTimings::default().second,
             broker_wait_progress_interval: broker::WaitTimings::default().progress_every,
             workspace_clone_timeout: Duration::from_secs(10 * 60),
@@ -740,6 +744,13 @@ impl ServerTimings {
     }
     pub fn with_worktree_reclaim_registry_read_timeout(mut self, timeout: Duration) -> Self {
         self.worktree_reclaim_registry_read_timeout = timeout;
+        self
+    }
+
+    /// Sets how often a running Server reads its Config Documents again;
+    /// injectable so tests see one change without waiting out the default.
+    pub fn with_config_document_check_interval(mut self, interval: Duration) -> Self {
+        self.config_document_check_interval = interval;
         self
     }
 
@@ -1471,10 +1482,9 @@ struct AppState {
     landing_agent_selection: LandingAgentSelectionStore,
     onboarded: OnboardedStore,
     /// The loaded effective-settings view. A watch channel so every attached
-    /// lifecycle stream re-pushes the snapshot when a mutation (or a future
-    /// Config Document watcher) replaces it; the Config Documents behind it,
-    /// which this server alone writes, are written through
-    /// [`SessionOperations::change_setting`].
+    /// lifecycle stream re-pushes the snapshot when a mutation, or the Config
+    /// Documents changing by another hand, replaces it; what this server writes
+    /// of them it writes through [`SessionOperations::change_setting`].
     settings: Arc<watch::Sender<SettingsSnapshot>>,
     serving: ServingController,
     /// The Relays this Server holds entries for, and its Logins at them.
@@ -1711,7 +1721,9 @@ async fn start(
     // After all fallible local-server setup, so an error returning from spawn
     // can never leave a detached Serving listener behind; still before any
     // Session starts, so the first Turn runs under the pinned Server Settings.
-    if let Err(error) = adopt_settings(&settings, &runtimes, &serving, &opening_settings).await {
+    if let Err(error) =
+        adopt_settings(&settings, &runtimes, &serving, &relays, &opening_settings).await
+    {
         tracing::error!("could not adopt Serving settings at startup: {error:#}");
     }
 
@@ -1960,6 +1972,7 @@ async fn start(
             settings.clone(),
             runtimes.clone(),
             serving.clone(),
+            relays.clone(),
         ),
         root_discovery.clone(),
         registry_standing.clone(),
@@ -1981,6 +1994,10 @@ async fn start(
     let (move_settlements, asked_move_settlements) = tokio::sync::mpsc::unbounded_channel();
     providers.settle_moves_through(move_settlements, timings.move_continuation_grace);
     operations.settle_pending_moves(asked_move_settlements, provider_shutdown_rx.clone());
+    operations.follow_config_documents(
+        timings.config_document_check_interval,
+        provider_shutdown_rx.clone(),
+    );
     // A Broker Tool spawning a Subagent starts that Subagent's Provider actor
     // through the same orchestrator every other Session's runs on, one
     // reading a Subagent reads it from the same Session store, and a
@@ -2966,19 +2983,22 @@ fn pairing_error_response(error: crate::serving::PairingFailure) -> Response {
 
 /// Puts a freshly loaded effective-settings view in force: its problems reach
 /// the Log, every hosted Provider runtime takes the Server Settings it now
-/// runs under, and every attached client receives the snapshot. Startup and an
-/// accepted mutation adopt a view the same way, and a future Config Document
-/// watcher will too.
+/// runs under, the Server holds an entry for each Relay it pins, and every
+/// attached client receives the snapshot. Startup, an accepted mutation, and
+/// a Config Document changed by another hand all adopt a view the same way.
 async fn adopt_settings(
     settings: &watch::Sender<SettingsSnapshot>,
     runtimes: &[Arc<dyn ProviderRuntime>],
     serving: &ServingController,
+    relays: &crate::relays::RelayController,
     snapshot: &SettingsSnapshot,
 ) -> Result<()> {
     crate::settings::log_diagnostics(&snapshot.diagnostics);
     for runtime in runtimes {
         runtime.apply_settings(&snapshot.settings);
     }
+    let (pinned_relays, pinned_in) = crate::settings::relay_pins(snapshot);
+    relays.adopt_pins(pinned_relays, pinned_in);
     let serving_result = serving.adopt(snapshot.settings.serving).await;
     settings.send_replace(snapshot.clone());
     serving_result

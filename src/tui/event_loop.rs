@@ -5358,6 +5358,7 @@ mod tests {
                 SettingsSnapshot {
                     settings: EffectiveSettings::default(),
                     pinned: Vec::new(),
+                    pinned_in: Default::default(),
                     diagnostics: Vec::new(),
                 },
             )))
@@ -6417,6 +6418,7 @@ mod tests {
                     SettingsSnapshot {
                         settings,
                         pinned: vec![],
+                        pinned_in: Default::default(),
                         diagnostics: vec![],
                     },
                 )))

@@ -140,6 +140,7 @@ fn content_width_snapshot(
             ..EffectiveSettings::default()
         },
         pinned,
+        pinned_in: Default::default(),
         diagnostics: Vec::new(),
     }
 }

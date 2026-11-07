@@ -686,6 +686,7 @@ async fn no_setting_governing_serving_or_pairing_is_listed_described_or_set() {
         "serving.listener",
         "serving.port",
         "serving.bindAddress",
+        "serving.relays",
     ] {
         assert!(withheld.contains(&key), "{key} is withheld: {withheld:?}");
     }
@@ -727,6 +728,67 @@ async fn no_setting_governing_serving_or_pairing_is_listed_described_or_set() {
             && in_force.settings.serving.port == 9443,
         "and nothing about Serving moved"
     );
+
+    server.shutdown().await.expect("shut down server");
+}
+
+/// The Relays a Config Document pins say where this Server may be reached and
+/// through whom, so a Sidekick is told nothing of them by any Tool, whichever
+/// way it asks, nor may it pin one or take one away.
+#[tokio::test]
+async fn a_relay_a_config_document_pins_is_told_to_no_sidekick_and_set_by_none() {
+    const PINNED: &str = "relay.pinned-here.example.test";
+    let document = format!("{{ \"serving\": {{ \"relays\": [\"https://{PINNED}\"] }} }}\n");
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let config_dir = tempfile::tempdir().expect("create isolated config directory");
+    write_config_document(config_dir.path(), &document);
+    let channel = "sidekick-pinned-relays";
+    let (server, mut claude) = host_claude(state_dir.path(), config_dir.path(), channel).await;
+    let descriptor = server.descriptor().clone();
+    let (_sidekick, mut sidekick, _provider) = start_sidekick(&descriptor, &mut claude).await;
+
+    for arguments in [json!({}), json!({ "group": "experimental" })] {
+        let rows = list_settings(&mut sidekick, arguments).await;
+        assert!(!keys(&rows).contains(&"serving.relays"));
+        let listed = serde_json::to_string(&rows).expect("rows serialize");
+        assert!(
+            !listed.contains(PINNED) && !listed.contains("relays"),
+            "{listed}"
+        );
+    }
+    let another = format!("https://another.{PINNED}");
+    for (tool, arguments) in [
+        ("describe_setting", json!({ "key": "serving.relays" })),
+        ("describe_setting", json!({ "key": "SERVING.RELAYS" })),
+        (
+            "set_setting",
+            json!({ "key": "serving.relays", "value": [another] }),
+        ),
+        ("set_setting", json!({ "key": "serving.relays" })),
+    ] {
+        let refusal = refused(&mut sidekick, tool, arguments.clone()).await;
+        assert!(
+            refusal.contains("no Sidekick reads or changes") && !refusal.contains(PINNED),
+            "{tool} refuses {arguments}: {refusal}"
+        );
+    }
+    let near = refused(
+        &mut sidekick,
+        "describe_setting",
+        json!({ "key": "relays" }),
+    )
+    .await;
+    assert!(
+        !near.contains("serving.relays"),
+        "never offered as the nearest key: {near}"
+    );
+    assert_eq!(
+        config_document(config_dir.path()).as_deref(),
+        Some(document.as_str()),
+        "the Config Document is left as the user wrote it"
+    );
+    let (_client, in_force) = attached_client(state_dir.path(), channel).await;
+    assert_eq!(in_force.settings.relays, [format!("https://{PINNED}")]);
 
     server.shutdown().await.expect("shut down server");
 }

@@ -79,6 +79,7 @@ fn application_in(home: &Home) -> Application {
             SettingsSnapshot {
                 settings,
                 pinned: Vec::new(),
+                pinned_in: Default::default(),
                 diagnostics: Vec::new(),
             },
         )))

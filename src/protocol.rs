@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt,
     net::{IpAddr, Ipv6Addr},
     ops::Range,
@@ -2353,6 +2353,11 @@ pub struct EffectiveSettings {
     pub workspace: WorkspaceSettings,
     pub provider: ProviderSettings,
     pub serving: ServingSettings,
+    /// The Relays a Config Document pins, each address written the one way a
+    /// Relay's is and held once. Keyed under `serving` with the Settings it
+    /// keeps company with, it is kept apart from them because those are what
+    /// the Serving listener follows, and this is what the Relay entries do.
+    pub relays: Vec<String>,
     pub broker: BrokerSettings,
 }
 
@@ -2591,6 +2596,10 @@ pub enum SettingMutation {
     WorkspaceRoots {
         value: Option<Vec<String>>,
     },
+    /// Pins the whole list of Relay addresses at once.
+    ServingRelays {
+        value: Option<Vec<String>>,
+    },
     ProviderCodexEnabled {
         value: Option<bool>,
     },
@@ -2672,6 +2681,9 @@ pub struct SettingsSnapshot {
     /// Dotted schema key paths a Config Document pins, so a client can tell a
     /// deliberate choice from a built-in default without reading the file.
     pub pinned: Vec<String>,
+    /// The Config Document pinning each of those keys: the one that wins, where
+    /// the stack comes to hold several.
+    pub pinned_in: BTreeMap<String, PathBuf>,
     pub diagnostics: Vec<SettingsDiagnostic>,
 }
 
@@ -5865,6 +5877,9 @@ pub enum SessionErrorCode {
     /// The Server already holds an entry for the Relay at that address.
     RelayAlreadyAdded,
     RelayNotFound,
+    /// A Config Document pins the Relay, so removing it here would only have
+    /// it come back: it is taken out of the document first.
+    RelayPinned,
     /// The Relay did not answer.
     RelayUnreachable,
     /// The Server and the Relay share no version of the protocol between

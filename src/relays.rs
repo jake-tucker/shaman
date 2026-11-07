@@ -14,6 +14,13 @@
 //! Entries are kept beside the Server's Remotes and Peers, owner-only, and
 //! nothing of them — an address, a code, an Account — reaches a Log
 //! (ADR-0008).
+//!
+//! A Config Document may pin Relays. A pin makes an entry and nothing more: it
+//! logs in to nothing, connects to nothing, and leaves the choice to Serve
+//! through the Relay to this machine's user. Which entries are pinned is only
+//! ever read off the Settings in force and never stored, so a pin taken out of
+//! the document, while the Server runs or while it is down, leaves the entry
+//! its Login and its choice, and refuses its removal no longer.
 
 use std::{
     path::{Path, PathBuf},
@@ -55,7 +62,7 @@ use crate::{
     protocol::{
         Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginOutcome, RelayLoginRefusal,
         RelayMachines, RelayMachinesAnswer, RelayRemoval, RelaySide, RelayState, RelayUnreachable,
-        SessionErrorCode, UnreachableReason,
+        SessionErrorCode, UnreachableReason, relay_pinned_message,
     },
     runtime::replace_private_file,
     serving::{
@@ -181,6 +188,9 @@ struct HeldRelay {
     /// while the other does: no login can be begun once removal has, and
     /// none begun before it can finish once removal asks the Relay to forget.
     operations: Arc<AsyncMutex<()>>,
+    /// The Config Document pinning the Relay, as the Settings last adopted
+    /// say. Never stored.
+    pinned_in: Option<PathBuf>,
 }
 
 struct HeldLogin {
@@ -221,6 +231,7 @@ impl RelayFailure {
                 StatusCode::NOT_FOUND
             }
             SessionErrorCode::RelayAlreadyAdded
+            | SessionErrorCode::RelayPinned
             | SessionErrorCode::RelayProtocolMismatch
             | SessionErrorCode::RelayServeThroughLimitReached => StatusCode::CONFLICT,
             SessionErrorCode::RelayUnreachable | SessionErrorCode::RelayRefused => {
@@ -272,6 +283,7 @@ impl RelayController {
                 login: None,
                 connection: None,
                 operations: Arc::default(),
+                pinned_in: None,
             })
             .collect();
         let listing = RelayListing {
@@ -459,29 +471,48 @@ impl RelayController {
                 format!("the Relay at {address} is already added"),
             ));
         }
-        relays.push(HeldRelay {
-            stored: StoredRelay {
-                address,
-                logged_in: false,
-                login_needed: false,
-                serve_through: false,
-                untold_lapse: None,
-                given_notice: None,
-            },
-            serve_through: watch::Sender::new(ServeThrough::first(false)),
-            state: RelayState::LoginNeeded,
-            unreachable: None,
-            account: None,
-            login: None,
-            connection: None,
-            operations: Arc::default(),
-        });
+        relays.push(HeldRelay::first_at(address, None));
         if let Err(error) = self.persist(&relays) {
             relays.pop();
             return Err(records_failure(error));
         }
         self.publish(&relays);
         Ok(relays.last().expect("the Relay was just added").relay())
+    }
+
+    /// Has the Relays the Settings in force pin be those at `addresses`, each
+    /// written the one way a Relay's is, as `document` pins them. An address
+    /// with no entry gets one, after those there are, so no entry moves; one
+    /// with an entry is pinned as it stands, whatever its Login and its choice
+    /// to Serve through it; and an entry no longer pinned is otherwise left as
+    /// it was. Nothing here connects to anything. An entry that cannot be
+    /// stored stands all the same, the document having said so: it is stored
+    /// with whatever is next written of the Relays, or adopted, and until then
+    /// is made again by each start while the document still pins it.
+    pub(crate) fn adopt_pins(&self, addresses: &[String], document: Option<&Path>) {
+        let mut relays = self.lock();
+        let pinned_in = |address: &str| {
+            document
+                .filter(|_| addresses.iter().any(|pinned| pinned == address))
+                .map(Path::to_path_buf)
+        };
+        for held in relays.iter_mut() {
+            held.pinned_in = pinned_in(&held.stored.address);
+        }
+        let mut added = false;
+        for address in addresses {
+            if !relays.iter().any(|held| &held.stored.address == address) {
+                relays.push(HeldRelay::first_at(address.clone(), pinned_in(address)));
+                added = true;
+            }
+        }
+        if (added || self.unstored.load(Ordering::Acquire))
+            && let Err(error) = self.persist(&relays)
+        {
+            self.unstored.store(true, Ordering::Release);
+            tracing::warn!("could not store a Relay a Config Document pins: {error:#}");
+        }
+        self.publish(&relays);
     }
 
     /// Chooses whether the Server Serves through the Relay at `address`: while
@@ -650,12 +681,16 @@ impl RelayController {
             })
     }
 
-    /// Removes the Relay at `address`. Any login under way there is given up
-    /// first, and heard out until the Relay lets it go, so nothing it finishes
-    /// can follow what comes next: the Relay is asked to forget the Server's
-    /// Login. The entry then goes whether or not it answered, since a Relay
-    /// that cannot be reached is forgotten here all the same; where the
-    /// entry cannot be forgotten here, it stays and goes on as before.
+    /// Removes the Relay at `address`, unless a Config Document pins it, which
+    /// is refused, naming the document, with nothing asked of the Relay: it
+    /// would only come back. Any login under way there is given up first, and
+    /// heard out until the Relay lets it go, so nothing it finishes can follow
+    /// what comes next: the Relay is asked to forget the Server's Login. The
+    /// entry then goes whether or not it answered, since a Relay that cannot
+    /// be reached is forgotten here all the same; where the entry cannot be
+    /// forgotten here, it stays and goes on as before. A pin landing after all
+    /// that was begun leaves an entry at the address, with nothing of the one
+    /// removed.
     pub(crate) async fn remove(
         &self,
         address: &str,
@@ -676,6 +711,12 @@ impl RelayController {
         let login = {
             let mut relays = self.lock();
             let held = owning(&mut relays, &address, &operations).ok_or_else(relay_not_found)?;
+            if let Some(document) = &held.pinned_in {
+                return Err(RelayFailure::new(
+                    SessionErrorCode::RelayPinned,
+                    relay_pinned_message(&address, document),
+                ));
+            }
             held.login
                 .as_mut()
                 .and_then(|login| Some((login.give_up.clone(), login.task.take()?)))
@@ -704,7 +745,16 @@ impl RelayController {
             return Err(relay_not_found());
         };
         let removed = relays.remove(index);
+        if let Some(document) = &removed.pinned_in {
+            relays.insert(
+                index,
+                HeldRelay::first_at(address.clone(), Some(document.clone())),
+            );
+        }
         if let Err(error) = self.persist(&relays) {
+            if removed.pinned_in.is_some() {
+                relays.remove(index);
+            }
             relays.insert(index, removed);
             let held = &mut relays[index];
             let serve_through = held.stored.serve_through;
@@ -1567,6 +1617,28 @@ fn told(relays: &[HeldRelay]) -> Vec<String> {
 }
 
 impl HeldRelay {
+    /// The entry for a Relay the Server has yet to do anything at.
+    fn first_at(address: String, pinned_in: Option<PathBuf>) -> Self {
+        Self {
+            stored: StoredRelay {
+                address,
+                logged_in: false,
+                login_needed: false,
+                serve_through: false,
+                untold_lapse: None,
+                given_notice: None,
+            },
+            serve_through: watch::Sender::new(ServeThrough::first(false)),
+            state: RelayState::LoginNeeded,
+            unreachable: None,
+            account: None,
+            login: None,
+            connection: None,
+            operations: Arc::default(),
+            pinned_in,
+        }
+    }
+
     /// Whether an Invite may offer the Relay: where its user has chosen that
     /// the Server Serves through it and its Login there stands. A Login the
     /// Relay was last found to refuse is offered to nobody, however the
@@ -1599,6 +1671,7 @@ impl HeldRelay {
                 .map(|login| login.progress.borrow().clone()),
             serve_through: self.stored.serve_through,
             login_needed_notice: self.stored.untold_lapse,
+            pinned_in: self.pinned_in.clone(),
         }
     }
 
@@ -1655,6 +1728,13 @@ fn stopped_answering() -> RelayFailure {
         SessionErrorCode::RelayUnreachable,
         "the Relay stopped answering",
     )
+}
+
+/// The address `address` names a Relay by, written the one way a Relay's
+/// address is, where it is one a Server can hold an entry for: what a Config
+/// Document's list is held to, as `add` is.
+pub(crate) fn holdable_address(address: &str) -> Option<String> {
+    relay_protocol::canonical_address(address).filter(|address| address.len() <= MAX_TOLD_RELAY_LEN)
 }
 
 /// The address `address` names a Relay by, written the one way a Relay's

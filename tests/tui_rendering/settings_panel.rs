@@ -154,6 +154,7 @@ fn snapshot(settings: EffectiveSettings, pinned: &[&str]) -> SettingsSnapshot {
     SettingsSnapshot {
         settings,
         pinned: pinned.iter().map(|key| (*key).to_owned()).collect(),
+        pinned_in: Default::default(),
         diagnostics: Vec::new(),
     }
 }
@@ -901,6 +902,67 @@ fn the_workspace_roots_list_editor_adds_edits_and_removes_rows_and_saves_them_as
     assert!(shown(&application, "Workspace Roots") == format!("~/code, {ARCHIVE_ROOT} ●"));
 }
 
+/// The Relays a Config Document pins are presented and edited with the other
+/// Serving Settings, each entry held to what a Relay's address is, and the list
+/// saved holds each address once, the one way a Relay's is written.
+#[test]
+fn the_experimental_tab_presents_and_edits_the_relays_pinned() {
+    const COMPANY: &str = "https://relay.example.com";
+    let workspace = workspace_dir();
+    let mut application = client_showing(
+        workspace.path(),
+        EffectiveSettings {
+            relays: vec![COMPANY.to_owned()],
+            ..EffectiveSettings::default()
+        },
+        &["serving.relays"],
+    );
+    open_experimental_tab(&mut application);
+    assert_eq!(shown(&application, "Relays"), format!("{COMPANY} ●"));
+
+    focus_setting(&mut application, "serving.relays");
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    let opened = screen(&application);
+    assert!(
+        opened.contains(&format!("› {COMPANY}")) && opened.contains("add a Relay's address"),
+        "{opened}"
+    );
+    assert!(
+        !opened.contains("browse"),
+        "a Relay is no directory: {opened}"
+    );
+
+    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    type_terminal_text(&mut application, "ftp://nope.example.com");
+    assert_eq!(
+        press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
+        ApplicationTransition::Continue,
+        "an address no Relay is reached at pins nothing"
+    );
+    assert!(
+        screen(&application).contains("\"ftp://nope.example.com\" is not"),
+        "{}",
+        screen(&application)
+    );
+
+    for _ in 0.."ftp://nope.example.com".len() {
+        press(&mut application, KeyCode::Backspace, KeyModifiers::NONE);
+    }
+    type_terminal_text(&mut application, "RELAY.example.com/");
+    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    type_terminal_text(&mut application, "home.example.net");
+    assert_eq!(
+        press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
+        MutatesSetting(SettingMutation::ServingRelays {
+            value: Some(vec![
+                COMPANY.to_owned(),
+                "https://home.example.net".to_owned(),
+            ]),
+        }),
+        "an address written two ways is saved as one"
+    );
+}
+
 /// An entry the Setting refuses keeps the editor open, focused on that entry
 /// and naming it, so nothing is pinned until every Root is one; a row the
 /// reader emptied is no entry at all, and Esc leaves the Setting as it was.
@@ -1525,6 +1587,7 @@ fn the_experimental_tab_stands_past_the_providers_and_lists_the_settings_declare
         "serving.listener",
         "serving.port",
         "serving.bindAddress",
+        "serving.relays",
     ] {
         let descriptor = suru::settings::SCHEMA
             .iter()
@@ -5205,6 +5268,7 @@ fn a_diagnostic_naming_the_focused_setting_leads_the_pane_with_its_file() {
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
                 pinned: Vec::new(),
+                pinned_in: Default::default(),
                 diagnostics: vec![
                     diagnostic(
                         "transcript.groups",
@@ -5381,6 +5445,7 @@ fn a_diagnostic_naming_one_of_a_providers_own_settings_leads_its_pane() {
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
                 pinned: Vec::new(),
+                pinned_in: Default::default(),
                 diagnostics: vec![suru::protocol::SettingsDiagnostic {
                     severity: suru::protocol::SettingsDiagnosticSeverity::Warning,
                     file: file.clone(),
@@ -5502,6 +5567,7 @@ fn copilots_fusion_tiers_stand_on_the_experimental_tab_and_start_off() {
     let workspace = workspace_dir();
     let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
     open_experimental_tab(&mut application);
+    focus_setting(&mut application, "provider.copilot.fusionTiers");
 
     assert_eq!(shown(&application, "Copilot Fusion tiers"), "false");
 }
@@ -5519,6 +5585,7 @@ fn leads_however_long_never_push_the_setting_the_keys_are_on_out_of_the_pane() {
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
                 pinned: Vec::new(),
+                pinned_in: Default::default(),
                 diagnostics: vec![suru::protocol::SettingsDiagnostic {
                     severity: suru::protocol::SettingsDiagnosticSeverity::Warning,
                     file,
@@ -5716,6 +5783,7 @@ fn a_diagnostic_names_its_config_document_from_the_readers_home() {
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
                 pinned: Vec::new(),
+                pinned_in: Default::default(),
                 diagnostics: vec![suru::protocol::SettingsDiagnostic {
                     severity: suru::protocol::SettingsDiagnosticSeverity::Warning,
                     file,

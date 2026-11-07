@@ -325,6 +325,7 @@ fn company_relay(state: RelayState) -> Relay {
         login: None,
         serve_through: false,
         login_needed_notice: None,
+        pinned_in: None,
     }
 }
 

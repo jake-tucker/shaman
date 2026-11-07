@@ -19,6 +19,7 @@ fn hide_sidebar(application: &mut Application) {
             SettingsSnapshot {
                 settings,
                 pinned: Vec::new(),
+                pinned_in: Default::default(),
                 diagnostics: Vec::new(),
             },
         )))

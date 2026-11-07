@@ -3758,6 +3758,7 @@ fn relay(address: &str) -> Relay {
         login: None,
         serve_through: false,
         login_needed_notice: None,
+        pinned_in: None,
     }
 }
 

@@ -638,6 +638,41 @@ Relay's operator can change it.
 
 Logging in opens nothing: it makes no Server reachable, and nobody can reach it through the Relay for it.
 
+### Pinning a Relay in a Config Document
+
+So that nobody types the address on each machine, your dotfiles or your company's rollout can pin it in Suru's Config
+Document: `suru.jsonc` in `~/.config/suru/`, on every platform (`$XDG_CONFIG_HOME/suru/` or `$SURU_CONFIG_DIR` where
+those are set). Pinned Settings live side by side in that one document, so a rollout merges this in rather than
+replacing the file.
+
+```jsonc
+{
+  // The Relay every machine here is to hold an entry for.
+  "serving": {
+    "relays": ["https://relay.example.com"],
+  },
+}
+```
+
+Each address appears in `/relay` marked **pinned**, reading **Login needed**, with nothing typed on that machine. The
+list is also on the Experimental tab of `/settings`, which edits the same Config Document.
+
+A pinned address is an entry and that is all. It logs in to nothing and opens nothing, and it sends the Relay no traffic
+at all until a user logs in there. Each machine's Login is still formed by its own user, as under
+[Logging in](#logging-in), and Serving through the Relay is still chosen on each machine and off until chosen. So a
+rollout to a thousand machines costs the Relay nothing, and admits nobody the admission rules do not.
+
+A running Server notices a change to the document within a couple of seconds, with no restart. An address written two
+ways (`relay.example.com` and `https://RELAY.example.com/`) is one entry, and an entry a user already holds is pinned
+as it stands, keeping its Login and its choice to Serve through it. An address no Relay is reached at is ignored alone,
+saying which entry of the list it was, and the others still apply. A document that stops parsing while a Server runs
+says so and takes nothing away until it is mended.
+
+`x` on a pinned Relay is refused, saying which Config Document pins it, since it would only come back. Taking an address
+out of the document unpins it and leaves the entry, and any Login there, standing, because removing a Relay also has
+the Relay forget the Login, which a config edit should not do on its own. Its user removes the entry when they want it
+gone.
+
 ### Serving through the Relay
 
 To make a Server reachable through the Relay, choose the Relay in its `/relay` list and press `s`, or press Space on

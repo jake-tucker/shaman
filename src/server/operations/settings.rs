@@ -15,8 +15,15 @@
 //! The operation changes whatever Setting it is given. What a Sidekick may
 //! change is bounded where its Tool is served, over the schema (ADR 0043),
 //! since the user's own panel may change every Setting there is.
+//!
+//! The document may also change by any other hand: a user's editor, their
+//! dotfiles, a company's rollout. The Server looks at it again every so often,
+//! and what it then says is put in force as one change more, so a value pinned
+//! by hand is adopted exactly as one set from the panel is. What it reads must
+//! say the same twice running first, since nothing stops another writer being
+//! seen partway through a save.
 
-use std::{future::Future, sync::Arc};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use tokio::sync::{Mutex, watch};
 
@@ -25,6 +32,7 @@ use crate::server::root_discovery::Ticket;
 use crate::{
     protocol::{SettingMutation, SettingsSnapshot},
     provider::{ProviderOrchestrator, ProviderRuntime},
+    relays::RelayController,
     serving::ServingController,
     sessions::SessionStore,
     settings::{ConfigDocuments, SettingsMutationError},
@@ -42,6 +50,8 @@ pub(crate) struct SettingsAdoption {
     runtimes: Arc<Vec<Arc<dyn ProviderRuntime>>>,
     /// Moved to whatever the Serving Settings now say.
     serving: ServingController,
+    /// Holds an entry for each Relay the Settings now pin.
+    relays: RelayController,
     /// Where each change runs, whole and after the one before it.
     changes: OneChangeAtATime,
 }
@@ -52,12 +62,14 @@ impl SettingsAdoption {
         snapshot: Arc<watch::Sender<SettingsSnapshot>>,
         runtimes: Arc<Vec<Arc<dyn ProviderRuntime>>>,
         serving: ServingController,
+        relays: RelayController,
     ) -> Self {
         Self {
             documents,
             snapshot,
             runtimes,
             serving,
+            relays,
             changes: OneChangeAtATime::default(),
         }
     }
@@ -120,18 +132,84 @@ impl SessionOperations {
         &self,
         mutation: SettingMutation,
     ) -> Result<SettingChanged, SettingsMutationError> {
+        let changed = self
+            .put_settings_in_force(move |documents, _| documents.mutate(&mutation).map(Some))
+            .await?;
+        Ok(changed.expect("a mutation always yields settings to put in force"))
+    }
+
+    /// Looks at the Config Documents every `interval` until `shutdown`, putting
+    /// in force what they say as they come to say something else.
+    pub(crate) fn follow_config_documents(
+        &self,
+        interval: Duration,
+        mut shutdown: watch::Receiver<bool>,
+    ) {
+        let operations = self.clone();
+        tokio::spawn(async move {
+            let mut reads = SuccessiveReads::default();
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = shutdown.changed() => break,
+                    () = tokio::time::sleep(interval) => {}
+                }
+                let adoption = &operations.settings_adoption;
+                let documents = adoption.documents.clone();
+                let in_force = adoption.snapshot.borrow().clone();
+                let said = {
+                    let in_force = in_force.clone();
+                    tokio::task::spawn_blocking(move || documents.read_again(&in_force)).await
+                };
+                // Only the Server stopping leaves a read unfinished.
+                let Ok(said) = said else {
+                    break;
+                };
+                if !reads.settled_on_another(said, &in_force) {
+                    continue;
+                }
+                // Read again once no other change is running, whose own write
+                // this may have seen before it was adopted.
+                if let Err(error) = operations
+                    .put_settings_in_force(|documents, in_force| {
+                        let said = documents.read_again(&in_force);
+                        Ok((said != in_force).then_some(said))
+                    })
+                    .await
+                {
+                    tracing::error!("could not follow the Config Documents: {error}");
+                }
+            }
+        });
+    }
+
+    /// Puts in force the settings `read` answers, given the Config Documents
+    /// and the settings in force now — it answers none where they are to stay.
+    /// All of what [`Self::change_setting`] says of a change holds for this.
+    async fn put_settings_in_force<R>(
+        &self,
+        read: R,
+    ) -> Result<Option<SettingChanged>, SettingsMutationError>
+    where
+        R: FnOnce(
+                ConfigDocuments,
+                SettingsSnapshot,
+            ) -> Result<Option<SettingsSnapshot>, SettingsMutationError>
+            + Send
+            + 'static,
+    {
         let adoption = self.settings_adoption.clone();
         let sessions = self.sessions.clone();
         let providers = self.providers.clone();
         let root_discovery = self.root_discovery.clone();
         let registry_standing = self.registry_standing.clone();
-        let (changed, rediscovery) = self
+        let changed = self
             .settings_adoption
             .changes
             .run(async move {
                 adoption
                     .change(
-                        mutation,
+                        read,
                         &sessions,
                         &providers,
                         &root_discovery,
@@ -140,42 +218,73 @@ impl SessionOperations {
                     .await
             })
             .await?;
+        let Some((changed, rediscovery)) = changed else {
+            return Ok(None);
+        };
         if let Some(ticket) = rediscovery {
             self.root_discovery.settled(ticket).await;
         }
-        Ok(changed)
+        Ok(Some(changed))
+    }
+}
+
+/// What the Config Documents were last read to say, for what is read to be
+/// believed only once two reads running agree on it.
+#[derive(Default)]
+struct SuccessiveReads(Option<SettingsSnapshot>);
+
+impl SuccessiveReads {
+    /// Takes `said`, the latest read, answering whether it is what the read
+    /// before it said too, and differs from what is `in_force`.
+    fn settled_on_another(&mut self, said: SettingsSnapshot, in_force: &SettingsSnapshot) -> bool {
+        if said == *in_force {
+            self.0 = None;
+            return false;
+        }
+        if self.0.as_ref() == Some(&said) {
+            self.0 = None;
+            return true;
+        }
+        self.0 = Some(said);
+        false
     }
 }
 
 impl SettingsAdoption {
-    /// One change, from its write through the Approval Postures it reconciles
-    /// and the discovery it begins of Workspace Roots it changed, which it
-    /// answers beside what changed without waiting on it.
-    async fn change(
+    /// One change, from what `read` makes of the document through the Approval
+    /// Postures it reconciles and the discovery it begins of Workspace Roots
+    /// it changed, which it answers beside what changed without waiting on
+    /// it; nothing, where `read` answers there is nothing to put in force.
+    async fn change<R>(
         &self,
-        mutation: SettingMutation,
+        read: R,
         sessions: &SessionStore,
         providers: &ProviderOrchestrator,
         root_discovery: &RootDiscovery,
         registry_standing: &RegistryStanding,
-    ) -> Result<(SettingChanged, Option<Ticket>), SettingsMutationError> {
+    ) -> Result<Option<(SettingChanged, Option<Ticket>)>, SettingsMutationError>
+    where
+        R: FnOnce(
+                ConfigDocuments,
+                SettingsSnapshot,
+            ) -> Result<Option<SettingsSnapshot>, SettingsMutationError>
+            + Send
+            + 'static,
+    {
         // The Roots are held still from before the ones in force are read
         // until those this change puts in force have taken away what they
         // no longer hold, so the step at start never decides on Roots put
         // in force meanwhile.
         let held = registry_standing.hold_roots().await;
-        let (roots, named_whole_before) = {
-            let before = self.snapshot.borrow();
-            (
-                before.settings.workspace.roots.clone(),
-                crate::settings::workspace_roots_named_whole(&before).map(<[String]>::to_vec),
-            )
-        };
+        let before = self.snapshot.borrow().clone();
+        let roots = before.settings.workspace.roots.clone();
+        let named_whole_before =
+            crate::settings::workspace_roots_named_whole(&before).map(<[String]>::to_vec);
         // The edit is filesystem work, and the CST handles it parses the
         // document into are not `Send`; both stay on a blocking thread, where
         // the read, the edit, and the write are one scope.
         let documents = self.documents.clone();
-        let snapshot = tokio::task::spawn_blocking(move || documents.mutate(&mutation))
+        let snapshot = tokio::task::spawn_blocking(move || read(documents, before))
             .await
             .expect("Config Document edit runs to completion")
             .inspect_err(|error| {
@@ -183,17 +292,25 @@ impl SettingsAdoption {
                     tracing::error!("Setting mutation failed: {error}");
                 }
             })?;
+        let Some(snapshot) = snapshot else {
+            return Ok(None);
+        };
         // The snapshot is in force, and every Client told of it, whether or
         // not the Serving listener could follow it, so the postures it makes
         // are reconciled either way.
-        let serving =
-            crate::server::adopt_settings(&self.snapshot, &self.runtimes, &self.serving, &snapshot)
-                .await
-                .err()
-                .map(|error| {
-                    tracing::error!("could not adopt Serving settings: {error:#}");
-                    ServingNotAdopted(error)
-                });
+        let serving = crate::server::adopt_settings(
+            &self.snapshot,
+            &self.runtimes,
+            &self.serving,
+            &self.relays,
+            &snapshot,
+        )
+        .await
+        .err()
+        .map(|error| {
+            tracing::error!("could not adopt Serving settings: {error:#}");
+            ServingNotAdopted(error)
+        });
         let changed = sessions.reconcile_approval_postures(&snapshot.settings);
         crate::server::apply_live_posture_updates(providers, changed).await;
         let rediscovery = if snapshot.settings.workspace.roots == roots {
@@ -213,7 +330,7 @@ impl SettingsAdoption {
             Some(ticket)
         };
         drop(held);
-        Ok((SettingChanged { snapshot, serving }, rediscovery))
+        Ok(Some((SettingChanged { snapshot, serving }, rediscovery)))
     }
 }
 
@@ -251,6 +368,32 @@ mod tests {
     use tokio::sync::oneshot;
 
     use super::*;
+
+    /// What is read of the document is believed only once it says the same
+    /// twice running, so a save seen half done — a file emptied for a moment —
+    /// is never adopted, and what agrees with what is in force asks nothing.
+    #[test]
+    fn what_is_read_is_believed_only_once_two_reads_running_agree() {
+        let in_force = SettingsSnapshot::default();
+        let another = |theme: &str| {
+            let mut said = SettingsSnapshot::default();
+            said.settings.appearance.theme = theme.to_owned();
+            said
+        };
+        let mut reads = SuccessiveReads::default();
+
+        assert!(!reads.settled_on_another(in_force.clone(), &in_force));
+        assert!(!reads.settled_on_another(another("blip"), &in_force));
+        assert!(!reads.settled_on_another(another("saved"), &in_force));
+        assert!(reads.settled_on_another(another("saved"), &in_force));
+
+        assert!(!reads.settled_on_another(another("blip"), &in_force));
+        assert!(
+            !reads.settled_on_another(in_force.clone(), &in_force),
+            "a read agreeing with what is in force forgets what came before it"
+        );
+        assert!(!reads.settled_on_another(another("blip"), &in_force));
+    }
 
     /// `awaited`, failing the test rather than hanging it where a change never
     /// gets as far as it should.

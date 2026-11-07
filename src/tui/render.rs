@@ -8922,6 +8922,7 @@ mod tests {
                         ..EffectiveSettings::default()
                     },
                     pinned: vec!["session.contentWidth".to_owned()],
+                    pinned_in: Default::default(),
                     diagnostics: Vec::new(),
                 },
             )))

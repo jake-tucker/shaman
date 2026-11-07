@@ -66,6 +66,7 @@ fn relay(state: RelayState, serve_through: bool) -> Relay {
         login: None,
         serve_through,
         login_needed_notice: None,
+        pinned_in: None,
     }
 }
 

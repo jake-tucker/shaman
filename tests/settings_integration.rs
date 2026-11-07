@@ -3673,3 +3673,60 @@ async fn a_config_root_that_cannot_be_searched_is_an_error_and_takes_no_change()
         "and nothing was written"
     );
 }
+
+/// A Config Document changed by another hand — an editor, dotfiles, a rollout —
+/// is adopted with no restart and no mutation, exactly as one Suru edited is,
+/// every attached Client told. A document that stops parsing says so and takes
+/// nothing away, since a running Server has what it said last to go on, and
+/// mending it is adopted the same way.
+#[tokio::test]
+async fn a_config_document_changed_by_another_hand_is_adopted_with_no_restart() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let config_dir = tempfile::tempdir().expect("create isolated config directory");
+    let document = config_dir.path().join("suru.jsonc");
+    let channel = "settings-another-hand";
+    let server = server::spawn_with_timings(
+        ServerConfig::new(state_dir.path(), channel)
+            .expect("configure server")
+            .with_config_dir(config_dir.path()),
+        suru::server::ServerTimings::default()
+            .with_config_document_check_interval(std::time::Duration::from_millis(5)),
+    )
+    .await
+    .expect("spawn server");
+    let (mut client, opening) = attach(state_dir.path(), channel).await;
+    assert_eq!(opening.pinned, [] as [String; 0]);
+
+    std::fs::write(
+        &document,
+        "{ \"transcript\": { \"reasoningVisibility\": \"hidden\" } }\n",
+    )
+    .expect("write the Config Document");
+    let adopted = next_snapshot(&mut client).await;
+    assert_eq!(
+        adopted.settings.transcript.reasoning_visibility,
+        ReasoningVisibility::Hidden
+    );
+    assert_eq!(adopted.pinned, ["transcript.reasoningVisibility"]);
+    assert_eq!(
+        adopted.pinned_in["transcript.reasoningVisibility"],
+        document
+    );
+
+    std::fs::write(&document, "{ \"transcript\": ").expect("write the Config Document");
+    let troubled = next_snapshot(&mut client).await;
+    assert_eq!(troubled.settings, adopted.settings);
+    assert_eq!(troubled.pinned, adopted.pinned);
+    let [diagnostic] = troubled.diagnostics.as_slice() else {
+        panic!("the trouble is told: {:?}", troubled.diagnostics);
+    };
+    assert_eq!(diagnostic.severity, SettingsDiagnosticSeverity::Error);
+
+    std::fs::write(&document, "{}\n").expect("write the Config Document");
+    let mended = next_snapshot(&mut client).await;
+    assert_eq!(mended.pinned, [] as [String; 0]);
+    assert_eq!(mended.diagnostics, []);
+
+    drop(client);
+    server.shutdown().await.expect("shut down server");
+}

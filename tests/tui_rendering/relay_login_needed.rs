@@ -373,6 +373,7 @@ fn a_relay_notice_stands_through_a_settings_snapshot() {
                     ..EffectiveSettings::default()
                 },
                 pinned: Vec::new(),
+                pinned_in: Default::default(),
                 diagnostics: Vec::new(),
             },
         )))
@@ -925,6 +926,7 @@ fn needing_login(address: &str) -> Relay {
         login: None,
         serve_through: false,
         login_needed_notice: None,
+        pinned_in: None,
     }
 }
 
@@ -933,6 +935,7 @@ fn needing_login(address: &str) -> Relay {
 fn lapsed(address: &str, notice: Option<Uuid>) -> Relay {
     Relay {
         login_needed_notice: notice,
+        pinned_in: None,
         ..needing_login(address)
     }
 }

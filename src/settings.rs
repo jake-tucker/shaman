@@ -19,10 +19,13 @@
 //! format-preserving CST edit of the winning Config Document, so a user's key
 //! order, spacing, and comments survive an edit Suru makes; the file it leaves
 //! behind is then reloaded, which keeps the file — not an in-memory shadow of
-//! it — the source of truth for what every client is told.
+//! it — the source of truth for what every client is told. A document changed
+//! by anything else is read again as the server next looks, and followed the
+//! same way.
 
 use std::{
     borrow::Cow,
+    collections::HashSet,
     ffi::OsStr,
     fmt, fs,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
@@ -46,6 +49,7 @@ use crate::protocol::{
     SettingsSnapshot, SidebarScope, SidebarVisibility, TextSelectionCopy, TextSelectionPlainText,
     ToolCallVisibility,
 };
+use crate::relays::holdable_address;
 
 /// The Config Document Suru prefers when both accepted names exist.
 pub const PRIMARY_CONFIG_FILE: &str = "suru.jsonc";
@@ -94,6 +98,7 @@ const SERVING_ENABLED: &str = "serving.enabled";
 const SERVING_LISTENER: &str = "serving.listener";
 const SERVING_PORT: &str = "serving.port";
 const SERVING_BIND_ADDRESS: &str = "serving.bindAddress";
+const SERVING_RELAYS: &str = "serving.relays";
 const BROKER_ENABLED: &str = "broker.enabled";
 const BROKER_MAX_DEPTH: &str = "broker.maxDepth";
 const BROKER_MAX_CONCURRENT_SUBAGENTS: &str = "broker.maxConcurrentSubagents";
@@ -371,6 +376,10 @@ pub struct TextListSettingChoice {
     /// Whether each entry names a directory on the Server, which the editor
     /// may then choose in the Directory Browser rather than have typed.
     names_directories: bool,
+    /// Whether a diagnostic says which entry it ignored by its place in the
+    /// list alone: one of a kind kept out of the Log, every diagnostic reaching
+    /// it, which may hold what was never meant to be written down.
+    told_by_place: bool,
 }
 
 /// An entry a list Setting refuses: where it stands in the list, and why,
@@ -398,6 +407,7 @@ impl TextListSettingChoice {
             seed,
             pin,
             names_directories: false,
+            told_by_place: false,
         }
     }
 
@@ -405,6 +415,15 @@ impl TextListSettingChoice {
     pub const fn of_directories(self) -> Self {
         Self {
             names_directories: true,
+            ..self
+        }
+    }
+
+    /// The same list, each entry of which a diagnostic says it ignored by its
+    /// place in the list alone.
+    const fn told_by_place(self) -> Self {
+        Self {
+            told_by_place: true,
             ..self
         }
     }
@@ -444,7 +463,9 @@ impl TextListSettingChoice {
 
     /// Writes the entries of a list a Config Document pins that the Setting
     /// takes, ignoring each other entry alone and saying why, naming it as the
-    /// document spells it. A value that is no list at all is refused whole.
+    /// document spells it, or by its place where it is
+    /// [told by that alone](Self::told_by_place). A value that is no list at
+    /// all is refused whole.
     fn apply(self, value: &Value, write: impl FnOnce(Vec<String>)) -> Applied {
         let Value::Array(entries) = value else {
             return Applied::Refused;
@@ -452,13 +473,16 @@ impl TextListSettingChoice {
         let mut ignored = Vec::new();
         let taken = entries
             .iter()
-            .filter_map(|entry| match entry {
+            .enumerate()
+            .filter_map(|(index, entry)| match entry {
                 Value::String(text) if (self.admits)(text) => Some(text.clone()),
                 refused => {
-                    ignored.push(format!(
-                        "ignored the entry {refused} because it is not {}",
-                        self.entry
-                    ));
+                    let named = if self.told_by_place {
+                        format!("entry {}", index + 1)
+                    } else {
+                        format!("the entry {refused}")
+                    };
+                    ignored.push(format!("ignored {named} because it is not {}", self.entry));
                     None
                 }
             })
@@ -490,6 +514,35 @@ pub(crate) const WORKSPACE_ROOTS_LIST: TextListSettingChoice = TextListSettingCh
     |roots| SettingMutation::WorkspaceRoots { value: Some(roots) },
 )
 .of_directories();
+
+/// `addresses`, each one a Relay is reached at, written the one way a Relay's
+/// is and held once, where it first stands.
+fn one_entry_each(addresses: Vec<String>) -> Vec<String> {
+    let mut held = Vec::with_capacity(addresses.len());
+    let mut seen = HashSet::with_capacity(addresses.len());
+    for address in addresses
+        .iter()
+        .filter_map(|address| holdable_address(address))
+    {
+        if seen.insert(address.clone()) {
+            held.push(address);
+        }
+    }
+    held
+}
+
+const SERVING_RELAYS_LIST: TextListSettingChoice = TextListSettingChoice::new(
+    "Relays this Server holds an entry for",
+    "add a Relay's address",
+    "an http:// or https:// address of at most 512 characters naming a Relay's host, with no \
+     credentials, query or fragment",
+    |address| holdable_address(address).is_some(),
+    |settings| settings.relays.clone(),
+    |addresses| SettingMutation::ServingRelays {
+        value: Some(one_entry_each(addresses)),
+    },
+)
+.told_by_place();
 
 fn spell_session_content_width(maximum: u64) -> String {
     format!("max {maximum} columns")
@@ -956,6 +1009,9 @@ fn in_force(mutation: &SettingMutation, settings: &EffectiveSettings) -> Setting
         },
         SettingMutation::WorkspaceRoots { .. } => SettingMutation::WorkspaceRoots {
             value: Some(settings.workspace.roots.clone()),
+        },
+        SettingMutation::ServingRelays { .. } => SettingMutation::ServingRelays {
+            value: Some(settings.relays.clone()),
         },
         SettingMutation::ProviderCodexEnabled { .. } => SettingMutation::ProviderCodexEnabled {
             value: Some(settings.provider.codex.enabled),
@@ -2109,6 +2165,27 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         },
     },
     SettingDescriptor {
+        key: SERVING_RELAYS,
+        label: "Relays",
+        description: "The Relays this Server holds an entry for, each logged in to and Served through only by its user's own choice on this machine; taken out of here, an entry stays until its user removes it",
+        group: SettingGroup::Experimental,
+        scope: SettingScope::Server,
+        sidekick: SidekickAccess::Hidden,
+        values: SettingValues::Open {
+            named: &[],
+            accepts: "a list of http:// or https:// addresses each naming a Relay's host",
+            spell: |settings| match settings.relays.as_slice() {
+                [] => "none".to_owned(),
+                relays => relays.join(", "),
+            },
+            chosen_at: Some(SettingChoiceSurface::TextList(SERVING_RELAYS_LIST)),
+        },
+        reset: SettingMutation::ServingRelays { value: None },
+        apply: |settings, value| {
+            SERVING_RELAYS_LIST.apply(value, |relays| settings.relays = one_entry_each(relays))
+        },
+    },
+    SettingDescriptor {
         key: BROKER_ENABLED,
         label: "Broker",
         description: "Whether every Provider Session is offered the Broker's Tools",
@@ -2303,6 +2380,26 @@ impl ConfigDocuments {
         load(self.root.as_deref())
     }
 
+    /// What the stack says now, for the Settings in force to follow. A document
+    /// that cannot be read whole says nothing of what it pins, so that is left
+    /// in force and only the trouble told: a save half-done or an edit mistyped
+    /// takes nothing away from a running Server. Only a Server starting has
+    /// nothing else to go on, and so runs on the built-in defaults instead.
+    pub fn read_again(&self, in_force: &SettingsSnapshot) -> SettingsSnapshot {
+        let said = self.load();
+        if said
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == SettingsDiagnosticSeverity::Error)
+        {
+            return SettingsSnapshot {
+                diagnostics: said.diagnostics,
+                ..in_force.clone()
+            };
+        }
+        said
+    }
+
     /// Applies one typed mutation to the winning Config Document — creating
     /// the document, and any intermediate objects, when they are missing — and
     /// returns the snapshot the reloaded stack now yields.
@@ -2439,6 +2536,7 @@ fn pin_for(mutation: &SettingMutation) -> (&'static str, Option<Value>) {
         SettingMutation::ServingListener { value } => (SERVING_LISTENER, pinned(value)),
         SettingMutation::ServingPort { value } => (SERVING_PORT, pinned(value)),
         SettingMutation::ServingBindAddress { value } => (SERVING_BIND_ADDRESS, pinned(value)),
+        SettingMutation::ServingRelays { value } => (SERVING_RELAYS, pinned(value)),
         SettingMutation::BrokerEnabled { value } => (BROKER_ENABLED, pinned(value)),
         SettingMutation::BrokerMaxDepth { value } => (BROKER_MAX_DEPTH, pinned(value)),
         SettingMutation::BrokerMaxConcurrentSubagents { value } => {
@@ -2632,15 +2730,19 @@ pub(crate) fn workspace_roots_named_whole(snapshot: &SettingsSnapshot) -> Option
         .then_some(snapshot.settings.workspace.roots.as_slice())
 }
 
+/// The Relays `snapshot` pins, and the Config Document pinning them.
+pub(crate) fn relay_pins(snapshot: &SettingsSnapshot) -> (&[String], Option<&Path>) {
+    (
+        &snapshot.settings.relays,
+        snapshot.pinned_in.get(SERVING_RELAYS).map(PathBuf::as_path),
+    )
+}
+
 /// Loads the Config Document stack under `config_dir` and collapses it into
 /// the effective-settings snapshot. `None` — no configured root — loads pure
 /// defaults, which is also what any broken document degrades to.
 fn load(config_dir: Option<&Path>) -> SettingsSnapshot {
-    let mut snapshot = SettingsSnapshot {
-        settings: EffectiveSettings::default(),
-        pinned: Vec::new(),
-        diagnostics: Vec::new(),
-    };
+    let mut snapshot = SettingsSnapshot::default();
     let Some(config_dir) = config_dir else {
         return snapshot;
     };
@@ -2816,8 +2918,11 @@ fn apply_key(
                 )],
             ),
         };
-        if pins && !snapshot.pinned.contains(&key) {
-            snapshot.pinned.push(key.clone());
+        if pins {
+            if !snapshot.pinned.contains(&key) {
+                snapshot.pinned.push(key.clone());
+            }
+            snapshot.pinned_in.insert(key.clone(), path.to_path_buf());
         }
         snapshot
             .diagnostics
@@ -3124,6 +3229,7 @@ mod tests {
                 "one of true or false".to_owned(),
                 "a port from 0 to 65535".to_owned(),
                 "one of \"127.0.0.1\", \"::1\", \"0.0.0.0\", \"::\", or an IP address".to_owned(),
+                "a list of http:// or https:// addresses each naming a Relay's host".to_owned(),
                 "one of true or false".to_owned(),
                 // A Broker cap names both ends of what it takes, the upper one
                 // being the most the count it is kept in can hold.
@@ -3419,6 +3525,44 @@ mod tests {
         }
     }
 
+    /// What the list of Relays says it takes is what a Server can hold, and
+    /// it takes that the way every other surface taking a Relay's address does.
+    #[test]
+    fn the_relays_list_takes_what_a_server_can_hold_and_writes_it_one_way() {
+        assert!(
+            SERVING_RELAYS_LIST
+                .entry
+                .contains(&crate::serving::MAX_TOLD_RELAY_LEN.to_string())
+        );
+        let longest = crate::serving::MAX_TOLD_RELAY_LEN - "https://.test".len();
+        let at_most = format!("https://{}.test", "a".repeat(longest));
+        let too_long = format!("https://{}.test", "a".repeat(longest + 1));
+        assert!((SERVING_RELAYS_LIST.admits)(&at_most));
+        assert!(!(SERVING_RELAYS_LIST.admits)(&too_long));
+
+        assert_eq!(
+            one_entry_each(vec![
+                "b.example.test".to_owned(),
+                "a.example.test:443".to_owned(),
+                "https://B.example.test/".to_owned(),
+            ]),
+            ["https://b.example.test", "https://a.example.test"],
+            "each once, where it first stands"
+        );
+        let descriptor = setting(SERVING_RELAYS);
+        let in_force = EffectiveSettings {
+            relays: vec!["https://a.example.test".to_owned()],
+            ..EffectiveSettings::default()
+        };
+        assert_eq!(
+            descriptor.pin(&descriptor.value(&in_force)),
+            Some(SettingMutation::ServingRelays {
+                value: Some(in_force.relays),
+            }),
+            "what is in force is spelled as a pin of itself"
+        );
+    }
+
     #[test]
     fn every_setting_keeps_company_with_a_group_named_once() {
         let names = SettingGroup::ALL.map(SettingGroup::name);
@@ -3577,7 +3721,8 @@ mod tests {
                 "serving.enabled",
                 "serving.listener",
                 "serving.port",
-                "serving.bindAddress"
+                "serving.bindAddress",
+                "serving.relays"
             ]
         );
         assert_eq!(
@@ -3594,7 +3739,7 @@ mod tests {
         );
         assert_eq!(
             declaring(|access| access == SidekickAccess::ReadAndChange).len(),
-            SCHEMA.len() - 11
+            SCHEMA.len() - 12
         );
         for descriptor in SCHEMA {
             if let SidekickAccess::ReadOnly { why } = descriptor.sidekick {

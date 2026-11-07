@@ -47,6 +47,8 @@ mod pair_back;
 mod pair_back_faults;
 #[path = "relays/pairing.rs"]
 mod pairing;
+#[path = "relays/pinning.rs"]
+mod pinning;
 #[path = "relays/serving.rs"]
 mod serving;
 #[path = "relays/short_invite.rs"]

@@ -816,6 +816,7 @@ fn choosing_a_foreign_picker_row_turns_and_opens_without_moving_sidebar_scope() 
                     ..EffectiveSettings::default()
                 },
                 pinned: Vec::new(),
+                pinned_in: Default::default(),
                 diagnostics: Vec::new(),
             },
         )))
@@ -1761,6 +1762,7 @@ fn client_showing_icons(workspace: &std::path::Path) -> Application {
                     ..EffectiveSettings::default()
                 },
                 pinned: Vec::new(),
+                pinned_in: Default::default(),
                 diagnostics: Vec::new(),
             },
         )))

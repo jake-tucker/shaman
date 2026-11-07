@@ -433,7 +433,7 @@ pub(crate) trait RelayWays: Send + Sync {
 
     /// Whether this Server's user has chosen the Relay at `relay`, written
     /// the one way a Relay's address is: whether this Server holds an entry
-    /// for it, logged in there or not. A Remote's Relay way at a Relay not
+    /// for it, added or pinned, logged in there or not. A Remote's Relay way at a Relay not
     /// chosen is listed with the Remote and never dialled.
     fn chosen(&self, relay: &str) -> bool;
 
@@ -5707,9 +5707,9 @@ struct WayDialer {
 
 impl WayDialer {
     /// Whether a Remote's `way` is dialled: a direct way always, and a Relay
-    /// way only at a Relay this Server's user has chosen by adding it. A
-    /// Relay way at any other — one the Remote told of, say — is listed with
-    /// the Remote, and nothing is asked of that Relay.
+    /// way only at a Relay this Server's user has chosen by adding or pinning
+    /// it. A Relay way at any other — one the Remote told of, say — is listed
+    /// with the Remote, and nothing is asked of that Relay.
     fn dials(&self, way: &Way) -> bool {
         match way {
             Way::Direct(_) => true,

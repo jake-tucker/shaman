@@ -603,6 +603,7 @@ mod tests {
         SettingsSnapshot {
             settings,
             pinned: pinned.iter().map(|key| (*key).to_owned()).collect(),
+            pinned_in: Default::default(),
             diagnostics: Vec::new(),
         }
     }

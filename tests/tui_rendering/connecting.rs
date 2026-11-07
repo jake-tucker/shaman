@@ -1014,6 +1014,7 @@ fn the_selected_remote_lists_its_relays_whole_saying_which_this_server_uses() {
         login: None,
         serve_through: false,
         login_needed_notice: None,
+        pinned_in: None,
     };
     for width in [80, 48] {
         let mut application = Application::default();
