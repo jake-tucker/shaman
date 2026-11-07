@@ -23,6 +23,7 @@ mod interruption;
 mod models;
 mod monitoring;
 mod resume;
+mod routing_tiers;
 mod skills;
 mod steering;
 mod subagent_resumes;

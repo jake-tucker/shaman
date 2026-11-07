@@ -152,8 +152,23 @@ pub enum ModelOptionRole {
     Speed,
     Context,
     Verbosity,
+    /// A Routing Tier. It always goes by [`ROUTING_TIER_OPTION_ID`], so what
+    /// reads a Selection can tell one with no catalog at hand.
+    RoutingTier,
     Other,
 }
+
+impl ModelOptionRole {
+    /// Whether only the user may choose this option: an Agent is neither
+    /// offered it nor able to name it, whatever else it may choose, and an
+    /// Errand never runs under it.
+    pub fn is_the_users_alone(self) -> bool {
+        matches!(self, Self::RoutingTier)
+    }
+}
+
+/// The identity of the Model Option every Provider's Routing Tier goes by.
+pub const ROUTING_TIER_OPTION_ID: &str = "routing_tier";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -360,6 +375,30 @@ impl ModelDescriptor {
         }
     }
 
+    /// This Model as it is offered wherever only an Agent or an Errand will run
+    /// what is chosen: with no option only the user may choose for a Turn of
+    /// their own.
+    pub fn without_the_users_own_options(mut self) -> Self {
+        self.options
+            .retain(|option| !option.role.is_the_users_alone());
+        self
+    }
+
+    /// [`Self::default_agent_selection`] for an Agent or an Errand, which leaves
+    /// out every option only the user may choose.
+    pub fn default_selection_for_an_agent(&self) -> AgentSelection {
+        AgentSelection {
+            provider: self.provider.clone(),
+            model: self.id.clone(),
+            options: self
+                .options
+                .iter()
+                .filter(|option| !option.role.is_the_users_alone())
+                .map(ModelOptionDescriptor::default_selection)
+                .collect(),
+        }
+    }
+
     pub fn materialize_agent_selection(
         &self,
         current: Option<&AgentSelection>,
@@ -372,6 +411,15 @@ impl ModelDescriptor {
         let options = self
             .options
             .iter()
+            // An option only the user chooses may go unchosen: an Agent's Selection and one
+            // from before the option was on offer name none.
+            .filter(|descriptor| {
+                !descriptor.role.is_the_users_alone()
+                    || current
+                        .options
+                        .iter()
+                        .any(|selection| selection.id == descriptor.id)
+            })
             .map(|descriptor| {
                 let mut matching = current
                     .options
@@ -1169,6 +1217,27 @@ pub struct AgentSelection {
     pub provider: ProviderId,
     pub model: ModelId,
     pub options: Vec<ModelOptionSelection>,
+}
+
+impl AgentSelection {
+    /// The Routing Tier this Selection names, where it names one.
+    pub fn routing_tier(&self) -> Option<&ModelOptionChoiceId> {
+        self.options
+            .iter()
+            .find(|option| option.id.as_str() == ROUTING_TIER_OPTION_ID)
+            .and_then(|option| match &option.value {
+                ModelOptionValue::Select { choice } => Some(choice),
+                ModelOptionValue::Toggle { .. } => None,
+            })
+    }
+
+    /// This Selection naming no Routing Tier, which is what anyone but the
+    /// user asking for an Agent runs under.
+    pub fn without_routing_tier(mut self) -> Self {
+        self.options
+            .retain(|option| option.id.as_str() != ROUTING_TIER_OPTION_ID);
+        self
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

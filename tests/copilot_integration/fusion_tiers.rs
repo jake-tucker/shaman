@@ -43,22 +43,28 @@ fn fusion_assignment() -> Value {
 }
 
 /// What the CLI was told in each `method` request, in the order it received them: the assignment,
-/// or `None` where the request carried no such field at all.
+/// or `None` where the request carried no such field at all. The throwaway Session a catalog
+/// discovery opens for the Routing Tiers, with its store off, is not one of those a test here is
+/// counting: `routing_tiers` reads that one.
 fn assignments_on(requests: &[Value], method: &str) -> Vec<Option<Value>> {
     requests
         .iter()
         .filter(|request| request["method"] == method)
+        .filter(|request| {
+            let params = &request["params"];
+            params.get("expAssignments").is_none() || params["enableSessionStore"] != false
+        })
         .map(|request| request["params"].get("expAssignments").cloned())
         .collect()
 }
 
-fn fusion_tiers_pinned(setting: bool) -> SettingMutation {
+pub(super) fn fusion_tiers_pinned(setting: bool) -> SettingMutation {
     SettingMutation::ProviderCopilotFusionTiers {
         value: Some(setting),
     }
 }
 
-fn fusion_tiers_in_force() -> EffectiveSettings {
+pub(super) fn fusion_tiers_in_force() -> EffectiveSettings {
     EffectiveSettings {
         provider: ProviderSettings {
             copilot: CopilotSettings {
@@ -72,16 +78,16 @@ fn fusion_tiers_in_force() -> EffectiveSettings {
 }
 
 /// The directories one Suru keeps across a restart, and the Workspace its Session works in.
-struct Home {
+pub(super) struct Home {
     state: tempfile::TempDir,
     data: tempfile::TempDir,
     config: tempfile::TempDir,
-    workspace: tempfile::TempDir,
+    pub(super) workspace: tempfile::TempDir,
     channel: &'static str,
 }
 
 impl Home {
-    fn new(channel: &'static str) -> Self {
+    pub(super) fn new(channel: &'static str) -> Self {
         let directory = || tempfile::tempdir().expect("create isolated directory");
         Self {
             state: directory(),
@@ -92,9 +98,29 @@ impl Home {
         }
     }
 
+    /// The Config Document as an outside edit leaves it, turning the Setting off while no Server is
+    /// running to hear of it.
+    pub(super) fn pin_off_while_down(&self) {
+        for entry in std::fs::read_dir(self.config.path()).expect("read the config root") {
+            let path = entry.expect("read a Config Document").path();
+            let Ok(document) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if document.contains("\"fusionTiers\": true") {
+                std::fs::write(
+                    &path,
+                    document.replace("\"fusionTiers\": true", "\"fusionTiers\": false"),
+                )
+                .expect("edit the Config Document");
+                return;
+            }
+        }
+        panic!("the Setting was pinned in a Config Document");
+    }
+
     /// A Server hosting Copilot alone on `copilot` with this home's Config Document, and a client
     /// attached to it.
-    async fn host(&self, copilot: &ScriptedCopilot) -> (RunningServer, ManagedClient) {
+    pub(super) async fn host(&self, copilot: &ScriptedCopilot) -> (RunningServer, ManagedClient) {
         let server = server::spawn_with_provider(
             ServerConfig::new(self.state.path(), self.channel)
                 .expect("configure server")
@@ -114,7 +140,7 @@ impl Home {
     }
 }
 
-async fn pin(client: &ManagedClient, setting: Option<bool>) {
+pub(super) async fn pin(client: &ManagedClient, setting: Option<bool>) {
     if let Some(setting) = setting {
         client
             .mutate_setting(fusion_tiers_pinned(setting))
@@ -123,7 +149,7 @@ async fn pin(client: &ManagedClient, setting: Option<bool>) {
     }
 }
 
-fn prompt(text: &str) -> InitialPrompt {
+pub(super) fn prompt(text: &str) -> InitialPrompt {
     InitialPrompt {
         id: PromptId::new(),
         text: text.to_owned(),
@@ -153,7 +179,7 @@ async fn opened_session(client: &ManagedClient, workspace: &Path) -> SessionId {
 }
 
 /// Delivers a second Prompt to `session_id` and comes back once its Turn settles.
-async fn continued_session(client: &ManagedClient, session_id: SessionId) {
+pub(super) async fn continued_session(client: &ManagedClient, session_id: SessionId) {
     let mut feed = client
         .subscribe_session(session_id)
         .await

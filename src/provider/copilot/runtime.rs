@@ -2,17 +2,17 @@
 
 use std::{
     ffi::{OsStr, OsString},
-    sync::Mutex as StdMutex,
+    sync::{Arc, Mutex as StdMutex},
 };
 
 use tokio::{sync::watch, time::Duration};
 
 use super::{
     COPILOT_HARNESS_NAME, COPILOT_PROVIDER_ID, COPILOT_SERVER_ARGS, REASONING_EFFORT_OPTION_ID,
-    catalog::model_descriptors,
+    catalog::{AUTO_MODEL_ID, model_descriptors},
     copilot_error_context, copilot_fix,
     errand::run_copilot_errand,
-    fusion_tiers::fusion_tier_assignment,
+    fusion_tiers::{ROUTING_TIER_DISCOVERY_TIMEOUT, routing_tier_option},
     pricing::CopilotPricing,
     session::{INTERRUPT_REQUEST_TIMEOUT, start_copilot_session},
     skills::CopilotSkills,
@@ -21,9 +21,9 @@ use super::{
 use crate::{
     pricing::CacheRatesFuture,
     protocol::{
-        AgentSelection, CopilotSettings, EffectiveSettings, ModelId, ModelOptionChoiceId,
-        ModelOptionId, ModelOptionSelection, ModelOptionValue, ProviderId, ProviderUnavailability,
-        SkillCatalog,
+        AgentSelection, CopilotSettings, EffectiveSettings, ModelDescriptor, ModelId,
+        ModelOptionChoiceId, ModelOptionId, ModelOptionRole, ModelOptionSelection,
+        ModelOptionValue, ProviderId, ProviderUnavailability, SkillCatalog,
     },
     provider::{
         ErrandFuture, ManualCompaction, ProviderErrand, ProviderFuture, ProviderModelDiscovery,
@@ -52,7 +52,10 @@ pub struct CopilotRuntime {
     harness: SharedHarness<CopilotConnector>,
     skills: CopilotSkills,
     interrupt_request_timeout: Duration,
-    settings: StdMutex<CopilotSettings>,
+    routing_tier_discovery_timeout: Duration,
+    /// Shared with each Session, which reads whether its Provider still offers Routing Tiers as
+    /// each of its Turns begins.
+    settings: Arc<StdMutex<CopilotSettings>>,
     /// The prices the last harness Suru saw running published, kept so a
     /// cache saving can still be estimated at them while no harness runs or
     /// one is being launched.
@@ -73,7 +76,8 @@ impl CopilotRuntime {
             harness: SharedHarness::new(spec, CopilotConnector::new()),
             skills: CopilotSkills::default(),
             interrupt_request_timeout: INTERRUPT_REQUEST_TIMEOUT,
-            settings: StdMutex::new(CopilotSettings::default()),
+            routing_tier_discovery_timeout: ROUTING_TIER_DISCOVERY_TIMEOUT,
+            settings: Arc::new(StdMutex::new(CopilotSettings::default())),
             last_pricing: StdMutex::new(None),
         }
     }
@@ -104,6 +108,14 @@ impl CopilotRuntime {
     /// exercise the timeout without waiting out the default.
     pub fn with_interrupt_request_timeout(mut self, timeout: Duration) -> Self {
         self.interrupt_request_timeout = timeout;
+        self
+    }
+
+    /// Bounds how long a discovery waits to learn the Routing Tiers on offer before it gives up on
+    /// them and offers `auto` without. Injectable so tests can exercise a CLI that never answers
+    /// without waiting out the default.
+    pub fn with_routing_tier_discovery_timeout(mut self, timeout: Duration) -> Self {
+        self.routing_tier_discovery_timeout = timeout;
         self
     }
 
@@ -165,7 +177,22 @@ impl ProviderRuntime for CopilotRuntime {
                 }
                 listed = handle.connection().list_models() => listed?,
             };
-            let discovery = ProviderModelDiscovery::new(model_descriptors(listed));
+            let mut models = model_descriptors(listed);
+            let offers_tiers = self
+                .settings
+                .lock()
+                .expect("Copilot Settings lock is not poisoned")
+                .fusion_tiers;
+            if offers_tiers
+                && let Some(auto) = models
+                    .iter_mut()
+                    .find(|model| model.id.as_str() == AUTO_MODEL_ID)
+                && let Some(option) =
+                    routing_tier_option(&handle, self.routing_tier_discovery_timeout).await
+            {
+                auto.options.push(option);
+            }
+            let discovery = ProviderModelDiscovery::new(models);
             *self
                 .last_pricing
                 .lock()
@@ -210,17 +237,12 @@ impl ProviderRuntime for CopilotRuntime {
             // Launches the shared process if this is the first demand, or the first since a crash,
             // which is how the Prompt after a harness crash recovers without a restart.
             let handle = self.harness.demand().await?;
-            let settings = *self
-                .settings
-                .lock()
-                .expect("Copilot Settings lock is not poisoned");
             start_copilot_session(
                 handle,
                 request,
                 self.skills.clone(),
                 self.interrupt_request_timeout,
-                settings.permissions,
-                settings.fusion_tiers.then(fusion_tier_assignment),
+                self.settings.clone(),
             )
             .await
         })
@@ -231,6 +253,26 @@ impl ProviderRuntime for CopilotRuntime {
             .settings
             .lock()
             .expect("Copilot Settings lock is not poisoned") = settings.provider.copilot;
+    }
+
+    fn catalog_settings(&self, settings: &EffectiveSettings) -> u64 {
+        u64::from(settings.provider.copilot.fusion_tiers)
+    }
+
+    /// A Routing Tier remembered from when the Setting was on, or discovered as it turned off.
+    fn models_offered_under(
+        &self,
+        mut models: Vec<ModelDescriptor>,
+        settings: &EffectiveSettings,
+    ) -> Vec<ModelDescriptor> {
+        if !settings.provider.copilot.fusion_tiers {
+            for model in &mut models {
+                model
+                    .options
+                    .retain(|option| option.role != ModelOptionRole::RoutingTier);
+            }
+        }
+        models
     }
 
     fn run_errand(&self, errand: ProviderErrand) -> ErrandFuture<'_> {

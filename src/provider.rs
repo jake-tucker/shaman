@@ -1139,6 +1139,13 @@ pub enum ProviderEvent {
     AgentSelectionChanged {
         selection: AgentSelection,
     },
+    /// The Provider will not run what the Turn asked for and runs `selection`
+    /// instead, for the reason `why` tells a reader, in place of the plain
+    /// account of the difference [`Self::AgentSelectionChanged`] leaves.
+    AgentSelectionCorrected {
+        selection: AgentSelection,
+        why: String,
+    },
     AgentMessageStarted,
     AgentMessageDelta {
         content: String,
@@ -1864,6 +1871,29 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     fn apply_settings(&self, settings: &EffectiveSettings) {
         let _ = settings;
     }
+
+    /// The part of `settings` this Provider's Model discovery answers
+    /// differently under, read as a value that changes when it does. The Model
+    /// Catalog asks this Provider again when it changes. Runtimes whose catalog
+    /// depends on no Setting need not implement it.
+    fn catalog_settings(&self, settings: &EffectiveSettings) -> u64 {
+        let _ = settings;
+        0
+    }
+
+    /// `models`, discovered or remembered earlier, as `settings` still let this
+    /// Provider offer them, so that a catalog never offers what a Setting has
+    /// since taken away for as long as a discovery takes, or across a restart.
+    /// What a Setting has since made available waits for that discovery, because
+    /// only the Provider can say what it is.
+    fn models_offered_under(
+        &self,
+        models: Vec<ModelDescriptor>,
+        settings: &EffectiveSettings,
+    ) -> Vec<ModelDescriptor> {
+        let _ = settings;
+        models
+    }
 }
 
 pub(crate) fn validate_models(models: &[ModelDescriptor]) -> Result<(), ProviderError> {
@@ -1888,6 +1918,16 @@ pub(crate) fn validate_models(models: &[ModelDescriptor]) -> Result<(), Provider
                 return Err(ProviderError::new(format!(
                     "Model `{}` has duplicate {:?} options",
                     model.id, option.role
+                )));
+            }
+            if option.role == ModelOptionRole::RoutingTier
+                && (option.id.as_str() != crate::protocol::ROUTING_TIER_OPTION_ID
+                    || !matches!(option.kind, ModelOptionKind::Select { .. }))
+            {
+                return Err(ProviderError::new(format!(
+                    "Model `{}` has a Routing Tier that is not a choice under `{}`",
+                    model.id,
+                    crate::protocol::ROUTING_TIER_OPTION_ID
                 )));
             }
             if let ModelOptionKind::Select { choices, default } = &option.kind {

@@ -112,6 +112,7 @@ impl ContextQueries {
                             | ProviderEvent::TurnInterrupted
                             | ProviderEvent::TurnFailed { .. }
                             | ProviderEvent::AgentSelectionChanged { .. }
+                            | ProviderEvent::AgentSelectionCorrected { .. }
                             | ProviderEvent::AgentSelectionRejected { .. }
                             | ProviderEvent::SubagentUpdated { .. }
                             | ProviderEvent::SubagentCompleted { .. }

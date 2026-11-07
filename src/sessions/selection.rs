@@ -37,6 +37,7 @@ impl SessionStore {
         turn_id: TurnId,
         agent_id: AgentId,
         selection: AgentSelection,
+        why: Option<String>,
     ) -> anyhow::Result<Option<SessionUpdate>> {
         let mut state = self
             .state
@@ -85,60 +86,70 @@ impl SessionStore {
             turn_id,
             agent: effective_agent,
         });
-        if requested.selection.model != selection.model {
+        if let Some(why) = why {
             changes.push(SessionChange::ActivityAdded {
                 activity: Activity::Status {
                     id: ActivityId::new(),
                     turn_id,
-                    text: format!(
-                        "Provider used Model `{}` instead of requested Model `{}`.",
-                        selection.model, requested.selection.model
-                    ),
+                    text: why,
                 },
             });
-        }
-        for effective in &selection.options {
-            let requested_value = requested
-                .selection
-                .options
-                .iter()
-                .find(|candidate| candidate.id == effective.id)
-                .map(|candidate| &candidate.value);
-            if requested_value == Some(&effective.value) {
-                continue;
+        } else {
+            if requested.selection.model != selection.model {
+                changes.push(SessionChange::ActivityAdded {
+                    activity: Activity::Status {
+                        id: ActivityId::new(),
+                        turn_id,
+                        text: format!(
+                            "Provider used Model `{}` instead of requested Model `{}`.",
+                            selection.model, requested.selection.model
+                        ),
+                    },
+                });
             }
-            let requested_value = requested_value
-                .map(model_option_value_text)
-                .unwrap_or_else(|| "no value".to_owned());
-            changes.push(SessionChange::ActivityAdded {
-                activity: Activity::Status {
-                    id: ActivityId::new(),
-                    turn_id,
-                    text: format!(
-                        "Provider used Model Option `{}` value `{}` instead of requested value `{requested_value}`.",
-                        effective.id,
-                        model_option_value_text(&effective.value),
-                    ),
-                },
-            });
-        }
-        for omitted in requested.selection.options.iter().filter(|requested| {
-            !selection
-                .options
-                .iter()
-                .any(|effective| effective.id == requested.id)
-        }) {
-            changes.push(SessionChange::ActivityAdded {
-                activity: Activity::Status {
-                    id: ActivityId::new(),
-                    turn_id,
-                    text: format!(
-                        "Provider omitted requested Model Option `{}` value `{}`.",
-                        omitted.id,
-                        model_option_value_text(&omitted.value),
-                    ),
-                },
-            });
+            for effective in &selection.options {
+                let requested_value = requested
+                    .selection
+                    .options
+                    .iter()
+                    .find(|candidate| candidate.id == effective.id)
+                    .map(|candidate| &candidate.value);
+                if requested_value == Some(&effective.value) {
+                    continue;
+                }
+                let requested_value = requested_value
+                    .map(model_option_value_text)
+                    .unwrap_or_else(|| "no value".to_owned());
+                changes.push(SessionChange::ActivityAdded {
+                    activity: Activity::Status {
+                        id: ActivityId::new(),
+                        turn_id,
+                        text: format!(
+                            "Provider used Model Option `{}` value `{}` instead of requested value `{requested_value}`.",
+                            effective.id,
+                            model_option_value_text(&effective.value),
+                        ),
+                    },
+                });
+            }
+            for omitted in requested.selection.options.iter().filter(|requested| {
+                !selection
+                    .options
+                    .iter()
+                    .any(|effective| effective.id == requested.id)
+            }) {
+                changes.push(SessionChange::ActivityAdded {
+                    activity: Activity::Status {
+                        id: ActivityId::new(),
+                        turn_id,
+                        text: format!(
+                            "Provider omitted requested Model Option `{}` value `{}`.",
+                            omitted.id,
+                            model_option_value_text(&omitted.value),
+                        ),
+                    },
+                });
+            }
         }
         let update = state.commit(&self.storage, session_id, changes)?;
         Ok(Some(update))

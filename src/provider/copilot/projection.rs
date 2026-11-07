@@ -132,10 +132,11 @@ use github_copilot_sdk::{
     session_events::{
         AssistantIdleData, AssistantMessageData, AssistantMessageDeltaData,
         AssistantMessageStartData, AssistantReasoningData, AssistantReasoningDeltaData,
-        AssistantUsageData, SessionCompactionCompleteData, SessionErrorData, SessionEventType,
-        SessionIdleData, SubagentCompletedData, SubagentFailedData, SubagentStartedData,
-        SystemNotificationData, ToolExecutionCompleteContent, ToolExecutionCompleteData,
-        ToolExecutionStartData, ToolShellOutputData, UserMessageData, UserMessageDelivery,
+        AssistantUsageData, AutoTier, AutoTierSwitchFailureReason, SessionAutoTierSwitchFailedData,
+        SessionCompactionCompleteData, SessionErrorData, SessionEventType, SessionIdleData,
+        SubagentCompletedData, SubagentFailedData, SubagentStartedData, SystemNotificationData,
+        ToolExecutionCompleteContent, ToolExecutionCompleteData, ToolExecutionStartData,
+        ToolShellOutputData, UserMessageData, UserMessageDelivery,
     },
     subscription::RecvErrorKind,
 };
@@ -151,12 +152,15 @@ use super::{
     pricing::CopilotPricing,
     reported,
     routes::{self, Routes},
-    session::until_crash,
+    session::{running_on, until_crash},
     skills::CopilotSkills,
     tools::{PresentedToolCall, ToolDisposition, presented_tool_call, tool_activity_id},
     transport::CopilotConnection,
 };
-use crate::protocol::{AgentSelection, ContextFill, Cost, NativeMeter, TurnId, Usage};
+use crate::protocol::{
+    AgentSelection, ContextFill, Cost, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection,
+    ModelOptionValue, NativeMeter, ROUTING_TIER_OPTION_ID, TurnId, Usage,
+};
 use crate::provider::{
     AttributedProviderEvent, ContextFillReport, ProviderActivityId, ProviderCommandStatus,
     ProviderError, ProviderEvent, ProviderEventAttribution, ProviderEventStream,
@@ -251,6 +255,8 @@ pub(super) struct CopilotCorrelation {
     /// The Agent Selection the Copilot Session runs under, which a Continuation Copilot owns
     /// begins under.
     selection: AgentSelection,
+    /// The Selection a tier Copilot refused left in force, until the Session has taken it in.
+    tier_correction: Option<AgentSelection>,
     /// Copilot still owes reports of a manual compaction whose Turn settled on its answer alone.
     /// They carry the manual trigger a new manual compaction's would, so none begins until they
     /// are in — or until a stretch of the loop has run to its idle since, which every report
@@ -660,6 +666,7 @@ impl CopilotCorrelation {
             compaction_end: None,
             owes_aborted_idle: false,
             selection,
+            tier_correction: None,
             manual_reports_owed: false,
             routes: Routes::default(),
         }
@@ -712,6 +719,54 @@ impl CopilotCorrelation {
             self.served_window = None;
         }
         self.selection = selection;
+    }
+
+    /// Copilot refused the tier this Turn claimed, leaving another in force. The Selection says so
+    /// from here on, and the Session learns of it before it next asks for a Selection.
+    pub(super) fn project_tier_refused(
+        &mut self,
+        refusal: SessionAutoTierSwitchFailedData,
+    ) -> Vec<AttributedProviderEvent> {
+        let requested = refusal.requested_auto_tier.as_ref().map_or_else(
+            || "provider-default routing".to_owned(),
+            |tier| format!("Routing Tier `{}`", tier.as_str()),
+        );
+        let effective = refusal
+            .effective_auto_tier
+            .as_ref()
+            .filter(|tier| **tier != AutoTier::Unknown)
+            .map(|tier| tier.as_str().to_owned());
+        let why = format!(
+            "Copilot refused {requested} ({}). This Turn runs on {}.",
+            switch_failure_words(&refusal.reason),
+            running_on(effective.as_deref()),
+        );
+        let mut corrected = self.selection.clone().without_routing_tier();
+        corrected
+            .options
+            .extend(effective.map(|tier| ModelOptionSelection {
+                id: ModelOptionId::new(ROUTING_TIER_OPTION_ID),
+                value: ModelOptionValue::Select {
+                    choice: ModelOptionChoiceId::new(tier),
+                },
+            }));
+        self.selection = corrected.clone();
+        self.tier_correction = Some(corrected.clone());
+        if self.turn.is_none() {
+            return Vec::new();
+        }
+        vec![attributed(
+            None,
+            ProviderEvent::AgentSelectionCorrected {
+                selection: corrected,
+                why,
+            },
+        )]
+    }
+
+    /// The Selection a refused tier left in force, once, if one did since this was last asked.
+    pub(super) fn take_tier_correction(&mut self) -> Option<AgentSelection> {
+        self.tier_correction.take()
     }
 
     /// The window the main conversation's Model is served at, as Copilot last reported it under
@@ -1271,6 +1326,18 @@ impl TimelineForwarding {
     }
 }
 
+/// Copilot's reason for refusing a tier, for reading.
+fn switch_failure_words(reason: &AutoTierSwitchFailureReason) -> String {
+    match reason {
+        AutoTierSwitchFailureReason::PolicyRejected => "rejected by policy",
+        AutoTierSwitchFailureReason::RequestFailed => "the request failed",
+        AutoTierSwitchFailureReason::SetupFailed => "setup failed",
+        AutoTierSwitchFailureReason::Unsupported => "not supported",
+        AutoTierSwitchFailureReason::Unknown => "no reason Suru can read",
+    }
+    .to_owned()
+}
+
 /// Logs what Copilot reports filling the context window with: the breakdown behind each context
 /// report, and the MCP servers the Session loaded, whose tool definitions count against it.
 fn log_context_contents(event: &SessionEvent) {
@@ -1732,6 +1799,9 @@ fn project_session_event(
         return Ok(correlation.project_route_lifecycle(&event));
     }
     match event.parsed_type() {
+        SessionEventType::SessionAutoTierSwitchFailed => Ok(reported(&event)
+            .map(|refusal| correlation.project_tier_refused(refusal))
+            .unwrap_or_default()),
         // A transient error is one Copilot's own loop recovers from by retrying, so it is not the
         // Turn's outcome and stays out of the Transcript.
         SessionEventType::SessionError if event.is_transient_error() => Ok(Vec::new()),

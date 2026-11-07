@@ -180,24 +180,33 @@ impl ErrandMetering {
 /// stream to and only the finished reply is of any use.
 fn errand_session_config(errand: &ProviderErrand) -> Result<SessionConfig, ProviderError> {
     let options = lower_selection_options(&errand.selection)?;
-    let mut config = SessionConfig::default()
+    let mut config = least_capable_session_config()
+        .with_working_directory(errand.execution_directory.clone())
+        .with_model(errand.selection.model.as_str());
+    config.reasoning_effort = options.reasoning_effort;
+    config.context_tier = options.context_tier.map(tier_id);
+    Ok(config)
+}
+
+/// The least-capable, least-persistent Session the SDK will open, for one Suru opens for its own
+/// purposes and discards: no Tools, no Skills, a refusal for anything it asks permission for, and
+/// nothing streamed.
+pub(super) fn least_capable_session_config() -> SessionConfig {
+    SessionConfig::default()
         // The SDK registers the identifier before it asks the CLI to create the Session, which is
         // what gives the Session-scoped requests the CLI may issue mid-creation somewhere to land.
         .with_session_id(CopilotSessionId::new(uuid::Uuid::new_v4().to_string()))
         .with_client_name(COPILOT_CLIENT_NAME)
-        .with_working_directory(errand.execution_directory.clone())
-        .with_model(errand.selection.model.as_str())
         .with_available_tools(Vec::<String>::new())
         .deny_all_permissions()
-        // The least-persistent mode on offer. Copilot files the Session under its own state
-        // directory and lists it in its own picker regardless, which is why discarding one means
-        // deleting it rather than only closing it.
+        // The least-persistent mode on offer. A deleted Session that ran a Turn under it leaves no
+        // row in the CLI's `session-store.db`, where one under the default leaves several
+        // (docs/validation/copilot-routing-tier-selection.md). Copilot files the Session under its
+        // own state directory and lists it in its own picker regardless, which is why discarding
+        // one means deleting it rather than only closing it.
         .with_enable_session_store(false)
         .with_enable_skills(false)
-        .with_streaming(false);
-    config.reasoning_effort = options.reasoning_effort;
-    config.context_tier = options.context_tier.map(tier_id);
-    Ok(config)
+        .with_streaming(false)
 }
 
 /// The Prompt one Errand delivers: what was asked, and the shape it must be answered in.
@@ -242,23 +251,23 @@ fn replied_json(reply: &str) -> Option<Value> {
     serde_json::from_str(reply.get(opening..=closing)?).ok()
 }
 
-/// The Copilot Session an Errand ran on, discarded however the Errand ends.
+/// A Copilot Session Suru opened for its own purposes, discarded however that work ends.
 ///
 /// The [`Drop`] arm is the one that matters: an Errand that runs past its deadline is dropped where
 /// it stands, and without it the Session it opened would be left behind — which is the whole of
 /// what this type is for.
-struct DiscardedSession {
+pub(super) struct DiscardedSession {
     native: Option<NativeSession>,
 }
 
 impl DiscardedSession {
-    fn holding(native: NativeSession) -> Self {
+    pub(super) fn holding(native: NativeSession) -> Self {
         Self {
             native: Some(native),
         }
     }
 
-    fn native(&self) -> &NativeSession {
+    pub(super) fn native(&self) -> &NativeSession {
         self.native
             .as_ref()
             .expect("an Errand's Copilot Session is discarded only once the Errand is done with it")
@@ -269,7 +278,7 @@ impl DiscardedSession {
     /// The discard runs as a task of its own rather than inline, so that an Errand whose deadline
     /// passes while it is tidying up does not take the half-finished tidying with it: a Session
     /// closed but never deleted is one the user is left to find in their own CLI.
-    async fn discard(&mut self) {
+    pub(super) async fn discard(&mut self) {
         let Some(native) = self.native.take() else {
             return;
         };

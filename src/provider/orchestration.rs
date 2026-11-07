@@ -3087,6 +3087,7 @@ async fn run_provider_session(
                             | ProviderEvent::TurnInterrupted
                             | ProviderEvent::TurnFailed { .. }
                             | ProviderEvent::AgentSelectionChanged { .. }
+                            | ProviderEvent::AgentSelectionCorrected { .. }
                             | ProviderEvent::AgentSelectionRejected { .. } => {}
                             // A Subagent's own lifecycle addresses its row,
                             // which outlives the Turn that spawned it; an
@@ -6093,6 +6094,7 @@ fn project_provider_event(
                     active.turn_id,
                     next_agent.agent.clone(),
                     selection,
+                    None,
                 ).map(|_| ProviderEventProjection::Continue)
             }
             ProviderEvent::ApprovalRequested {
@@ -6183,6 +6185,16 @@ fn project_provider_event(
                     active.turn_id,
                     next_agent.agent.clone(),
                     selection,
+                    None,
+                )
+                .map(|_| ProviderEventProjection::Continue),
+            ProviderEvent::AgentSelectionCorrected { selection, why } => sessions
+                .reconcile_effective_agent_selection(
+                    session_id,
+                    active.turn_id,
+                    next_agent.agent.clone(),
+                    selection,
+                    Some(why),
                 )
                 .map(|_| ProviderEventProjection::Continue),
             ProviderEvent::AgentMessageStarted => {

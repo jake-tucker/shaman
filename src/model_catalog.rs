@@ -6,8 +6,8 @@ use tokio::sync::watch;
 use crate::{
     protocol::{
         AgentSelection, ModelAvailability, ModelCatalog, ModelDescriptor, ProviderCatalogStatus,
-        ProviderId, ProviderModelCatalog, ProviderUnavailability, SessionTimestamp,
-        SettingsSnapshot,
+        ProviderId, ProviderModelCatalog, ProviderUnavailability, ROUTING_TIER_OPTION_ID,
+        SessionTimestamp, SettingsSnapshot,
     },
     provider::{ProviderError, ProviderRuntime, validate_models},
 };
@@ -82,6 +82,9 @@ struct CatalogState {
     /// without setting this, which is what lets a connecting client ask for
     /// the live answer exactly once.
     discovered_live: bool,
+    /// Whether the discovery running answers for Settings no longer in force,
+    /// and so is to be followed by another.
+    rediscover: bool,
 }
 
 impl CatalogState {
@@ -153,6 +156,13 @@ impl ModelCatalogService {
                                     }
                                 }
                             })
+                            .map(|mut candidate| {
+                                candidate.models = runtime.models_offered_under(
+                                    candidate.models,
+                                    &settings.borrow().settings,
+                                );
+                                candidate
+                            })
                             .map_or_else(CatalogState::default, CatalogState::remembered);
                         ProviderCatalog {
                             provider,
@@ -214,7 +224,9 @@ impl ModelCatalogService {
     /// enabling it and using it are one step. A Provider disabled at startup
     /// was never consulted and has no cache to fall back on, so without this it
     /// would come back as a Provider with no Models until something asked
-    /// again.
+    /// again. A change of a Setting a Provider's catalog depends on discovers it
+    /// again too, taking away at once whatever the Setting no longer lets it
+    /// offer.
     fn refresh_providers_as_they_are_enabled(
         &self,
         mut settings: watch::Receiver<SettingsSnapshot>,
@@ -226,15 +238,31 @@ impl ModelCatalogService {
                 .iter()
                 .map(ProviderCatalog::is_enabled)
                 .collect::<Vec<_>>();
+            let mut was_under = service
+                .providers
+                .iter()
+                .map(ProviderCatalog::catalog_settings)
+                .collect::<Vec<_>>();
             while settings.changed().await.is_ok() {
                 let mut turned = false;
-                for (catalog, was_enabled) in service.providers.iter().zip(was_enabled.iter_mut()) {
+                for ((catalog, was_enabled), was_under) in service
+                    .providers
+                    .iter()
+                    .zip(was_enabled.iter_mut())
+                    .zip(was_under.iter_mut())
+                {
                     let is_enabled = catalog.is_enabled();
                     if is_enabled && !*was_enabled {
                         catalog.begin_refresh();
                     }
                     turned |= is_enabled != *was_enabled;
                     *was_enabled = is_enabled;
+                    let is_under = catalog.catalog_settings();
+                    if is_under != *was_under {
+                        catalog.follow_catalog_settings();
+                        turned = true;
+                    }
+                    *was_under = is_under;
                 }
                 if turned {
                     service.changes.send_modify(|changes| *changes += 1);
@@ -320,9 +348,19 @@ impl ModelCatalogService {
         }) else {
             return Ok(selection.clone());
         };
-        model
-            .materialize_agent_selection(Some(selection))
-            .map_err(|error| error.to_string())
+        // Whether a Routing Tier can be had is the Provider's to say when a
+        // Turn claims it, and what it says fails no Turn, so one this catalog
+        // no longer offers is carried to it rather than refused here.
+        let tier = selection
+            .options
+            .iter()
+            .find(|option| option.id.as_str() == ROUTING_TIER_OPTION_ID)
+            .cloned();
+        let mut normalized = model
+            .materialize_agent_selection(Some(&selection.clone().without_routing_tier()))
+            .map_err(|error| error.to_string())?;
+        normalized.options.extend(tier);
+        Ok(normalized)
     }
 
     fn cached_models(&self, provider: &ProviderId) -> Option<Vec<ModelDescriptor>> {
@@ -345,6 +383,38 @@ impl ProviderCatalog {
             .borrow()
             .settings
             .provider_enabled(&self.provider)
+    }
+
+    fn catalog_settings(&self) -> u64 {
+        self.runtime
+            .catalog_settings(&self.settings.borrow().settings)
+    }
+
+    /// `models` as the Settings in force let this Provider offer them.
+    fn offered(&self, models: Vec<ModelDescriptor>) -> Vec<ModelDescriptor> {
+        self.runtime
+            .models_offered_under(models, &self.settings.borrow().settings)
+    }
+
+    /// Answers a change of a Setting this catalog depends on: what it no longer
+    /// lets the Provider offer goes at once, and the Provider is asked what it
+    /// offers now — after the discovery already running, which answers for the
+    /// Setting as it was. A Provider the user has off is not asked, here as
+    /// anywhere: turning it on asks it.
+    fn follow_catalog_settings(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .expect("Model catalog lock is not poisoned");
+        state.models = state.models.take().map(|models| self.offered(models));
+        if !self.is_enabled() {
+            return;
+        }
+        if state.refreshing {
+            state.rediscover = true;
+        } else {
+            self.begin_refresh_locked(&mut state);
+        }
     }
 
     /// What a Provider the user turned off reports: no Models, because none
@@ -507,8 +577,15 @@ impl ProviderCatalog {
     }
 
     async fn discover(&self) {
-        let result = self.runtime.list_models().await.and_then(|discovery| {
+        while self.discover_settling().await {}
+    }
+
+    /// One discovery, answering whether a change of the Settings it ran under
+    /// owes another.
+    async fn discover_settling(&self) -> bool {
+        let result = self.runtime.list_models().await.and_then(|mut discovery| {
             admissible_discovery(&self.provider, &discovery.models)?;
+            discovery.models = self.offered(discovery.models);
             Ok(discovery)
         });
         // What to remember is decided before the lock and written after it:
@@ -560,14 +637,16 @@ impl ProviderCatalog {
                 });
             }
         }
-        state.refreshing = false;
+        state.refreshing = std::mem::take(&mut state.rediscover);
         state.discovered_live = true;
+        let rediscover = state.refreshing;
         drop(state);
         if let (Some(remember), Some(remembered)) = (&self.remember, remembered) {
             remember(remembered);
         }
         self.generation.send_modify(|generation| *generation += 1);
         self.changes.send_modify(|changes| *changes += 1);
+        rediscover
     }
 
     /// What this Provider serves right now, or the disabled catalog while the
@@ -637,11 +716,11 @@ fn errand_selection_in(
     declared: Option<AgentSelection>,
 ) -> Option<AgentSelection> {
     declared
-        .and_then(|declared| admitted_selection(models, &declared))
+        .and_then(|declared| admitted_selection(models, &declared.without_routing_tier()))
         .or_else(|| {
             default_model(models)
                 .filter(|model| model.availability == ModelAvailability::Available)
-                .map(ModelDescriptor::default_agent_selection)
+                .map(ModelDescriptor::default_selection_for_an_agent)
         })
 }
 
@@ -666,7 +745,7 @@ fn admitted_selection(
         return None;
     }
     let mut options = declared.options.clone();
-    for default in model.default_agent_selection().options {
+    for default in model.default_selection_for_an_agent().options {
         if !options.iter().any(|option| option.id == default.id) {
             options.push(default);
         }
@@ -813,6 +892,427 @@ mod tests {
         fn shutdown(&self) -> ProviderFuture<'_, ()> {
             Box::pin(async { Ok(()) })
         }
+    }
+
+    /// What the fake below offers on its one Model, a Routing Tier of `high` and `low`.
+    fn routing_tier() -> ModelOptionDescriptor {
+        ModelOptionDescriptor {
+            role: ModelOptionRole::RoutingTier,
+            ..select_option(
+                crate::protocol::ROUTING_TIER_OPTION_ID,
+                vec![
+                    choice("low", ModelAvailability::Available),
+                    choice("high", ModelAvailability::Available),
+                    choice("closed", ModelAvailability::Unavailable),
+                ],
+                "low",
+            )
+        }
+    }
+
+    fn tiered_model(options: Vec<ModelOptionDescriptor>) -> ModelDescriptor {
+        ModelDescriptor {
+            options,
+            ..conversing_model(ModelAvailability::Available)
+        }
+    }
+
+    fn tier_setting(on: bool) -> SettingsSnapshot {
+        let mut snapshot = SettingsSnapshot::default();
+        snapshot.settings.provider.copilot.fusion_tiers = on;
+        snapshot
+    }
+
+    /// A Provider that offers a Routing Tier only under a Setting, as the Setting stood when each
+    /// discovery began, which can be held in flight.
+    struct TierGatedRuntime {
+        calls: AtomicUsize,
+        offering: AtomicBool,
+        hold: tokio::sync::Semaphore,
+    }
+
+    impl TierGatedRuntime {
+        fn new(offering: bool, held: bool) -> Arc<Self> {
+            Arc::new(Self {
+                calls: AtomicUsize::new(0),
+                offering: AtomicBool::new(offering),
+                hold: tokio::sync::Semaphore::new(if held {
+                    0
+                } else {
+                    tokio::sync::Semaphore::MAX_PERMITS
+                }),
+            })
+        }
+    }
+
+    impl ProviderRuntime for TierGatedRuntime {
+        fn provider_id(&self) -> ProviderId {
+            ProviderId::new("stub")
+        }
+
+        fn display_name(&self) -> &str {
+            "Stub"
+        }
+
+        fn list_models(&self) -> ProviderFuture<'_, ProviderModelDiscovery> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let offering = self.offering.load(Ordering::SeqCst);
+            Box::pin(async move {
+                drop(self.hold.acquire().await.expect("the hold stays open"));
+                Ok(ProviderModelDiscovery::new(vec![tiered_model(
+                    if offering {
+                        vec![routing_tier()]
+                    } else {
+                        Vec::new()
+                    },
+                )]))
+            })
+        }
+
+        fn start_session(
+            &self,
+            _request: ProviderSessionRequest,
+        ) -> ProviderFuture<'_, ProviderSessionConnection> {
+            unimplemented!("catalog tests never start Sessions")
+        }
+
+        fn run_errand(
+            &self,
+            _errand: crate::provider::ProviderErrand,
+        ) -> crate::provider::ErrandFuture<'_> {
+            unimplemented!("catalog tests never run Errands")
+        }
+
+        fn errand_selection(&self) -> Option<AgentSelection> {
+            None
+        }
+
+        fn shutdown(&self) -> ProviderFuture<'_, ()> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn apply_settings(&self, settings: &crate::protocol::EffectiveSettings) {
+            self.offering
+                .store(settings.provider.copilot.fusion_tiers, Ordering::SeqCst);
+        }
+
+        fn catalog_settings(&self, settings: &crate::protocol::EffectiveSettings) -> u64 {
+            u64::from(settings.provider.copilot.fusion_tiers)
+        }
+
+        fn models_offered_under(
+            &self,
+            mut models: Vec<ModelDescriptor>,
+            settings: &crate::protocol::EffectiveSettings,
+        ) -> Vec<ModelDescriptor> {
+            if !settings.provider.copilot.fusion_tiers {
+                for model in &mut models {
+                    model
+                        .options
+                        .retain(|option| option.role != ModelOptionRole::RoutingTier);
+                }
+            }
+            models
+        }
+    }
+
+    fn offered_options(service: &ModelCatalogService) -> usize {
+        service.current().providers[0].models[0].options.len()
+    }
+
+    async fn settled_catalog(service: &ModelCatalogService) -> ProviderCatalogStatus {
+        let mut changes = service.subscribe();
+        loop {
+            let status = service.current().providers[0].status.clone();
+            if status != ProviderCatalogStatus::Refreshing {
+                return status;
+            }
+            tokio::time::timeout(std::time::Duration::from_secs(5), changes.changed())
+                .await
+                .expect("the catalog settles")
+                .expect("the catalog lives on");
+        }
+    }
+
+    fn remembered_with(options: Vec<ModelOptionDescriptor>) -> CatalogMemory {
+        CatalogMemory {
+            remembered: vec![RememberedProviderCatalog {
+                provider: ProviderId::new("stub"),
+                models: vec![tiered_model(options)],
+                warning: None,
+                discovered_at: SessionTimestamp(1),
+            }],
+            remember: None,
+        }
+    }
+
+    /// The Setting went off while Suru was down: the catalog remembered from when it was on offers
+    /// nothing it has since taken away, not even until the first discovery.
+    #[tokio::test]
+    async fn a_remembered_catalog_offers_nothing_a_setting_has_since_taken_away() {
+        let (_settings, settings_rx) = watch::channel(tier_setting(false));
+        let runtime = TierGatedRuntime::new(false, false);
+        let service = ModelCatalogService::new(
+            [runtime.clone() as Arc<dyn ProviderRuntime>],
+            settings_rx,
+            remembered_with(vec![routing_tier()]),
+        );
+
+        assert_eq!(offered_options(&service), 0);
+        assert_eq!(
+            service
+                .default_selection()
+                .map(|selection| selection.options),
+            Some(Vec::new()),
+            "nor does the default a fresh Landing starts from name it"
+        );
+        assert_eq!(runtime.calls.load(Ordering::SeqCst), 0);
+    }
+
+    /// The Setting came on while Suru was down: no one has to ask for a refresh to be offered what
+    /// it makes available, because the first client to connect brings the first discovery.
+    #[tokio::test]
+    async fn a_remembered_catalog_shows_what_a_setting_has_since_made_available_once_a_client_connects()
+     {
+        let (_settings, settings_rx) = watch::channel(tier_setting(true));
+        let runtime = TierGatedRuntime::new(true, false);
+        let service = ModelCatalogService::new(
+            [runtime.clone() as Arc<dyn ProviderRuntime>],
+            settings_rx,
+            remembered_with(Vec::new()),
+        );
+        assert_eq!(offered_options(&service), 0);
+
+        service.warm();
+        settled_catalog(&service).await;
+
+        assert_eq!(offered_options(&service), 1);
+    }
+
+    #[tokio::test]
+    async fn turning_the_setting_on_or_off_asks_the_provider_again() {
+        let (settings, settings_rx) = watch::channel(tier_setting(false));
+        let runtime = TierGatedRuntime::new(false, false);
+        let service = ModelCatalogService::new(
+            [runtime.clone() as Arc<dyn ProviderRuntime>],
+            settings_rx,
+            CatalogMemory::none(),
+        );
+        service.refresh().await;
+        assert_eq!(runtime.calls.load(Ordering::SeqCst), 1);
+
+        let mut changes = service.subscribe();
+        changes.mark_unchanged();
+        runtime.apply_settings(&tier_setting(true).settings);
+        settings.send_replace(tier_setting(true));
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        while offered_options_if_any(&service) != 1 {
+            assert!(tokio::time::Instant::now() < deadline, "no tier arrived");
+            tokio::time::timeout_at(deadline, changes.changed())
+                .await
+                .expect("the catalog changes")
+                .expect("the catalog lives on");
+        }
+        assert_eq!(runtime.calls.load(Ordering::SeqCst), 2);
+
+        settings.send_replace(tier_setting(false));
+        runtime.apply_settings(&tier_setting(false).settings);
+        while offered_options_if_any(&service) != 0 {
+            assert!(tokio::time::Instant::now() < deadline, "the tier stayed");
+            tokio::time::timeout_at(deadline, changes.changed())
+                .await
+                .expect("the catalog changes")
+                .expect("the catalog lives on");
+        }
+    }
+
+    fn offered_options_if_any(service: &ModelCatalogService) -> usize {
+        service.current().providers[0]
+            .models
+            .first()
+            .map_or(0, |model| model.options.len())
+    }
+
+    /// A change of any other Setting costs no discovery.
+    #[tokio::test]
+    async fn a_change_of_a_setting_the_catalog_does_not_depend_on_asks_nothing() {
+        let (settings, settings_rx) = watch::channel(tier_setting(true));
+        let runtime = TierGatedRuntime::new(true, false);
+        let service = ModelCatalogService::new(
+            [runtime.clone() as Arc<dyn ProviderRuntime>],
+            settings_rx,
+            CatalogMemory::none(),
+        );
+        service.refresh().await;
+
+        settings.send_modify(|snapshot| snapshot.settings.provider.copilot.enabled = true);
+        tokio::task::yield_now().await;
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        assert_eq!(runtime.calls.load(Ordering::SeqCst), 1);
+    }
+
+    /// A discovery under the Setting as it was, still running when the Setting turns, answers for
+    /// a Setting no longer in force, so the Provider is asked again rather than trusted.
+    #[tokio::test]
+    async fn a_discovery_in_flight_when_the_setting_turns_on_does_not_leave_the_tiers_hidden() {
+        let (settings, settings_rx) = watch::channel(tier_setting(false));
+        let runtime = TierGatedRuntime::new(false, true);
+        let service = ModelCatalogService::new(
+            [runtime.clone() as Arc<dyn ProviderRuntime>],
+            settings_rx,
+            CatalogMemory::none(),
+        );
+        service.warm();
+        while runtime.calls.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+
+        runtime.apply_settings(&tier_setting(true).settings);
+        settings.send_replace(tier_setting(true));
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        runtime
+            .hold
+            .add_permits(tokio::sync::Semaphore::MAX_PERMITS / 2);
+
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        while runtime.calls.load(Ordering::SeqCst) < 2
+            || service.current().providers[0].status == ProviderCatalogStatus::Refreshing
+        {
+            assert!(tokio::time::Instant::now() < deadline, "not asked again");
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+        assert_eq!(offered_options(&service), 1);
+    }
+
+    #[tokio::test]
+    async fn a_discovery_in_flight_when_the_setting_turns_off_does_not_bring_the_tiers_back() {
+        let (settings, settings_rx) = watch::channel(tier_setting(true));
+        let runtime = TierGatedRuntime::new(true, true);
+        let service = ModelCatalogService::new(
+            [runtime.clone() as Arc<dyn ProviderRuntime>],
+            settings_rx,
+            CatalogMemory::none(),
+        );
+        service.warm();
+        while runtime.calls.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+
+        runtime.apply_settings(&tier_setting(false).settings);
+        settings.send_replace(tier_setting(false));
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        runtime
+            .hold
+            .add_permits(tokio::sync::Semaphore::MAX_PERMITS / 2);
+
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        while runtime.calls.load(Ordering::SeqCst) < 2
+            || service.current().providers[0].status == ProviderCatalogStatus::Refreshing
+        {
+            assert!(tokio::time::Instant::now() < deadline, "not asked again");
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+        assert_eq!(offered_options(&service), 0);
+    }
+
+    /// An Errand never runs on a Routing Tier: it carries no assignment, on which a tier fails at
+    /// once, and a Provider's fallback or a pin naming one still gets an answer on plain Models.
+    #[test]
+    fn an_errand_never_runs_under_a_routing_tier() {
+        let tiered = tiered_model(vec![routing_tier()]);
+        let plain = AgentSelection {
+            provider: ProviderId::new("stub"),
+            model: ModelId::new("conversing"),
+            options: Vec::new(),
+        };
+        assert_eq!(
+            errand_selection_in(std::slice::from_ref(&tiered), None),
+            Some(plain.clone()),
+            "the Provider's default Model, whose default tier stays out"
+        );
+        assert_eq!(
+            errand_selection_in(
+                std::slice::from_ref(&tiered),
+                Some(AgentSelection {
+                    options: vec![chosen(crate::protocol::ROUTING_TIER_OPTION_ID, "high")],
+                    ..plain.clone()
+                })
+            ),
+            Some(plain.clone()),
+            "a pin naming a tier on a Model that offers one"
+        );
+        assert_eq!(
+            errand_selection_in(
+                &[tiered_model(Vec::new())],
+                Some(AgentSelection {
+                    options: vec![chosen(crate::protocol::ROUTING_TIER_OPTION_ID, "high")],
+                    ..plain.clone()
+                })
+            ),
+            Some(plain),
+            "a pin naming a tier on a Model no longer offering one is the same Model"
+        );
+    }
+
+    fn normalizing_service(
+        options: Vec<ModelOptionDescriptor>,
+    ) -> (ModelCatalogService, watch::Sender<SettingsSnapshot>) {
+        let (settings, settings_rx) = watch::channel(tier_setting(true));
+        let service = ModelCatalogService::new(
+            [TierGatedRuntime::new(true, false) as Arc<dyn ProviderRuntime>],
+            settings_rx,
+            remembered_with(options),
+        );
+        (service, settings)
+    }
+
+    fn selecting(options: Vec<ModelOptionSelection>) -> AgentSelection {
+        AgentSelection {
+            provider: ProviderId::new("stub"),
+            model: ModelId::new("conversing"),
+            options,
+        }
+    }
+
+    /// A Selection with no tier on a Model that offers them has chosen none: it is what a Session
+    /// from before the Setting holds, and a Subagent's.
+    #[tokio::test]
+    async fn a_selection_naming_no_routing_tier_stands_on_a_model_that_offers_them() {
+        let (service, _settings) = normalizing_service(vec![routing_tier()]);
+        assert_eq!(
+            service.normalize_selection(&selecting(Vec::new())),
+            Ok(selecting(Vec::new()))
+        );
+    }
+
+    /// Whether a tier can be had is the Provider's to say when a Turn claims it, and what it says
+    /// never fails a Turn, so a Selection naming one a catalog does not offer, or marks disabled,
+    /// is not refused here on the strength of what the catalog last heard.
+    #[tokio::test]
+    async fn a_selection_naming_a_routing_tier_the_catalog_does_not_offer_is_left_to_the_provider()
+    {
+        let names = |tier| selecting(vec![chosen(crate::protocol::ROUTING_TIER_OPTION_ID, tier)]);
+        let (offered, _settings) = normalizing_service(vec![routing_tier()]);
+        assert_eq!(
+            offered.normalize_selection(&names("closed")),
+            Ok(names("closed"))
+        );
+        assert_eq!(
+            offered.normalize_selection(&names("gone")),
+            Ok(names("gone"))
+        );
+        let (not_offered, _settings) = normalizing_service(Vec::new());
+        assert_eq!(
+            not_offered.normalize_selection(&names("high")),
+            Ok(names("high"))
+        );
+        assert!(
+            not_offered
+                .normalize_selection(&selecting(vec![chosen("other", "high")]))
+                .is_err(),
+            "any other unknown option is refused as ever"
+        );
     }
 
     fn remembered(display_name: &str) -> RememberedProviderCatalog {

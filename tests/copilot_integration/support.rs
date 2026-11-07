@@ -299,6 +299,75 @@ pub fn session_models_arm() -> String {
     .to_owned()
 }
 
+/// Copilot's Auto routing metadata as a Session assigned its tiers is told it, in the CLI's order:
+/// visible tiers, one of them disabled with Copilot's reason, and two it keeps out of a picker.
+pub const AUTO_TIERS: &str = concat!(
+    r#"{"defaultTier":"hydrafusion","tiers":["#,
+    r#"{"id":"balance","displayName":"Standard","type":"auto","#,
+    r#""description":"Versatile models.","status":{"enabled":true,"pickerVisible":true}},"#,
+    r#"{"id":"hydrafusion-max","displayName":"Max","type":"fusion","#,
+    r#""description":"The most capable models.","status":{"enabled":false,"pickerVisible":true,"#,
+    r#""reason":"plan","message":"Not on your plan."}},"#,
+    r#"{"id":"hydrafusion","displayName":"High","type":"fusion","#,
+    r#""description":"Capable models.","status":{"enabled":true}},"#,
+    r#"{"id":"secret","displayName":"Secret","type":"auto","#,
+    r#""description":"Hidden.","status":{"enabled":true,"pickerVisible":false}},"#,
+    r#"{"id":"fast","displayName":"Fast","type":"auto","#,
+    r#""description":"Latency.","status":{"enabled":true,"pickerVisible":true}}]}"#,
+);
+
+/// A `session.model.list` arm answering a Session that was opened with the Fusion assignment with
+/// `auto`, and any other with none, as the CLI does. It brings a `session.create` arm that notes
+/// which Sessions carried the assignment.
+pub fn assigned_session_arms(auto: &str) -> String {
+    format!(
+        r#"    *'"method":"session.create"'*'"expAssignments"'*|*'"method":"session.resume"'*'"expAssignments"'*)
+      sid=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
+      : > "$COPILOT_FIXTURE_LOG.assigned-$sid"
+      reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"sessionId":"'"$sid"'"}}}}'
+      ;;
+    *'"method":"session.model.list"'*)
+      listed=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
+      if [ -e "$COPILOT_FIXTURE_LOG.assigned-$listed" ]; then
+        reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"list":[],"auto":{auto}}}}}'
+      else
+        reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"list":[]}}}}'
+      fi
+      ;;
+"#
+    )
+}
+
+/// `session.model.switchTo` and `session.model.getCurrent` arms keeping a Session's Model and Auto
+/// preference as the CLI does: a switch naming no preference leaves it alone, and it stays even
+/// while a concrete Model is selected. A switch to `autoTier` `not-a-tier` is refused.
+pub fn tiered_model_arms() -> String {
+    r#"    *'"method":"session.model.switchTo"'*'"autoTier":"not-a-tier"'*)
+      reply '{"jsonrpc":"2.0","id":'"$id"',"error":{"code":-32603,"message":"Auto preference not-a-tier is unavailable for this account"}}'
+      ;;
+    *'"method":"session.model.switchTo"'*)
+      printf '%s' "$body" | sed -n 's/.*"modelId":"\([^"]*\)".*/\1/p' > "$COPILOT_FIXTURE_LOG.model"
+      case "$body" in
+        *'"autoTier":null'*) rm -f "$COPILOT_FIXTURE_LOG.tier" ;;
+        *'"autoTier":"'*) printf '%s' "$body" | sed -n 's/.*"autoTier":"\([^"]*\)".*/\1/p' > "$COPILOT_FIXTURE_LOG.tier" ;;
+      esac
+      reply '{"jsonrpc":"2.0","id":'"$id"',"result":{"modelId":"switched"}}'
+      ;;
+    *'"method":"session.model.getCurrent"'*)
+      current='{}'
+      if [ -s "$COPILOT_FIXTURE_LOG.model" ]; then
+        current='{"modelId":"'"$(cat "$COPILOT_FIXTURE_LOG.model")"'"'
+        if [ -s "$COPILOT_FIXTURE_LOG.tier" ]; then
+          current="$current"',"autoTier":"'"$(cat "$COPILOT_FIXTURE_LOG.tier")"'"'
+        fi
+        current="$current"'}'
+      fi
+      reply '{"jsonrpc":"2.0","id":'"$id"',"result":'"$current"'}'
+      ;;
+"#
+    .to_owned()
+}
+
 /// A `session.model.switchTo` arm judging a reasoning effort as CLI 1.0.88 does: a switch naming
 /// one on a Session whose own Models were never listed is refused as unsupported, whatever the
 /// effort and whether or not the flat catalog offers it, and accepted once they were.

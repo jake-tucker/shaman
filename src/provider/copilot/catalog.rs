@@ -31,7 +31,7 @@ use crate::{
 
 /// The Model Copilot routes on the user's behalf. Copilot's catalog names no default of its own, so
 /// when it offers this one Suru defaults to it rather than guessing between concrete Models.
-const AUTO_MODEL_ID: &str = "auto";
+pub(super) const AUTO_MODEL_ID: &str = "auto";
 
 /// The reasoning effort a Model defaults to where Copilot names none and the Model offers it.
 const MEDIUM_EFFORT: &str = "medium";
