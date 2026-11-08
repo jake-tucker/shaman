@@ -98,6 +98,7 @@ use super::super::command_presentation::{PresentedCommand, present_command};
 use super::{
     claude_error, compaction,
     message_models::MessageModels,
+    model_usage::{reported_model_usage, total_usage},
     session::ClaudeResumeState,
     thinking::{ThinkingEvent, ThinkingSplitter},
     transport::ConversationItem,
@@ -2821,25 +2822,44 @@ impl ClaudeProjection {
             self.latest_reported_costs
                 .insert(reporting_lifetime.clone(), cost);
         }
-        // A loop running Claude's `/compact` makes no call the result meters — the summarising is
-        // the CLI's own — so the zero usage it reports states nothing, while the running Cost it
+        // The running totals by Model are what the Turn's Usage is read from where they are
+        // believed: what they add is each Model's Share, and the Shares together the Turn's Usage,
+        // native Subagents' calls among them (ADR 0071). Where they are not, the Turn's Usage is
+        // the loop's own calls for this result, under its Agent Selection with no Share.
+        let highest_before = self.resume.model_usage.clone();
+        let increases = self.resume.model_usage.record(
+            &reporting_lifetime,
+            reported_model_usage(result.model_usage.as_ref()),
+        );
+        // A loop running Claude's `/compact` makes no call its own usage meters — the summarising
+        // is the CLI's own — so the zero usage it reports states nothing, while the running Cost it
         // carries includes what the summarising spent.
-        let reported_usage = result
-            .usage
-            .as_ref()
-            .filter(|_| !self.turn.is_compaction_requested());
-        if reported_usage.is_some() || reported_cost.is_some() || self.turn_metering.is_some() {
-            let usage = reported_usage.map_or_else(Usage::default, result_usage);
-            if let Some(metering) = self.turn_metering.as_mut() {
-                metering.add_usage_with_cumulative_cost(usage, reported_cost);
-            } else {
-                self.turn_metering = Some(ReportedMetering::new(usage, reported_cost));
-            }
-            let metering = self
-                .turn_metering
+        let reported_usage = match &increases {
+            Some(increases) => Some(total_usage(increases)),
+            None => result
+                .usage
                 .as_ref()
-                .expect("Claude Turn metering was just initialized");
+                .filter(|_| !self.turn.is_compaction_requested())
+                .map(result_usage),
+        };
+        if reported_usage.is_some() || reported_cost.is_some() || self.turn_metering.is_some() {
+            let metering = ReportedMetering::accumulate_running(
+                &mut self.turn_metering,
+                reported_usage.unwrap_or_default(),
+                reported_cost,
+                increases
+                    .into_iter()
+                    .flatten()
+                    .map(|share| (share.model, share.usage, share.cost)),
+            );
             projected.push(metering.subtree_event(&reporting_lifetime));
+        }
+        // Stored before the Turn settles, so the next process is measured against these totals
+        // however soon it starts.
+        if self.resume.model_usage != highest_before {
+            projected.push(ProviderEvent::ResumeStateChanged {
+                resume_state: self.resume.to_provider(),
+            });
         }
         let turn_settled;
         if interrupted {
@@ -2942,7 +2962,7 @@ pub(super) fn result_usage(usage: &ResultUsage) -> Usage {
     }
 }
 
-fn reported_token_count(value: Option<f64>) -> Option<u64> {
+pub(super) fn reported_token_count(value: Option<f64>) -> Option<u64> {
     value
         .filter(|value| {
             value.is_finite() && *value >= 0.0 && value.fract() == 0.0 && *value <= u64::MAX as f64
@@ -3583,6 +3603,7 @@ mod tests {
         let mut projection = projection_resuming(ClaudeResumeState {
             session_id: "provider-session".to_owned(),
             agents: [("a2046dbbe8ecd4a5c".to_owned(), "agent_1".to_owned())].into(),
+            ..ClaudeResumeState::default()
         });
 
         let mut messages = send_message_resuming("send_1", "a2046dbbe8ecd4a5c").to_vec();
@@ -3608,6 +3629,7 @@ mod tests {
         let mut projection = projection_resuming(ClaudeResumeState {
             session_id: "provider-session".to_owned(),
             agents: [("agent-task".to_owned(), "agent_1".to_owned())].into(),
+            ..ClaudeResumeState::default()
         });
 
         let mut events = project(
@@ -4144,7 +4166,7 @@ mod tests {
         // where a lifetime of its own would count the earlier spend a second time.
         let resume = ClaudeResumeState {
             session_id: "conversation-1".to_owned(),
-            agents: Default::default(),
+            ..ClaudeResumeState::default()
         };
         let mut before = projection_resuming(resume.clone());
         let mut after = projection_resuming(resume);

@@ -1670,6 +1670,36 @@ impl ReportedMetering {
         }
     }
 
+    /// Adds one report of a running total to the reading `slot` holds,
+    /// starting it with that report where there is none yet, as
+    /// [`Self::add_usage_with_cumulative_cost`] adds one, and adds each
+    /// Model's part of the report to its Model Share beside it: the part's
+    /// Usage is the report's own work on that Model, and its Cost that
+    /// Model's running total on the same terms as the reading's.
+    pub(super) fn accumulate_running(
+        slot: &mut Option<Self>,
+        usage: Usage,
+        running_cost: Option<Cost>,
+        shares: impl IntoIterator<Item = (ModelId, Usage, Option<Cost>)>,
+    ) -> &Self {
+        let metering = match slot {
+            Some(metering) => {
+                metering.add_usage_with_cumulative_cost(usage, running_cost);
+                metering
+            }
+            None => slot.insert(Self::new(usage, running_cost)),
+        };
+        for (model, usage, running_cost) in shares {
+            match metering.shares.iter_mut().find(|(held, _)| *held == model) {
+                Some((_, share)) => share.add_usage_with_cumulative_cost(usage, running_cost),
+                None => metering
+                    .shares
+                    .push((model, Self::new(usage, running_cost))),
+            }
+        }
+        metering
+    }
+
     pub(super) fn add_usage_with_cumulative_cost(
         &mut self,
         usage: Usage,
@@ -1700,22 +1730,26 @@ impl ReportedMetering {
                     metered.partial()
                 }
             }),
-            // A Share's Cost is on the reading's terms, so a reading whose
-            // own Cost is unknown leaves none for its Shares.
-            model_shares: self
-                .shares
-                .iter()
-                .map(|(model, share)| {
-                    let cost = share.reported_cost.filter(|_| self.reported_cost.is_some());
-                    ModelShare {
-                        model: model.clone(),
-                        usage: share.usage.clone(),
-                        cost,
-                        cost_is_partial: cost.is_some() && !share.cost_complete,
-                    }
-                })
-                .collect(),
+            model_shares: self.model_shares(self.reported_cost.is_some()),
         }
+    }
+
+    /// The reading's Model Shares. A Share's Cost is on the reading's
+    /// terms, so a reading that states no Cost of its own — `priced` false
+    /// — leaves none for its Shares.
+    fn model_shares(&self, priced: bool) -> Vec<ModelShare> {
+        self.shares
+            .iter()
+            .map(|(model, share)| {
+                let cost = share.reported_cost.filter(|_| priced);
+                ModelShare {
+                    model: model.clone(),
+                    usage: share.usage.clone(),
+                    cost,
+                    cost_is_partial: cost.is_some() && !share.cost_complete,
+                }
+            })
+            .collect()
     }
 
     /// The reading as an Errand's consumption. An Errand's Cost is fixed
@@ -1730,12 +1764,13 @@ impl ReportedMetering {
     }
 
     pub(super) fn subtree_event(&self, reporting_lifetime: &str) -> ProviderEvent {
+        let cost = self
+            .complete_cost()
+            .map(|cost| MeteredCost::reported_subtree(cost, reporting_lifetime));
         ProviderEvent::Usage {
             usage: self.usage.clone(),
-            cost: self
-                .complete_cost()
-                .map(|cost| MeteredCost::reported_subtree(cost, reporting_lifetime)),
-            model_shares: Vec::new(),
+            model_shares: self.model_shares(cost.is_some()),
+            cost,
         }
     }
 

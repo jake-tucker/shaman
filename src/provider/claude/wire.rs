@@ -373,6 +373,11 @@ pub(super) struct ResultMessage {
     /// total for it — across the processes that resume it, but not across a `/clear`.
     #[serde(default)]
     pub(super) total_cost_usd: Option<f64>,
+    /// The conversation's running totals by the Model each call ran on, Subagents' calls among
+    /// them, on the same terms as `total_cost_usd`. Kept unread here so an entry in some shape
+    /// Suru cannot read leaves the totals unbelieved rather than the result unread.
+    #[serde(default, rename = "modelUsage")]
+    pub(super) model_usage: Option<Value>,
     /// The conversation the result belongs to: the one the process was spawned or resumed under,
     /// until a `/clear` moves it onto a new one, whose running total starts again at zero.
     #[serde(default)]

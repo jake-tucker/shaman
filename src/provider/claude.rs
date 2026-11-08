@@ -33,6 +33,7 @@ mod compaction;
 mod context;
 mod errand;
 mod message_models;
+mod model_usage;
 mod projection;
 mod questionnaire;
 mod runtime;

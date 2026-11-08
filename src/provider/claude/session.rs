@@ -56,6 +56,7 @@ use super::{
     availability::ClaudeAvailability,
     broker::BrokerMcpConfig,
     claude_error, claude_error_context,
+    model_usage::HighestModelUsage,
     projection::{ClaudeProjection, provider_events},
     runtime::usable_claude_models,
     skills::ClaudeSkills,
@@ -99,6 +100,10 @@ pub(super) struct ClaudeResumeState {
     /// tool use that spawned it, which a resume does not change.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(super) agents: BTreeMap<String, String>,
+    /// The highest running totals the conversation's results reported by Model, in each reporting
+    /// lifetime it has had, so the Turn after a restart counts only what it adds to them.
+    #[serde(default, skip_serializing_if = "HighestModelUsage::is_empty")]
+    pub(super) model_usage: HighestModelUsage,
 }
 
 impl ClaudeResumeState {
@@ -174,7 +179,7 @@ pub(super) async fn start_claude_session(
         None => (
             ClaudeResumeState {
                 session_id: uuid::Uuid::new_v4().to_string(),
-                agents: BTreeMap::new(),
+                ..ClaudeResumeState::default()
             },
             ProviderSessionSpawn::Mint,
         ),
@@ -1231,7 +1236,7 @@ mod tests {
             restored_state(Some(state)).expect("the Resume State is readable"),
             Some(ClaudeResumeState {
                 session_id: "11111111-2222-3333-4444-555555555555".to_owned(),
-                agents: BTreeMap::new(),
+                ..ClaudeResumeState::default()
             })
         );
     }
@@ -1241,6 +1246,7 @@ mod tests {
         let state = ClaudeResumeState {
             session_id: "11111111-2222-3333-4444-555555555555".to_owned(),
             agents: BTreeMap::from([("a2046dbbe8ecd4a5c".to_owned(), "toolu_agent".to_owned())]),
+            ..ClaudeResumeState::default()
         };
         assert_eq!(
             restored_state(Some(state.to_provider())).expect("the Resume State is readable"),
