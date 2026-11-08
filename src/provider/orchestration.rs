@@ -6341,6 +6341,21 @@ fn project_provider_event(
                     },
                 )
                 .map(|_| ProviderEventProjection::Continue),
+            ProviderEvent::Rerouted { from, to, reason } => sessions
+                .publish_agent_output(
+                    session_id,
+                    SessionChange::ActivityAdded {
+                        activity: Activity::Reroute {
+                            id: ActivityId::new(),
+                            turn_id: active.turn_id,
+                            provider: next_agent.selection.provider.clone(),
+                            from,
+                            to,
+                            reason: reason.map(|reason| normalize_provider_text(&reason)),
+                        },
+                    },
+                )
+                .map(|_| ProviderEventProjection::Continue),
             ProviderEvent::CurrentModelChanged { model } => sessions
                 .publish_agent_output(
                     session_id,

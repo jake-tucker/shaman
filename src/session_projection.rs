@@ -1891,7 +1891,8 @@ impl From<&Activity> for ActivityStanding {
             Activity::Status { .. }
             | Activity::Error { .. }
             | Activity::WatchOutcome { .. }
-            | Activity::Route { .. } => Self::Other,
+            | Activity::Route { .. }
+            | Activity::Reroute { .. } => Self::Other,
         }
     }
 }

@@ -3372,6 +3372,25 @@ pub enum Activity {
         turn_id: TurnId,
         decision: RouteDecision,
     },
+    /// A Reroute: the Provider switching, within the Turn, from the Model it
+    /// was running to another for reasons of its own, standing where the
+    /// Provider reported it. Every Provider records the same row, which a
+    /// client presents as a Status row. It never changes the Agent
+    /// Selection, and it reports a moment rather than work in progress, so
+    /// it has no status to settle.
+    Reroute {
+        id: ActivityId,
+        turn_id: TurnId,
+        /// The Provider whose Models `from` and `to` name.
+        provider: ProviderId,
+        /// The Model the Provider was running, where it said.
+        from: Option<ModelId>,
+        /// The Model the Provider runs from here on.
+        to: ModelId,
+        /// Why the Provider switched, in words it gave or Suru gave its
+        /// reason, where it gave one: display text, never parsed.
+        reason: Option<String>,
+    },
     /// One Session the Turn's Agent — a Sidekick — began: a Subsession. This
     /// row is the way into it from where it was begun, and all the Sidekick's
     /// Transcript carries of it: the Subsession is a top-level Session of its
@@ -3480,6 +3499,7 @@ impl Activity {
             | Self::WatchOutcome { id, .. }
             | Self::Compaction { id, .. }
             | Self::Route { id, .. }
+            | Self::Reroute { id, .. }
             | Self::Subsession { id, .. }
             | Self::Move { id, .. } => *id,
         }
@@ -3502,6 +3522,7 @@ impl Activity {
             | Self::WatchOutcome { turn_id, .. }
             | Self::Compaction { turn_id, .. }
             | Self::Route { turn_id, .. }
+            | Self::Reroute { turn_id, .. }
             | Self::Subsession { turn_id, .. } => Some(*turn_id),
             Self::Move { .. } => None,
         }
@@ -3545,6 +3566,7 @@ impl Activity {
             | Self::Error { .. }
             | Self::ModelCalls { .. }
             | Self::Route { .. }
+            | Self::Reroute { .. }
             | Self::Subsession { .. } => None,
             Self::Command { status, .. }
             | Self::FileChange { status, .. }
@@ -3618,6 +3640,25 @@ pub enum RouteVerdict {
     Rejected,
     /// The review ended with a verdict Suru cannot read.
     Unread,
+}
+
+/// A Reroute in the one line every reader of a Transcript meets it in, given
+/// what its Provider and each of its Models are called where it is read.
+pub fn reroute_sentence(
+    provider: &str,
+    from: Option<&str>,
+    to: &str,
+    reason: Option<&str>,
+) -> String {
+    let mut sentence = match from {
+        Some(from) => format!("{provider} rerouted from {from} to {to}"),
+        None => format!("{provider} rerouted to {to}"),
+    };
+    if let Some(reason) = reason {
+        sentence.push_str(": ");
+        sentence.push_str(reason);
+    }
+    sentence
 }
 
 impl RouteDecision {

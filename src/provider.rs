@@ -1182,6 +1182,17 @@ pub enum ProviderEvent {
     AgentMessageSuperseded {
         message: ProviderMessageId,
     },
+    /// The Provider switched the Turn, for reasons of its own, from the Model
+    /// it was running to `to` — a Reroute, recorded where the event falls in
+    /// its Turn. `from` is the Model it left, where the Provider named it, and
+    /// `reason` says why for a reader, where it gave a reason. It never
+    /// changes the Agent Selection, so a routed Selection choosing a Model
+    /// for each call reports none.
+    Rerouted {
+        from: Option<crate::protocol::ModelId>,
+        to: crate::protocol::ModelId,
+        reason: Option<String>,
+    },
     /// A Route's decision, recorded where the event falls in its Turn.
     RouteDecided {
         decision: crate::protocol::RouteDecision,

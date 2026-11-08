@@ -1915,6 +1915,14 @@ mod tests {
                 description: "the build".to_owned(),
                 summary: Some("it passed".to_owned()),
             },
+            Activity::Reroute {
+                id: ActivityId::new(),
+                turn_id: working,
+                provider: ProviderId::new("codex"),
+                from: Some(crate::protocol::ModelId::new("gpt-5")),
+                to: crate::protocol::ModelId::new("gpt-5-mini"),
+                reason: Some("high-risk cyber activity".to_owned()),
+            },
         ];
         let ids = added.iter().map(Activity::id).collect::<Vec<_>>();
         let [

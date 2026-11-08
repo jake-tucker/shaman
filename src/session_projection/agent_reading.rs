@@ -61,9 +61,9 @@ use time::{OffsetDateTime, macros::format_description};
 use crate::protocol::{
     Activity, ActivityStatus, Answer, Approval, ApprovalOutcome, ApprovalSubject, Author,
     CompactionTrigger, Decision, ExcerptQuestionnaire, FileChange, Message, MessageRole,
-    MessageStatus, Question, QuestionAnswer, Questionnaire, QuestionnaireOutcome, ReadingSpan,
-    RouteDecision, ServerReference, SessionSnapshot, SessionTimestamp, TranscriptItem, Turn,
-    TurnId, TurnStatus, WatchOutcomeStatus,
+    MessageStatus, ModelId, ProviderId, Question, QuestionAnswer, Questionnaire,
+    QuestionnaireOutcome, ReadingSpan, RouteDecision, ServerReference, SessionSnapshot,
+    SessionTimestamp, TranscriptItem, Turn, TurnId, TurnStatus, WatchOutcomeStatus,
 };
 pub(crate) use crate::protocol::{
     DEFAULT_MAX_CHARS, DEFAULT_TURNS, Detail, EntryNumber, Position, ReadRefusal, ReadRequest,
@@ -889,6 +889,13 @@ impl<'a> Transcript<'a> {
             }
             Activity::Reasoning { .. } => String::new(),
             Activity::Route { decision, .. } => route_summary(decision),
+            Activity::Reroute {
+                provider,
+                from,
+                to,
+                reason,
+                ..
+            } => reroute(provider, from.as_ref(), to, reason.as_deref()),
             Activity::ModelCalls { calls, .. } => format!(
                 "{}: {}",
                 plural(calls.len(), "Model call"),
@@ -1046,6 +1053,15 @@ impl<'a> Transcript<'a> {
             }
             Activity::Status { text, .. } | Activity::Error { text, .. } => {
                 whole.push_str(text);
+            }
+            Activity::Reroute {
+                provider,
+                from,
+                to,
+                reason,
+                ..
+            } => {
+                whole.push_str(&reroute(provider, from.as_ref(), to, reason.as_deref()));
             }
             Activity::Route { decision, .. } => {
                 whole.push_str(&decision.sentence(provider_name));
@@ -1314,6 +1330,7 @@ fn activity_label(activity: &Activity) -> Spans {
         },
         Activity::Reasoning { .. } => "reasoning".to_owned(),
         Activity::Route { .. } => "route".to_owned(),
+        Activity::Reroute { .. } => "reroute".to_owned(),
         Activity::ModelCalls { .. } => "model calls".to_owned(),
         Activity::Move { status, .. } => format!("move [{}]", stood(*status)),
         Activity::Subsession {
@@ -1341,6 +1358,21 @@ fn route_summary(decision: &RouteDecision) -> String {
         Some(detail) => format!("{sentence} — {detail}"),
         None => sentence,
     }
+}
+
+/// A Reroute on one line, naming its Models as its Provider does.
+fn reroute(
+    provider: &ProviderId,
+    from: Option<&ModelId>,
+    to: &ModelId,
+    reason: Option<&str>,
+) -> String {
+    crate::protocol::reroute_sentence(
+        &provider_name(provider),
+        from.map(ModelId::as_str),
+        to.as_str(),
+        reason,
+    )
 }
 
 /// How a Compaction changed the context's size, where either side is known.
@@ -2001,6 +2033,28 @@ mod tests {
         assert_eq!(
             row.transcript,
             "1.6 route: gpt-judge rejected the work\nIt is not."
+        );
+    }
+
+    #[test]
+    fn a_reroute_reads_as_the_models_it_switched_between_and_why() {
+        let mut fixture = Fixture::new();
+        let turn = fixture.turn(TurnStatus::Completed);
+        fixture.message(turn, MessageRole::User, "Fix it.");
+        fixture.activity(Activity::Reroute {
+            id: ActivityId::new(),
+            turn_id: turn,
+            provider: ProviderId::new("codex"),
+            from: Some(ModelId::new("gpt-5")),
+            to: ModelId::new("gpt-5-mini"),
+            reason: Some("high-risk cyber activity".to_owned()),
+        });
+        fixture.message(turn, MessageRole::Agent, "It is fixed.");
+
+        let row = fixture.read(entry("1.2"));
+        assert_eq!(
+            row.transcript,
+            "1.2 reroute: Codex rerouted from gpt-5 to gpt-5-mini: high-risk cyber activity"
         );
     }
 

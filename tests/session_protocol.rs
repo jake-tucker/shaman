@@ -3723,6 +3723,36 @@ fn a_compaction_request_and_the_turn_it_begins_travel_on_the_wire() {
 }
 
 #[test]
+fn a_reroute_row_keeps_its_wire_shape() {
+    let activity = Activity::Reroute {
+        id: ActivityId::from_uuid(fixture_id("0198b27e-345a-700e-ae3b-d971c57fbe87")),
+        turn_id: TurnId::from_uuid(fixture_id("0198b27e-2dc4-76ba-9895-f43db821fe3d")),
+        provider: ProviderId::new("copilot"),
+        from: Some(ModelId::new("gpt-sol")),
+        to: ModelId::new("gpt-luna"),
+        reason: Some("the Model declined the request".to_owned()),
+    };
+    let expected = json!({
+        "id": "0198b27e-345a-700e-ae3b-d971c57fbe87",
+        "turn_id": "0198b27e-2dc4-76ba-9895-f43db821fe3d",
+        "kind": "reroute",
+        "provider": "copilot",
+        "from": "gpt-sol",
+        "to": "gpt-luna",
+        "reason": "the Model declined the request",
+    });
+
+    assert_eq!(
+        serde_json::to_value(&activity).expect("encode a Reroute"),
+        expected
+    );
+    assert_eq!(
+        serde_json::from_value::<Activity>(expected).expect("decode a Reroute"),
+        activity
+    );
+}
+
+#[test]
 fn a_superseded_message_and_a_route_row_keep_their_wire_shape() {
     let session_id = SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f"));
     let turn_id = TurnId::from_uuid(fixture_id("0198b27e-2dc4-76ba-9895-f43db821fe3d"));

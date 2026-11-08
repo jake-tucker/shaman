@@ -1912,7 +1912,7 @@ impl RenderUnit<'_> {
                     .is_some()
                     .then(|| UnitAnchor::binary(1, false))
             }
-            Self::Activity(activity) => render_activity(
+            Self::Activity(activity) => render_activity_with_model_names(
                 projection,
                 activity,
                 resolved_fold_step(folds, activity),
@@ -1920,6 +1920,7 @@ impl RenderUnit<'_> {
                 width,
                 hyperlinks,
                 workspace,
+                model_names,
             ),
             Self::Group {
                 kind,
@@ -1936,7 +1937,7 @@ impl RenderUnit<'_> {
             )),
             Self::GroupMember(activity) => {
                 let start = projection.lines.len();
-                let anchor = render_activity(
+                let anchor = render_activity_with_model_names(
                     projection,
                     activity,
                     resolved_fold_step(folds, activity),
@@ -1944,6 +1945,7 @@ impl RenderUnit<'_> {
                     width.saturating_sub(MEMBER_INDENT.len() as u16),
                     hyperlinks,
                     workspace,
+                    model_names,
                 );
                 indent_members(&mut projection.lines[start..]);
                 anchor
@@ -2212,9 +2214,9 @@ enum TurnEntryRole {
     /// user's own work from then on rather than the Turn's, so it stays
     /// outside the fold as the way into that Session from where it began.
     Subsession,
-    /// A Route's decision. Every one stays outside the fold, because it says
-    /// which Model answered and why it changed, which the work beneath it
-    /// does not.
+    /// A Route's decision, or a Reroute. Every one stays outside the fold,
+    /// because it says which Model answered and why it changed, which the
+    /// work beneath it does not.
     Route,
     /// Everything else, which is the work a Turn Fold hides.
     Work,
@@ -2380,7 +2382,7 @@ impl TranscriptEntry<'_> {
                     Activity::Error { .. } => TurnEntryRole::Error,
                     Activity::Compaction { .. } => TurnEntryRole::Compaction,
                     Activity::Subsession { .. } => TurnEntryRole::Subsession,
-                    Activity::Route { .. } => TurnEntryRole::Route,
+                    Activity::Route { .. } | Activity::Reroute { .. } => TurnEntryRole::Route,
                     _ => TurnEntryRole::Work,
                 },
             },
@@ -3337,6 +3339,13 @@ fn activity_fingerprint(activity: &Activity, step: FoldStep) -> u64 {
             decision.sentence(provider_name).hash(&mut hasher);
             decision.detail().hash(&mut hasher);
         }
+        Activity::Reroute {
+            provider,
+            from,
+            to,
+            reason,
+            ..
+        } => (provider, from, to, reason).hash(&mut hasher),
         Activity::Command {
             status,
             output,
@@ -3770,6 +3779,7 @@ fn delegation_sender(delegator: &Delegator, parent: Option<SessionId>) -> String
 /// have to hunt for, so neither is ever folded and neither anchors a click.
 /// Each kind projects through its own renderer, so what one kind shows never
 /// depends on how another renders.
+#[cfg(test)]
 fn render_activity(
     projection: &mut ActivityProjection<'_>,
     activity: &Activity,
@@ -3778,6 +3788,24 @@ fn render_activity(
     width: u16,
     hyperlinks: bool,
     workspace: &Path,
+) -> Option<UnitAnchor> {
+    render_activity_with_model_names(
+        projection, activity, step, theme, width, hyperlinks, workspace, None,
+    )
+}
+
+/// [`render_activity`], naming the Models a Reroute moved between as the
+/// catalog does.
+#[allow(clippy::too_many_arguments)]
+fn render_activity_with_model_names(
+    projection: &mut ActivityProjection<'_>,
+    activity: &Activity,
+    step: FoldStep,
+    theme: &Theme,
+    width: u16,
+    hyperlinks: bool,
+    workspace: &Path,
+    model_names: Option<TranscriptModelNames<'_>>,
 ) -> Option<UnitAnchor> {
     match activity {
         Activity::Approval {
@@ -3912,6 +3940,35 @@ fn render_activity(
                     indent: "  ",
                 },
                 text,
+                theme.text.subdued,
+                theme,
+            );
+            None
+        }
+        Activity::Reroute {
+            provider,
+            from,
+            to,
+            reason,
+            ..
+        } => {
+            let name = |model| {
+                let name = sanitize_content(model_name(model_names, provider, model));
+                name.split_whitespace().collect::<Vec<_>>().join(" ")
+            };
+            let row = crate::protocol::reroute_sentence(
+                &provider_name(provider),
+                from.as_ref().map(name).as_deref(),
+                &name(to),
+                reason.as_deref(),
+            );
+            push_styled_prefixed_lines(
+                projection,
+                ContentGutter {
+                    lead: "  ",
+                    indent: "  ",
+                },
+                &row,
                 theme.text.subdued,
                 theme,
             );
@@ -7845,6 +7902,7 @@ mod tests {
             | Activity::Compaction { turn_id: id, .. }
             | Activity::Route { turn_id: id, .. }
             | Activity::ModelCalls { turn_id: id, .. }
+            | Activity::Reroute { turn_id: id, .. }
             | Activity::Subsession { turn_id: id, .. } => *id = turn_id,
             Activity::Move { .. } => {}
         }
@@ -8042,6 +8100,43 @@ mod tests {
                 "  ✓ Worked",
                 "  All green.",
                 "  gpt-judge rejected the work",
+            ]
+        );
+    }
+
+    /// A Reroute says which Model took over and why, which the work it folds away does not, so
+    /// it stays outside a settled Turn's fold where it was reported.
+    #[test]
+    fn a_turn_fold_keeps_a_reroute_outside_where_it_stood() {
+        let mut entries = vec![Entry::Message(user_message("run the tests"))];
+        entries.extend(hidden_work());
+        entries.push(Entry::Activity(Activity::Reroute {
+            id: ActivityId::new(),
+            turn_id: TurnId::new(),
+            provider: crate::protocol::ProviderId::new("copilot"),
+            from: Some(crate::protocol::ModelId::new("gpt-sol")),
+            to: crate::protocol::ModelId::new("gpt-luna"),
+            reason: Some("the Model declined the request".to_owned()),
+        }));
+        entries.extend(hidden_work());
+        entries.push(Entry::Message(agent_message("All green.")));
+        let (snapshot, _) = turn_snapshot(vec![(TurnStatus::Completed, entries)]);
+
+        let rows = projected_rows(
+            &snapshot,
+            &TranscriptFolds::default(),
+            &TranscriptGroups::default(),
+        );
+
+        assert_eq!(
+            rows.into_iter()
+                .filter(|row| !row.trim().is_empty())
+                .collect::<Vec<_>>(),
+            [
+                "┃ run the tests",
+                "  ✓ Worked",
+                "  Copilot rerouted from gpt-sol to gpt-luna: the Model declined the request",
+                "  All green.",
             ]
         );
     }

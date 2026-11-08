@@ -1987,6 +1987,63 @@ fn auto_message_labels_remain_without_a_model_calls_fold_in_a_settled_turn() {
 }
 
 #[test]
+fn a_reroute_stands_as_a_status_row_naming_both_models_and_the_reason() {
+    let workspace = workspace_dir();
+    let mut snapshot = navigable_session_snapshot(SessionId::new(), workspace.path(), 1);
+    let turn_id = snapshot.turns[0].id;
+    let answer = snapshot
+        .messages
+        .iter_mut()
+        .find(|message| message.role == MessageRole::Agent)
+        .expect("fixture contains an Agent Message");
+    answer.content = "Answered on the fallback.".to_owned();
+    let answer_id = answer.id;
+    let reroute = Activity::Reroute {
+        id: ActivityId::new(),
+        turn_id,
+        provider: ProviderId::new("copilot"),
+        from: Some(ModelId::new("first")),
+        to: ModelId::new("second"),
+        reason: Some("the Model declined the request".to_owned()),
+    };
+    let answer_position = snapshot
+        .transcript
+        .iter()
+        .position(|item| matches!(item, TranscriptItem::Message { message_id } if *message_id == answer_id))
+        .expect("the answer is in the Transcript");
+    snapshot.transcript.insert(
+        answer_position,
+        TranscriptItem::Activity {
+            activity_id: reroute.id(),
+        },
+    );
+    snapshot.activities.push(reroute);
+    let mut application = connected_application(workspace.path());
+    deliver_auto_catalog(&mut application, "First Model", "Second Model");
+    application
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .expect("attach a settled Session");
+
+    let rows = rendered_application_rows_at(&application, 100, 24);
+    let words = rows
+        .iter()
+        .flat_map(|row| row.split_whitespace())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        words.contains(
+            "Copilot rerouted from First Model to Second Model: the Model declined the request"
+        ),
+        "the row names both Models as the catalog does, and why: {rows:#?}"
+    );
+    assert!(
+        rendered_row(&rows, "Copilot rerouted from")
+            < rendered_row(&rows, "Answered on the fallback."),
+        "the Reroute stands where it was reported, before the work after it: {rows:#?}"
+    );
+}
+
+#[test]
 fn model_calls_are_absent_across_turns_even_without_an_answer() {
     let workspace = workspace_dir();
     let mut snapshot = navigable_session_snapshot(SessionId::new(), workspace.path(), 3);
