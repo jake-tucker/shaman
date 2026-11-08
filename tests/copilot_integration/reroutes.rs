@@ -15,7 +15,7 @@ use suru::{
     protocol::{
         Activity, AgentSelection, CreateSessionRequest, InitialPrompt, ModelId,
         ModelOptionChoiceId, ModelOptionId, ModelOptionSelection, ModelOptionValue, PromptId,
-        ProviderId, SessionSnapshot, TurnStatus,
+        ProviderId, Reroute, SessionSnapshot, TurnStatus,
     },
     provider::CopilotRuntime,
     server::{self, ServerConfig},
@@ -164,24 +164,22 @@ async fn a_refusal_fallback_stands_in_the_transcript_as_a_reroute_where_copilot_
         panic!("one Reroute was expected: {:?}", settled.activities);
     };
     let Activity::Reroute {
-        turn_id,
-        provider,
-        from,
-        to,
-        reason,
-        ..
+        turn_id, reroute, ..
     } = reroute
     else {
         unreachable!("filtered to Reroutes");
     };
     assert_eq!(*turn_id, settled.turns[0].id);
-    assert_eq!(provider.as_str(), "copilot");
-    assert_eq!(from.as_ref().map(ModelId::as_str), Some("claude-fixture"));
-    assert_eq!(to.as_str(), "fallback-fixture");
     assert_eq!(
-        reason.as_deref(),
-        Some("the Model declined the request"),
-        "the row says why Copilot switched, in words rather than its cause code"
+        *reroute,
+        Reroute {
+            provider: ProviderId::new("copilot"),
+            from: Some(ModelId::new("claude-fixture")),
+            to: ModelId::new("fallback-fixture"),
+            reason: Some("the Model declined the request".to_owned()),
+        },
+        "the row names both Models, and says why Copilot switched in words rather than its \
+         cause code"
     );
 
     let outline = transcript_outline(&settled, None);
@@ -193,7 +191,10 @@ async fn a_refusal_fallback_stands_in_the_transcript_as_a_reroute_where_copilot_
     };
     let reroute_at = outline
         .iter()
-        .position(|item| item.contains("Reroute"))
+        .position(|item| {
+            item == "turn 0: Copilot rerouted from claude-fixture to fallback-fixture: the Model \
+                     declined the request"
+        })
         .unwrap_or_else(|| panic!("the Reroute is in the Transcript: {outline:#?}"));
     assert!(
         position("Before the fallback") < reroute_at && reroute_at < position("After the fallback"),

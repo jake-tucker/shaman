@@ -3339,13 +3339,7 @@ fn activity_fingerprint(activity: &Activity, step: FoldStep) -> u64 {
             decision.sentence(provider_name).hash(&mut hasher);
             decision.detail().hash(&mut hasher);
         }
-        Activity::Reroute {
-            provider,
-            from,
-            to,
-            reason,
-            ..
-        } => (provider, from, to, reason).hash(&mut hasher),
+        Activity::Reroute { reroute, .. } => reroute.hash(&mut hasher),
         Activity::Command {
             status,
             output,
@@ -3945,23 +3939,10 @@ fn render_activity_with_model_names(
             );
             None
         }
-        Activity::Reroute {
-            provider,
-            from,
-            to,
-            reason,
-            ..
-        } => {
-            let name = |model| {
-                let name = sanitize_content(model_name(model_names, provider, model));
-                name.split_whitespace().collect::<Vec<_>>().join(" ")
-            };
-            let row = crate::protocol::reroute_sentence(
-                &provider_name(provider),
-                from.as_ref().map(name).as_deref(),
-                &name(to),
-                reason.as_deref(),
-            );
+        Activity::Reroute { reroute, .. } => {
+            let row = reroute.sentence(provider_name, |model| {
+                model_display_name(model_names, &reroute.provider, model)
+            });
             push_styled_prefixed_lines(
                 projection,
                 ContentGutter {
@@ -8113,10 +8094,12 @@ mod tests {
         entries.push(Entry::Activity(Activity::Reroute {
             id: ActivityId::new(),
             turn_id: TurnId::new(),
-            provider: crate::protocol::ProviderId::new("copilot"),
-            from: Some(crate::protocol::ModelId::new("gpt-sol")),
-            to: crate::protocol::ModelId::new("gpt-luna"),
-            reason: Some("the Model declined the request".to_owned()),
+            reroute: crate::protocol::Reroute {
+                provider: crate::protocol::ProviderId::new("copilot"),
+                from: Some(crate::protocol::ModelId::new("gpt-sol")),
+                to: crate::protocol::ModelId::new("gpt-luna"),
+                reason: Some("the Model declined the request".to_owned()),
+            },
         }));
         entries.extend(hidden_work());
         entries.push(Entry::Message(agent_message("All green.")));

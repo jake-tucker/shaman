@@ -1554,10 +1554,7 @@ enum StoredActivityPayload<'a> {
         decision: Cow<'a, crate::protocol::RouteDecision>,
     },
     Reroute {
-        provider: Cow<'a, ProviderId>,
-        from: Option<Cow<'a, ModelId>>,
-        to: Cow<'a, ModelId>,
-        reason: Option<Cow<'a, str>>,
+        reroute: Cow<'a, crate::protocol::Reroute>,
     },
     Subsession {
         session_id: SessionId,
@@ -1634,18 +1631,10 @@ impl StoredActivityPayload<'_> {
                 turn_id: turn_id?,
                 decision: decision.into_owned(),
             },
-            Self::Reroute {
-                provider,
-                from,
-                to,
-                reason,
-            } => Activity::Reroute {
+            Self::Reroute { reroute } => Activity::Reroute {
                 id,
                 turn_id: turn_id?,
-                provider: provider.into_owned(),
-                from: from.map(Cow::into_owned),
-                to: to.into_owned(),
-                reason: owned(reason),
+                reroute: reroute.into_owned(),
             },
             Self::ModelCalls { calls } => Activity::ModelCalls {
                 id,
@@ -1849,17 +1838,8 @@ impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
             Activity::Route { decision, .. } => Self::Route {
                 decision: Cow::Borrowed(decision),
             },
-            Activity::Reroute {
-                provider,
-                from,
-                to,
-                reason,
-                ..
-            } => Self::Reroute {
-                provider: Cow::Borrowed(provider),
-                from: from.as_ref().map(Cow::Borrowed),
-                to: Cow::Borrowed(to),
-                reason: borrowed(reason),
+            Activity::Reroute { reroute, .. } => Self::Reroute {
+                reroute: Cow::Borrowed(reroute),
             },
             Activity::ModelCalls { calls, .. } => Self::ModelCalls {
                 calls: Cow::Borrowed(calls),

@@ -6348,10 +6348,12 @@ fn project_provider_event(
                         activity: Activity::Reroute {
                             id: ActivityId::new(),
                             turn_id: active.turn_id,
-                            provider: next_agent.selection.provider.clone(),
-                            from,
-                            to,
-                            reason: reason.map(|reason| normalize_provider_text(&reason)),
+                            reroute: crate::protocol::Reroute {
+                                provider: next_agent.selection.provider.clone(),
+                                from,
+                                to,
+                                reason: reason.map(|reason| normalize_provider_text(&reason)),
+                            },
                         },
                     },
                 )

@@ -3727,19 +3727,23 @@ fn a_reroute_row_keeps_its_wire_shape() {
     let activity = Activity::Reroute {
         id: ActivityId::from_uuid(fixture_id("0198b27e-345a-700e-ae3b-d971c57fbe87")),
         turn_id: TurnId::from_uuid(fixture_id("0198b27e-2dc4-76ba-9895-f43db821fe3d")),
-        provider: ProviderId::new("copilot"),
-        from: Some(ModelId::new("gpt-sol")),
-        to: ModelId::new("gpt-luna"),
-        reason: Some("the Model declined the request".to_owned()),
+        reroute: suru::protocol::Reroute {
+            provider: ProviderId::new("copilot"),
+            from: Some(ModelId::new("gpt-sol")),
+            to: ModelId::new("gpt-luna"),
+            reason: Some("the Model declined the request".to_owned()),
+        },
     };
     let expected = json!({
         "id": "0198b27e-345a-700e-ae3b-d971c57fbe87",
         "turn_id": "0198b27e-2dc4-76ba-9895-f43db821fe3d",
         "kind": "reroute",
-        "provider": "copilot",
-        "from": "gpt-sol",
-        "to": "gpt-luna",
-        "reason": "the Model declined the request",
+        "reroute": {
+            "provider": "copilot",
+            "from": "gpt-sol",
+            "to": "gpt-luna",
+            "reason": "the Model declined the request",
+        },
     });
 
     assert_eq!(

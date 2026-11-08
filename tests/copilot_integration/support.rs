@@ -11,8 +11,8 @@ use suru::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionSubscription},
     protocol::{
         Activity, CreateSessionRequest, Delegator, DerivationErrand, InitialPrompt, Message,
-        MessageRole, MessageStatus, ModelCatalog, PromptId, ProviderId, ProviderModelCatalog,
-        SessionId, SessionSnapshot, TranscriptItem, TurnId, TurnStatus,
+        MessageRole, MessageStatus, ModelCatalog, ModelId, PromptId, ProviderId,
+        ProviderModelCatalog, SessionId, SessionSnapshot, TranscriptItem, TurnId, TurnStatus,
     },
     provider::CopilotRuntime,
     server::{self, RunningServer, ServerConfig},
@@ -1107,6 +1107,9 @@ pub fn transcript_outline(snapshot: &SessionSnapshot, parent: Option<SessionId>)
                     Activity::Reasoning { .. } => "reasoning".to_owned(),
                     Activity::Route { decision, .. } => {
                         decision.sentence(suru::provider::provider_name)
+                    }
+                    Activity::Reroute { reroute, .. } => {
+                        reroute.sentence(suru::provider::provider_name, ModelId::to_string)
                     }
                     other => format!("{other:?}"),
                 };

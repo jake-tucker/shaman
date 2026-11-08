@@ -3381,15 +3381,7 @@ pub enum Activity {
     Reroute {
         id: ActivityId,
         turn_id: TurnId,
-        /// The Provider whose Models `from` and `to` name.
-        provider: ProviderId,
-        /// The Model the Provider was running, where it said.
-        from: Option<ModelId>,
-        /// The Model the Provider runs from here on.
-        to: ModelId,
-        /// Why the Provider switched, in words it gave or Suru gave its
-        /// reason, where it gave one: display text, never parsed.
-        reason: Option<String>,
+        reroute: Reroute,
     },
     /// One Session the Turn's Agent — a Sidekick — began: a Subsession. This
     /// row is the way into it from where it was begun, and all the Sidekick's
@@ -3642,23 +3634,43 @@ pub enum RouteVerdict {
     Unread,
 }
 
-/// A Reroute in the one line every reader of a Transcript meets it in, given
-/// what its Provider and each of its Models are called where it is read.
-pub fn reroute_sentence(
-    provider: &str,
-    from: Option<&str>,
-    to: &str,
-    reason: Option<&str>,
-) -> String {
-    let mut sentence = match from {
-        Some(from) => format!("{provider} rerouted from {from} to {to}"),
-        None => format!("{provider} rerouted to {to}"),
-    };
-    if let Some(reason) = reason {
-        sentence.push_str(": ");
-        sentence.push_str(reason);
+/// What a Reroute says: which Provider switched the Turn from which Model to
+/// which, and why.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Reroute {
+    /// The Provider whose Models `from` and `to` name.
+    pub provider: ProviderId,
+    /// The Model the Provider was running, where it said.
+    pub from: Option<ModelId>,
+    /// The Model the Provider runs from here on.
+    pub to: ModelId,
+    /// Why the Provider switched, in words it gave or Suru gave its reason,
+    /// where it gave one: display text, never parsed.
+    pub reason: Option<String>,
+}
+
+impl Reroute {
+    /// The Reroute in the one line every reader of a Transcript meets it in,
+    /// calling a Provider what `provider_name` says it is called and each
+    /// Model what `model_name` says.
+    pub fn sentence(
+        &self,
+        provider_name: impl FnOnce(&ProviderId) -> String,
+        model_name: impl Fn(&ModelId) -> String,
+    ) -> String {
+        let provider = provider_name(&self.provider);
+        let to = model_name(&self.to);
+        let mut sentence = match &self.from {
+            Some(from) => format!("{provider} rerouted from {} to {to}", model_name(from)),
+            None => format!("{provider} rerouted to {to}"),
+        };
+        if let Some(reason) = &self.reason {
+            sentence.push_str(": ");
+            sentence.push_str(reason);
+        }
+        sentence
     }
-    sentence
 }
 
 impl RouteDecision {

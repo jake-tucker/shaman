@@ -1830,7 +1830,7 @@ fn project_session_event(
                             change
                                 .as_ref()
                                 .map(|change| change.new_model == AUTO_MODEL_ID),
-                            change.as_ref().and_then(reroute),
+                            change.as_ref().and_then(refusal_fallback_reroute),
                         )
                     }
                     _ => unreachable!(),
@@ -2081,7 +2081,7 @@ fn project_session_event(
         SessionEventType::SessionModelChange if correlation.turn.is_some() => {
             Ok(reported::<SessionModelChangeData>(&event)
                 .as_ref()
-                .and_then(reroute)
+                .and_then(refusal_fallback_reroute)
                 .map(|reroute| attributed(None, reroute))
                 .into_iter()
                 .collect())
@@ -2316,8 +2316,10 @@ const REFUSAL_FALLBACK_CAUSE: &str = "refusal_fallback";
 
 /// The Reroute a model change reports, where Copilot switched for a reason of its own. Only a
 /// refusal fallback is one: a change the user's Selection asked for is none, and neither is Auto
-/// choosing a Model for each call, which it reports otherwise.
-fn reroute(change: &SessionModelChangeData) -> Option<ProviderEvent> {
+/// choosing a Model for each call, which it reports otherwise. A `rate_limit_auto_switch` is
+/// deliberately not one for now: it moves the rest of the Session onto Auto, which reaches wider
+/// than a switch within one Turn, and how to show it is a decision of its own.
+fn refusal_fallback_reroute(change: &SessionModelChangeData) -> Option<ProviderEvent> {
     (change.cause.as_deref() == Some(REFUSAL_FALLBACK_CAUSE)).then(|| ProviderEvent::Rerouted {
         from: change
             .previous_model

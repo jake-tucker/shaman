@@ -2001,10 +2001,12 @@ fn a_reroute_stands_as_a_status_row_naming_both_models_and_the_reason() {
     let reroute = Activity::Reroute {
         id: ActivityId::new(),
         turn_id,
-        provider: ProviderId::new("copilot"),
-        from: Some(ModelId::new("first")),
-        to: ModelId::new("second"),
-        reason: Some("the Model declined the request".to_owned()),
+        reroute: suru::protocol::Reroute {
+            provider: ProviderId::new("copilot"),
+            from: Some(ModelId::new("first")),
+            to: ModelId::new("second"),
+            reason: Some("the Model declined the request".to_owned()),
+        },
     };
     let answer_position = snapshot
         .transcript

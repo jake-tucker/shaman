@@ -1918,10 +1918,12 @@ mod tests {
             Activity::Reroute {
                 id: ActivityId::new(),
                 turn_id: working,
-                provider: ProviderId::new("codex"),
-                from: Some(crate::protocol::ModelId::new("gpt-5")),
-                to: crate::protocol::ModelId::new("gpt-5-mini"),
-                reason: Some("high-risk cyber activity".to_owned()),
+                reroute: crate::protocol::Reroute {
+                    provider: ProviderId::new("codex"),
+                    from: Some(crate::protocol::ModelId::new("gpt-5")),
+                    to: crate::protocol::ModelId::new("gpt-5-mini"),
+                    reason: Some("high-risk cyber activity".to_owned()),
+                },
             },
         ];
         let ids = added.iter().map(Activity::id).collect::<Vec<_>>();
