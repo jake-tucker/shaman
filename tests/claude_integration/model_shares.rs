@@ -12,12 +12,12 @@ use crate::claude_integration::support::{
     CLAUDE_MODELS, DurableSession, ScriptedClaude, conversation_fixture, discovery_arms, on_resume,
     opened_session, settled_session, user_turn_arm,
 };
+use crate::support::usage::{self, by_model, share, usd};
 use serde_json::json;
 use suru::protocol::{
     AgentSelection, Cost, ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection,
-    ModelOptionValue, ModelShare, Outlook, ProviderId, SessionSnapshot, SessionTimestamp,
-    TurnStatus, Usage, UsageMetricsBreakdown, UsageMetricsInterval, UsageMetricsKey,
-    UsageMetricsModelView, UsageMetricsQuery, UsageMetricsReport,
+    ModelOptionValue, ModelShare, Outlook, ProviderId, SessionSnapshot, TurnStatus, Usage,
+    UsageMetricsKey, UsageMetricsModelView, UsageMetricsReport,
 };
 
 /// The Model the fixture's `default` row, and its `fixture[1m]` row, resolve to.
@@ -195,10 +195,6 @@ fn resuming_fixture(first: &[serde_json::Value], resumed: &[serde_json::Value]) 
     ))
 }
 
-fn usd(usd: f64) -> Cost {
-    Cost::from_usd(usd).expect("a fixture Cost is a valid USD figure")
-}
-
 /// The Usage a Share or a Turn holds for `input` fresh, `cache_read` and `cache_write` cached,
 /// `output` written besides `reasoning` thought.
 fn usage(input: u64, (cache_read, cache_write): (u64, u64), output: u64, reasoning: u64) -> Usage {
@@ -218,15 +214,6 @@ fn own_usage(input: u64, output: u64) -> Usage {
         fresh_input_tokens: Some(input),
         output_tokens: Some(output),
         ..Usage::default()
-    }
-}
-
-fn share(model: &str, usage: Usage, cost: f64) -> ModelShare {
-    ModelShare {
-        model: ModelId::new(model),
-        usage,
-        cost: Some(usd(cost)),
-        cost_is_partial: false,
     }
 }
 
@@ -373,26 +360,8 @@ async fn a_native_subagent_on_another_model_holds_its_own_share_and_counts_in_th
     session.shutdown().await;
 }
 
-/// All of time, as one bucket, broken down by Model in `model_view`.
-fn by_model(model_view: UsageMetricsModelView) -> UsageMetricsQuery {
-    let all = UsageMetricsInterval {
-        start: SessionTimestamp(0),
-        end: SessionTimestamp(i64::MAX as u64),
-    };
-    UsageMetricsQuery {
-        buckets: vec![all],
-        breakdown: UsageMetricsBreakdown::Model,
-        model_view,
-        comparison: None,
-        top_sessions: 5,
-    }
-}
-
 fn model_key(model: &str) -> UsageMetricsKey {
-    UsageMetricsKey::Model {
-        provider: ProviderId::new("claude"),
-        model: ModelId::new(model),
-    }
+    usage::model_key("claude", model)
 }
 
 /// The keys of the report's one bucket, each with its label and the tokens and Cost it holds.

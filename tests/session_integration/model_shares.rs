@@ -12,17 +12,19 @@ use crate::session_integration::{
     provider_support::{ControlledProvider, ControlledProviderRuntime, ControlledProviderSession},
     support::{hosted_selection, read_session_until},
 };
-use crate::support::PROGRESS_DEADLINE;
+use crate::support::{
+    PROGRESS_DEADLINE,
+    usage::{self, all_of_time, by_model, share, tokens, usd},
+};
 use suru::{
     pricing::CacheRates,
     protocol::{
-        AdmitPromptRequest, AgentId, AgentIdentity, Cost, CostBasis, CountedCost,
-        CreateSessionRequest, EstimatedSaving, ExecutionDirectory, InitialPrompt, InsightsQuery,
-        InsightsReport, KeyedUsageMetrics, ModelAvailability, ModelDescriptor, ModelId, ModelShare,
-        PromptDelivery, PromptId, ProviderId, SessionId, SessionSnapshot, SessionTimestamp,
-        TurnStatus, Usage, UsageMetricsAggregate, UsageMetricsBreakdown, UsageMetricsInterval,
-        UsageMetricsKey, UsageMetricsModelView, UsageMetricsQuery, UsageMetricsReport,
-        signed_nano_usd,
+        AdmitPromptRequest, AgentId, AgentIdentity, CostBasis, CountedCost, CreateSessionRequest,
+        EstimatedSaving, ExecutionDirectory, InitialPrompt, InsightsQuery, InsightsReport,
+        KeyedUsageMetrics, ModelAvailability, ModelDescriptor, ModelId, ModelShare, PromptDelivery,
+        PromptId, ProviderId, SessionId, SessionSnapshot, SessionTimestamp, TurnStatus, Usage,
+        UsageMetricsAggregate, UsageMetricsBreakdown, UsageMetricsInterval, UsageMetricsKey,
+        UsageMetricsModelView, UsageMetricsQuery, UsageMetricsReport, signed_nano_usd,
     },
     provider::{MeteredCost, ProviderEvent},
     server::{self, RunningServer, ServerConfig},
@@ -54,27 +56,6 @@ fn catalog() -> Vec<ModelDescriptor> {
     vec![model(AUTO, "Auto"), model(GPT, "GPT-5")]
 }
 
-fn usd(usd: f64) -> Cost {
-    Cost::from_usd(usd).expect("a fixture Cost is valid")
-}
-
-fn tokens(input: u64, output: u64) -> Usage {
-    Usage {
-        fresh_input_tokens: Some(input),
-        output_tokens: Some(output),
-        ..Usage::default()
-    }
-}
-
-fn share(model: &str, usage: Usage, cost: f64) -> ModelShare {
-    ModelShare {
-        model: ModelId::new(model),
-        usage,
-        cost: Some(usd(cost)),
-        cost_is_partial: false,
-    }
-}
-
 /// A Usage event for a Turn-scoped Reported Cost split into `model_shares`.
 fn usage_event(usage: Usage, cost: f64, model_shares: Vec<ModelShare>) -> ProviderEvent {
     ProviderEvent::Usage {
@@ -85,10 +66,7 @@ fn usage_event(usage: Usage, cost: f64, model_shares: Vec<ModelShare>) -> Provid
 }
 
 fn model_key(model: &str) -> UsageMetricsKey {
-    UsageMetricsKey::Model {
-        provider: ProviderId::new(PROVIDER),
-        model: ModelId::new(model),
-    }
+    usage::model_key(PROVIDER, model)
 }
 
 /// A Server hosting the controlled Provider over [`catalog`], and the
@@ -304,28 +282,6 @@ fn saving(usd: f64, is_partial: bool) -> EstimatedSaving {
         nano_usd: signed_nano_usd(usd),
         is_partial,
     }
-}
-
-/// All of time, as one bucket, broken down by `breakdown` in `model_view`.
-fn all_of_time(
-    breakdown: UsageMetricsBreakdown,
-    model_view: UsageMetricsModelView,
-) -> UsageMetricsQuery {
-    let all = UsageMetricsInterval {
-        start: SessionTimestamp(0),
-        end: SessionTimestamp(i64::MAX as u64),
-    };
-    UsageMetricsQuery {
-        buckets: vec![all],
-        breakdown,
-        model_view,
-        comparison: Some(all),
-        top_sessions: 5,
-    }
-}
-
-fn by_model(model_view: UsageMetricsModelView) -> UsageMetricsQuery {
-    all_of_time(UsageMetricsBreakdown::Model, model_view)
 }
 
 /// What each key of the report's one bucket holds, in the report's order.

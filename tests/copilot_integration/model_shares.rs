@@ -5,6 +5,7 @@
 use crate::copilot_integration::support::{
     Opened, conversation_fixture, opened_session, replay_capture, settled_session,
 };
+use crate::support::usage::tokens;
 use serde_json::Value;
 use suru::protocol::{Cost, ModelId, ModelShare, SessionSnapshot, Usage};
 
@@ -75,14 +76,6 @@ async fn settled_at(timeline: &str, name: &'static str, turn_index: usize) -> Se
     drop(client);
     server.shutdown().await.expect("shut the server down");
     settled
-}
-
-fn tokens(input: u64, output: u64) -> Usage {
-    Usage {
-        fresh_input_tokens: Some(input),
-        output_tokens: Some(output),
-        ..Usage::default()
-    }
 }
 
 #[tokio::test]
