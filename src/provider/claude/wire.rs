@@ -644,6 +644,17 @@ pub(super) struct NativeModel {
     pub(super) supported_effort_levels: Vec<String>,
 }
 
+/// Reads a token count the CLI stated, or absence where the figure it stated cannot be one: a
+/// negative, fractional, non-finite, or unrepresentable number is unreadable, never a fabricated
+/// zero.
+pub(super) fn reported_token_count(value: Option<f64>) -> Option<u64> {
+    value
+        .filter(|value| {
+            value.is_finite() && *value >= 0.0 && value.fract() == 0.0 && *value <= u64::MAX as f64
+        })
+        .map(|value| value as u64)
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::Value;

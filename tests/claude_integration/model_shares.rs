@@ -29,7 +29,12 @@ const FIXTURE_3: &str = "claude-fixture-3";
 /// output counting the thinking among it.
 #[derive(Clone, Copy)]
 struct Entry {
+    /// The canonical Model id the entry names in `canonicalModel`.
     model: &'static str,
+    /// The raw model string the entry is keyed by, where it is not `model`.
+    key: Option<&'static str>,
+    /// Whether the entry states `canonicalModel` at all, as CLIs before it did not.
+    states_canonical: bool,
     input: u64,
     output: u64,
     cache_read: u64,
@@ -42,6 +47,8 @@ impl Entry {
     const fn on(model: &'static str) -> Self {
         Self {
             model,
+            key: None,
+            states_canonical: true,
             input: 0,
             output: 0,
             cache_read: 0,
@@ -49,6 +56,22 @@ impl Entry {
             thinking: 0,
             cost: 0.0,
         }
+    }
+
+    /// The entry keyed by `key` rather than its canonical id.
+    const fn keyed(mut self, key: &'static str) -> Self {
+        self.key = Some(key);
+        self
+    }
+
+    /// The entry as a CLI predating `canonicalModel` writes it.
+    const fn without_canonical(mut self) -> Self {
+        self.states_canonical = false;
+        self
+    }
+
+    fn key(&self) -> &'static str {
+        self.key.unwrap_or(self.model)
     }
 
     const fn tokens(mut self, input: u64, output: u64) -> Self {
@@ -74,7 +97,7 @@ impl Entry {
     }
 
     fn wire(&self) -> serde_json::Value {
-        json!({
+        let mut wire = json!({
             "inputTokens": self.input,
             "outputTokens": self.output,
             "cacheReadInputTokens": self.cache_read,
@@ -87,7 +110,13 @@ impl Entry {
             "canonicalModel": self.model,
             "provider": "firstParty",
             "costBasis": "list",
-        })
+        });
+        if !self.states_canonical {
+            wire.as_object_mut()
+                .expect("an entry is an object")
+                .remove("canonicalModel");
+        }
+        wire
     }
 }
 
@@ -115,7 +144,7 @@ fn result(
     if let Some(entries) = model_usage {
         result["modelUsage"] = entries
             .iter()
-            .map(|entry| (entry.model.to_owned(), entry.wire()))
+            .map(|entry| (entry.key().to_owned(), entry.wire()))
             .collect::<serde_json::Map<_, _>>()
             .into();
     }
@@ -627,4 +656,92 @@ async fn an_interrupted_turn_keeps_the_shares_its_result_reported() {
         .shutdown()
         .await
         .expect("shut the server down");
+}
+
+#[tokio::test]
+async fn a_model_reached_at_another_raw_id_is_one_actual_model_under_its_canonical_id() {
+    let plain = Entry::on(FIXTURE_1).tokens(100, 10).cost(0.01);
+    let dated = Entry::on(FIXTURE_3)
+        .keyed("claude-fixture-3-20251001")
+        .tokens(20, 2)
+        .cost(0.002);
+    let one_million = Entry::on(FIXTURE_1)
+        .keyed("claude-fixture-1[1m]")
+        .tokens(50, 5)
+        .cost(0.02);
+    let claude = conversation_fixture(&turn_by_turn(&[
+        result("prov-session", (100, 10), 0.012, Some(&[plain, dated])),
+        result(
+            "prov-session",
+            (50, 5),
+            0.032,
+            Some(&[plain, dated, one_million]),
+        ),
+    ]));
+    let session = DurableSession::start(&claude, None, "claude-shares-canonical").await;
+
+    let settled = session.continue_with("At the larger tier", 1).await;
+
+    assert_eq!(
+        shares(&settled, 0),
+        [
+            share(FIXTURE_1, usage(100, (0, 0), 10, 0), 0.01),
+            share(FIXTURE_3, usage(20, (0, 0), 2, 0), 0.002),
+        ],
+        "a Share names the canonical Model its entry states, not the raw id it is keyed by"
+    );
+    assert_eq!(
+        shares(&settled, 1),
+        [share(FIXTURE_1, usage(50, (0, 0), 5, 0), 0.03)],
+        "the work at the 1M-context tier is the same Model's, its running Cost the Model's across \
+         every raw id it was keyed by"
+    );
+    session
+        .client
+        .list_models()
+        .await
+        .expect("discover Claude Models");
+    let actual = session
+        .client
+        .outlook(Outlook::Local)
+        .usage_metrics(&by_model(UsageMetricsModelView::Actual))
+        .await
+        .expect("read Usage Metrics in the Actual view");
+    assert_eq!(
+        filed(&actual)
+            .into_iter()
+            .map(|(key, _, input, cost)| (key, input, cost))
+            .collect::<Vec<_>>(),
+        [
+            (model_key(FIXTURE_1), Some(150), Some(usd(0.03))),
+            (model_key(FIXTURE_3), Some(20), Some(usd(0.002))),
+        ],
+        "however the Model was reached, the Actual view holds one key for it"
+    );
+
+    session.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_entry_stating_no_canonical_id_is_read_under_its_key_without_the_context_tier() {
+    let claude = conversation_fixture(&turn_by_turn(&[result(
+        "prov-session",
+        (50, 5),
+        0.02,
+        Some(&[Entry::on(FIXTURE_1)
+            .keyed("claude-fixture-1[1m]")
+            .without_canonical()
+            .tokens(50, 5)
+            .cost(0.02)]),
+    )]));
+    let session = DurableSession::start(&claude, None, "claude-shares-no-canonical").await;
+
+    assert_eq!(
+        shares(&session.read().await, 0),
+        [share(FIXTURE_1, usage(50, (0, 0), 5, 0), 0.02)],
+        "a CLI that names no canonical id names the Model by its key, the tier set aside as the \
+         CLI names Models elsewhere"
+    );
+
+    session.shutdown().await;
 }

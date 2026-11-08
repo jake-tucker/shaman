@@ -1254,6 +1254,24 @@ mod tests {
         );
     }
 
+    /// The highest metering totals only keep a later Turn from counting what an earlier one did,
+    /// so totals Suru cannot read cost the Session nothing it cannot do without (ADR 0022).
+    #[test]
+    fn resume_state_whose_metering_totals_are_unreadable_still_restores_the_conversation() {
+        let state = ProviderResumeState::new(serde_json::json!({
+            "session_id": "11111111-2222-3333-4444-555555555555",
+            "model_usage": ["not", "totals"],
+        }));
+
+        assert_eq!(
+            restored_state(Some(state)).expect("the Resume State is readable"),
+            Some(ClaudeResumeState {
+                session_id: "11111111-2222-3333-4444-555555555555".to_owned(),
+                ..ClaudeResumeState::default()
+            })
+        );
+    }
+
     #[test]
     fn resume_state_suru_cannot_read_fails_rather_than_opening_a_new_conversation() {
         for unusable in [

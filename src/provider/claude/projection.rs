@@ -106,7 +106,7 @@ use super::{
     wire::{
         AssistantMessageSnapshot, CommandLifecycle, CommandLifecycleState, ContentBlock,
         EchoedUserContent, EchoedUserMessage, LocalCommandOutput, ResultMessage, ResultUsage,
-        StreamEventMessage, SyntheticUserMessage, SystemMessage,
+        StreamEventMessage, SyntheticUserMessage, SystemMessage, reported_token_count,
     },
 };
 use crate::protocol::{Cost, FileChange, Usage};
@@ -2826,16 +2826,17 @@ impl ClaudeProjection {
         // believed: what they add is each Model's Share, and the Shares together the Turn's Usage,
         // native Subagents' calls among them (ADR 0071). Where they are not, the Turn's Usage is
         // the loop's own calls for this result, under its Agent Selection with no Share.
-        let highest_before = self.resume.model_usage.clone();
-        let increases = self.resume.model_usage.record(
+        let filed = format!("claude:{}", self.resume.session_id);
+        let recorded = self.resume.model_usage.record(
             &reporting_lifetime,
+            &filed,
             reported_model_usage(result.model_usage.as_ref()),
         );
         // A loop running Claude's `/compact` makes no call its own usage meters — the summarising
         // is the CLI's own — so the zero usage it reports states nothing, while the running Cost it
         // carries includes what the summarising spent.
-        let reported_usage = match &increases {
-            Some(increases) => Some(total_usage(increases)),
+        let reported_usage = match &recorded.shares {
+            Some(shares) => Some(total_usage(shares)),
             None => result
                 .usage
                 .as_ref()
@@ -2847,16 +2848,13 @@ impl ClaudeProjection {
                 &mut self.turn_metering,
                 reported_usage.unwrap_or_default(),
                 reported_cost,
-                increases
-                    .into_iter()
-                    .flatten()
-                    .map(|share| (share.model, share.usage, share.cost)),
+                recorded.shares.into_iter().flatten(),
             );
             projected.push(metering.subtree_event(&reporting_lifetime));
         }
         // Stored before the Turn settles, so the next process is measured against these totals
         // however soon it starts.
-        if self.resume.model_usage != highest_before {
+        if recorded.changed {
             projected.push(ProviderEvent::ResumeStateChanged {
                 resume_state: self.resume.to_provider(),
             });
@@ -2930,9 +2928,6 @@ fn send_message_description(input: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Reads an integer token count without letting a malformed negative,
-/// fractional, non-finite, or unrepresentable Provider number become a
-/// fabricated zero.
 /// A result's usage in Suru's disjoint parts. The CLI counts thinking inside its output tokens, so
 /// the thinking it breaks out is taken back out of the output; a breakdown it does not give leaves
 /// the thinking unknown and the output as stated.
@@ -2960,14 +2955,6 @@ pub(super) fn result_usage(usage: &ResultUsage) -> Usage {
         reasoning_tokens,
         native_meter: None,
     }
-}
-
-pub(super) fn reported_token_count(value: Option<f64>) -> Option<u64> {
-    value
-        .filter(|value| {
-            value.is_finite() && *value >= 0.0 && value.fract() == 0.0 && *value <= u64::MAX as f64
-        })
-        .map(|value| value as u64)
 }
 
 /// Whether a result is a Turn the user stopped. The CLI reports an interrupted loop as an errored

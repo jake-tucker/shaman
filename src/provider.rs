@@ -1565,6 +1565,15 @@ impl From<EstimatedCost> for MeteredCost {
     }
 }
 
+/// One Model's part of one Provider report, which a [`ReportedMetering`]
+/// adds to that Model's Share.
+#[derive(Debug, PartialEq)]
+pub(super) struct ShareReport {
+    pub(super) model: ModelId,
+    pub(super) usage: Usage,
+    pub(super) cost: Option<Cost>,
+}
+
 /// The cumulative Usage and Provider-reported Cost of the work one reading
 /// covers: an active Turn, or an Errand. A field stays known only while every contributing Provider report states a
 /// valid value; overflow and omission degrade that field to absence rather
@@ -1610,20 +1619,63 @@ impl ReportedMetering {
         usage: Usage,
         reported_cost: Option<Cost>,
     ) -> &Self {
-        let share = model.map(|model| (model, usage.clone()));
+        let share = model.map(|model| ShareReport {
+            model,
+            usage: usage.clone(),
+            cost: reported_cost,
+        });
+        Self::accumulate_with(slot, usage, reported_cost, share, Self::add)
+    }
+
+    /// Adds one report of a running total to the reading `slot` holds,
+    /// starting it with that report where there is none yet, as
+    /// [`Self::add_usage_with_cumulative_cost`] adds one, and adds each
+    /// Model's part of the report to its Model Share beside it: the part's
+    /// Usage is the report's own work on that Model, and its Cost that
+    /// Model's running total on the same terms as the reading's.
+    pub(super) fn accumulate_running(
+        slot: &mut Option<Self>,
+        usage: Usage,
+        running_cost: Option<Cost>,
+        shares: impl IntoIterator<Item = ShareReport>,
+    ) -> &Self {
+        Self::accumulate_with(
+            slot,
+            usage,
+            running_cost,
+            shares,
+            Self::add_usage_with_cumulative_cost,
+        )
+    }
+
+    /// Adds one report to the reading `slot` holds by `add`, starting it
+    /// with that report where there is none yet, and each of `shares` to
+    /// the Model Share it names the same way, starting the Share where the
+    /// reading holds none for its Model.
+    fn accumulate_with(
+        slot: &mut Option<Self>,
+        usage: Usage,
+        cost: Option<Cost>,
+        shares: impl IntoIterator<Item = ShareReport>,
+        add: fn(&mut Self, Usage, Option<Cost>),
+    ) -> &Self {
         let metering = match slot {
             Some(metering) => {
-                metering.add(usage, reported_cost);
+                add(metering, usage, cost);
                 metering
             }
-            None => slot.insert(Self::new(usage, reported_cost)),
+            None => slot.insert(Self::new(usage, cost)),
         };
-        if let Some((model, usage)) = share {
-            match metering.shares.iter_mut().find(|(held, _)| *held == model) {
-                Some((_, share)) => share.add(usage, reported_cost),
+        for share in shares {
+            match metering
+                .shares
+                .iter_mut()
+                .find(|(held, _)| *held == share.model)
+            {
+                Some((_, held)) => add(held, share.usage, share.cost),
                 None => metering
                     .shares
-                    .push((model, Self::new(usage, reported_cost))),
+                    .push((share.model, Self::new(share.usage, share.cost))),
             }
         }
         metering
@@ -1668,36 +1720,6 @@ impl ReportedMetering {
                 (None, None) => None,
             };
         }
-    }
-
-    /// Adds one report of a running total to the reading `slot` holds,
-    /// starting it with that report where there is none yet, as
-    /// [`Self::add_usage_with_cumulative_cost`] adds one, and adds each
-    /// Model's part of the report to its Model Share beside it: the part's
-    /// Usage is the report's own work on that Model, and its Cost that
-    /// Model's running total on the same terms as the reading's.
-    pub(super) fn accumulate_running(
-        slot: &mut Option<Self>,
-        usage: Usage,
-        running_cost: Option<Cost>,
-        shares: impl IntoIterator<Item = (ModelId, Usage, Option<Cost>)>,
-    ) -> &Self {
-        let metering = match slot {
-            Some(metering) => {
-                metering.add_usage_with_cumulative_cost(usage, running_cost);
-                metering
-            }
-            None => slot.insert(Self::new(usage, running_cost)),
-        };
-        for (model, usage, running_cost) in shares {
-            match metering.shares.iter_mut().find(|(held, _)| *held == model) {
-                Some((_, share)) => share.add_usage_with_cumulative_cost(usage, running_cost),
-                None => metering
-                    .shares
-                    .push((model, Self::new(usage, running_cost))),
-            }
-        }
-        metering
     }
 
     pub(super) fn add_usage_with_cumulative_cost(
