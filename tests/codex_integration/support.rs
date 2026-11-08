@@ -190,6 +190,16 @@ pub async fn settled_session(
     .await
 }
 
+/// Codex's `thread/tokenUsage/updated` reading of `thread`'s running total under native `turn`:
+/// `input` tokens in and `output` out, none cached and none reasoning, the latest call alone
+/// stated as the same figures.
+pub fn token_usage_reading(thread: &str, turn: &str, input: u64, output: u64) -> String {
+    let total = input + output;
+    format!(
+        r#"{{"method":"thread/tokenUsage/updated","params":{{"threadId":"{thread}","turnId":"{turn}","tokenUsage":{{"total":{{"totalTokens":{total},"inputTokens":{input},"cachedInputTokens":0,"cacheWriteInputTokens":0,"outputTokens":{output},"reasoningOutputTokens":0}},"last":{{"totalTokens":{total},"inputTokens":{input},"cachedInputTokens":0,"cacheWriteInputTokens":0,"outputTokens":{output},"reasoningOutputTokens":0}},"modelContextWindow":272000}}}}}}"#
+    )
+}
+
 pub async fn receive_initial_state(client: &mut ManagedClient) {
     assert!(matches!(
         timeout(PROGRESS_DEADLINE, client.next()).await,

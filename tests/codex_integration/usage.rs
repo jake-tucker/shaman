@@ -340,17 +340,43 @@ pub(super) async fn priced_lookup() -> (Arc<PricingSource>, tempfile::TempDir) {
 
 /// A server hosting `codex` against the fixture rate table, a client past its
 /// initial state, and a Session opened on `prompt`. `name` is the client
-/// channel, so each test needs its own.
-struct MeteredSession {
-    server: server::RunningServer,
-    client: ManagedClient,
-    session_id: SessionId,
+/// channel, so each test needs its own. It keeps what a replacement server on
+/// the same state needs, so a test can [`MeteredSession::restart`] it.
+pub(super) struct MeteredSession {
+    pub(super) server: server::RunningServer,
+    pub(super) client: ManagedClient,
+    pub(super) session_id: SessionId,
+    config: ServerConfig,
+    client_config: ManagedClientConfig,
+    pricing: Arc<PricingSource>,
     _state_dir: tempfile::TempDir,
+    _data_dir: tempfile::TempDir,
     _workspace: tempfile::TempDir,
     _pricing_cache: tempfile::TempDir,
 }
 
-async fn metered_session(
+impl MeteredSession {
+    /// Stops the server and starts a replacement hosting `codex` on the same
+    /// state and rate table, which only storage can answer for what came
+    /// before, with a client past its initial state.
+    pub(super) async fn restart(mut self, codex: &ScriptedCodex) -> Self {
+        drop(self.client);
+        self.server
+            .shutdown()
+            .await
+            .expect("stop the original server");
+        self.server = spawn_metered(&self.config, codex, &self.pricing).await;
+        self.client = connect_metered(&self.client_config).await;
+        self
+    }
+
+    pub(super) async fn shutdown(self) {
+        drop(self.client);
+        self.server.shutdown().await.expect("shut the server down");
+    }
+}
+
+pub(super) async fn metered_session(
     codex: &ScriptedCodex,
     name: &'static str,
     prompt: &str,
@@ -367,19 +393,16 @@ async fn metered_session_with_pricing(
     pricing_cache: tempfile::TempDir,
 ) -> MeteredSession {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let data_dir = tempfile::tempdir().expect("create isolated data directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
-    let server = server::spawn_with_provider(
-        ServerConfig::new(state_dir.path(), name).expect("configure server"),
-        Arc::new(CodexRuntime::new(codex.executable()).with_pricing_source(pricing)),
-    )
-    .await
-    .expect("spawn server");
-    let mut client = ManagedClient::connect(
-        ManagedClientConfig::new(state_dir.path(), name).expect("configure client"),
-    )
-    .await
-    .expect("connect client");
-    receive_initial_state(&mut client).await;
+    let config = ServerConfig::new(state_dir.path(), name)
+        .expect("configure server")
+        .with_data_dir(data_dir.path());
+    let client_config = ManagedClientConfig::new(state_dir.path(), name)
+        .expect("configure client")
+        .with_data_dir(data_dir.path());
+    let server = spawn_metered(&config, codex, &pricing).await;
+    let client = connect_metered(&client_config).await;
     let created = client
         .create_session(CreateSessionRequest {
             session_id: None,
@@ -401,13 +424,42 @@ async fn metered_session_with_pricing(
         server,
         client,
         session_id: created.session.id,
+        config,
+        client_config,
+        pricing,
         _state_dir: state_dir,
+        _data_dir: data_dir,
         _workspace: workspace,
         _pricing_cache: pricing_cache,
     }
 }
 
-async fn settled_turn(client: &ManagedClient, session: SessionId, index: usize) -> SessionSnapshot {
+async fn spawn_metered(
+    config: &ServerConfig,
+    codex: &ScriptedCodex,
+    pricing: &Arc<PricingSource>,
+) -> server::RunningServer {
+    server::spawn_with_provider(
+        config.clone(),
+        Arc::new(CodexRuntime::new(codex.executable()).with_pricing_source(pricing.clone())),
+    )
+    .await
+    .expect("spawn server")
+}
+
+async fn connect_metered(config: &ManagedClientConfig) -> ManagedClient {
+    let mut client = ManagedClient::connect(config.clone())
+        .await
+        .expect("connect client");
+    receive_initial_state(&mut client).await;
+    client
+}
+
+pub(super) async fn settled_turn(
+    client: &ManagedClient,
+    session: SessionId,
+    index: usize,
+) -> SessionSnapshot {
     timeout(PROGRESS_DEADLINE, async {
         loop {
             let snapshot = client
@@ -907,64 +959,19 @@ async fn a_settled_turns_late_reading_does_not_truncate_the_turn_now_running() {
 #[tokio::test]
 async fn usage_survives_a_restart_and_the_reattach_replay_is_not_counted_again() {
     let fixture = ScriptedCodex::new_multiprocess(PERSISTED_METERING_CODEX);
-    let (pricing, _pricing_cache) = priced_lookup().await;
-    let state_dir = tempfile::tempdir().expect("create isolated state directory");
-    let data_dir = tempfile::tempdir().expect("create isolated data directory");
-    let workspace = tempfile::tempdir().expect("create valid Workspace");
-    let channel = "codex-persisted-metering";
-    let config = ServerConfig::new(state_dir.path(), channel)
-        .expect("configure original server")
-        .with_data_dir(data_dir.path());
-    let client_config = || {
-        ManagedClientConfig::new(state_dir.path(), channel)
-            .expect("configure client")
-            .with_data_dir(data_dir.path())
-    };
-
-    let original = server::spawn_with_provider(
-        config.clone(),
-        Arc::new(CodexRuntime::new(fixture.executable()).with_pricing_source(pricing.clone())),
+    let opened = metered_session(
+        &fixture,
+        "codex-persisted-metering",
+        "Meter before the restart",
     )
-    .await
-    .expect("spawn original server");
-    let mut original_client = ManagedClient::connect(client_config())
-        .await
-        .expect("connect original client");
-    receive_initial_state(&mut original_client).await;
-    let created = original_client
-        .create_session(CreateSessionRequest {
-            session_id: None,
-            preparation_id: None,
-            agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
-                path: workspace.path().to_owned(),
-            },
-            prompt: InitialPrompt {
-                id: PromptId::new(),
-                text: "Meter before the restart".to_owned(),
-                skill_invocations: Vec::new(),
-                attachments: Vec::new(),
-            },
-        })
-        .await
-        .expect("create Session");
-    let before = settled_turn(&original_client, created.session.id, 0).await;
+    .await;
+    let before = settled_turn(&opened.client, opened.session_id, 0).await;
     assert_eq!(before.turns[0].usage, Some(first_turn_usage()));
-    drop(original_client);
-    original.shutdown().await.expect("stop original server");
 
-    let replacement = server::spawn_with_provider(
-        config,
-        Arc::new(CodexRuntime::new(fixture.executable()).with_pricing_source(pricing)),
-    )
-    .await
-    .expect("spawn replacement server");
-    let mut replacement_client = ManagedClient::connect(client_config())
-        .await
-        .expect("connect replacement client");
-    receive_initial_state(&mut replacement_client).await;
-    let restored = replacement_client
-        .read_session(created.session.id)
+    let restarted = opened.restart(&fixture).await;
+    let restored = restarted
+        .client
+        .read_session(restarted.session_id)
         .await
         .expect("read restored Session");
     assert_eq!(
@@ -977,9 +984,10 @@ async fn usage_survives_a_restart_and_the_reattach_replay_is_not_counted_again()
     assert_eq!(restored.turns[0].cost, Cost::from_usd(0.0029625));
     assert_eq!(restored.turns[0].cost_basis, Some(CostBasis::Estimated));
 
-    replacement_client
+    restarted
+        .client
         .admit_prompt(
-            created.session.id,
+            restarted.session_id,
             AdmitPromptRequest {
                 prompt: InitialPrompt {
                     id: PromptId::new(),
@@ -992,7 +1000,7 @@ async fn usage_survives_a_restart_and_the_reattach_replay_is_not_counted_again()
         )
         .await
         .expect("admit Prompt to the reopened Session");
-    let after = settled_turn(&replacement_client, created.session.id, 1).await;
+    let after = settled_turn(&restarted.client, restarted.session_id, 1).await;
 
     assert_eq!(
         after.turns[1].usage,
@@ -1012,11 +1020,7 @@ async fn usage_survives_a_restart_and_the_reattach_replay_is_not_counted_again()
         "and the restored Turn is not rewritten by the replay"
     );
 
-    drop(replacement_client);
-    replacement
-        .shutdown()
-        .await
-        .expect("stop replacement server");
+    restarted.shutdown().await;
 }
 
 #[tokio::test]
