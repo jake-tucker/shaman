@@ -1350,7 +1350,6 @@ pub(super) struct ModelReroutedParams {
     #[serde(default)]
     pub(super) from_model: String,
     pub(super) to_model: String,
-    #[serde(default)]
     pub(super) reason: Option<NativeRerouteReason>,
 }
 
@@ -1362,18 +1361,6 @@ pub(super) enum NativeRerouteReason {
     /// to a Model it still allows.
     HighRiskCyberActivity,
     Unrecognised(String),
-}
-
-impl NativeRerouteReason {
-    /// The reason in words a reader follows after "rerouted from one Model to another:".
-    pub(super) fn worded(&self) -> String {
-        match self {
-            Self::HighRiskCyberActivity => {
-                "the account was flagged for potentially high-risk cyber activity".to_owned()
-            }
-            Self::Unrecognised(code) => format!("a reason Suru does not recognise ({code})"),
-        }
-    }
 }
 
 impl<'de> Deserialize<'de> for NativeRerouteReason {
