@@ -32,8 +32,8 @@ use super::{
         ClientError, ClientErrorResponse, ClientInfo, ClientNotification, ClientRequest,
         CompletedNativeAgentMessage, FileChangeUpdatedParams, IncomingMessage,
         InitializeCapabilities, InitializeParams, ItemDeltaParams, ItemNotificationParams,
-        NativeCodexErrorInfo, NativeItem, NativeNotification, NativeToolUse, NativeTurnFailureKind,
-        NativeTurnOutcome, NativeTurnStatus, ReasoningSectionBreakParams,
+        ModelReroutedParams, NativeCodexErrorInfo, NativeItem, NativeNotification, NativeToolUse,
+        NativeTurnFailureKind, NativeTurnOutcome, NativeTurnStatus, ReasoningSectionBreakParams,
         ReasoningSummaryDeltaParams, RequestId, ThreadCompactStartParams,
         ThreadSettingsUpdatedParams, ThreadTokenUsageParams, TurnCompletedParams,
         TurnStartedParams, user_message_text,
@@ -978,6 +978,16 @@ fn decode_notification(
                 }
                 NativeItem::Unknown => Ok(None),
             }
+        }
+        "model/rerouted" => {
+            let params: ModelReroutedParams = decode_notification_params(method, params)?;
+            Ok(Some(NativeNotification::ModelRerouted {
+                thread_id: params.thread_id,
+                turn_id: params.turn_id,
+                from_model: params.from_model,
+                to_model: params.to_model,
+                reason: params.reason,
+            }))
         }
         "thread/tokenUsage/updated" => {
             let params: ThreadTokenUsageParams = decode_notification_params(method, params)?;

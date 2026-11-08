@@ -410,6 +410,7 @@ impl SecretRedactor {
             | Event::CompactionStarted { .. }
             | Event::CompactionCompleted { .. }
             | Event::TokenUsage { .. }
+            | Event::ModelRerouted { .. }
             | Event::TurnStarted { .. } => {}
         }
         prefix.push(event);

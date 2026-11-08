@@ -1340,6 +1340,55 @@ impl<'de> Deserialize<'de> for NativeCodexErrorInfo {
     }
 }
 
+/// Codex moving one native turn, for reasons of its own, off the Model it was running onto
+/// another: `model/rerouted`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ModelReroutedParams {
+    pub(super) thread_id: String,
+    pub(super) turn_id: String,
+    #[serde(default)]
+    pub(super) from_model: String,
+    pub(super) to_model: String,
+    #[serde(default)]
+    pub(super) reason: Option<NativeRerouteReason>,
+}
+
+/// Why Codex rerouted a turn, as the code its `ModelRerouteReason` names. A code this build does
+/// not know is kept as Codex spelled it, so a reader still sees what Codex said.
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum NativeRerouteReason {
+    /// Codex flagged the account for potentially high-risk cyber activity and moved the request
+    /// to a Model it still allows.
+    HighRiskCyberActivity,
+    Unrecognised(String),
+}
+
+impl NativeRerouteReason {
+    /// The reason in words a reader follows after "rerouted from one Model to another:".
+    pub(super) fn worded(&self) -> String {
+        match self {
+            Self::HighRiskCyberActivity => {
+                "the account was flagged for potentially high-risk cyber activity".to_owned()
+            }
+            Self::Unrecognised(code) => format!("a reason Suru does not recognise ({code})"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for NativeRerouteReason {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(match Value::deserialize(deserializer)? {
+            Value::String(code) if code == "highRiskCyberActivity" => Self::HighRiskCyberActivity,
+            Value::String(code) => Self::Unrecognised(code),
+            other => Self::Unrecognised(other.to_string()),
+        })
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct ThreadTokenUsageParams {
@@ -1678,6 +1727,15 @@ pub(super) enum NativeNotification {
         turn_id: String,
         outcome: NativeTurnOutcome,
         final_agent_message: Option<CompletedNativeAgentMessage>,
+    },
+    /// Codex moving native turn `turn_id` of `thread_id` off `from_model`, for
+    /// the reason it gave, onto `to_model` for the rest of that turn.
+    ModelRerouted {
+        thread_id: String,
+        turn_id: String,
+        from_model: String,
+        to_model: String,
+        reason: Option<NativeRerouteReason>,
     },
     /// Codex's latest running total for `thread_id`, keyed by the native Turn
     /// it was measured under.

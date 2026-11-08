@@ -64,12 +64,14 @@ use crate::{
     pricing::{ModelsDevModel, PricingSource},
     protocol::{
         AgentSelection, Approval, ApprovalSubject, CommandAction, DividedUsage, FileChange,
-        ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection, ModelOptionValue, Usage,
+        ModelAttribution, ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection,
+        ModelOptionValue, ModelShare, ProviderId, Usage,
     },
     provider::{
         AttributedProviderEvent, MeteredCost, ProviderActivityId, ProviderCommandStatus,
         ProviderError, ProviderEvent, ProviderEventAttribution, ProviderEventStream,
         ProviderFileChangeStatus, ProviderSubagentId, ProviderSubagentStatus, ToolCallInput,
+        actual_model::{ModelInForce, SelectedModel},
         first_line,
         harness::ProcessGuard,
         reasoning::{ReasoningSegment, ReasoningSummarySplitter},
@@ -167,6 +169,107 @@ struct ThreadInFlight {
     /// Whether the thread's `contextCompaction` item has started and not yet
     /// completed.
     compacting: bool,
+    /// The Models Codex rerouted the open Turn onto, and where on the thread's
+    /// running total each took over.
+    reroutes: TurnReroutes,
+}
+
+/// Which Model one followed thread's open Turn runs on as Codex reroutes it,
+/// and so which Model each stretch of its Usage is a Share of. Codex's
+/// readings name no Model, so each one's increment is the Model's in force
+/// when it arrives: the Selection's before any Reroute, and the Model a
+/// Reroute moved to after it, for the rest of the native turn it rerouted. A
+/// later native turn of the same Turn — a Subagent's stretch can run several
+/// — begins on the Selection's again, unless Codex reroutes it too.
+#[derive(Default)]
+struct TurnReroutes {
+    /// Each switch of Model, in order: where the thread's running total stood
+    /// when it took over, and the Model it put in force — `None` where it
+    /// put the Selection's back, as a new native turn does.
+    switches: Vec<(NativeCumulativeUsage, Option<ModelId>)>,
+    /// The native turn the latest Reroute moved, which the Model it put in
+    /// force lasts for.
+    rerouted_turn: Option<String>,
+    /// The Model the latest switch put in force, as Agent Messages are
+    /// attributed to it.
+    in_force: ModelInForce,
+}
+
+impl TurnReroutes {
+    /// Codex moved native turn `turn_id` onto `to` with the thread's total
+    /// standing `at`.
+    fn reroute(&mut self, turn_id: &str, at: NativeCumulativeUsage, to: ModelId) {
+        self.switches.push((at, Some(to.clone())));
+        self.rerouted_turn = Some(turn_id.to_owned());
+        self.in_force.observe(to);
+    }
+
+    /// The open Turn is running native turn `turn_id`, with the thread's total
+    /// standing `at`: one other than the turn a Reroute moved runs on the
+    /// Selection's Model again.
+    fn running(&mut self, turn_id: &str, at: NativeCumulativeUsage) {
+        if !turn_id.is_empty()
+            && self
+                .rerouted_turn
+                .as_deref()
+                .is_some_and(|rerouted| rerouted != turn_id)
+        {
+            self.switches.push((at, None));
+            self.rerouted_turn = None;
+            self.in_force.forget();
+        }
+    }
+
+    /// What an Agent Message the open Turn writes now under `selected` is
+    /// attributed to: the Model a Reroute put in force, where it is not the
+    /// Selection's own.
+    fn attribution(&self, selected: SelectedModel<'_>) -> Option<ModelAttribution> {
+        self.in_force.attribution(selected)
+    }
+
+    /// The Model Shares of the stretch of the thread's running total from
+    /// `start` to `latest`, `selected` being the Model the Selection runs —
+    /// unknown, where no evidence has said, leaving its stretches
+    /// unattributed. Each stretch is the Share of the Model in force over it,
+    /// a Model's stretches merging into one Share; a stretch holding no
+    /// token is no Share. A switch before `start` takes over from `start`, so
+    /// the Shares are stated within the stretch, and add up to no more of it
+    /// than it holds.
+    fn shares(
+        &self,
+        selected: Option<&ModelId>,
+        start: NativeCumulativeUsage,
+        latest: NativeCumulativeUsage,
+    ) -> Vec<ModelShare> {
+        let mut shares: Vec<ModelShare> = Vec::new();
+        let mut from = start;
+        let mut model = selected;
+        let ends = self
+            .switches
+            .iter()
+            .map(|(at, to)| (*at, to.as_ref().or(selected)))
+            .chain(std::iter::once((latest, None)));
+        for (at, next) in ends {
+            let to = at.furthest_of(from);
+            let usage = to.since(from);
+            if let Some(model) = model
+                && has_billable_usage(&usage)
+            {
+                match shares.iter_mut().find(|share| &share.model == model) {
+                    Some(share) => share.usage = share.usage.saturating_add(&usage),
+                    None => shares.push(ModelShare {
+                        model: model.clone(),
+                        usage,
+                        cost: None,
+                        cost_is_partial: false,
+                    }),
+                }
+            }
+            from = to;
+            model = next;
+        }
+        shares
+    }
 }
 
 impl ThreadInFlight {
@@ -279,6 +382,29 @@ impl AttachedChild {
         (self.resumed_turn.is_none()
             || self.metering.baseline_turn.as_deref() == self.resumed_turn.as_deref())
         .then(|| self.metering.latest.since(self.metering.baseline))
+    }
+
+    /// Where the stretch the Subagent's Cost is priced over begins: whichever
+    /// came later, its Model becoming known or the stretch beginning — a
+    /// resume's Turn prices only its own. Before the Model is known nothing
+    /// is priced, and the stretch is the whole of the Turn's.
+    fn pricing_start(&self) -> NativeCumulativeUsage {
+        if self.model.is_some() {
+            self.pricing_baseline.furthest_of(self.metering.baseline)
+        } else {
+            self.metering.baseline
+        }
+    }
+
+    /// The Model Shares of the open stretch, stated within the part of it the
+    /// Subagent's Cost is priced over, as that Cost requires: what the
+    /// Reroutes leave is the Model the child runs on, where that is known and
+    /// not left ambiguous by a change of Model.
+    fn priced_stretch_shares(&self) -> Vec<ModelShare> {
+        let selected = self.model.as_ref().filter(|_| !self.estimate_blocked);
+        self.in_flight
+            .reroutes
+            .shares(selected, self.pricing_start(), self.metering.latest)
     }
 
     /// Notes a `sendInput` handing this working child `text` from `sender`,
@@ -603,18 +729,22 @@ impl NativeCorrelation {
             Some(_) => {
                 child.model = Some(model.clone());
                 child.estimate_blocked = true;
-                child.stretch_usage()
+                child
+                    .stretch_usage()
+                    .map(|usage| (usage, child.priced_stretch_shares()))
             }
         };
         let mut observed = vec![model_changed(model)];
-        observed.extend(restated.map(|usage| AttributedProviderEvent {
-            attribution: ProviderEventAttribution::Subagent(ProviderSubagentId::new(thread_id)),
-            event: ProviderEvent::Usage {
-                usage,
-                cost: None,
-                model_shares: Vec::new(),
-            },
-        }));
+        observed.extend(
+            restated.map(|(usage, model_shares)| AttributedProviderEvent {
+                attribution: ProviderEventAttribution::Subagent(ProviderSubagentId::new(thread_id)),
+                event: ProviderEvent::Usage {
+                    usage,
+                    cost: None,
+                    model_shares,
+                },
+            }),
+        );
         observed
     }
 
@@ -717,6 +847,19 @@ impl NativeCorrelation {
         self.effective_selection.clone()
     }
 
+    /// The Model the Agent Selection of the conversation on `thread_id` runs,
+    /// with its Provider, as a Message written there is attributed beneath:
+    /// the Session's own Selection on its thread, and on a child's the Model
+    /// evidence says the child runs. `None` where nothing has said.
+    fn selected_model(&self, thread_id: &str) -> Option<(ProviderId, ModelId)> {
+        if thread_id == self.thread_id {
+            let selection = self.effective_selection.as_ref()?;
+            return Some((selection.provider.clone(), selection.model.clone()));
+        }
+        let model = self.children.get(thread_id)?.model.clone()?;
+        Some((ProviderId::new("codex"), model))
+    }
+
     fn is_active_turn(&self, thread_id: &str, turn_id: &str) -> bool {
         self.thread_id == thread_id && self.active_turn_id.as_deref() == Some(turn_id)
     }
@@ -776,6 +919,10 @@ impl NativeCorrelation {
             return None;
         }
         child.latest_turn_id = Some(turn_id.to_owned());
+        child
+            .in_flight
+            .reroutes
+            .running(turn_id, child.metering.latest);
         Some(child)
     }
 
@@ -1489,14 +1636,9 @@ fn estimate_cost(
             if child.estimate_blocked {
                 return event;
             }
-            // Priced from whichever came later: the Model becoming known, or
-            // the stretch beginning — a resume's Turn prices only its own.
             (
                 model,
-                child
-                    .metering
-                    .latest
-                    .since(child.pricing_baseline.furthest_of(child.metering.baseline)),
+                child.metering.latest.since(child.pricing_start()),
                 child.unpriced_prefix,
             )
         }
@@ -1609,6 +1751,9 @@ fn streamed_step_turn(notification: &NativeNotification) -> Option<(&str, &str)>
             thread_id, turn_id, ..
         }
         | NativeNotification::UserMessage {
+            thread_id, turn_id, ..
+        }
+        | NativeNotification::ModelRerouted {
             thread_id, turn_id, ..
         } => Some((thread_id, turn_id)),
         NativeNotification::TurnStarted { .. }
@@ -1908,6 +2053,20 @@ fn project_notification(
             &turn_id,
             &tool,
             call,
+        )),
+        NativeNotification::ModelRerouted {
+            thread_id,
+            turn_id,
+            from_model,
+            to_model,
+            reason,
+        } => Ok(project_model_rerouted(
+            correlation,
+            &thread_id,
+            &turn_id,
+            from_model,
+            to_model,
+            reason,
         )),
         NativeNotification::TokenUsage {
             thread_id,
@@ -2754,11 +2913,16 @@ fn project_token_usage(
             };
         }
         let usage = correlation.root_metering.record(total, turn_id);
+        let model_shares = correlation.root.reroutes.shares(
+            Some(&correlation.metered_model),
+            correlation.root_metering.baseline,
+            correlation.root_metering.latest,
+        );
         return owning(
             std::iter::once(ProviderEvent::Usage {
                 usage,
                 cost: None,
-                model_shares: Vec::new(),
+                model_shares,
             })
             .chain(context_event)
             .collect(),
@@ -2782,13 +2946,18 @@ fn project_token_usage(
         child.metering.observe(total);
         return attributed(&attribution, context_event.into_iter().collect());
     }
+    child
+        .in_flight
+        .reroutes
+        .running(turn_id, child.metering.latest);
     let usage = child.metering.record(total, &child.stretch_key());
+    let model_shares = child.priced_stretch_shares();
     attributed(
         &attribution,
         std::iter::once(ProviderEvent::Usage {
             usage,
             cost: None,
-            model_shares: Vec::new(),
+            model_shares,
         })
         .chain(context_event)
         .collect(),
@@ -2839,12 +3008,17 @@ fn project_agent_selection_changed(
     }])
 }
 
+/// An Agent Message opening on a followed thread. Where Codex rerouted the
+/// native turn it is written in, the Message names the Model it moved to; one
+/// already streaming when the Reroute arrived began on the Model before it,
+/// and keeps that.
 fn project_agent_message_started(
     correlation: &mut NativeCorrelation,
     thread_id: &str,
     turn_id: &str,
     item_id: String,
 ) -> Result<Vec<AttributedProviderEvent>, ProviderError> {
+    let selected = correlation.selected_model(thread_id);
     let Some((thread, attribution)) = correlation.item_thread(thread_id, turn_id) else {
         return Ok(Vec::new());
     };
@@ -2857,10 +3031,62 @@ fn project_agent_message_started(
         item_id,
         streamed_text: String::new(),
     });
+    let model = selected.and_then(|(provider, model)| {
+        thread
+            .reroutes
+            .attribution(SelectedModel::new(&provider, &model))
+    });
     Ok(attributed(
         &attribution,
-        vec![ProviderEvent::AgentMessageStarted],
+        std::iter::once(ProviderEvent::AgentMessageStarted)
+            .chain(model.map(|model| ProviderEvent::AgentMessageModelKnown {
+                message: None,
+                model,
+            }))
+            .collect(),
     ))
+}
+
+/// Codex moving native turn `turn_id` of a followed thread off the Model it
+/// was running onto `to_model`: a Reroute where it falls in the Turn that
+/// native turn runs in, after which the thread's Usage is `to_model`'s for the
+/// rest of that native turn. It leaves the Agent Selection alone. A Reroute of
+/// a turn no Turn here runs in is dropped, as its other output is.
+fn project_model_rerouted(
+    correlation: &mut NativeCorrelation,
+    thread_id: &str,
+    turn_id: &str,
+    from_model: String,
+    to_model: String,
+    reason: Option<super::wire::NativeRerouteReason>,
+) -> Vec<AttributedProviderEvent> {
+    if to_model.trim().is_empty() {
+        return Vec::new();
+    }
+    let to = ModelId::new(to_model);
+    let attribution = if thread_id == correlation.thread_id {
+        if correlation.active_turn_id.as_deref() != Some(turn_id) {
+            return Vec::new();
+        }
+        let at = correlation.root_metering.latest;
+        correlation.root.reroutes.reroute(turn_id, at, to.clone());
+        ProviderEventAttribution::OwningSession
+    } else {
+        let Some(child) = correlation.child_step(thread_id, turn_id) else {
+            return Vec::new();
+        };
+        let at = child.metering.latest;
+        child.in_flight.reroutes.reroute(turn_id, at, to.clone());
+        ProviderEventAttribution::Subagent(ProviderSubagentId::new(thread_id))
+    };
+    attributed(
+        &attribution,
+        vec![ProviderEvent::Rerouted {
+            from: (!from_model.trim().is_empty()).then(|| ModelId::new(from_model)),
+            to,
+            reason: reason.map(|reason| reason.worded()),
+        }],
+    )
 }
 
 fn project_agent_message_delta(

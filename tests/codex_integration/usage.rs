@@ -11,7 +11,7 @@ use suru::{
     protocol::{
         Activity, AdmitPromptRequest, AgentSelection, AgentSelectionOperationId,
         CompactSessionRequest, Cost, CostBasis, CreateSessionRequest, InitialPrompt, ModelId,
-        PromptDelivery, PromptId, ProviderId, SessionId, SessionSnapshot, TurnStatus,
+        ModelShare, PromptDelivery, PromptId, ProviderId, SessionId, SessionSnapshot, TurnStatus,
         UpdateAgentSelectionRequest, Usage,
     },
     provider::CodexRuntime,
@@ -450,6 +450,16 @@ async fn codex_cumulative_readings_become_per_turn_deltas_priced_from_the_rate_t
     );
     assert_eq!(first.turns[0].cost, Cost::from_usd(0.0029625));
     assert_eq!(first.turns[0].cost_basis, Some(CostBasis::Estimated));
+    assert_eq!(
+        first.turns[0].model_shares,
+        vec![ModelShare {
+            model: ModelId::new("priced-fixture"),
+            usage: first_turn_usage(),
+            cost: Cost::from_usd(0.0029625),
+            cost_is_partial: false,
+        }],
+        "a Turn Codex never rerouted is one Share of its selected Model, at the same Cost"
+    );
 
     client
         .admit_prompt(
@@ -488,6 +498,19 @@ async fn codex_cumulative_readings_become_per_turn_deltas_priced_from_the_rate_t
         })
     );
     assert_eq!(second.turns[1].cost, Cost::from_usd(0.0046));
+    assert_eq!(
+        second.turns[1]
+            .model_shares
+            .iter()
+            .map(|share| (share.model.as_str(), share.usage.clone(), share.cost))
+            .collect::<Vec<_>>(),
+        vec![(
+            "priced-fixture",
+            second.turns[1].usage.clone().unwrap(),
+            Cost::from_usd(0.0046)
+        )],
+        "each Turn's Share is its own, measured as its Usage is"
+    );
     assert_eq!(second.turns[1].cost_basis, Some(CostBasis::Estimated));
     assert_eq!(
         second.turns[0].usage,
@@ -569,6 +592,16 @@ async fn a_codex_model_the_rate_table_does_not_price_records_tokens_without_a_co
         "an unknown price is absent rather than free"
     );
     assert_eq!(settled.turns[0].cost_basis, None);
+    assert_eq!(
+        settled.turns[0].model_shares,
+        vec![ModelShare {
+            model: ModelId::new("unpriced-fixture"),
+            usage: first_turn_usage(),
+            cost: None,
+            cost_is_partial: false,
+        }],
+        "the Share still holds the selected Model's tokens"
+    );
 
     opened
         .server
@@ -617,6 +650,19 @@ async fn a_child_threads_readings_land_in_the_subagents_own_session() {
     assert_eq!(child.session.context_fill.unwrap().occupied_tokens, 600);
     assert_eq!(child.turns[0].cost, Cost::from_usd(0.007));
     assert_eq!(child.turns[0].cost_basis, Some(CostBasis::Estimated));
+    assert_eq!(
+        child.turns[0]
+            .model_shares
+            .iter()
+            .map(|share| (share.model.as_str(), share.usage.clone(), share.cost))
+            .collect::<Vec<_>>(),
+        vec![(
+            "child-priced-fixture",
+            child.turns[0].usage.clone().unwrap(),
+            Cost::from_usd(0.007)
+        )],
+        "a Subagent Codex never rerouted is one Share of the Model it ran on"
+    );
 
     opened
         .server

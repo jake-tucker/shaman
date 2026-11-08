@@ -18,6 +18,7 @@ mod interruption;
 mod models;
 mod process;
 mod questionnaires;
+mod reroutes;
 mod shutdown;
 mod skills;
 mod steering;
