@@ -25,8 +25,8 @@ Whether the user wants Suru to offer a Provider at all, carried as a Setting and
 _Avoid_: Provider toggle, active, installed
 
 **Model**:
-The language model selected for an Agent through its Provider. A Subagent's actual Model is known only from Provider evidence; its parent's Model does not establish its own.
-_Avoid_: Engine
+The language model selected for an Agent through its Provider. The Model a Turn's work actually ran on is its **Actual Model**, known only from Provider evidence — a Model Call, a Reroute, an alias the Provider resolved — and never from the Agent Selection alone, so a Subagent's parent's Model does not establish its own.
+_Avoid_: Engine, served model, resolved model
 
 **Model Catalog**:
 The Models each Provider currently offers, together with their names, Model Options, and whatever else the Provider publishes about each — its relative price, token prices, limits, and the Model Advisories it asks be shown — as Suru last learned them from the Provider. Suru remembers the last catalog it learned across restarts so it can present Models by name before asking the Provider again, and asks each Provider anew when a user connects to a server that has not yet asked it since it started. A remembered catalog is the same catalog, not a separate copy, and a Model's name always reflects the latest catalog. Distinct from Provider Availability, which is never remembered: Suru re-reads it rather than replaying a past condition.
@@ -139,6 +139,10 @@ _Avoid_: Synthetic turn, background turn, ghost turn
 The plan by which a Provider that routes on the user's behalf works a Turn: which Models act, in what order, and which reviews another's work. A Turn on a Routing Tier holds one or more; each Route's decisions stand in the Transcript where they were made, but its plan is not evidence that every planned Model ran.
 _Avoid_: Cascade, critique, phase
 
+**Reroute**:
+A Provider's switch, within a Turn, from the Model it was running to another for reasons of its own — moving off a Model over high-risk activity, or falling back after a refusal. It departs from what the Agent Selection would have run: a routed Selection choosing a Model for each call is that Selection doing its work, not a Reroute. Unlike a Route, nothing planned it. A Reroute stands in the Transcript where the Provider reported it, and the work after it is the new Model's.
+_Avoid_: Fallback, model change, Route
+
 **Model Call**:
 A Provider-reported invocation of a concrete Model in a Turn; repeated invocations of the same Model are separate calls. An unrelated Model Call does not establish which Model authored a Message.
 _Avoid_: Route step, model selection
@@ -164,8 +168,12 @@ The Activity recording how a Watch settled — completed, failed, or stopped —
 _Avoid_: Task notification, background result, wake
 
 **Usage**:
-The record of the tokens a Turn consumed, kept in five parts — fresh input, cache reads, cache writes, output, and the reasoning within that output — with any part a Provider does not report simply absent, never guessed at zero. A Turn records its Usage the way it records when it began and Settled, and a failed or interrupted Turn keeps whatever Usage it accrued, because Usage answers what a Session has consumed rather than what it got for it. A Session's Usage is the sum over its Turns' Usage, and the total a surface shows for a Session includes its Subagent subtree, while each child Session keeps its own.
+The record of the tokens a Turn consumed, kept in five parts — fresh input, cache reads, cache writes, output, and the reasoning within that output — with any part a Provider does not report simply absent, never guessed at zero. A Turn records its Usage the way it records when it began and Settled, and a failed or interrupted Turn keeps whatever Usage it accrued, because Usage answers what a Session has consumed rather than what it got for it. A Claude Turn's Usage includes the native Subagents Claude ran inside its process, as its Cost does, because Claude reports their tokens only in its own totals. A Session's Usage is the sum over its Turns' Usage, and the total a surface shows for a Session includes its Subagent subtree, while each child Session keeps its own.
 _Avoid_: Token count, consumption, spend
+
+**Model Share**:
+The part of a Turn's Usage and Cost that its Provider's evidence attributes to one Actual Model. A Turn that ran on several Models — along a Route, after a Reroute, through a native Subagent — holds a Share for each. Whatever no evidence attributes stays with the Turn's Agent Selection, neither spread across the Shares nor guessed.
+_Avoid_: Per-model usage, model breakdown
 
 **Context Fill**:
 The latest known number of tokens occupying a Session's context, expressed against its Model's context window when that capacity is known. It belongs to that Session alone, excludes its Subagents, and can decrease after a Compaction, unlike cumulative Usage; its denominator is the context window, not the Provider's compaction threshold.
@@ -180,7 +188,7 @@ The Activity recording one occasion on which a Provider replaced what its Agent 
 _Avoid_: Summarization, compression, truncation, context reset
 
 **Cost**:
-The dollar figure for recorded work, fixed when recorded and never restated against later prices; a Provider-reported figure outranks a Suru estimate, and unknown Cost remains absent rather than zero. Cost is the API-equivalent figure even where a subscription means nothing marginal was billed, with its origin stated by Cost Basis and the work it accounts for stated by Cost Coverage. A surface states two readings for a Session. Its **own Cost** is the Provider's account of that Session's own conversation. Its **tree Cost** is that own Cost with every descendant's rolled up beneath it, native and brokered, to any depth, and never anything above it; a Sidekick's Session's tree Cost carries besides the tree Cost of every Subsession it began on its own Server. A Claude Session's own Cost includes the native Subagents Claude ran inside its process, because Claude reports no split and Suru invents none; a brokered Subagent's Cost is never in its caller's own Cost.
+The dollar figure for recorded work, fixed when recorded and never restated against later prices; a Provider-reported figure outranks a Suru estimate, and unknown Cost remains absent rather than zero. Cost is the API-equivalent figure even where a subscription means nothing marginal was billed, with its origin stated by Cost Basis and the work it accounts for stated by Cost Coverage. An Estimated Cost prices each Model Share at its Actual Model, and only what no Share covers at the Agent Selection's. A surface states two readings for a Session. Its **own Cost** is the Provider's account of that Session's own conversation. Its **tree Cost** is that own Cost with every descendant's rolled up beneath it, native and brokered, to any depth, and never anything above it; a Sidekick's Session's tree Cost carries besides the tree Cost of every Subsession it began on its own Server. A Claude Session's own Cost includes the native Subagents Claude ran inside its process, because Claude reports no split and Suru invents none; a brokered Subagent's Cost is never in its caller's own Cost.
 _Avoid_: Price (that is a rate), spend, billing, self cost, parent-only cost, subtree total
 
 **Cost Coverage**:
@@ -192,7 +200,7 @@ Where a Cost came from: **Reported** when the Provider itself stated the figure,
 _Avoid_: Cost source, cost type
 
 **Usage Metrics**:
-What the Sessions living on one Server, and the Errands it ran, consumed over a span of time, divided into time buckets and broken down by Model, Provider, or Workspace. Errands count under a reserved Errands key in every breakdown, whatever Model, Provider, or Workspace each ran under, placed by when each began; they add to Usage and Cost, partial where an Errand's Usage or Cost is unknown, but never to the Sessions or Turns counted, and are never among the most expensive Sessions, since an Errand belongs to no Session. Over all of time the Cost is the root Sessions' tree Costs and every Errand's besides. It is read on request and never stored. The reader cuts the buckets at its own local boundaries and asks for them as spans of time, so the Server keeps no calendar, and a remote Server's Usage Metrics are read in the reader's days. Only the Sessions that live on that Server count, so one it merely reads from another Server is never counted twice. A span's figures are compared with the period of its own length before it, cut in the reader's calendar as far as the span has run, and all of time with nothing. Its most expensive Sessions are the top-level Sessions whose work cost the most in the span — not over their lifetimes — a Subagent's Cost counted toward the Session it works for, and a Subsession's apart from the Sidekick that began it, since each is a Session the reader opens on its own.
+What the Sessions living on one Server, and the Errands it ran, consumed over a span of time, divided into time buckets and broken down by Model, Provider, or Workspace. Broken down by Model, the work is filed either by the Model each Turn's Agent Selection named or by its Actual Models, one key per Model Share whichever way that Model was reached, a Turn counting under every Model it holds a Share in and once in the total; the other breakdowns read the same either way. Errands count under a reserved Errands key in every breakdown, whatever Model, Provider, or Workspace each ran under, placed by when each began; they add to Usage and Cost, partial where an Errand's Usage or Cost is unknown, but never to the Sessions or Turns counted, and are never among the most expensive Sessions, since an Errand belongs to no Session. Over all of time the Cost is the root Sessions' tree Costs and every Errand's besides. It is read on request and never stored. The reader cuts the buckets at its own local boundaries and asks for them as spans of time, so the Server keeps no calendar, and a remote Server's Usage Metrics are read in the reader's days. Only the Sessions that live on that Server count, so one it merely reads from another Server is never counted twice. A span's figures are compared with the period of its own length before it, cut in the reader's calendar as far as the span has run, and all of time with nothing. Its most expensive Sessions are the top-level Sessions whose work cost the most in the span — not over their lifetimes — a Subagent's Cost counted toward the Session it works for, and a Subsession's apart from the Sidekick that began it, since each is a Session the reader opens on its own.
 _Avoid_: Usage stats, analytics, spend, token count
 
 **Insights**:
@@ -220,7 +228,7 @@ The Agent Selection a Provider declares for running Errands, chosen for cheapnes
 _Avoid_: Small model, cheap model, title model
 
 **Message**:
-User-visible content in a session attributed to the user or agent — or, for a Delegation, to the Agent that delegated it. An Agent Message under a routed Selection may identify its concrete authoring Model where the Provider reports evidence of it.
+User-visible content in a session attributed to the user or agent — or, for a Delegation, to the Agent that delegated it. An Agent Message may identify its Actual Model where the Provider reports evidence of it: under a routed Selection, after a Reroute, or under an alias the Provider resolved.
 _Avoid_: Event, item
 
 **Superseded Message**:
