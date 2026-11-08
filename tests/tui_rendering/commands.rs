@@ -3,7 +3,7 @@
 use crate::tui_rendering::support::{
     buffer_rows, enter_active_session, enter_session, failed_session_snapshot,
     rendered_application_buffer, rendered_application_cursor_at, rendered_application_rows,
-    type_terminal_text, workspace_dir,
+    rendered_application_rows_at, text_position, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Position;
@@ -382,6 +382,40 @@ fn slash_autocomplete_keeps_the_landing_composer_visible_at_minimum_size() {
             .expect("cell before the composer cursor is visible")
             .symbol(),
         "n"
+    );
+}
+
+#[test]
+fn slash_completion_details_the_selected_command_beside_the_list() {
+    let mut application = Application::default();
+    type_terminal_text(&mut application, "/models");
+
+    let buffer = rendered_application_buffer(&application, 120, 30);
+    let rows = buffer_rows(&buffer);
+    let name = text_position(&buffer, "/models  Choose Model");
+    let description = text_position(&buffer, "Search available Provider Models");
+    assert!(
+        description.0 > name.0 + "/models  Choose Model".len() as u16 && description.1 > name.1,
+        "the description stands in a pane beside the list: {rows:#?}"
+    );
+    assert!(
+        !rows[usize::from(name.1)].contains("· Search"),
+        "the list row no longer carries the description: {rows:#?}"
+    );
+    let alias = text_position(&buffer, "Alias /mo");
+    let key = text_position(&buffer, "Key Ctrl+X M");
+    assert_eq!(alias.0, description.0);
+    assert_eq!(key.0, description.0);
+
+    let narrow = rendered_application_rows_at(&application, 60, 30).join("\n");
+    assert!(
+        narrow.contains("/models  Choose Model · Search"),
+        "a narrow composer keeps the one-line rows: {narrow}"
+    );
+    let short = rendered_application_rows_at(&application, 120, 15).join("\n");
+    assert!(
+        short.contains("/models  Choose Model · Search"),
+        "a dock too short to reach the description keeps the one-line rows: {short}"
     );
 }
 

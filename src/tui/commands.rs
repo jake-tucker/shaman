@@ -1087,7 +1087,7 @@ pub(super) enum SemanticReach {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct SlashCommand {
     pub(super) name: &'static str,
-    aliases: &'static [&'static str],
+    pub(super) aliases: &'static [&'static str],
     /// Whether the command reads what is typed after its name as its own
     /// payload — `/compact <instructions>` — rather than the composer
     /// sending that line on as a literal Prompt.

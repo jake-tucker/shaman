@@ -752,6 +752,67 @@ fn skill_bindings_follow_outside_edits_and_same_named_replacements_stay_stale() 
 }
 
 #[test]
+fn skill_completion_details_the_selected_skill_beside_the_list_and_copies_it_as_written() {
+    use suru::protocol::{EffectiveSettings, SidebarVisibility, TextSelectionCopy};
+
+    const DESCRIPTION: &str = "Review the current change for correctness, clarity, and missing tests. This \
+         explanation runs longer than one list row so its closing advice stays readable.";
+    let review = SkillDescriptor {
+        id: SkillId::new("review-id"),
+        name: "review".to_owned(),
+        description: DESCRIPTION.to_owned(),
+        scope: Some("Workspace".to_owned()),
+    };
+    let test = SkillDescriptor {
+        id: SkillId::new("test-id"),
+        name: "test".to_owned(),
+        description: "Test the change".to_owned(),
+        scope: None,
+    };
+    let (_workspace, mut application) = application_with_skills(vec![review, test], None);
+    let mut settings = EffectiveSettings::default();
+    settings.sidebar.initial_visibility = SidebarVisibility::Hidden;
+    settings.text_selection.copy = TextSelectionCopy::Release;
+    crate::tui_rendering::support::deliver_settings(&mut application, settings);
+    type_terminal_text(&mut application, "$");
+
+    let buffer = rendered_application_buffer(&application, 120, 30);
+    let name = text_position(&buffer, "$review");
+    let scope = text_position(&buffer, "Workspace");
+    let start = text_position(&buffer, "Review the current");
+    let tail = text_position(&buffer, "readable.");
+    assert!(
+        start.0 > name.0 + "$review".len() as u16 && start.1 < tail.1,
+        "the description wraps whole in a pane beside the list"
+    );
+    assert_eq!(scope.0, start.0, "the scope is detailed in the pane");
+    assert_eq!(
+        super::selection::drag(
+            &mut application,
+            start,
+            (tail.0 + "readable.".len() as u16 - 1, tail.1),
+        ),
+        ApplicationTransition::CopyToClipboard(DESCRIPTION.into()),
+    );
+
+    application
+        .handle_terminal_event(InputEvent::Key(KeyEvent::new(
+            KeyCode::Down,
+            KeyModifiers::NONE,
+        )))
+        .expect("select the next Skill");
+    let moved = rendered_application_rows_at(&application, 120, 30).join("\n");
+    assert!(moved.contains("Test the change"));
+    assert!(!moved.contains("Review the current"));
+
+    let narrow = rendered_application_rows_at(&application, 60, 30).join("\n");
+    assert!(
+        narrow.contains("$review  Review the current"),
+        "a narrow composer keeps the one-line rows: {narrow}"
+    );
+}
+
+#[test]
 fn provider_limit_disables_new_choices_and_rejects_manual_over_limit_input() {
     let review = SkillDescriptor {
         id: SkillId::new("review-id"),
