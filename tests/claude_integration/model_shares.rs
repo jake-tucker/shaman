@@ -9,7 +9,7 @@
 //! result's own `usage`, under its Agent Selection with no Share.
 
 use crate::claude_integration::support::{
-    CLAUDE_MODELS, DurableSession, ScriptedClaude, conversation_fixture, discovery_arms,
+    CLAUDE_MODELS, DurableSession, ScriptedClaude, conversation_fixture, discovery_arms, on_resume,
     opened_session, settled_session, user_turn_arm,
 };
 use serde_json::json;
@@ -156,23 +156,13 @@ fn turn_by_turn(results: &[serde_json::Value]) -> String {
     format!("      turns=$(( ${{turns:-0}} + 1 ))\n      case \"$turns\" in\n{arms}      esac\n")
 }
 
-/// A fixture over the default catalog playing `timeline` for every Prompt.
-fn fixture(timeline: &str) -> ScriptedClaude {
-    conversation_fixture(timeline)
-}
-
 /// A fixture answering the first child's Prompts from `first` and a resuming child's from
 /// `resumed`, each Turn by Turn.
 fn resuming_fixture(first: &[serde_json::Value], resumed: &[serde_json::Value]) -> ScriptedClaude {
-    let timeline = format!(
-        "      case \" $* \" in\n      *\" --resume \"*)\n{}      ;;\n      *)\n{}      ;;\n      esac\n",
-        turn_by_turn(resumed),
-        turn_by_turn(first)
-    );
     ScriptedClaude::new(&format!(
         "{}{}",
         discovery_arms(CLAUDE_MODELS),
-        user_turn_arm(&timeline)
+        user_turn_arm(&on_resume(&turn_by_turn(first), &turn_by_turn(resumed)))
     ))
 }
 
@@ -241,7 +231,7 @@ async fn two_turns_in_one_process_each_hold_shares_of_their_own_model_usage_incr
         .cache(2_500, 260)
         .thinking(14)
         .cost(0.035);
-    let claude = fixture(&turn_by_turn(&[
+    let claude = conversation_fixture(&turn_by_turn(&[
         result("prov-session", (100, 30), 0.02, Some(&[first])),
         result("prov-session", (50, 20), 0.035, Some(&[second])),
     ]));
@@ -323,7 +313,7 @@ async fn the_first_turn_after_a_selection_change_holds_the_increase_over_the_tot
 
 #[tokio::test]
 async fn a_native_subagent_on_another_model_holds_its_own_share_and_counts_in_the_turns_usage() {
-    let claude = fixture(&turn_by_turn(&[result(
+    let claude = conversation_fixture(&turn_by_turn(&[result(
         "prov-session",
         (400, 12),
         0.0045,
@@ -401,7 +391,7 @@ fn filed(report: &UsageMetricsReport) -> Vec<(UsageMetricsKey, String, Option<u6
 
 #[tokio::test]
 async fn a_turn_under_default_is_read_under_the_model_it_resolved_to_in_the_actual_view() {
-    let claude = fixture(&turn_by_turn(&[result(
+    let claude = conversation_fixture(&turn_by_turn(&[result(
         "prov-session",
         (400, 12),
         0.0045,
@@ -474,7 +464,7 @@ async fn a_turn_under_default_is_read_under_the_model_it_resolved_to_in_the_actu
 
 #[tokio::test]
 async fn a_share_is_keyed_by_the_model_as_the_cli_names_it_whatever_the_selection_calls_it() {
-    let claude = fixture(&turn_by_turn(&[result(
+    let claude = conversation_fixture(&turn_by_turn(&[result(
         "prov-session",
         (100, 30),
         0.02,
@@ -501,7 +491,7 @@ async fn a_total_gone_back_is_not_believed_and_the_next_counts_only_past_the_hig
     let highest = Entry::on(FIXTURE_1).tokens(500, 50).cost(0.05);
     let gone_back = Entry::on(FIXTURE_1).tokens(300, 30).cost(0.03);
     let past_it = Entry::on(FIXTURE_1).tokens(560, 58).cost(0.056);
-    let claude = fixture(&turn_by_turn(&[
+    let claude = conversation_fixture(&turn_by_turn(&[
         result("prov-session", (500, 50), 0.05, Some(&[highest])),
         result("prov-session", (70, 9), 0.03, Some(&[gone_back])),
         result("prov-session", (90, 11), 0.056, Some(&[past_it])),
@@ -529,7 +519,7 @@ async fn a_total_gone_back_is_not_believed_and_the_next_counts_only_past_the_hig
 
 #[tokio::test]
 async fn one_models_entry_gone_back_leaves_the_whole_result_unbelieved() {
-    let claude = fixture(&turn_by_turn(&[
+    let claude = conversation_fixture(&turn_by_turn(&[
         result(
             "prov-session",
             (100, 10),
@@ -565,7 +555,7 @@ async fn one_models_entry_gone_back_leaves_the_whole_result_unbelieved() {
 
 #[tokio::test]
 async fn a_result_with_no_model_usage_keeps_its_own_usage_and_no_share() {
-    let claude = fixture(&turn_by_turn(&[result(
+    let claude = conversation_fixture(&turn_by_turn(&[result(
         "prov-session",
         (100, 30),
         0.02,
@@ -588,7 +578,7 @@ async fn a_result_with_no_model_usage_keeps_its_own_usage_and_no_share() {
 async fn a_clear_starts_the_new_conversations_shares_from_zero() {
     let before = Entry::on(FIXTURE_1).tokens(500, 50).cost(0.05);
     let cleared = Entry::on(FIXTURE_1).tokens(80, 8).cost(0.008);
-    let claude = fixture(&turn_by_turn(&[
+    let claude = conversation_fixture(&turn_by_turn(&[
         result("prov-session", (500, 50), 0.05, Some(&[before])),
         result("cleared-session", (0, 0), 0.0, Some(&[])),
         result("cleared-session", (80, 8), 0.008, Some(&[cleared])),
@@ -616,7 +606,7 @@ async fn a_clear_starts_the_new_conversations_shares_from_zero() {
 #[tokio::test]
 async fn an_interrupted_turn_keeps_the_shares_its_result_reported() {
     let interrupted = Entry::on(FIXTURE_1).tokens(40, 2).cost(0.004);
-    let claude = fixture(&turn_by_turn(&[aborted(
+    let claude = conversation_fixture(&turn_by_turn(&[aborted(
         "prov-session",
         0.004,
         &[interrupted],

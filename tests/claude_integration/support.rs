@@ -871,6 +871,14 @@ pub fn user_turn_arm(timeline: &str) -> String {
     )
 }
 
+/// A timeline playing `resumed` for a Prompt a child resuming the conversation receives, and
+/// `first` for one the child that opened it receives.
+pub fn on_resume(first: &str, resumed: &str) -> String {
+    format!(
+        "      case \" $* \" in\n      *\" --resume \"*)\n{resumed}      ;;\n      *)\n{first}      ;;\n      esac\n"
+    )
+}
+
 /// A user-message arm that plays nothing at all, for a Turn a test only needs to have started.
 pub fn silent_user_turn_arm() -> String {
     user_turn_arm("      :\n")

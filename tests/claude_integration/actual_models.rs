@@ -10,7 +10,7 @@
 
 use crate::claude_integration::support::{
     CLAUDE_MODELS, DurableSession, LiveTurn, ScriptedClaude, agent_messages, discovery_arms,
-    interrupt_arm, opened_session, settled_session, silent_interrupt_arm, user_turn_arm,
+    interrupt_arm, on_resume, opened_session, settled_session, silent_interrupt_arm, user_turn_arm,
 };
 use crate::support::PROGRESS_DEADLINE;
 use suru::{
@@ -179,20 +179,17 @@ const ABORTED_RESULT: &str = r#"      emit '{"type":"user","message":{"role":"us
 /// The first child streams a Message whose Model nothing names and never answers the interrupt
 /// that follows, so Suru replaces it with a child resuming the conversation, which runs the next
 /// Turn on another Model.
-const RESTATED_AFTER_A_RESPAWN: &str = r#"      case " $* " in
-      *" --resume "*)
-      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+const CUT_OFF_BEFORE_A_RESPAWN: &str = r#"      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Cut off."}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"prov-session"}'
+"#;
+
+/// What the child resuming the conversation runs after [`CUT_OFF_BEFORE_A_RESPAWN`].
+const FRESH_AFTER_A_RESPAWN: &str = r#"      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Fresh."}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"assistant","message":{"role":"assistant","model":"claude-fixture-3","content":[{"type":"text","text":"Fresh."}]},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"result","subtype":"success","is_error":false,"duration_ms":900,"num_turns":1,"result":"Fresh.","session_id":"prov-session"}'
-      ;;
-      *)
-      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Cut off."}},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      ;;
-      esac
 "#;
 
 #[tokio::test]
@@ -427,7 +424,7 @@ async fn a_turn_after_a_respawn_attributes_none_of_the_replaced_childs_messages(
     let claude = ScriptedClaude::new(&format!(
         "{}{}{}",
         discovery_arms(CLAUDE_MODELS),
-        user_turn_arm(RESTATED_AFTER_A_RESPAWN),
+        user_turn_arm(&on_resume(CUT_OFF_BEFORE_A_RESPAWN, FRESH_AFTER_A_RESPAWN)),
         silent_interrupt_arm(),
     ));
     let mut live = LiveTurn::start(

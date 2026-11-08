@@ -7,8 +7,8 @@
 //! or a Subagent's Session does.
 
 use crate::claude_integration::support::{
-    CLAUDE_MODELS, ScriptedClaude, agent_messages, discovery_arms, interrupt_arm, opened_session,
-    session_where, settled_session, stop_task_arm, user_turn_arm,
+    CLAUDE_MODELS, ScriptedClaude, agent_messages, discovery_arms, interrupt_arm, on_resume,
+    opened_session, session_where, settled_session, stop_task_arm, user_turn_arm,
 };
 use suru::{
     managed_client::ManagedClient,
@@ -106,9 +106,7 @@ fn respawning_fixture(first: &str, respawned: &str) -> ScriptedClaude {
     ScriptedClaude::new(&format!(
         "{}{}{}{}",
         discovery_arms(CLAUDE_MODELS),
-        user_turn_arm(&format!(
-            "      case \"$*\" in\n      *--resume*)\n{respawned}        ;;\n      *)\n{first}        ;;\n      esac\n"
-        )),
+        user_turn_arm(&on_resume(first, respawned)),
         stop_task_arm(),
         interrupt_arm(ABORTED_RESULT),
     ))
