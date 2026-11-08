@@ -2,21 +2,27 @@
 //! events split a Turn's Usage and Cost by Actual Model, the Session snapshot
 //! carries the Shares, and Usage Metrics files them by Actual Model under the
 //! Actual Model view while every other figure reads as it does under
-//! Selected.
+//! Selected. Insights' cache saving prices each Share at its Actual Model's
+//! rates, whatever view the metrics show, and only the unattributed
+//! remainder at the Selection's.
+
+use std::sync::Arc;
 
 use crate::session_integration::{
-    provider_support::{ControlledProvider, ControlledProviderSession},
+    provider_support::{ControlledProvider, ControlledProviderRuntime, ControlledProviderSession},
     support::{hosted_selection, read_session_until},
 };
 use crate::support::PROGRESS_DEADLINE;
 use suru::{
+    pricing::CacheRates,
     protocol::{
-        AdmitPromptRequest, AgentId, AgentIdentity, Cost, CountedCost, CreateSessionRequest,
-        ExecutionDirectory, InitialPrompt, KeyedUsageMetrics, ModelAvailability, ModelDescriptor,
-        ModelId, ModelShare, PromptDelivery, PromptId, ProviderId, SessionId, SessionSnapshot,
-        SessionTimestamp, TurnStatus, Usage, UsageMetricsAggregate, UsageMetricsBreakdown,
-        UsageMetricsInterval, UsageMetricsKey, UsageMetricsModelView, UsageMetricsQuery,
-        UsageMetricsReport,
+        AdmitPromptRequest, AgentId, AgentIdentity, Cost, CostBasis, CountedCost,
+        CreateSessionRequest, EstimatedSaving, ExecutionDirectory, InitialPrompt, InsightsQuery,
+        InsightsReport, KeyedUsageMetrics, ModelAvailability, ModelDescriptor, ModelId, ModelShare,
+        PromptDelivery, PromptId, ProviderId, SessionId, SessionSnapshot, SessionTimestamp,
+        TurnStatus, Usage, UsageMetricsAggregate, UsageMetricsBreakdown, UsageMetricsInterval,
+        UsageMetricsKey, UsageMetricsModelView, UsageMetricsQuery, UsageMetricsReport,
+        signed_nano_usd,
     },
     provider::{MeteredCost, ProviderEvent},
     server::{self, RunningServer, ServerConfig},
@@ -26,6 +32,8 @@ use tokio::time::timeout;
 const PROVIDER: &str = "controlled";
 const AUTO: &str = "auto";
 const GPT: &str = "gpt-5";
+/// A second Model the Provider prices, at cache rates unlike GPT-5's.
+const OPUS: &str = "opus-4";
 /// A Model the Provider reports a Share on that its catalog does not list.
 const UNLISTED: &str = "mystery-model";
 
@@ -88,6 +96,7 @@ fn model_key(model: &str) -> UsageMetricsKey {
 struct Hosted {
     _workspace: tempfile::TempDir,
     server: RunningServer,
+    runtime: Arc<ControlledProviderRuntime>,
     provider: ControlledProvider,
     client: reqwest::Client,
 }
@@ -96,12 +105,13 @@ async fn hosted(config: ServerConfig) -> Hosted {
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let (runtime, provider) =
         ControlledProvider::with_provider(ProviderId::new(PROVIDER), catalog());
-    let server = server::spawn_with_provider(config, runtime)
+    let server = server::spawn_with_provider(config, runtime.clone())
         .await
         .expect("spawn server");
     Hosted {
         _workspace: workspace,
         server,
+        runtime,
         provider,
         client: crate::support::loopback_client(),
     }
@@ -226,6 +236,73 @@ impl Hosted {
             .expect("send the Usage Metrics read");
         assert!(response.status().is_success(), "{}", response.status());
         response.json().await.expect("decode the report")
+    }
+
+    /// What caching saved over all of time, as Insights estimate it.
+    async fn cache_saving(&self) -> EstimatedSaving {
+        let descriptor = self.server.descriptor();
+        let response = self
+            .client
+            .post(format!("{}/v1/usage-metrics/insights", descriptor.base_url))
+            .bearer_auth(&descriptor.token)
+            .json(&InsightsQuery {
+                interval: UsageMetricsInterval {
+                    start: SessionTimestamp(0),
+                    end: SessionTimestamp(i64::MAX as u64),
+                },
+            })
+            .send()
+            .await
+            .expect("send the Insights read");
+        assert!(response.status().is_success(), "{}", response.status());
+        response
+            .json::<InsightsReport>()
+            .await
+            .expect("decode the Insights")
+            .cache
+            .saving
+    }
+
+    /// The Provider prices GPT-5 and Opus 4 today, at unlike cache rates:
+    /// GPT-5 lists no cache-write rate, as models.dev lists none for
+    /// OpenAI's Models. `auto` and [`UNLISTED`] have no price.
+    fn price_gpt_and_opus(&self) {
+        self.runtime.price_cache(
+            ModelId::new(GPT),
+            CacheRates {
+                input: 2.0,
+                cache_read: Some(0.2),
+                cache_write: None,
+            },
+        );
+        self.runtime.price_cache(
+            ModelId::new(OPUS),
+            CacheRates {
+                input: 5.0,
+                cache_read: Some(0.5),
+                cache_write: Some(6.25),
+            },
+        );
+    }
+}
+
+/// Usage of `fresh` fresh input tokens beside `reads` read from cache and
+/// `writes` written to it.
+fn cached(fresh: u64, reads: u64, writes: u64) -> Usage {
+    Usage {
+        fresh_input_tokens: Some(fresh),
+        cache_read_tokens: Some(reads),
+        cache_write_tokens: Some(writes),
+        output_tokens: Some(0),
+        ..Usage::default()
+    }
+}
+
+/// A saving of `usd`, partial or not.
+fn saving(usd: f64, is_partial: bool) -> EstimatedSaving {
+    EstimatedSaving {
+        nano_usd: signed_nano_usd(usd),
+        is_partial,
     }
 }
 
@@ -945,5 +1022,257 @@ async fn a_running_total_s_cost_no_share_accounts_for_counts_its_turn_under_the_
             (model_key(GPT), part(tokens(100, 10), 0.06)),
         ]
     );
+    hosted.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn the_cache_saving_prices_each_share_at_its_own_model_s_cache_rates() {
+    let state = tempfile::tempdir().unwrap();
+    let mut hosted =
+        hosted(ServerConfig::new(state.path(), "model-shares-saving-rates").unwrap()).await;
+    hosted.price_gpt_and_opus();
+    let gpt = hosted.begin(GPT).await;
+    let shares = vec![
+        share(GPT, cached(100_000, 1_000_000, 0), 0.10),
+        share(OPUS, cached(200_000, 2_000_000, 1_000_000), 0.20),
+    ];
+    hosted
+        .play(
+            &gpt,
+            vec![
+                usage_event(cached(300_000, 3_000_000, 1_000_000), 0.30, shares.clone()),
+                ProviderEvent::TurnCompleted,
+            ],
+            1,
+        )
+        .await;
+
+    assert_eq!(
+        hosted.cache_saving().await,
+        // GPT-5's 1M reads at $0.20 rather than $2.00 a million, and Opus
+        // 4's 2M at $0.50 rather than $5.00, less its 1M writes at $1.25
+        // beyond fresh input: none at the Selection's rates, which list no
+        // cache write.
+        saving(1.8 + 9.0 - 1.25, false),
+        "each Share is priced at its own Model's cache rates"
+    );
+    for model_view in [
+        UsageMetricsModelView::Selected,
+        UsageMetricsModelView::Actual,
+    ] {
+        let _ = hosted.report(&by_model(model_view)).await;
+        assert_eq!(
+            hosted.cache_saving().await,
+            saving(1.8 + 9.0 - 1.25, false),
+            "whatever view the metrics show"
+        );
+    }
+
+    let snapshot = hosted.read_until(gpt.session_id, 1).await;
+    let turn = &snapshot.turns[0];
+    assert_eq!(
+        (turn.cost, turn.cost_basis, &turn.model_shares),
+        (Some(usd(0.30)), Some(CostBasis::Reported), &shares),
+        "a Reported Cost and its Shares' are recorded as reported, never re-priced"
+    );
+    hosted.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn an_unpriced_selection_s_shares_save_in_full_and_only_a_remainder_using_the_cache_is_partial()
+ {
+    let state = tempfile::tempdir().unwrap();
+    let mut hosted =
+        hosted(ServerConfig::new(state.path(), "model-shares-saving-auto").unwrap()).await;
+    hosted.price_gpt_and_opus();
+    let mut auto = hosted.begin(AUTO).await;
+    hosted
+        .play(
+            &auto,
+            vec![
+                usage_event(
+                    cached(1_000, 2_000_000, 0),
+                    0.30,
+                    vec![
+                        share(GPT, cached(400, 1_000_000, 0), 0.10),
+                        share(OPUS, cached(400, 1_000_000, 0), 0.15),
+                    ],
+                ),
+                ProviderEvent::TurnCompleted,
+            ],
+            1,
+        )
+        .await;
+    assert_eq!(
+        hosted.cache_saving().await,
+        saving(1.8 + 4.5, false),
+        "the remainder used no cache, so `auto` having no price leaves nothing out"
+    );
+
+    hosted.next_turn(&mut auto).await;
+    hosted
+        .play(
+            &auto,
+            vec![
+                usage_event(
+                    cached(0, 1_500_000, 0),
+                    0.10,
+                    vec![share(GPT, cached(0, 1_000_000, 0), 0.08)],
+                ),
+                ProviderEvent::TurnCompleted,
+            ],
+            2,
+        )
+        .await;
+    assert_eq!(
+        hosted.cache_saving().await,
+        saving(1.8 + 4.5 + 1.8, true),
+        "the Shares save in full; only the 500K the remainder read at `auto` is left out"
+    );
+    hosted.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_turn_without_shares_saves_at_its_selection_s_rates() {
+    let state = tempfile::tempdir().unwrap();
+    let mut hosted =
+        hosted(ServerConfig::new(state.path(), "model-shares-saving-none").unwrap()).await;
+    hosted.price_gpt_and_opus();
+    let gpt = hosted.begin(GPT).await;
+    hosted
+        .play(
+            &gpt,
+            vec![
+                usage_event(cached(100, 1_000_000, 0), 0.10, Vec::new()),
+                ProviderEvent::TurnCompleted,
+            ],
+            1,
+        )
+        .await;
+    assert_eq!(hosted.cache_saving().await, saving(1.8, false));
+
+    let auto = hosted.begin(AUTO).await;
+    hosted
+        .play(
+            &auto,
+            vec![
+                usage_event(cached(100, 1_000_000, 0), 0.10, Vec::new()),
+                ProviderEvent::TurnCompleted,
+            ],
+            1,
+        )
+        .await;
+    assert_eq!(
+        hosted.cache_saving().await,
+        saving(1.8, true),
+        "`auto` has no price, so a Turn on it with no Shares is left out"
+    );
+    hosted.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_share_on_a_model_with_no_price_leaves_the_saving_partial_only_where_it_used_the_cache() {
+    let state = tempfile::tempdir().unwrap();
+    let mut hosted =
+        hosted(ServerConfig::new(state.path(), "model-shares-saving-unlisted").unwrap()).await;
+    hosted.price_gpt_and_opus();
+    let mut gpt = hosted.begin(GPT).await;
+    hosted
+        .play(
+            &gpt,
+            vec![
+                usage_event(
+                    cached(600, 1_000_000, 0),
+                    0.10,
+                    vec![
+                        share(GPT, cached(100, 1_000_000, 0), 0.08),
+                        share(UNLISTED, cached(500, 0, 0), 0.02),
+                    ],
+                ),
+                ProviderEvent::TurnCompleted,
+            ],
+            1,
+        )
+        .await;
+    assert_eq!(
+        hosted.cache_saving().await,
+        saving(1.8, false),
+        "a Share that used no cache needs no cache rate"
+    );
+
+    hosted.next_turn(&mut gpt).await;
+    hosted
+        .play(
+            &gpt,
+            vec![
+                usage_event(
+                    cached(0, 2_000_000, 0),
+                    0.10,
+                    vec![share(UNLISTED, cached(0, 1_000_000, 0), 0.05)],
+                ),
+                ProviderEvent::TurnCompleted,
+            ],
+            2,
+        )
+        .await;
+    assert_eq!(
+        hosted.cache_saving().await,
+        // The remainder's 1M reads at the Selection's rates; the unlisted
+        // Model's 1M left out.
+        saving(1.8 + 1.8, true),
+    );
+    hosted.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_running_total_s_shares_save_on_each_turn_s_own_usage() {
+    let state = tempfile::tempdir().unwrap();
+    let mut hosted =
+        hosted(ServerConfig::new(state.path(), "model-shares-saving-running").unwrap()).await;
+    hosted.price_gpt_and_opus();
+    let mut auto = hosted.begin(AUTO).await;
+    // The Cost a running total over the reporting lifetime, its Shares' in
+    // it beside it, while each Turn's Usage, and its Shares', is its own.
+    let running = |usage: Usage, cost: f64, model_shares: Vec<ModelShare>| ProviderEvent::Usage {
+        usage,
+        cost: Some(MeteredCost::reported_subtree(
+            usd(cost),
+            "controlled:lifetime",
+        )),
+        model_shares,
+    };
+    hosted
+        .play(
+            &auto,
+            vec![
+                running(
+                    cached(0, 1_000_000, 0),
+                    0.10,
+                    vec![share(GPT, cached(0, 1_000_000, 0), 0.10)],
+                ),
+                ProviderEvent::TurnCompleted,
+            ],
+            1,
+        )
+        .await;
+    hosted.next_turn(&mut auto).await;
+    hosted
+        .play(
+            &auto,
+            vec![
+                running(
+                    cached(0, 2_000_000, 0),
+                    0.30,
+                    vec![
+                        share(GPT, cached(0, 1_000_000, 0), 0.15),
+                        share(OPUS, cached(0, 1_000_000, 0), 0.15),
+                    ],
+                ),
+                ProviderEvent::TurnCompleted,
+            ],
+            2,
+        )
+        .await;
+    assert_eq!(hosted.cache_saving().await, saving(1.8 + 1.8 + 4.5, false));
     hosted.server.shutdown().await.unwrap();
 }

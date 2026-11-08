@@ -29,7 +29,10 @@
 //! every read from the rates each Turn's or Errand's Provider prices its
 //! Model at today, asked once the lock is let go, and a Model lacking the
 //! rate of a part of the cache its work used is left out and the estimate
-//! marked partial.
+//! marked partial. A Turn's work is priced at the Models that did it,
+//! whatever view the metrics show: each Model Share's part of its Usage at
+//! that Share's Actual Model, and only what the Shares leave at its Agent
+//! Selection's.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -49,7 +52,7 @@ use activities::{ActivityTallies, ActivityTally};
 use super::{
     super::{
         SessionStore,
-        cost_coverage::{CostContribution, tree_contributions},
+        cost_coverage::{CostContribution, DividedUsage, tree_contributions},
     },
     CopiedSession, CountedSession, MeteredForest, SessionTimestamp, TurnPlaces, errand_cost,
     placed_at,
@@ -169,13 +172,7 @@ impl InsightsFold {
         self.turns.add(turn);
         self.quarter_hours.add_turn(session_id, turn, at);
         self.delegation.add_turn(session_id, role, turn);
-        if let Some(usage) = &turn.usage {
-            let model = turn
-                .agent
-                .as_ref()
-                .map(|agent| (&agent.selection.provider, &agent.selection.model));
-            self.cache.add(usage, model);
-        }
+        self.cache.add_turn(turn);
         self.held_turns
             .entry(session_id)
             .or_default()
@@ -190,7 +187,7 @@ impl InsightsFold {
         self.delegation.insights.errands.add(errand_cost(errand));
         if let Some(usage) = &errand.usage {
             self.cache
-                .add(usage, Some((&errand.provider, &errand.model)));
+                .add_errand(usage, (&errand.provider, &errand.model));
         }
     }
 
@@ -407,7 +404,7 @@ struct CacheTally {
     /// it. A saving is linear in both, so a Model's work is priced together
     /// as it would be piece by piece.
     by_model: HashMap<(ProviderId, ModelId), CacheUse>,
-    /// Whether a Turn that read or wrote the cache ran on no Model the
+    /// Whether some work that read or wrote the cache ran on no Model the
     /// store knows, so no rates can price it.
     is_unattributed: bool,
 }
@@ -420,10 +417,40 @@ struct CacheUse {
 }
 
 impl CacheTally {
-    /// Adds the Usage of a Turn or an Errand that ran on `model`, none where
-    /// the store knows no Model it ran on.
-    fn add(&mut self, usage: &Usage, model: Option<(&ProviderId, &ModelId)>) {
+    /// Adds a Turn's Usage to the input, and what it read from cache and
+    /// wrote to it to the Models that did the work: each Model Share's part,
+    /// as [`DividedUsage`] gives it, to that Share's Actual Model under the
+    /// Turn's Provider, and the part the Shares leave — all of it, on a Turn
+    /// holding none — to its Selection's Model.
+    fn add_turn(&mut self, turn: &Turn) {
+        let Some(usage) = &turn.usage else {
+            return;
+        };
         self.input.add_usage(usage);
+        let selection = turn.agent.as_ref().map(|agent| &agent.selection);
+        let divided = DividedUsage::of(turn);
+        for (share, usage) in turn.model_shares.iter().zip(&divided.shares) {
+            if let Some(usage) = usage {
+                let model = selection.map(|selection| (&selection.provider, &share.model));
+                self.add(usage, model);
+            }
+        }
+        if let Some(left) = &divided.left {
+            let model = selection.map(|selection| (&selection.provider, &selection.model));
+            self.add(left, model);
+        }
+    }
+
+    /// Adds an Errand's Usage to the input, and what it read from cache and
+    /// wrote to it to `model`, the Model it ran on.
+    fn add_errand(&mut self, usage: &Usage, model: (&ProviderId, &ModelId)) {
+        self.input.add_usage(usage);
+        self.add(usage, Some(model));
+    }
+
+    /// Adds what some work that ran on `model` read from cache and wrote to
+    /// it, none where the store knows no Model it ran on.
+    fn add(&mut self, usage: &Usage, model: Option<(&ProviderId, &ModelId)>) {
         let reads = usage.cache_read_tokens.unwrap_or(0);
         let writes = usage.cache_write_tokens.unwrap_or(0);
         if reads == 0 && writes == 0 {
