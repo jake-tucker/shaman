@@ -17,6 +17,28 @@ const AUTO_TWO_MODELS: &str = r#"      event r1 session.auto_mode_resolved '{"ch
       event i1 session.idle '{}'
 "#;
 
+/// An Auto Turn one of whose Models has a call the catalog cannot price — its cache read has no
+/// published price — beside one it can.
+const AUTO_PARTLY_PRICED_MODEL: &str = r#"      event u1 assistant.usage '{"apiCallId":"c1","model":"claude-fixture","isAuto":true,"inputTokens":100,"outputTokens":10}'
+      event u2 assistant.usage '{"apiCallId":"c2","model":"incomplete-cache-fixture","isAuto":true,"inputTokens":500,"cacheReadTokens":100,"outputTokens":50}'
+      event u3 assistant.usage '{"apiCallId":"c3","model":"incomplete-cache-fixture","isAuto":true,"inputTokens":200,"outputTokens":20}'
+      event m1 assistant.message '{"messageId":"m1","apiCallId":"c3","content":"Done"}'
+      event i1 session.idle '{}'
+"#;
+
+/// An Auto Turn whose loop goes idle while a sub-agent it started still works, so a last call's
+/// report arriving after the idle is late output: it begins a Continuation, which the next idle
+/// settles.
+const AUTO_USAGE_AFTER_IDLE: &str = r#"      event u1 assistant.usage '{"apiCallId":"c1","model":"claude-fixture","isAuto":true,"inputTokens":100,"outputTokens":10}'
+      event m1 assistant.message '{"messageId":"m1","apiCallId":"c1","content":"Kicked off the audit."}'
+      agent_event s1 agent-1 subagent.started '{"toolCallId":"t-spawn","agentName":"auditor","agentDisplayName":"Auditor","agentDescription":"Audit the dependencies"}'
+      event i1 session.idle '{}'
+      event u2 assistant.usage '{"apiCallId":"c2","model":"incomplete-cache-fixture","isAuto":true,"inputTokens":50,"outputTokens":5}'
+      agent_event s2 agent-1 subagent.completed '{"toolCallId":"t-spawn","agentName":"auditor","agentDisplayName":"Auditor","durationMs":900}'
+      event m2 assistant.message '{"messageId":"m2","content":"The audit found nothing."}'
+      event i2 session.idle '{}'
+"#;
+
 /// An Auto Turn one of whose reports names no Model, so nothing says which Model its call ran on.
 const AUTO_UNNAMED_REPORT: &str = r#"      event u1 assistant.usage '{"apiCallId":"c1","model":"claude-fixture","isAuto":true,"inputTokens":100,"outputTokens":10}'
       event u2 assistant.usage '{"apiCallId":"c2","model":"","isAuto":true,"inputTokens":50,"outputTokens":5}'
@@ -41,9 +63,14 @@ const CRITIQUE_REVISED: &str = include_str!("fixtures/fusion-critique-revision.j
 /// The Session once `timeline` has played out as its first Turn. `name` is the client channel,
 /// so each test needs its own.
 async fn settled(timeline: &str, name: &'static str) -> SessionSnapshot {
+    settled_at(timeline, name, 0).await
+}
+
+/// The Session once `timeline` has played out and the Turn at `turn_index` has settled.
+async fn settled_at(timeline: &str, name: &'static str, turn_index: usize) -> SessionSnapshot {
     let copilot = conversation_fixture(timeline);
     let opened = opened_session(&copilot, name, "Split the work").await;
-    let settled = settled_session(&opened.client, opened.session_id, 0).await;
+    let settled = settled_session(&opened.client, opened.session_id, turn_index).await;
     let Opened { server, client, .. } = opened;
     drop(client);
     server.shutdown().await.expect("shut the server down");
@@ -72,11 +99,13 @@ async fn an_auto_turn_calling_two_models_holds_a_share_for_each_at_its_calls_rep
                 model: ModelId::new("claude-fixture"),
                 usage: tokens(1_200, 110),
                 cost: Cost::from_usd((1_200.0 * 2.0 + 110.0 * 8.0) / 100_000.0),
+                cost_is_partial: false,
             },
             ModelShare {
                 model: ModelId::new("incomplete-cache-fixture"),
                 usage: tokens(500, 50),
                 cost: Cost::from_usd((500.0 * 2.0 + 50.0 * 8.0) / 100_000.0),
+                cost_is_partial: false,
             },
         ],
         "each call's tokens and Cost go to the Model it reported, in the order first reported"
@@ -102,6 +131,7 @@ async fn a_report_naming_no_model_adds_to_the_turn_total_alone() {
             model: ModelId::new("claude-fixture"),
             usage: tokens(100, 10),
             cost: Cost::from_usd((100.0 * 2.0 + 10.0 * 8.0) / 100_000.0),
+            cost_is_partial: false,
         }],
         "nothing is guessed for the call whose report names no Model"
     );
@@ -126,6 +156,7 @@ async fn a_late_report_counts_as_a_share_of_the_turn_it_lands_in() {
                     ..Usage::default()
                 },
                 cost: None,
+                cost_is_partial: false,
             },
             ModelShare {
                 model: ModelId::new("solver-model"),
@@ -134,6 +165,7 @@ async fn a_late_report_counts_as_a_share_of_the_turn_it_lands_in() {
                     ..Usage::default()
                 },
                 cost: None,
+                cost_is_partial: false,
             },
         ],
         "the first call's report, arriving after the repair's commit, is a Share of the same \
@@ -216,4 +248,69 @@ async fn a_fusion_route_with_planner_and_reviewer_on_different_models_holds_a_sh
             .and_then(|usage| usage.fresh_input_tokens),
         "every call names its Model, so the Shares cover the whole Turn"
     );
+}
+
+#[tokio::test]
+async fn a_share_whose_calls_are_not_all_priced_is_marked_partial_and_keeps_its_priced_part() {
+    let settled = settled(AUTO_PARTLY_PRICED_MODEL, "copilot-shares-partly-priced").await;
+    let turn = &settled.turns[0];
+    assert_eq!(
+        turn.model_shares,
+        vec![
+            ModelShare {
+                model: ModelId::new("claude-fixture"),
+                usage: tokens(100, 10),
+                cost: Cost::from_usd((100.0 * 2.0 + 10.0 * 8.0) / 100_000.0),
+                cost_is_partial: false,
+            },
+            ModelShare {
+                model: ModelId::new("incomplete-cache-fixture"),
+                usage: Usage {
+                    fresh_input_tokens: Some(600),
+                    cache_read_tokens: None,
+                    output_tokens: Some(70),
+                    ..Usage::default()
+                },
+                cost: Cost::from_usd((200.0 * 2.0 + 20.0 * 8.0) / 100_000.0),
+                cost_is_partial: true,
+            },
+        ],
+        "the Model with an unpriced call keeps its priced call's Cost, marked partial, and the \
+         wholly priced Model's stands exact"
+    );
+    assert!(
+        turn.cost_details
+            .as_ref()
+            .is_some_and(|details| details.is_partial)
+    );
+}
+
+#[tokio::test]
+async fn a_report_arriving_after_idle_is_a_share_of_the_continuation_it_begins() {
+    let settled = settled_at(AUTO_USAGE_AFTER_IDLE, "copilot-shares-after-idle", 1).await;
+    assert_eq!(
+        settled.turns.len(),
+        2,
+        "the late report begins a Continuation"
+    );
+    assert!(settled.turns[1].is_continuation());
+    assert_eq!(
+        settled.turns[0]
+            .model_shares
+            .iter()
+            .map(|share| share.model.as_str())
+            .collect::<Vec<_>>(),
+        ["claude-fixture"]
+    );
+    assert_eq!(
+        settled.turns[1].model_shares,
+        vec![ModelShare {
+            model: ModelId::new("incomplete-cache-fixture"),
+            usage: tokens(50, 5),
+            cost: Cost::from_usd((50.0 * 2.0 + 5.0 * 8.0) / 100_000.0),
+            cost_is_partial: false,
+        }],
+        "its Share is the Continuation's, as its Usage is"
+    );
+    assert_eq!(settled.turns[1].usage, Some(tokens(50, 5)));
 }

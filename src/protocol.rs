@@ -5120,6 +5120,26 @@ impl UsageTotal {
     }
 }
 
+impl Usage {
+    /// Both readings' tokens together, part by part, holding at the largest
+    /// representable count rather than wrapping, and keeping a part absent
+    /// where neither states it. A native meter is in a unit only its
+    /// Provider defines, so the two are added only where both state one.
+    pub fn saturating_add(&self, other: &Self) -> Self {
+        Self {
+            fresh_input_tokens: add_parts(self.fresh_input_tokens, other.fresh_input_tokens),
+            cache_read_tokens: add_parts(self.cache_read_tokens, other.cache_read_tokens),
+            cache_write_tokens: add_parts(self.cache_write_tokens, other.cache_write_tokens),
+            output_tokens: add_parts(self.output_tokens, other.output_tokens),
+            reasoning_tokens: add_parts(self.reasoning_tokens, other.reasoning_tokens),
+            native_meter: self
+                .native_meter
+                .zip(other.native_meter)
+                .and_then(|(held, added)| held.checked_add(added)),
+        }
+    }
+}
+
 /// Adds one measured part to another, keeping absence where neither side
 /// measured anything.
 fn add_parts(held: Option<u64>, added: Option<u64>) -> Option<u64> {
@@ -5177,17 +5197,33 @@ pub struct Turn {
 /// named it, routed to it, or the Provider rerouted to it.
 ///
 /// A Share's figures are stated on the Turn's own terms. Its Usage is part
-/// of the Turn's Usage. Its Cost shares the Turn's Cost Basis and Cost
-/// Coverage: Turn-scoped where the Turn's is, and a running total within
-/// the Turn's reporting lifetime where the Turn's Cost is one, so Cost
-/// Coverage places its increments as it places the Turn's. It is absent
-/// where nothing priced that Model's part.
+/// of the Turn's Usage, for the same work the Turn's Usage covers. Its Cost
+/// shares the Turn's Cost Basis and Cost Coverage: where the Turn's Cost is
+/// Turn-scoped, the Share's is what that Model's part of this Turn cost;
+/// where the Turn's Cost is a running total within a reporting lifetime,
+/// the Share's is that Model's running total within the same lifetime — the
+/// cumulative figure, never this Turn's increment — and Cost Coverage takes
+/// each Share's increments as it takes the Turn's.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelShare {
     pub model: ModelId,
     pub usage: Usage,
+    /// Absent where nothing priced that Model's part, which leaves it
+    /// partial; never stated where the Turn states no Cost.
     pub cost: Option<Cost>,
+    /// Whether some of that Model's part has no price, so `cost` says less
+    /// than it cost.
+    #[serde(default)]
+    pub cost_is_partial: bool,
+}
+
+impl ModelShare {
+    /// Whether the Share's work is wholly priced: it states a Cost, and
+    /// none of its part is left out of it.
+    pub fn is_priced(&self) -> bool {
+        self.cost.is_some() && !self.cost_is_partial
+    }
 }
 
 #[derive(Deserialize)]

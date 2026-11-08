@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crate::protocol::{
     Cost, CostBasis, CostCoverage, CostRecord, CostTotal, CountedCost, ModelId, SessionId,
-    SessionTimestamp, Turn, TurnId, TurnStatus,
+    SessionTimestamp, Turn, TurnId, TurnStatus, Usage,
 };
 
 use super::SessionStoreState;
@@ -28,7 +28,9 @@ use super::SessionStoreState;
 /// lifetime where the Turn's is a running total — and the rest is the
 /// unattributed remainder. The parts add up to what the Turn adds, so no
 /// Share ever takes more than is left of it and the remainder is never
-/// negative.
+/// negative. A partial mark stands on the part whose work is unpriced: an
+/// unpriced Share's, or the remainder's, which also holds the work no
+/// report has priced yet.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CostContribution {
     /// The Session whose Turn carries the Cost.
@@ -38,10 +40,89 @@ pub(crate) struct CostContribution {
     /// known amount but its work leaves the total partial.
     pub(crate) amount: Option<CountedAmount>,
     pub(crate) is_partial: bool,
-    /// Which of the Turn's Model Shares this part of what it adds is, by its
-    /// place among them, or none for the unattributed remainder — all of it,
-    /// on a Turn holding no Shares.
-    pub(crate) model_share: Option<usize>,
+    /// Which of the Turn's Model Shares this part of what it adds is, or
+    /// none for the unattributed remainder — all of it, on a Turn holding no
+    /// Shares.
+    pub(crate) model_share: Option<ModelShareIndex>,
+}
+
+/// Which of a Turn's [`Turn::model_shares`] a part of what it adds is: its
+/// place among them, valid against the Turn the contribution names, whose
+/// Shares the reading copied together with it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ModelShareIndex(pub(crate) usize);
+
+/// One Model Share's part of a Turn's frozen Cost record, as Cost Coverage
+/// divides the record's contribution by it.
+#[derive(Clone, Copy)]
+struct SharedPart {
+    index: ModelShareIndex,
+    /// What the Share adds on the record's terms, absent where nothing
+    /// priced it.
+    cost: Option<Cost>,
+    /// Whether some of the Share's work is unpriced.
+    is_partial: bool,
+}
+
+/// A Turn's Usage as its Model Shares divide it: what each Share holds of
+/// it, and what they leave unattributed. Each Share takes no more of each
+/// part than the Shares before it left, so they add up to the Turn's Usage
+/// and nothing left is ever negative. This is the one reading of which part
+/// of a Turn's Usage is whose, for Cost Coverage and the metrics read alike.
+pub(super) struct DividedUsage {
+    /// Each Share's part, by its place among the Turn's Shares; absent
+    /// where the Turn recorded no Usage.
+    pub(super) shares: Vec<Option<Usage>>,
+    /// What no Share holds, absent where the Turn recorded no Usage.
+    pub(super) left: Option<Usage>,
+}
+
+impl DividedUsage {
+    pub(super) fn of(turn: &Turn) -> Self {
+        let mut left = turn.usage.clone();
+        let shares = turn
+            .model_shares
+            .iter()
+            .map(|share| left.as_mut().map(|left| take_usage(left, &share.usage)))
+            .collect();
+        Self { shares, left }
+    }
+
+    /// Whether any token is left unattributed.
+    pub(super) fn leaves_usage(&self) -> bool {
+        self.left.as_ref().is_some_and(|left| {
+            [
+                left.fresh_input_tokens,
+                left.cache_read_tokens,
+                left.cache_write_tokens,
+                left.output_tokens,
+                left.reasoning_tokens,
+            ]
+            .into_iter()
+            .any(|count| count.is_some_and(|count| count > 0))
+        })
+    }
+}
+
+/// Takes from `left` the part of each token count `share` states, no more
+/// than is left of it, answering what was taken: absent where either is.
+fn take_usage(left: &mut Usage, share: &Usage) -> Usage {
+    let take = |left: &mut Option<u64>, share: Option<u64>| match (left.as_mut(), share) {
+        (Some(left), Some(share)) => {
+            let taken = share.min(*left);
+            *left -= taken;
+            Some(taken)
+        }
+        _ => None,
+    };
+    Usage {
+        fresh_input_tokens: take(&mut left.fresh_input_tokens, share.fresh_input_tokens),
+        cache_read_tokens: take(&mut left.cache_read_tokens, share.cache_read_tokens),
+        cache_write_tokens: take(&mut left.cache_write_tokens, share.cache_write_tokens),
+        output_tokens: take(&mut left.output_tokens, share.output_tokens),
+        reasoning_tokens: take(&mut left.reasoning_tokens, share.reasoning_tokens),
+        native_meter: None,
+    }
 }
 
 /// An amount a Turn contributes to a Cost, with the Cost Basis of the frozen
@@ -73,20 +154,38 @@ impl CostContribution {
         }
     }
 
-    /// This contribution divided between the Model Shares that took the
-    /// parts `shares` give, each by its place among the Turn's Shares, in
-    /// the order given, and the remainder: each Share takes no more than is
-    /// left, so the parts add up to this one. Every part carries this one's
-    /// partial mark, and the remainder stands only where something is left
-    /// or no Share took a part, so a Turn its Shares wholly cover adds
-    /// nothing unattributed.
-    fn split(self, shares: impl IntoIterator<Item = (usize, Cost)>) -> Vec<Self> {
-        let Some(amount) = self.amount else {
+    /// Work of this Turn's Model Share at `index` whose Cost nothing
+    /// priced: it adds nothing, and leaves that Share partial.
+    fn unpriced_share(session_id: SessionId, turn_id: TurnId, index: ModelShareIndex) -> Self {
+        Self {
+            model_share: Some(index),
+            ..Self::unaccounted(session_id, turn_id)
+        }
+    }
+
+    /// This contribution divided between the Model Shares whose `shares`
+    /// parts are given, in order, and the unattributed remainder. Each
+    /// Share takes no more than is left, so the parts add up to this one;
+    /// an unpriced Share takes nothing and is marked partial. The remainder
+    /// takes what is left, and this one's partial mark unless an unpriced
+    /// Share accounts for it and the remainder holds no Usage that could be
+    /// unpriced too; it stands only where it takes something or that mark,
+    /// so a Turn its Shares wholly cover adds nothing unattributed.
+    fn split(self, shares: &[SharedPart], remainder_holds_usage: bool) -> Vec<Self> {
+        let Some(amount) = self.amount.filter(|_| !shares.is_empty()) else {
             return vec![self];
         };
         let mut left = amount.cost.nano_usd();
-        let mut parts = Vec::new();
-        for (model_share, cost) in shares {
+        let mut parts = Vec::with_capacity(shares.len() + 1);
+        for share in shares {
+            let Some(cost) = share.cost else {
+                parts.push(Self::unpriced_share(
+                    self.session_id,
+                    self.turn_id,
+                    share.index,
+                ));
+                continue;
+            };
             let taken = cost.nano_usd().min(left);
             left -= taken;
             parts.push(Self {
@@ -94,16 +193,20 @@ impl CostContribution {
                     cost: Cost::from_nano_usd(taken),
                     ..amount
                 }),
-                model_share: Some(model_share),
+                is_partial: share.is_partial,
+                model_share: Some(share.index),
                 ..self
             });
         }
-        if left > 0 || parts.is_empty() {
+        let explained = parts.iter().any(|part| part.is_partial);
+        let remainder_partial = self.is_partial && (!explained || remainder_holds_usage);
+        if left > 0 || remainder_partial {
             parts.push(Self {
-                amount: Some(CountedAmount {
+                amount: (left > 0).then_some(CountedAmount {
                     cost: Cost::from_nano_usd(left),
                     ..amount
                 }),
+                is_partial: remainder_partial,
                 model_share: None,
                 ..self
             });
@@ -319,11 +422,18 @@ fn contributions_of(forest: &impl CostForest, sessions: &[SessionId]) -> Vec<Cos
                         .report
                         .shares
                         .iter()
-                        .map(|(model_share, model, cost)| {
-                            let highest = highest_shares.entry(model).or_default();
-                            let added = cost.nano_usd().saturating_sub(*highest);
-                            *highest = (*highest).max(cost.nano_usd());
-                            (*model_share, Cost::from_nano_usd(added))
+                        .map(|share| {
+                            let cost = share.cost.map(|cost| {
+                                let highest = highest_shares.entry(&share.model).or_default();
+                                let added = cost.nano_usd().saturating_sub(*highest);
+                                *highest = (*highest).max(cost.nano_usd());
+                                Cost::from_nano_usd(added)
+                            });
+                            SharedPart {
+                                index: share.index,
+                                cost,
+                                is_partial: share.is_partial,
+                            }
                         })
                         .collect::<Vec<_>>();
                     contributions.extend(
@@ -337,7 +447,7 @@ fn contributions_of(forest: &impl CostForest, sessions: &[SessionId]) -> Vec<Cos
                             is_partial: increment.is_partial || untimed,
                             model_share: None,
                         }
-                        .split(shares),
+                        .split(&shares, increment.report.remainder_holds_usage),
                     );
                 }
                 included.push(latest);
@@ -359,19 +469,22 @@ fn contributions_of(forest: &impl CostForest, sessions: &[SessionId]) -> Vec<Cos
             is_partial: record.record.is_partial,
             model_share: None,
         };
-        let shares = || {
-            record
-                .shares
-                .iter()
-                .map(|(model_share, _, cost)| (*model_share, *cost))
-        };
+        let shares = record
+            .shares
+            .iter()
+            .map(|share| SharedPart {
+                index: share.index,
+                cost: share.cost,
+                is_partial: share.is_partial,
+            })
+            .collect::<Vec<_>>();
         let Some(started_at) = record.turn_started_at else {
             contributions.extend(
                 CostContribution {
                     is_partial: true,
                     ..counted
                 }
-                .split(shares()),
+                .split(&shares, record.remainder_holds_usage),
             );
             continue;
         };
@@ -392,7 +505,7 @@ fn contributions_of(forest: &impl CostForest, sessions: &[SessionId]) -> Vec<Cos
                 contributions.push(CostContribution::unaccounted(record.owner, record.turn_id));
             }
         } else {
-            contributions.extend(counted.split(shares()));
+            contributions.extend(counted.split(&shares, record.remainder_holds_usage));
         }
     }
 
@@ -413,6 +526,7 @@ fn contributions_of(forest: &impl CostForest, sessions: &[SessionId]) -> Vec<Cos
                     })
                     .max_by_key(|aggregate| aggregate.record.recorded_at)
             });
+            let covered = covering.is_some();
             let unaccounted = if let Some(aggregate) = covering {
                 work_exceeds_coverage(
                     turn.last_output_at,
@@ -423,7 +537,24 @@ fn contributions_of(forest: &impl CostForest, sessions: &[SessionId]) -> Vec<Cos
             } else {
                 turn.cost.is_none() || turn.status == TurnStatus::Active
             };
-            if unaccounted {
+            if !unaccounted {
+                continue;
+            }
+            // A Turn nothing priced leaves each of its Model Shares unpriced,
+            // and its remainder where it holds any Usage. Work past what a
+            // report says, or not yet reported, has no Model any evidence
+            // names, so it stays with the Selection, as its remainder.
+            let unpriced = !covered && turn.cost.is_none();
+            let remainder = !unpriced
+                || turn.model_shares.is_empty()
+                || turn.status == TurnStatus::Active
+                || DividedUsage::of(turn).leaves_usage();
+            if unpriced {
+                contributions.extend((0..turn.model_shares.len()).map(|index| {
+                    CostContribution::unpriced_share(owner, turn.id, ModelShareIndex(index))
+                }));
+            }
+            if remainder {
                 contributions.push(CostContribution::unaccounted(owner, turn.id));
             }
         }
@@ -458,15 +589,29 @@ struct ScopedCost {
     turn_id: TurnId,
     turn_started_at: Option<SessionTimestamp>,
     record: CostRecord,
-    /// The Turn's Model Shares that state a Cost, by their place among its
-    /// Shares, on this record's terms: only its current record has any,
-    /// since a Turn's Shares are stated beside its current Cost alone.
-    shares: Vec<(usize, ModelId, Cost)>,
+    /// The Turn's Model Shares, on this record's terms. Only its current
+    /// record has any, since a Turn's Shares are stated beside its current
+    /// Cost alone: a record it kept from an earlier reporting lifetime
+    /// counts wholly as its unattributed remainder.
+    shares: Vec<ScopedShare>,
+    /// Whether the Turn's Shares leave any of its Usage unattributed.
+    remainder_holds_usage: bool,
+}
+
+/// One of a Turn's Model Shares beside the Cost record it is stated on.
+struct ScopedShare {
+    index: ModelShareIndex,
+    model: ModelId,
+    cost: Option<Cost>,
+    /// Whether some of the Share's work is unpriced.
+    is_partial: bool,
 }
 
 fn cost_records(owner: SessionId, turn: &Turn) -> Vec<ScopedCost> {
     let records = turn_cost_records(turn);
     let current = records.len().checked_sub(1);
+    let remainder_holds_usage =
+        turn.model_shares.is_empty() || DividedUsage::of(turn).leaves_usage();
     records
         .into_iter()
         .enumerate()
@@ -479,13 +624,17 @@ fn cost_records(owner: SessionId, turn: &Turn) -> Vec<ScopedCost> {
                 turn.model_shares
                     .iter()
                     .enumerate()
-                    .filter_map(|(model_share, share)| {
-                        Some((model_share, share.model.clone(), share.cost?))
+                    .map(|(index, share)| ScopedShare {
+                        index: ModelShareIndex(index),
+                        model: share.model.clone(),
+                        cost: share.cost,
+                        is_partial: !share.is_priced(),
                     })
                     .collect()
             } else {
                 Vec::new()
             },
+            remainder_holds_usage,
         })
         .collect()
 }

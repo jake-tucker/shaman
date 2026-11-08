@@ -63,6 +63,7 @@ fn share(model: &str, usage: Usage, cost: f64) -> ModelShare {
         model: ModelId::new(model),
         usage,
         cost: Some(usd(cost)),
+        cost_is_partial: false,
     }
 }
 
@@ -531,28 +532,19 @@ async fn totals_the_comparison_and_the_provider_and_workspace_breakdowns_read_th
         )
         .await;
 
-    // Only a top Session's main Model follows the view under every
-    // breakdown, since it names a Model whatever the breakdown.
-    let without_top_sessions = |mut report: UsageMetricsReport| {
-        report.top_sessions.clear();
-        report
-    };
     for breakdown in [
         UsageMetricsBreakdown::Provider,
         UsageMetricsBreakdown::Workspace,
     ] {
         assert_eq!(
-            without_top_sessions(
-                hosted
-                    .report(&all_of_time(breakdown, UsageMetricsModelView::Actual))
-                    .await
-            ),
-            without_top_sessions(
-                hosted
-                    .report(&all_of_time(breakdown, UsageMetricsModelView::Selected))
-                    .await
-            ),
-            "the {breakdown:?} breakdown reads the same in both views"
+            hosted
+                .report(&all_of_time(breakdown, UsageMetricsModelView::Actual))
+                .await,
+            hosted
+                .report(&all_of_time(breakdown, UsageMetricsModelView::Selected))
+                .await,
+            "the {breakdown:?} breakdown reads the same in both views, top \
+             Sessions' Models included"
         );
     }
     let actual = hosted
@@ -805,6 +797,153 @@ async fn a_running_total_s_shares_contribute_their_increments_through_cost_cover
             ..part(tokens(250, 25), 0.25)
         },
         "the lifetime's highest total, counted once"
+    );
+    hosted.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn partial_marks_stand_on_the_key_whose_work_is_unpriced() {
+    let state = tempfile::tempdir().unwrap();
+    let mut hosted = hosted(ServerConfig::new(state.path(), "model-shares-partial").unwrap()).await;
+    let auto = hosted.begin(AUTO).await;
+    hosted
+        .play(
+            &auto,
+            vec![
+                ProviderEvent::Usage {
+                    usage: tokens(100, 10),
+                    // Only the GPT-5 calls were priced, so the Turn is partial.
+                    cost: Some(MeteredCost::reported(usd(0.10)).partial()),
+                    model_shares: vec![
+                        share(GPT, tokens(60, 6), 0.10),
+                        ModelShare {
+                            model: ModelId::new(UNLISTED),
+                            usage: tokens(40, 4),
+                            cost: None,
+                            cost_is_partial: false,
+                        },
+                    ],
+                },
+                ProviderEvent::TurnCompleted,
+            ],
+            1,
+        )
+        .await;
+
+    let actual = hosted
+        .report(&by_model(UsageMetricsModelView::Actual))
+        .await;
+    assert_eq!(
+        keyed(&actual),
+        vec![
+            (model_key(GPT), part(tokens(60, 6), 0.10)),
+            (
+                model_key(UNLISTED),
+                UsageMetricsAggregate {
+                    cost: CountedCost {
+                        amount: None,
+                        is_partial: true,
+                    },
+                    ..part(tokens(40, 4), 0.0)
+                }
+            ),
+        ],
+        "the priced Model's figure is exact, and the unpriced one's is the one marked partial"
+    );
+    assert_eq!(
+        actual.buckets[0].total.cost,
+        CountedCost {
+            amount: Some(usd(0.10)),
+            is_partial: true,
+        }
+    );
+    hosted.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_share_with_unpriced_calls_is_marked_partial_on_its_own_key() {
+    let state = tempfile::tempdir().unwrap();
+    let mut hosted =
+        hosted(ServerConfig::new(state.path(), "model-shares-share-partial").unwrap()).await;
+    let auto = hosted.begin(AUTO).await;
+    hosted
+        .play(
+            &auto,
+            vec![
+                ProviderEvent::Usage {
+                    usage: tokens(100, 10),
+                    cost: Some(MeteredCost::reported(usd(0.10)).partial()),
+                    model_shares: vec![
+                        ModelShare {
+                            cost_is_partial: true,
+                            ..share(GPT, tokens(60, 6), 0.06)
+                        },
+                        share(UNLISTED, tokens(40, 4), 0.04),
+                    ],
+                },
+                ProviderEvent::TurnCompleted,
+            ],
+            1,
+        )
+        .await;
+
+    let actual = hosted
+        .report(&by_model(UsageMetricsModelView::Actual))
+        .await;
+    assert_eq!(
+        keyed(&actual),
+        vec![
+            (
+                model_key(GPT),
+                UsageMetricsAggregate {
+                    cost: CountedCost {
+                        amount: Some(usd(0.06)),
+                        is_partial: true,
+                    },
+                    ..part(tokens(60, 6), 0.06)
+                }
+            ),
+            (model_key(UNLISTED), part(tokens(40, 4), 0.04)),
+        ]
+    );
+    hosted.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_running_total_s_cost_no_share_accounts_for_counts_its_turn_under_the_selection() {
+    let state = tempfile::tempdir().unwrap();
+    let mut hosted =
+        hosted(ServerConfig::new(state.path(), "model-shares-leftover").unwrap()).await;
+    let auto = hosted.begin(AUTO).await;
+    hosted
+        .play(
+            &auto,
+            vec![
+                ProviderEvent::Usage {
+                    usage: tokens(100, 10),
+                    cost: Some(MeteredCost::reported_subtree(
+                        usd(0.10),
+                        "controlled:lifetime",
+                    )),
+                    model_shares: vec![share(GPT, tokens(100, 10), 0.06)],
+                },
+                ProviderEvent::TurnCompleted,
+            ],
+            1,
+        )
+        .await;
+
+    let actual = hosted
+        .report(&by_model(UsageMetricsModelView::Actual))
+        .await;
+    assert_eq!(
+        keyed(&actual),
+        vec![
+            // The Share covers every token, but not $0.04 of the Cost: the
+            // Turn has a part under its Selection, so it counts there.
+            (model_key(AUTO), part(tokens(0, 0), 0.04)),
+            (model_key(GPT), part(tokens(100, 10), 0.06)),
+        ]
     );
     hosted.server.shutdown().await.unwrap();
 }

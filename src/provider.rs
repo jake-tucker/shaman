@@ -1462,10 +1462,14 @@ pub enum ProviderEvent {
     /// Provider has evidence of which Model did which part: each Share's
     /// Usage is part of `usage`, and its Cost is on `cost`'s terms — its
     /// Basis, its Coverage, and, for a running total, its reporting
-    /// lifetime. What the Shares leave uncovered is the unattributed
-    /// remainder, which stays with the Agent Selection. A Provider with no
-    /// such evidence states none, and its whole Turn stays with the
-    /// Selection. Like the reading, the Shares replace the last ones whole.
+    /// lifetime. So where `cost` is a running total, each Share's Cost is
+    /// that Model's running total in the same lifetime, never the Turn's
+    /// increment of it: Cost Coverage takes the increments. A Share states
+    /// no Cost where `cost` is absent. What the Shares leave uncovered is
+    /// the unattributed remainder, which stays with the Agent Selection. A
+    /// Provider with no such evidence states none, and its whole Turn stays
+    /// with the Selection. Like the reading, the Shares replace the last
+    /// ones whole. See [`ModelShare`].
     Usage {
         usage: Usage,
         cost: Option<MeteredCost>,
@@ -1695,13 +1699,19 @@ impl ReportedMetering {
                     metered.partial()
                 }
             }),
+            // A Share's Cost is on the reading's terms, so a reading whose
+            // own Cost is unknown leaves none for its Shares.
             model_shares: self
                 .shares
                 .iter()
-                .map(|(model, share)| ModelShare {
-                    model: model.clone(),
-                    usage: share.usage.clone(),
-                    cost: share.reported_cost,
+                .map(|(model, share)| {
+                    let cost = share.reported_cost.filter(|_| self.reported_cost.is_some());
+                    ModelShare {
+                        model: model.clone(),
+                        usage: share.usage.clone(),
+                        cost,
+                        cost_is_partial: cost.is_some() && !share.cost_complete,
+                    }
                 })
                 .collect(),
         }

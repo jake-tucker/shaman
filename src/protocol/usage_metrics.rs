@@ -74,8 +74,8 @@ pub enum UsageMetricsBreakdown {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageMetricsModelView {
-    /// The Model its Agent Selection named, whatever ran: all of a Turn on
-    /// Auto counts under Auto.
+    /// The Model each Turn's Agent Selection named, whatever ran: all of a
+    /// Turn on Auto counts under Auto.
     #[default]
     Selected,
     /// Its Actual Models: each Model Share under a key for the Provider and

@@ -6939,15 +6939,8 @@ fn project_provider_event(
             ProviderEvent::Usage {
                 usage,
                 cost,
-                mut model_shares,
+                model_shares,
             } => {
-                // A Share's Cost is on the reading's terms, so a reading
-                // stating none leaves nothing for a Share's to be stated on.
-                if cost.is_none() {
-                    for share in &mut model_shares {
-                        share.cost = None;
-                    }
-                }
                 sessions
                     .publish_agent_output(
                         session_id,
