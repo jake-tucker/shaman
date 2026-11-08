@@ -1317,8 +1317,8 @@ impl Sidebar {
         self.act_on_menu_item(menu.selected)
     }
 
-    /// Moves the menu's selection onto the item drawn under the pointer, as
-    /// the arrows would, answering whether it moved.
+    /// Moves the menu's focus onto the item drawn under the pointer, as the
+    /// arrows would, answering whether it moved.
     pub(super) fn point_menu_at(&mut self, position: Position) -> bool {
         let show_icons = self.show_icons;
         let Some(index) = self.geometry.borrow().menu_hit(position) else {

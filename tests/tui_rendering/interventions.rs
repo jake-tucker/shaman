@@ -3,7 +3,7 @@
 
 use crate::tui_rendering::support::{
     add_activity, add_request, approval_activity, connected_application, enter_active_session,
-    invoke, key, rendered_application_rows, type_terminal_text, workspace_dir,
+    invoke, key, point_at, rendered_application_rows, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Position;
@@ -468,5 +468,47 @@ fn escape_leaves_a_decision_in_flight_alone_until_the_server_settles_it() {
         !screen(&app).contains("Approval · Choose Decision"),
         "the settled Approval reconciles the panel closed: {}",
         screen(&app)
+    );
+}
+
+/// A panel still arming takes no key the reader may have been mid-way
+/// through, and the pointer passing over it is no different: it moves no
+/// choice until the panel is armed.
+#[test]
+fn the_pointer_moves_no_choice_while_a_presented_questionnaire_arms() {
+    let workspace = workspace_dir();
+    let (mut app, clock) = armed_application(workspace.path());
+    let (_, mut snapshot, turn_id) = enter_active_session(&mut app, workspace.path());
+    add_request(&mut snapshot, turn_id, "Where should it run?");
+    let Some(Activity::Questionnaire { questionnaire, .. }) = snapshot.activities.last_mut() else {
+        unreachable!("the request was just added")
+    };
+    questionnaire.questions[0].choices = ["Locally", "Remotely"]
+        .into_iter()
+        .map(|label| suru::protocol::QuestionChoice {
+            id: label.to_lowercase(),
+            label: label.to_owned(),
+            description: None,
+            recommended: false,
+        })
+        .collect();
+    deliver(&mut app, &snapshot);
+
+    let rows = rendered_application_rows(&app);
+    let y = rows
+        .iter()
+        .position(|row| row.contains("Remotely"))
+        .expect("the choice is drawn");
+    let x = rows[y][..rows[y].find("Remotely").unwrap()].chars().count() as u16;
+
+    clock.advance(ARMING / 2);
+    assert!(
+        !point_at(&mut app, (x, y as u16)),
+        "the pointer moves nothing while the panel arms"
+    );
+    clock.advance(ARMING);
+    assert!(
+        point_at(&mut app, (x + 1, y as u16)),
+        "and walks the choices once it is armed"
     );
 }

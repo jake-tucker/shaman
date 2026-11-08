@@ -989,8 +989,8 @@ impl WorkspacePicker {
         )
     }
 
-    /// Moves the row menu's selection onto the item drawn under the pointer,
-    /// as the arrows would, answering whether it moved.
+    /// Moves the row menu's focus onto the item drawn under the pointer, as
+    /// the arrows would, answering whether it moved.
     pub(super) fn point_menu_at(&mut self, position: Position) -> bool {
         let before = self.menu.as_ref().map(|menu| menu.selected);
         self.menu_hit(position) && self.menu.as_ref().map(|menu| menu.selected) != before

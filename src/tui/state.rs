@@ -14688,7 +14688,11 @@ impl Application {
             }
             Some(PointerList::Worktrees) => self.state.worktree_picker.point_at(position),
             Some(PointerList::ModelOptions) => self.state.model_options.point_at(position),
-            Some(PointerList::Questionnaire) => self.state.questionnaires.point_at(position),
+            // A panel still presenting itself takes no key the reader may have
+            // been mid-way through, and the pointer moves its choices no more.
+            Some(PointerList::Questionnaire) => {
+                !self.state.intervention_is_arming() && self.state.questionnaires.point_at(position)
+            }
             Some(PointerList::SidebarMenu) => self.state.sidebar.point_menu_at(position),
             Some(PointerList::WorkspacePickerMenu) => {
                 self.state.workspace_picker.point_menu_at(position)
@@ -14951,18 +14955,6 @@ fn is_reader_interaction(event: &InputEvent) -> bool {
 }
 
 impl TuiState {
-    /// Which surface above the Intervention panels owns the keys, if any.
-    /// The routing in [`Application::command_for_input_mode`] and the
-    /// self-presentation step read the ladder through this one answer, so
-    /// "something else owns the keys" is said once.
-    ///
-    /// A completion list left standing over the composer is not one of them:
-    /// it is the composer's own, and the panels outrank it.
-    ///
-    /// Held Interventions — the open Session's Origin Unreachable — answer
-    /// last: nothing of the panels is presented, but a surface the reader
-    /// opened over them, the `/relay` list a login-needed offer opens say,
-    /// still owns its keys.
     /// The list the pointer drives, which is whichever list the keys reach
     /// first, where that list follows the pointer at all.
     fn pointer_list(&self) -> Option<PointerList> {
@@ -14985,6 +14977,18 @@ impl TuiState {
         }
     }
 
+    /// Which surface above the Intervention panels owns the keys, if any.
+    /// The routing in [`Application::command_for_input_mode`] and the
+    /// self-presentation step read the ladder through this one answer, so
+    /// "something else owns the keys" is said once.
+    ///
+    /// A completion list left standing over the composer is not one of them:
+    /// it is the composer's own, and the panels outrank it.
+    ///
+    /// Held Interventions — the open Session's Origin Unreachable — answer
+    /// last: nothing of the panels is presented, but a surface the reader
+    /// opened over them, the `/relay` list a login-needed offer opens say,
+    /// still owns its keys.
     fn surface_above_interventions(&self) -> Option<SurfaceAboveInterventions> {
         // The Usage Metrics view covers even the Approval Posture picker.
         if self.metrics_view.is_open() {

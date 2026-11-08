@@ -393,8 +393,8 @@ impl ComposerCompletion {
         &self.targets
     }
 
-    /// Selects the candidate drawn under the pointer, as the keys would, and
-    /// answers whether the selection moved. What was pointed at is in view
+    /// Moves focus onto the candidate drawn under the pointer, as the keys
+    /// would, and answers whether it moved. What was pointed at is in view
     /// already, so the window holds.
     pub(super) fn point_at(&mut self, position: Position) -> bool {
         let Some(mode) = self.mode.as_mut() else {
