@@ -269,6 +269,7 @@ async fn copilot_models_carry_their_prices_limits_and_advisories_as_model_detail
                     text: "25% off this month, until 2099-11-30".to_owned(),
                 },
             ],
+            resolved_model: None,
         },
         "every part Copilot publishes reaches the catalog, the retention warning first"
     );

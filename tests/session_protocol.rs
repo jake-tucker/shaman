@@ -3266,6 +3266,7 @@ fn model_descriptors_and_option_values_use_strict_typed_json() {
                 title: Some("Data retention".to_owned()),
                 text: "Retained [briefly](https://example.com)".to_owned(),
             }],
+            resolved_model: None,
         },
     };
     let encoded = serde_json::to_value(&descriptor).expect("encode Model descriptor");

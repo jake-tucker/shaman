@@ -9,9 +9,9 @@
 use super::{CLAUDE_PROVIDER_ID, REASONING_EFFORT_OPTION_ID, wire::NativeModel};
 use crate::{
     protocol::{
-        AgentSelection, ModelAvailability, ModelDescriptor, ModelId, ModelOptionChoice,
-        ModelOptionChoiceId, ModelOptionDescriptor, ModelOptionId, ModelOptionKind,
-        ModelOptionRole, ProviderId,
+        AgentSelection, ModelAvailability, ModelDescriptor, ModelDetails, ModelId,
+        ModelOptionChoice, ModelOptionChoiceId, ModelOptionDescriptor, ModelOptionId,
+        ModelOptionKind, ModelOptionRole, ProviderId,
     },
     provider::humanized_wire_id,
 };
@@ -77,7 +77,15 @@ fn model_descriptor(model: NativeModel) -> ModelDescriptor {
         options: reasoning_effort_option(&model.supported_effort_levels)
             .into_iter()
             .collect(),
-        details: Default::default(),
+        // The CLI names the Model a call ran on without its 1M-context tier, so the row's
+        // resolution is read the same way.
+        details: ModelDetails {
+            resolved_model: model
+                .resolved_model
+                .as_deref()
+                .map(|resolved| ModelId::new(super::without_context_tier(resolved))),
+            ..ModelDetails::default()
+        },
     }
 }
 

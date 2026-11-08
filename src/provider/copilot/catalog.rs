@@ -144,6 +144,7 @@ fn model_details(model: &Model) -> ModelDetails {
             .and_then(|billing| billing.token_prices.as_ref())
             .and_then(token_prices),
         advisories: advisories(model),
+        resolved_model: None,
     }
 }
 

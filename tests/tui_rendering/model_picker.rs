@@ -2055,6 +2055,7 @@ fn detailed_catalog() -> ModelCatalog {
             title: Some("Data retention".to_owned()),
             text: "Prompts may be retained. [Learn more](https://example.com/r)".to_owned(),
         }],
+        resolved_model: None,
     };
     let mut terra = model_descriptor(
         "copilot",

@@ -1252,7 +1252,7 @@ fn model_labels(
         .iter()
         .filter_map(|key| match key {
             UsageMetricsKey::Model { provider, model } => {
-                let label = catalog.model(provider, model).map_or_else(
+                let label = catalog.actual_model(provider, model).map_or_else(
                     || model.as_str().to_owned(),
                     |descriptor| descriptor.display_name.clone(),
                 );

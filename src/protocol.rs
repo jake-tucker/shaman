@@ -235,6 +235,11 @@ pub struct ModelDetails {
     pub prices: Option<ModelPrices>,
     /// What the Provider asks be shown beside the Model, warnings first.
     pub advisories: Vec<ModelAdvisory>,
+    /// The concrete Model the Provider resolves this one to today, where its
+    /// id is an alias — Claude's `default` or `opus` — so the Actual Model of
+    /// work done under it is named as it is here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_model: Option<ModelId>,
 }
 
 impl ModelDetails {
@@ -593,6 +598,23 @@ impl ModelCatalog {
             .filter(|catalog| catalog.provider == *provider)
             .flat_map(|catalog| &catalog.models)
             .find(|descriptor| descriptor.id == *model)
+    }
+
+    /// The Model a catalog row names the Actual Model `model` by: the row
+    /// listed as it, or else the first row other than the default that
+    /// resolves to it — the default's name says how it was chosen rather
+    /// than what ran.
+    pub fn actual_model(&self, provider: &ProviderId, model: &ModelId) -> Option<&ModelDescriptor> {
+        self.model(provider, model).or_else(|| {
+            self.providers
+                .iter()
+                .filter(|catalog| catalog.provider == *provider)
+                .flat_map(|catalog| &catalog.models)
+                .find(|descriptor| {
+                    !descriptor.is_default
+                        && descriptor.details.resolved_model.as_ref() == Some(model)
+                })
+        })
     }
 }
 
