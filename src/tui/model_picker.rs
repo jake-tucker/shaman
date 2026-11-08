@@ -101,19 +101,23 @@ impl<'a> CatalogNames<'a> {
 
     /// What `outlook`'s catalog calls `model`: as `provider` offers it where
     /// the Provider is known, and otherwise as the first Provider offering a
-    /// Model by that identifier does.
+    /// Model by that identifier does. A Model no row is listed as is named by
+    /// the row resolving to it, as Usage Metrics names an Actual Model.
     pub(in crate::tui) fn model(
         &self,
         outlook: &Outlook,
         provider: Option<&ProviderId>,
         model: &ModelId,
     ) -> Option<&'a str> {
-        self.0
+        let rows = self
+            .0
             .get(outlook)?
             .iter()
-            .filter(|candidate| provider.is_none_or(|provider| &candidate.provider == provider))
-            .flat_map(|candidate| &candidate.models)
-            .find(|descriptor| &descriptor.id == model)
+            .filter(move |candidate| {
+                provider.is_none_or(|provider| &candidate.provider == provider)
+            })
+            .flat_map(|candidate| &candidate.models);
+        crate::protocol::actual_model_row(rows, model)
             .map(|descriptor| descriptor.display_name.as_str())
     }
 }

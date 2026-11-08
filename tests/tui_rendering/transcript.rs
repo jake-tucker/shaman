@@ -12905,3 +12905,65 @@ fn the_line_gesture_is_a_semantic_command() {
         "text_selection.line"
     );
 }
+
+/// A Claude catalog whose `default` alias and two other rows resolve to `claude-fixture-1`, the
+/// base row listed after its 1M-context variant.
+fn resolving_catalog() -> ModelCatalog {
+    let row = |id: &str, name: &str, is_default: bool| {
+        let mut row =
+            model_descriptor("claude", id, name, is_default, ModelAvailability::Available);
+        row.details.resolved_model = Some(ModelId::new("claude-fixture-1"));
+        row
+    };
+    ModelCatalog {
+        providers: vec![ProviderModelCatalog {
+            provider: ProviderId::new("claude"),
+            display_name: "Claude".to_owned(),
+            models: vec![
+                row("default", "Default (recommended)", true),
+                row("fixture[1m]", "Fixture (1M context)", false),
+                row("fixture", "Fixture", false),
+            ],
+            status: ProviderCatalogStatus::Fresh,
+        }],
+    }
+}
+
+#[test]
+fn a_message_names_its_actual_model_by_the_catalog_row_resolving_to_it() {
+    let workspace = workspace_dir();
+    let mut snapshot = navigable_session_snapshot(SessionId::new(), workspace.path(), 1);
+    let answer = snapshot
+        .messages
+        .iter_mut()
+        .find(|message| message.role == MessageRole::Agent)
+        .expect("fixture contains an Agent Message");
+    answer.content = "Resolved.".to_owned();
+    answer.model = Some(ModelAttribution {
+        provider: ProviderId::new("claude"),
+        selected: ModelId::new("default"),
+        actual: ModelId::new("claude-fixture-1"),
+    });
+    let mut application = connected_application(workspace.path());
+    application
+        .handle_event(ApplicationEvent::Managed(ManagedEvent::ModelCatalog(
+            resolving_catalog(),
+        )))
+        .expect("cache the Claude catalog");
+    application
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .expect("attach a settled Session");
+
+    let rows = rendered_application_rows_at(&application, 80, 24);
+    let heading = rows
+        .iter()
+        .find(|row| row.contains("Default (recommended) ·"))
+        .unwrap_or_else(|| panic!("a Model heading: {}", rows.join("\n")));
+    assert!(
+        heading
+            .trim_end()
+            .ends_with("Default (recommended) · Fixture"),
+        "the Actual Model reads as Usage Metrics names it, from the base row resolving to it: \
+         {heading:?}"
+    );
+}

@@ -600,24 +600,38 @@ impl ModelCatalog {
             .find(|descriptor| descriptor.id == *model)
     }
 
-    /// The catalog row naming the Actual Model `model`: the row listed as
-    /// it, or else, among the rows other than the default that resolve to
-    /// it, the one with the shortest id — the base row, ahead of those
-    /// naming a variant of it — and the first listed of those. The default's
-    /// name says how a Model was chosen rather than what ran.
+    /// The catalog row naming the Actual Model `model` under `provider`, by
+    /// [`actual_model_row`].
     pub fn actual_model(&self, provider: &ProviderId, model: &ModelId) -> Option<&ModelDescriptor> {
-        self.model(provider, model).or_else(|| {
+        actual_model_row(
             self.providers
                 .iter()
                 .filter(|catalog| catalog.provider == *provider)
-                .flat_map(|catalog| &catalog.models)
-                .filter(|descriptor| {
-                    !descriptor.is_default
-                        && descriptor.details.resolved_model.as_ref() == Some(model)
-                })
-                .min_by_key(|descriptor| descriptor.id.as_str().len())
-        })
+                .flat_map(|catalog| &catalog.models),
+            model,
+        )
     }
+}
+
+/// The row among `rows` naming the Actual Model `model`: the row listed as
+/// it, or else, among the rows other than the default that resolve to it,
+/// the one with the shortest id — the base row, ahead of those naming a
+/// variant of it — and the first listed of those. The default's name says
+/// how a Model was chosen rather than what ran. Every surface naming a
+/// Model that ran names it by this rule, so a Transcript and Usage Metrics
+/// agree.
+pub fn actual_model_row<'a>(
+    rows: impl Iterator<Item = &'a ModelDescriptor> + Clone,
+    model: &ModelId,
+) -> Option<&'a ModelDescriptor> {
+    rows.clone()
+        .find(|descriptor| descriptor.id == *model)
+        .or_else(|| {
+            rows.filter(|descriptor| {
+                !descriptor.is_default && descriptor.details.resolved_model.as_ref() == Some(model)
+            })
+            .min_by_key(|descriptor| descriptor.id.as_str().len())
+        })
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
