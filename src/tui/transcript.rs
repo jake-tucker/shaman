@@ -7807,6 +7807,32 @@ mod tests {
         );
     }
 
+    /// On any Provider, a settled Turn whose last Message from its Agent says nothing still folds
+    /// to the answer it did give, rather than to the empty one that followed it.
+    #[test]
+    fn a_turn_fold_answers_with_the_last_message_that_says_something() {
+        let mut entries = vec![Entry::Message(user_message("run the tests"))];
+        entries.extend(hidden_work());
+        entries.extend([
+            Entry::Message(agent_message("All green.")),
+            Entry::Message(agent_message("")),
+        ]);
+        let (snapshot, _) = turn_snapshot(vec![(TurnStatus::Completed, entries)]);
+
+        let rows = projected_rows(
+            &snapshot,
+            &TranscriptFolds::default(),
+            &TranscriptGroups::default(),
+        );
+
+        assert_eq!(
+            rows.into_iter()
+                .filter(|row| !row.trim().is_empty())
+                .collect::<Vec<_>>(),
+            ["┃ run the tests", "  ✓ Worked", "  All green."]
+        );
+    }
+
     fn superseded_message(content: &str) -> Message {
         Message {
             status: MessageStatus::Superseded,

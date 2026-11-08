@@ -18,6 +18,7 @@ A Message is identified to the store with a new event beside its start rather th
 
 ## Consequences
 
+- A Turn's final Message is the last one that may answer it: never a Superseded Message, nor one with nothing in it. That second clause reaches every Provider, where a Turn Fold could once settle on an empty Message and hide the answer before it; a Subagent Report already read a Turn's final Message this way.
 - A Route's rows stay outside a closed Turn Fold, so a one-Model Route costs a settled Turn one line, every time. A verdict's account can run to 4 KB, so only its sentence stands there, with the account folded beneath it.
 - A person who denies a review's Approval may spend more rather than less: the one denial seen failed the judge, and the Route escalated to its repair, passing over the solver's answer though nothing rejected it.
 - A Tool a losing phase leaves running hears nothing further, so it settles with the Turn as `Failed` (ADR 0039) rather than by anything Copilot said. That was never seen outside an abort.
