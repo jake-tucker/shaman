@@ -21,7 +21,7 @@ mod wire;
 pub use session::CodexRuntime;
 
 use super::{ProviderError, concise_remote_message};
-use crate::protocol::ProviderUnavailability;
+use crate::protocol::{ProviderId, ProviderUnavailability};
 
 /// What the Log and failures call the Codex harness server process.
 const CODEX_HARNESS_NAME: &str = "Codex app-server";
@@ -29,6 +29,11 @@ const CODEX_HARNESS_NAME: &str = "Codex app-server";
 /// What the Log and failures call the one-shot Codex run an Errand is, which is
 /// a different process in a different mode from the app-server above.
 const CODEX_ONE_SHOT_NAME: &str = "Codex exec";
+
+/// The Provider every Codex Selection, Model, and Reroute names.
+fn provider_id() -> ProviderId {
+    ProviderId::new("codex")
+}
 
 /// The catalog Codex's Models are priced from. models.dev files them under
 /// the Model vendor rather than the CLI that fronts them.

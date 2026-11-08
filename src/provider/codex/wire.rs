@@ -17,8 +17,8 @@ use crate::{
     protocol::{
         AgentSelection, CodexApprovalPolicy, CodexSandboxMode, FileChange, ModelAvailability,
         ModelDescriptor, ModelId, ModelOptionChoice, ModelOptionChoiceId, ModelOptionDescriptor,
-        ModelOptionId, ModelOptionKind, ModelOptionRole, ModelOptionValue, ProviderId,
-        ReasoningSummaryDetail, Usage,
+        ModelOptionId, ModelOptionKind, ModelOptionRole, ModelOptionValue, ReasoningSummaryDetail,
+        Usage,
     },
     provider::{
         BrokerHandoff, ProviderAttachment, ProviderError, exclusive_count, humanized_wire_id,
@@ -255,7 +255,7 @@ struct NativeServiceTier {
 
 impl From<NativeModel> for ModelDescriptor {
     fn from(model: NativeModel) -> Self {
-        let provider = ProviderId::new("codex");
+        let provider = super::provider_id();
         let mut options = Vec::new();
         if !model.supported_reasoning_efforts.is_empty() {
             options.push(ModelOptionDescriptor {

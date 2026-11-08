@@ -177,7 +177,7 @@ impl ProviderRuntime for CodexRuntime {
     }
 
     fn provider_id(&self) -> ProviderId {
-        ProviderId::new("codex")
+        super::provider_id()
     }
 
     fn display_name(&self) -> &str {
@@ -568,7 +568,7 @@ async fn start_codex_thread(
         posture: context.posture.clone(),
     };
     let selection = AgentSelection {
-        provider: ProviderId::new("codex"),
+        provider: super::provider_id(),
         model: ModelId::new(started.model),
         options: initial_options,
     };

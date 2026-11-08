@@ -29,7 +29,7 @@ use crate::{
     pricing::{ModelsDevModel, PricingSource},
     protocol::{
         AgentSelection, ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection,
-        ModelOptionValue, ProviderId, ProviderUnavailability, Usage,
+        ModelOptionValue, ProviderUnavailability, Usage,
     },
     provider::{
         ErrandAnswer, ErrandConsumption, ErrandCost, ErrandFailed, ProviderErrand, ProviderError,
@@ -73,7 +73,7 @@ const WEB_SEARCH_DISABLED: &str = "disabled";
 /// costs a cheaper Errand rather than the Errand itself.
 pub(super) fn declared_errand_selection() -> AgentSelection {
     AgentSelection {
-        provider: ProviderId::new("codex"),
+        provider: super::provider_id(),
         model: ModelId::new(ERRAND_MODEL),
         options: vec![ModelOptionSelection {
             id: ModelOptionId::new(REASONING_EFFORT_OPTION_ID),

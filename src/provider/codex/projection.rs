@@ -857,7 +857,7 @@ impl NativeCorrelation {
             return Some((selection.provider.clone(), selection.model.clone()));
         }
         let model = self.children.get(thread_id)?.model.clone()?;
-        Some((ProviderId::new("codex"), model))
+        Some((super::provider_id(), model))
     }
 
     fn is_active_turn(&self, thread_id: &str, turn_id: &str) -> bool {

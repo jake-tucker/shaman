@@ -14,8 +14,8 @@ use super::{
 };
 use crate::{
     protocol::{
-        ProviderId, SkillCatalog, SkillCatalogCapabilities, SkillCatalogStatus, SkillDescriptor,
-        SkillId, SkillPromptDelivery,
+        SkillCatalog, SkillCatalogCapabilities, SkillCatalogStatus, SkillDescriptor, SkillId,
+        SkillPromptDelivery,
     },
     provider::{ProviderError, ProviderPrompt, harness::ProcessRegistry},
 };
@@ -111,7 +111,7 @@ impl CodexSkills {
             .expect("Codex Skill store lock is not poisoned")
             .insert(execution_directory.to_owned(), native);
         Ok(SkillCatalog {
-            provider: ProviderId::new("codex"),
+            provider: super::provider_id(),
             execution_directory: crate::protocol::ExecutionDirectory {
                 path: execution_directory.to_owned(),
             },
