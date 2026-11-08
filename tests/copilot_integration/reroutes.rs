@@ -7,8 +7,8 @@
 use std::sync::Arc;
 
 use crate::copilot_integration::support::{
-    ScriptedCopilot, connect_in, conversation_fixture, settled_session, titling_turned_off,
-    transcript_outline,
+    ScriptedCopilot, connect_in, conversation_fixture, opened_session, settled_session,
+    titling_turned_off, transcript_outline,
 };
 use suru::{
     managed_client::ManagedClientConfig,
@@ -41,6 +41,19 @@ const AUTO_CALLS_ON_TWO_MODELS: &str = r#"      event r1 session.auto_mode_resol
       event u2 assistant.usage '{"apiCallId":"c2","model":"other-fixture","isAuto":true,"inputTokens":10,"outputTokens":2}'
       event m2 assistant.message '{"messageId":"m2","apiCallId":"c2","content":"Second","model":"other-fixture"}'
       event i1 session.idle '{}'
+"#;
+
+/// A Turn that settles while its Subagent works on: once the Subagent settles, the loop it wakes
+/// falls back off a refusing Model before it says anything, so the Reroute is the first thing the
+/// Continuation that loop works in holds.
+const REFUSAL_FALLBACK_IN_A_WOKEN_LOOP: &str = r#"      event e1 assistant.message '{"messageId":"m1","content":"Kicked off the audit."}'
+      agent_event e2 agent-1 subagent.started '{"toolCallId":"t-spawn","agentName":"auditor","agentDisplayName":"Auditor","agentDescription":"Audit the dependencies"}'
+      event e3 session.idle '{}'
+      wait_for "$COPILOT_FIXTURE_RELEASE"
+      agent_event e4 agent-1 subagent.completed '{"toolCallId":"t-spawn","agentName":"auditor","agentDisplayName":"Auditor","durationMs":900}'
+      event e5 session.model_change '{"previousModel":"claude-fixture","newModel":"fallback-fixture","cause":"refusal_fallback"}'
+      event e6 assistant.message '{"messageId":"m2","content":"The audit found nothing."}'
+      event e7 session.idle '{}'
 "#;
 
 /// Auto, which takes no Model Options.
@@ -288,4 +301,36 @@ async fn auto_calling_a_different_model_for_each_call_is_no_reroute() {
             .map(|selection| selection.model.as_str()),
         Some("auto")
     );
+}
+
+#[tokio::test]
+async fn a_refusal_fallback_before_a_woken_loop_says_anything_heads_its_continuation() {
+    let copilot = conversation_fixture(REFUSAL_FALLBACK_IN_A_WOKEN_LOOP);
+    let opened = opened_session(&copilot, "copilot-woken-loop-reroute", "Audit it").await;
+    let settled = settled_session(&opened.client, opened.session_id, 0).await;
+    assert_eq!(settled.turns[0].status, TurnStatus::Completed);
+
+    copilot.release();
+    let woken = settled_session(&opened.client, opened.session_id, 1).await;
+    let outline = transcript_outline(&woken, None);
+    let continuation = outline
+        .iter()
+        .filter(|item| item.starts_with("turn 1: "))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        continuation,
+        [
+            "turn 1: Copilot rerouted from claude-fixture to fallback-fixture: the Model declined \
+             the request",
+            "turn 1: Agent: The audit found nothing.",
+        ],
+        "the Reroute stands where Copilot reported it, ahead of what the woken loop said: \
+         {outline:#?}"
+    );
+    opened
+        .server
+        .shutdown()
+        .await
+        .expect("shut the server down");
 }

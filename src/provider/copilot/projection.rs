@@ -2076,15 +2076,21 @@ fn project_session_event(
                 .into_iter()
                 .collect())
         }
-        // Copilot switching Models of its own accord mid-Turn is a Reroute where it reports it.
-        // With no Turn open there is nothing it switched away from.
-        SessionEventType::SessionModelChange if correlation.turn.is_some() => {
-            Ok(reported::<SessionModelChangeData>(&event)
+        // Copilot switching Models of its own accord is a Reroute where it reports it. It is the
+        // loop's own output, so like content it opens the Continuation stretch a loop woken
+        // after its Turn settled owes, and stands ahead of whatever that loop goes on to say;
+        // outside any Turn it is dropped.
+        SessionEventType::SessionModelChange => {
+            let Some(reroute) = reported::<SessionModelChangeData>(&event)
                 .as_ref()
                 .and_then(refusal_fallback_reroute)
-                .map(|reroute| attributed(None, reroute))
-                .into_iter()
-                .collect())
+            else {
+                return Ok(Vec::new());
+            };
+            if correlation.open_main_streams().is_none() {
+                return Ok(Vec::new());
+            }
+            Ok(vec![attributed(None, reroute)])
         }
         SessionEventType::SessionAutoTierSwitchFailed => Ok(reported(&event)
             .map(|refusal| correlation.project_tier_refused(refusal))
