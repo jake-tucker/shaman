@@ -1,8 +1,9 @@
 //! Model option resolution and atomic option updates.
 
 use crate::tui_rendering::support::{
-    model_descriptor, rendered_application_rows, rendered_application_rows_at,
-    selected_session_snapshot, type_terminal_text, workspace_dir,
+    deliver_settings, model_descriptor, rendered_application_buffer, rendered_application_rows,
+    rendered_application_rows_at, selected_session_snapshot, text_position, type_terminal_text,
+    workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use suru::{
@@ -1249,6 +1250,10 @@ fn routed_model() -> suru::protocol::ModelDescriptor {
 }
 
 fn landing_on_the_routed_model() -> Application {
+    landing_on_model_with_options(routed_model())
+}
+
+fn landing_on_model_with_options(model: suru::protocol::ModelDescriptor) -> Application {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
@@ -1263,9 +1268,15 @@ fn landing_on_the_routed_model() -> Application {
             request,
             catalog: ModelCatalog {
                 providers: vec![ProviderModelCatalog {
-                    provider: ProviderId::new("copilot"),
-                    display_name: "Copilot".to_owned(),
-                    models: vec![routed_model()],
+                    provider: model.provider.clone(),
+                    display_name: match model.provider.as_str() {
+                        "copilot" => "Copilot",
+                        "codex" => "Codex",
+                        "claude" => "Claude",
+                        provider => provider,
+                    }
+                    .to_owned(),
+                    models: vec![model],
                     status: ProviderCatalogStatus::Fresh,
                 }],
             },
@@ -1308,7 +1319,7 @@ fn a_routing_tier_is_chosen_beside_the_model_and_a_disabled_one_says_why_and_can
     let max = choices.find("Max").expect("Max is listed");
     assert!(standard < high && high < max, "Copilot's order: {choices}");
     assert!(
-        choices.contains("Max [unavailable] · Not on your plan."),
+        choices.contains("Max [unavailable]") && !choices.contains("Not on your plan."),
         "{choices}"
     );
 
@@ -1317,9 +1328,128 @@ fn a_routing_tier_is_chosen_beside_the_model_and_a_disabled_one_says_why_and_can
     press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
     let still = rendered_application_rows_at(&application, 140, 18).join("\n");
     assert!(
-        still.contains("Max [unavailable]"),
+        still.contains("Max [unavailable]")
+            && still.contains("Not on your plan. The most capable models."),
         "choosing a disabled tier leaves the choices standing: {still}"
     );
+}
+
+#[test]
+fn option_and_choice_descriptions_wrap_beside_the_list_and_copy_as_written() {
+    use suru::protocol::{EffectiveSettings, SidebarVisibility, TextSelectionCopy};
+
+    const OPTION_DESCRIPTION: &str = "Choose how the Model balances capability and response time. This explanation is \
+         intentionally longer than a single list row so its concluding guidance stays readable.";
+    const CHOICE_DESCRIPTION: &str = "Use the most capable configuration for demanding work, with additional processing \
+         before responding. This longer explanation keeps its final recommendation visible.";
+
+    for (provider, role) in [
+        ("copilot", ModelOptionRole::RoutingTier),
+        ("copilot", ModelOptionRole::ReasoningEffort),
+        ("codex", ModelOptionRole::ReasoningEffort),
+        ("claude", ModelOptionRole::ReasoningEffort),
+    ] {
+        let mut model = model_descriptor(
+            provider,
+            "configurable",
+            "Configurable Model",
+            true,
+            ModelAvailability::Available,
+        );
+        model.options.push(ModelOptionDescriptor {
+            id: ModelOptionId::new("configuration"),
+            label: "Configuration".to_owned(),
+            description: Some(OPTION_DESCRIPTION.to_owned()),
+            role,
+            kind: ModelOptionKind::Select {
+                choices: vec![
+                    ModelOptionChoice {
+                        id: ModelOptionChoiceId::new("standard"),
+                        label: "Standard".to_owned(),
+                        description: Some(CHOICE_DESCRIPTION.to_owned()),
+                        availability: ModelAvailability::Available,
+                    },
+                    ModelOptionChoice {
+                        id: ModelOptionChoiceId::new("alternate"),
+                        label: "Alternate".to_owned(),
+                        description: Some("A different configuration.".to_owned()),
+                        availability: ModelAvailability::Available,
+                    },
+                ],
+                default: ModelOptionChoiceId::new("standard"),
+            },
+        });
+        let mut application = landing_on_model_with_options(model);
+        let mut settings = EffectiveSettings::default();
+        settings.sidebar.initial_visibility = SidebarVisibility::Hidden;
+        settings.text_selection.copy = TextSelectionCopy::Release;
+        deliver_settings(&mut application, settings);
+
+        let buffer = rendered_application_buffer(&application, 140, 30);
+        let option = text_position(&buffer, "› Configuration");
+        let start = text_position(&buffer, "Choose how");
+        let tail = text_position(&buffer, "readable.");
+        assert!(start.0 > option.0 && start.1 < tail.1);
+        assert_eq!(
+            super::selection::drag(
+                &mut application,
+                start,
+                (tail.0 + "readable.".len() as u16 - 1, tail.1),
+            ),
+            ApplicationTransition::CopyToClipboard(OPTION_DESCRIPTION.into()),
+        );
+
+        press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+        let buffer = rendered_application_buffer(&application, 140, 30);
+        let choice = text_position(&buffer, "› Standard [current]");
+        let start = text_position(&buffer, "Use the most");
+        let tail = text_position(&buffer, "visible.");
+        assert!(start.0 > choice.0 && start.1 < tail.1);
+        assert_eq!(
+            super::selection::drag(
+                &mut application,
+                start,
+                (tail.0 + "visible.".len() as u16 - 1, tail.1),
+            ),
+            ApplicationTransition::CopyToClipboard(CHOICE_DESCRIPTION.into()),
+        );
+
+        press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+        let moved = rendered_application_rows_at(&application, 140, 30).join("\n");
+        assert!(moved.contains("A different configuration."));
+        assert!(!moved.contains("Use the most capable"));
+        press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(
+            rendered_application_rows_at(&application, 140, 30)
+                .join("\n")
+                .contains("Configuration · Alternate")
+        );
+    }
+}
+
+#[test]
+fn split_options_mark_overflow_and_keep_compact_choices_on_narrow_terminals() {
+    let mut model = routed_model();
+    model.options[0].description = Some("A lengthy explanation of routing choices. ".repeat(80));
+    let mut application = landing_on_model_with_options(model);
+    let split = rendered_application_rows_at(&application, 140, 12);
+    assert!(split.iter().any(|row| row.contains('…')));
+    assert!(split.iter().any(|row| row.contains("› Routing tier")));
+    assert!(split.iter().any(|row| row.contains("Confirm")));
+
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    for (width, height) in [(80, 14), (103, 14), (104, 14), (140, 5)] {
+        let rows = rendered_application_rows_at(&application, width, height).join("\n");
+        assert!(
+            rows.contains("› Standard [current]"),
+            "{width}x{height}: {rows}"
+        );
+    }
+    let narrow = rendered_application_rows_at(&application, 80, 14).join("\n");
+    assert!(narrow.contains("Standard [current] · Versatile models."));
+    let wide = rendered_application_rows_at(&application, 104, 14).join("\n");
+    assert!(!wide.contains("Standard [current] · Versatile models."));
+    assert!(wide.contains("Versatile models."));
 }
 
 /// The picker shows Copilot's default as the choice in force, and taking it stores no tier, because

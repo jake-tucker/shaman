@@ -37,6 +37,7 @@ use super::{
     connect_overlay::{ConnectDetails, ConnectOverlay, LoginStep},
     context_overlay::{ContextOverlayView, ContextRow},
     directory_browser::{DirectoryBrowserRow, DirectoryBrowserRowKind},
+    drawn_pane::DrawnPane,
     found_machines::{FoundMachine, FoundMachines, GroupState, MachineGroup, MachineState},
     icon_picker,
     keymap::binding_label,
@@ -4369,14 +4370,86 @@ fn render_onboarding(frame: &mut Frame<'_>, state: &TuiState, main: Rect, theme:
 }
 
 fn render_model_options(frame: &mut Frame<'_>, state: &TuiState, main: Rect, theme: &Theme) {
-    let area = centered_rect(
-        main,
-        main.width.saturating_sub(4).min(76),
-        main.height.saturating_sub(2).min(14),
+    let split = SplitBox::fits(main).then(|| {
+        let area = SplitBox::area(main, MODEL_PICKER_SPLIT_HEIGHT);
+        SplitBox::new(area, SplitBox::inner(area), MODEL_PICKER_SPLIT_LIST)
+    });
+    let area = split.as_ref().map_or_else(
+        || {
+            centered_rect(
+                main,
+                main.width.saturating_sub(4).min(76),
+                main.height.saturating_sub(2).min(14),
+            )
+        },
+        |split| split.area,
     );
-    let content_width = usize::from(area.width.saturating_sub(2));
-    let content_height = usize::from(area.height.saturating_sub(2));
+    let list_area = split
+        .as_ref()
+        .map_or_else(|| SplitBox::inner(area), |split| split.list);
+    let content_width = usize::from(list_area.width);
+    let content_height = usize::from(list_area.height);
     let mut lines = Vec::with_capacity(content_height);
+    let option_rows = state.model_options.rows();
+    let choice_rows = state.model_options.choice_rows();
+    let mut pane = DrawnPane::default();
+    if let Some(split) = &split {
+        let pane_content = split.pane_content();
+        let width = pane_content.width;
+        if let Some(row) = choice_rows.iter().find(|row| row.selected) {
+            pane.line(
+                &row.label,
+                width,
+                theme.text.primary.add_modifier(Modifier::BOLD),
+            );
+            if row.current {
+                pane.line("Current value", width, theme.text.subdued);
+            }
+            if !row.available {
+                pane.line("Unavailable", width, theme.text.subdued);
+            }
+            if let Some(description) = &row.description {
+                pane.blank();
+                pane.wrap(description, "", width, theme.text.primary);
+            }
+            pane.blank();
+        }
+        if let Some(descriptor) = state.model_options.selected_descriptor() {
+            pane.line(
+                &descriptor.label,
+                width,
+                theme.text.primary.add_modifier(Modifier::BOLD),
+            );
+            if let Some(row) = option_rows.iter().find(|row| row.selected) {
+                pane.wrap(&row.value, "", width, theme.text.subdued);
+                if !row.available {
+                    pane.line("Unavailable", width, theme.text.subdued);
+                }
+            }
+            if let Some(description) = &descriptor.description {
+                pane.blank();
+                pane.wrap(description, "", width, theme.text.primary);
+            }
+        } else if state.model_options.is_confirm_selected() {
+            pane.line(
+                "Confirm",
+                width,
+                theme.text.primary.add_modifier(Modifier::BOLD),
+            );
+            pane.blank();
+            pane.wrap(
+                if state.model_options.is_valid() {
+                    "Apply the staged Model Options."
+                } else {
+                    "The Model or a selected value is unavailable. Choose available values before applying."
+                },
+                "",
+                width,
+                theme.text.primary,
+            );
+        }
+        pane.fit(usize::from(pane_content.height), theme);
+    }
     let model = state
         .model_options
         .model()
@@ -4400,12 +4473,12 @@ fn render_model_options(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         ));
     }
 
-    if state.model_options.is_choice_picker_open() {
+    let title = if state.model_options.is_choice_picker_open() {
         let descriptor = state
             .model_options
             .selected_descriptor()
             .expect("an open choice picker has a descriptor");
-        if content_height >= 3 {
+        if split.is_none() && content_height >= 3 {
             lines.push(Line::styled(
                 truncate_to_width(
                     descriptor
@@ -4419,14 +4492,13 @@ fn render_model_options(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         }
         let footer_rows = usize::from(content_height >= 3);
         let capacity = content_height.saturating_sub(lines.len() + footer_rows);
-        let rows = state.model_options.choice_rows();
-        let selected = rows.iter().position(|row| row.selected);
+        let selected = choice_rows.iter().position(|row| row.selected);
         lines.extend(
             state
                 .model_options
                 .choices_window()
-                .show(rows, capacity, selected)
-                .map(|row| model_option_choice_line(row, content_width, theme)),
+                .show(choice_rows.iter().collect(), capacity, selected)
+                .map(|row| model_option_choice_line(row, content_width, split.is_none(), theme)),
         );
         if footer_rows > 0 && lines.len() < content_height {
             lines.push(Line::styled(
@@ -4434,111 +4506,122 @@ fn render_model_options(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
                 theme.text.subdued,
             ));
         }
+        format!(" {} Choices ", descriptor.label)
+    } else {
+        let footer_rows = usize::from(content_height >= 4);
+        // With only one content row, show whichever action owns the focus.
+        let confirm_rows = usize::from(
+            content_height > lines.len()
+                && (content_height > 1 || state.model_options.is_confirm_selected()),
+        );
+        let capacity = content_height.saturating_sub(lines.len() + footer_rows + confirm_rows);
+        // Confirm stands apart below the options, so while it holds focus the
+        // window keeps to the foot of them.
+        let selected = option_rows
+            .iter()
+            .position(|row| row.selected)
+            .or_else(|| option_rows.len().checked_sub(1));
+        for row in state.model_options.options_window().show(
+            option_rows.iter().collect(),
+            capacity,
+            selected,
+        ) {
+            let marker = if row.selected { "› " } else { "  " };
+            let unavailable = if row.available { "" } else { " [unavailable]" };
+            let description = row
+                .description
+                .as_ref()
+                .filter(|_| split.is_none())
+                .map_or_else(String::new, |description| format!(" · {description}"));
+            lines.push(Line::styled(
+                truncate_to_width(
+                    &format!(
+                        "{marker}{} · {}{unavailable}{description}",
+                        row.label, row.value
+                    ),
+                    content_width,
+                ),
+                if row.selected {
+                    theme.selection.focused
+                } else if row.available {
+                    theme.text.primary
+                } else {
+                    theme.text.subdued
+                },
+            ));
+        }
+        if confirm_rows > 0 {
+            while lines.len() < content_height.saturating_sub(footer_rows + confirm_rows) {
+                lines.push(Line::default());
+            }
+            let selected = state.model_options.is_confirm_selected();
+            let valid = state.model_options.is_valid();
+            let marker = if selected { "› " } else { "  " };
+            let label = if valid {
+                "Confirm"
+            } else {
+                "Confirm [unavailable]"
+            };
+            lines.push(Line::styled(
+                truncate_to_width(&format!("{marker}{label}"), content_width),
+                if selected {
+                    theme.selection.focused
+                } else if valid {
+                    theme.text.primary
+                } else {
+                    theme.text.subdued
+                },
+            ));
+        }
+        if footer_rows > 0 && lines.len() < content_height {
+            let controls = if state.model_options.is_valid() {
+                if state.model_options.is_confirm_selected() {
+                    "Enter confirm · Ctrl+Enter apply · Esc cancel"
+                } else {
+                    "Enter configure · Ctrl+Enter apply · Esc cancel"
+                }
+            } else {
+                "Enter configure · Apply unavailable · Esc cancel"
+            };
+            lines.push(Line::styled(
+                truncate_to_width(controls, content_width),
+                theme.text.subdued,
+            ));
+        }
+        " Model Options ".to_owned()
+    };
+    let Some(split) = split else {
         render_overlay_box(
             frame,
             state,
             SelectionSurface::ModelOptions,
             area,
             lines,
-            &format!(" {} Choices ", descriptor.label),
+            &title,
             theme,
         );
         return;
-    }
-
-    let footer_rows = usize::from(content_height >= 4);
-    // With only one content row, show whichever action owns the focus.
-    let confirm_rows = usize::from(
-        content_height > lines.len()
-            && (content_height > 1 || state.model_options.is_confirm_selected()),
-    );
-    let capacity = content_height.saturating_sub(lines.len() + footer_rows + confirm_rows);
-    let rows = state.model_options.rows();
-    // Confirm stands apart below the options, so while it holds focus the
-    // window keeps to the foot of them.
-    let selected = rows
-        .iter()
-        .position(|row| row.selected)
-        .or_else(|| rows.len().checked_sub(1));
-    for row in state
-        .model_options
-        .options_window()
-        .show(rows, capacity, selected)
-    {
-        let marker = if row.selected { "› " } else { "  " };
-        let unavailable = if row.available { "" } else { " [unavailable]" };
-        let description = row
-            .description
-            .map_or_else(String::new, |description| format!(" · {description}"));
-        lines.push(Line::styled(
-            truncate_to_width(
-                &format!(
-                    "{marker}{} · {}{unavailable}{description}",
-                    row.label, row.value
-                ),
-                content_width,
-            ),
-            if row.selected {
-                theme.selection.focused
-            } else if row.available {
-                theme.text.primary
-            } else {
-                theme.text.subdued
-            },
-        ));
-    }
-    if confirm_rows > 0 {
-        while lines.len() < content_height.saturating_sub(footer_rows + confirm_rows) {
-            lines.push(Line::default());
-        }
-        let selected = state.model_options.is_confirm_selected();
-        let valid = state.model_options.is_valid();
-        let marker = if selected { "› " } else { "  " };
-        let label = if valid {
-            "Confirm"
-        } else {
-            "Confirm [unavailable]"
-        };
-        lines.push(Line::styled(
-            truncate_to_width(&format!("{marker}{label}"), content_width),
-            if selected {
-                theme.selection.focused
-            } else if valid {
-                theme.text.primary
-            } else {
-                theme.text.subdued
-            },
-        ));
-    }
-    if footer_rows > 0 && lines.len() < content_height {
-        let controls = if state.model_options.is_valid() {
-            if state.model_options.is_confirm_selected() {
-                "Enter confirm · Ctrl+Enter apply · Esc cancel"
-            } else {
-                "Enter configure · Ctrl+Enter apply · Esc cancel"
-            }
-        } else {
-            "Enter configure · Apply unavailable · Esc cancel"
-        };
-        lines.push(Line::styled(
-            truncate_to_width(controls, content_width),
-            theme.text.subdued,
-        ));
-    }
-    render_overlay_box(
+    };
+    clear_over(frame, state, area);
+    frame.render_widget(titled_overlay_block(title.as_str(), theme), area);
+    frame.render_widget(Paragraph::new(lines), split.list);
+    split.draw_pane(frame, pane.lines, false, theme);
+    split.record_selection(
         frame,
         state,
         SelectionSurface::ModelOptions,
-        area,
-        lines,
-        " Model Options ",
-        theme,
+        SplitWrapped {
+            list: &[],
+            pane: &pane.wrapped,
+        },
+        &[],
     );
 }
 
 fn model_option_choice_line(
-    row: ModelOptionChoiceRow,
+    row: &ModelOptionChoiceRow,
     width: usize,
+    show_description: bool,
     theme: &Theme,
 ) -> Line<'static> {
     let marker = if row.selected { "› " } else { "  " };
@@ -4546,6 +4629,8 @@ fn model_option_choice_line(
     let unavailable = if row.available { "" } else { " [unavailable]" };
     let description = row
         .description
+        .as_ref()
+        .filter(|_| show_description)
         .map_or_else(String::new, |description| format!(" · {description}"));
     Line::styled(
         truncate_to_width(

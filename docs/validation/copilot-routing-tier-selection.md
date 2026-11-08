@@ -79,3 +79,12 @@ The Session's `totalNanoAiu` came to 397,542,100 across eight Turns, 0.40 credit
 - **A hung or failing discovery.** Only the scripted CLI exercises one.
 - **A Subagent on a tier's Session, live.** Its Selection is built without one, which the tests read.
 - **Windows and Linux.** Every observation above is from macOS.
+
+## Picker presentation
+
+Routing Tier choices use the same split layout as the Model picker when the main area is at least
+104 columns wide: choices and their current/unavailable markers stay on the left, while the focused
+choice's description wraps on the right. The Model Options list presents the focused option's
+description the same way, including thinking effort and other Providers' options. Narrow terminals
+retain the compact inline descriptions. Details exceeding the available height end with an ellipsis;
+copying a wrapped description preserves the original text without including the neighboring list.
