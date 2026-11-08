@@ -37,10 +37,8 @@ cool things Suru does:
 
 - Themes - Panda is the default. Use `/themes` to choose another, including the terminal-derived System theme.
 - Cross-provider subagents - a Claude-managed Opus session can spin up a Codex-managed Astra session to review its work.
-- Copilot Auto visibility - when Copilot reports the concrete Model, see it on Agent Messages and while it is working;
-  expand the Model Calls Fold to inspect reported calls, including identifiable failed attempts and repeated Models.
-  Your Agent Selection stays on Auto. Calls can be missing when reports lack usable correlation; a report first received
-  after its Turn settles may be omitted or appear under a later Turn because Copilot does not always identify its Turn.
+- Copilot Auto visibility - when Copilot reports the concrete Model, see it on Agent Messages and while it is working.
+  Your Agent Selection stays on Auto.
 - Remote access - run `/serve` to issue an Invite on one machine, then paste it into `/pair` on another, which also lists
   your machines logged in at your Relays, so that you can see and drive the first machine's Sessions from the second.
   Reaching it directly needs a network path between the two machines; where there is none, a Relay can carry the

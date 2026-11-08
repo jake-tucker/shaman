@@ -1903,7 +1903,7 @@ fn deliver_auto_catalog(application: &mut Application, first: &str, second: &str
 }
 
 #[test]
-fn auto_message_labels_and_model_calls_fold_survive_a_settled_turn() {
+fn auto_message_labels_remain_without_a_model_calls_fold_in_a_settled_turn() {
     let workspace = workspace_dir();
     let mut snapshot = navigable_session_snapshot(SessionId::new(), workspace.path(), 1);
     let turn_id = snapshot.turns[0].id;
@@ -1928,6 +1928,7 @@ fn auto_message_labels_and_model_calls_fold_survive_a_settled_turn() {
         .iter()
         .position(|item| matches!(item, TranscriptItem::Message { message_id } if *message_id == answer.id))
         .expect("the answer is in the Transcript");
+    let without_calls = snapshot.clone();
     snapshot.transcript.insert(
         answer_position,
         TranscriptItem::Activity {
@@ -1940,6 +1941,11 @@ fn auto_message_labels_and_model_calls_fold_survive_a_settled_turn() {
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
         .expect("attach a settled Session");
+    let mut without = connected_application(workspace.path());
+    deliver_auto_catalog(&mut without, "First Model", "Second Model");
+    without
+        .handle_event(ApplicationEvent::SessionAttached(without_calls))
+        .expect("attach the same Session without Model Calls");
 
     let folded = rendered_application_rows_at(&application, 80, 24);
     let screen = folded.join("\n");
@@ -1952,42 +1958,36 @@ fn auto_message_labels_and_model_calls_fold_survive_a_settled_turn() {
         "answer remains visible: {screen}"
     );
     assert!(
-        screen.contains("3 model calls · +3 lines"),
-        "the call list remains available outside the settled Turn Fold: {screen}"
+        !screen.contains("model call") && !screen.contains("Second Model"),
+        "the recorded calls have no Transcript row or details: {screen}"
     );
     assert!(
-        rendered_row(&folded, "Fixed the tests.") < rendered_row(&folded, "3 model calls"),
-        "the call details follow the answer even when usage preceded it: {screen}"
+        !screen.contains("Worked"),
+        "calls alone do not create a Turn Fold: {screen}"
     );
-    assert!(
-        !screen.contains("Second Model"),
-        "call details start folded: {screen}"
+    assert_eq!(
+        folded,
+        rendered_application_rows_at(&without, 80, 24),
+        "recorded calls do not change the Transcript's spacing"
     );
 
-    left_click_at(
-        &mut application,
-        rendered_row(&folded, "3 model calls") as u16,
-    )
-    .expect("open the Model Calls Fold");
-    let expanded = rendered_application_rows_at(&application, 80, 24).join("\n");
-    assert_eq!(expanded.matches("First Model").count(), 2, "{expanded}");
-    assert_eq!(expanded.matches("Second Model").count(), 2, "{expanded}");
-    press_leader_chord(&mut application, 'f');
-    let keyboard_opened = rendered_application_rows_at(&application, 80, 24).join("\n");
-    assert!(
-        keyboard_opened.contains("Second Model"),
-        "{keyboard_opened}"
-    );
-    press_leader_chord(&mut application, 'f');
-    let keyboard_closed = rendered_application_rows_at(&application, 80, 24).join("\n");
-    assert!(
-        !keyboard_closed.contains("Second Model"),
-        "{keyboard_closed}"
+    for application in [&mut application, &mut without] {
+        press_leader_chord(application, 'f');
+        application
+            .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
+                SemanticCommandId::TranscriptTurnsToggle,
+            )))
+            .expect("open every Turn Fold");
+    }
+    assert_eq!(
+        rendered_application_rows_at(&application, 80, 24),
+        rendered_application_rows_at(&without, 80, 24),
+        "opening Folds does not reveal the recorded calls"
     );
 }
 
 #[test]
-fn call_details_stay_with_each_turn_and_remain_visible_without_an_answer() {
+fn model_calls_are_absent_across_turns_even_without_an_answer() {
     let workspace = workspace_dir();
     let mut snapshot = navigable_session_snapshot(SessionId::new(), workspace.path(), 3);
     for (index, turn) in snapshot.turns.iter().enumerate() {
@@ -2002,6 +2002,14 @@ fn call_details_stay_with_each_turn_and_remain_visible_without_an_answer() {
             _ => "Third answer",
         }
         .to_owned();
+    }
+    let without_calls = snapshot.clone();
+    for (index, turn) in snapshot.turns.iter().enumerate() {
+        let answer = snapshot
+            .messages
+            .iter()
+            .find(|message| message.turn_id == turn.id && message.role == MessageRole::Agent)
+            .expect("each fixture Turn has an Agent Message");
         let answer_position = snapshot
             .transcript
             .iter()
@@ -2017,7 +2025,7 @@ fn call_details_stay_with_each_turn_and_remain_visible_without_an_answer() {
             calls: vec![auto_model("first"); index + 1],
         };
         snapshot.transcript.insert(
-            answer_position,
+            answer_position + usize::from(index > 0),
             TranscriptItem::Activity {
                 activity_id: calls.id(),
             },
@@ -2029,25 +2037,33 @@ fn call_details_stay_with_each_turn_and_remain_visible_without_an_answer() {
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
         .expect("attach three Turns");
+    let mut without = connected_application(workspace.path());
+    deliver_auto_catalog(&mut without, "First Model", "Second Model");
+    without
+        .handle_event(ApplicationEvent::SessionAttached(without_calls))
+        .expect("attach the same Turns without Model Calls");
     let rows = rendered_application_rows_at(&application, 100, 40);
     let positions = [
         "First answer",
-        "1 model call",
         "Prompt section 2",
-        "2 model calls",
         "Prompt section 3",
         "Third answer",
-        "3 model calls",
     ]
     .map(|text| rendered_row(&rows, text));
     assert!(
         positions.windows(2).all(|pair| pair[0] < pair[1]),
         "{rows:?}"
     );
+    assert!(!rows.join("\n").contains("model call"), "{rows:?}");
+    assert_eq!(
+        rows,
+        rendered_application_rows_at(&without, 100, 40),
+        "recorded calls leave no rows between Turns, even without an answer"
+    );
 }
 
 #[test]
-fn auto_model_labels_and_call_details_refresh_when_the_session_or_catalog_changes() {
+fn auto_model_labels_refresh_without_showing_live_model_calls() {
     let workspace = workspace_dir();
     let session_id = SessionId::new();
     let mut snapshot = navigable_session_snapshot(session_id, workspace.path(), 1);
@@ -2092,11 +2108,7 @@ fn auto_model_labels_and_call_details_refresh_when_the_session_or_catalog_change
         .expect("project the first reported Model");
     let first = rendered_application_rows_at(&application, 80, 24);
     assert!(first.join("\n").contains("Auto · First Model"), "{first:?}");
-    left_click_at(
-        &mut application,
-        rendered_row(&first, "1 model call") as u16,
-    )
-    .expect("open the Model Calls Fold");
+    assert!(!first.join("\n").contains("model call"), "{first:?}");
 
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
@@ -2110,18 +2122,20 @@ fn auto_model_labels_and_call_details_refresh_when_the_session_or_catalog_change
             },
         )))
         .expect("project another call");
-    let calls = rendered_application_rows_at(&application, 80, 24).join("\n");
-    assert!(
-        calls.contains("2 model calls") && calls.contains("Second Model"),
-        "{calls}"
+    assert_eq!(
+        rendered_application_rows_at(&application, 80, 24),
+        first,
+        "another recorded call does not change the Transcript"
     );
 
     deliver_auto_catalog(&mut application, "First Renamed", "Second Renamed");
     let renamed = rendered_application_rows_at(&application, 80, 24).join("\n");
     assert!(renamed.contains("Auto · First Renamed"), "{renamed}");
-    assert!(renamed.contains("Second Renamed"), "{renamed}");
     assert!(
-        !renamed.contains("First Model") && !renamed.contains("Second Model"),
+        !renamed.contains("First Model")
+            && !renamed.contains("Second Model")
+            && !renamed.contains("Second Renamed")
+            && !renamed.contains("model call"),
         "{renamed}"
     );
     application
@@ -2138,7 +2152,7 @@ fn auto_model_labels_and_call_details_refresh_when_the_session_or_catalog_change
         .expect("retract the Message attribution");
     let retracted = rendered_application_rows_at(&application, 80, 24).join("\n");
     assert!(!retracted.contains("Auto · First Renamed"), "{retracted}");
-    assert!(retracted.contains("2 model calls"), "{retracted}");
+    assert!(!retracted.contains("model call"), "{retracted}");
 }
 
 #[test]
@@ -2214,7 +2228,7 @@ fn working_indicator_names_only_the_current_reported_model() {
 }
 
 #[test]
-fn model_names_follow_the_open_sessions_origin_for_messages_calls_and_working() {
+fn model_names_follow_the_open_sessions_origin_for_messages_and_working() {
     let workspace = workspace_dir();
     let session_id = SessionId::new();
     let mut snapshot = navigable_session_snapshot(session_id, workspace.path(), 1);
@@ -2288,19 +2302,7 @@ fn model_names_follow_the_open_sessions_origin_for_messages_calls_and_working() 
     assert!(screen.contains("Auto · Remote Model"), "{screen}");
     assert!(screen.contains("Working · Remote Model"), "{screen}");
     assert!(!screen.contains("Local Model"), "{screen}");
-    let row = rendered_row(&rows, "1 model call");
-    click_mouse(
-        &mut application,
-        MouseEvent {
-            kind: MouseEventKind::Down(crossterm::event::MouseButton::Left),
-            column: rows[row].find("1 model call").unwrap() as u16,
-            row: row as u16,
-            modifiers: KeyModifiers::NONE,
-        },
-    )
-    .expect("open call details");
-    let expanded = rendered_application_rows_at(&application, 100, 24).join("\n");
-    assert!(expanded.matches("Remote Model").count() >= 3, "{expanded}");
+    assert!(!screen.contains("model call"), "{screen}");
 
     application
         .handle_event(ApplicationEvent::OriginCatalog {
@@ -6609,6 +6611,96 @@ fn hidden_reasoning_neither_breaks_a_command_run_nor_leaves_a_gap() {
         "a Transcript with Reasoning hidden reads exactly as it would had the \
          thinking never happened, down to the rows of air between its entries"
     );
+}
+
+#[test]
+fn model_calls_neither_break_command_groups_nor_leave_a_gap() {
+    let workspace = workspace_dir();
+    for settled in [false, true] {
+        let mut without_calls = command_run_snapshot(
+            SessionId::new(),
+            workspace.path(),
+            &[
+                RunEntry::UserMessage("Run the workflow"),
+                SUCCESSFUL_COMMAND,
+                SUCCESSFUL_COMMAND,
+                RunEntry::AgentMessage("The workflow is green."),
+            ],
+        );
+        if settled {
+            without_calls.session.status = SessionStatus::Idle;
+            without_calls.turns[0].status = TurnStatus::Completed;
+        }
+        let mut with_calls = without_calls.clone();
+        let calls = Activity::ModelCalls {
+            id: ActivityId::new(),
+            turn_id: with_calls.turns[0].id,
+            calls: vec![auto_model("first"), auto_model("second")],
+        };
+        let second_command = with_calls.activities[1].id();
+        let position = with_calls
+            .transcript
+            .iter()
+            .position(|item| {
+                matches!(item, TranscriptItem::Activity { activity_id } if *activity_id == second_command)
+            })
+            .expect("the second command is in the Transcript");
+        with_calls.transcript.insert(
+            position,
+            TranscriptItem::Activity {
+                activity_id: calls.id(),
+            },
+        );
+        with_calls.activities.push(calls);
+
+        let mut application = connected_application(workspace.path());
+        application
+            .handle_event(ApplicationEvent::SessionAttached(with_calls))
+            .expect("attach a command run interleaved with Model Calls");
+        let mut without = connected_application(workspace.path());
+        without
+            .handle_event(ApplicationEvent::SessionAttached(without_calls))
+            .expect("attach the same command run without Model Calls");
+        assert_eq!(
+            rendered_application_rows_at(&application, 80, 24),
+            rendered_application_rows_at(&without, 80, 24),
+            "Model Calls leave no trace before opening the Turn"
+        );
+
+        if settled {
+            for application in [&mut application, &mut without] {
+                application
+                    .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
+                        SemanticCommandId::TranscriptTurnsToggle,
+                    )))
+                    .expect("open every Turn Fold");
+            }
+        }
+        let grouped = rendered_application_rows_at(&application, 80, 24);
+        assert!(
+            grouped.join("\n").contains("✓ Ran 2 commands"),
+            "Model Calls do not split the command Group: {grouped:?}"
+        );
+        assert_eq!(
+            grouped,
+            rendered_application_rows_at(&without, 80, 24),
+            "Model Calls leave no gap in the command Group"
+        );
+
+        for application in [&mut application, &mut without] {
+            press_leader_chord(application, 'g');
+        }
+        let expanded = rendered_application_rows_at(&application, 80, 24);
+        assert!(
+            expanded.join("\n").contains("command 1") && expanded.join("\n").contains("command 2"),
+            "the command Group still opens onto both members: {expanded:?}"
+        );
+        assert_eq!(
+            expanded,
+            rendered_application_rows_at(&without, 80, 24),
+            "opening the Group does not reveal the Model Calls"
+        );
+    }
 }
 
 #[test]

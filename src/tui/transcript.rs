@@ -1912,7 +1912,7 @@ impl RenderUnit<'_> {
                     .is_some()
                     .then(|| UnitAnchor::binary(1, false))
             }
-            Self::Activity(activity) => render_activity_with_model_names(
+            Self::Activity(activity) => render_activity(
                 projection,
                 activity,
                 resolved_fold_step(folds, activity),
@@ -1920,7 +1920,6 @@ impl RenderUnit<'_> {
                 width,
                 hyperlinks,
                 workspace,
-                model_names,
             ),
             Self::Group {
                 kind,
@@ -1937,7 +1936,7 @@ impl RenderUnit<'_> {
             )),
             Self::GroupMember(activity) => {
                 let start = projection.lines.len();
-                let anchor = render_activity_with_model_names(
+                let anchor = render_activity(
                     projection,
                     activity,
                     resolved_fold_step(folds, activity),
@@ -1945,7 +1944,6 @@ impl RenderUnit<'_> {
                     width.saturating_sub(MEMBER_INDENT.len() as u16),
                     hyperlinks,
                     workspace,
-                    model_names,
                 );
                 indent_members(&mut projection.lines[start..]);
                 anchor
@@ -2317,9 +2315,12 @@ impl<'a> TranscriptContent<'a> {
 /// A File Change with no paths is absent on the same terms: there is no file
 /// row to draw while it streams and no work for a settled Turn Fold to stand
 /// for if it never receives one.
+///
+/// Model Calls remain recorded but are not shown in the Transcript.
 fn transcript_shows_nothing(activity: &Activity, visibility: ActivityVisibility) -> bool {
     match activity {
         Activity::FileChange { changes, .. } => changes.is_empty(),
+        Activity::ModelCalls { .. } => true,
         Activity::ToolCall { .. } => visibility.tool_calls == ToolCallVisibility::Hidden,
         Activity::Reasoning { .. } if visibility.reasoning == ReasoningVisibility::Hidden => true,
         Activity::Reasoning {
@@ -2379,7 +2380,7 @@ impl TranscriptEntry<'_> {
                     Activity::Error { .. } => TurnEntryRole::Error,
                     Activity::Compaction { .. } => TurnEntryRole::Compaction,
                     Activity::Subsession { .. } => TurnEntryRole::Subsession,
-                    Activity::Route { .. } | Activity::ModelCalls { .. } => TurnEntryRole::Route,
+                    Activity::Route { .. } => TurnEntryRole::Route,
                     _ => TurnEntryRole::Work,
                 },
             },
@@ -2652,36 +2653,16 @@ fn plan_units<'a>(
     let folding = TurnFolding::plan(snapshot, &content, disclosure.turns);
     let mut units = Vec::with_capacity(snapshot.transcript.len() + provisional.len());
     let mut run: Option<GroupRun<'a>> = None;
-    let reading_order = snapshot.transcript_in_reading_order();
-    let mut answers = HashMap::new();
-    for (position, item) in &reading_order {
-        if let Some(TranscriptEntry::Message(message)) = content.entry(item)
-            && message.may_answer_its_turn()
-        {
-            answers.insert(message.turn_id, *position);
-        }
-    }
-    let mut moved_calls = HashSet::new();
-    let mut calls_after: HashMap<usize, Vec<&Activity>> = HashMap::new();
-    for (position, item) in &reading_order {
-        if let Some(TranscriptEntry::Activity(activity @ Activity::ModelCalls { turn_id, .. })) =
-            content.entry(item)
-            && let Some(answer) = answers.get(turn_id)
-        {
-            moved_calls.insert(*position);
-            calls_after.entry(*answer).or_default().push(activity);
-        }
-    }
     // A transcript entry the Transcript shows nothing for projects nothing
     // rather than a gap, so it does not end a run either: the entries around
     // it are still adjacent as presented. An entry a Turn Fold hides projects
     // nothing for the same reason and is read the same way.
-    for (position, item) in reading_order {
+    for (position, item) in snapshot.transcript_in_reading_order() {
         if let Some(marker) = folding.marker_at(position) {
             close_run(&mut units, &mut run, groups);
             units.push(RenderUnit::TurnFold(marker));
         }
-        if folding.hides(position) || moved_calls.contains(&position) {
+        if folding.hides(position) {
             continue;
         }
         let Some(entry) = content.entry(item) else {
@@ -2727,10 +2708,6 @@ fn plan_units<'a>(
                     units.push(in_turn_gutter(RenderUnit::Activity(activity), disclosed));
                 }
             },
-        }
-        if let Some(calls) = calls_after.get(&position) {
-            close_run(&mut units, &mut run, groups);
-            units.extend(calls.iter().copied().map(RenderUnit::Activity));
         }
     }
     close_run(&mut units, &mut run, groups);
@@ -3355,12 +3332,11 @@ fn activity_fingerprint(activity: &Activity, step: FoldStep) -> u64 {
             (*outcome as u8).hash(&mut hasher);
             author.hash(&mut hasher);
         }
-        Activity::Status { .. } | Activity::Error { .. } => {}
+        Activity::Status { .. } | Activity::Error { .. } | Activity::ModelCalls { .. } => {}
         Activity::Route { decision, .. } => {
             decision.sentence(provider_name).hash(&mut hasher);
             decision.detail().hash(&mut hasher);
         }
-        Activity::ModelCalls { calls, .. } => calls.hash(&mut hasher),
         Activity::Command {
             status,
             output,
@@ -3794,7 +3770,6 @@ fn delegation_sender(delegator: &Delegator, parent: Option<SessionId>) -> String
 /// have to hunt for, so neither is ever folded and neither anchors a click.
 /// Each kind projects through its own renderer, so what one kind shows never
 /// depends on how another renders.
-#[cfg(test)]
 fn render_activity(
     projection: &mut ActivityProjection<'_>,
     activity: &Activity,
@@ -3803,22 +3778,6 @@ fn render_activity(
     width: u16,
     hyperlinks: bool,
     workspace: &Path,
-) -> Option<UnitAnchor> {
-    render_activity_with_model_names(
-        projection, activity, step, theme, width, hyperlinks, workspace, None,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn render_activity_with_model_names(
-    projection: &mut ActivityProjection<'_>,
-    activity: &Activity,
-    step: FoldStep,
-    theme: &Theme,
-    width: u16,
-    hyperlinks: bool,
-    workspace: &Path,
-    model_names: Option<TranscriptModelNames<'_>>,
 ) -> Option<UnitAnchor> {
     match activity {
         Activity::Approval {
@@ -3966,32 +3925,7 @@ fn render_activity_with_model_names(
             width,
             hyperlinks,
         ),
-        Activity::ModelCalls { calls, .. } => {
-            let folded = step != FoldStep::Expanded;
-            let count = calls.len();
-            let noun = if count == 1 { "call" } else { "calls" };
-            let mut header = vec![
-                StyledSpan::chrome("  ", theme.text.subdued),
-                StyledSpan::text(format!("{count} model {noun}"), theme.text.subdued),
-            ];
-            if folded {
-                header.push(StyledSpan::chrome(" · ", theme.text.subdued));
-                header.push(StyledSpan::chrome(
-                    fold_marker_text(count, "lines"),
-                    theme.action.primary,
-                ));
-            }
-            projection.lines.push(StyledLine::from(header));
-            if !folded {
-                for call in calls {
-                    let name =
-                        sanitize_content(model_name(model_names, &call.provider, &call.actual));
-                    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
-                    push_prefixed_lines(projection.lines, OUTPUT_INDENT, &name, theme.text.subdued);
-                }
-            }
-            Some(UnitAnchor::binary(1, folded))
-        }
+        Activity::ModelCalls { .. } => None,
         Activity::Error { text, .. } => {
             push_styled_prefixed_lines(
                 projection,
