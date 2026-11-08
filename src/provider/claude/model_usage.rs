@@ -152,12 +152,12 @@ pub(super) fn reported_model_usage(
                 let model = entry
                     .get("canonicalModel")
                     .and_then(Value::as_str)
-                    .filter(|model| !model.is_empty())
-                    .unwrap_or_else(|| super::canonical_model(key));
+                    .and_then(ModelId::named)
+                    .unwrap_or_else(|| ModelId::new(super::canonical_model(key)));
                 Some((
                     key.clone(),
                     ReportedEntry {
-                        model: ModelId::new(model),
+                        model,
                         totals: ModelTotals::read(entry)?,
                     },
                 ))
@@ -190,7 +190,7 @@ pub(super) fn total_usage(shares: &[ShareReport]) -> Usage {
 }
 
 /// `total` and `part` added part by part. A part either leaves unknown is unknown in the sum,
-/// unlike [`crate::protocol::UsageTotal::saturating_add`], which keeps whichever side is known:
+/// unlike [`crate::protocol::Usage::saturating_add`], which keeps whichever side is known:
 /// that totals Turns a surface shows together, where a Turn that measured nothing leaves the
 /// others' figures standing, while this makes one Turn's Usage, which states no part it cannot
 /// state whole.

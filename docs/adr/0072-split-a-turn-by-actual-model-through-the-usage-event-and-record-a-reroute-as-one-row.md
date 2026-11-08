@@ -14,7 +14,7 @@ A **Reroute** — the Provider switching a Turn from one Model to another for re
 
 - **A Model Share event of its own.** Rejected: a Provider would have to keep two readings of one Turn in step, and the Turn's Usage and its Shares could disagree between them.
 - **Shares as increments added on each event.** Rejected: every other part of the Usage event replaces the last, and a Provider restating its reading after a lost event would count a Share twice.
-- **A Share's Cost as the Turn's increment where its Cost is a running total.** Rejected: the metrics read takes the highest running figure per Model, so increments would be counted as zero on later Turns.
+- **A Share's Cost as the Turn's increment where its Cost is a running total.** Rejected: Cost Coverage, which the metrics read consumes, takes the highest running figure per Model, so increments would be counted as zero on later Turns.
 - **Spread the remainder across the Shares in proportion.** Rejected: it guesses which Model did work no evidence attributes.
 - **Label an Actual key by the first row resolving to it.** Rejected: the label then depends on catalog order, so a 1M-context variant listed first names its base Model.
 - **A Reroute row per Provider, or Provider-shaped reasons.** Rejected: every client would need each Provider's row type to show what is the same event to the user.
@@ -24,4 +24,5 @@ A **Reroute** — the Provider switching a Turn from one Model to another for re
 
 - Turns recorded before Shares were kept have none, and stay under their Selection in the Actual view. Nothing rebuilds them.
 - A Provider's Shares must fit its Turn's Usage. One that states more has the excess clipped in order rather than failing the read.
+- Labels are worked out over every Model the read's Turns ran under, in either view, so a key reads the same in both. A Model id two Providers share is therefore named with its Provider even in a report where only one of them is a series, for example a Codex `gpt-5` Selection beside a Copilot Auto Share on `gpt-5`.
 - Claude's Usage now includes its native Subagents' tokens (ADR 0071), so the Actual view and the Selected view total the same work.
