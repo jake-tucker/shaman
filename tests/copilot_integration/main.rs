@@ -20,6 +20,7 @@ mod errands;
 mod fusion_routes;
 mod fusion_tiers;
 mod interruption;
+mod model_shares;
 mod models;
 mod monitoring;
 mod reroutes;

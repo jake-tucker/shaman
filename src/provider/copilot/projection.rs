@@ -2342,8 +2342,8 @@ fn project_usage_event(
     event: &SessionEvent,
     pricing: &CopilotPricing,
 ) -> Result<ProviderEvent, ProviderError> {
-    let (usage, reported_cost) = priced_usage(event, pricing)?;
-    Ok(metered(streams, usage, reported_cost))
+    let call = priced_call(event, pricing)?;
+    Ok(metered(streams, call.model, call.usage, call.cost))
 }
 
 #[derive(Clone, Copy)]
@@ -2502,6 +2502,21 @@ pub(super) fn priced_usage(
     event: &SessionEvent,
     pricing: &CopilotPricing,
 ) -> Result<(Usage, Option<Cost>), ProviderError> {
+    priced_call(event, pricing).map(|call| (call.usage, call.cost))
+}
+
+/// One model call's `assistant.usage` report: what [`priced_usage`] reads of it, and the Model it
+/// names as the one the call ran on, absent where it names none.
+struct PricedCall {
+    model: Option<ModelId>,
+    usage: Usage,
+    cost: Option<Cost>,
+}
+
+fn priced_call(
+    event: &SessionEvent,
+    pricing: &CopilotPricing,
+) -> Result<PricedCall, ProviderError> {
     let cache_ttl_seconds = reported_cache_ttl(event);
     let reported: AssistantUsageData = decode(event)?;
     let usage = Usage {
@@ -2515,23 +2530,31 @@ pub(super) fn priced_usage(
         reasoning_tokens: reported_count(reported.reasoning_tokens),
         native_meter: reported.cost.and_then(NativeMeter::from_units),
     };
-    let reported_cost = pricing.cost(
+    let cost = pricing.cost(
         &reported.model,
         reported.max_prompt_tokens,
         cache_ttl_seconds,
         &usage,
     );
-    Ok((usage, reported_cost))
+    let model = reported.model.trim();
+    Ok(PricedCall {
+        model: (!model.is_empty()).then(|| ModelId::new(model)),
+        usage,
+        cost,
+    })
 }
 
 /// Adds one model call's `usage`, costing `reported_cost`, to the reading the conversation's Turn
-/// has accumulated, answering the Turn's Usage so far.
+/// has accumulated, and to the running Model Share of `model`, the Model the call reported running
+/// on, answering the Turn's Usage so far. A call naming no Model adds to the Turn's total alone,
+/// unattributed.
 fn metered(
     streams: &mut ConversationStreams,
+    model: Option<ModelId>,
     usage: Usage,
     reported_cost: Option<Cost>,
 ) -> ProviderEvent {
-    ReportedMetering::accumulate(&mut streams.metering, usage, reported_cost).event()
+    ReportedMetering::accumulate_on(&mut streams.metering, model, usage, reported_cost).event()
 }
 
 fn reported_cache_ttl(event: &SessionEvent) -> Option<i64> {
@@ -2614,7 +2637,13 @@ fn compaction_usage(
         .model
         .as_deref()
         .and_then(|model| pricing.cost(model, None, None, &usage));
-    Some(metered(streams, usage, reported_cost))
+    let model = used
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .map(ModelId::new);
+    Some(metered(streams, model, usage, reported_cost))
 }
 
 /// Whether an event carries conversation content this projection presents.
