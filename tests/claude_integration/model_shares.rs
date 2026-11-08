@@ -832,3 +832,106 @@ async fn a_share_under_a_canonical_id_is_labelled_by_the_row_resolving_to_its_da
 
     session.shutdown().await;
 }
+
+/// What each Model key of the report's one bucket is labelled, in the report's order: the
+/// Session's title Errand stands under its own key beside them.
+fn labelled(report: &UsageMetricsReport) -> Vec<(UsageMetricsKey, String)> {
+    filed(report)
+        .into_iter()
+        .filter(|(key, ..)| *key != UsageMetricsKey::Errands)
+        .map(|(key, label, ..)| (key, label))
+        .collect()
+}
+
+/// Both Model views of a Session's Usage Metrics, once the catalog its labels are read from has
+/// been discovered.
+async fn both_views(session: &DurableSession) -> (UsageMetricsReport, UsageMetricsReport) {
+    session
+        .client
+        .list_models()
+        .await
+        .expect("discover Claude Models");
+    let read = |model_view| {
+        let client = session.client.outlook(Outlook::Local);
+        async move {
+            client
+                .usage_metrics(&by_model(model_view))
+                .await
+                .expect("read Usage Metrics")
+        }
+    };
+    (
+        read(UsageMetricsModelView::Selected).await,
+        read(UsageMetricsModelView::Actual).await,
+    )
+}
+
+/// The fixture's `haiku` row, which offers no effort to choose.
+fn haiku() -> AgentSelection {
+    AgentSelection {
+        provider: ProviderId::new("claude"),
+        model: ModelId::new("haiku"),
+        options: Vec::new(),
+    }
+}
+
+#[tokio::test]
+async fn an_alias_and_the_model_it_resolves_to_read_as_one_name_in_either_view() {
+    let claude = conversation_fixture(&turn_by_turn(&[result(
+        "prov-session",
+        (100, 10),
+        0.01,
+        Some(&[Entry::on(FIXTURE_3).tokens(100, 10).cost(0.01)]),
+    )]));
+    let session = DurableSession::start(&claude, Some(haiku()), "claude-shares-alias-label").await;
+
+    let (selected, actual) = both_views(&session).await;
+
+    assert_eq!(
+        labelled(&selected),
+        [(model_key("haiku"), "Haiku".to_owned())],
+        "the Selected view names the alias as it always has, whatever its Turns' Shares are keyed by"
+    );
+    assert_eq!(
+        labelled(&actual),
+        [(model_key(FIXTURE_3), "Haiku".to_owned())],
+        "the Actual view names the Model by the row resolving to it, and holds no key for the \
+         alias, whose Turn its Share covers whole"
+    );
+
+    session.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_alias_holding_a_remainder_beside_its_resolved_model_is_told_apart_from_it() {
+    let claude = conversation_fixture(&turn_by_turn(&[
+        result(
+            "prov-session",
+            (100, 10),
+            0.01,
+            Some(&[Entry::on(FIXTURE_3).tokens(100, 10).cost(0.01)]),
+        ),
+        result("prov-session", (30, 3), 0.013, None),
+    ]));
+    let session =
+        DurableSession::start(&claude, Some(haiku()), "claude-shares-alias-remainder").await;
+    session.continue_with("Again", 1).await;
+
+    let (selected, actual) = both_views(&session).await;
+
+    assert_eq!(
+        labelled(&selected),
+        [(model_key("haiku"), "Haiku".to_owned())]
+    );
+    assert_eq!(
+        labelled(&actual),
+        [
+            (model_key(FIXTURE_3), "Haiku (claude-fixture-3)".to_owned()),
+            (model_key("haiku"), "Haiku (haiku)".to_owned()),
+        ],
+        "where the alias's unattributed remainder and the Model it resolves to are both series, \
+         their ids tell the two apart"
+    );
+
+    session.shutdown().await;
+}

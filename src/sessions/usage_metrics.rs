@@ -1086,8 +1086,11 @@ fn fold(
     named.extend(keys.iter().cloned());
     let mut named = named.into_iter().collect::<Vec<_>>();
     named.sort_by(|left, right| key_order(left).cmp(&key_order(right)));
-    let mut labels: HashMap<UsageMetricsKey, String> =
-        named.iter().cloned().zip(labels(&named, names)).collect();
+    let mut labels: HashMap<UsageMetricsKey, String> = named
+        .iter()
+        .cloned()
+        .zip(labels(&named, &keys, names))
+        .collect();
     let top_sessions = top
         .into_iter()
         .map(|owner| {
@@ -1156,12 +1159,13 @@ fn key_order(key: &UsageMetricsKey) -> (u8, &str, &str) {
 const ERRANDS_LABEL: &str = "Errands";
 
 /// The name a reader is shown for each of `keys`, in their order: a Model's
-/// as [`model_labels`] tells them apart, a Provider's display name in the
-/// Model Catalog, otherwise its id; a Workspace's as [`workspace_labels`]
-/// tells them apart; and Errands as [`ERRANDS_LABEL`].
-fn labels(keys: &[UsageMetricsKey], names: &KeyNames) -> Vec<String> {
+/// as [`model_labels`] tells them apart, given the keys `reported` as the
+/// report's series; a Provider's display name in the Model Catalog,
+/// otherwise its id; a Workspace's as [`workspace_labels`] tells them apart;
+/// and Errands as [`ERRANDS_LABEL`].
+fn labels(keys: &[UsageMetricsKey], reported: &[UsageMetricsKey], names: &KeyNames) -> Vec<String> {
     let catalog = names.catalog;
-    let mut models = model_labels(keys, catalog);
+    let mut models = model_labels(keys, reported, catalog);
     let mut workspaces = workspace_labels(keys, names);
     keys.iter()
         .map(|key| match key {
@@ -1195,6 +1199,8 @@ struct NamedModel<'a> {
     key: &'a UsageMetricsKey,
     provider: &'a ProviderId,
     model: &'a ModelId,
+    /// The Model Catalog row it is named from, where one names it.
+    row: Option<&'a ModelId>,
     /// Its name in the Model Catalog, otherwise its id.
     label: String,
     /// The ways its label reads: its letters and digits, lowercased, and
@@ -1221,8 +1227,16 @@ impl NamedModel<'_> {
 /// `Copilot · GPT-5.5`; one that reads like another of its own Provider has
 /// its id after it, as `Opus 5.5 (opus)`, unless its label is its id, which
 /// already tells it from the other's.
+///
+/// Two Models named from one catalog row — an alias, and the Model it
+/// resolves to that its Turns' Model Shares are keyed by — are one name, so
+/// the alias reads in the Selected view as it does with no Shares, and the
+/// Model as its row does in the Actual view. They are told apart only where
+/// both are among the series `reported`: an alias's unattributed remainder
+/// beside the Model it resolves to.
 fn model_labels(
     keys: &[UsageMetricsKey],
+    reported: &[UsageMetricsKey],
     catalog: &ModelCatalog,
 ) -> HashMap<UsageMetricsKey, String> {
     let letters = |text: &str| -> String {
@@ -1252,7 +1266,8 @@ fn model_labels(
         .iter()
         .filter_map(|key| match key {
             UsageMetricsKey::Model { provider, model } => {
-                let label = catalog.actual_model(provider, model).map_or_else(
+                let row = catalog.actual_model(provider, model);
+                let label = row.map_or_else(
                     || model.as_str().to_owned(),
                     |descriptor| descriptor.display_name.clone(),
                 );
@@ -1268,6 +1283,7 @@ fn model_labels(
                     key,
                     provider,
                     model,
+                    row: row.map(|descriptor| &descriptor.id),
                     label,
                     readings,
                 })
@@ -1278,10 +1294,16 @@ fn model_labels(
     named
         .iter()
         .map(|this| {
+            let one_name = |other: &NamedModel<'_>| {
+                other.provider == this.provider
+                    && this.row.is_some()
+                    && other.row == this.row
+                    && !(reported.contains(this.key) && reported.contains(other.key))
+            };
             let alike = || {
-                named
-                    .iter()
-                    .filter(|other| !std::ptr::eq(*other, this) && this.reads_like(other))
+                named.iter().filter(|other| {
+                    !std::ptr::eq(*other, this) && this.reads_like(other) && !one_name(other)
+                })
             };
             let mut label = this.label.clone();
             if alike().any(|other| other.provider == this.provider) && label != this.model.as_str()
