@@ -7,7 +7,8 @@ use crate::copilot_integration::support::{
     COPILOT_MODELS, ScriptedCopilot, agent_messages, cold_switch_refusing_arm, connect,
     connect_arm, conversation_fixture, create_session_arm, modelless_current_model_arm, models_arm,
     permission_decision_arm, resumable_conversation_fixture, send_arm, session_models_arm,
-    settled_session, settled_session_on, signed_in_arm, switch_model_arm, titling_turned_off,
+    session_where, settled_session, settled_session_on, signed_in_arm, switch_model_arm,
+    titling_turned_off,
 };
 use serde_json::Value;
 use suru::{
@@ -15,7 +16,7 @@ use suru::{
         Activity, ActivityStatus, AdmitPromptRequest, AgentSelection, Cost, CostBasis,
         CreateSessionRequest, InitialPrompt, MessageStatus, ModelId, ModelOptionChoiceId,
         ModelOptionId, ModelOptionSelection, ModelOptionValue, NativeMeter, PromptDelivery,
-        PromptId, PromptStatus, ProviderId, TurnStatus, Usage,
+        PromptId, PromptStatus, ProviderId, SessionSnapshot, TurnStatus, Usage,
     },
     provider::CopilotRuntime,
     server::{self, ServerConfig},
@@ -52,6 +53,60 @@ const STREAMED_MESSAGE: &str = r#"      event e1 assistant.message_start '{"mess
       event e5 session.idle '{}'
 "#;
 
+const AUTO_MODEL_MESSAGE: &str = r#"      event r1 session.auto_mode_resolved '{"chosenModel":"claude-fixture"}'
+      event m1 assistant.message_start '{"messageId":"m1"}'
+      event d1 assistant.message_delta '{"messageId":"m1","deltaContent":"Hello"}'
+      event m2 assistant.message '{"messageId":"m1","content":"Hello","model":"claude-fixture"}'
+      event u1 assistant.usage '{"model":"claude-fixture","isAuto":true,"inputTokens":10,"outputTokens":2}'
+      event i1 session.idle '{}'
+"#;
+
+const AUTO_MODEL_CALLS: &str = r#"      event r1 session.auto_mode_resolved '{"chosenModel":"claude-fixture"}'
+      event u1 assistant.usage '{"apiCallId":"c1","model":"claude-fixture","isAuto":true,"inputTokens":10,"outputTokens":2}'
+      event u2 assistant.usage '{"apiCallId":"c2","model":"other-fixture","isAuto":true,"inputTokens":10,"outputTokens":2}'
+      event m1 assistant.message '{"messageId":"m1","apiCallId":"c3","content":"Done","model":"other-fixture"}'
+      event u3 assistant.usage '{"apiCallId":"c3","model":"other-fixture","inputTokens":10,"outputTokens":2}'
+      event i1 session.idle '{}'
+"#;
+
+const AUTO_CORRELATED_MESSAGES: &str = r#"      event u1 assistant.usage '{"apiCallId":"c1","model":"claude-fixture","isAuto":true,"inputTokens":1}'
+      event u2 assistant.usage '{"apiCallId":"c2","model":"other-fixture","isAuto":true,"inputTokens":1}'
+      event m1 assistant.message '{"messageId":"m1","apiCallId":"c1","content":"First"}'
+      event m2 assistant.message '{"messageId":"m2","apiCallId":"c3","content":"Second"}'
+      event u3 assistant.usage '{"apiCallId":"c3","model":"third-fixture","isAuto":true,"inputTokens":1}'
+      event m3 assistant.message '{"messageId":"m3","content":"Unattributed"}'
+      event u4 assistant.usage '{"apiCallId":"c4","model":"fourth-fixture","isAuto":true,"inputTokens":1}'
+      event i1 session.idle '{}'
+"#;
+
+const AUTO_LIVE_MODELS: &str = r#"      event r1 session.auto_mode_resolved '{"chosenModel":"claude-fixture"}'
+      event c1 model.call_start '{"turnId":"t1","model":"claude-fixture"}'
+      event m1 assistant.message_start '{"messageId":"m1"}'
+      event d1 assistant.message_delta '{"messageId":"m1","deltaContent":"running"}'
+      (
+        wait_for "$COPILOT_FIXTURE_RELEASE"
+        event f1 model.call_finished '{"turnId":"t1","dispatchDurationMs":10,"editClassifierVersion":1,"outcome":"success"}'
+        event d2 assistant.message_delta '{"messageId":"m1","deltaContent":" waiting"}'
+        wait_for "$COPILOT_FIXTURE_RELEASE-next"
+        event c2 model.call_start '{"turnId":"t2","model":"other-fixture"}'
+        event d3 assistant.message_delta '{"messageId":"m1","deltaContent":" next"}'
+        wait_for "$COPILOT_FIXTURE_RELEASE-finish"
+        event f2 model.call_finished '{"turnId":"t2","dispatchDurationMs":10,"editClassifierVersion":1,"outcome":"success"}'
+        event m2 assistant.message '{"messageId":"m1","content":"running waiting next","model":"other-fixture"}'
+        event i1 session.idle '{}'
+      ) &
+"#;
+
+const AUTO_FUSION_LATE_USAGE: &str = r#"      event e1 session.fusion_resolved '{"contractVersion":1,"fusionId":"r","turnId":"r:turn","syntheticModel":"hydrafusion","policy":"standard","pattern":"cascade","primaryModel":"solver","fallbackModel":"fallback","followUpModel":"solver"}'
+      event e2 assistant.message '{"messageId":"m1","apiCallId":"c1","content":"Attempt","fusion":{"fusionId":"r","syntheticModel":"hydrafusion","policy":"standard","pattern":"cascade","phaseId":"r:primary","phaseKind":"primary","role":"solver"}}'
+      event e3 assistant.usage '{"apiCallId":"c2","model":"repair-model","isAuto":true,"inputTokens":1}'
+      event e4 assistant.message '{"messageId":"m2","apiCallId":"c2","content":"Repair","fusion":{"fusionId":"r","syntheticModel":"hydrafusion","policy":"standard","pattern":"cascade","phaseId":"r:repair","phaseKind":"repair","role":"solver"}}'
+      event e5 session.fusion_commit_started '{"fusionId":"r","commitId":"r:commit","sourcePhaseId":"r:repair","sourceModel":"repair-model","kind":"text"}'
+      event e6 assistant.usage '{"apiCallId":"c1","model":"solver-model","isAuto":true,"inputTokens":1}'
+      event e7 assistant.message '{"messageId":"m2","apiCallId":"c2","content":"Repair","fusion":{"fusionId":"r","syntheticModel":"hydrafusion","policy":"standard","pattern":"cascade","phaseId":"r:repair","phaseKind":"repair","role":"solver","commitId":"r:commit"}}'
+      event e8 session.idle '{}'
+"#;
+
 fn selection(model: &str, effort: &str, tier: &str) -> AgentSelection {
     AgentSelection {
         provider: ProviderId::new("copilot"),
@@ -71,6 +126,324 @@ fn selection(model: &str, effort: &str, tier: &str) -> AgentSelection {
             },
         ],
     }
+}
+
+async fn auto_snapshot(timeline: &str, channel: &'static str) -> SessionSnapshot {
+    let copilot = conversation_fixture(timeline);
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let workspace = tempfile::tempdir().expect("create valid Workspace");
+    let titling = titling_turned_off();
+    let server = server::spawn_with_provider(
+        ServerConfig::new(state_dir.path(), channel)
+            .expect("configure server")
+            .with_config_dir(titling.path()),
+        Arc::new(CopilotRuntime::new(copilot.executable())),
+    )
+    .await
+    .expect("spawn server");
+    let client = connect(state_dir.path(), channel).await;
+    client.list_models().await.expect("discover Copilot Models");
+
+    let created = client
+        .create_session(CreateSessionRequest {
+            session_id: None,
+            preparation_id: None,
+            agent_selection: Some(AgentSelection {
+                provider: ProviderId::new("copilot"),
+                model: ModelId::new("auto"),
+                options: Vec::new(),
+            }),
+            execution_directory: suru::protocol::ExecutionDirectory {
+                path: workspace.path().to_owned(),
+            },
+            prompt: InitialPrompt {
+                id: PromptId::new(),
+                text: "Say hello".to_owned(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+        })
+        .await
+        .expect("create Session on Auto");
+    let settled = settled_session(&client, created.session.id, 0).await;
+    drop(client);
+    server.shutdown().await.expect("shut the server down");
+    settled
+}
+
+#[tokio::test]
+async fn copilot_auto_message_records_the_reported_model_without_changing_the_selection() {
+    let settled = auto_snapshot(AUTO_MODEL_MESSAGE, "copilot-auto-message-model").await;
+    let messages = agent_messages(&settled);
+    let [message] = messages.as_slice() else {
+        panic!("one Agent Message was expected: {messages:?}");
+    };
+
+    assert_eq!(
+        serde_json::to_value(message).expect("serialize Message")["model"],
+        serde_json::json!({
+            "provider": "copilot",
+            "selected": "auto",
+            "actual": "claude-fixture"
+        }),
+        "the Message keeps the concrete Model Copilot reported"
+    );
+    assert_eq!(
+        settled
+            .session
+            .agent_selection
+            .as_ref()
+            .expect("Agent Selection")
+            .model
+            .as_str(),
+        "auto",
+        "attribution never changes what the user selected"
+    );
+}
+
+#[tokio::test]
+async fn copilot_auto_correlates_messages_only_with_their_own_model_calls() {
+    let settled = auto_snapshot(AUTO_CORRELATED_MESSAGES, "copilot-auto-correlation").await;
+    let messages = agent_messages(&settled);
+    let models = messages
+        .iter()
+        .map(|message| message.model.as_ref().map(|model| model.actual.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        models,
+        [Some("claude-fixture"), Some("third-fixture"), None],
+        "call IDs associate Usage before or after a Message; unrelated calls never do"
+    );
+}
+
+#[tokio::test]
+async fn copilot_auto_attributes_late_usage_to_a_superseded_fusion_message() {
+    let settled = auto_snapshot(AUTO_FUSION_LATE_USAGE, "copilot-auto-fusion").await;
+    let messages = agent_messages(&settled);
+    assert_eq!(messages.len(), 2, "the committed twin is not duplicated");
+    assert_eq!(messages[0].content, "Attempt");
+    assert_eq!(messages[0].status, MessageStatus::Superseded);
+    assert_eq!(
+        messages[0]
+            .model
+            .as_ref()
+            .map(|model| model.actual.as_str()),
+        Some("solver-model"),
+        "late call evidence still reaches the superseded Message"
+    );
+    assert_eq!(messages[1].content, "Repair");
+    assert_eq!(
+        messages[1]
+            .model
+            .as_ref()
+            .map(|model| model.actual.as_str()),
+        Some("repair-model")
+    );
+    let calls = settled
+        .activities
+        .iter()
+        .find_map(|activity| match activity {
+            Activity::ModelCalls { calls, .. } => Some(calls),
+            _ => None,
+        })
+        .expect("actual calls are recorded independently of the Route's plan");
+    assert_eq!(
+        calls
+            .iter()
+            .map(|call| call.actual.as_str())
+            .collect::<Vec<_>>(),
+        ["repair-model", "solver-model"]
+    );
+    assert!(
+        settled
+            .activities
+            .iter()
+            .any(|activity| matches!(activity, Activity::Route { .. }))
+    );
+}
+
+#[tokio::test]
+async fn copilot_auto_current_model_tracks_dispatches_and_clears_between_them() {
+    let copilot = conversation_fixture(AUTO_LIVE_MODELS);
+    let state = tempfile::tempdir().expect("create isolated state directory");
+    let workspace = tempfile::tempdir().expect("create valid Workspace");
+    let titling = titling_turned_off();
+    let server = server::spawn_with_provider(
+        ServerConfig::new(state.path(), "copilot-auto-live-model")
+            .expect("configure server")
+            .with_config_dir(titling.path()),
+        Arc::new(CopilotRuntime::new(copilot.executable())),
+    )
+    .await
+    .expect("spawn server");
+    let client = connect(state.path(), "copilot-auto-live-model").await;
+    client.list_models().await.expect("discover Copilot Models");
+    let id = client
+        .create_session(CreateSessionRequest {
+            session_id: None,
+            preparation_id: None,
+            agent_selection: Some(AgentSelection {
+                provider: ProviderId::new("copilot"),
+                model: ModelId::new("auto"),
+                options: Vec::new(),
+            }),
+            execution_directory: suru::protocol::ExecutionDirectory {
+                path: workspace.path().to_owned(),
+            },
+            prompt: InitialPrompt {
+                id: PromptId::new(),
+                text: "Work in stages".to_owned(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+        })
+        .await
+        .expect("create Session on Auto")
+        .session
+        .id;
+    let mut feed = client
+        .subscribe_session(id)
+        .await
+        .expect("subscribe to Session");
+    let wait_for_text = |snapshot: &SessionSnapshot, text: &str| {
+        agent_messages(snapshot)
+            .iter()
+            .any(|message| message.content.contains(text))
+    };
+    let first = session_where(&client, &mut feed, id, "the first call is running", |s| {
+        wait_for_text(s, "running")
+    })
+    .await;
+    copilot.release();
+    let between = session_where(&client, &mut feed, id, "the first call ended", |s| {
+        wait_for_text(s, "waiting")
+    })
+    .await;
+    copilot.release_gate("next");
+    let second = session_where(&client, &mut feed, id, "the second call is running", |s| {
+        wait_for_text(s, "next")
+    })
+    .await;
+    copilot.release_gate("finish");
+    let settled = settled_session(&client, id, 0).await;
+
+    drop(feed);
+    drop(client);
+    server.shutdown().await.expect("shut the server down");
+    assert_eq!(
+        serde_json::to_value(&first).unwrap()["current_model"]["model"]["actual"],
+        "claude-fixture",
+        "the live Model is based on the open dispatch"
+    );
+    assert!(
+        serde_json::to_value(&between).unwrap()["current_model"].is_null(),
+        "a completed dispatch does not remain the live Model"
+    );
+    assert_eq!(
+        serde_json::to_value(&second).unwrap()["current_model"]["model"]["actual"],
+        "other-fixture",
+        "a later dispatch replaces the current Model"
+    );
+    assert!(serde_json::to_value(&settled).unwrap()["current_model"].is_null());
+}
+
+#[tokio::test]
+async fn copilot_auto_records_each_reported_model_call_and_restores_it() {
+    let copilot = conversation_fixture(AUTO_MODEL_CALLS);
+    let state = tempfile::tempdir().expect("create isolated state directory");
+    let data = tempfile::tempdir().expect("create isolated data directory");
+    let workspace = tempfile::tempdir().expect("create valid Workspace");
+    let titling = titling_turned_off();
+    let host = async || {
+        let server = server::spawn_with_provider(
+            ServerConfig::new(state.path(), "copilot-auto-calls")
+                .expect("configure server")
+                .with_data_dir(data.path())
+                .with_config_dir(titling.path()),
+            Arc::new(CopilotRuntime::new(copilot.executable())),
+        )
+        .await
+        .expect("spawn server");
+        let client = crate::copilot_integration::support::connect_in(
+            suru::managed_client::ManagedClientConfig::new(state.path(), "copilot-auto-calls")
+                .expect("configure client")
+                .with_data_dir(data.path()),
+        )
+        .await;
+        (server, client)
+    };
+
+    let (server, client) = host().await;
+    client.list_models().await.expect("discover Copilot Models");
+    let id = client
+        .create_session(CreateSessionRequest {
+            session_id: None,
+            preparation_id: None,
+            agent_selection: Some(AgentSelection {
+                provider: ProviderId::new("copilot"),
+                model: ModelId::new("auto"),
+                options: Vec::new(),
+            }),
+            execution_directory: suru::protocol::ExecutionDirectory {
+                path: workspace.path().to_owned(),
+            },
+            prompt: InitialPrompt {
+                id: PromptId::new(),
+                text: "Do the work".to_owned(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+        })
+        .await
+        .expect("create Session on Auto")
+        .session
+        .id;
+    let settled = settled_session(&client, id, 0).await;
+    let activities = serde_json::to_value(&settled.activities).expect("serialize Activities");
+    let groups = activities
+        .as_array()
+        .expect("Activities array")
+        .iter()
+        .filter(|activity| activity["kind"] == "model_calls")
+        .collect::<Vec<_>>();
+    let [group] = groups.as_slice() else {
+        panic!("one Model Calls Activity was expected: {activities}");
+    };
+    assert_eq!(
+        group["calls"],
+        serde_json::json!([
+            {"provider":"copilot","selected":"auto","actual":"claude-fixture"},
+            {"provider":"copilot","selected":"auto","actual":"other-fixture"},
+            {"provider":"copilot","selected":"auto","actual":"other-fixture"}
+        ]),
+        "each reported call is recorded in order, even when Models repeat"
+    );
+    assert_eq!(
+        group["turn_id"],
+        serde_json::to_value(settled.turns[0].id).unwrap()
+    );
+    assert_eq!(
+        settled.turns[0].usage.as_ref().unwrap().fresh_input_tokens,
+        Some(30),
+        "call attribution leaves Usage accounting intact"
+    );
+
+    drop(client);
+    server.shutdown().await.expect("stop the original server");
+    copilot.wait_for_exit().await;
+    let (server, client) = host().await;
+    let restored = client
+        .read_session(id)
+        .await
+        .expect("read restored Session");
+    assert_eq!(restored.messages, settled.messages);
+    assert_eq!(restored.activities, settled.activities);
+    assert_eq!(restored.transcript, settled.transcript);
+    drop(client);
+    server
+        .shutdown()
+        .await
+        .expect("stop the replacement server");
 }
 
 #[tokio::test]

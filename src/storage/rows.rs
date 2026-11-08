@@ -1048,6 +1048,7 @@ impl MessageRow {
                 role: message.role.clone(),
                 status: message.status,
                 content: Cow::Borrowed(&message.content),
+                model: message.model.clone(),
                 skill_invocations: stored_skill_invocations(&message.skill_invocations),
                 attachments: Cow::Borrowed(&message.attachments),
                 truncated: message.truncated,
@@ -1066,6 +1067,7 @@ impl MessageRow {
                 role: payload.role,
                 status: payload.status,
                 content: payload.content.into_owned(),
+                model: payload.model,
                 skill_invocations: skill_invocations(payload.skill_invocations),
                 attachments: payload.attachments.into_owned(),
                 truncated: payload.truncated,
@@ -1440,6 +1442,8 @@ struct StoredMessagePayload<'a> {
     role: MessageRole,
     status: MessageStatus,
     content: Cow<'a, str>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model: Option<crate::protocol::ModelAttribution>,
     skill_invocations: Vec<StoredSkillInvocation>,
     /// Absent when the Message binds none.
     #[serde(default, skip_serializing_if = "binds_none")]
@@ -1486,6 +1490,9 @@ enum StoredActivityPayload<'a> {
     },
     Error {
         text: Cow<'a, str>,
+    },
+    ModelCalls {
+        calls: Cow<'a, [crate::protocol::ModelAttribution]>,
     },
     Command {
         status: ActivityStatus,
@@ -1620,6 +1627,11 @@ impl StoredActivityPayload<'_> {
                 id,
                 turn_id: turn_id?,
                 decision: decision.into_owned(),
+            },
+            Self::ModelCalls { calls } => Activity::ModelCalls {
+                id,
+                turn_id: turn_id?,
+                calls: calls.into_owned(),
             },
             Self::Error { text } => Activity::Error {
                 id,
@@ -1817,6 +1829,9 @@ impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
             },
             Activity::Route { decision, .. } => Self::Route {
                 decision: Cow::Borrowed(decision),
+            },
+            Activity::ModelCalls { calls, .. } => Self::ModelCalls {
+                calls: Cow::Borrowed(calls),
             },
             Activity::Error { text, .. } => Self::Error {
                 text: Cow::Borrowed(text),
@@ -2186,6 +2201,7 @@ mod tests {
             role: MessageRole::User,
             status: MessageStatus::Completed,
             content: prompt.text.clone(),
+            model: None,
             skill_invocations: Vec::new(),
             attachments: Vec::new(),
             truncated: false,

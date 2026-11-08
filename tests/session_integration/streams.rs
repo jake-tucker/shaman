@@ -216,6 +216,7 @@ async fn real_session_stream_appends_and_completes_one_stable_agent_message() {
                         role: MessageRole::User,
                         status: MessageStatus::Completed,
                         content: "Continue with an active Agent".to_owned(),
+                        model: None,
                         skill_invocations: Vec::new(),
                         attachments: Vec::new(),
                         truncated: false,

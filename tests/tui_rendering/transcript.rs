@@ -5,8 +5,9 @@ use crate::tui_rendering::{
     failing_provider_support::spawn_with_failing_provider,
     support::{
         buffer_rows, click_mouse, connected_application, connected_application_with_terminal_facts,
-        failed_session_snapshot, navigable_session_snapshot, rendered_application_buffer,
-        rendered_application_rows_at, rendered_row, text_position, workspace_dir,
+        failed_session_snapshot, model_descriptor, navigable_session_snapshot,
+        rendered_application_buffer, rendered_application_rows_at, rendered_row, text_position,
+        workspace_dir,
     },
 };
 use crossterm::event::{
@@ -33,8 +34,10 @@ use suru::{
         Activity, ActivityId, ActivityStatus, AppearanceSettings, CommandAutoExpand,
         CompactionTrigger, Cost, CostBasis, CreateSessionRequest, EffectiveSettings, FileChange,
         FoldPosture, GroupPosture, InitialPrompt, Message, MessageId, MessageRole, MessageStatus,
-        NativeMeter, Prompt, PromptDelivery, PromptId, PromptOrder, PromptStatus,
-        ReasoningVisibility, SessionChange, SessionId, SessionRevision, SessionStatus,
+        ModelAttribution, ModelAvailability, ModelCatalog, ModelId, NativeMeter, Outlook, Prompt,
+        PromptDelivery, PromptId, PromptOrder, PromptStatus, ProviderCatalogStatus, ProviderId,
+        ProviderModelCatalog, ReasoningVisibility, Remote, RemoteHealth, RemoteStatus,
+        SessionChange, SessionId, SessionReference, SessionRevision, SessionStatus,
         SessionTimestamp, SessionUpdate, SettingsSnapshot, ToolCallVisibility, TranscriptItem,
         TranscriptSettings, Turn, TurnId, TurnStatus, Usage, WatchOutcomeStatus,
     },
@@ -741,6 +744,7 @@ async fn streamed_agent_markdown_updates_one_unboxed_row_through_the_real_sessio
                         status: MessageStatus::Completed,
                         content: "Continue with an active Agent".to_owned(),
                         truncated: false,
+                        model: None,
                         skill_invocations: Vec::new(),
                         attachments: Vec::new(),
                         author: None,
@@ -1683,6 +1687,7 @@ fn message_anchor_survives_prompt_reconciliation_and_composer_dock_layout_change
                             status: MessageStatus::Completed,
                             content: request.prompt.text.clone(),
                             truncated: false,
+                            model: None,
                             skill_invocations: Vec::new(),
                             attachments: Vec::new(),
                             author: None,
@@ -1835,6 +1840,455 @@ fn left_click_at(application: &mut Application, row: u16) -> anyhow::Result<Appl
             modifiers: KeyModifiers::NONE,
         },
     )
+}
+
+fn auto_model(actual: &str) -> ModelAttribution {
+    ModelAttribution {
+        provider: ProviderId::new("copilot"),
+        selected: ModelId::new("auto"),
+        actual: ModelId::new(actual),
+    }
+}
+
+fn auto_catalog(first: &str, second: &str) -> ModelCatalog {
+    ModelCatalog {
+        providers: vec![ProviderModelCatalog {
+            provider: ProviderId::new("copilot"),
+            display_name: "Copilot".to_owned(),
+            models: vec![
+                model_descriptor(
+                    "copilot",
+                    "auto",
+                    "Auto",
+                    true,
+                    ModelAvailability::Available,
+                ),
+                model_descriptor(
+                    "copilot",
+                    "first",
+                    first,
+                    false,
+                    ModelAvailability::Available,
+                ),
+                model_descriptor(
+                    "copilot",
+                    "second",
+                    second,
+                    false,
+                    ModelAvailability::Available,
+                ),
+            ],
+            status: ProviderCatalogStatus::Fresh,
+        }],
+    }
+}
+
+fn deliver_auto_catalog(application: &mut Application, first: &str, second: &str) {
+    application
+        .handle_event(ApplicationEvent::Managed(ManagedEvent::ModelCatalog(
+            auto_catalog(first, second),
+        )))
+        .expect("cache the Copilot catalog");
+}
+
+#[test]
+fn auto_message_labels_and_model_calls_fold_survive_a_settled_turn() {
+    let workspace = workspace_dir();
+    let mut snapshot = navigable_session_snapshot(SessionId::new(), workspace.path(), 1);
+    let turn_id = snapshot.turns[0].id;
+    let answer = snapshot
+        .messages
+        .iter_mut()
+        .find(|message| message.role == MessageRole::Agent)
+        .expect("fixture contains an Agent Message");
+    answer.content = "Fixed the tests.".to_owned();
+    answer.model = Some(auto_model("first"));
+    let activity = Activity::ModelCalls {
+        id: ActivityId::new(),
+        turn_id,
+        calls: vec![
+            auto_model("first"),
+            auto_model("second"),
+            auto_model("second"),
+        ],
+    };
+    let answer_position = snapshot
+        .transcript
+        .iter()
+        .position(|item| matches!(item, TranscriptItem::Message { message_id } if *message_id == answer.id))
+        .expect("the answer is in the Transcript");
+    snapshot.transcript.insert(
+        answer_position,
+        TranscriptItem::Activity {
+            activity_id: activity.id(),
+        },
+    );
+    snapshot.activities.push(activity);
+    let mut application = connected_application(workspace.path());
+    deliver_auto_catalog(&mut application, "First Model", "Second Model");
+    application
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .expect("attach a settled Session");
+
+    let folded = rendered_application_rows_at(&application, 80, 24);
+    let screen = folded.join("\n");
+    assert!(
+        screen.contains("Auto · First Model"),
+        "model heading: {screen}"
+    );
+    assert!(
+        screen.contains("Fixed the tests."),
+        "answer remains visible: {screen}"
+    );
+    assert!(
+        screen.contains("3 model calls · +3 lines"),
+        "the call list remains available outside the settled Turn Fold: {screen}"
+    );
+    assert!(
+        rendered_row(&folded, "Fixed the tests.") < rendered_row(&folded, "3 model calls"),
+        "the call details follow the answer even when usage preceded it: {screen}"
+    );
+    assert!(
+        !screen.contains("Second Model"),
+        "call details start folded: {screen}"
+    );
+
+    left_click_at(
+        &mut application,
+        rendered_row(&folded, "3 model calls") as u16,
+    )
+    .expect("open the Model Calls Fold");
+    let expanded = rendered_application_rows_at(&application, 80, 24).join("\n");
+    assert_eq!(expanded.matches("First Model").count(), 2, "{expanded}");
+    assert_eq!(expanded.matches("Second Model").count(), 2, "{expanded}");
+    press_leader_chord(&mut application, 'f');
+    let keyboard_opened = rendered_application_rows_at(&application, 80, 24).join("\n");
+    assert!(
+        keyboard_opened.contains("Second Model"),
+        "{keyboard_opened}"
+    );
+    press_leader_chord(&mut application, 'f');
+    let keyboard_closed = rendered_application_rows_at(&application, 80, 24).join("\n");
+    assert!(
+        !keyboard_closed.contains("Second Model"),
+        "{keyboard_closed}"
+    );
+}
+
+#[test]
+fn call_details_stay_with_each_turn_and_remain_visible_without_an_answer() {
+    let workspace = workspace_dir();
+    let mut snapshot = navigable_session_snapshot(SessionId::new(), workspace.path(), 3);
+    for (index, turn) in snapshot.turns.iter().enumerate() {
+        let answer = snapshot
+            .messages
+            .iter_mut()
+            .find(|message| message.turn_id == turn.id && message.role == MessageRole::Agent)
+            .expect("each fixture Turn has an Agent Message");
+        answer.content = match index {
+            0 => "First answer",
+            1 => "",
+            _ => "Third answer",
+        }
+        .to_owned();
+        let answer_position = snapshot
+            .transcript
+            .iter()
+            .position(|item| {
+                matches!(
+                    item, TranscriptItem::Message { message_id } if *message_id == answer.id
+                )
+            })
+            .unwrap();
+        let calls = Activity::ModelCalls {
+            id: ActivityId::new(),
+            turn_id: turn.id,
+            calls: vec![auto_model("first"); index + 1],
+        };
+        snapshot.transcript.insert(
+            answer_position,
+            TranscriptItem::Activity {
+                activity_id: calls.id(),
+            },
+        );
+        snapshot.activities.push(calls);
+    }
+    let mut application = connected_application(workspace.path());
+    deliver_auto_catalog(&mut application, "First Model", "Second Model");
+    application
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .expect("attach three Turns");
+    let rows = rendered_application_rows_at(&application, 100, 40);
+    let positions = [
+        "First answer",
+        "1 model call",
+        "Prompt section 2",
+        "2 model calls",
+        "Prompt section 3",
+        "Third answer",
+        "3 model calls",
+    ]
+    .map(|text| rendered_row(&rows, text));
+    assert!(
+        positions.windows(2).all(|pair| pair[0] < pair[1]),
+        "{rows:?}"
+    );
+}
+
+#[test]
+fn auto_model_labels_and_call_details_refresh_when_the_session_or_catalog_changes() {
+    let workspace = workspace_dir();
+    let session_id = SessionId::new();
+    let mut snapshot = navigable_session_snapshot(session_id, workspace.path(), 1);
+    let turn_id = snapshot.turns[0].id;
+    set_turn_in_flight(&mut snapshot, turn_id);
+    let message_id = snapshot
+        .messages
+        .iter()
+        .find(|message| message.role == MessageRole::Agent)
+        .expect("fixture contains an Agent Message")
+        .id;
+    let revision = snapshot.revision.0;
+    let activity_id = ActivityId::new();
+    let mut application = connected_application(workspace.path());
+    deliver_auto_catalog(&mut application, "First Model", "Second Model");
+    application
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .expect("attach a live Session");
+    let initial = rendered_application_rows_at(&application, 80, 24).join("\n");
+    assert!(!initial.contains("Auto · First Model"), "{initial}");
+
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(revision + 1),
+                changes: vec![
+                    SessionChange::MessageModelChanged {
+                        message_id,
+                        model: auto_model("first"),
+                    },
+                    SessionChange::ActivityAdded {
+                        activity: Activity::ModelCalls {
+                            id: activity_id,
+                            turn_id,
+                            calls: vec![auto_model("first")],
+                        },
+                    },
+                ],
+            },
+        )))
+        .expect("project the first reported Model");
+    let first = rendered_application_rows_at(&application, 80, 24);
+    assert!(first.join("\n").contains("Auto · First Model"), "{first:?}");
+    left_click_at(
+        &mut application,
+        rendered_row(&first, "1 model call") as u16,
+    )
+    .expect("open the Model Calls Fold");
+
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(revision + 2),
+                changes: vec![SessionChange::ModelCallRecorded {
+                    activity_id,
+                    model: auto_model("second"),
+                }],
+            },
+        )))
+        .expect("project another call");
+    let calls = rendered_application_rows_at(&application, 80, 24).join("\n");
+    assert!(
+        calls.contains("2 model calls") && calls.contains("Second Model"),
+        "{calls}"
+    );
+
+    deliver_auto_catalog(&mut application, "First Renamed", "Second Renamed");
+    let renamed = rendered_application_rows_at(&application, 80, 24).join("\n");
+    assert!(renamed.contains("Auto · First Renamed"), "{renamed}");
+    assert!(renamed.contains("Second Renamed"), "{renamed}");
+    assert!(
+        !renamed.contains("First Model") && !renamed.contains("Second Model"),
+        "{renamed}"
+    );
+}
+
+#[test]
+fn working_indicator_names_only_the_current_reported_model() {
+    let workspace = workspace_dir();
+    let session_id = SessionId::new();
+    let mut snapshot = navigable_session_snapshot(session_id, workspace.path(), 1);
+    let turn_id = snapshot.turns[0].id;
+    set_turn_in_flight(&mut snapshot, turn_id);
+    snapshot.session.working_since = Some(suru::protocol::SessionTimestamp::now());
+    snapshot.current_model = Some(suru::protocol::WorkingModel {
+        turn_id,
+        model: auto_model("first"),
+    });
+    let revision = snapshot.revision.0;
+    let mut application = connected_application(workspace.path());
+    deliver_auto_catalog(&mut application, "First Model", "Second Model");
+    application
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .expect("attach a working Session");
+
+    let indicator = |application: &Application| {
+        rendered_application_rows_at(application, 100, 24)
+            .into_iter()
+            .find(|row| row.contains("Working") && row.contains("to interrupt"))
+            .expect("the Working Indicator is drawn")
+    };
+    let first = indicator(&application);
+    assert!(first.contains("Working · First Model"), "{first}");
+    assert!(first.contains("Esc to interrupt"), "{first}");
+
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(revision + 1),
+                changes: vec![SessionChange::CurrentModelChanged {
+                    turn_id,
+                    model: Some(auto_model("second")),
+                }],
+            },
+        )))
+        .expect("project the next live Model");
+    assert!(indicator(&application).contains("Working · Second Model"));
+    deliver_auto_catalog(&mut application, "First Renamed", "Second Renamed");
+    assert!(indicator(&application).contains("Working · Second Renamed"));
+    deliver_auto_catalog(
+        &mut application,
+        "First Renamed",
+        "A model name too long for a narrow terminal",
+    );
+    let narrow = rendered_application_rows_at(&application, 44, 24);
+    let narrow_indicator = narrow.iter().find(|row| row.contains("Working")).unwrap();
+    assert!(
+        narrow_indicator.contains("Esc to interrupt"),
+        "{narrow_indicator}"
+    );
+
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(revision + 2),
+                changes: vec![SessionChange::CurrentModelChanged {
+                    turn_id,
+                    model: None,
+                }],
+            },
+        )))
+        .expect("clear the ended call");
+    let cleared = indicator(&application);
+    assert!(!cleared.contains("Second"), "{cleared}");
+}
+
+#[test]
+fn model_names_follow_the_open_sessions_origin_for_messages_calls_and_working() {
+    let workspace = workspace_dir();
+    let session_id = SessionId::new();
+    let mut snapshot = navigable_session_snapshot(session_id, workspace.path(), 1);
+    let turn_id = snapshot.turns[0].id;
+    set_turn_in_flight(&mut snapshot, turn_id);
+    snapshot.session.working_since = Some(SessionTimestamp::now());
+    snapshot.current_model = Some(suru::protocol::WorkingModel {
+        turn_id,
+        model: auto_model("first"),
+    });
+    snapshot
+        .messages
+        .iter_mut()
+        .find(|message| message.role == MessageRole::Agent)
+        .unwrap()
+        .model = Some(auto_model("first"));
+    let calls = Activity::ModelCalls {
+        id: ActivityId::new(),
+        turn_id,
+        calls: vec![auto_model("first")],
+    };
+    snapshot.transcript.push(TranscriptItem::Activity {
+        activity_id: calls.id(),
+    });
+    snapshot.activities.push(calls);
+    let remote = Outlook::Remote("studio".to_owned());
+    let mut application = connected_application(workspace.path());
+    deliver_auto_catalog(&mut application, "Local Model", "Local Second");
+    application
+        .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
+            SemanticCommandId::ConnectOpen,
+        )))
+        .expect("open the Connect picker");
+    application
+        .handle_event(ApplicationEvent::RemotesListed(vec![Remote {
+            name: "studio".to_owned(),
+            fingerprint: "studio-fingerprint".to_owned(),
+            ways: Vec::new(),
+            status: RemoteStatus::Available,
+        }]))
+        .expect("list the remote");
+    application
+        .handle_event(ApplicationEvent::RemoteProbed {
+            name: "studio".to_owned(),
+            result: Ok(RemoteHealth {
+                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                status: RemoteStatus::Available,
+                unreachable: None,
+            }),
+        })
+        .expect("probe the remote");
+    for key in [KeyCode::Down, KeyCode::Enter] {
+        application
+            .handle_terminal_event(InputEvent::Key(KeyEvent::new(key, KeyModifiers::NONE)))
+            .expect("turn the Outlook toward the remote");
+    }
+    application
+        .handle_event(ApplicationEvent::OriginCatalog {
+            outlook: remote.clone(),
+            event: ManagedEvent::ModelCatalog(auto_catalog("Remote Model", "Remote Second")),
+        })
+        .expect("cache the remote catalog");
+    application
+        .handle_event(ApplicationEvent::OriginSessionAttached {
+            reference: SessionReference::new(remote.clone(), session_id),
+            snapshot,
+        })
+        .expect("open the remote Session");
+    let rows = rendered_application_rows_at(&application, 100, 24);
+    let screen = rows.join("\n");
+    assert!(screen.contains("Auto · Remote Model"), "{screen}");
+    assert!(screen.contains("Working · Remote Model"), "{screen}");
+    assert!(!screen.contains("Local Model"), "{screen}");
+    let row = rendered_row(&rows, "1 model call");
+    click_mouse(
+        &mut application,
+        MouseEvent {
+            kind: MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: rows[row].find("1 model call").unwrap() as u16,
+            row: row as u16,
+            modifiers: KeyModifiers::NONE,
+        },
+    )
+    .expect("open call details");
+    let expanded = rendered_application_rows_at(&application, 100, 24).join("\n");
+    assert!(expanded.matches("Remote Model").count() >= 3, "{expanded}");
+
+    application
+        .handle_event(ApplicationEvent::OriginCatalog {
+            outlook: remote,
+            event: ManagedEvent::ModelCatalog(auto_catalog("Remote Renamed", "Remote Second")),
+        })
+        .expect("refresh the remote catalog");
+    let refreshed = rendered_application_rows_at(&application, 100, 24).join("\n");
+    assert!(refreshed.contains("Auto · Remote Renamed"), "{refreshed}");
+    assert!(
+        refreshed.contains("Working · Remote Renamed"),
+        "{refreshed}"
+    );
+    assert!(!refreshed.contains("Remote Model"), "{refreshed}");
 }
 
 /// Presses the Ctrl+X leader chord followed by `key`, the way a reader
@@ -5756,6 +6210,7 @@ fn command_run_snapshot(
                     status: MessageStatus::Completed,
                     content: (*content).to_owned(),
                     truncated: false,
+                    model: None,
                     skill_invocations: Vec::new(),
                     attachments: Vec::new(),
                     author: None,
@@ -8789,6 +9244,7 @@ fn append_settled_turn(
             role,
             status: MessageStatus::Completed,
             content: content.to_owned(),
+            model: None,
             skill_invocations: Vec::new(),
             attachments: Vec::new(),
             truncated: false,
@@ -9260,6 +9716,7 @@ fn newer_turn_begins(
                     status: MessageStatus::Completed,
                     content: prompt.to_owned(),
                     truncated: false,
+                    model: None,
                     skill_invocations: Vec::new(),
                     attachments: Vec::new(),
                     author: None,

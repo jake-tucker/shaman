@@ -1297,6 +1297,7 @@ mod tests {
             role,
             status,
             content: content.to_owned(),
+            model: None,
             skill_invocations: Vec::new(),
             attachments: Vec::new(),
             truncated: false,
@@ -1373,6 +1374,7 @@ mod tests {
             pending_approvals_revision: SessionRevision(0),
             watches: Vec::new(),
             waiting_on_subagents: None,
+            current_model: None,
             subagent_usage: None,
             total_cost: None,
             own_cost: None,
@@ -1460,6 +1462,25 @@ mod tests {
         sink.created(persisted, Vec::new());
         writer.shutdown().await.unwrap();
         repository.session(session_id).await.unwrap().unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_working_model_is_not_restored_from_storage() {
+        use crate::protocol::{ModelAttribution, ModelId, ProviderId, WorkingModel};
+
+        let directory = tempfile::tempdir().unwrap();
+        let repository = StorageRepository::open(directory.path()).await.unwrap();
+        let mut live = session(directory.path());
+        live.snapshot.current_model = Some(WorkingModel {
+            turn_id: live.snapshot.turns[1].id,
+            model: ModelAttribution {
+                provider: ProviderId::new("copilot"),
+                selected: ModelId::new("auto"),
+                actual: ModelId::new("fixture-model"),
+            },
+        });
+        let restored = stored(&repository, live).await;
+        assert!(restored.snapshot.current_model.is_none());
     }
 
     #[tokio::test]

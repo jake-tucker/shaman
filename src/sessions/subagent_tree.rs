@@ -1214,6 +1214,7 @@ mod tests {
             role: MessageRole::Agent,
             status: MessageStatus::Completed,
             content: "Found it.".to_owned(),
+            model: None,
             skill_invocations: Vec::new(),
             attachments: Vec::new(),
             truncated: false,

@@ -889,6 +889,15 @@ impl<'a> Transcript<'a> {
             }
             Activity::Reasoning { .. } => String::new(),
             Activity::Route { decision, .. } => route_summary(decision),
+            Activity::ModelCalls { calls, .. } => format!(
+                "{}: {}",
+                plural(calls.len(), "Model call"),
+                calls
+                    .iter()
+                    .map(|call| call.actual.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             Activity::Subsession { title, prompt, .. } => {
                 format!("\"{title}\", first asked: {prompt}")
             }
@@ -1043,6 +1052,14 @@ impl<'a> Transcript<'a> {
                 if let Some(detail) = decision.detail() {
                     whole.push('\n');
                     whole.push_str(detail);
+                }
+            }
+            Activity::ModelCalls { calls, .. } => {
+                for (index, call) in calls.iter().enumerate() {
+                    if index > 0 {
+                        whole.push('\n');
+                    }
+                    whole.push_str(call.actual.as_str());
                 }
             }
             Activity::WatchOutcome {
@@ -1297,6 +1314,7 @@ fn activity_label(activity: &Activity) -> Spans {
         },
         Activity::Reasoning { .. } => "reasoning".to_owned(),
         Activity::Route { .. } => "route".to_owned(),
+        Activity::ModelCalls { .. } => "model calls".to_owned(),
         Activity::Move { status, .. } => format!("move [{}]", stood(*status)),
         Activity::Subsession {
             session_id,
@@ -1743,6 +1761,7 @@ mod tests {
                 watches: Vec::new(),
                 attachments: Vec::new(),
                 waiting_on_subagents: None,
+                current_model: None,
             })
         }
 
@@ -1798,6 +1817,7 @@ mod tests {
                 role,
                 status: MessageStatus::Completed,
                 content: content.to_owned(),
+                model: None,
                 skill_invocations: Vec::new(),
                 attachments: Vec::new(),
                 truncated: false,

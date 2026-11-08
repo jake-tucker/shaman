@@ -562,6 +562,7 @@ async fn active_turn_admission_preserves_order_and_safe_steer_delivery() {
                         status: MessageStatus::Completed,
                         content: "Long-running work".to_owned(),
                         truncated: false,
+                        model: None,
                         skill_invocations: Vec::new(),
                         attachments: Vec::new(),
                         author: None,

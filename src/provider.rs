@@ -1150,7 +1150,21 @@ pub enum ProviderEvent {
     AgentMessageDelta {
         content: String,
     },
+    /// The concrete Model the Provider identified for an Agent Message. A
+    /// named Message can be updated after its stream completed.
+    AgentMessageModelKnown {
+        message: Option<ProviderMessageId>,
+        model: crate::protocol::ModelAttribution,
+    },
     AgentMessageCompleted,
+    /// One model call the Provider reported beneath a routed selection.
+    ModelCallRecorded {
+        model: crate::protocol::ModelAttribution,
+    },
+    /// Evidence of a currently executing Model, cleared when that work ends.
+    CurrentModelChanged {
+        model: Option<crate::protocol::ModelAttribution>,
+    },
     /// Names the Agent Message just started, for a later event of the same
     /// Turn to speak of it.
     AgentMessageIdentified {

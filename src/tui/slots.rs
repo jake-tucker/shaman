@@ -98,6 +98,8 @@ pub(super) struct WorkingIndicatorSlotContext {
     /// description, or how many Watches there are. `None` in every other
     /// state.
     pub(super) watching: Option<String>,
+    /// What the owning Server's catalog calls the currently executing Model.
+    pub(super) current_model: Option<String>,
 }
 
 #[derive(Clone, Debug)]

@@ -3205,6 +3205,13 @@ pub enum Activity {
         turn_id: TurnId,
         text: String,
     },
+    /// The concrete Models reported for individual calls beneath a routed
+    /// selection, in the order the Provider reported them.
+    ModelCalls {
+        id: ActivityId,
+        turn_id: TurnId,
+        calls: Vec<ModelAttribution>,
+    },
     Command {
         id: ActivityId,
         turn_id: TurnId,
@@ -3464,6 +3471,7 @@ impl Activity {
             | Self::Questionnaire { id, .. }
             | Self::Status { id, .. }
             | Self::Error { id, .. }
+            | Self::ModelCalls { id, .. }
             | Self::Command { id, .. }
             | Self::FileChange { id, .. }
             | Self::ToolCall { id, .. }
@@ -3485,6 +3493,7 @@ impl Activity {
             | Self::Questionnaire { turn_id, .. }
             | Self::Status { turn_id, .. }
             | Self::Error { turn_id, .. }
+            | Self::ModelCalls { turn_id, .. }
             | Self::Command { turn_id, .. }
             | Self::FileChange { turn_id, .. }
             | Self::ToolCall { turn_id, .. }
@@ -3534,6 +3543,7 @@ impl Activity {
             }),
             Self::Status { .. }
             | Self::Error { .. }
+            | Self::ModelCalls { .. }
             | Self::Route { .. }
             | Self::Subsession { .. } => None,
             Self::Command { status, .. }
@@ -5218,6 +5228,23 @@ impl Turn {
     }
 }
 
+/// Provider evidence of the concrete Model used beneath a routed selection.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelAttribution {
+    pub provider: ProviderId,
+    pub selected: ModelId,
+    pub actual: ModelId,
+}
+
+/// Provider evidence of a concrete Model currently working in a Turn.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkingModel {
+    pub turn_id: TurnId,
+    pub model: ModelAttribution,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Message {
@@ -5226,6 +5253,10 @@ pub struct Message {
     pub role: MessageRole,
     pub status: MessageStatus,
     pub content: String,
+    /// The concrete Model the Provider identified for this Agent Message
+    /// beneath a routed selection, absent when it reported none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<ModelAttribution>,
     /// Safe invocation records captured with a user Message. Agent Messages
     /// and Delegations always carry an empty list.
     pub skill_invocations: Vec<SkillInvocation>,
@@ -5360,6 +5391,9 @@ pub struct SessionSnapshot {
     /// Indicator's Working is spent on.
     #[serde(default)]
     pub waiting_on_subagents: Option<TurnId>,
+    /// A Model the Provider reports as currently working, never stored.
+    #[serde(default)]
+    pub current_model: Option<WorkingModel>,
 }
 
 impl SessionSnapshot {
@@ -5662,12 +5696,22 @@ pub enum SessionChange {
     SessionWaitingOnSubagentsChanged {
         waiting_on_subagents: Option<TurnId>,
     },
+    /// Evidence of the Model currently executing in this Turn, or its end.
+    CurrentModelChanged {
+        turn_id: TurnId,
+        model: Option<ModelAttribution>,
+    },
     MessageAdded {
         message: Message,
     },
     MessageContentAppended {
         message_id: MessageId,
         content: String,
+    },
+    /// Provider evidence of the Model that wrote an Agent Message.
+    MessageModelChanged {
+        message_id: MessageId,
+        model: ModelAttribution,
     },
     MessageTruncated {
         message_id: MessageId,
@@ -5678,6 +5722,11 @@ pub enum SessionChange {
     /// A Route passed a completed Agent Message over for another Model's work.
     MessageSuperseded {
         message_id: MessageId,
+    },
+    /// One more reported call belonging to an existing Model Calls Activity.
+    ModelCallRecorded {
+        activity_id: ActivityId,
+        model: ModelAttribution,
     },
     QuestionnaireAccepted {
         activity_id: ActivityId,

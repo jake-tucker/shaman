@@ -441,10 +441,12 @@ fn moved_row(change: &SessionChange) -> Option<Table> {
         | SessionChange::TurnOutputObserved { .. }
         | SessionChange::TurnStatusChanged { .. } => Some(Table::Turns),
         SessionChange::MessageContentAppended { .. }
+        | SessionChange::MessageModelChanged { .. }
         | SessionChange::MessageTruncated { .. }
         | SessionChange::MessageCompleted { .. }
         | SessionChange::MessageSuperseded { .. } => Some(Table::Messages),
         SessionChange::QuestionnaireAccepted { .. }
+        | SessionChange::ModelCallRecorded { .. }
         | SessionChange::QuestionnaireSettled { .. }
         | SessionChange::DecisionAccepted { .. }
         | SessionChange::ApprovalSettled { .. }
@@ -490,6 +492,7 @@ fn moved_row(change: &SessionChange) -> Option<Table> {
         | SessionChange::SessionMonitoringChanged { .. }
         | SessionChange::SessionWatchesChanged { .. }
         | SessionChange::SessionWaitingOnSubagentsChanged { .. }
+        | SessionChange::CurrentModelChanged { .. }
         | SessionChange::SessionStatusChanged { .. } => None,
     }
 }

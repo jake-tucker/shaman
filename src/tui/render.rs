@@ -80,7 +80,7 @@ use super::{
     subagent_picker::working_subagents,
     text_layout::{TextLayout, draw_row, drawn_character},
     theme_picker::ThemePickerRow,
-    transcript::{TranscriptView, client_error_lines},
+    transcript::{TranscriptModelNames, TranscriptView, client_error_lines, model_display_name},
     unreachable_reason,
     usage::{compact_cost, compact_count},
     workspace_picker::{WorkspacePickerMenuGeometry, WorkspacePickerRowKind, WorkspaceRow},
@@ -7036,6 +7036,36 @@ fn render_session_surface(
                 working_since: *working_since,
                 interrupt: *interrupt,
                 watching: watching.clone(),
+                current_model: if *indicator_state == WorkingIndicatorState::Working {
+                    snapshot.current_model.as_ref().and_then(|current| {
+                        let ComposerKey::Session(reference) = &key else {
+                            return None;
+                        };
+                        snapshot
+                            .turns
+                            .iter()
+                            .any(|turn| {
+                                turn.id == current.turn_id
+                                    && turn.status == crate::protocol::TurnStatus::Active
+                            })
+                            .then(|| {
+                                let names = TranscriptModelNames {
+                                    catalog: state.model_picker.catalog_names(),
+                                    outlook: &reference.origin,
+                                    revision: state
+                                        .model_picker
+                                        .catalog_revision(&reference.origin),
+                                };
+                                model_display_name(
+                                    Some(names),
+                                    &current.model.provider,
+                                    &current.model.actual,
+                                )
+                            })
+                    })
+                } else {
+                    None
+                },
             };
             let default = working_indicator_line(
                 &context,
@@ -7542,6 +7572,16 @@ fn working_indicator_line(
         (Some(said), None) | (None, Some(said)) => format!(" ({said})"),
         (Some(elapsed), Some(guidance)) => format!(" ({elapsed} • {guidance})"),
     };
+    let model = context.current_model.as_ref().and_then(|model| {
+        let text = format!(" · {model}");
+        let watching_width = context
+            .watching
+            .as_ref()
+            .map_or(0, |watching| watching.width() + 1);
+        (label.width() + watching_width + text.width() + metadata.width()
+            <= usize::from(context.width))
+        .then(|| SlotText::new(text, theme.text.subdued))
+    });
     let label = shimmered_label_spans(
         label,
         animation_frame,
@@ -7560,6 +7600,7 @@ fn working_indicator_line(
         truncate_slot_text(
             label
                 .chain(watching)
+                .chain(model)
                 .chain(std::iter::once(SlotText::new(metadata, theme.text.subdued)))
                 .collect(),
             usize::from(context.width),
@@ -8537,6 +8578,7 @@ mod tests {
             pending_approvals_revision: crate::protocol::SessionRevision(0),
             watches: Vec::new(),
             waiting_on_subagents: None,
+            current_model: None,
             subagent_usage: None,
             total_cost: None,
             own_cost: None,
@@ -8914,6 +8956,7 @@ mod tests {
                     pending_approvals_revision: crate::protocol::SessionRevision(0),
                     watches: Vec::new(),
                     waiting_on_subagents: None,
+                    current_model: None,
                     subagent_usage: None,
                     total_cost: None,
                     own_cost: None,
@@ -9001,6 +9044,7 @@ mod tests {
                     pending_approvals_revision: crate::protocol::SessionRevision(0),
                     watches: Vec::new(),
                     waiting_on_subagents: None,
+                    current_model: None,
                     subagent_usage: None,
                     total_cost: None,
                     own_cost: None,

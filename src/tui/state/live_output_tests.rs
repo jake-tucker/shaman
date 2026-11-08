@@ -122,6 +122,7 @@ fn session_running(commands: &[(&str, ActivityStatus)]) -> (SessionSnapshot, Vec
         pending_approvals_revision: SessionRevision(0),
         watches: Vec::new(),
         waiting_on_subagents: None,
+        current_model: None,
         subagent_usage: None,
         total_cost: None,
         own_cost: None,

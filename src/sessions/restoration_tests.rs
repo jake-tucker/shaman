@@ -903,6 +903,7 @@ pub(super) fn persisted(workspace: &Path, parent: Option<SessionId>) -> Persiste
             watches: Vec::new(),
             attachments: Vec::new(),
             waiting_on_subagents: None,
+            current_model: None,
         },
         resume_states: HashMap::new(),
         subagent_identity: None,

@@ -17,9 +17,10 @@ use anyhow::{Result, bail};
 
 use crate::protocol::{
     Activity, ActivityId, ActivityStatus, AgentIdentity, ApprovalOutcome, AttachmentDescriptor,
-    CompactionTrigger, CostDetails, CostRecord, Message, MessageRole, MessageStatus, Prompt,
-    PromptDelivery, PromptStatus, QuestionnaireOutcome, SessionChange, SessionRevision,
-    SessionSnapshot, SessionUpdate, TranscriptItem, Turn, TurnId, TurnStatus,
+    CompactionTrigger, CostDetails, CostRecord, Message, MessageRole, MessageStatus,
+    ModelAttribution, Prompt, PromptDelivery, PromptStatus, QuestionnaireOutcome, SessionChange,
+    SessionRevision, SessionSnapshot, SessionUpdate, TranscriptItem, Turn, TurnId, TurnStatus,
+    WorkingModel,
 };
 
 /// Applies `update` to `snapshot` in place, or refuses it and leaves the
@@ -64,6 +65,16 @@ pub(crate) fn validate_changes(
     Ok(ValidatedChanges { targets })
 }
 
+fn validate_model_attribution(model: &ModelAttribution) -> Result<()> {
+    if model.provider.as_str().trim().is_empty()
+        || model.selected.as_str().trim().is_empty()
+        || model.actual.as_str().trim().is_empty()
+    {
+        bail!("Session update named an empty Model attribution");
+    }
+    Ok(())
+}
+
 /// A batch [`validate_changes`] found applies cleanly to the snapshot it read,
 /// carrying where in that snapshot each change lands — the Prompt, Turn,
 /// Message, or Activity it names, by position — so applying it neither looks
@@ -97,6 +108,9 @@ impl ValidatedChanges {
                     next.icon.clone_from(icon);
                 }
                 SessionChange::AgentSelectionChanged { selection } => {
+                    if next.session.agent_selection.as_ref() != Some(selection) {
+                        next.current_model = None;
+                    }
                     next.session.agent_selection = Some(selection.clone());
                 }
                 SessionChange::AgentSelectionAvailabilityChanged { availability } => {
@@ -235,6 +249,20 @@ impl ValidatedChanges {
                 } => {
                     next.waiting_on_subagents = *waiting_on_subagents;
                 }
+                SessionChange::CurrentModelChanged { turn_id, model } => {
+                    if let Some(model) = model {
+                        next.current_model = Some(WorkingModel {
+                            turn_id: *turn_id,
+                            model: model.clone(),
+                        });
+                    } else if next
+                        .current_model
+                        .as_ref()
+                        .is_some_and(|held| held.turn_id == *turn_id)
+                    {
+                        next.current_model = None;
+                    }
+                }
                 SessionChange::MessageAdded { message } => {
                     next.messages.push(message.clone());
                     next.transcript.push(TranscriptItem::Message {
@@ -243,6 +271,9 @@ impl ValidatedChanges {
                 }
                 SessionChange::MessageContentAppended { content, .. } => {
                     next.messages[resolved()].content.push_str(content);
+                }
+                SessionChange::MessageModelChanged { model, .. } => {
+                    next.messages[resolved()].model = Some(model.clone());
                 }
                 SessionChange::MessageTruncated { .. } => {
                     next.messages[resolved()].truncated = true;
@@ -332,6 +363,13 @@ impl ValidatedChanges {
                             checkout: to_checkout.clone(),
                         });
                     }
+                }
+                SessionChange::ModelCallRecorded { model, .. } => {
+                    let Activity::ModelCalls { calls, .. } = &mut next.activities[resolved()]
+                    else {
+                        unreachable!("{RESOLVED}");
+                    };
+                    calls.push(model.clone());
                 }
                 SessionChange::CommandOutputAppended { content, .. } => {
                     let Activity::Command { output, .. } = &mut next.activities[resolved()] else {
@@ -561,11 +599,20 @@ impl ValidatedChanges {
                     current_title.clone_from(title);
                 }
                 SessionChange::TurnStatusChanged {
-                    status, settled_at, ..
+                    turn_id,
+                    status,
+                    settled_at,
                 } => {
                     let turn = &mut next.turns[resolved()];
                     turn.status = *status;
                     turn.settled_at = *settled_at;
+                    if next
+                        .current_model
+                        .as_ref()
+                        .is_some_and(|held| held.turn_id == *turn_id)
+                    {
+                        next.current_model = None;
+                    }
                 }
                 SessionChange::WorkspaceChanged {
                     workspace,
@@ -884,6 +931,18 @@ impl<'a> Validation<'a> {
                 };
                 Some(index)
             }
+            SessionChange::CurrentModelChanged { turn_id, model } => {
+                let Some((index, turn)) = self.turns.find(|turn| turn.id == *turn_id) else {
+                    bail!("Session update referenced an unknown Turn");
+                };
+                if turn.status != TurnStatus::Active {
+                    bail!("A current Model requires an active Turn");
+                }
+                if let Some(model) = model {
+                    validate_model_attribution(model)?;
+                }
+                Some(index)
+            }
             SessionChange::MessageAdded { message } => {
                 if self
                     .turns
@@ -903,6 +962,12 @@ impl<'a> Validation<'a> {
                 {
                     bail!("Only Agent Messages stream");
                 }
+                if message.role != MessageRole::Agent && message.model.is_some() {
+                    bail!("Only Agent Messages carry a Model attribution");
+                }
+                if let Some(model) = &message.model {
+                    validate_model_attribution(model)?;
+                }
                 // A Delegation arrives whole, so it is added in its final
                 // state, which may already be cut short by Suru's cap. Every
                 // other Message is added before any content reaches it.
@@ -911,6 +976,18 @@ impl<'a> Validation<'a> {
                 }
                 self.messages.add(message);
                 None
+            }
+            SessionChange::MessageModelChanged { message_id, model } => {
+                let Some((index, message)) =
+                    self.messages.find(|message| message.id == *message_id)
+                else {
+                    bail!("Session update referenced an unknown Message");
+                };
+                if !message.from_agent {
+                    bail!("Only Agent Messages carry a Model attribution");
+                }
+                validate_model_attribution(model)?;
+                Some(index)
             }
             SessionChange::MessageContentAppended { message_id, .. } => {
                 let Some((index, message)) =
@@ -1078,6 +1155,18 @@ impl<'a> Validation<'a> {
                 self.validate_added_activity(activity)?;
                 self.activities.add(activity);
                 None
+            }
+            SessionChange::ModelCallRecorded { activity_id, model } => {
+                let (index, standing) = self.activity(activity_id)?;
+                let ActivityStanding::ModelCalls { turn_id } = standing else {
+                    bail!("Session update recorded a Model call on a different Activity kind");
+                };
+                let turn_id = *turn_id;
+                if !self.turns.is_active(turn_id) {
+                    bail!("Session update recorded a Model call after its Turn settled");
+                }
+                validate_model_attribution(model)?;
+                Some(index)
             }
             SessionChange::CommandOutputAppended { activity_id, .. } => {
                 let (index, standing) = self.activity(activity_id)?;
@@ -1473,6 +1562,12 @@ impl<'a> Validation<'a> {
         {
             bail!("Session update reused an Activity identity");
         }
+        if let Activity::ModelCalls { calls, .. } = activity {
+            if calls.len() != 1 {
+                bail!("Session update added Model Calls without exactly one initial call");
+            }
+            validate_model_attribution(&calls[0])?;
+        }
         if matches!(
             activity,
             Activity::Command {
@@ -1696,6 +1791,9 @@ impl From<&Message> for MessageStanding {
 /// What a later change in the same batch could be refused over about an
 /// Activity, by its kind.
 enum ActivityStanding {
+    ModelCalls {
+        turn_id: TurnId,
+    },
     Move {
         status: ActivityStatus,
     },
@@ -1738,6 +1836,7 @@ enum ActivityStanding {
 impl From<&Activity> for ActivityStanding {
     fn from(activity: &Activity) -> Self {
         match activity {
+            Activity::ModelCalls { turn_id, .. } => Self::ModelCalls { turn_id: *turn_id },
             Activity::Approval {
                 outcome,
                 turn_id,
@@ -1897,6 +1996,7 @@ mod tests {
             pending_approvals_revision: crate::protocol::SessionRevision(0),
             watches: Vec::new(),
             waiting_on_subagents: None,
+            current_model: None,
             subagent_usage: None,
             total_cost: None,
             own_cost: None,
@@ -1920,6 +2020,144 @@ mod tests {
             cost_basis: None,
             cost_details: None,
         }
+    }
+
+    #[test]
+    fn a_current_model_is_transient_turn_scoped_and_cleared_on_selection_or_settle() {
+        use crate::protocol::{AgentSelection, ModelId, ProviderId};
+
+        let session_id = SessionId::new();
+        let turn_id = TurnId::new();
+        let other = TurnId::new();
+        let auto = AgentSelection {
+            provider: ProviderId::new("copilot"),
+            model: ModelId::new("auto"),
+            options: Vec::new(),
+        };
+        let model = ModelAttribution {
+            provider: auto.provider.clone(),
+            selected: auto.model.clone(),
+            actual: ModelId::new("actual"),
+        };
+        let mut snapshot = empty_snapshot(session_id);
+        snapshot.session.agent_selection = Some(auto.clone());
+        snapshot
+            .turns
+            .extend([active_continuation(turn_id), active_continuation(other)]);
+        let update = |snapshot: &SessionSnapshot, changes| SessionUpdate {
+            session_id,
+            revision: SessionRevision(snapshot.revision.0 + 1),
+            changes,
+        };
+        let first = update(
+            &snapshot,
+            vec![SessionChange::CurrentModelChanged {
+                turn_id,
+                model: Some(model.clone()),
+            }],
+        );
+        apply_update(&mut snapshot, &first).unwrap();
+        assert_eq!(
+            snapshot
+                .current_model
+                .as_ref()
+                .map(|current| &current.model),
+            Some(&model)
+        );
+
+        let unrelated = update(
+            &snapshot,
+            vec![
+                SessionChange::CurrentModelChanged {
+                    turn_id: other,
+                    model: None,
+                },
+                SessionChange::AgentSelectionChanged {
+                    selection: auto.clone(),
+                },
+            ],
+        );
+        apply_update(&mut snapshot, &unrelated).unwrap();
+        assert!(
+            snapshot.current_model.is_some(),
+            "an unrelated end or unchanged selection moves nothing"
+        );
+
+        let changed = update(
+            &snapshot,
+            vec![SessionChange::AgentSelectionChanged {
+                selection: AgentSelection {
+                    model: ModelId::new("fixed"),
+                    ..auto
+                },
+            }],
+        );
+        apply_update(&mut snapshot, &changed).unwrap();
+        assert!(snapshot.current_model.is_none());
+
+        let settled = update(
+            &snapshot,
+            vec![
+                SessionChange::CurrentModelChanged {
+                    turn_id,
+                    model: Some(model.clone()),
+                },
+                SessionChange::TurnStatusChanged {
+                    turn_id,
+                    status: TurnStatus::Completed,
+                    settled_at: Some(SessionTimestamp(1)),
+                },
+            ],
+        );
+        apply_update(&mut snapshot, &settled).unwrap();
+        assert!(snapshot.current_model.is_none());
+        let late = update(
+            &snapshot,
+            vec![SessionChange::CurrentModelChanged {
+                turn_id,
+                model: Some(model),
+            }],
+        );
+        assert!(apply_update(&mut snapshot, &late).is_err());
+    }
+
+    #[test]
+    fn invalid_model_evidence_is_rejected_even_on_an_initial_agent_message() {
+        use crate::protocol::{ModelId, ProviderId};
+
+        let session_id = SessionId::new();
+        let turn_id = TurnId::new();
+        let mut snapshot = empty_snapshot(session_id);
+        snapshot.turns.push(active_continuation(turn_id));
+        let invalid = ModelAttribution {
+            provider: ProviderId::new("copilot"),
+            selected: ModelId::new("auto"),
+            actual: ModelId::new(" "),
+        };
+        let message = Message {
+            id: MessageId::new(),
+            turn_id,
+            role: MessageRole::Agent,
+            status: MessageStatus::Streaming,
+            content: String::new(),
+            model: Some(invalid.clone()),
+            skill_invocations: Vec::new(),
+            attachments: Vec::new(),
+            truncated: false,
+            author: None,
+        };
+        assert!(validate_changes(&snapshot, &[SessionChange::MessageAdded { message }]).is_err());
+        assert!(
+            validate_changes(
+                &snapshot,
+                &[SessionChange::CurrentModelChanged {
+                    turn_id,
+                    model: Some(invalid),
+                }]
+            )
+            .is_err()
+        );
+        assert!(snapshot.messages.is_empty() && snapshot.current_model.is_none());
     }
 
     #[test]
@@ -1975,6 +2213,7 @@ mod tests {
                     role: MessageRole::Agent,
                     status: MessageStatus::Streaming,
                     content: String::new(),
+                    model: None,
                     skill_invocations: Vec::new(),
                     attachments: Vec::new(),
                     truncated: false,
@@ -2015,6 +2254,7 @@ mod tests {
                             role: MessageRole::Agent,
                             status: MessageStatus::Streaming,
                             content: String::new(),
+                            model: None,
                             skill_invocations: Vec::new(),
                             attachments: Vec::new(),
                             truncated: false,

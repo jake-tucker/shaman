@@ -46,9 +46,10 @@ use crate::{
     ansi::{AnsiScanner, FragmentRole, sgr_parameter_code, sgr_parameters},
     protocol::{
         Activity, ActivityId, AttachmentDescriptor, Author, Delegator, FileChange, FoldPosture,
-        GroupPosture, InitialPrompt, Message, MessageId, MessageRole, MessageStatus, PromptId,
-        ReasoningVisibility, RouteDecision, SessionId, SessionRevision, SessionSnapshot,
-        ToolCallVisibility, TranscriptItem, TranscriptSettings, Turn, TurnId, TurnStatus,
+        GroupPosture, InitialPrompt, Message, MessageId, MessageRole, MessageStatus,
+        ModelAttribution, ModelId, Outlook, PromptId, ProviderId, ReasoningVisibility,
+        RouteDecision, SessionId, SessionRevision, SessionSnapshot, ToolCallVisibility,
+        TranscriptItem, TranscriptSettings, Turn, TurnId, TurnStatus,
     },
     provider::provider_name,
     theme::Theme,
@@ -57,6 +58,7 @@ use crate::{
 use super::{
     attachment_preview::{AttachmentPreviews, AttachmentRows, AttachmentStrip, STRIP_ROWS},
     markdown,
+    model_picker::CatalogNames,
     slots::{SlotText, truncate_slot_text},
     spinner,
     text_binding::TextBindings,
@@ -690,6 +692,45 @@ pub(super) struct TranscriptCache {
     selection_epoch: Cell<u64>,
 }
 
+/// Catalog names for the Origin owning the Session, and the cache version
+/// that makes a change to those names visible to the memoized Transcript.
+#[derive(Clone, Copy)]
+pub(super) struct TranscriptModelNames<'a> {
+    pub(super) catalog: CatalogNames<'a>,
+    pub(super) outlook: &'a Outlook,
+    pub(super) revision: u64,
+}
+
+fn model_name<'a>(
+    names: Option<TranscriptModelNames<'a>>,
+    provider: &'a ProviderId,
+    model: &'a ModelId,
+) -> &'a str {
+    names
+        .and_then(|names| names.catalog.model(names.outlook, Some(provider), model))
+        .unwrap_or_else(|| match model.as_str() {
+            "auto" => "Auto",
+            id => id,
+        })
+}
+
+pub(super) fn model_display_name(
+    names: Option<TranscriptModelNames<'_>>,
+    provider: &ProviderId,
+    model: &ModelId,
+) -> String {
+    sanitize_content(model_name(names, provider, model))
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn model_heading(names: Option<TranscriptModelNames<'_>>, model: &ModelAttribution) -> String {
+    let selected = model_display_name(names, &model.provider, &model.selected);
+    let actual = model_display_name(names, &model.provider, &model.actual);
+    format!("{selected} · {actual}")
+}
+
 impl TranscriptCache {
     pub(super) fn selection_epoch(&self) -> u64 {
         self.selection_epoch.get()
@@ -771,6 +812,7 @@ impl TranscriptCache {
     // One parameter per input the cached view is keyed on, so a change to any
     // of them is visibly a change to what gets rebuilt.
     #[allow(clippy::too_many_arguments)]
+    #[cfg(test)]
     pub(super) fn view_with_hyperlinks(
         &self,
         generation: u64,
@@ -782,7 +824,34 @@ impl TranscriptCache {
         width: u16,
         hyperlinks: bool,
     ) -> Ref<'_, TranscriptView> {
+        self.view_with_model_names(
+            generation,
+            snapshot,
+            provisional,
+            disclosure,
+            previews,
+            theme,
+            width,
+            hyperlinks,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn view_with_model_names(
+        &self,
+        generation: u64,
+        snapshot: &SessionSnapshot,
+        provisional: &[&PendingPrompt],
+        disclosure: TranscriptDisclosure<'_>,
+        previews: &AttachmentPreviews,
+        theme: &Theme,
+        width: u16,
+        hyperlinks: bool,
+        model_names: Option<TranscriptModelNames<'_>>,
+    ) -> Ref<'_, TranscriptView> {
         let key = ViewKey {
+            catalog_revision: model_names.map_or(0, |names| names.revision),
             previews: previews.fingerprint(),
             generation,
             session_id: snapshot.session.id,
@@ -824,6 +893,7 @@ impl TranscriptCache {
                 previews,
                 theme,
                 width,
+                model_names,
             );
             let same_layout = previous_key.is_some_and(|old| {
                 old.generation == key.generation
@@ -831,6 +901,7 @@ impl TranscriptCache {
                     && old.width == key.width
                     && old.hyperlinks == key.hyperlinks
                     && old.theme == key.theme
+                    && old.catalog_revision == key.catalog_revision
                     && old.visibility == key.visibility
                     && old.grouping == key.grouping
                     && old.folds_fingerprint == key.folds_fingerprint
@@ -864,6 +935,7 @@ struct ViewKey {
     theme: Theme,
     width: u16,
     hyperlinks: bool,
+    catalog_revision: u64,
     /// Which kinds of Activity are drawn at all, which the Settings decide
     /// rather than the reader's clicks. It is a rendering input outside the
     /// Session snapshot all the same, so ADR 0007 puts it in the key: a reader
@@ -1634,6 +1706,16 @@ enum RenderUnit<'a> {
     Provisional(&'a PendingPrompt, AttachmentRows),
 }
 
+#[derive(Clone, Copy)]
+struct UnitRenderContext<'a> {
+    folds: &'a TranscriptFolds,
+    theme: &'a Theme,
+    width: u16,
+    hyperlinks: bool,
+    workspace: &'a Path,
+    model_names: Option<TranscriptModelNames<'a>>,
+}
+
 impl RenderUnit<'_> {
     fn key(&self) -> UnitKey {
         match self {
@@ -1799,15 +1881,19 @@ impl RenderUnit<'_> {
     fn render(
         &self,
         projection: &mut ActivityProjection<'_>,
-        folds: &TranscriptFolds,
-        theme: &Theme,
-        width: u16,
-        hyperlinks: bool,
-        workspace: &Path,
+        context: UnitRenderContext<'_>,
     ) -> Option<UnitAnchor> {
+        let UnitRenderContext {
+            folds,
+            theme,
+            width,
+            hyperlinks,
+            workspace,
+            model_names,
+        } = context;
         match self {
             Self::Message(message, parent, attachments) => {
-                let strip = render_message(
+                let strip = render_message_with_model_names(
                     projection.lines,
                     message,
                     *parent,
@@ -1815,6 +1901,7 @@ impl RenderUnit<'_> {
                     theme,
                     width,
                     hyperlinks,
+                    model_names,
                 );
                 project_strip(projection, strip, attachments, width);
                 // A Message someone sent on the user's behalf opens with the
@@ -1825,7 +1912,7 @@ impl RenderUnit<'_> {
                     .is_some()
                     .then(|| UnitAnchor::binary(1, false))
             }
-            Self::Activity(activity) => render_activity(
+            Self::Activity(activity) => render_activity_with_model_names(
                 projection,
                 activity,
                 resolved_fold_step(folds, activity),
@@ -1833,6 +1920,7 @@ impl RenderUnit<'_> {
                 width,
                 hyperlinks,
                 workspace,
+                model_names,
             ),
             Self::Group {
                 kind,
@@ -1849,7 +1937,7 @@ impl RenderUnit<'_> {
             )),
             Self::GroupMember(activity) => {
                 let start = projection.lines.len();
-                let anchor = render_activity(
+                let anchor = render_activity_with_model_names(
                     projection,
                     activity,
                     resolved_fold_step(folds, activity),
@@ -1857,6 +1945,7 @@ impl RenderUnit<'_> {
                     width.saturating_sub(MEMBER_INDENT.len() as u16),
                     hyperlinks,
                     workspace,
+                    model_names,
                 );
                 indent_members(&mut projection.lines[start..]);
                 anchor
@@ -1866,11 +1955,10 @@ impl RenderUnit<'_> {
                 let strips = projection.strips.len();
                 let anchor = unit.render(
                     projection,
-                    folds,
-                    theme,
-                    width.saturating_sub(MEMBER_INDENT.len() as u16),
-                    hyperlinks,
-                    workspace,
+                    UnitRenderContext {
+                        width: width.saturating_sub(MEMBER_INDENT.len() as u16),
+                        ..context
+                    },
                 );
                 indent_members(&mut projection.lines[start..]);
                 for strip in &mut projection.strips[strips..] {
@@ -2291,7 +2379,7 @@ impl TranscriptEntry<'_> {
                     Activity::Error { .. } => TurnEntryRole::Error,
                     Activity::Compaction { .. } => TurnEntryRole::Compaction,
                     Activity::Subsession { .. } => TurnEntryRole::Subsession,
-                    Activity::Route { .. } => TurnEntryRole::Route,
+                    Activity::Route { .. } | Activity::ModelCalls { .. } => TurnEntryRole::Route,
                     _ => TurnEntryRole::Work,
                 },
             },
@@ -2564,16 +2652,36 @@ fn plan_units<'a>(
     let folding = TurnFolding::plan(snapshot, &content, disclosure.turns);
     let mut units = Vec::with_capacity(snapshot.transcript.len() + provisional.len());
     let mut run: Option<GroupRun<'a>> = None;
+    let reading_order = snapshot.transcript_in_reading_order();
+    let mut answers = HashMap::new();
+    for (position, item) in &reading_order {
+        if let Some(TranscriptEntry::Message(message)) = content.entry(item)
+            && message.may_answer_its_turn()
+        {
+            answers.insert(message.turn_id, *position);
+        }
+    }
+    let mut moved_calls = HashSet::new();
+    let mut calls_after: HashMap<usize, Vec<&Activity>> = HashMap::new();
+    for (position, item) in &reading_order {
+        if let Some(TranscriptEntry::Activity(activity @ Activity::ModelCalls { turn_id, .. })) =
+            content.entry(item)
+            && let Some(answer) = answers.get(turn_id)
+        {
+            moved_calls.insert(*position);
+            calls_after.entry(*answer).or_default().push(activity);
+        }
+    }
     // A transcript entry the Transcript shows nothing for projects nothing
     // rather than a gap, so it does not end a run either: the entries around
     // it are still adjacent as presented. An entry a Turn Fold hides projects
     // nothing for the same reason and is read the same way.
-    for (position, item) in snapshot.transcript_in_reading_order() {
+    for (position, item) in reading_order {
         if let Some(marker) = folding.marker_at(position) {
             close_run(&mut units, &mut run, groups);
             units.push(RenderUnit::TurnFold(marker));
         }
-        if folding.hides(position) {
+        if folding.hides(position) || moved_calls.contains(&position) {
             continue;
         }
         let Some(entry) = content.entry(item) else {
@@ -2619,6 +2727,10 @@ fn plan_units<'a>(
                     units.push(in_turn_gutter(RenderUnit::Activity(activity), disclosed));
                 }
             },
+        }
+        if let Some(calls) = calls_after.get(&position) {
+            close_run(&mut units, &mut run, groups);
+            units.extend(calls.iter().copied().map(RenderUnit::Activity));
         }
     }
     close_run(&mut units, &mut run, groups);
@@ -2913,6 +3025,7 @@ fn rebuild(
     previews: &AttachmentPreviews,
     theme: &Theme,
     width: u16,
+    model_names: Option<TranscriptModelNames<'_>>,
 ) -> TranscriptView {
     let mut reusable: HashMap<UnitKey, UnitView> = previous
         .filter(|view| {
@@ -2921,6 +3034,7 @@ fn rebuild(
                 && view.key.theme == key.theme
                 && view.key.width == key.width
                 && view.key.hyperlinks == key.hyperlinks
+                && view.key.catalog_revision == key.catalog_revision
         })
         .map(|view| {
             view.units
@@ -2930,19 +3044,17 @@ fn rebuild(
         })
         .unwrap_or_default();
     let planned = plan_units(snapshot, provisional, disclosure, previews);
+    let render_context = UnitRenderContext {
+        folds: disclosure.folds,
+        theme,
+        width,
+        hyperlinks: key.hyperlinks,
+        workspace: &snapshot.session.execution_directory.path,
+        model_names,
+    };
     let mut units = planned
         .iter()
-        .map(|unit| {
-            reuse_or_render(
-                &mut reusable,
-                unit,
-                disclosure.folds,
-                theme,
-                width,
-                key.hyperlinks,
-                &snapshot.session.execution_directory.path,
-            )
-        })
+        .map(|unit| reuse_or_render(&mut reusable, unit, render_context))
         .collect::<Vec<_>>();
     assign_separators(&planned, &mut units);
 
@@ -3031,14 +3143,10 @@ fn assign_separators<'a>(planned: &'a [RenderUnit<'_>], rendered: &mut [UnitView
 fn reuse_or_render(
     reusable: &mut HashMap<UnitKey, UnitView>,
     unit: &RenderUnit<'_>,
-    folds: &TranscriptFolds,
-    theme: &Theme,
-    width: u16,
-    hyperlinks: bool,
-    workspace: &Path,
+    context: UnitRenderContext<'_>,
 ) -> UnitView {
     let key = unit.key();
-    let fingerprint = unit.fingerprint(folds);
+    let fingerprint = unit.fingerprint(context.folds);
     if let Some(cached) = reusable.remove(&key)
         && cached.fingerprint == fingerprint
     {
@@ -3051,11 +3159,7 @@ fn reuse_or_render(
             lines: &mut rendered,
             strips: &mut strips,
         },
-        folds,
-        theme,
-        width,
-        hyperlinks,
-        workspace,
+        context,
     );
     let source_lines = rendered.len();
     let mut lines = Vec::with_capacity(rendered.len());
@@ -3069,7 +3173,7 @@ fn reuse_or_render(
             marker_line = Some(lines.len());
         }
         first_row_of_source_line.push(rows.len());
-        for (line, layout) in layout_line(line, width) {
+        for (line, layout) in layout_line(line, context.width) {
             let line_index = lines.len();
             rows_per_line.push(layout.row_count());
             rows.extend(layout.into_rows().into_iter().map(|row| WrappedRow {
@@ -3083,7 +3187,7 @@ fn reuse_or_render(
         }
     }
     let spinner_rows = unit
-        .spinner_lines(folds)
+        .spinner_lines(context.folds)
         .into_iter()
         .filter_map(|line| first_row_of_source_line.get(line).copied())
         .collect();
@@ -3157,6 +3261,7 @@ fn message_fingerprint(message: &Message, attachments: &AttachmentRows) -> u64 {
     message.content.len().hash(&mut hasher);
     message.truncated.hash(&mut hasher);
     (message.status == MessageStatus::Superseded).hash(&mut hasher);
+    message.model.hash(&mut hasher);
     attachments.hash(&mut hasher);
     TextBindings::from_message(message).hash(&mut hasher);
     hasher.finish()
@@ -3255,6 +3360,7 @@ fn activity_fingerprint(activity: &Activity, step: FoldStep) -> u64 {
             decision.sentence(provider_name).hash(&mut hasher);
             decision.detail().hash(&mut hasher);
         }
+        Activity::ModelCalls { calls, .. } => calls.hash(&mut hasher),
         Activity::Command {
             status,
             output,
@@ -3476,6 +3582,7 @@ fn sanitize_content(text: &str) -> std::borrow::Cow<'_, str> {
 /// Transcript holds it, which is what a Delegation names its sender against.
 /// Projects a Message by its role, answering where a user Message's strip of
 /// thumbnails begins among `lines`, where it has one.
+#[cfg(test)]
 fn render_message(
     lines: &mut Vec<StyledLine>,
     message: &Message,
@@ -3484,6 +3591,29 @@ fn render_message(
     theme: &Theme,
     width: u16,
     hyperlinks: bool,
+) -> Option<usize> {
+    render_message_with_model_names(
+        lines,
+        message,
+        parent,
+        attachments,
+        theme,
+        width,
+        hyperlinks,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_message_with_model_names(
+    lines: &mut Vec<StyledLine>,
+    message: &Message,
+    parent: Option<SessionId>,
+    attachments: &AttachmentRows,
+    theme: &Theme,
+    width: u16,
+    hyperlinks: bool,
+    model_names: Option<TranscriptModelNames<'_>>,
 ) -> Option<usize> {
     match (&message.role, &message.author) {
         (MessageRole::User, None) => push_user_message(
@@ -3506,10 +3636,27 @@ fn render_message(
             None
         }
         (MessageRole::Agent, _) if message.status == MessageStatus::Superseded => {
-            push_superseded_message(lines, message, theme, width, hyperlinks);
+            push_superseded_message_with_model_names(
+                lines,
+                message,
+                theme,
+                width,
+                hyperlinks,
+                model_names,
+            );
             None
         }
         (MessageRole::Agent, _) => {
+            if let Some(model) = &message.model
+                && (!message.content.is_empty() || message.truncated)
+            {
+                push_prefixed_lines(
+                    lines,
+                    "  ",
+                    &model_heading(model_names, model),
+                    theme.text.subdued,
+                );
+            }
             push_agent_message(
                 lines,
                 &message.content,
@@ -3647,6 +3794,7 @@ fn delegation_sender(delegator: &Delegator, parent: Option<SessionId>) -> String
 /// have to hunt for, so neither is ever folded and neither anchors a click.
 /// Each kind projects through its own renderer, so what one kind shows never
 /// depends on how another renders.
+#[cfg(test)]
 fn render_activity(
     projection: &mut ActivityProjection<'_>,
     activity: &Activity,
@@ -3655,6 +3803,22 @@ fn render_activity(
     width: u16,
     hyperlinks: bool,
     workspace: &Path,
+) -> Option<UnitAnchor> {
+    render_activity_with_model_names(
+        projection, activity, step, theme, width, hyperlinks, workspace, None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_activity_with_model_names(
+    projection: &mut ActivityProjection<'_>,
+    activity: &Activity,
+    step: FoldStep,
+    theme: &Theme,
+    width: u16,
+    hyperlinks: bool,
+    workspace: &Path,
+    model_names: Option<TranscriptModelNames<'_>>,
 ) -> Option<UnitAnchor> {
     match activity {
         Activity::Approval {
@@ -3802,6 +3966,32 @@ fn render_activity(
             width,
             hyperlinks,
         ),
+        Activity::ModelCalls { calls, .. } => {
+            let folded = step != FoldStep::Expanded;
+            let count = calls.len();
+            let noun = if count == 1 { "call" } else { "calls" };
+            let mut header = vec![
+                StyledSpan::chrome("  ", theme.text.subdued),
+                StyledSpan::text(format!("{count} model {noun}"), theme.text.subdued),
+            ];
+            if folded {
+                header.push(StyledSpan::chrome(" · ", theme.text.subdued));
+                header.push(StyledSpan::chrome(
+                    fold_marker_text(count, "lines"),
+                    theme.action.primary,
+                ));
+            }
+            projection.lines.push(StyledLine::from(header));
+            if !folded {
+                for call in calls {
+                    let name =
+                        sanitize_content(model_name(model_names, &call.provider, &call.actual));
+                    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+                    push_prefixed_lines(projection.lines, OUTPUT_INDENT, &name, theme.text.subdued);
+                }
+            }
+            Some(UnitAnchor::binary(1, folded))
+        }
         Activity::Error { text, .. } => {
             push_styled_prefixed_lines(
                 projection,
@@ -5973,6 +6163,7 @@ fn push_route_row(
 /// Projects a Superseded Message where it was written: labelled as passed over
 /// and dimmed, so it is not taken for the answer, its words still as readable
 /// and as selectable as any.
+#[cfg(test)]
 fn push_superseded_message(
     lines: &mut Vec<StyledLine>,
     message: &Message,
@@ -5980,10 +6171,29 @@ fn push_superseded_message(
     width: u16,
     hyperlinks: bool,
 ) {
-    lines.push(StyledLine::from(vec![
+    push_superseded_message_with_model_names(lines, message, theme, width, hyperlinks, None);
+}
+
+fn push_superseded_message_with_model_names(
+    lines: &mut Vec<StyledLine>,
+    message: &Message,
+    theme: &Theme,
+    width: u16,
+    hyperlinks: bool,
+    model_names: Option<TranscriptModelNames<'_>>,
+) {
+    let mut heading = vec![
         StyledSpan::chrome("  ", theme.text.subdued),
         StyledSpan::text(SUPERSEDED_LABEL, theme.text.subdued),
-    ]));
+    ];
+    if let Some(model) = &message.model {
+        heading.push(StyledSpan::chrome(" · ", theme.text.subdued));
+        heading.push(StyledSpan::text(
+            model_heading(model_names, model),
+            theme.text.subdued,
+        ));
+    }
+    lines.push(StyledLine::from(heading));
     let content = lines.len();
     push_agent_message(
         lines,
@@ -7160,6 +7370,7 @@ mod tests {
             role: MessageRole::Agent,
             status: MessageStatus::Completed,
             content: "```\nfenced code\n".to_owned(),
+            model: None,
             skill_invocations: Vec::new(),
             attachments: Vec::new(),
             truncated: true,
@@ -7252,6 +7463,7 @@ mod tests {
             role: MessageRole::Agent,
             status: MessageStatus::Completed,
             content: format!("prose\n\n{}\n", CappedStream::Message.truncation_marker()),
+            model: None,
             skill_invocations: Vec::new(),
             attachments: Vec::new(),
             truncated: false,
@@ -7360,6 +7572,7 @@ mod tests {
             role: MessageRole::User,
             status: MessageStatus::Completed,
             content: content.to_owned(),
+            model: None,
             skill_invocations: Vec::new(),
             attachments: Vec::new(),
             truncated: false,
@@ -7470,6 +7683,7 @@ mod tests {
             pending_approvals_revision: crate::protocol::SessionRevision(0),
             watches: Vec::new(),
             waiting_on_subagents: None,
+            current_model: None,
             subagent_usage: None,
             total_cost: None,
             own_cost: None,
@@ -7696,6 +7910,7 @@ mod tests {
             | Activity::WatchOutcome { turn_id: id, .. }
             | Activity::Compaction { turn_id: id, .. }
             | Activity::Route { turn_id: id, .. }
+            | Activity::ModelCalls { turn_id: id, .. }
             | Activity::Subsession { turn_id: id, .. } => *id = turn_id,
             Activity::Move { .. } => {}
         }

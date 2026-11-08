@@ -69,6 +69,7 @@ pub fn created_session_snapshot(
         pending_approvals_revision: suru::protocol::SessionRevision(0),
         watches: Vec::new(),
         waiting_on_subagents: None,
+        current_model: None,
         subagent_usage: None,
         total_cost: None,
         own_cost: None,

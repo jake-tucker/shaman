@@ -244,11 +244,13 @@ fn agent_output_turn_id(
 ) -> anyhow::Result<TurnId> {
     match change {
         SessionChange::TurnUsageChanged { turn_id, .. }
+        | SessionChange::CurrentModelChanged { turn_id, .. }
         | SessionChange::SubagentAgentChanged { turn_id, .. } => Ok(*turn_id),
         SessionChange::MessageAdded { message } if message.role == MessageRole::Agent => {
             Ok(message.turn_id)
         }
         SessionChange::MessageContentAppended { message_id, .. }
+        | SessionChange::MessageModelChanged { message_id, .. }
         | SessionChange::MessageTruncated { message_id }
         | SessionChange::MessageCompleted { message_id }
         | SessionChange::MessageSuperseded { message_id } => snapshot
@@ -261,6 +263,7 @@ fn agent_output_turn_id(
             .turn_id()
             .ok_or_else(|| anyhow!("Agent output added an Activity of no Turn")),
         SessionChange::DecisionAccepted { activity_id }
+        | SessionChange::ModelCallRecorded { activity_id, .. }
         | SessionChange::ApprovalSettled { activity_id, .. }
         | SessionChange::ApprovalFollowUpFailed { activity_id, .. }
         | SessionChange::QuestionnaireAccepted { activity_id }

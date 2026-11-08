@@ -571,6 +571,8 @@ struct ActiveProviderTurn {
     /// The Agent Messages of this Turn the Provider named, by the name a later
     /// event speaks of them by.
     identified_messages: HashMap<super::ProviderMessageId, MessageId>,
+    superseded_messages: HashSet<super::ProviderMessageId>,
+    model_calls: Option<ActivityId>,
     interruption_acknowledged: bool,
     command_activities: HashMap<super::ProviderActivityId, ActiveProviderCommand>,
     file_change_activities: HashMap<super::ProviderActivityId, ActivityId>,
@@ -624,6 +626,8 @@ impl ActiveProviderTurn {
             prompt_begun: true,
             streaming_message: None,
             identified_messages: HashMap::new(),
+            superseded_messages: HashSet::new(),
+            model_calls: None,
             interruption_acknowledged: false,
             command_activities: HashMap::new(),
             file_change_activities: HashMap::new(),
@@ -6220,6 +6224,7 @@ fn project_provider_event(
                                     role: MessageRole::Agent,
                                     status: MessageStatus::Streaming,
                                     content: String::new(),
+                                    model: None,
                                     skill_invocations: Vec::new(),
                                     attachments: Vec::new(),
                                     truncated: false,
@@ -6244,6 +6249,29 @@ fn project_provider_event(
                     .publish_agent_output_changes(
                         session_id,
                         message_content_changes(message.id, content),
+                    )
+                    .map(|_| ProviderEventProjection::Continue)
+            }
+            ProviderEvent::AgentMessageModelKnown { message, model } => {
+                let message_id = match message {
+                    Some(message) => active.identified_messages.get(&message).copied(),
+                    None => active.streaming_message.as_ref().map(|message| message.id),
+                };
+                let Some(message_id) = message_id else {
+                    return fail_invalid_provider_event(
+                        sessions,
+                        session_id,
+                        active,
+                        "Provider identified the Model of an unknown Agent Message",
+                    );
+                };
+                sessions
+                    .publish_agent_output(
+                        session_id,
+                        SessionChange::MessageModelChanged {
+                            message_id,
+                            model,
+                        },
                     )
                     .map(|_| ProviderEventProjection::Continue)
             }
@@ -6272,14 +6300,14 @@ fn project_provider_event(
                 Ok(ProviderEventProjection::Continue)
             }
             ProviderEvent::AgentMessageSuperseded { message } => {
-                match active.identified_messages.remove(&message) {
-                    Some(message_id) => sessions
+                match active.identified_messages.get(&message).copied() {
+                    Some(message_id) if active.superseded_messages.insert(message) => sessions
                         .publish_agent_output(
                             session_id,
                             SessionChange::MessageSuperseded { message_id },
                         )
                         .map(|_| ProviderEventProjection::Continue),
-                    None => Ok(ProviderEventProjection::Continue),
+                    _ => Ok(ProviderEventProjection::Continue),
                 }
             }
             ProviderEvent::RouteDecided { decision } => sessions
@@ -6294,6 +6322,40 @@ fn project_provider_event(
                     },
                 )
                 .map(|_| ProviderEventProjection::Continue),
+            ProviderEvent::CurrentModelChanged { model } => sessions
+                .publish_agent_output(
+                    session_id,
+                    SessionChange::CurrentModelChanged {
+                        turn_id: active.turn_id,
+                        model,
+                    },
+                )
+                .map(|_| ProviderEventProjection::Continue),
+            ProviderEvent::ModelCallRecorded { model } => {
+                let change = match active.model_calls {
+                    Some(activity_id) => SessionChange::ModelCallRecorded { activity_id, model },
+                    None => {
+                        let activity_id = ActivityId::new();
+                        SessionChange::ActivityAdded {
+                            activity: Activity::ModelCalls {
+                                id: activity_id,
+                                turn_id: active.turn_id,
+                                calls: vec![model],
+                            },
+                        }
+                    }
+                };
+                let created = match &change {
+                    SessionChange::ActivityAdded { activity } => Some(activity.id()),
+                    _ => None,
+                };
+                sessions.publish_agent_output(session_id, change).map(|_| {
+                    if let Some(activity_id) = created {
+                        active.model_calls = Some(activity_id);
+                    }
+                    ProviderEventProjection::Continue
+                })
+            }
             ProviderEvent::CommandStarted {
                 activity_id,
                 command,
@@ -7807,6 +7869,7 @@ running 1 test",
                         role: MessageRole::Agent,
                         status: MessageStatus::Completed,
                         content: answer.to_owned(),
+                        model: None,
                         skill_invocations: Vec::new(),
                         attachments: Vec::new(),
                         truncated: false,

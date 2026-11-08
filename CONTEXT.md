@@ -136,8 +136,12 @@ The one kind of Turn that begins with nothing asked of the Agent — no Prompt, 
 _Avoid_: Synthetic turn, background turn, ghost turn
 
 **Route**:
-The plan by which a Provider that routes on the user's behalf works a Turn: which Models act, in what order, and which reviews another's work. A Turn on a Routing Tier holds one or more; each Route's decisions stand in the Transcript where they were made.
+The plan by which a Provider that routes on the user's behalf works a Turn: which Models act, in what order, and which reviews another's work. A Turn on a Routing Tier holds one or more; each Route's decisions stand in the Transcript where they were made, but its plan is not evidence that every planned Model ran.
 _Avoid_: Cascade, critique, phase
+
+**Model Call**:
+A Provider-reported invocation of a concrete Model in a Turn; repeated invocations of the same Model are separate calls. An unrelated Model Call does not establish which Model authored a Message.
+_Avoid_: Route step, model selection
 
 **Settle**:
 The transition of a Turn or Activity into a terminal state — completed, failed, or interrupted — after which it accepts no further Provider output. A Turn still open when Suru stops Settles as failed at the next start, at the moment of its last output, because nothing survives a stop to finish it; a Subagent's row in its parent's Transcript Settles with it. An Activity still running when its Turn Settles Settles with it: interrupted if the Turn was interrupted, since someone asked the work to stop, and failed otherwise. An Activity is failed on its own only when its Provider reports that it failed; an exit status is only a Command's exit code, never the evidence for how it settled. A Session Settles in its own, reversible sense: set aside as done for now, by the user's say-so or on its own after long enough idle, and active again the moment it is prompted or the user unsettles it. Only the say-so is stored, as a marker stamped with the moment it was set. Settling on its own — **auto-settle**, governed by one Setting holding either how long being left alone has to be or the word that suspends it — is instead derived wherever Sessions are listed, from the Session's last activity: nothing is written down for it, no clock fires for it, and moving that Setting reclassifies every Session at once. A Session that is Working or Monitoring never auto-settles, since it is not yet done. Neither a Session nothing has moved since it was made nor one Suru cannot read auto-settles: the first has set nothing aside and the second has no activity Suru can see. Unsettling moves a Session's last activity to the moment the user reached for it, so auto-settle cannot put back what they just took off the shelf. Wherever Sessions are listed by liveness, the settled ones stand apart from the active ones.
@@ -216,7 +220,7 @@ The Agent Selection a Provider declares for running Errands, chosen for cheapnes
 _Avoid_: Small model, cheap model, title model
 
 **Message**:
-User-visible content in a session attributed to the user or agent — or, for a Delegation, to the Agent that delegated it.
+User-visible content in a session attributed to the user or agent — or, for a Delegation, to the Agent that delegated it. An Agent Message under a routed Selection may identify its concrete authoring Model where the Provider reports evidence of it.
 _Avoid_: Event, item
 
 **Superseded Message**:
@@ -324,7 +328,7 @@ The ordered, user-visible history of a Session: its Messages and Activities in p
 _Avoid_: History, log, conversation
 
 **Working Indicator**:
-The transient presentation immediately after a Session's latest Transcript row while that Session is Working or Monitoring. It distinguishes the Agent's own work in the current Turn from waiting on Subagents — those surviving a Turn that has Settled, or those the Agent waits on through the Broker while nothing else of its Turn is in progress — and from Monitoring. It carries the work's elapsed time and interruption guidance without becoming a Message or Activity; waiting on Subagents is still Working, so moving between the two changes only the words, never the time or the guidance. While Monitoring it names the Watch it waits on, or counts them where there are several, and only the word Monitoring shimmers.
+The transient presentation immediately after a Session's latest Transcript row while that Session is Working or Monitoring. It distinguishes the Agent's own work in the current Turn from waiting on Subagents — those surviving a Turn that has Settled, or those the Agent waits on through the Broker while nothing else of its Turn is in progress — and from Monitoring. It carries the work's elapsed time and interruption guidance without becoming a Message or Activity; waiting on Subagents is still Working, so moving between the two changes only the words, never the time or the guidance. It can name a currently executing Model when Provider evidence identifies one, without changing the Agent Selection; an absent Model does not assert which ran last. While Monitoring it names the Watch it waits on, or counts them where there are several, and only the word Monitoring shimmers.
 _Avoid_: Active text, status text, loading row
 
 **Session Content Column**:

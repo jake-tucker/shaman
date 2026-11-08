@@ -132,11 +132,12 @@ use github_copilot_sdk::{
     session_events::{
         AssistantIdleData, AssistantMessageData, AssistantMessageDeltaData,
         AssistantMessageStartData, AssistantReasoningData, AssistantReasoningDeltaData,
-        AssistantUsageData, AutoTier, AutoTierSwitchFailureReason, SessionAutoTierSwitchFailedData,
-        SessionCompactionCompleteData, SessionErrorData, SessionEventType, SessionIdleData,
-        SubagentCompletedData, SubagentFailedData, SubagentStartedData, SystemNotificationData,
-        ToolExecutionCompleteContent, ToolExecutionCompleteData, ToolExecutionStartData,
-        ToolShellOutputData, UserMessageData, UserMessageDelivery,
+        AssistantUsageData, AutoTier, AutoTierSwitchFailureReason, SessionAutoModeResolvedData,
+        SessionAutoTierSwitchFailedData, SessionCompactionCompleteData, SessionErrorData,
+        SessionEventType, SessionIdleData, SubagentCompletedData, SubagentFailedData,
+        SubagentStartedData, SystemNotificationData, ToolExecutionCompleteContent,
+        ToolExecutionCompleteData, ToolExecutionStartData, ToolShellOutputData, UserMessageData,
+        UserMessageDelivery,
     },
     subscription::RecvErrorKind,
 };
@@ -147,8 +148,11 @@ use tokio::{
 
 use super::super::command_presentation::PresentedCommand;
 use super::{
-    COPILOT_FAILURE_FALLBACK, COPILOT_HARNESS_NAME, copilot_error,
+    COPILOT_FAILURE_FALLBACK, COPILOT_HARNESS_NAME,
+    catalog::AUTO_MODEL_ID,
+    copilot_error,
     event_drain::EventDrainCheckpoint,
+    model_evidence::WorkingModels,
     pricing::CopilotPricing,
     reported,
     routes::{self, Routes},
@@ -158,8 +162,9 @@ use super::{
     transport::CopilotConnection,
 };
 use crate::protocol::{
-    AgentSelection, ContextFill, Cost, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection,
-    ModelOptionValue, NativeMeter, ROUTING_TIER_OPTION_ID, TurnId, Usage,
+    AgentSelection, ContextFill, Cost, ModelAttribution, ModelId, ModelOptionChoiceId,
+    ModelOptionId, ModelOptionSelection, ModelOptionValue, NativeMeter, ProviderId,
+    ROUTING_TIER_OPTION_ID, TurnId, Usage,
 };
 use crate::provider::{
     AttributedProviderEvent, ContextFillReport, ProviderActivityId, ProviderCommandStatus,
@@ -566,6 +571,7 @@ struct KnownSubagent {
 #[derive(Default)]
 struct ConversationStreams {
     message: Option<ActiveMessage>,
+    working_models: WorkingModels,
     /// The Reasoning blocks the conversation has open, in the order Copilot opened them. Copilot's
     /// loop reasons one block through at a time, so this is a short list rather than a
     /// map, and settling the conversation walks it in the order a reader met it.
@@ -578,6 +584,13 @@ struct ConversationStreams {
     /// emits one usage event per model call and gives it no Turn identity, so
     /// this state lives exactly as long as the surrounding Turn streams do.
     metering: Option<ReportedMetering>,
+    reported_model_calls: HashMap<String, ModelAttribution>,
+    pending_model_messages: HashMap<String, Vec<PendingModelMessage>>,
+}
+
+struct PendingModelMessage {
+    message: ProviderMessageId,
+    actual: Option<ModelId>,
 }
 
 /// The agent Message Copilot is still streaming, and the text it has carried so far — against
@@ -1084,6 +1097,28 @@ impl CopilotCorrelation {
             .into_iter()
             .map(|decided| attributed(None, decided))
             .collect()
+    }
+
+    fn project_current_model(&mut self, event: &SessionEvent) -> Option<AttributedProviderEvent> {
+        if self.is_compacting_on_request() || self.compaction.holds_stretch() {
+            return None;
+        }
+        let auto = self.selection.model.as_str() == AUTO_MODEL_ID;
+        self.turn
+            .as_mut()?
+            .streams
+            .working_models
+            .read(event, auto)
+            .map(|event| attributed(None, event))
+    }
+
+    fn clear_current_model(&mut self) -> Option<AttributedProviderEvent> {
+        self.turn
+            .as_mut()?
+            .streams
+            .working_models
+            .clear()
+            .map(|event| attributed(None, event))
     }
 
     /// The process hosting the Session is gone, and a staged phase's conversation with it. What
@@ -1740,12 +1775,35 @@ fn project_session_event(
                 return Ok(correlation.project_subagent_message(&subagent, &event));
             }
             SessionEventType::AssistantTurnEnd => {
-                return Ok(correlation.project_subagent_turn_end(&subagent));
+                let mut projected = correlation
+                    .subagents
+                    .get_mut(&subagent)
+                    .and_then(|working| {
+                        let models = &mut working.streams.working_models;
+                        models.read(&event, models.own_auto())
+                    })
+                    .map(|event| attributed(Some(&subagent), event))
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                projected.extend(correlation.project_subagent_turn_end(&subagent));
+                return Ok(projected);
             }
             event_type if is_compaction_report(&event_type) => {
-                return Ok(
-                    correlation.project_subagent_compaction(&subagent, compaction_event(&event))
+                let mut projected = if event_type == SessionEventType::SessionCompactionStart {
+                    correlation
+                        .subagents
+                        .get_mut(&subagent)
+                        .and_then(|working| working.streams.working_models.clear())
+                        .map(|event| attributed(Some(&subagent), event))
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
+                projected.extend(
+                    correlation.project_subagent_compaction(&subagent, compaction_event(&event)),
                 );
+                return Ok(projected);
             }
             _ => {}
         }
@@ -1760,10 +1818,21 @@ fn project_session_event(
             });
             working.stretch.answer(no_tools);
         }
+        let compacting = correlation
+            .agents
+            .get(&subagent)
+            .is_some_and(|known| known.compaction.holds_stretch());
         let streams = &mut working.streams;
+        if event.parsed_type() == SessionEventType::SessionAutoModeResolved {
+            return Ok(reported::<SessionAutoModeResolvedData>(&event)
+                .and_then(|_| streams.working_models.set_own_auto(true))
+                .map(|event| attributed(Some(&subagent), event))
+                .into_iter()
+                .collect());
+        }
         if event.parsed_type() == SessionEventType::AssistantUsage {
-            let model = reported::<AssistantUsageData>(&event)
-                .and_then(|usage| (!usage.model.is_empty()).then_some(usage.model));
+            let usage: AssistantUsageData = decode(&event)?;
+            let model = (!usage.model.is_empty()).then_some(usage.model.clone());
             let mut projected = Vec::new();
             if let Some(model) = model {
                 if let Some(known) = correlation.agents.get_mut(&subagent) {
@@ -1781,24 +1850,67 @@ fn project_session_event(
                 Some(&subagent),
                 project_usage_event(streams, &event, &correlation.pricing)?,
             ));
+            if usage.is_auto == Some(true)
+                && is_conversation_model_call(
+                    &event,
+                    &usage,
+                    ConversationKind::Subagent,
+                    compacting,
+                )
+            {
+                projected.extend(
+                    reported_model_call(streams, &usage, &ModelId::new(AUTO_MODEL_ID))
+                        .into_iter()
+                        .map(|event| attributed(Some(&subagent), event)),
+                );
+            }
             return Ok(projected);
         }
-        return Ok(project_conversation_event(
-            streams,
-            &mut correlation.delegations,
-            &correlation.execution_directory,
-            &mut working.routes,
-            correlation.stretches,
-            &event,
-        )?
-        .into_iter()
-        .map(|projected| attributed(Some(&subagent), projected))
-        .collect());
+        let current_model = if compacting {
+            None
+        } else {
+            let models = &mut streams.working_models;
+            models.read(&event, models.own_auto())
+        };
+        let auto = ModelId::new(AUTO_MODEL_ID);
+        let routed_selection = streams.working_models.own_auto().then_some(&auto);
+        let mut projected = current_model
+            .map(|event| attributed(Some(&subagent), event))
+            .into_iter()
+            .collect::<Vec<_>>();
+        projected.extend(
+            project_conversation_event(
+                streams,
+                &mut correlation.delegations,
+                &correlation.execution_directory,
+                &mut working.routes,
+                correlation.stretches,
+                ModelRouting {
+                    selected: routed_selection,
+                    conversation: ConversationKind::Subagent,
+                },
+                &event,
+            )?
+            .into_iter()
+            .map(|event| attributed(Some(&subagent), event)),
+        );
+        return Ok(projected);
     }
     if routes::is_lifecycle(&event) {
-        return Ok(correlation.project_route_lifecycle(&event));
+        let mut projected = correlation.project_route_lifecycle(&event);
+        projected.extend(correlation.project_current_model(&event));
+        return Ok(projected);
     }
     match event.parsed_type() {
+        SessionEventType::AssistantTurnStart
+        | SessionEventType::AssistantTurnEnd
+        | SessionEventType::ModelCallStart
+        | SessionEventType::ModelCallFinished
+        | SessionEventType::Abort
+        | SessionEventType::AgentInterrupted => Ok(correlation
+            .project_current_model(&event)
+            .into_iter()
+            .collect()),
         SessionEventType::SessionAutoTierSwitchFailed => Ok(reported(&event)
             .map(|refusal| correlation.project_tier_refused(refusal))
             .unwrap_or_default()),
@@ -1807,8 +1919,9 @@ fn project_session_event(
         SessionEventType::SessionError if event.is_transient_error() => Ok(Vec::new()),
         SessionEventType::SessionError => {
             let failure: SessionErrorData = decode(&event)?;
+            let current = correlation.clear_current_model();
             correlation.project_session_error(&failure);
-            Ok(Vec::new())
+            Ok(current.into_iter().collect())
         }
         SessionEventType::AssistantIdle | SessionEventType::SessionIdle => {
             let aborted = if event.parsed_type() == SessionEventType::AssistantIdle {
@@ -1834,7 +1947,16 @@ fn project_session_event(
             Ok(projected)
         }
         event_type if is_compaction_report(&event_type) => {
-            Ok(correlation.project_main_compaction_report(&event))
+            let mut projected = if event_type == SessionEventType::SessionCompactionStart {
+                correlation
+                    .clear_current_model()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+            projected.extend(correlation.project_main_compaction_report(&event));
+            Ok(projected)
         }
         // A manual compaction's summarising call is the Turn's Usage as its
         // `compactionTokensUsed` reports it, once.
@@ -1845,14 +1967,28 @@ fn project_session_event(
             if correlation.open_main_streams().is_none() {
                 return Ok(Vec::new());
             }
+            let selection = (correlation.selection.model.as_str() == AUTO_MODEL_ID)
+                .then(|| correlation.selection.model.clone());
+            let compacting = correlation.compaction.holds_stretch();
             let turn = correlation
                 .turn
                 .as_mut()
                 .expect("usage opened or found the main conversation's Turn");
-            Ok(vec![attributed(
+            let mut projected = vec![attributed(
                 None,
                 project_usage_event(&mut turn.streams, &event, &correlation.pricing)?,
-            )])
+            )];
+            if let Some(selected) = selection {
+                let usage: AssistantUsageData = decode(&event)?;
+                if is_conversation_model_call(&event, &usage, ConversationKind::Main, compacting) {
+                    projected.extend(
+                        reported_model_call(&mut turn.streams, &usage, &selected)
+                            .into_iter()
+                            .map(|event| attributed(None, event)),
+                    );
+                }
+            }
+            Ok(projected)
         }
         // Content the Transcript presents belongs to a Turn, so late content — like the error
         // above — opens a Continuation stretch for what it carries; everything else on the
@@ -1871,6 +2007,8 @@ fn project_session_event(
                 return Ok(Vec::new());
             }
             let stretch = correlation.stretches;
+            let routed_selection = (correlation.selection.model.as_str() == AUTO_MODEL_ID)
+                .then_some(&correlation.selection.model);
             let turn = correlation
                 .turn
                 .as_mut()
@@ -1881,6 +2019,10 @@ fn project_session_event(
                 &correlation.execution_directory,
                 &mut correlation.routes,
                 stretch,
+                ModelRouting {
+                    selected: routed_selection,
+                    conversation: ConversationKind::Main,
+                },
                 &event,
             )?
             .into_iter()
@@ -1900,6 +2042,78 @@ fn project_usage_event(
     Ok(metered(streams, usage, reported_cost))
 }
 
+#[derive(Clone, Copy)]
+enum ConversationKind {
+    Main,
+    Subagent,
+}
+
+struct ModelRouting<'a> {
+    selected: Option<&'a ModelId>,
+    conversation: ConversationKind,
+}
+
+fn is_conversation_model_call(
+    event: &SessionEvent,
+    usage: &AssistantUsageData,
+    conversation: ConversationKind,
+    compacting: bool,
+) -> bool {
+    if matches!(conversation, ConversationKind::Main)
+        && event
+            .data
+            .get("parentToolCallId")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| !id.is_empty())
+    {
+        return false;
+    }
+    match (usage.interaction_type.as_deref(), conversation) {
+        (Some("conversation-agent"), ConversationKind::Main)
+        | (Some("conversation-subagent"), ConversationKind::Subagent) => true,
+        (None, _) => !compacting,
+        _ => false,
+    }
+}
+
+fn reported_model_call(
+    streams: &mut ConversationStreams,
+    usage: &AssistantUsageData,
+    selected: &ModelId,
+) -> Vec<ProviderEvent> {
+    if usage.model.trim().is_empty() || usage.model == selected.as_str() {
+        return Vec::new();
+    }
+    let model = ModelAttribution {
+        provider: ProviderId::new(super::COPILOT_PROVIDER_ID),
+        selected: selected.clone(),
+        actual: ModelId::new(&usage.model),
+    };
+    let mut projected = vec![ProviderEvent::ModelCallRecorded {
+        model: model.clone(),
+    }];
+    if let Some(id) = usage.api_call_id.as_ref().filter(|id| !id.is_empty()) {
+        if streams.reported_model_calls.contains_key(id) {
+            return Vec::new();
+        }
+        streams
+            .reported_model_calls
+            .insert(id.clone(), model.clone());
+        if let Some(messages) = streams.pending_model_messages.remove(id) {
+            projected.extend(messages.into_iter().map(|pending| {
+                let mut attribution = model.clone();
+                if let Some(actual) = pending.actual {
+                    attribution.actual = actual;
+                }
+                ProviderEvent::AgentMessageModelKnown {
+                    message: Some(pending.message),
+                    model: attribution,
+                }
+            }));
+        }
+    }
+    projected
+}
 /// What one model call's `assistant.usage` reports it consumed, in Suru's disjoint Usage parts,
 /// and its Cost at the catalog `pricing` holds — absent where that prices nothing for the call's
 /// Model. A Turn adds it to the Turn's reading; an Errand to the Errand's.
@@ -2050,6 +2264,7 @@ fn project_conversation_event(
     execution_directory: &Path,
     routes: &mut Routes,
     stretch: u64,
+    routing: ModelRouting<'_>,
     event: &SessionEvent,
 ) -> Result<Vec<ProviderEvent>, ProviderError> {
     let fusion = routes::attribution(event);
@@ -2074,13 +2289,87 @@ fn project_conversation_event(
         }
         SessionEventType::AssistantMessage => {
             let message: AssistantMessageData = decode(event)?;
-            let Some(fusion) = fusion else {
-                return project_message_completed(streams, &message.message_id, &message.content);
+            let actual = message
+                .model
+                .as_deref()
+                .filter(|model| !model.trim().is_empty() && *model != AUTO_MODEL_ID)
+                .or_else(|| {
+                    fusion
+                        .as_ref()
+                        .and_then(|route| route.source_model.as_deref())
+                        .filter(|model| !model.trim().is_empty() && *model != AUTO_MODEL_ID)
+                })
+                .map(ModelId::new);
+            let call_id = message.api_call_id.as_ref().filter(|id| !id.is_empty());
+            let reported_call = call_id
+                .and_then(|id| streams.reported_model_calls.get(id))
+                .cloned();
+            let selected = routing
+                .selected
+                .or_else(|| reported_call.as_ref().map(|call| &call.selected));
+            let model = selected.and_then(|selected| {
+                actual.as_ref().map_or_else(
+                    || reported_call.clone(),
+                    |actual| {
+                        Some(ModelAttribution {
+                            provider: ProviderId::new(super::COPILOT_PROVIDER_ID),
+                            selected: selected.clone(),
+                            actual: actual.clone(),
+                        })
+                    },
+                )
+            });
+            let mut projected = if let Some(fusion) = fusion {
+                if !routes.admit_message(&fusion, &message, stretch) {
+                    return Ok(Vec::new());
+                }
+                project_routed_message(streams, &message)?
+            } else {
+                project_message_completed(streams, &message.message_id, &message.content)?
             };
-            if !routes.admit_message(&fusion, &message, stretch) {
-                return Ok(Vec::new());
+            if let Some(mut index) = projected
+                .iter()
+                .rposition(|event| matches!(event, ProviderEvent::AgentMessageCompleted))
+            {
+                if let Some(call_id) = call_id.filter(|_| {
+                    routing.selected.is_some()
+                        || matches!(routing.conversation, ConversationKind::Subagent)
+                }) {
+                    let provider_message = ProviderMessageId::new(message.message_id.clone());
+                    if !projected.iter().any(|event| {
+                        matches!(event, ProviderEvent::AgentMessageIdentified { message }
+                            if message == &provider_message)
+                    }) {
+                        projected.insert(
+                            index,
+                            ProviderEvent::AgentMessageIdentified {
+                                message: provider_message.clone(),
+                            },
+                        );
+                        index += 1;
+                    }
+                    if model.is_none() {
+                        streams
+                            .pending_model_messages
+                            .entry(call_id.clone())
+                            .or_default()
+                            .push(PendingModelMessage {
+                                message: provider_message,
+                                actual,
+                            });
+                    }
+                }
+                if let Some(model) = model {
+                    projected.insert(
+                        index,
+                        ProviderEvent::AgentMessageModelKnown {
+                            message: None,
+                            model,
+                        },
+                    );
+                }
             }
-            project_routed_message(streams, &message)
+            Ok(projected)
         }
         SessionEventType::ToolExecutionStart => Ok(reported(event).map_or_else(
             Vec::new,
@@ -3917,6 +4206,295 @@ mod tests {
 
     fn subagent(id: &str) -> ProviderEventAttribution {
         ProviderEventAttribution::Subagent(ProviderSubagentId::new(id))
+    }
+
+    #[test]
+    fn an_auto_parent_never_supplies_a_subagents_model_or_auto_selection() {
+        let mut correlation = with_subagent();
+        correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
+        let root = project_attributed(
+            &mut correlation,
+            event(
+                "model.call_start",
+                json!({ "turnId": "root", "model": "root-model" }),
+            ),
+        );
+        assert!(matches!(
+            &root[..],
+            [AttributedProviderEvent {
+                attribution: ProviderEventAttribution::OwningSession,
+                event: ProviderEvent::CurrentModelChanged { model: Some(model) },
+            }] if model.actual.as_str() == "root-model"
+        ));
+
+        assert!(
+            project_attributed(
+                &mut correlation,
+                agent_event(
+                    "agent-1",
+                    "model.call_start",
+                    json!({ "turnId": "child", "model": "child-model" }),
+                ),
+            )
+            .is_empty(),
+            "a child's dispatch has no Auto evidence of its own yet"
+        );
+        let child_usage = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "assistant.usage",
+                json!({ "model": "child-model", "inputTokens": 1 }),
+            ),
+        );
+        assert!(!child_usage.iter().any(|event| matches!(
+            event.event,
+            ProviderEvent::ModelCallRecorded { .. } | ProviderEvent::CurrentModelChanged { .. }
+        )));
+
+        let resolved = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "session.auto_mode_resolved",
+                json!({ "chosenModel": "child-model" }),
+            ),
+        );
+        assert!(matches!(
+            &resolved[..],
+            [AttributedProviderEvent {
+                attribution: ProviderEventAttribution::Subagent(agent),
+                event: ProviderEvent::CurrentModelChanged { model: Some(model) },
+            }] if agent.as_str() == "agent-1" && model.actual.as_str() == "child-model"
+        ));
+        let child_end = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "model.call_finished",
+                json!({
+                    "turnId": "child", "dispatchDurationMs": 1,
+                    "editClassifierVersion": 1, "outcome": "success",
+                }),
+            ),
+        );
+        assert!(matches!(
+            &child_end[..],
+            [AttributedProviderEvent {
+                attribution: ProviderEventAttribution::Subagent(agent),
+                event: ProviderEvent::CurrentModelChanged { model: None },
+            }] if agent.as_str() == "agent-1"
+        ));
+        let root_end = project(
+            &mut correlation,
+            "model.call_finished",
+            json!({
+                "turnId": "root", "dispatchDurationMs": 1,
+                "editClassifierVersion": 1, "outcome": "success",
+            }),
+        );
+        assert!(matches!(
+            &root_end[..],
+            [ProviderEvent::CurrentModelChanged { model: None }]
+        ));
+    }
+
+    #[test]
+    fn a_subagents_per_call_auto_evidence_does_not_label_unrelated_work() {
+        let mut correlation = with_subagent();
+        project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "model.call_start",
+                json!({ "turnId": "child", "model": "auto-model" }),
+            ),
+        );
+        let usage = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "assistant.usage",
+                json!({
+                    "apiCallId": "auto-call", "model": "auto-model",
+                    "isAuto": true, "inputTokens": 1,
+                }),
+            ),
+        );
+        assert!(
+            usage
+                .iter()
+                .any(|event| matches!(event.event, ProviderEvent::ModelCallRecorded { .. }))
+        );
+        assert!(
+            !usage
+                .iter()
+                .any(|event| matches!(event.event, ProviderEvent::CurrentModelChanged { .. }))
+        );
+
+        let auto_message = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "assistant.message",
+                json!({
+                    "messageId": "auto-message", "apiCallId": "auto-call",
+                    "content": "Auto answer",
+                }),
+            ),
+        );
+        assert!(auto_message.iter().any(|event| matches!(
+            &event.event,
+            ProviderEvent::AgentMessageModelKnown { model, .. }
+                if model.selected.as_str() == "auto" && model.actual.as_str() == "auto-model"
+        )));
+
+        let fixed_message = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "assistant.message",
+                json!({
+                    "messageId": "fixed-message", "apiCallId": "fixed-call",
+                    "content": "Fixed answer", "model": "fixed-model",
+                }),
+            ),
+        );
+        assert!(
+            !fixed_message
+                .iter()
+                .any(|event| matches!(event.event, ProviderEvent::AgentMessageModelKnown { .. }))
+        );
+
+        project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "assistant.message",
+                json!({
+                    "messageId": "late-message", "apiCallId": "late-call",
+                    "content": "Later answer", "model": "message-model",
+                }),
+            ),
+        );
+        let late_usage = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "assistant.usage",
+                json!({
+                    "apiCallId": "late-call", "model": "usage-model",
+                    "isAuto": true, "inputTokens": 1,
+                }),
+            ),
+        );
+        assert!(late_usage.iter().any(|event| matches!(
+            &event.event,
+            ProviderEvent::AgentMessageModelKnown { message: Some(message), model }
+                if message == &ProviderMessageId::new("late-message")
+                    && model.selected.as_str() == "auto"
+                    && model.actual.as_str() == "message-model"
+        )));
+    }
+
+    #[test]
+    fn model_calls_exclude_other_conversations_and_background_work_without_losing_usage() {
+        for (child, interaction, parent_tool, expected) in [
+            (false, None, false, true),
+            (false, Some("conversation-agent"), false, true),
+            (false, Some("conversation-subagent"), false, false),
+            (false, Some("conversation-compaction"), false, false),
+            (false, Some("conversation-background"), false, false),
+            (false, Some("conversation-sampling"), false, false),
+            (false, Some("future-interaction"), false, false),
+            (false, None, true, false),
+            (true, None, false, true),
+            (true, Some("conversation-subagent"), false, true),
+            (true, Some("conversation-agent"), false, false),
+            (true, Some("conversation-compaction"), false, false),
+        ] {
+            let mut correlation = with_subagent();
+            correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
+            let mut data = json!({
+                "apiCallId": "call", "model": "reported-model",
+                "isAuto": true, "inputTokens": 1, "interactionType": interaction,
+            });
+            if parent_tool {
+                data["parentToolCallId"] = json!("child-tool");
+            }
+            let event = if child {
+                agent_event("agent-1", "assistant.usage", data)
+            } else {
+                event("assistant.usage", data)
+            };
+            let projected = project_attributed(&mut correlation, event);
+            assert!(
+                projected.iter().any(|event| matches!(
+                    &event.event,
+                    ProviderEvent::Usage { usage, .. } if usage.fresh_input_tokens == Some(1)
+                )),
+                "usage must remain accounted for {child:?} {interaction:?} {parent_tool:?}"
+            );
+            assert_eq!(
+                projected
+                    .iter()
+                    .any(|event| matches!(event.event, ProviderEvent::ModelCallRecorded { .. })),
+                expected,
+                "call attribution for child={child}, interaction={interaction:?}, parent_tool={parent_tool}",
+            );
+        }
+    }
+
+    #[test]
+    fn unclassified_compaction_usage_is_not_a_conversation_model_call() {
+        for child in [false, true] {
+            let mut correlation = with_subagent();
+            correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
+            let scoped = |event_type, data| {
+                if child {
+                    agent_event("agent-1", event_type, data)
+                } else {
+                    event(event_type, data)
+                }
+            };
+            project_attributed(
+                &mut correlation,
+                scoped("session.compaction_start", compaction_started()),
+            );
+            let usage = project_attributed(
+                &mut correlation,
+                scoped(
+                    "assistant.usage",
+                    json!({ "model": "summary", "isAuto": true, "inputTokens": 1 }),
+                ),
+            );
+            assert!(
+                usage
+                    .iter()
+                    .any(|event| matches!(event.event, ProviderEvent::Usage { .. }))
+            );
+            assert!(
+                !usage
+                    .iter()
+                    .any(|event| matches!(event.event, ProviderEvent::ModelCallRecorded { .. }))
+            );
+            project_attributed(
+                &mut correlation,
+                scoped("session.compaction_complete", compaction_completed()),
+            );
+            let after = project_attributed(
+                &mut correlation,
+                scoped(
+                    "assistant.usage",
+                    json!({ "model": "answer", "isAuto": true, "inputTokens": 1 }),
+                ),
+            );
+            assert!(
+                after
+                    .iter()
+                    .any(|event| matches!(event.event, ProviderEvent::ModelCallRecorded { .. }))
+            );
+        }
     }
 
     #[test]
@@ -8420,6 +8998,47 @@ mod tests {
             phase_started(route, "primary"),
         );
         correlation
+    }
+
+    #[test]
+    fn auto_fusion_attributes_the_staged_model_and_preserves_supersession() {
+        let mut correlation = in_turn();
+        correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
+        project(
+            &mut correlation,
+            "session.fusion_resolved",
+            resolved("r", &["primary", "repair"]),
+        );
+        let started = project(
+            &mut correlation,
+            "assistant.fusion_phase_started",
+            phase_started("r", "primary"),
+        );
+        assert!(started.iter().any(|event| matches!(
+            event,
+            ProviderEvent::CurrentModelChanged { model: Some(model) }
+                if model.actual.as_str() == "gpt-fixture"
+        )));
+
+        let mut attributed = fusion("r", "primary", false);
+        attributed["sourceModel"] = json!("gpt-solver");
+        let mut message = staged_message("draft", "First attempt", attributed);
+        message["model"] = json!(" ");
+        let staged = project(&mut correlation, "assistant.message", message);
+        assert!(staged.iter().any(|event| matches!(
+            event,
+            ProviderEvent::AgentMessageModelKnown { model, .. }
+                if model.selected.as_str() == "auto" && model.actual.as_str() == "gpt-solver"
+        )));
+        let committed = project(
+            &mut correlation,
+            "session.fusion_commit_started",
+            commit_of("r", "repair"),
+        );
+        assert_eq!(
+            superseded_messages(&committed),
+            [ProviderMessageId::new("draft")]
+        );
     }
 
     fn superseded_messages(events: &[ProviderEvent]) -> Vec<ProviderMessageId> {

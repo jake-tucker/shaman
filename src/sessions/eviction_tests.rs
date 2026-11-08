@@ -89,6 +89,7 @@ fn reply(turn_id: TurnId, content: &str) -> SessionChange {
             role: MessageRole::Agent,
             status: MessageStatus::Completed,
             content: content.to_owned(),
+            model: None,
             skill_invocations: Vec::new(),
             attachments: Vec::new(),
             truncated: false,

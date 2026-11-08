@@ -32,6 +32,7 @@ mod context;
 mod errand;
 mod event_drain;
 mod fusion_tiers;
+mod model_evidence;
 mod pricing;
 mod projection;
 mod questionnaire;

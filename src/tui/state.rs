@@ -107,7 +107,8 @@ use super::{
     transcript::{
         ActivityVisibility, FoldDisclosure, FoldStep, Grouping, LiveOutputVisibility, MessageStart,
         PendingPrompt, TranscriptCache, TranscriptDisclosure, TranscriptFolds, TranscriptGroups,
-        TranscriptTurnFolds, TranscriptView, UnitKey, UnitStart, streams_live_output,
+        TranscriptModelNames, TranscriptTurnFolds, TranscriptView, UnitKey, UnitStart,
+        streams_live_output,
     },
     workspace_picker::{WorkspacePicker, WorkspacePickerChoice},
     worktree_picker::{WorktreeChoice, WorktreePickerRow},
@@ -3902,9 +3903,10 @@ impl TuiState {
         width: u16,
     ) -> Option<std::cell::Ref<'_, TranscriptView>> {
         let snapshot = self.session.as_ref()?.snapshot();
-        let interaction = self.session_interaction(self.session_reference.as_ref()?)?;
+        let reference = self.session_reference.as_ref()?;
+        let interaction = self.session_interaction(reference)?;
         let provisional = self.provisional_prompts(snapshot.session.id);
-        Some(self.transcript_cache.view_with_hyperlinks(
+        Some(self.transcript_cache.view_with_model_names(
             self.transcript_generation,
             snapshot,
             &provisional.iter().collect::<Vec<_>>(),
@@ -3919,6 +3921,11 @@ impl TuiState {
             theme,
             width,
             self.hyperlinks,
+            Some(TranscriptModelNames {
+                catalog: self.model_picker.catalog_names(),
+                outlook: &reference.origin,
+                revision: self.model_picker.catalog_revision(&reference.origin),
+            }),
         ))
     }
 
@@ -4984,6 +4991,7 @@ impl TuiState {
             watches: Vec::new(),
             attachments: self.composers.uploaded(&provisional.prompt.attachments),
             waiting_on_subagents: None,
+            current_model: None,
         })
     }
 
@@ -5004,7 +5012,7 @@ impl TuiState {
         let turns = TranscriptTurnFolds::default();
         // The reader's own first Prompt, which no one sent on their behalf.
         let pending = PendingPrompt::users(provisional.prompt.clone());
-        Some(self.transcript_cache.view_with_hyperlinks(
+        Some(self.transcript_cache.view_with_model_names(
             self.transcript_generation,
             snapshot,
             &[&pending],
@@ -5019,6 +5027,11 @@ impl TuiState {
             theme,
             width,
             self.hyperlinks,
+            Some(TranscriptModelNames {
+                catalog: self.model_picker.catalog_names(),
+                outlook: &self.outlook,
+                revision: self.model_picker.catalog_revision(&self.outlook),
+            }),
         ))
     }
 

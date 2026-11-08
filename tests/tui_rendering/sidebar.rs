@@ -9645,6 +9645,7 @@ fn the_session_left_behind_is_never_drawn_under_the_one_being_opened() {
                         status: MessageStatus::Completed,
                         content: "Still answering the reader".to_owned(),
                         truncated: false,
+                        model: None,
                         skill_invocations: Vec::new(),
                         attachments: Vec::new(),
                         author: None,

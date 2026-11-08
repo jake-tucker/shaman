@@ -975,6 +975,7 @@ impl CompactingSession {
             status: MessageStatus::Completed,
             content: prompt.text.clone(),
             truncated: false,
+            model: None,
             skill_invocations: Vec::new(),
             attachments: Vec::new(),
             author: None,

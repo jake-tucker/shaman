@@ -64,6 +64,9 @@ pub(super) struct ModelPicker {
     /// back to one names its Models again without waiting to hear the catalog
     /// anew.
     cached_providers: HashMap<Outlook, Vec<ProviderModels>>,
+    /// Moves whenever a catalog in the cache changes, including listings and
+    /// readings as well as pushes.
+    catalog_revisions: HashMap<Outlook, u64>,
     /// How many catalogs each Outlook's Server has pushed, which tells a
     /// reading asked of it earlier whether a newer word has landed since.
     pushes: HashMap<Outlook, u64>,
@@ -272,6 +275,19 @@ impl ModelPicker {
         CatalogNames(&self.cached_providers)
     }
 
+    pub(super) fn catalog_revision(&self, outlook: &Outlook) -> u64 {
+        self.catalog_revisions
+            .get(outlook)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn replace_catalog(&mut self, outlook: Outlook, providers: Vec<ProviderModels>) {
+        let revision = self.catalog_revisions.entry(outlook.clone()).or_default();
+        *revision = revision.wrapping_add(1);
+        self.cached_providers.insert(outlook, providers);
+    }
+
     /// How the latest catalog heard for `outlook` stands for each Provider,
     /// for a surface reporting Availability outside the picker.
     pub(super) fn catalog_statuses(&self, outlook: &Outlook) -> CatalogStatuses<'_> {
@@ -314,8 +330,7 @@ impl ModelPicker {
             return;
         }
         let providers = normalize_catalog(catalog.providers);
-        self.cached_providers
-            .insert(request.outlook().clone(), providers.clone());
+        self.replace_catalog(request.outlook().clone(), providers.clone());
         if request.outlook() != &self.outlook {
             return;
         }
@@ -330,8 +345,7 @@ impl ModelPicker {
     /// listing it asked for.
     pub(super) fn adopt_catalog(&mut self, outlook: Outlook, catalog: ModelCatalog) {
         *self.pushes.entry(outlook.clone()).or_default() += 1;
-        self.cached_providers
-            .insert(outlook, normalize_catalog(catalog.providers));
+        self.replace_catalog(outlook, normalize_catalog(catalog.providers));
     }
 
     /// How many catalogs `outlook`'s Server has pushed so far.
@@ -344,8 +358,7 @@ impl ModelPicker {
     /// unless it has pushed one since, which is its newer word.
     pub(super) fn adopt_reading(&mut self, outlook: Outlook, catalog: ModelCatalog, pushes: u64) {
         if self.pushes(&outlook) == pushes {
-            self.cached_providers
-                .insert(outlook, normalize_catalog(catalog.providers));
+            self.replace_catalog(outlook, normalize_catalog(catalog.providers));
         }
     }
 
