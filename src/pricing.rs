@@ -55,9 +55,14 @@ impl EstimatedCost {
 
 /// A Turn's reading priced from a rate table by the one rule every
 /// Estimated Cost follows: each Model Share's part of the Usage at that
-/// Share's Actual Model, and only the part the Shares leave — all of it, on
-/// a reading holding none — at the Agent Selection's Model. A reading with
-/// no Shares is priced exactly as one estimate at the Selection's Model.
+/// Share's Actual Model, and only the unattributed remainder — all of it, on
+/// a reading holding no Shares — at the Agent Selection's Model. A reading
+/// with no Shares is priced exactly as one estimate at the Selection's Model.
+///
+/// It builds the Shares itself from the parts a Provider attributes, so it
+/// can never restate a Share some other source priced. It stops short of a
+/// [`MeteredCost`](crate::provider::MeteredCost) because the Cost Coverage
+/// an estimate is stated on is the Provider's to say, not the rate table's.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ShareEstimate {
     cost: Option<EstimatedCost>,
@@ -66,35 +71,39 @@ pub struct ShareEstimate {
 }
 
 impl ShareEstimate {
-    /// Prices `usage` and its `model_shares` with `price`, which answers
-    /// what some Usage costs at one Model, absent where it has no price for
-    /// it. Each Share is priced at the part of `usage` [`DividedUsage`]
-    /// gives it, and any Cost it already states is replaced.
+    /// Prices `usage`, which `shares` — each a Model and the Usage the
+    /// Provider attributes to it — divide as [`DividedUsage`] does, with
+    /// `price`, which answers what some Usage costs at one Model, absent
+    /// where it has no price for it.
     fn priced(
         usage: &Usage,
         selection: &ModelId,
-        mut model_shares: Vec<ModelShare>,
+        shares: &[(ModelId, Usage)],
         mut price: impl FnMut(&ModelId, &Usage) -> Option<Cost>,
     ) -> Self {
-        let divided = DividedUsage::of(Some(usage), &model_shares);
-        let mut parts = Vec::with_capacity(model_shares.len() + 1);
-        for (share, part) in model_shares.iter_mut().zip(&divided.shares) {
-            share.cost = part.as_ref().and_then(|part| price(&share.model, part));
-            share.cost_is_partial = false;
-            parts.push(share.cost);
-        }
-        if model_shares.is_empty() || divided.leaves_usage() {
-            let left = divided.left.as_ref().unwrap_or(usage);
-            parts.push(price(selection, left));
-        }
+        let divided = DividedUsage::of(usage, shares.iter().map(|(model, usage)| (model, usage)));
+        // Each Share's, in order, then the remainder's where it is priced.
+        let priced: Vec<Option<Cost>> = divided
+            .by_model(selection)
+            .map(|(model, part)| price(model, part))
+            .collect();
+        let model_shares = divided
+            .shares()
+            .iter()
+            .zip(&priced)
+            .map(|((model, part), &cost)| ModelShare {
+                model: (*model).clone(),
+                usage: part.clone(),
+                cost,
+                // A rate table prices a part whole or not at all.
+                cost_is_partial: false,
+            })
+            .collect();
         let mut cost = None::<Cost>;
         let mut is_partial = false;
-        for part in parts {
-            match part {
-                Some(part) => match cost.map_or(Some(part), |cost| cost.checked_add(part)) {
-                    Some(sum) => cost = Some(sum),
-                    None => is_partial = true,
-                },
+        for part in priced {
+            match part.and_then(|part| cost.map_or(Some(part), |cost| cost.checked_add(part))) {
+                Some(sum) => cost = Some(sum),
                 None => is_partial = true,
             }
         }
@@ -117,8 +126,9 @@ impl ShareEstimate {
         self.is_partial
     }
 
-    /// The Shares, each stating its Estimated Cost at its Actual Model, or
-    /// none where that Model has no price for its part.
+    /// The Shares, each stating the part of the reading it was priced at and
+    /// its Estimated Cost at its Actual Model, or none where that Model has
+    /// no price for its part.
     pub fn into_model_shares(self) -> Vec<ModelShare> {
         self.model_shares
     }
@@ -291,18 +301,19 @@ impl PricingSource {
 
     /// Prices a Turn's reading by the per-Share rule ([`ShareEstimate`]) from
     /// only fresh in-memory rates, as [`Self::estimate_cached`] reads them:
-    /// each of `model_shares` at its own Model in `selection`'s catalog, and
-    /// what they leave of `usage` at `selection`. A cold, busy, or overdue
-    /// table prices nothing.
+    /// each of `shares` — a Model and the part of `usage` the Provider
+    /// attributes to it — at its own Model in `selection`'s catalog, and what
+    /// they leave of `usage` at `selection`. A cold, busy, or overdue table
+    /// prices nothing.
     pub fn estimate_cached_by_share(
         &self,
         selection: &ModelsDevModel,
         usage: &Usage,
-        model_shares: Vec<ModelShare>,
+        shares: &[(ModelId, Usage)],
     ) -> ShareEstimate {
         let state = self.state.try_lock().ok();
         let catalog = state.as_deref().and_then(|state| self.fresh_catalog(state));
-        ShareEstimate::priced(usage, &selection.model, model_shares, |model, usage| {
+        ShareEstimate::priced(usage, &selection.model, shares, |model, usage| {
             catalog?.price(&selection.provider, model, usage)
         })
     }
@@ -871,6 +882,11 @@ mod tests {
         }
     }
 
+    /// A part of a reading a Provider attributes to `model`.
+    fn part(model: &str, usage: Usage) -> (ModelId, Usage) {
+        (ModelId::new(model), usage)
+    }
+
     fn unpriced_share(model: &str, usage: Usage) -> ModelShare {
         ModelShare {
             model: ModelId::new(model),
@@ -897,16 +913,13 @@ mod tests {
     #[tokio::test]
     async fn each_share_is_estimated_at_its_own_model_and_only_the_remainder_at_the_selection() {
         let (pricing, _data_dir) = primed_by_share_fixture().await;
-        let shares = vec![
-            unpriced_share("cheap", fresh(1_000_000)),
-            unpriced_share("dear", fresh(1_000_000)),
+        let shares = [
+            part("cheap", fresh(1_000_000)),
+            part("dear", fresh(1_000_000)),
         ];
 
-        let auto = pricing.estimate_cached_by_share(
-            &openai_model("auto"),
-            &fresh(3_000_000),
-            shares.clone(),
-        );
+        let auto =
+            pricing.estimate_cached_by_share(&openai_model("auto"), &fresh(3_000_000), &shares);
         assert_eq!(
             estimated(&auto),
             (Cost::from_usd(11.0), true),
@@ -921,7 +934,7 @@ mod tests {
         );
 
         let cheap =
-            pricing.estimate_cached_by_share(&openai_model("cheap"), &fresh(3_000_000), shares);
+            pricing.estimate_cached_by_share(&openai_model("cheap"), &fresh(3_000_000), &shares);
         assert_eq!(
             estimated(&cheap),
             (Cost::from_usd(12.0), false),
@@ -939,7 +952,7 @@ mod tests {
             ("auto", Usage::default()),
         ] {
             let model = openai_model(model);
-            let estimate = pricing.estimate_cached_by_share(&model, &usage, Vec::new());
+            let estimate = pricing.estimate_cached_by_share(&model, &usage, &[]);
             assert_eq!(
                 estimate.cost(),
                 pricing.estimate_cached(&model, &usage),
@@ -961,10 +974,9 @@ mod tests {
         let estimate = pricing.estimate_cached_by_share(
             &openai_model("auto"),
             &fresh(2_000_000),
-            vec![
-                // A Cost a Share states already is the table's to replace.
-                priced_share("mystery", fresh(1_000_000), 99.0),
-                unpriced_share("dear", fresh(1_000_000)),
+            &[
+                part("mystery", fresh(1_000_000)),
+                part("dear", fresh(1_000_000)),
             ],
         );
         assert_eq!(
@@ -983,7 +995,7 @@ mod tests {
         let nothing = pricing.estimate_cached_by_share(
             &openai_model("auto"),
             &fresh(1_000_000),
-            vec![unpriced_share("mystery", fresh(1_000_000))],
+            &[part("mystery", fresh(1_000_000))],
         );
         assert_eq!(estimated(&nothing), (None, true), "nothing priced any part");
     }
@@ -994,19 +1006,19 @@ mod tests {
         let estimate = pricing.estimate_cached_by_share(
             &openai_model("cheap"),
             &fresh(1_500_000),
-            vec![
-                unpriced_share("dear", fresh(1_000_000)),
-                unpriced_share("dear", fresh(1_000_000)),
+            &[
+                part("dear", fresh(1_000_000)),
+                part("dear", fresh(1_000_000)),
             ],
         );
         assert_eq!(estimated(&estimate), (Cost::from_usd(15.0), false));
         assert_eq!(
-            estimate
-                .into_model_shares()
-                .into_iter()
-                .map(|share| share.cost)
-                .collect::<Vec<_>>(),
-            vec![Cost::from_usd(10.0), Cost::from_usd(5.0)]
+            estimate.into_model_shares(),
+            vec![
+                priced_share("dear", fresh(1_000_000), 10.0),
+                priced_share("dear", fresh(500_000), 5.0),
+            ],
+            "each Share states the part it was priced at"
         );
     }
 
@@ -1017,7 +1029,7 @@ mod tests {
         let estimate = pricing.estimate_cached_by_share(
             &openai_model("cheap"),
             &fresh(2_000_000),
-            vec![unpriced_share("cheap", fresh(1_000_000))],
+            &[part("cheap", fresh(1_000_000))],
         );
         assert_eq!(estimated(&estimate), (None, true));
     }
