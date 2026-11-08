@@ -8,8 +8,11 @@
 //! Message is named as it opens, and attributed once a snapshot names the Model. A Message the CLI
 //! wrote itself carries its `<synthetic>` placeholder, which is no Model at all.
 //!
-//! The CLI names the Model that ran without the context tier a Selection may carry, so a Selection
-//! such as `claude-opus-5-5[1m]` running `claude-opus-5-5` ran its own Model.
+//! Both the Model that ran and the Selection's are compared, and the Actual Model named, as Claude's
+//! catalog names a Model — without a context tier or a snapshot date — so a Selection such as
+//! `claude-opus-5-5[1m]` running `claude-opus-5-5` ran its own Model, a Message the API says
+//! `claude-haiku-4-5-20251001` wrote names `claude-haiku-4-5` as the Turn's Model Share does, and
+//! a Selection of that dated id running it ran its own Model too.
 //!
 //! What is held speaks only of the assistant message streaming now, so it is forgotten at each
 //! boundary between them: the next `message_start`, the loop's `result`, and the end of the CLI's
@@ -118,15 +121,15 @@ impl MessageModels {
     }
 }
 
-/// `selection`, compared as the CLI names the Model it runs.
+/// `selection`, compared as Claude's catalog names the Model it runs.
 fn selected(selection: &AgentSelection) -> SelectedModel<'_> {
-    SelectedModel::of(selection).running_as(super::without_context_tier(selection.model.as_str()))
+    SelectedModel::of(selection).running_as(super::canonical_model(selection.model.as_str()))
 }
 
-/// The Model `model` names where it is one that ran, rather than nothing or the CLI's placeholder.
-/// This is the one place the wire's `model` is judged.
+/// The Model `model` names where it is one that ran, rather than nothing or the CLI's placeholder,
+/// as Claude's catalog names it. This is the one place the wire's `model` is judged.
 fn ran(model: Option<&str>) -> Option<ModelId> {
     model
         .filter(|model| !model.trim().is_empty() && *model != SYNTHETIC_MODEL)
-        .map(ModelId::new)
+        .map(|model| ModelId::new(super::canonical_model(model)))
 }

@@ -47,8 +47,13 @@ case " $* " in
   *" --model middling "*) actual=claude-fixture-2 ;;
   *" --model claude-fixture-2 "*) actual=claude-fixture-2 ;;
   *" --model claude-fixture-2[1m] "*) actual=claude-fixture-2 ;;
+  *" --model claude-fixture-2-20250101 "*) actual=claude-fixture-2-20250101 ;;
 esac
 "#;
+
+/// A launch the CLI resolves to a dated wire id, as it resolves an alias of a dated Model such as
+/// Haiku 4.5 to `claude-haiku-4-5-20251001`.
+const RESOLVES_TO_A_DATED_ID: &str = "actual=claude-fixture-1-20251001\n";
 
 /// One assistant message on the Model the CLI was launched with, then the CLI falling back to
 /// `claude-fixture-3` for the next call in the same Turn.
@@ -114,11 +119,15 @@ fn resolving_fixture(models: &str, timeline: &str) -> ScriptedClaude {
 }
 
 /// The fixture's catalog with rows whose values are themselves concrete Models: one as the CLI
-/// names it, and one at its 1M-context tier.
+/// names it, one at its 1M-context tier, and one by its dated wire id.
 fn catalog_with_concrete_rows() -> String {
     let mut rows: Vec<serde_json::Value> =
         serde_json::from_str(CLAUDE_MODELS).expect("the fixture's Model rows are JSON");
-    for value in ["claude-fixture-2", "claude-fixture-2[1m]"] {
+    for value in [
+        "claude-fixture-2",
+        "claude-fixture-2[1m]",
+        "claude-fixture-2-20250101",
+    ] {
         rows.push(serde_json::json!({
             "value": value,
             "resolvedModel": value,
@@ -543,4 +552,52 @@ async fn a_native_subagents_model_stays_its_own_beside_the_loops_actual_model() 
         .shutdown()
         .await
         .expect("shut the server down");
+}
+
+#[tokio::test]
+async fn a_message_on_a_dated_wire_id_names_the_canonical_model_it_is() {
+    let claude = ScriptedClaude::with_preamble(
+        RESOLVES_TO_A_DATED_ID,
+        &format!(
+            "{}{}",
+            discovery_arms(CLAUDE_MODELS),
+            user_turn_arm(TWO_MESSAGES_ON_ONE_MODEL)
+        ),
+    );
+    let session = DurableSession::start(&claude, None, "claude-actual-model-dated").await;
+
+    assert_eq!(
+        attributions(&session.read().await),
+        [
+            (
+                "Looking around.",
+                Some(attributed("default", "claude-fixture-1"))
+            ),
+            ("Found it.", Some(attributed("default", "claude-fixture-1"))),
+        ],
+        "the Actual Model is named as Claude's catalog names it, its snapshot date set aside, as \
+         the Turn's Model Shares name it"
+    );
+
+    session.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_selection_of_a_dated_wire_id_running_that_id_carries_no_attribution() {
+    let claude = resolving_fixture(&catalog_with_concrete_rows(), TWO_MESSAGES_ON_ONE_MODEL);
+    let session = DurableSession::start(
+        &claude,
+        Some(concrete("claude-fixture-2-20250101")),
+        "claude-actual-model-dated-selection",
+    )
+    .await;
+
+    assert_eq!(
+        attributions(&session.read().await),
+        [("Looking around.", None), ("Found it.", None)],
+        "both sides are compared as the canonical Model they name, so a dated Selection ran its own \
+         Model"
+    );
+
+    session.shutdown().await;
 }

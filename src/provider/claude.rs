@@ -79,6 +79,26 @@ fn without_context_tier(model: &str) -> &str {
         .unwrap_or(model)
 }
 
+/// `model` as Claude's own catalog names it: without its 1M-context tier, and without the
+/// `-YYYYMMDD` snapshot date a dated wire id carries — the API and the picker's `resolvedModel`
+/// name Haiku 4.5 `claude-haiku-4-5-20251001`, where the catalog, and so a result's
+/// `canonicalModel`, names it `claude-haiku-4-5`. The CLI recognises the date by the same
+/// pattern, `-\d{8}$`. Every surface that names a Claude Model that ran names it this way, so a
+/// Model Share, a Message's Actual Model and a catalog row's resolution agree.
+fn canonical_model(model: &str) -> &str {
+    let model = without_context_tier(model);
+    match model.len().checked_sub(9).map(|at| model.split_at(at)) {
+        Some((base, date))
+            if !base.is_empty()
+                && date.starts_with('-')
+                && date[1..].bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            base
+        }
+        _ => model,
+    }
+}
+
 /// What a Claude failure is called when the CLI itself said nothing usable.
 const CLAUDE_FAILURE_FALLBACK: &str = "Claude Provider failed";
 
@@ -174,4 +194,25 @@ fn selection_args(selection: &AgentSelection) -> Result<Vec<OsString>, ProviderE
         args.push(OsString::from(effort));
     }
     Ok(args)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonical_model;
+
+    #[test]
+    fn a_wire_id_is_named_without_its_context_tier_or_snapshot_date() {
+        for (wire, canonical) in [
+            ("claude-haiku-4-5-20251001", "claude-haiku-4-5"),
+            ("claude-opus-4-6[1m]", "claude-opus-4-6"),
+            ("claude-sonnet-4-5-20250929[1m]", "claude-sonnet-4-5"),
+            ("claude-opus-5-5", "claude-opus-5-5"),
+            ("claude-model-2025", "claude-model-2025"),
+            ("claude-x-2025100a", "claude-x-2025100a"),
+            ("-20251001", "-20251001"),
+            ("default", "default"),
+        ] {
+            assert_eq!(canonical_model(wire), canonical, "{wire}");
+        }
+    }
 }

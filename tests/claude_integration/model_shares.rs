@@ -754,19 +754,80 @@ async fn an_entry_stating_no_canonical_id_is_read_under_its_key_without_the_cont
         "prov-session",
         (50, 5),
         0.02,
-        Some(&[Entry::on(FIXTURE_1)
-            .keyed("claude-fixture-1[1m]")
-            .without_canonical()
-            .tokens(50, 5)
-            .cost(0.02)]),
+        Some(&[
+            Entry::on(FIXTURE_1)
+                .keyed("claude-fixture-1[1m]")
+                .without_canonical()
+                .tokens(50, 5)
+                .cost(0.015),
+            Entry::on(FIXTURE_3)
+                .keyed("claude-fixture-3-20251001")
+                .without_canonical()
+                .tokens(10, 1)
+                .cost(0.005),
+        ]),
     )]));
     let session = DurableSession::start(&claude, None, "claude-shares-no-canonical").await;
 
     assert_eq!(
         shares(&session.read().await, 0),
-        [share(FIXTURE_1, usage(50, (0, 0), 5, 0), 0.02)],
-        "a CLI that names no canonical id names the Model by its key, the tier set aside as the \
-         CLI names Models elsewhere"
+        [
+            share(FIXTURE_1, usage(50, (0, 0), 5, 0), 0.015),
+            share(FIXTURE_3, usage(10, (0, 0), 1, 0), 0.005),
+        ],
+        "a CLI that names no canonical id names the Model by its key, its context tier and \
+         snapshot date set aside as Claude's catalog names Models"
+    );
+
+    session.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_share_under_a_canonical_id_is_labelled_by_the_row_resolving_to_its_dated_wire_id() {
+    let mut rows: Vec<serde_json::Value> =
+        serde_json::from_str(CLAUDE_MODELS).expect("the fixture's Model rows are JSON");
+    for row in &mut rows {
+        if row["value"] == "haiku" {
+            row["resolvedModel"] = json!("claude-fixture-3-20251001");
+        }
+    }
+    let models = serde_json::to_string(&rows).expect("the rows re-serialize");
+    let claude = over_catalog(
+        &models,
+        &turn_by_turn(&[result(
+            "prov-session",
+            (100, 10),
+            0.012,
+            Some(&[
+                Entry::on(FIXTURE_1).tokens(100, 10).cost(0.01),
+                Entry::on(FIXTURE_3)
+                    .keyed("claude-fixture-3-20251001")
+                    .tokens(20, 2)
+                    .cost(0.002),
+            ]),
+        )]),
+    );
+    let session = DurableSession::start(&claude, None, "claude-shares-dated-label").await;
+    session
+        .client
+        .list_models()
+        .await
+        .expect("discover Claude Models");
+
+    let actual = session
+        .client
+        .outlook(Outlook::Local)
+        .usage_metrics(&by_model(UsageMetricsModelView::Actual))
+        .await
+        .expect("read Usage Metrics in the Actual view");
+
+    assert_eq!(
+        filed(&actual)
+            .into_iter()
+            .find(|(key, ..)| *key == model_key(FIXTURE_3))
+            .map(|(_, label, ..)| label),
+        Some("Haiku".to_owned()),
+        "the `haiku` row resolves to the dated wire id of the Model its Share names canonically"
     );
 
     session.shutdown().await;

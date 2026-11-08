@@ -139,7 +139,7 @@ pub(super) struct ReportedEntry {
 /// Each entry names its Model by its `canonicalModel`, which can differ from its key — a
 /// provider-specific id, a dated one, one at the 1M-context tier — so the same Model is one Model
 /// however its calls were keyed. An entry from a CLI that states no canonical id is named by its
-/// key, its context tier set aside as the CLI sets it aside wherever else it names a Model.
+/// key as Claude's catalog would name it, its context tier and snapshot date set aside.
 pub(super) fn reported_model_usage(
     model_usage: Option<&Value>,
 ) -> Option<BTreeMap<String, ReportedEntry>> {
@@ -153,7 +153,7 @@ pub(super) fn reported_model_usage(
                     .get("canonicalModel")
                     .and_then(Value::as_str)
                     .filter(|model| !model.is_empty())
-                    .unwrap_or_else(|| super::without_context_tier(key));
+                    .unwrap_or_else(|| super::canonical_model(key));
                 Some((
                     key.clone(),
                     ReportedEntry {

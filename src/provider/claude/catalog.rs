@@ -77,13 +77,12 @@ fn model_descriptor(model: NativeModel) -> ModelDescriptor {
         options: reasoning_effort_option(&model.supported_effort_levels)
             .into_iter()
             .collect(),
-        // The CLI names the Model a call ran on without its 1M-context tier, so the row's
-        // resolution is read the same way.
+        // The row's resolution names the Model as Suru names every Claude Model that ran.
         details: ModelDetails {
             resolved_model: model
                 .resolved_model
                 .as_deref()
-                .map(|resolved| ModelId::new(super::without_context_tier(resolved))),
+                .map(|resolved| ModelId::new(super::canonical_model(resolved))),
             ..ModelDetails::default()
         },
     }
