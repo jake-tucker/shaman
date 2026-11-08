@@ -211,6 +211,17 @@ pub(super) struct StreamEvent {
     pub(super) content_block: Option<ContentBlock>,
     #[serde(default)]
     pub(super) delta: Option<ContentDelta>,
+    /// The assistant message a `message_start` opens.
+    #[serde(default)]
+    pub(super) message: Option<OpenedMessage>,
+}
+
+/// The assistant message a `message_start` opens, decoded only for the Model the API names as
+/// running it.
+#[derive(Deserialize)]
+pub(super) struct OpenedMessage {
+    #[serde(default)]
+    pub(super) model: Option<String>,
 }
 
 /// The content block a `content_block_start` opens: the text or thinking it opens with, and for a

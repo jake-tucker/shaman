@@ -21,6 +21,7 @@ use crate::protocol::{
     SkillCatalogStatus, SkillId, SkillInvocation, SkillPromptDelivery, TextSpan, Usage,
 };
 
+mod actual_model;
 mod claude;
 mod codex;
 mod command_presentation;

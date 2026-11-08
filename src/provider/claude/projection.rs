@@ -97,6 +97,7 @@ use tokio::sync::mpsc;
 use super::super::command_presentation::{PresentedCommand, present_command};
 use super::{
     claude_error, compaction,
+    message_models::MessageModels,
     session::ClaudeResumeState,
     thinking::{ThinkingEvent, ThinkingSplitter},
     transport::ConversationItem,
@@ -865,6 +866,8 @@ pub(super) struct ClaudeProjection {
     /// A snapshot can race the task lifecycle, so evidence waits here until the stretch's row
     /// exists, and a settle clears it so a resume reports only its own.
     subagent_models: BTreeMap<String, crate::protocol::ModelId>,
+    /// Which Model the loop's own conversation wrote each Agent Message on.
+    message_models: MessageModels,
     /// The latest cumulative Cost results reported, by the reporting lifetime whose running total
     /// each is. A later report in the same lifetime is accepted only if it has not gone back.
     latest_reported_costs: HashMap<String, Cost>,
@@ -941,6 +944,7 @@ impl ClaudeProjection {
             pending_steers: BTreeMap::new(),
             resume,
             subagent_models: BTreeMap::new(),
+            message_models: MessageModels::default(),
             latest_reported_costs: HashMap::new(),
             seen_results: HashSet::new(),
             reasoning_blocks: 0,
@@ -1720,6 +1724,7 @@ impl ClaudeProjection {
     /// reports: output the old process left queued can no longer put its tasks back.
     fn project_process_ended(&mut self) -> Vec<AttributedProviderEvent> {
         self.turn.tasks_died_with_process();
+        self.message_models.forget();
         // A foreground task that died with the process was never a Watch, so none is lost.
         self.foreground_tasks.clear();
         // Nor is any steer the process still held for its agents ever delivered.
@@ -1890,6 +1895,13 @@ impl ClaudeProjection {
                 if let Some(selection) = self.turn.begin_continuation() {
                     projected.push(ProviderEvent::ContinuationStarted { selection });
                 }
+                self.message_models.assistant_message_started(
+                    event
+                        .message
+                        .as_ref()
+                        .and_then(|opened| opened.model.as_deref()),
+                    self.turn.running_selection().as_ref(),
+                );
             }
             "content_block_start" => {
                 if let Some(block) = event.content_block {
@@ -1904,6 +1916,12 @@ impl ClaudeProjection {
                         "text" => {
                             conversation.open_text_block = event.index;
                             projected.push(ProviderEvent::AgentMessageStarted);
+                            if owner.is_none() {
+                                projected.extend(
+                                    self.message_models
+                                        .message_started(self.turn.running_selection().as_ref()),
+                                );
+                            }
                             if let Some(text) = block.text.filter(|text| !text.is_empty()) {
                                 projected.push(ProviderEvent::AgentMessageDelta { content: text });
                             }
@@ -1998,6 +2016,11 @@ impl ClaudeProjection {
         };
         let owner: ConversationKey = message.parent_tool_use_id;
         let claimed = self.claim_conversation(&owner);
+        let running = owner
+            .is_none()
+            .then(|| self.turn.running_selection())
+            .flatten();
+        let loop_model = message.message.model.clone();
         let observed_model = owner.as_ref().and_then(|conversation| {
             message
                 .message
@@ -2016,13 +2039,28 @@ impl ClaudeProjection {
         let known = held.is_some();
         let mut conversation = held.unwrap_or_default();
         let mut projected = Vec::new();
-        if !conversation.streamed {
+        if conversation.streamed {
+            // The chunks already streamed what this restates, so all it adds is the Model that
+            // wrote it.
+            if owner.is_none() {
+                projected.extend(
+                    self.message_models
+                        .snapshot_named(loop_model.as_deref(), running.as_ref()),
+                );
+            }
+        } else {
             for (index, block) in message.message.content.into_iter().enumerate() {
                 let index = index as u64;
                 match block.kind.as_str() {
                     "text" => {
                         if let Some(text) = block.text.filter(|text| !text.is_empty()) {
                             projected.push(ProviderEvent::AgentMessageStarted);
+                            if owner.is_none() {
+                                projected.extend(MessageModels::whole_message(
+                                    loop_model.as_deref(),
+                                    running.as_ref(),
+                                ));
+                            }
                             projected.push(ProviderEvent::AgentMessageDelta { content: text });
                             projected.push(ProviderEvent::AgentMessageCompleted);
                         }
@@ -2694,6 +2732,7 @@ impl ClaudeProjection {
         if owning.open_text_block.take().is_some() {
             projected.push(ProviderEvent::AgentMessageCompleted);
         }
+        self.message_models.forget();
         // A command of the loop's own whose tool result never came back has no outcome to match,
         // so it settles with the result rather than holding the Turn open: interrupted where the
         // user stopped the loop, and failed otherwise (ADR 0039). A subagent's commands are owed

@@ -32,6 +32,7 @@ mod catalog;
 mod compaction;
 mod context;
 mod errand;
+mod message_models;
 mod projection;
 mod questionnaire;
 mod runtime;

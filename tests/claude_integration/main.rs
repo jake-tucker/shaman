@@ -10,6 +10,7 @@ use crate::support::provider as provider_support;
 use crate::support::scripted_binary as scripted_binary_support;
 
 mod activity;
+mod actual_models;
 mod approvals;
 mod availability;
 mod broker;
