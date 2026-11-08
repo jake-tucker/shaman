@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 
 use crate::protocol::{
-    Cost, CostBasis, CostCoverage, CostRecord, CostTotal, CountedCost, ModelId, SessionId,
-    SessionTimestamp, Turn, TurnId, TurnStatus, Usage,
+    Cost, CostBasis, CostCoverage, CostRecord, CostTotal, CountedCost, DividedUsage, ModelId,
+    SessionId, SessionTimestamp, Turn, TurnId, TurnStatus,
 };
 
 use super::SessionStoreState;
@@ -62,67 +62,6 @@ struct SharedPart {
     cost: Option<Cost>,
     /// Whether some of the Share's work is unpriced.
     is_partial: bool,
-}
-
-/// A Turn's Usage as its Model Shares divide it: what each Share holds of
-/// it, and what they leave unattributed. Each Share takes no more of each
-/// part than the Shares before it left, so they add up to the Turn's Usage
-/// and nothing left is ever negative. This is the one reading of which part
-/// of a Turn's Usage is whose, for Cost Coverage and the metrics read alike.
-pub(super) struct DividedUsage {
-    /// Each Share's part, by its place among the Turn's Shares; absent
-    /// where the Turn recorded no Usage.
-    pub(super) shares: Vec<Option<Usage>>,
-    /// What no Share holds, absent where the Turn recorded no Usage.
-    pub(super) left: Option<Usage>,
-}
-
-impl DividedUsage {
-    pub(super) fn of(turn: &Turn) -> Self {
-        let mut left = turn.usage.clone();
-        let shares = turn
-            .model_shares
-            .iter()
-            .map(|share| left.as_mut().map(|left| take_usage(left, &share.usage)))
-            .collect();
-        Self { shares, left }
-    }
-
-    /// Whether any token is left unattributed.
-    pub(super) fn leaves_usage(&self) -> bool {
-        self.left.as_ref().is_some_and(|left| {
-            [
-                left.fresh_input_tokens,
-                left.cache_read_tokens,
-                left.cache_write_tokens,
-                left.output_tokens,
-                left.reasoning_tokens,
-            ]
-            .into_iter()
-            .any(|count| count.is_some_and(|count| count > 0))
-        })
-    }
-}
-
-/// Takes from `left` the part of each token count `share` states, no more
-/// than is left of it, answering what was taken: absent where either is.
-fn take_usage(left: &mut Usage, share: &Usage) -> Usage {
-    let take = |left: &mut Option<u64>, share: Option<u64>| match (left.as_mut(), share) {
-        (Some(left), Some(share)) => {
-            let taken = share.min(*left);
-            *left -= taken;
-            Some(taken)
-        }
-        _ => None,
-    };
-    Usage {
-        fresh_input_tokens: take(&mut left.fresh_input_tokens, share.fresh_input_tokens),
-        cache_read_tokens: take(&mut left.cache_read_tokens, share.cache_read_tokens),
-        cache_write_tokens: take(&mut left.cache_write_tokens, share.cache_write_tokens),
-        output_tokens: take(&mut left.output_tokens, share.output_tokens),
-        reasoning_tokens: take(&mut left.reasoning_tokens, share.reasoning_tokens),
-        native_meter: None,
-    }
 }
 
 /// An amount a Turn contributes to a Cost, with the Cost Basis of the frozen
@@ -540,7 +479,7 @@ fn contributions_of(forest: &impl CostForest, sessions: &[SessionId]) -> Vec<Cos
             let remainder = !unpriced
                 || turn.model_shares.is_empty()
                 || turn.status == TurnStatus::Active
-                || DividedUsage::of(turn).leaves_usage();
+                || DividedUsage::of_turn(turn).leaves_usage();
             if unpriced {
                 contributions.extend((0..turn.model_shares.len()).map(|index| {
                     CostContribution::unpriced_share(owner, turn.id, ModelShareIndex(index))
@@ -615,7 +554,7 @@ fn cost_records(owner: SessionId, turn: &Turn) -> Vec<ScopedCost> {
     let records = turn_cost_records(turn);
     let current = records.len().checked_sub(1);
     let remainder_holds_usage =
-        turn.model_shares.is_empty() || DividedUsage::of(turn).leaves_usage();
+        turn.model_shares.is_empty() || DividedUsage::of_turn(turn).leaves_usage();
     records
         .into_iter()
         .enumerate()

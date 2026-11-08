@@ -37,10 +37,10 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::protocol::{
-    CacheInsights, CountedCost, DelegationInsights, EstimatedSaving, InsightsQuery, InsightsReport,
-    ModelId, ProviderId, QUARTER_HOUR_MS, QuarterHourTurns, SessionId, TURN_DURATION_BIN_ENDS_MS,
-    TURN_DURATION_BINS, ToolTally, Turn, TurnDurations, TurnId, TurnInsights, TurnStatus, Usage,
-    UsageMetricsAggregate, WorkspaceId, signed_nano_usd,
+    CacheInsights, CountedCost, DelegationInsights, DividedUsage, EstimatedSaving, InsightsQuery,
+    InsightsReport, ModelId, ProviderId, QUARTER_HOUR_MS, QuarterHourTurns, SessionId,
+    TURN_DURATION_BIN_ENDS_MS, TURN_DURATION_BINS, ToolTally, Turn, TurnDurations, TurnId,
+    TurnInsights, TurnStatus, Usage, UsageMetricsAggregate, WorkspaceId, signed_nano_usd,
 };
 
 use crate::{errands::ErrandRecord, pricing::CacheRateLookup, sidekick::SidekickWorkspace};
@@ -52,7 +52,7 @@ use activities::{ActivityTallies, ActivityTally};
 use super::{
     super::{
         SessionStore,
-        cost_coverage::{CostContribution, DividedUsage, tree_contributions},
+        cost_coverage::{CostContribution, tree_contributions},
     },
     CopiedSession, CountedSession, MeteredForest, SessionTimestamp, TurnPlaces, errand_cost,
     placed_at,
@@ -428,7 +428,7 @@ impl CacheTally {
         };
         self.input.add_usage(usage);
         let selection = turn.agent.as_ref().map(|agent| &agent.selection);
-        let divided = DividedUsage::of(turn);
+        let divided = DividedUsage::of_turn(turn);
         for (share, usage) in turn.model_shares.iter().zip(&divided.shares) {
             if let Some(usage) = usage {
                 let model = selection.map(|selection| (&selection.provider, &share.model));

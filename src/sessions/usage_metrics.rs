@@ -64,19 +64,17 @@ use std::{
 };
 
 use crate::protocol::{
-    Author, Cost, CostBasis, CountedCost, KeyedUsageMetrics, MAX_USAGE_METRICS_BUCKETS,
-    MAX_USAGE_METRICS_TOP_SESSIONS, ModelCatalog, ModelId, ProviderId, SessionId, SessionTimestamp,
-    Turn, TurnId, TurnStatus, Usage, UsageMetricsAggregate, UsageMetricsBreakdown,
-    UsageMetricsBucket, UsageMetricsKey, UsageMetricsKeyLabel, UsageMetricsModelView,
-    UsageMetricsQuery, UsageMetricsReport, UsageMetricsSession, Workspace, WorkspaceId,
-    WorkspacePaths,
+    Author, Cost, CostBasis, CountedCost, DividedUsage, KeyedUsageMetrics,
+    MAX_USAGE_METRICS_BUCKETS, MAX_USAGE_METRICS_TOP_SESSIONS, ModelCatalog, ModelId, ProviderId,
+    SessionId, SessionTimestamp, Turn, TurnId, TurnStatus, Usage, UsageMetricsAggregate,
+    UsageMetricsBreakdown, UsageMetricsBucket, UsageMetricsKey, UsageMetricsKeyLabel,
+    UsageMetricsModelView, UsageMetricsQuery, UsageMetricsReport, UsageMetricsSession, Workspace,
+    WorkspaceId, WorkspacePaths,
 };
 
 use super::{
     SessionStore, SessionStoreState,
-    cost_coverage::{
-        CostContribution, CostForest, DividedUsage, ModelShareIndex, tree_contributions,
-    },
+    cost_coverage::{CostContribution, CostForest, ModelShareIndex, tree_contributions},
 };
 use crate::{
     errands::ErrandRecord,
@@ -189,7 +187,7 @@ impl Filing {
             return Self::whole(selection, turn);
         }
         let provider = turn.agent.as_ref().map(|agent| &agent.selection.provider);
-        let divided = DividedUsage::of(turn);
+        let divided = DividedUsage::of_turn(turn);
         let mut filing = Self {
             parts: Vec::new(),
             shares: Vec::with_capacity(turn.model_shares.len()),

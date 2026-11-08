@@ -5226,6 +5226,74 @@ impl ModelShare {
     }
 }
 
+/// A reading's Usage as its Model Shares divide it: what each Share holds of
+/// it, and what they leave unattributed. Each Share takes no more of each
+/// part than the Shares before it left, so they add up to the reading's
+/// Usage and nothing left is ever negative. This is the one reading of which
+/// part of a Turn's Usage is whose, for Cost Coverage, the metrics read, and
+/// a rate table pricing each Share alike.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DividedUsage {
+    /// Each Share's part, by its place among the Shares; absent where the
+    /// reading states no Usage.
+    pub shares: Vec<Option<Usage>>,
+    /// What no Share holds, absent where the reading states no Usage.
+    pub left: Option<Usage>,
+}
+
+impl DividedUsage {
+    /// `usage` as `model_shares` divide it.
+    pub fn of(usage: Option<&Usage>, model_shares: &[ModelShare]) -> Self {
+        let mut left = usage.cloned();
+        let shares = model_shares
+            .iter()
+            .map(|share| left.as_mut().map(|left| take_usage(left, &share.usage)))
+            .collect();
+        Self { shares, left }
+    }
+
+    /// A Turn's Usage as its Model Shares divide it.
+    pub fn of_turn(turn: &Turn) -> Self {
+        Self::of(turn.usage.as_ref(), &turn.model_shares)
+    }
+
+    /// Whether any token is left unattributed.
+    pub fn leaves_usage(&self) -> bool {
+        self.left.as_ref().is_some_and(|left| {
+            [
+                left.fresh_input_tokens,
+                left.cache_read_tokens,
+                left.cache_write_tokens,
+                left.output_tokens,
+                left.reasoning_tokens,
+            ]
+            .into_iter()
+            .any(|count| count.is_some_and(|count| count > 0))
+        })
+    }
+}
+
+/// Takes from `left` the part of each token count `share` states, no more
+/// than is left of it, answering what was taken: absent where either is.
+fn take_usage(left: &mut Usage, share: &Usage) -> Usage {
+    let take = |left: &mut Option<u64>, share: Option<u64>| match (left.as_mut(), share) {
+        (Some(left), Some(share)) => {
+            let taken = share.min(*left);
+            *left -= taken;
+            Some(taken)
+        }
+        _ => None,
+    };
+    Usage {
+        fresh_input_tokens: take(&mut left.fresh_input_tokens, share.fresh_input_tokens),
+        cache_read_tokens: take(&mut left.cache_read_tokens, share.cache_read_tokens),
+        cache_write_tokens: take(&mut left.cache_write_tokens, share.cache_write_tokens),
+        output_tokens: take(&mut left.output_tokens, share.output_tokens),
+        reasoning_tokens: take(&mut left.reasoning_tokens, share.reasoning_tokens),
+        native_meter: None,
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TurnWire {
