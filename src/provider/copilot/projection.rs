@@ -1819,13 +1819,19 @@ fn project_session_event(
                 return Ok(correlation.project_subagent_message(&subagent, &event));
             }
             SessionEventType::SessionAutoModeResolved | SessionEventType::SessionModelChange => {
-                let auto = match event.parsed_type() {
-                    SessionEventType::SessionAutoModeResolved => {
-                        reported::<SessionAutoModeResolvedData>(&event).map(|_| true)
-                    }
+                let (auto, reroute) = match event.parsed_type() {
+                    SessionEventType::SessionAutoModeResolved => (
+                        reported::<SessionAutoModeResolvedData>(&event).map(|_| true),
+                        None,
+                    ),
                     SessionEventType::SessionModelChange => {
-                        reported::<SessionModelChangeData>(&event)
-                            .map(|change| change.new_model == AUTO_MODEL_ID)
+                        let change = reported::<SessionModelChangeData>(&event);
+                        (
+                            change
+                                .as_ref()
+                                .map(|change| change.new_model == AUTO_MODEL_ID),
+                            change.as_ref().and_then(reroute),
+                        )
                     }
                     _ => unreachable!(),
                 };
@@ -1836,12 +1842,13 @@ fn project_session_event(
                     return Ok(Vec::new());
                 };
                 known.auto_selection = auto;
-                return Ok(correlation
-                    .subagents
-                    .get_mut(&subagent)
-                    .and_then(|working| working.streams.working_models.selection_changed(auto))
-                    .map(|event| attributed(Some(&subagent), event))
+                let Some(working) = correlation.subagents.get_mut(&subagent) else {
+                    return Ok(Vec::new());
+                };
+                return Ok(reroute
                     .into_iter()
+                    .chain(working.streams.working_models.selection_changed(auto))
+                    .map(|event| attributed(Some(&subagent), event))
                     .collect());
             }
             SessionEventType::AssistantTurnEnd => {
@@ -2069,6 +2076,17 @@ fn project_session_event(
                 .into_iter()
                 .collect())
         }
+        // Copilot switching Models of its own accord mid-Turn is a Reroute where it reports it.
+        // With no Turn open there is nothing it switched away from.
+        SessionEventType::SessionModelChange => Ok(correlation
+            .turn
+            .as_ref()
+            .and(reported::<SessionModelChangeData>(&event))
+            .as_ref()
+            .and_then(reroute)
+            .map(|reroute| attributed(None, reroute))
+            .into_iter()
+            .collect()),
         SessionEventType::SessionAutoTierSwitchFailed => Ok(reported(&event)
             .map(|refusal| correlation.project_tier_refused(refusal))
             .unwrap_or_default()),
@@ -2291,6 +2309,25 @@ fn project_session_event(
         }
         _ => Ok(Vec::new()),
     }
+}
+
+/// The `cause` Copilot gives a model change when the Model it was running declined a request and
+/// it switched to its configured refusal-fallback Model.
+const REFUSAL_FALLBACK_CAUSE: &str = "refusal_fallback";
+
+/// The Reroute a model change reports, where Copilot switched for a reason of its own. Only a
+/// refusal fallback is one: a change the user's Selection asked for is none, and neither is Auto
+/// choosing a Model for each call, which it reports otherwise.
+fn reroute(change: &SessionModelChangeData) -> Option<ProviderEvent> {
+    (change.cause.as_deref() == Some(REFUSAL_FALLBACK_CAUSE)).then(|| ProviderEvent::Rerouted {
+        from: change
+            .previous_model
+            .as_deref()
+            .filter(|model| !model.is_empty())
+            .map(ModelId::new),
+        to: ModelId::new(&change.new_model),
+        reason: Some("the Model declined the request".to_owned()),
+    })
 }
 
 fn project_usage_event(
@@ -5197,6 +5234,58 @@ mod tests {
             !fixed_message
                 .iter()
                 .any(|event| matches!(event.event, ProviderEvent::AgentMessageModelKnown { .. }))
+        );
+    }
+
+    #[test]
+    fn a_subagents_refusal_fallback_is_its_own_reroute_and_still_ends_its_auto_selection() {
+        let mut correlation = with_subagent();
+        project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "session.auto_mode_resolved",
+                json!({ "chosenModel": "child-model" }),
+            ),
+        );
+        project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "model.call_start",
+                json!({ "turnId": "t1", "model": "child-model" }),
+            ),
+        );
+        let changed = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "session.model_change",
+                json!({
+                    "previousModel": "child-model",
+                    "newModel": "fallback-model",
+                    "cause": "refusal_fallback",
+                }),
+            ),
+        );
+        let subagent = ProviderEventAttribution::Subagent(ProviderSubagentId::new("agent-1"));
+        assert_eq!(
+            changed,
+            [
+                AttributedProviderEvent {
+                    attribution: subagent.clone(),
+                    event: ProviderEvent::Rerouted {
+                        from: Some(ModelId::new("child-model")),
+                        to: ModelId::new("fallback-model"),
+                        reason: Some("the Model declined the request".to_owned()),
+                    },
+                },
+                AttributedProviderEvent {
+                    attribution: subagent,
+                    event: ProviderEvent::CurrentModelChanged { model: None },
+                },
+            ],
+            "the Reroute lands in the Subagent's own Transcript, and the change still ends Auto"
         );
     }
 

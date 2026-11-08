@@ -22,6 +22,7 @@ mod fusion_tiers;
 mod interruption;
 mod models;
 mod monitoring;
+mod reroutes;
 mod resume;
 mod routing_tiers;
 mod skills;
