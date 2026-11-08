@@ -160,7 +160,7 @@ fn ctrl_t_dispatches_one_semantic_reasoning_cycle_without_a_slash_name() {
     let mut application = Application::default();
     type_terminal_text(&mut application, "/");
     let autocomplete = rendered_application_rows_at(&application, 100, 40).join("\n");
-    assert!(autocomplete.contains("Configure Model Options"));
+    assert!(autocomplete.contains("/options  Configure Model"));
     assert!(!autocomplete.contains("Cycle Reasoning Effort"));
 }
 

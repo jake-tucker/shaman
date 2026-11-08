@@ -814,8 +814,7 @@ fn skill_completion_details_the_selected_skill_beside_the_list_and_copies_it_as_
 
 #[test]
 fn a_catalog_warning_spans_the_split_skill_completion_beneath_the_list_and_pane() {
-    const WARNING: &str =
-        "Some Skills failed to load from the Workspace: review/SKILL.md has no description";
+    const WARNING: &str = "Some Skills failed to load: review/SKILL.md has no description";
     let workspace = workspace_dir();
     let mut application = Application::new(workspace.path(), Default::default());
     application

@@ -376,7 +376,7 @@ pub(super) fn render_with_slots(
         }
     }
     if state.composer_completion.is_visible() && !state.reconnect_overlay_visible() {
-        render_composer_completion(frame, state, composer.area, main, theme);
+        render_composer_completion(frame, state, composer.area, theme);
     }
     // The Subagent Picker docks over the composer the way the completion list
     // does: it belongs to the composer's place on screen, not to the main
@@ -4943,41 +4943,21 @@ struct ComposerDock {
 
 impl ComposerDock {
     /// The widest a dock stands, and the widest it stands once it details
-    /// the selected row in a pane beside its list.
+    /// the selected row in a pane beside its list. Neither stands wider than
+    /// the composer it docks over.
     const WIDTH: u16 = 72;
     const SPLIT_WIDTH: u16 = 104;
 
     /// Docks `desired_rows` of content over the composer, giving up rows from
     /// the bottom when the frame cannot spare them all.
     fn over(frame: &Frame<'_>, composer_area: Rect, desired_rows: u16) -> Self {
-        Self::spanning(
-            frame,
-            composer_area,
-            frame.area(),
-            composer_area.width.clamp(1, Self::WIDTH),
-            desired_rows,
-        )
+        Self::spanning(frame, composer_area, Self::WIDTH, desired_rows)
     }
 
-    /// The width a dock detailing its selected row stands at: past the
-    /// composer's own columns where `main` has the room, so the pane beside
-    /// the list is wide enough to read.
-    fn split_width(composer_area: Rect, main: Rect) -> u16 {
-        main.width
-            .saturating_sub(4)
-            .min(Self::SPLIT_WIDTH)
-            .max(composer_area.width)
-    }
-
-    /// [`Self::over`], `width` columns wide, centered on the composer's
-    /// columns as far as the columns of `bounds` allow.
-    fn spanning(
-        frame: &Frame<'_>,
-        composer_area: Rect,
-        bounds: Rect,
-        width: u16,
-        desired_rows: u16,
-    ) -> Self {
+    /// [`Self::over`], at most `max_width` columns wide and never wider than
+    /// the composer, centered on the composer's columns.
+    fn spanning(frame: &Frame<'_>, composer_area: Rect, max_width: u16, desired_rows: u16) -> Self {
+        let width = composer_area.width.clamp(1, max_width.max(1));
         let room_above = composer_area.y.saturating_sub(frame.area().y);
         let bordered = room_above >= 3;
         let height = if bordered {
@@ -4985,11 +4965,9 @@ impl ComposerDock {
         } else {
             desired_rows.min(room_above.max(1))
         };
-        let center = composer_area.x.saturating_add(composer_area.width / 2);
-        let x = center
-            .saturating_sub(width / 2)
-            .min(bounds.right().saturating_sub(width))
-            .max(bounds.x);
+        let x = composer_area
+            .x
+            .saturating_add(composer_area.width.saturating_sub(width) / 2);
         let y = composer_area.y.saturating_sub(height).max(frame.area().y);
         Self {
             area: Rect::new(x, y, width, height),
@@ -5010,14 +4988,13 @@ fn render_composer_completion(
     frame: &mut Frame<'_>,
     state: &TuiState,
     composer_area: Rect,
-    main: Rect,
     theme: &Theme,
 ) {
-    // Once the composer is as wide as a dock stands, the dock widens to
+    // Once the composer is as wide as a dock stands, the dock spans it to
     // detail the selected row beside the list, so a description is read
     // whole rather than cut off at the end of its row.
     if composer_area.width >= ComposerDock::WIDTH
-        && render_split_composer_completion(frame, state, composer_area, main, theme)
+        && render_split_composer_completion(frame, state, composer_area, theme)
     {
         return;
     }
@@ -5056,7 +5033,6 @@ fn render_split_composer_completion(
     frame: &mut Frame<'_>,
     state: &TuiState,
     composer_area: Rect,
-    main: Rect,
     theme: &Theme,
 ) -> bool {
     let completion = &state.composer_completion;
@@ -5075,7 +5051,7 @@ fn render_split_composer_completion(
         };
         (SplitBox::new(area, body, COMPLETION_SPLIT_LIST), message)
     };
-    let width = ComposerDock::split_width(composer_area, main);
+    let width = composer_area.width.min(ComposerDock::SPLIT_WIDTH);
     // The pane is as wide whatever the dock's height, so its width is
     // measured on a box of the dock's width before the dock is stood up.
     let pane_width = split(Rect::new(0, 0, width, 3)).0.pane_content().width;
@@ -5108,7 +5084,7 @@ fn render_split_composer_completion(
     let listed_rows = rows.len() - message_rows;
     let desired_rows = u16::try_from(listed_rows.max(pane_rows) + message_rows).unwrap_or(u16::MAX);
     let ComposerDock { area, bordered } =
-        ComposerDock::spanning(frame, composer_area, main, width, desired_rows);
+        ComposerDock::spanning(frame, composer_area, width, desired_rows);
     let (split, message_area) = split(area);
     if !bordered || usize::from(split.pane_content().height) < least_rows {
         return false;
