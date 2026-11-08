@@ -2078,15 +2078,14 @@ fn project_session_event(
         }
         // Copilot switching Models of its own accord mid-Turn is a Reroute where it reports it.
         // With no Turn open there is nothing it switched away from.
-        SessionEventType::SessionModelChange => Ok(correlation
-            .turn
-            .as_ref()
-            .and(reported::<SessionModelChangeData>(&event))
-            .as_ref()
-            .and_then(reroute)
-            .map(|reroute| attributed(None, reroute))
-            .into_iter()
-            .collect()),
+        SessionEventType::SessionModelChange if correlation.turn.is_some() => {
+            Ok(reported::<SessionModelChangeData>(&event)
+                .as_ref()
+                .and_then(reroute)
+                .map(|reroute| attributed(None, reroute))
+                .into_iter()
+                .collect())
+        }
         SessionEventType::SessionAutoTierSwitchFailed => Ok(reported(&event)
             .map(|refusal| correlation.project_tier_refused(refusal))
             .unwrap_or_default()),
