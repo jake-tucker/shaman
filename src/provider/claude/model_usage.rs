@@ -189,6 +189,11 @@ pub(super) fn total_usage(shares: &[ShareReport]) -> Usage {
     )
 }
 
+/// `total` and `part` added part by part. A part either leaves unknown is unknown in the sum,
+/// unlike [`crate::protocol::UsageTotal::saturating_add`], which keeps whichever side is known:
+/// that totals Turns a surface shows together, where a Turn that measured nothing leaves the
+/// others' figures standing, while this makes one Turn's Usage, which states no part it cannot
+/// state whole.
 fn sum(total: &Usage, part: &Usage) -> Usage {
     let add = |total: Option<u64>, part: Option<u64>| {
         total

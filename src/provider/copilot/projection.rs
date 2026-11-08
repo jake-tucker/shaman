@@ -2505,8 +2505,9 @@ pub(super) fn priced_usage(
     priced_call(event, pricing).map(|call| (call.usage, call.cost))
 }
 
-/// One model call's `assistant.usage` report: what [`priced_usage`] reads of it, and the Model it
-/// names as the one the call ran on, absent where it names none.
+/// One model call's `assistant.usage` report as [`priced_call`] reads it: its Usage, its Cost, and
+/// the Model it names as the one the call ran on, absent where it names none. [`priced_usage`] is
+/// this without the Model.
 struct PricedCall {
     model: Option<ModelId>,
     usage: Usage,

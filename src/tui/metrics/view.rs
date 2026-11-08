@@ -30,7 +30,7 @@ use crate::{
 use super::{
     super::slots::truncate_to_width,
     BarStrip, FocusedRow, LEGEND_SERIES, MetricsContent, MetricsReadRefusal, MetricsTab,
-    MetricsView, Offered, OfferedBreakdown,
+    MetricsView, Offered,
     calendar::{MetricsRange, RangeBuckets},
     chart::{self, Figure, MetricsMeasure, Series},
     headline::{self, HEADLINE_ROWS},

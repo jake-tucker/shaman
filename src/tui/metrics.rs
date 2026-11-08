@@ -83,14 +83,10 @@ impl Offered for UsageMetricsBreakdown {
     }
 }
 
-/// A breakdown in the words its notes use, beside its control's.
-pub(super) trait OfferedBreakdown: Offered {
-    /// What several of its keys are called.
-    fn plural(self) -> &'static str;
-}
-
-impl OfferedBreakdown for UsageMetricsBreakdown {
-    fn plural(self) -> &'static str {
+impl UsageMetricsBreakdown {
+    /// What several of its keys are called, in the words its notes use
+    /// beside its control's.
+    pub(super) fn plural(self) -> &'static str {
         match self {
             Self::Model => "Models",
             Self::Provider => "Providers",

@@ -1601,18 +1601,9 @@ impl ReportedMetering {
     }
 
     /// Adds one report to the reading `slot` holds, starting it with that
-    /// report where there is none yet, and answers the reading.
-    pub(super) fn accumulate(
-        slot: &mut Option<Self>,
-        usage: Usage,
-        reported_cost: Option<Cost>,
-    ) -> &Self {
-        Self::accumulate_on(slot, None, usage, reported_cost)
-    }
-
-    /// Adds one report to the reading `slot` holds, as
-    /// [`Self::accumulate`] does, and to the Model Share of `model` beside
-    /// it where the report names the Model whose call it measures.
+    /// report where there is none yet, and to the Model Share of `model`
+    /// beside it where the report names the Model whose call it measures,
+    /// and answers the reading.
     pub(super) fn accumulate_on(
         slot: &mut Option<Self>,
         model: Option<ModelId>,

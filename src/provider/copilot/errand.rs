@@ -165,7 +165,7 @@ impl ErrandMetering {
             self.lost = true;
             return;
         };
-        ReportedMetering::accumulate(&mut self.reading, usage, cost);
+        ReportedMetering::accumulate_on(&mut self.reading, None, usage, cost);
     }
 }
 
