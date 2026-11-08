@@ -128,10 +128,6 @@ enum ServerCommand {
     },
 }
 
-/// What a stop holds back, and what it does not.
-const STAYS_STOPPED: &str = "None is restarted until the next login or `suru server start`, and \
-                             opening Suru or running `suru relay` or `suru serve` starts one.";
-
 #[tokio::main]
 async fn main() -> Result<ExitCode> {
     std::hint::black_box(&BUILD_ID);
@@ -203,12 +199,12 @@ async fn main() -> Result<ExitCode> {
             }
             match stop_server(&config).await? {
                 ServerStop::Stopped(health) => println!(
-                    "Suru server stopped (pid {}, instance {}). {STAYS_STOPPED}",
+                    "Suru server stopped (pid {}, instance {})",
                     health.identity.pid, health.identity.instance_id
                 ),
                 ServerStop::NoneRunning => println!(
-                    "No Suru server was running on the `{}` Channel. A stop is recorded. \
-                     {STAYS_STOPPED}",
+                    "No Suru server was running on the `{}` Channel. A stop is recorded, so none \
+                     is restarted until the next login or `suru server start`.",
                     config.channel()
                 ),
             }
