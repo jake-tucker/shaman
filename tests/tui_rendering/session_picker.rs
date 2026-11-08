@@ -1,13 +1,12 @@
 //! The session picker: ordering, search, scope, attach, and deletion.
 
 use crate::tui_rendering::support::{
-    connected_application, connected_application_homed, enter_active_session,
+    PANDA, connected_application, connected_application_homed, enter_active_session,
     failed_session_snapshot, named_workspace_path, navigable_session_snapshot,
     noncanonical_spelling, rendered_application_buffer, rendered_application_rows,
     rendered_application_rows_at, rendered_row, text_position, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use ratatui::style::Color;
 use suru::{
     managed_client::ManagedEvent,
     protocol::{
@@ -727,7 +726,7 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
             .cell((tag_columns[0], row))
             .expect("draw the Origin-like text in the title")
             .fg,
-        Color::DarkGray,
+        PANDA.muted,
         "title text that resembles an Origin tag keeps the row style"
     );
     assert_eq!(
@@ -735,7 +734,7 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
             .cell((tag_columns[1], row))
             .expect("draw the actual Origin tag")
             .fg,
-        Color::DarkGray,
+        PANDA.muted,
         "the foreign Origin tag is subdued independently of row focus"
     );
     assert_eq!(

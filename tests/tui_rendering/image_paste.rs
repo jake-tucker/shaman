@@ -6,7 +6,6 @@
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use ratatui::style::Color;
 use suru::{
     managed_client::SessionEvent,
     protocol::{
@@ -21,8 +20,8 @@ use suru::{
 };
 
 use crate::tui_rendering::support::{
-    add_activity, approval_activity, click_mouse, connected_application, enter_active_session,
-    invoke, key, rendered_application_buffer, rendered_application_rows,
+    PANDA, add_activity, approval_activity, click_mouse, connected_application,
+    enter_active_session, invoke, key, rendered_application_buffer, rendered_application_rows,
     rendered_application_rows_at, text_position, type_terminal_text, workspace_dir,
 };
 
@@ -372,7 +371,7 @@ fn a_dimmed_line_beneath_the_text_describes_each_attachment_until_its_label_goes
         .windows("[Image 1]".len())
         .find(|window| window.iter().map(|cell| cell.symbol()).collect::<String>() == "[Image 1]")
         .expect("the label is drawn");
-    assert!(label.iter().all(|cell| cell.fg == Color::Cyan));
+    assert!(label.iter().all(|cell| cell.fg == PANDA.primary));
 
     key(&mut application, KeyCode::Backspace);
     key(&mut application, KeyCode::Backspace);

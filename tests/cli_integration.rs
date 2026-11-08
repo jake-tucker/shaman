@@ -2175,6 +2175,11 @@ async fn attached_tui_restores_its_terminal_and_exits_on_manual_stop() {
 async fn clean_tui_exit_restores_the_terminal() {
     let servers = DetachedServers::new();
     let channel = "clean-tui-exit-test";
+    std::fs::write(
+        servers.state_dir().join("suru.jsonc"),
+        r#"{ "appearance": { "theme": "system" } }"#,
+    )
+    .expect("select System for the terminal-color repaint");
     start_server_for_tui(&servers, channel).await;
 
     let mut tui = AttachedTui::spawn(&servers, channel);

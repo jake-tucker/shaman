@@ -4,10 +4,10 @@ use crate::support::deadlines::PROGRESS_DEADLINE;
 use crate::tui_rendering::{
     failing_provider_support::spawn_with_failing_provider,
     support::{
-        buffer_rows, click_mouse, connected_application, connected_application_with_terminal_facts,
-        failed_session_snapshot, model_descriptor, navigable_session_snapshot,
-        rendered_application_buffer, rendered_application_rows_at, rendered_row, text_position,
-        workspace_dir,
+        PANDA, buffer_rows, click_mouse, connected_application,
+        connected_application_with_terminal_facts, failed_session_snapshot, model_descriptor,
+        navigable_session_snapshot, rendered_application_buffer, rendered_application_rows_at,
+        rendered_row, text_position, workspace_dir,
     },
 };
 use crossterm::event::{
@@ -290,28 +290,50 @@ fn transcript_content_with_terminal_escapes_renders_sanitized_cells() {
         assert!(!screen.contains(hidden));
     }
     assert_no_control_cells(&buffer);
-    assert_ne!(text_cell(&buffer, "Build finished").fg, Color::Green);
-    assert_ne!(text_cell(&buffer, "Prompt section 1").fg, Color::Red);
-    assert_eq!(text_cell(&buffer, "test result").fg, Color::LightRed);
+    assert_ne!(text_cell(&buffer, "Build finished").fg, PANDA.success);
+    assert_ne!(text_cell(&buffer, "Prompt section 1").fg, PANDA.error);
+    assert_eq!(text_cell(&buffer, "test result").fg, PANDA.error);
     assert!(
         text_cell(&buffer, "test result")
             .modifier
             .contains(Modifier::BOLD)
     );
-    assert_eq!(text_cell(&buffer, "green-ok").fg, Color::Green);
+    assert_eq!(text_cell(&buffer, "green-ok").fg, PANDA.success);
     assert!(
         !text_cell(&buffer, "green-ok")
             .modifier
             .contains(Modifier::BOLD)
     );
-    assert_eq!(text_cell(&buffer, ". 78 passed").fg, Color::DarkGray);
+    assert_eq!(text_cell(&buffer, ". 78 passed").fg, PANDA.muted);
 }
 
 #[test]
-fn all_base_ansi_foregrounds_and_backgrounds_render_through_the_theme_palette() {
+fn default_theme_base_ansi_foregrounds_and_backgrounds_use_pandas_palette() {
     let workspace = workspace_dir();
     let application =
-        application_with_ansi_palette_output(workspace.path(), TerminalFacts::default());
+        application_with_ansi_palette_output(workspace.path(), TerminalFacts::default(), None);
+    let buffer = rendered_application_buffer(&application, 160, 30);
+    let derived = [
+        PANDA.panel,
+        PANDA.error,
+        PANDA.success,
+        PANDA.warning,
+        PANDA.primary,
+        PANDA.secondary,
+        PANDA.info,
+        PANDA.text,
+    ];
+    assert_ansi_palette(&buffer, &derived, &derived);
+}
+
+#[test]
+fn system_theme_base_ansi_foregrounds_and_backgrounds_use_the_terminal_palette() {
+    let workspace = workspace_dir();
+    let application = application_with_ansi_palette_output(
+        workspace.path(),
+        TerminalFacts::default(),
+        Some("system"),
+    );
     let buffer = rendered_application_buffer(&application, 160, 30);
     let normal = [
         Color::Black,
@@ -339,22 +361,10 @@ fn all_base_ansi_foregrounds_and_backgrounds_render_through_the_theme_palette() 
 #[test]
 fn named_theme_base_ansi_foregrounds_and_backgrounds_use_its_derived_palette() {
     let workspace = workspace_dir();
-    let mut application =
-        application_with_ansi_palette_output(workspace.path(), TerminalFacts::unprobed(true));
-    deliver_settings(
-        &mut application,
-        EffectiveSettings {
-            appearance: AppearanceSettings {
-                theme: "catppuccin".to_owned(),
-                ..AppearanceSettings::default()
-            },
-            transcript: TranscriptSettings {
-                groups: GroupPosture::Off,
-                ..TranscriptSettings::default()
-            },
-            ..EffectiveSettings::default()
-        },
-        &["transcript.groups"],
+    let application = application_with_ansi_palette_output(
+        workspace.path(),
+        TerminalFacts::unprobed(true),
+        Some("catppuccin"),
     );
 
     let buffer = rendered_application_buffer(&application, 160, 30);
@@ -374,9 +384,10 @@ fn named_theme_base_ansi_foregrounds_and_backgrounds_use_its_derived_palette() {
 pub(super) fn application_with_ansi_palette_output(
     workspace: &std::path::Path,
     terminal_facts: TerminalFacts,
+    theme: Option<&str>,
 ) -> Application {
     let mut application = Application::new(workspace, terminal_facts);
-    ungroup(&mut application);
+    ungroup_with_theme(&mut application, theme);
     let mut snapshot = navigable_session_snapshot(SessionId::new(), workspace, 1);
     let turn_id = snapshot.turns[0].id;
     set_turn_in_flight(&mut snapshot, turn_id);
@@ -463,7 +474,7 @@ fn escape_laden_transcript_stays_clean_after_scroll_and_session_switch() {
             .join("\n")
             .contains("artifact marker")
     );
-    assert_eq!(text_cell(escaped_buffer, "red").fg, Color::Red);
+    assert_eq!(text_cell(escaped_buffer, "red").fg, PANDA.error);
     assert_no_control_cells(escaped_buffer);
     application
         .handle_event(ApplicationEvent::Command(CommandId::ScrollTranscriptPageUp))
@@ -532,16 +543,16 @@ fn activity_sgr_styles_patch_over_each_activity_base_style() {
     press_leader_chord(&mut application, 'f');
 
     let buffer = rendered_application_buffer(&application, 120, 28);
-    assert_eq!(text_cell(&buffer, "bright pair").fg, Color::LightYellow);
-    assert_eq!(text_cell(&buffer, "bright pair").bg, Color::LightBlue);
-    assert_eq!(text_cell(&buffer, "plain status").fg, Color::DarkGray);
+    assert_eq!(text_cell(&buffer, "bright pair").fg, PANDA.warning);
+    assert_eq!(text_cell(&buffer, "bright pair").bg, PANDA.primary);
+    assert_eq!(text_cell(&buffer, "plain status").fg, PANDA.muted);
 
     let decorated_error = text_cell(&buffer, "under reversed");
-    assert_eq!(decorated_error.fg, Color::Red);
+    assert_eq!(decorated_error.fg, PANDA.error);
     assert!(decorated_error.modifier.contains(Modifier::UNDERLINED));
     assert!(decorated_error.modifier.contains(Modifier::REVERSED));
     let plain_error = text_cell(&buffer, "plain error");
-    assert_eq!(plain_error.fg, Color::Red);
+    assert_eq!(plain_error.fg, PANDA.error);
     assert!(!plain_error.modifier.contains(Modifier::UNDERLINED));
     assert!(!plain_error.modifier.contains(Modifier::REVERSED));
 
@@ -640,7 +651,7 @@ fn command_output_osc_8_hyperlinks_render_with_link_style() {
     let buffer = rendered_application_buffer(&application, 100, 24);
     for link_text in ["bel link", "st link"] {
         let cell = text_cell(&buffer, link_text);
-        assert_eq!(cell.fg, Color::Blue);
+        assert_eq!(cell.fg, PANDA.info);
         assert!(cell.modifier.contains(Modifier::UNDERLINED));
     }
     assert_no_control_cells(&buffer);
@@ -892,28 +903,28 @@ async fn streamed_agent_markdown_updates_one_unboxed_row_through_the_real_sessio
                 .cell((user_accent_column, row))
                 .expect("accent cell")
                 .fg,
-            Color::Cyan
+            PANDA.primary
         );
         assert_eq!(
             completed
                 .cell((user_block_right_edge, row))
                 .expect("elevated row edge")
                 .bg,
-            Color::Reset,
+            PANDA.panel,
             "the inherited surface spans the full user block width"
         );
     }
-    assert_eq!(text_cell(&completed, "┃").fg, Color::Cyan);
+    assert_eq!(text_cell(&completed, "┃").fg, PANDA.primary);
     assert_eq!(
         completed
             .cell((user_accent_column + 2, user_row))
             .unwrap()
             .bg,
-        Color::Reset
+        PANDA.panel
     );
-    assert_eq!(text_cell(&completed, "Error:").fg, Color::Red);
-    assert_eq!(text_cell(&completed, "Reading files").fg, Color::DarkGray);
-    assert_eq!(text_cell(&completed, "Streamed heading").fg, Color::Cyan);
+    assert_eq!(text_cell(&completed, "Error:").fg, PANDA.error);
+    assert_eq!(text_cell(&completed, "Reading files").fg, PANDA.muted);
+    assert_eq!(text_cell(&completed, "Streamed heading").fg, PANDA.primary);
     assert!(
         text_cell(&completed, "Streamed heading")
             .modifier
@@ -924,13 +935,13 @@ async fn streamed_agent_markdown_updates_one_unboxed_row_through_the_real_sessio
             .modifier
             .contains(Modifier::ITALIC)
     );
-    assert_eq!(text_cell(&completed, "link").fg, Color::Cyan);
+    assert_eq!(text_cell(&completed, "link").fg, PANDA.warning);
     assert!(
         text_cell(&completed, "link")
             .modifier
             .contains(Modifier::UNDERLINED)
     );
-    assert_eq!(text_cell(&completed, "inline code").fg, Color::Yellow);
+    assert_eq!(text_cell(&completed, "inline code").fg, PANDA.success);
 
     drop(subscription);
     drop(client);
@@ -942,18 +953,18 @@ async fn streamed_agent_markdown_updates_one_unboxed_row_through_the_real_sessio
 fn command_activities_render_active_successful_and_failed_states_at_responsive_widths() {
     let workspace = workspace_dir();
     let cases = [
-        (ActivityStatus::Active, None, "⠋ cargo test", Color::Cyan),
+        (ActivityStatus::Active, None, "⠋ cargo test", PANDA.primary),
         (
             ActivityStatus::Completed,
             Some(0),
             "✓ cargo test",
-            Color::Green,
+            PANDA.success,
         ),
         (
             ActivityStatus::Failed,
             Some(17),
             "× cargo test (exit 17)",
-            Color::Red,
+            PANDA.error,
         ),
     ];
 
@@ -1031,7 +1042,7 @@ fn file_change_activities_render_active_successful_and_failed_states_at_responsi
                 "⠋ Deleting old.rs",
                 "⠋ Editing src/lib.rs",
             ],
-            Color::Cyan,
+            PANDA.primary,
         ),
         (
             ActivityStatus::Completed,
@@ -1041,7 +1052,7 @@ fn file_change_activities_render_active_successful_and_failed_states_at_responsi
                 "✓ Deleted old.rs",
                 "✓ Edited src/lib.rs",
             ],
-            Color::Green,
+            PANDA.success,
         ),
         (
             ActivityStatus::Failed,
@@ -1051,7 +1062,7 @@ fn file_change_activities_render_active_successful_and_failed_states_at_responsi
                 "× Failed to delete old.rs",
                 "× Failed to edit src/lib.rs",
             ],
-            Color::Red,
+            PANDA.error,
         ),
     ];
 
@@ -1104,7 +1115,7 @@ fn file_change_activities_render_active_successful_and_failed_states_at_responsi
                 .map_or(expected, |(action, _)| action);
             assert_eq!(text_cell(&desktop, action).fg, color);
         }
-        assert_eq!(text_cell(&desktop, "src/a.rs").fg, Color::DarkGray);
+        assert_eq!(text_cell(&desktop, "src/a.rs").fg, PANDA.muted);
 
         let compact = rendered_application_rows_at(&application, 43, 18).join("\n");
         for expected in rows {
@@ -2832,7 +2843,7 @@ fn a_command_interrupted_without_being_watched_folds_to_its_single_row() {
     );
     assert_eq!(
         text_cell(&buffer, "× cargo test").fg,
-        Color::Yellow,
+        PANDA.warning,
         "an interrupted command wears the warning face, as a stop rather than a failure"
     );
     assert!(
@@ -2861,7 +2872,7 @@ fn a_tool_call_interrupted_without_being_watched_folds_to_its_single_row() {
 
     assert_eq!(
         text_cell(&buffer, "× github/search_issues").fg,
-        Color::Yellow,
+        PANDA.warning,
         "an interrupted Tool Call wears the warning face: {rendered}"
     );
     assert!(
@@ -3128,7 +3139,14 @@ fn session_opened_under(
 /// in. The Sidebar and Aside stay hidden, as they are before any Settings
 /// arrive, so the frame keeps the width the test was written against.
 fn ungroup(application: &mut Application) {
+    ungroup_with_theme(application, None);
+}
+
+fn ungroup_with_theme(application: &mut Application, theme: Option<&str>) {
     let mut settings = settings_with_groups(GroupPosture::Off);
+    if let Some(theme) = theme {
+        settings.appearance.theme = theme.to_owned();
+    }
     settings.sidebar.initial_visibility = suru::protocol::SidebarVisibility::Hidden;
     settings.aside.initial_visibility = suru::protocol::AsideVisibility::Hidden;
     deliver_settings(application, settings, &["transcript.groups"]);
@@ -3879,19 +3897,19 @@ fn subagent_rows_render_working_settled_failed_and_stopped_states() {
             ActivityStatus::Active,
             None,
             "⠋ Subagent: Explore: Map the provider seams",
-            Color::Cyan,
+            PANDA.primary,
         ),
         (
             ActivityStatus::Completed,
             Some(12_000),
             "✓ Subagent: Explore: Map the provider seams · 12s",
-            Color::DarkGray,
+            PANDA.muted,
         ),
         (
             ActivityStatus::Failed,
             Some(3_000),
             "× Subagent: Explore: Map the provider seams · 3s",
-            Color::Red,
+            PANDA.error,
         ),
         // Stopped on request wears the interrupted Turn's own face, so a stop
         // reads as a stop rather than as the Subagent going wrong.
@@ -3899,7 +3917,7 @@ fn subagent_rows_render_working_settled_failed_and_stopped_states() {
             ActivityStatus::Interrupted,
             Some(8_000),
             "× Subagent: Explore: Map the provider seams · 8s",
-            Color::Yellow,
+            PANDA.warning,
         ),
     ];
 
@@ -3964,7 +3982,7 @@ fn tool_call_rows_lead_with_their_marker_then_their_tool_and_input() {
             "create_issue",
             "title=Fix the seam",
             "⠋ github/create_issue title=Fix the seam",
-            Color::Cyan,
+            PANDA.primary,
         ),
         (
             ActivityStatus::Completed,
@@ -3972,7 +3990,7 @@ fn tool_call_rows_lead_with_their_marker_then_their_tool_and_input() {
             "Read",
             "file_path=src/lib.rs",
             "✓ Read file_path=src/lib.rs",
-            Color::Green,
+            PANDA.success,
         ),
         (
             ActivityStatus::Failed,
@@ -3980,7 +3998,7 @@ fn tool_call_rows_lead_with_their_marker_then_their_tool_and_input() {
             "WebFetch",
             "url=https://example.com/missing",
             "× WebFetch url=https://example.com/missing",
-            Color::Red,
+            PANDA.error,
         ),
         // A Tool given no arguments is its name alone.
         (
@@ -3989,7 +4007,7 @@ fn tool_call_rows_lead_with_their_marker_then_their_tool_and_input() {
             "list_providers",
             "",
             "✓ suru/list_providers",
-            Color::Green,
+            PANDA.success,
         ),
     ];
 
@@ -4677,14 +4695,14 @@ fn watch_outcome_rows_wear_the_outcome_marker_for_each_status_beside_the_provide
             "cargo test",
             Some(r#"Background command "cargo test" completed (exit code 0)"#),
             r#"    ✓ Background command "cargo test" completed (exit code 0)"#,
-            Color::DarkGray,
+            PANDA.muted,
         ),
         (
             WatchOutcomeStatus::Failed,
             "cargo test",
             Some(r#"Background command "cargo test" failed with exit code 1"#),
             r#"    × Background command "cargo test" failed with exit code 1"#,
-            Color::Red,
+            PANDA.error,
         ),
         // Stopped wears the face a stopped Subagent does, so a stop reads as
         // a stop rather than as the Watch going wrong.
@@ -4693,7 +4711,7 @@ fn watch_outcome_rows_wear_the_outcome_marker_for_each_status_beside_the_provide
             "tail logs",
             Some(r#"Monitor "tail logs" stopped"#),
             r#"    × Monitor "tail logs" stopped"#,
-            Color::Yellow,
+            PANDA.warning,
         ),
         // A Provider that gave no summary still says which Watch it was and
         // how it ended.
@@ -4702,7 +4720,7 @@ fn watch_outcome_rows_wear_the_outcome_marker_for_each_status_beside_the_provide
             "cargo test",
             None,
             r#"    ✓ "cargo test" completed"#,
-            Color::DarkGray,
+            PANDA.muted,
         ),
     ];
 
@@ -4759,7 +4777,7 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             None,
             None,
             "    ⠋ Compacting context",
-            Color::Cyan,
+            PANDA.primary,
         ),
         (
             ActivityStatus::Completed,
@@ -4768,7 +4786,7 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             Some(31_000),
             None,
             "    ✓ Compacted context · 182K → 31K (automatic)",
-            Color::DarkGray,
+            PANDA.muted,
         ),
         // A side nothing is known for is left out rather than guessed at.
         (
@@ -4778,7 +4796,7 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             None,
             None,
             "    ✓ Compacted context · 182K → (automatic)",
-            Color::DarkGray,
+            PANDA.muted,
         ),
         (
             ActivityStatus::Completed,
@@ -4787,7 +4805,7 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             Some(31_000),
             None,
             "    ✓ Compacted context · → 31K (automatic)",
-            Color::DarkGray,
+            PANDA.muted,
         ),
         (
             ActivityStatus::Completed,
@@ -4796,7 +4814,7 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             None,
             None,
             "    ✓ Compacted context (automatic)",
-            Color::DarkGray,
+            PANDA.muted,
         ),
         // A short history's summary can outgrow it, and reads as the Provider measured it.
         (
@@ -4806,7 +4824,7 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             Some(24_000),
             None,
             "    ✓ Compacted context · 20K → 24K (automatic)",
-            Color::DarkGray,
+            PANDA.muted,
         ),
         // Only the Provider's own choice says so: a Compaction the user asked
         // for is no surprise to them.
@@ -4817,7 +4835,7 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             Some(31_000),
             None,
             "    ✓ Compacted context · 182K → 31K",
-            Color::DarkGray,
+            PANDA.muted,
         ),
         (
             ActivityStatus::Failed,
@@ -4826,7 +4844,7 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             None,
             Some("Conversation too long"),
             "    × Compaction failed: Conversation too long",
-            Color::Red,
+            PANDA.error,
         ),
         (
             ActivityStatus::Failed,
@@ -4835,7 +4853,7 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             None,
             None,
             "    × Compaction failed",
-            Color::Red,
+            PANDA.error,
         ),
         // Cut off by an interrupt, it wears the face a stop does.
         (
@@ -4845,7 +4863,7 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             None,
             None,
             "    × Compaction stopped",
-            Color::Yellow,
+            PANDA.warning,
         ),
     ];
 
@@ -6388,8 +6406,7 @@ fn a_run_of_successful_commands_collapses_to_one_group_row() {
     }
     let affordance = text_cell(&buffer, "Ran 3 commands");
     assert_eq!(
-        affordance.fg,
-        Color::Blue,
+        affordance.fg, PANDA.primary,
         "the count is the expand affordance, styled action-primary"
     );
     assert!(
@@ -6398,7 +6415,7 @@ fn a_run_of_successful_commands_collapses_to_one_group_row() {
     );
     assert_eq!(
         text_cell(&buffer, "✓").fg,
-        Color::Green,
+        PANDA.success,
         "the header keeps the settled Activity-header marker"
     );
     let rows = buffer_rows(&buffer);
@@ -7202,12 +7219,12 @@ fn a_lone_running_command_is_a_collapsed_group_with_no_member_row() {
     assert!(!rendered.contains("output of command 1"), "{rendered}");
     assert_eq!(
         text_cell(&buffer, "Running 1 command").fg,
-        Color::Blue,
+        PANDA.primary,
         "the count stays the expand affordance while the Group runs"
     );
     assert_eq!(
         text_cell(&buffer, "· command 1").fg,
-        Color::DarkGray,
+        PANDA.muted,
         "the running member's summary is a dim suffix"
     );
 }
@@ -7311,7 +7328,7 @@ fn a_groups_header_counts_failed_and_stopped_members_and_marks_the_worst() {
                 RunEntry::Command(ActivityStatus::Interrupted, None),
             ],
             "× Ran 3 commands · 1 failed · 1 stopped",
-            Color::Red,
+            PANDA.error,
         ),
         (
             vec![
@@ -7319,7 +7336,7 @@ fn a_groups_header_counts_failed_and_stopped_members_and_marks_the_worst() {
                 RunEntry::Command(ActivityStatus::Interrupted, None),
             ],
             "× Ran 2 commands · 1 stopped",
-            Color::Yellow,
+            PANDA.warning,
         ),
         (
             vec![
@@ -7327,7 +7344,7 @@ fn a_groups_header_counts_failed_and_stopped_members_and_marks_the_worst() {
                 RunEntry::ToolCall(ActivityStatus::Failed),
             ],
             "× Used 2 tools · 1 failed",
-            Color::Red,
+            PANDA.error,
         ),
     ] {
         let snapshot = command_run_snapshot(SessionId::new(), workspace.path(), &entries);
@@ -7711,8 +7728,7 @@ fn a_run_of_completed_tool_calls_collapses_to_one_used_tools_row() {
     }
     let affordance = text_cell(&buffer, "Used 3 tools");
     assert_eq!(
-        affordance.fg,
-        Color::Blue,
+        affordance.fg, PANDA.primary,
         "the count is the expand affordance, styled action-primary"
     );
     assert!(
@@ -7721,7 +7737,7 @@ fn a_run_of_completed_tool_calls_collapses_to_one_used_tools_row() {
     );
     assert_eq!(
         text_cell(&buffer, "✓").fg,
-        Color::Green,
+        PANDA.success,
         "the header keeps the settled Activity-header marker"
     );
     let header = &rows[rendered_row(&rows, "Used 3 tools")];
@@ -8360,8 +8376,7 @@ fn a_run_of_settled_reasoning_blocks_collapses_to_one_thought_row() {
     }
     let affordance = text_cell(&buffer, "3 steps");
     assert_eq!(
-        affordance.fg,
-        Color::Blue,
+        affordance.fg, PANDA.primary,
         "the step count is the expand affordance, styled action-primary"
     );
 }
@@ -8537,7 +8552,7 @@ fn a_reasoning_groups_marker_speaks_for_a_member_stopped_before_its_latest() {
     );
     assert_eq!(
         text_cell(&buffer, "×").fg,
-        Color::Yellow,
+        PANDA.warning,
         "a stop wears the warning ×, however the latest member settled"
     );
 }
@@ -9466,7 +9481,7 @@ fn the_turn_a_compaction_request_began_shows_its_one_row_under_its_turn_fold() {
             Some(31_000),
             None,
             "✓ Compacted context · 182K → 31K",
-            Color::DarkGray,
+            PANDA.muted,
         ),
         (
             TurnStatus::Failed,
@@ -9475,7 +9490,7 @@ fn the_turn_a_compaction_request_began_shows_its_one_row_under_its_turn_fold() {
             None,
             Some("No messages to compact"),
             "× Compaction failed: No messages to compact",
-            Color::Red,
+            PANDA.error,
         ),
         // Interrupted, it left the context as it was: it measured nothing,
         // and wears the face a stop does rather than a failure's.
@@ -9486,7 +9501,7 @@ fn the_turn_a_compaction_request_began_shows_its_one_row_under_its_turn_fold() {
             None,
             None,
             "× Compaction stopped",
-            Color::Yellow,
+            PANDA.warning,
         ),
     ] {
         let mut snapshot = failed_session_snapshot(

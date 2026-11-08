@@ -5,7 +5,6 @@
 //! held, is demoted to plain text with a Notice naming it.
 
 use crossterm::event::KeyCode;
-use ratatui::style::Color;
 use suru::{
     protocol::{AttachmentId, Outlook, PromptId, SessionId, SessionReference, SessionTimestamp},
     tui::{
@@ -17,7 +16,7 @@ use suru::{
 use crate::tui_rendering::{
     image_paste::{answer_read, bound, descriptor, paste_image, png, read_clipboard, submit},
     support::{
-        connected_application, enter_active_session, failed_session_snapshot, invoke, key,
+        PANDA, connected_application, enter_active_session, failed_session_snapshot, invoke, key,
         rendered_application_buffer, rendered_application_rows, type_terminal_text, workspace_dir,
     },
 };
@@ -37,7 +36,7 @@ fn label_is_accented(application: &Application, label: &str) -> bool {
         .windows(label.len())
         .rfind(|window| window.iter().map(|cell| cell.symbol()).collect::<String>() == label)
         .unwrap_or_else(|| panic!("{label} is drawn"));
-    cells.iter().all(|cell| cell.fg == Color::Cyan)
+    cells.iter().all(|cell| cell.fg == PANDA.primary)
 }
 
 /// Opens `target` through the Session picker, listing it alone, and hydrates

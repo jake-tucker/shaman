@@ -3,11 +3,11 @@
 //! move its edge a column at a time.
 
 use crate::tui_rendering::support::{
-    add_activity, approval_activity, connected_application, deliver_settings, enter_active_session,
-    invoke, key, rendered_application_buffer, rendered_application_rows_at, workspace_dir,
+    PANDA, add_activity, approval_activity, connected_application, deliver_settings,
+    enter_active_session, invoke, key, rendered_application_buffer, rendered_application_rows_at,
+    workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use ratatui::style::Color;
 use std::time::Duration;
 use suru::{
     managed_client::{SessionEvent, SubagentTreeEvent},
@@ -95,7 +95,7 @@ fn aside_columns(application: &Application, aside_width: u16) -> Vec<String> {
 fn focused_aside_rows(application: &Application) -> Vec<u16> {
     let buffer = rendered_application_buffer(application, WIDTH, HEIGHT);
     (0..HEIGHT)
-        .filter(|row| buffer[(WIDTH - 30, *row)].bg == Color::Blue)
+        .filter(|row| buffer[(WIDTH - 30, *row)].bg == PANDA.primary)
         .collect()
 }
 

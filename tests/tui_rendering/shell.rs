@@ -3,7 +3,7 @@
 use crate::tui_rendering::{
     failing_provider_support::spawn_with_failing_provider,
     support::{
-        connected_application, connected_application_with_terminal_facts, enter_session,
+        PANDA, connected_application, connected_application_with_terminal_facts, enter_session,
         failed_session_snapshot, fixture_instance_id, model_descriptor, navigable_session_snapshot,
         ready_health, rendered_application_buffer, rendered_application_rows,
         rendered_application_rows_at, rendered_row, rendered_rows, text_position,
@@ -670,8 +670,7 @@ fn a_terminal_without_truecolor_uses_the_modifier_shimmer() {
         })
         .collect::<Vec<_>>();
     assert!(opening_styles.iter().all(|style| {
-        style.fg == Some(ratatui::style::Color::Reset)
-            && style.add_modifier.contains(ratatui::style::Modifier::DIM)
+        style.fg == Some(PANDA.text) && style.add_modifier.contains(ratatui::style::Modifier::DIM)
     }));
 
     for _ in 0..10 {
@@ -691,7 +690,7 @@ fn a_terminal_without_truecolor_uses_the_modifier_shimmer() {
     assert!(
         sweeping_styles
             .iter()
-            .all(|style| style.fg == Some(ratatui::style::Color::Reset))
+            .all(|style| style.fg == Some(PANDA.text))
     );
     assert!(
         sweeping_styles

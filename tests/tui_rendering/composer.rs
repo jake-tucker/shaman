@@ -1,7 +1,7 @@
 //! Composer input: cursor placement, growth, editing bindings, and history.
 
 use crate::tui_rendering::support::{
-    WorkspaceDir, buffer_rows, connected_application, enter_active_session, enter_session,
+    PANDA, WorkspaceDir, buffer_rows, connected_application, enter_active_session, enter_session,
     failed_session_snapshot, rendered_application_buffer, rendered_application_cursor_at,
     rendered_application_rows, rendered_application_rows_at, text_position, type_terminal_text,
     workspace_dir,
@@ -10,7 +10,6 @@ use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::layout::Position;
-use ratatui::style::Color;
 use suru::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
@@ -634,7 +633,7 @@ fn longest_exact_marker_is_accented_while_ambiguous_input_is_rejected_in_place()
         .expect("paste exact and ambiguous markers");
 
     let buffer = rendered_application_buffer(&application, 80, 15);
-    for (marker, color) in [("$lint.rs", Color::Cyan), ("$review", Color::Red)] {
+    for (marker, color) in [("$lint.rs", PANDA.primary), ("$review", PANDA.error)] {
         let cells = buffer
             .content()
             .windows(marker.len())
@@ -740,7 +739,7 @@ fn skill_bindings_follow_outside_edits_and_same_named_replacements_stay_stale() 
         .windows(7)
         .find(|window| window.iter().map(|cell| cell.symbol()).collect::<String>() == "$review")
         .expect("stale marker remains visible");
-    assert!(marker.iter().all(|cell| cell.fg == Color::Red));
+    assert!(marker.iter().all(|cell| cell.fg == PANDA.error));
     assert_eq!(
         stale
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
@@ -932,7 +931,7 @@ fn intersecting_a_binding_invalidates_it_and_unknown_dollar_tokens_stay_literal(
             .find(|window| window.iter().map(|cell| cell.symbol()).collect::<String>() == literal)
             .unwrap_or_else(|| panic!("rendered composer contains {literal}"));
         assert!(
-            cells.iter().all(|cell| cell.fg == Color::Reset),
+            cells.iter().all(|cell| cell.fg == PANDA.text),
             "unknown and incomplete dollar text keeps normal styling"
         );
     }

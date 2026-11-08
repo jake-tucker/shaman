@@ -834,7 +834,7 @@ impl ThemeCatalog {
             return theme
                 .variants
                 .get(variant)
-                .map(|theme| theme.for_terminal_capabilities(terminal_facts));
+                .map(|theme| theme.for_named_terminal_capabilities(terminal_facts));
         }
         Theme::resolve(name, mode, terminal_facts)
     }
@@ -886,7 +886,7 @@ impl Theme {
         }
         Self::named(name, variant)
             .unwrap_or_else(|| Err(ThemeError(format!("Theme {name:?} was not found"))))
-            .map(|theme| theme.for_terminal_capabilities(terminal_facts))
+            .map(|theme| theme.for_named_terminal_capabilities(terminal_facts))
     }
 
     fn for_terminal_capabilities(self, terminal_facts: &TerminalFacts) -> Self {
@@ -895,6 +895,21 @@ impl Theme {
         } else {
             self.quantized(&IndexedPalette::from_terminal_facts(terminal_facts))
         }
+    }
+
+    fn for_named_terminal_capabilities(self, terminal_facts: &TerminalFacts) -> Self {
+        let mut theme = self.for_terminal_capabilities(terminal_facts);
+        let border = theme.border.default.fg;
+        // A menu that shares the element color would otherwise hide the inactive cursor.
+        if theme.selection.unfocused.bg == theme.surface.overlay.bg
+            && border.is_some()
+            && border != theme.surface.overlay.bg
+            && border != theme.selection.unfocused.fg
+            && border != theme.selection.focused.bg
+        {
+            theme.selection.unfocused.bg = border;
+        }
+        theme
     }
 
     pub(crate) fn system() -> Self {
@@ -1514,6 +1529,57 @@ mod tests {
             Some(Color::Rgb(0x10, 0x10, 0x10))
         );
         assert_eq!(theme.surface.overlay.bg, Some(Color::Rgb(0x12, 0x12, 0x12)));
+    }
+
+    #[test]
+    fn panda_keeps_an_unfocused_selection_visible_in_truecolor_and_indexed_menus() {
+        for truecolor in [false, true] {
+            let theme = Theme::resolve(
+                "panda",
+                AppearanceMode::System,
+                &TerminalFacts::unprobed(truecolor),
+            )
+            .expect("resolve the built-in Panda Theme");
+
+            assert_eq!(theme.selection.unfocused.bg, theme.border.default.fg);
+            assert_ne!(theme.selection.unfocused.bg, theme.surface.overlay.bg);
+            assert_ne!(theme.selection.unfocused.bg, theme.selection.unfocused.fg);
+            assert_ne!(theme.selection.unfocused.bg, theme.selection.focused.bg);
+        }
+    }
+
+    #[test]
+    fn an_unfocused_selection_is_adjusted_only_when_the_terminal_collapses_its_menu_color() {
+        let source = document(
+            json!({}),
+            &[
+                ("backgroundElement", json!("#282828")),
+                ("backgroundMenu", json!("#292929")),
+                ("border", json!("#777777")),
+                ("text", json!("#eeeeee")),
+                ("primary", json!("#00aaff")),
+            ],
+        );
+        let theme = Theme::from_document(&source, ThemeVariant::Dark).expect("resolve Theme");
+        let truecolor = theme.for_named_terminal_capabilities(&TerminalFacts::unprobed(true));
+        assert_eq!(
+            truecolor.selection.unfocused.bg,
+            Some(Color::Rgb(40, 40, 40))
+        );
+        assert_ne!(
+            truecolor.selection.unfocused.bg,
+            truecolor.surface.overlay.bg
+        );
+
+        let indexed_facts = TerminalFacts::unprobed(false);
+        let quantized = theme.for_terminal_capabilities(&indexed_facts);
+        assert_eq!(
+            quantized.selection.unfocused.bg,
+            quantized.surface.overlay.bg
+        );
+        let indexed = theme.for_named_terminal_capabilities(&indexed_facts);
+        assert_eq!(indexed.selection.unfocused.bg, indexed.border.default.fg);
+        assert_ne!(indexed.selection.unfocused.bg, indexed.surface.overlay.bg);
     }
 
     #[test]

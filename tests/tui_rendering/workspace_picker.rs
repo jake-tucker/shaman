@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::tui_rendering::support::{
-    SIDEBAR_WIDE, answer_workspace_resolution, application_looking_at_studio,
+    PANDA, SIDEBAR_WIDE, answer_workspace_resolution, application_looking_at_studio,
     connected_application, deliver_settings, drawn_in_sidebar, enter_active_session,
     fixture_instance_id, model_descriptor, noncanonical_spelling, ready_health,
     rendered_application_buffer, rendered_application_rows, rendered_application_rows_at,
@@ -18,7 +18,6 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use ratatui::style::Color;
 use suru::{
     managed_client::ManagedEvent,
     protocol::{
@@ -406,7 +405,7 @@ fn the_unavailable_mark_stands_out_on_the_row_the_reader_is_on() {
     let buffer = rendered_application_buffer(&application, 80, 15);
     let cell = |needle: &str| buffer[text_position(&buffer, needle)].clone();
     let (mark, name) = (cell("[unavailable]"), cell("atlas"));
-    assert_eq!(mark.fg, Color::Yellow, "the mark is drawn as a warning");
+    assert_eq!(mark.fg, PANDA.warning, "the mark is drawn as a warning");
     assert_ne!(mark.fg, name.fg, "apart from the name beside it");
     assert_eq!(
         mark.bg, name.bg,

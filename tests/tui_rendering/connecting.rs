@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use crate::tui_rendering::support::{
-    fixture_instance_id, model_descriptor, navigable_session_snapshot, ready_health,
+    PANDA, fixture_instance_id, model_descriptor, navigable_session_snapshot, ready_health,
     rendered_application_rows, rendered_application_rows_at, text_on, type_terminal_text,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
@@ -1757,12 +1757,12 @@ fn the_address_cursor_is_drawn_before_the_keys_reach_the_address_list() {
     );
     assert!(draft.contains("  2. 192.168.1.24:7777"));
     assert_eq!(
-        connect_text_on(&application, Color::DarkGray).trim(),
+        connect_text_on(&application, PANDA.border).trim(),
         "› 1. 10.0.0.8:7777",
         "the address cursor is dimmed while the keys are in the name field"
     );
     assert_eq!(
-        connect_text_on(&application, Color::Blue).trim(),
+        connect_text_on(&application, PANDA.primary).trim(),
         "> studio",
         "the name field is lit because it is where the keys are"
     );
@@ -1774,7 +1774,7 @@ fn arrows_carry_the_keys_from_the_name_field_into_the_address_list() {
 
     press(&mut application, KeyCode::Down);
     assert_eq!(
-        connect_text_on(&application, Color::Blue).trim(),
+        connect_text_on(&application, PANDA.primary).trim(),
         "› 1. 10.0.0.8:7777",
         "one Down press lights the address the cursor was already marking"
     );
@@ -1793,14 +1793,14 @@ fn arrows_wrap_between_the_address_list_and_the_name_field() {
     // name field, so the column leads around through it.
     press(&mut application, KeyCode::Up);
     assert!(
-        connect_text_on(&application, Color::Blue)
+        connect_text_on(&application, PANDA.primary)
             .trim()
             .starts_with("› [-] Also let studio"),
         "Up from the name field comes to the option at the foot of the column"
     );
     press(&mut application, KeyCode::Up);
     assert_eq!(
-        connect_text_on(&application, Color::Blue).trim(),
+        connect_text_on(&application, PANDA.primary).trim(),
         "› 2. 192.168.1.24:7777",
         "and Up again enters the address list at its last row"
     );
@@ -1838,7 +1838,7 @@ fn the_priority_order_is_reorderable_before_the_keys_reach_the_address_list() {
         "Shift+↓ moves the marked address without the reader entering the list first"
     );
     assert_eq!(
-        connect_text_on(&application, Color::Blue).trim(),
+        connect_text_on(&application, PANDA.primary).trim(),
         "> studio",
         "reordering leaves the keys in the name field, so the name stays typeable"
     );

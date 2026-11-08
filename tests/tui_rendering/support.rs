@@ -224,6 +224,37 @@ pub fn fixture_instance_id() -> Uuid {
     Uuid::parse_str("c2f03bd2-b177-4e73-b33a-1fb4f3a8d002").expect("parse fixture instance ID")
 }
 
+/// Panda's roles on the unprobed indexed terminal used by most rendering fixtures.
+pub struct IndexedPanda {
+    pub primary: Color,
+    pub secondary: Color,
+    pub open_title: Color,
+    pub text: Color,
+    pub muted: Color,
+    pub panel: Color,
+    pub element: Color,
+    pub border: Color,
+    pub error: Color,
+    pub warning: Color,
+    pub success: Color,
+    pub info: Color,
+}
+
+pub const PANDA: IndexedPanda = IndexedPanda {
+    primary: Color::Indexed(39),
+    secondary: Color::Indexed(211),
+    open_title: Color::Indexed(50),
+    text: Color::Indexed(254),
+    muted: Color::Indexed(243),
+    panel: Color::Indexed(236),
+    element: Color::Indexed(237),
+    border: Color::Indexed(238),
+    error: Color::Indexed(197),
+    warning: Color::Indexed(215),
+    success: Color::Indexed(50),
+    info: Color::Indexed(111),
+};
+
 pub fn connected_application(workspace: &std::path::Path) -> Application {
     connected_application_with_terminal_facts(workspace, TerminalFacts::default())
 }

@@ -112,6 +112,60 @@ async fn appearance_theme_round_trips_byte_preservingly_and_reaches_every_client
 }
 
 #[tokio::test]
+async fn panda_defaults_while_a_pinned_system_theme_survives_restart_and_reset() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let config_dir = tempfile::tempdir().expect("create isolated config directory");
+    let server = server::spawn(
+        ServerConfig::new(state_dir.path(), "settings-theme-default")
+            .expect("configure server")
+            .with_config_dir(config_dir.path()),
+    )
+    .await
+    .expect("spawn server");
+    let (client, opening) = attach(state_dir.path(), "settings-theme-default").await;
+    assert_eq!(opening.settings.appearance.theme, "panda");
+    assert_eq!(opening.pinned_keys(), [] as [String; 0]);
+
+    let pinned = client
+        .mutate_setting(SettingMutation::AppearanceTheme {
+            value: Some("system".to_owned()),
+        })
+        .await
+        .expect("pin the System Theme");
+    assert_eq!(pinned.settings.appearance.theme, "system");
+    assert_eq!(pinned.pinned_keys(), ["appearance.theme"]);
+    assert!(config_document(config_dir.path()).contains("\"theme\": \"system\""));
+
+    drop(client);
+    server.shutdown().await.expect("shut down server");
+
+    let server = server::spawn(
+        ServerConfig::new(state_dir.path(), "settings-theme-default")
+            .expect("configure server")
+            .with_config_dir(config_dir.path()),
+    )
+    .await
+    .expect("restart server");
+    let (client, opening) = attach(state_dir.path(), "settings-theme-default").await;
+    assert_eq!(opening.settings.appearance.theme, "system");
+    assert_eq!(opening.pinned_keys(), ["appearance.theme"]);
+
+    let reset = client
+        .mutate_setting(SettingMutation::AppearanceTheme { value: None })
+        .await
+        .expect("reset the Theme");
+    assert_eq!(reset.settings.appearance.theme, "panda");
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
+    assert!(!config_document(config_dir.path()).contains("\"theme\""));
+    let (_, reconnected) = attach(state_dir.path(), "settings-theme-default").await;
+    assert_eq!(reconnected.settings.appearance.theme, "panda");
+    assert_eq!(reconnected.pinned_keys(), [] as [String; 0]);
+
+    drop(client);
+    server.shutdown().await.expect("shut down server");
+}
+
+#[tokio::test]
 async fn appearance_mode_round_trips_byte_preservingly_and_reaches_every_client() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");

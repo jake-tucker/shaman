@@ -35,6 +35,7 @@ To uninstall, delete the binary: `~/.local/bin/suru`, or `%LOCALAPPDATA%\Program
 The core "type a prompt and stuff happens" flow works as you might expect, so here are some of the additional
 cool things Suru does:
 
+- Themes - Panda is the default. Use `/themes` to choose another, including the terminal-derived System theme.
 - Cross-provider subagents - a Claude-managed Opus session can spin up a Codex-managed Astra session to review its work.
 - Copilot Auto visibility - when Copilot reports the concrete Model, see it on Agent Messages and while it is working;
   expand the Model Calls Fold to inspect reported calls, including identifiable failed attempts and repeated Models.

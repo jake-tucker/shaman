@@ -132,7 +132,7 @@ async fn safe_skill_invocations_are_readable_after_a_server_restart() {
         .find(|window| window.iter().map(|cell| cell.symbol()).collect::<String>() == "$review")
         .expect("restored recognized marker is visible");
     assert!(
-        marker.iter().all(|cell| cell.fg == Color::Cyan),
+        marker.iter().all(|cell| cell.fg == Color::Indexed(39)),
         "stored binding accents its marker without consulting the current catalog"
     );
     let transcript = terminal

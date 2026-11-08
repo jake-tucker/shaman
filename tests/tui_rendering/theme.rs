@@ -84,7 +84,7 @@ fn probed_system_application(background: TerminalColor, foreground: TerminalColo
             true,
         ),
     );
-    deliver_settings(&mut application, EffectiveSettings::default());
+    deliver_settings(&mut application, themed("system"));
     application
 }
 
@@ -98,9 +98,49 @@ fn press(
         .expect("handle Theme picker key")
 }
 
+fn preview_aura(application: &mut Application) {
+    open_theme_picker(application);
+    for character in "aura".chars() {
+        press(application, KeyCode::Char(character), KeyModifiers::NONE);
+    }
+}
+
+#[test]
+fn panda_is_the_default_theme_and_paints_the_landing() {
+    let workspace = workspace_dir();
+    let mut application =
+        connected_application_with_terminal_facts(workspace.path(), TerminalFacts::unprobed(true));
+    let settings = EffectiveSettings::default();
+    assert_eq!(settings.appearance.theme, "panda");
+    deliver_settings(&mut application, settings);
+
+    let buffer = rendered_application_buffer(&application, 100, 20);
+    assert_eq!(buffer.cell((99, 0)).unwrap().bg, Color::Rgb(41, 42, 43));
+
+    application.set_terminal_facts(TerminalFacts::new(
+        Some(TerminalColorProbe::new(
+            [None; 16],
+            None,
+            Some(TerminalColor::new(255, 255, 255)),
+        )),
+        true,
+    ));
+    let light_terminal = rendered_application_buffer(&application, 100, 20);
+    assert_eq!(
+        light_terminal.cell((99, 0)).unwrap().bg,
+        Color::Rgb(41, 42, 43),
+        "Panda keeps its dark palette even on a light terminal"
+    );
+
+    open_theme_picker(&mut application);
+    let picker = rendered_application_rows(&application).join("\n");
+    assert!(picker.contains("panda · [current]"), "{picker}");
+}
+
 #[test]
 fn picker_orders_system_first_then_the_built_ins_alphabetically() {
     let mut application = Application::default();
+    deliver_settings(&mut application, themed("system"));
     assert_eq!(
         open_theme_picker(&mut application),
         ApplicationTransition::Continue
@@ -228,6 +268,13 @@ fn rejected_user_theme_files_are_noticed_without_blocking_the_directory() {
     );
 
     open_theme_picker(&mut application);
+    for character in "aa".chars() {
+        press(
+            &mut application,
+            KeyCode::Char(character),
+            KeyModifiers::NONE,
+        );
+    }
     let picker = rendered_application_rows_at(&application, 120, 20).join("\n");
     assert!(picker.contains("aad-valid · [user]"), "{picker}");
     assert!(!picker.contains("aaa-broken · [user]"), "{picker}");
@@ -251,6 +298,10 @@ fn a_user_file_cannot_replace_the_terminal_derived_system_theme() {
     deliver_settings(
         &mut application,
         EffectiveSettings {
+            appearance: AppearanceSettings {
+                theme: "system".to_owned(),
+                ..AppearanceSettings::default()
+            },
             sidebar: SidebarSettings {
                 initial_visibility: SidebarVisibility::Hidden,
                 ..SidebarSettings::default()
@@ -394,7 +445,7 @@ fn moving_and_filtering_preview_the_top_match_without_leaving_the_client() {
     let workspace = workspace_dir();
     let mut application =
         connected_application_with_terminal_facts(workspace.path(), TerminalFacts::unprobed(true));
-    deliver_settings(&mut application, EffectiveSettings::default());
+    deliver_settings(&mut application, themed("system"));
     enter_session(&mut application, workspace.path());
     open_theme_picker(&mut application);
 
@@ -448,8 +499,7 @@ fn moving_and_filtering_preview_the_top_match_without_leaving_the_client() {
 #[test]
 fn escape_restores_the_opening_theme_and_enter_holds_preview_until_snapshot() {
     let mut application = truecolor_application();
-    open_theme_picker(&mut application);
-    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    preview_aura(&mut application);
     assert_eq!(
         rendered_application_buffer(&application, 80, 15)
             .cell((0, 0))
@@ -467,11 +517,10 @@ fn escape_restores_the_opening_theme_and_enter_holds_preview_until_snapshot() {
             .cell((0, 0))
             .unwrap()
             .bg,
-        Color::Reset
+        Color::Rgb(41, 42, 43)
     );
 
-    open_theme_picker(&mut application);
-    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    preview_aura(&mut application);
     assert_eq!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         MutatesSetting(SettingMutation::AppearanceTheme {
@@ -492,18 +541,17 @@ fn escape_restores_the_opening_theme_and_enter_holds_preview_until_snapshot() {
     deliver_settings(&mut application, EffectiveSettings::default());
     assert_eq!(
         rendered_application_buffer(&application, 80, 15)
-            .cell((0, 0))
+            .cell((79, 0))
             .unwrap()
             .bg,
-        Color::Reset
+        Color::Rgb(41, 42, 43)
     );
 }
 
 #[test]
 fn an_unrelated_snapshot_does_not_end_a_preview_still_being_browsed() {
     let mut application = truecolor_application();
-    open_theme_picker(&mut application);
-    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    preview_aura(&mut application);
 
     deliver_settings(&mut application, EffectiveSettings::default());
     hide_sidebar_as_view_state(&mut application);
@@ -525,8 +573,7 @@ fn an_unrelated_snapshot_does_not_end_a_preview_still_being_browsed() {
 #[test]
 fn escape_restores_the_opening_theme_after_another_client_changes_the_pin() {
     let mut application = truecolor_application();
-    open_theme_picker(&mut application);
-    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    preview_aura(&mut application);
 
     deliver_settings(&mut application, themed("catppuccin"));
     hide_sidebar_as_view_state(&mut application);
@@ -539,8 +586,8 @@ fn escape_restores_the_opening_theme_after_another_client_changes_the_pin() {
             .cell((0, 0))
             .unwrap()
             .bg,
-        Color::Reset,
-        "Escape restores System, which was in force when the picker opened"
+        Color::Rgb(41, 42, 43),
+        "Escape restores Panda, which was in force when the picker opened"
     );
 
     deliver_settings(&mut application, themed("catppuccin"));
@@ -557,8 +604,7 @@ fn escape_restores_the_opening_theme_after_another_client_changes_the_pin() {
 #[test]
 fn reopening_before_the_snapshot_keeps_the_confirmed_preview_as_the_opening_theme() {
     let mut application = truecolor_application();
-    open_theme_picker(&mut application);
-    press(&mut application, KeyCode::Down, KeyModifiers::NONE);
+    preview_aura(&mut application);
     assert!(matches!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::MutateSetting { .. }
@@ -992,7 +1038,7 @@ fn system_paints_dark_terminal_surfaces_borders_and_muted_text_dark() {
 fn an_unprobed_system_leaves_panel_backgrounds_to_the_terminal() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    deliver_settings(&mut application, EffectiveSettings::default());
+    deliver_settings(&mut application, themed("system"));
     let buffer = rendered_application_buffer(&application, 100, 20);
     let placeholder = text_position(&buffer, "Type a prompt");
     let composer_corner = (placeholder.0 - 2, placeholder.1 - 1);
@@ -1017,7 +1063,7 @@ fn system_leaves_panel_backgrounds_to_the_terminal_until_background_is_observed(
         true,
     );
     let mut application = connected_application_with_terminal_facts(workspace.path(), facts);
-    deliver_settings(&mut application, EffectiveSettings::default());
+    deliver_settings(&mut application, themed("system"));
     let buffer = rendered_application_buffer(&application, 100, 20);
     let placeholder = text_position(&buffer, "Type a prompt");
     let composer_corner = (placeholder.0 - 2, placeholder.1 - 1);
@@ -1033,7 +1079,7 @@ fn system_keeps_terminal_defaults_through_palette_replies_then_repaints_for_a_li
     let workspace = workspace_dir();
     let mut application =
         connected_application_with_terminal_facts(workspace.path(), TerminalFacts::unprobed(true));
-    deliver_settings(&mut application, EffectiveSettings::default());
+    deliver_settings(&mut application, themed("system"));
     let initial = rendered_application_buffer(&application, 100, 20);
     let mut palette = [None; 16];
     palette[0] = Some(TerminalColor::new(0, 0, 0));
@@ -1069,7 +1115,7 @@ fn unreported_system_palette_slots_keep_the_static_ansi_colors() {
         )),
         true,
     );
-    let application = application_with_ansi_palette_output(workspace.path(), facts);
+    let application = application_with_ansi_palette_output(workspace.path(), facts, Some("system"));
     let buffer = rendered_application_buffer(&application, 160, 30);
     let normal = [
         Color::Black,

@@ -5,7 +5,7 @@
 //! own loss still stands the whole frame down.
 
 use crate::tui_rendering::support::{
-    application_looking_at_studio, grace_elapses, navigable_session_snapshot,
+    PANDA, application_looking_at_studio, grace_elapses, navigable_session_snapshot,
     rendered_application_rows, rendered_application_rows_at, studio_stops_answering,
     studio_stops_answering_because, type_terminal_text,
 };
@@ -876,7 +876,7 @@ fn an_unreachable_remote_is_marked_and_dimmed_outside_everywhere() {
     let work = crate::tui_rendering::support::text_position(&buffer, "Studio work");
     assert_eq!(
         buffer.cell(work).expect("draw the Studio row").fg,
-        ratatui::style::Color::DarkGray,
+        PANDA.muted,
         "the Remote's cached rows are dimmed in every scope"
     );
 }

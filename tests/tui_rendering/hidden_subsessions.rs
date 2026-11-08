@@ -12,16 +12,15 @@ use std::{
 };
 
 use crate::tui_rendering::support::{
-    SIDEBAR_WIDE, add_activity, add_request, approval_activity, click_mouse, connected_application,
-    connected_application_homed, deliver_settings, drawn_in_sidebar, failed_session_snapshot,
-    listed_session, named_workspace_path, navigable_session_snapshot, rendered_application_buffer,
-    rendered_application_rows_at, rendered_row, sidebar_column, text_on, text_position,
-    type_terminal_text, workspace_dir,
+    PANDA, SIDEBAR_WIDE, add_activity, add_request, approval_activity, click_mouse,
+    connected_application, connected_application_homed, deliver_settings, drawn_in_sidebar,
+    failed_session_snapshot, listed_session, named_workspace_path, navigable_session_snapshot,
+    rendered_application_buffer, rendered_application_rows_at, rendered_row, sidebar_column,
+    text_on, text_position, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use ratatui::style::Color;
 use suru::{
     managed_client::{ManagedEvent, SessionEvent, SubagentTreeEvent},
     protocol::{
@@ -317,7 +316,7 @@ fn open_sidebar_text(application: &Application) -> String {
         .map(|row| {
             SIDEBAR_COLUMNS
                 .filter_map(|column| buffer.cell((column, row)))
-                .filter(|cell| cell.fg == Color::Cyan)
+                .filter(|cell| cell.fg == PANDA.open_title && cell.symbol() != "▎")
                 .map(|cell| cell.symbol())
                 .collect::<String>()
         })
@@ -330,7 +329,7 @@ fn open_sidebar_text(application: &Application) -> String {
 fn focused_sidebar_text(application: &Application) -> String {
     text_on(
         application,
-        Color::Blue,
+        PANDA.primary,
         (SIDEBAR_WIDE, TALL),
         SIDEBAR_COLUMNS,
     )

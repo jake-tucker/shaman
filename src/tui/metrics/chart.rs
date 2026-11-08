@@ -415,18 +415,17 @@ pub(crate) fn holds_nothing(report: &UsageMetricsReport) -> bool {
 }
 
 /// The colours series take in turn: the Theme's accent, then the bright
-/// ANSI hues it names, each once, and none the canvas is painted with nor
-/// [`other_color`] nor [`errands_color`], so no key reads as the canvas, as
-/// Other, or as the Errands — as many as [`KEYED_SERIES`] where the Theme's
-/// hues are all distinct. A Theme naming fewer distinct hues has them taken
-/// in turn again.
+/// ANSI hues it names, each once. Syntax colours fill any remaining places
+/// when those hues collide, without changing an already complete palette.
+/// None are the canvas, [`other_color`] or [`errands_color`]. A Theme
+/// naming fewer distinct colours has them taken in turn again.
 fn palette(theme: &Theme) -> Vec<Color> {
     let bright = theme.ansi.bright;
     let canvas = theme.surface.base.bg;
     let other = other_color(theme);
     let errands = errands_color(theme);
     let mut palette: Vec<Color> = Vec::new();
-    for color in [
+    let preferred = [
         theme.accent.primary.fg,
         Some(bright.blue),
         Some(bright.green),
@@ -434,10 +433,28 @@ fn palette(theme: &Theme) -> Vec<Color> {
         Some(bright.magenta),
         Some(bright.cyan),
         Some(bright.red),
-    ]
-    .into_iter()
-    .flatten()
+    ];
+    let fallback = [
+        theme.syntax.r#type.fg,
+        theme.syntax.variable.fg,
+        theme.syntax.function.fg,
+        theme.syntax.keyword.fg,
+        theme.syntax.number.fg,
+        theme.syntax.string.fg,
+        theme.syntax.operator.fg,
+        theme.syntax.comment.fg,
+    ];
+    for (is_fallback, color) in preferred
+        .into_iter()
+        .map(|color| (false, color))
+        .chain(fallback.into_iter().map(|color| (true, color)))
     {
+        if is_fallback && palette.len() >= KEYED_SERIES {
+            break;
+        }
+        let Some(color) = color else {
+            continue;
+        };
         if color != Color::Reset
             && Some(color) != canvas
             && color != other
@@ -890,6 +907,7 @@ fn segment_at(boundaries: &[(u32, Color)], eighth: u32) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{protocol::AppearanceMode, terminal::TerminalFacts};
 
     #[test]
     fn no_key_takes_other_s_colour_or_the_canvas_s() {
@@ -916,6 +934,22 @@ mod tests {
             assert!(!palette(&theme).contains(&errands), "{errands:?}");
             assert_ne!(errands, other_color(&theme));
             assert_ne!(Some(errands), theme.accent.primary.fg);
+        }
+    }
+
+    #[test]
+    fn panda_has_distinct_series_for_truecolor_and_indexed_terminals() {
+        for truecolor in [false, true] {
+            let theme = Theme::resolve(
+                "panda",
+                AppearanceMode::System,
+                &TerminalFacts::unprobed(truecolor),
+            )
+            .expect("resolve the built-in Panda Theme");
+            let colors = palette(&theme);
+            assert_eq!(colors.len(), KEYED_SERIES, "{colors:?}");
+            assert!(!colors.contains(&other_color(&theme)));
+            assert!(!colors.contains(&errands_color(&theme)));
         }
     }
 

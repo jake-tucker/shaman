@@ -10,13 +10,12 @@
 //! interrupting it.
 
 use crate::tui_rendering::support::{
-    click_mouse, connected_application, deliver_settings, failed_session_snapshot, invoke,
+    PANDA, click_mouse, connected_application, deliver_settings, failed_session_snapshot, invoke,
     model_descriptor, rendered_application_buffer, rendered_application_rows_at, workspace_dir,
 };
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use ratatui::style::Color;
 use suru::{
     managed_client::{ManagedEvent, SubagentTreeEvent},
     protocol::{
@@ -309,7 +308,7 @@ fn focused_aside_rows(application: &Application) -> Vec<String> {
     let buffer = rendered_application_buffer(application, WIDTH, HEIGHT);
     let rows = aside_rows(application);
     (0..HEIGHT)
-        .filter(|row| buffer[(WIDTH - ASIDE_WIDTH + 2, *row)].bg == Color::Blue)
+        .filter(|row| buffer[(WIDTH - ASIDE_WIDTH + 2, *row)].bg == PANDA.primary)
         .map(|row| rows[usize::from(row)].clone())
         .collect()
 }

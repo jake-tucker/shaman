@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::tui_rendering::support::{
-    NEW_SESSION, SELECTOR_ROW, SIDEBAR_PRESS_HEIGHT as PRESS_HEIGHT, SIDEBAR_WIDE as WIDE,
+    NEW_SESSION, PANDA, SELECTOR_ROW, SIDEBAR_PRESS_HEIGHT as PRESS_HEIGHT, SIDEBAR_WIDE as WIDE,
     answer_workspace_resolution, application_looking_at_studio, connected_application,
     deliver_settings, drawn_in_sidebar, enter_active_session, enter_session,
     failed_session_snapshot, fixture_instance_id, noncanonical_spelling, press_new_session,
@@ -354,7 +354,7 @@ fn a_working_active_row_draws_an_info_rail_and_an_idle_row_draws_none() {
     let buffer = rendered_application_buffer(&application, WIDE, 20);
     let rows = crate::tui_rendering::support::buffer_rows(&buffer);
     let working_title = u16::try_from(rendered_row(&rows, "Running a build")).expect("screen row");
-    assert_standing_rail(&buffer, working_title, Color::LightBlue, Color::Reset);
+    assert_standing_rail(&buffer, working_title, PANDA.info, PANDA.panel);
     let idle_title = u16::try_from(rendered_row(&rows, "Waiting quietly")).expect("screen row");
     for row in idle_title - 1..=idle_title + 1 {
         assert_ne!(buffer.cell((0, row)).expect("idle Rail cell").symbol(), "▎");
@@ -383,8 +383,8 @@ fn the_right_slot_says_monitoring_and_how_long_with_an_info_rail_while_a_watch_i
     assert_standing_rail(
         &buffer,
         u16::try_from(title).expect("screen row"),
-        Color::LightBlue,
-        Color::Reset,
+        PANDA.info,
+        PANDA.panel,
     );
 }
 
@@ -426,7 +426,7 @@ fn a_monitoring_rail_holds_steady_while_a_working_rail_shimmers() {
         before.cell((0, working_row)).expect("Rail cell").style(),
         "a Working Rail shimmers while its Agent works"
     );
-    assert_standing_rail(&after, waiting, Color::LightBlue, Color::Reset);
+    assert_standing_rail(&after, waiting, PANDA.info, PANDA.panel);
     for row in waiting - 1..=waiting + 1 {
         assert_eq!(
             after.cell((0, row)).expect("Rail cell").style(),
@@ -469,19 +469,19 @@ fn failed_stands_ahead_of_monitoring_and_monitoring_ahead_of_done() {
     let buffer = rendered_application_buffer(&application, WIDE, 20);
     let rows = crate::tui_rendering::support::buffer_rows(&buffer);
     let failed = u16::try_from(rendered_row(&rows, "Failed and waiting")).expect("screen row");
-    assert_standing_rail(&buffer, failed, Color::Red, Color::Reset);
+    assert_standing_rail(&buffer, failed, PANDA.error, PANDA.panel);
     assert!(
         sidebar_column(&rows[usize::from(failed - 1)]).ends_with("Failed"),
         "an unseen failure is not hidden by the waiting it left behind"
     );
     let waiting = u16::try_from(rendered_row(&rows, "Done and waiting")).expect("screen row");
-    assert_standing_rail(&buffer, waiting, Color::LightBlue, Color::Reset);
+    assert_standing_rail(&buffer, waiting, PANDA.info, PANDA.panel);
     assert!(
         sidebar_column(&rows[usize::from(waiting - 1)]).ends_with("Monitoring 30s"),
         "a Session still waiting on a Watch is not Done"
     );
     let done = u16::try_from(rendered_row(&rows, "Finished quietly")).expect("screen row");
-    assert_standing_rail(&buffer, done, Color::Green, Color::Reset);
+    assert_standing_rail(&buffer, done, PANDA.success, PANDA.panel);
     assert!(sidebar_column(&rows[usize::from(done - 1)]).ends_with("Done"));
 }
 
@@ -519,7 +519,7 @@ fn a_failed_session_still_monitoring_reads_monitoring_once_viewed() {
     let rows = crate::tui_rendering::support::buffer_rows(&buffer);
     for title in ["Viewed elsewhere", "Viewed here"] {
         let row = u16::try_from(rendered_row(&rows, title)).expect("screen row");
-        assert_standing_rail(&buffer, row, Color::LightBlue, Color::Reset);
+        assert_standing_rail(&buffer, row, PANDA.info, PANDA.panel);
         let slot = sidebar_column(&rows[usize::from(row - 1)]);
         assert!(
             slot.ends_with("Monitoring 30s"),
@@ -556,10 +556,10 @@ fn latest_turn_outcomes_draw_failed_and_done_but_leave_interrupted_quiet() {
     let buffer = rendered_application_buffer(&application, WIDE, 20);
     let rows = crate::tui_rendering::support::buffer_rows(&buffer);
     let failed = u16::try_from(rendered_row(&rows, "Failed work")).expect("screen row");
-    assert_standing_rail(&buffer, failed, Color::Red, Color::Reset);
+    assert_standing_rail(&buffer, failed, PANDA.error, PANDA.panel);
     assert!(sidebar_column(&rows[usize::from(failed - 1)]).ends_with("Failed"));
     let done = u16::try_from(rendered_row(&rows, "Completed work")).expect("screen row");
-    assert_standing_rail(&buffer, done, Color::Green, Color::Reset);
+    assert_standing_rail(&buffer, done, PANDA.success, PANDA.panel);
     assert!(sidebar_column(&rows[usize::from(done - 1)]).ends_with("Done"));
     let stopped = u16::try_from(rendered_row(&rows, "Stopped work")).expect("screen row");
     for row in stopped - 1..=stopped + 1 {
@@ -607,7 +607,7 @@ fn failed_and_done_draw_only_when_the_latest_turn_settled_after_viewed() {
     }
     assert!(!sidebar_column(&rows[usize::from(cleared - 1)]).contains("Failed"));
     let unseen = u16::try_from(rendered_row(&rows, "New since viewed")).expect("screen row");
-    assert_standing_rail(&buffer, unseen, Color::Green, Color::Reset);
+    assert_standing_rail(&buffer, unseen, PANDA.success, PANDA.panel);
     assert!(sidebar_column(&rows[usize::from(unseen - 1)]).ends_with("Done"));
 }
 
@@ -1537,7 +1537,7 @@ fn every_edge_grab_column_holds_focus_paint_until_release_without_opening_a_row(
         );
         let row = drawn_at(&application, "Work behind the grab");
         let before = rendered_application_buffer(&application, WIDE, PRESS_HEIGHT);
-        assert_eq!(before[(39, row)].fg, Color::DarkGray);
+        assert_eq!(before[(39, row)].fg, PANDA.element);
 
         assert_eq!(
             mouse(
@@ -1550,7 +1550,7 @@ fn every_edge_grab_column_holds_focus_paint_until_release_without_opening_a_row(
         let held = rendered_application_buffer(&application, WIDE, PRESS_HEIGHT);
         assert_eq!(
             held[(39, row)].fg,
-            Color::Cyan,
+            PANDA.primary,
             "grab column {column} paints the edge in the Theme focus color"
         );
 
@@ -1564,7 +1564,7 @@ fn every_edge_grab_column_holds_focus_paint_until_release_without_opening_a_row(
             "release is neither a row click nor a Selection copy"
         );
         let released = rendered_application_buffer(&application, WIDE, PRESS_HEIGHT);
-        assert_eq!(released[(39, row)].fg, Color::DarkGray);
+        assert_eq!(released[(39, row)].fg, PANDA.element);
         assert!(
             crate::tui_rendering::support::buffer_rows(&released)
                 .iter()
@@ -1608,7 +1608,7 @@ fn dragging_the_held_edge_reflows_the_sidebar_and_main_view_until_release() {
     assert_eq!(sidebar_divider_column(&held_rows), Some(39));
     assert_eq!(
         held[(39, 0)].fg,
-        Color::Cyan,
+        PANDA.primary,
         "the moved rule stays under the pointer in the focus color"
     );
     let after_composer = composer_columns(&held_rows);
@@ -1631,7 +1631,7 @@ fn dragging_the_held_edge_reflows_the_sidebar_and_main_view_until_release() {
         sidebar_divider_column(&crate::tui_rendering::support::buffer_rows(&released)),
         Some(39)
     );
-    assert_ne!(released[(39, 0)].fg, Color::Cyan);
+    assert_ne!(released[(39, 0)].fg, PANDA.primary);
 
     hide_the_revealed_sidebar(&mut application);
     answer_sidebar_reveal(&mut application);
@@ -1667,7 +1667,7 @@ fn edge_dragging_stops_at_the_sidebar_and_current_main_view_floors() {
         sidebar_divider_column(&crate::tui_rendering::support::buffer_rows(&at_minimum)),
         Some(23)
     );
-    assert_eq!(at_minimum[(23, 0)].fg, Color::Cyan);
+    assert_eq!(at_minimum[(23, 0)].fg, PANDA.primary);
     mouse(&mut minimum, MouseEventKind::Up(MouseButton::Left), (0, 0));
 
     let mut maximum = sidebar_showing(workspace.path(), Vec::new());
@@ -1691,7 +1691,7 @@ fn edge_dragging_stops_at_the_sidebar_and_current_main_view_floors() {
         Some(45),
         "a 46-column Sidebar leaves the current 100-column frame's 54-column main floor"
     );
-    assert_eq!(at_maximum[(45, 0)].fg, Color::Cyan);
+    assert_eq!(at_maximum[(45, 0)].fg, PANDA.primary);
     assert_eq!(
         drawn_sidebar_width(&maximum, 120),
         Some(46),
@@ -1834,7 +1834,7 @@ fn a_second_edge_press_within_the_click_interval_resets_and_keeps_the_edge_held(
     assert_eq!(drawn_sidebar_width(&application, WIDE), Some(33));
     assert_eq!(
         rendered_application_buffer(&application, WIDE, PRESS_HEIGHT)[(32, 0)].fg,
-        Color::Cyan,
+        PANDA.primary,
         "the first press starts the ordinary held-edge gesture"
     );
     mouse(
@@ -1852,7 +1852,7 @@ fn a_second_edge_press_within_the_click_interval_resets_and_keeps_the_edge_held(
     assert_eq!(drawn_sidebar_width(&application, WIDE), Some(32));
     assert_eq!(
         rendered_application_buffer(&application, WIDE, PRESS_HEIGHT)[(31, 0)].fg,
-        Color::Cyan,
+        PANDA.primary,
         "resetting on the second press leaves its new edge drag held"
     );
     assert_eq!(
@@ -1867,7 +1867,7 @@ fn a_second_edge_press_within_the_click_interval_resets_and_keeps_the_edge_held(
     assert_eq!(drawn_sidebar_width(&application, WIDE), Some(40));
     assert_eq!(
         rendered_application_buffer(&application, WIDE, PRESS_HEIGHT)[(39, 0)].fg,
-        Color::Cyan,
+        PANDA.primary,
         "the held edge follows the pointer from its reset width"
     );
     mouse(
@@ -1877,7 +1877,7 @@ fn a_second_edge_press_within_the_click_interval_resets_and_keeps_the_edge_held(
     );
     assert_eq!(
         rendered_application_buffer(&application, WIDE, PRESS_HEIGHT)[(39, 0)].fg,
-        Color::DarkGray
+        PANDA.element
     );
 }
 
@@ -2158,7 +2158,7 @@ fn overlays_keep_edge_presses_and_never_show_held_paint() {
     );
     assert_eq!(
         rendered_application_buffer(&settings, WIDE, PRESS_HEIGHT)[(39, 0)].fg,
-        Color::DarkGray,
+        PANDA.element,
         "Settings retains pointer ownership"
     );
     mouse(
@@ -2186,7 +2186,7 @@ fn overlays_keep_edge_presses_and_never_show_held_paint() {
     mouse(&mut menu, MouseEventKind::Down(MouseButton::Left), (39, 0));
     assert_eq!(
         rendered_application_buffer(&menu, WIDE, PRESS_HEIGHT)[(39, 0)].fg,
-        Color::DarkGray,
+        PANDA.element,
         "the Sidebar context menu retains pointer ownership"
     );
     mouse(&mut menu, MouseEventKind::Up(MouseButton::Left), (39, 0));
@@ -2236,7 +2236,7 @@ fn overlays_keep_edge_presses_and_never_show_held_paint() {
     );
     assert_eq!(
         rendered_application_buffer(&subagents, WIDE, PRESS_HEIGHT)[(39, 0)].fg,
-        Color::DarkGray,
+        PANDA.element,
         "the Subagent picker retains pointer ownership"
     );
     mouse(
@@ -2279,7 +2279,7 @@ fn hidden_and_squeezed_sidebars_leave_no_edge_grab_geometry() {
         .expect("hydrate the shown Sidebar");
     assert_eq!(
         rendered_application_buffer(&hidden, WIDE, PRESS_HEIGHT)[(39, 0)].fg,
-        Color::Gray,
+        PANDA.border,
         "the hidden frame supplied no stale grab zone"
     );
 
@@ -2297,7 +2297,7 @@ fn hidden_and_squeezed_sidebars_leave_no_edge_grab_geometry() {
     );
     assert_eq!(
         rendered_application_buffer(&squeezed, WIDE, PRESS_HEIGHT)[(39, 0)].fg,
-        Color::DarkGray,
+        PANDA.element,
         "squeeze-out clears the previous frame's grab zone"
     );
 }
@@ -2950,7 +2950,7 @@ fn esc_hands_the_keys_back_without_hiding_the_sidebar() {
         "nothing in the column claims the keys any more"
     );
     assert!(
-        !sidebar_text_on(&application, Color::DarkGray).contains("Listed work"),
+        !sidebar_text_on(&application, PANDA.element).contains("Listed work"),
         "and nothing is left dimly marked either: row focus says what Enter would act on, and \
          Enter no longer acts on the column"
     );
@@ -3201,7 +3201,7 @@ fn an_unreadable_row_is_marked_and_subdued() {
     let (column, row) = text_position(&buffer, "Unreadable work");
     assert_eq!(
         buffer.cell((column, row)).expect("the Title is drawn").fg,
-        Color::DarkGray,
+        PANDA.muted,
         "the row is subdued rather than drawn like work the reader could open"
     );
     let (column, row) = text_position(&buffer, "Readable work");
@@ -3210,7 +3210,7 @@ fn an_unreadable_row_is_marked_and_subdued() {
             .cell((column, row))
             .expect("the readable Title is drawn")
             .fg,
-        Color::Reset,
+        PANDA.text,
         "a readable row keeps its ordinary Title style"
     );
 }
@@ -3254,7 +3254,7 @@ fn seeding_passes_over_an_open_session_that_arrives_unreadable() {
             .cell((column, row))
             .expect("unreadable open Title")
             .fg,
-        Color::DarkGray,
+        PANDA.muted,
         "the damaged open row stays subdued rather than disguising its unreadable state"
     );
 }
@@ -3455,7 +3455,7 @@ fn sidebar_text_on(application: &Application, background: Color) -> String {
 
 /// The Sidebar row the reader is on while they are driving the Sidebar.
 fn selected_sidebar_text(application: &Application) -> String {
-    sidebar_text_on(application, Color::Blue)
+    sidebar_text_on(application, PANDA.primary)
 }
 
 /// The Sidebar row standing for the Session the main view has open.
@@ -3465,7 +3465,7 @@ fn open_sidebar_text(application: &Application) -> String {
         .map(|row| {
             (0..39)
                 .filter_map(|column| buffer.cell((column, row)))
-                .filter(|cell| cell.fg == Color::Cyan)
+                .filter(|cell| cell.fg == PANDA.open_title && cell.symbol() != "▎")
                 .map(|cell| cell.symbol())
                 .collect::<String>()
         })
@@ -3551,14 +3551,14 @@ fn the_open_session_draws_only_its_title_in_the_accent_style() {
     let title = buffer
         .cell((title_column, title_row))
         .expect("open Title cell");
-    assert_eq!(title.fg, Color::Cyan);
-    assert_eq!(title.bg, Color::Reset);
+    assert_eq!(title.fg, PANDA.open_title);
+    assert_eq!(title.bg, PANDA.panel);
     assert!(
         buffer
             .content()
             .iter()
             .take(usize::from(buffer.area.width) * 20)
-            .all(|cell| cell.bg != Color::Cyan),
+            .all(|cell| cell.bg != PANDA.open_title),
         "the open reading never repaints the row background"
     );
 }
@@ -3650,7 +3650,7 @@ fn a_working_row_that_is_open_and_focused_keeps_all_three_readings() {
         "and Working keeps its Rail down the row's left, so none of the three states is hidden"
     );
     let buffer = rendered_application_buffer(&application, WIDE, 20);
-    assert_standing_rail(&buffer, title, Color::LightBlue, Color::Blue);
+    assert_standing_rail(&buffer, title, PANDA.info, PANDA.primary);
 }
 
 #[test]
@@ -3673,6 +3673,17 @@ fn a_rail_whose_colour_is_the_focus_block_takes_the_blocks_text_colour_instead()
         ),
     ];
     let mut application = sidebar_showing(workspace.path(), sessions.clone());
+    deliver_settings(
+        &mut application,
+        EffectiveSettings {
+            appearance: AppearanceSettings {
+                theme: "system".to_owned(),
+                ..AppearanceSettings::default()
+            },
+            sidebar: shown(AutoSettle::default()),
+            ..EffectiveSettings::default()
+        },
+    );
     application.set_terminal_facts(TerminalFacts::new(
         Some(TerminalColorProbe::new(
             [None; 16],
@@ -6063,7 +6074,7 @@ fn everywhere_prefixes_foreign_workspaces_independently_of_title_truncation() {
     let (column, row) = text_position(&buffer, "studio · remote");
     assert_eq!(
         buffer.cell((column, row)).expect("the Remote is drawn").fg,
-        Color::DarkGray,
+        PANDA.muted,
         "the Remote shares the Workspace's subdued style"
     );
 }
@@ -6364,14 +6375,14 @@ fn a_transient_remote_drop_dims_only_its_rows_and_marks_it_unreachable() {
     let studio = text_position(&buffer, "Studio work");
     assert_eq!(
         buffer.cell(studio).expect("draw the Studio row").fg,
-        Color::DarkGray,
+        PANDA.muted,
         "cached rows from the dropped Remote are dimmed"
     );
-    assert_standing_rail(&buffer, studio.1, Color::LightBlue, Color::Reset);
+    assert_standing_rail(&buffer, studio.1, PANDA.info, PANDA.panel);
     let laptop = text_position(&buffer, "Laptop work");
     assert_eq!(
         buffer.cell(laptop).expect("draw the Laptop row").fg,
-        Color::Reset,
+        PANDA.text,
         "another Remote's rows are untouched"
     );
 }
@@ -6748,7 +6759,7 @@ fn a_fresh_remote_snapshot_clears_its_unreachable_presentation() {
             .cell(text_position(&buffer, "Studio work"))
             .expect("draw the recovered row")
             .fg,
-        Color::DarkGray,
+        PANDA.muted,
         "the fresh snapshot stops subduing the Remote's rows"
     );
 }
@@ -7152,7 +7163,7 @@ fn a_remote_turn_outcome_lights_that_outlooks_row_in_place() {
     let buffer = rendered_application_buffer(&application, WIDE, 20);
     let rows = crate::tui_rendering::support::buffer_rows(&buffer);
     let remote = u16::try_from(rendered_row(&rows, "Remote work")).expect("screen row");
-    assert_standing_rail(&buffer, remote, Color::Red, Color::Reset);
+    assert_standing_rail(&buffer, remote, PANDA.error, PANDA.panel);
     assert!(sidebar_column(&rows[usize::from(remote - 1)]).ends_with("Failed"));
     let local = u16::try_from(rendered_row(&rows, "Local work")).expect("screen row");
     assert_ne!(
@@ -8879,7 +8890,7 @@ fn attach_failure_immediately_keeps_the_target_shell_and_draws_a_transcript_erro
             .cell(text_position(&buffer, "Error:"))
             .expect("read the failure label")
             .fg,
-        Color::Red,
+        PANDA.error,
         "the client-local failure uses the Transcript error style"
     );
     let composer_row = composer_top_row(&application);

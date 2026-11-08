@@ -167,7 +167,7 @@ async fn list_settings_lists_every_setting_but_servings_by_key_and_value_in_forc
     assert_eq!(listed_value(&rows, "appearance.mode"), &json!("dark"));
     assert_eq!(
         listed_value(&rows, "appearance.theme"),
-        &json!("system"),
+        &json!("panda"),
         "a Setting nothing pins lists its built-in default"
     );
     assert_eq!(listed_value(&rows, "broker.maxDepth"), &json!(3));
@@ -181,7 +181,7 @@ async fn list_settings_lists_every_setting_but_servings_by_key_and_value_in_forc
     assert_eq!(
         list_settings(&mut sidekick, json!({ "group": "appearance" })).await,
         vec![
-            json!({ "key": "appearance.theme", "value": "system" }),
+            json!({ "key": "appearance.theme", "value": "panda" }),
             json!({ "key": "appearance.mode", "value": "dark" }),
             json!({ "key": "appearance.landingPage", "value": "Minimal" }),
             json!({ "key": "appearance.showIcons", "value": false }),
@@ -286,9 +286,15 @@ async fn describe_setting_says_what_each_kind_of_setting_holds_and_accepts() {
     );
     let theme = describe(&mut sidekick, "appearance.theme").await;
     assert_eq!(
-        (&theme["value"], &theme["pinned"], &theme["accepts"]),
         (
-            &json!("system"),
+            &theme["value"],
+            &theme["default"],
+            &theme["pinned"],
+            &theme["accepts"]
+        ),
+        (
+            &json!("panda"),
+            &json!("panda"),
             &json!(false),
             &json!("one of \"system\" or a Theme name")
         ),
@@ -1316,7 +1322,7 @@ async fn set_setting_pins_and_unpins_numbers_text_and_agent_selections() {
 
     for (key, value, default) in [
         ("sidebar.initialWidth", json!(48), json!(40)),
-        ("appearance.theme", json!("tokyonight"), json!("system")),
+        ("appearance.theme", json!("tokyonight"), json!("panda")),
         ("derivation.errand", selection.clone(), json!("session")),
         ("session.contentWidth", json!(120), json!(80)),
         ("session.contentWidth", json!("fill"), json!(80)),

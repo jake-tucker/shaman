@@ -3,9 +3,9 @@
 //! belongs to, fed by the per-tree subscription.
 
 use crate::tui_rendering::support::{
-    click_mouse, connected_application, deliver_settings, enter_session, failed_session_snapshot,
-    invoke, key, rendered_application_buffer, rendered_application_rows_at, type_terminal_text,
-    workspace_dir,
+    PANDA, click_mouse, connected_application, deliver_settings, enter_session,
+    failed_session_snapshot, invoke, key, rendered_application_buffer,
+    rendered_application_rows_at, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -601,10 +601,13 @@ fn the_open_entry_is_highlighted_by_its_title_alone() {
         buffer[(column - 2 + u16::try_from(offset).expect("fits"), row)].clone()
     };
 
-    assert_eq!(title_cell(&application, "Map every seam").fg, Color::Cyan);
+    assert_eq!(
+        title_cell(&application, "Map every seam").fg,
+        PANDA.open_title
+    );
     assert_ne!(
         title_cell(&application, "Weigh the options").fg,
-        Color::Cyan,
+        PANDA.open_title,
         "only the open entry is accented"
     );
 
@@ -616,15 +619,18 @@ fn the_open_entry_is_highlighted_by_its_title_alone() {
     );
     assert_eq!(
         title_cell(&application, "Weigh the options").fg,
-        Color::Cyan,
+        PANDA.open_title,
         "the highlight moves with the open Session"
     );
-    assert_ne!(title_cell(&application, "Map every seam").fg, Color::Cyan);
+    assert_ne!(
+        title_cell(&application, "Map every seam").fg,
+        PANDA.open_title
+    );
     let (column, row) = aside_row_position(&application, "Weigh the options");
     let buffer = rendered_application_buffer(&application, WIDTH, HEIGHT);
     assert_ne!(
         buffer[(column - 2, row)].bg,
-        Color::Cyan,
+        PANDA.open_title,
         "the highlight repaints nothing but the Title"
     );
 }
@@ -998,7 +1004,7 @@ fn the_edge_drags_and_a_double_click_resets_the_width() {
         "a pointer resize is view state"
     );
     let held = rendered_application_buffer(&application, WIDTH, HEIGHT);
-    assert_eq!(held[(WIDTH - 48, 0)].fg, Color::Cyan, "the held edge");
+    assert_eq!(held[(WIDTH - 48, 0)].fg, PANDA.primary, "the held edge");
     mouse(
         &mut application,
         MouseEventKind::Up(MouseButton::Left),
@@ -1297,7 +1303,7 @@ fn a_tree_that_cannot_be_read_says_so_until_a_session_of_it_is_opened_again() {
     let buffer = rendered_application_buffer(&application, WIDTH, HEIGHT);
     assert_eq!(
         buffer[(WIDTH - ASIDE_WIDTH + 2, 1)].fg,
-        Color::Red,
+        PANDA.error,
         "in the Theme's error colour"
     );
     advance(&now, 400);
@@ -1977,7 +1983,7 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
     );
     assert_eq!(
         needs_intervention_colour(&application, 5),
-        Some(Color::Yellow)
+        Some(PANDA.warning)
     );
     assert!(
         rows[3].ends_with(" 12s") && rows[1].ends_with(" 30s"),
@@ -2014,7 +2020,7 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
     );
     assert_eq!(
         needs_intervention_colour(&application, 1),
-        Some(Color::Yellow)
+        Some(PANDA.warning)
     );
     assert_eq!(
         asked
@@ -2050,7 +2056,7 @@ fn focused_aside_rows_at(application: &Application, width: u16) -> Vec<String> {
     let buffer = rendered_application_buffer(application, width, HEIGHT);
     let rows = aside_rows(application, width);
     (0..HEIGHT)
-        .filter(|row| buffer[(width - ASIDE_WIDTH + 2, *row)].bg == Color::Blue)
+        .filter(|row| buffer[(width - ASIDE_WIDTH + 2, *row)].bg == PANDA.primary)
         .map(|row| rows[usize::from(row)].trim_end().to_owned())
         .collect()
 }

@@ -1863,7 +1863,7 @@ pub struct AppearanceSettings {
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
-            theme: "system".to_owned(),
+            theme: "panda".to_owned(),
             mode: AppearanceMode::System,
             landing_page: LandingPage::Minimal,
             show_icons: false,

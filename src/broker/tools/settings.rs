@@ -973,7 +973,7 @@ mod tests {
             serde_json::to_value(&appearance).expect("serializes"),
             json!({
                 "settings": [
-                    { "key": "appearance.theme", "value": "system" },
+                    { "key": "appearance.theme", "value": "panda" },
                     { "key": "appearance.mode", "value": "dark" },
                     { "key": "appearance.landingPage", "value": "Minimal" },
                     { "key": "appearance.showIcons", "value": false },

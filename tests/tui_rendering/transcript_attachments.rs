@@ -3,10 +3,7 @@
 //! inside the same gutter block, read from the descriptors the Session's
 //! snapshot and updates carry.
 
-use ratatui::{
-    buffer::Buffer,
-    style::{Color, Style},
-};
+use ratatui::{buffer::Buffer, style::Style};
 use suru::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
@@ -23,7 +20,7 @@ use crate::tui_rendering::{
     deadlines::PROGRESS_DEADLINE,
     failing_provider_support::spawn_with_failing_provider,
     support::{
-        buffer_rows, enter_active_session, enter_session, rendered_application_buffer,
+        PANDA, buffer_rows, enter_active_session, enter_session, rendered_application_buffer,
         workspace_dir,
     },
 };
@@ -225,7 +222,7 @@ fn a_user_messages_attachments_are_listed_dimmed_beneath_its_text_inside_the_gut
 
     // Both labels are accented as the Skill Invocation beside them is.
     let skill = styles_of(&buffer, start + 1, "$review");
-    assert!(skill.iter().all(|style| style.fg == Some(Color::Cyan)));
+    assert!(skill.iter().all(|style| style.fg == Some(PANDA.primary)));
     for label in ["[Image 1]", "[Image 2]"] {
         let row = (start..)
             .find(|y| buffer_rows(&buffer)[usize::from(*y)].contains(label))
@@ -248,7 +245,7 @@ fn a_user_messages_attachments_are_listed_dimmed_beneath_its_text_inside_the_gut
         assert!(
             styles_of(&buffer, y, line)
                 .iter()
-                .all(|style| style.fg == Some(Color::DarkGray) && style.bg == text_style.bg),
+                .all(|style| style.fg == Some(PANDA.muted) && style.bg == text_style.bg),
             "{line:?} is dimmed"
         );
         assert_eq!(
@@ -361,7 +358,7 @@ fn a_prompt_awaiting_delivery_lists_its_attachments_as_its_message_will() {
     assert!(
         styles_of(&buffer, start + 1, "Image 1 · GIF")
             .iter()
-            .all(|style| style.fg == Some(Color::DarkGray))
+            .all(|style| style.fg == Some(PANDA.muted))
     );
 }
 
