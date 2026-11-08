@@ -987,6 +987,47 @@ async fn a_share_with_unpriced_calls_is_marked_partial_on_its_own_key() {
 }
 
 #[tokio::test]
+async fn shares_whose_rounded_costs_fall_a_nano_short_of_the_turn_s_leave_no_remainder() {
+    let state = tempfile::tempdir().unwrap();
+    let mut hosted =
+        hosted(ServerConfig::new(state.path(), "model-shares-rounding").unwrap()).await;
+    let auto = hosted.begin(AUTO).await;
+    // Each figure is rounded to a billionth of a dollar on its own, so two
+    // Shares of a $0.000000100 Turn can state $0.000000060 and $0.000000039.
+    hosted
+        .play(
+            &auto,
+            vec![
+                usage_event(
+                    tokens(100, 10),
+                    0.000_000_100,
+                    vec![
+                        share(GPT, tokens(60, 6), 0.000_000_060),
+                        share(UNLISTED, tokens(40, 4), 0.000_000_039),
+                    ],
+                ),
+                ProviderEvent::TurnCompleted,
+            ],
+            1,
+        )
+        .await;
+
+    let actual = hosted
+        .report(&by_model(UsageMetricsModelView::Actual))
+        .await;
+    assert_eq!(
+        keyed(&actual),
+        vec![
+            (model_key(GPT), part(tokens(60, 6), 0.000_000_060)),
+            (model_key(UNLISTED), part(tokens(40, 4), 0.000_000_040)),
+        ],
+        "a rounding shortfall the Shares' own rounding explains goes to the last of them, rather \
+         than filing the Turn under its Selection for $0.00"
+    );
+    hosted.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn a_running_total_s_cost_no_share_accounts_for_counts_its_turn_under_the_selection() {
     let state = tempfile::tempdir().unwrap();
     let mut hosted =

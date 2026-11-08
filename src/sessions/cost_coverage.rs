@@ -109,7 +109,9 @@ impl CostContribution {
     /// takes what is left, and this one's partial mark unless an unpriced
     /// Share accounts for it and the remainder holds no Usage that could be
     /// unpriced too; it stands only where it takes something or that mark,
-    /// so a Turn its Shares wholly cover adds nothing unattributed.
+    /// so a Turn its Shares wholly cover adds nothing unattributed. Where
+    /// they cover its Usage whole, a shortfall no larger than the rounding
+    /// of their Costs counts as covered too.
     fn split(self, shares: &[SharedPart], remainder_holds_usage: bool) -> Vec<Self> {
         let Some(amount) = self.amount.filter(|_| !shares.is_empty()) else {
             return vec![self];
@@ -136,6 +138,21 @@ impl CostContribution {
                 model_share: Some(share.index),
                 ..self
             });
+        }
+        // Each priced Share's Cost and the Turn's were rounded to a billionth
+        // of a dollar on their own, so the Shares of a Turn they wholly cover
+        // can fall short of it by up to a billionth each. That shortfall is
+        // rounding, not work, and goes to the last priced Share rather than
+        // filing the Turn under its Selection for nothing anyone can read.
+        let priced = shares.iter().filter(|share| share.cost.is_some()).count() as u64;
+        if left > 0 && left <= priced && !remainder_holds_usage {
+            let last = parts
+                .iter_mut()
+                .rev()
+                .find_map(|part| part.amount.as_mut())
+                .expect("a priced Share took a part");
+            last.cost = Cost::from_nano_usd(last.cost.nano_usd() + left);
+            left = 0;
         }
         let explained = parts.iter().any(|part| part.is_partial);
         let remainder_partial = self.is_partial && (!explained || remainder_holds_usage);
