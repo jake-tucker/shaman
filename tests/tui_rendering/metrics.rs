@@ -580,9 +580,35 @@ fn a_refused_refresh_keeps_the_figures_and_says_why_above_them() {
     let note = rendered_row(&rows, "Could not refresh: connection refused");
     assert_eq!(note, controls + 1, "beneath the controls");
     assert!(!rows.join("\n").contains("Refreshing…"));
-    // Its own row, so even 80 columns say all of it.
+    // Its own row, which it shares with the Model view under the Model
+    // breakdown, so even 80 columns say a short reason whole beside it.
     let narrow = rendered_application_rows_at(&application, 80, HEIGHT);
-    row(&narrow, "Could not refresh: connection refused");
+    let note = row(&narrow, "Could not refresh: connection refused");
+    assert!(note.contains("Model: ▐Selected▌"), "{note:?}");
+
+    // A long reason is cut short with an ellipsis before the Model view,
+    // never run into it.
+    let (_, second, _) = expect_read(key(&mut application, KeyCode::Char('r')));
+    answer(
+        &mut application,
+        second,
+        Err(MetricsReadRefusal::Failed(
+            "the Server is busy compacting its store and asks to be read again later".to_owned(),
+        )),
+    );
+    for width in [80, WIDTH] {
+        let rows = rendered_application_rows_at(&application, width, HEIGHT);
+        let note = row(&rows, "Could not refresh: the Server is busy");
+        let (reason, control) = note
+            .split_once("Model:")
+            .unwrap_or_else(|| panic!("the Model view beside the note: {note:?}"));
+        assert!(reason.trim_end().ends_with('…'), "{width}: {note:?}");
+        assert!(
+            reason.ends_with("    "),
+            "a gap before the control: {note:?}"
+        );
+        assert!(control.contains("▐Selected▌"), "{width}: {note:?}");
+    }
 
     // A refresh that lands clears the note.
     let (_, third, _) = expect_read(key(&mut application, KeyCode::Char('r')));
@@ -2009,6 +2035,62 @@ fn many_workspaces(query: &UsageMetricsQuery, keys: u64) -> UsageMetricsReport {
     }
     take_together(&mut report);
     report
+}
+
+/// `report` with Suru's Errands beside its keys, as the Server adds them:
+/// each day `fresh` tokens of fresh input and `cached` read from cache,
+/// costing `nano_usd`, in every bucket's whole and under the Errands key —
+/// never as a Session or a Turn.
+fn with_errands(
+    mut report: UsageMetricsReport,
+    fresh: u64,
+    cached: u64,
+    nano_usd: u64,
+) -> UsageMetricsReport {
+    let part = UsageMetricsAggregate {
+        fresh_input_tokens: Some(fresh),
+        cache_read_tokens: Some(cached),
+        cost: CountedCost {
+            amount: Some(Cost::from_nano_usd(nano_usd)),
+            is_partial: false,
+        },
+        ..UsageMetricsAggregate::default()
+    };
+    for bucket in &mut report.buckets {
+        let total = &mut bucket.total;
+        total.fresh_input_tokens = Some(total.fresh_input_tokens.unwrap_or(0) + fresh);
+        total.cache_read_tokens = Some(total.cache_read_tokens.unwrap_or(0) + cached);
+        total.cost.add(part.cost);
+        bucket.by_key.push(KeyedUsageMetrics {
+            key: UsageMetricsKey::Errands,
+            aggregate: part,
+        });
+    }
+    report.keys.push(UsageMetricsKeyLabel {
+        key: UsageMetricsKey::Errands,
+        label: "Errands".to_owned(),
+    });
+    take_together(&mut report);
+    report
+}
+
+/// Thirty days of [`report`]'s three Models, and Errands of 100K a day.
+fn thirty_days_with_errands() -> Application {
+    let mut application = reader_in(NEW_YORK, afternoon());
+    let (_, request_id, query) = ask(&mut application);
+    answer(
+        &mut application,
+        request_id,
+        Ok(with_errands(report(&query), 100_000, 0, 0)),
+    );
+    show_tokens(&mut application);
+    application
+}
+
+fn swatch(application: &Application, label: &str) -> Color {
+    let buffer = rendered_application_buffer(application, WIDTH, HEIGHT);
+    let (x, y) = text_position(&buffer, label);
+    buffer[(x - 2, y)].fg
 }
 
 #[test]

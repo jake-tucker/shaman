@@ -3,57 +3,18 @@
 //! never folds into Other and always takes the colour reserved for it.
 
 use super::{
-    HEIGHT, NEW_YORK, WIDTH, afternoon, answer, ask, click_with, expect_read, headline,
-    legend_row_at, legend_row_dimmed, many_workspaces, press, press_at, priced_report, reader_in,
-    rendered_row, report, row, screen, show_tokens, take_together,
+    NEW_YORK, afternoon, answer, ask, click_with, expect_read, headline, legend_row_at,
+    legend_row_dimmed, many_workspaces, press, press_at, priced_report, reader_in, rendered_row,
+    report, row, screen, show_tokens, swatch, take_together, thirty_days_with_errands,
+    with_errands,
 };
-use crate::tui_rendering::support::{invoke, rendered_application_buffer, text_position};
+use crate::tui_rendering::support::invoke;
 use crossterm::event::KeyModifiers;
 use ratatui::style::Color;
 use suru::{
-    protocol::{
-        Cost, CountedCost, KeyedUsageMetrics, UsageMetricsAggregate, UsageMetricsKey,
-        UsageMetricsKeyLabel, UsageMetricsQuery, UsageMetricsReport,
-    },
+    protocol::{UsageMetricsKey, UsageMetricsQuery, UsageMetricsReport},
     tui::{Application, SemanticCommandId},
 };
-
-/// `report` with Suru's Errands beside its keys, as the Server adds them:
-/// each day `fresh` tokens of fresh input and `cached` read from cache,
-/// costing `nano_usd`, in every bucket's whole and under the Errands key —
-/// never as a Session or a Turn.
-pub(super) fn with_errands(
-    mut report: UsageMetricsReport,
-    fresh: u64,
-    cached: u64,
-    nano_usd: u64,
-) -> UsageMetricsReport {
-    let part = UsageMetricsAggregate {
-        fresh_input_tokens: Some(fresh),
-        cache_read_tokens: Some(cached),
-        cost: CountedCost {
-            amount: Some(Cost::from_nano_usd(nano_usd)),
-            is_partial: false,
-        },
-        ..UsageMetricsAggregate::default()
-    };
-    for bucket in &mut report.buckets {
-        let total = &mut bucket.total;
-        total.fresh_input_tokens = Some(total.fresh_input_tokens.unwrap_or(0) + fresh);
-        total.cache_read_tokens = Some(total.cache_read_tokens.unwrap_or(0) + cached);
-        total.cost.add(part.cost);
-        bucket.by_key.push(KeyedUsageMetrics {
-            key: UsageMetricsKey::Errands,
-            aggregate: part,
-        });
-    }
-    report.keys.push(UsageMetricsKeyLabel {
-        key: UsageMetricsKey::Errands,
-        label: "Errands".to_owned(),
-    });
-    take_together(&mut report);
-    report
-}
 
 /// Thirty days by Workspace of `answered`, shown under Tokens.
 fn by_workspace(answered: impl FnOnce(&UsageMetricsQuery) -> UsageMetricsReport) -> Application {
@@ -64,12 +25,6 @@ fn by_workspace(answered: impl FnOnce(&UsageMetricsQuery) -> UsageMetricsReport)
     answer(&mut application, request_id, Ok(answered(&query)));
     show_tokens(&mut application);
     application
-}
-
-pub(super) fn swatch(application: &Application, label: &str) -> Color {
-    let buffer = rendered_application_buffer(application, WIDTH, HEIGHT);
-    let (x, y) = text_position(&buffer, label);
-    buffer[(x - 2, y)].fg
 }
 
 #[test]
@@ -119,19 +74,6 @@ fn errands_never_fold_into_other_and_keep_the_colour_reserved_for_them() {
             "{label}"
         );
     }
-}
-
-/// Thirty days of [`report`]'s three Models, and Errands of 100K a day.
-pub(super) fn thirty_days_with_errands() -> Application {
-    let mut application = reader_in(NEW_YORK, afternoon());
-    let (_, request_id, query) = ask(&mut application);
-    answer(
-        &mut application,
-        request_id,
-        Ok(with_errands(report(&query), 100_000, 0, 0)),
-    );
-    show_tokens(&mut application);
-    application
 }
 
 #[test]

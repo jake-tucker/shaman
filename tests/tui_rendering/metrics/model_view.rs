@@ -7,7 +7,7 @@ use super::{
     HEIGHT, NARROW, NEW_YORK, WIDTH, afternoon, answer, ask, by_provider, copilot, empty_report,
     expect_read, focused_row, legend_row_dimmed, many_workspaces, model, narrow_screen, press,
     press_at, priced_report, reader_in, rendered_row, report, row, screen, show_tokens, space,
-    ticks, top_session,
+    swatch, thirty_days_with_errands, ticks, top_session, with_errands,
 };
 use crate::tui_rendering::support::{
     invoke, key, rendered_application_buffer, rendered_application_rows_at, text_position,
@@ -169,6 +169,37 @@ fn the_control_is_drawn_only_under_the_model_breakdown() {
     );
 }
 
+/// Answers whether `transition` read the buckets `opened` read by Model
+/// anew in `expected`, showing nothing until that read answers and the
+/// control its choice, then answers it.
+fn reads_anew(
+    application: &mut Application,
+    transition: ApplicationTransition,
+    expected: UsageMetricsModelView,
+    opened: &UsageMetricsQuery,
+) {
+    let (_, request_id, query) = expect_read(transition);
+    assert_eq!(query.model_view, expected);
+    assert_eq!(query.breakdown, UsageMetricsBreakdown::Model);
+    assert_eq!(query.buckets, opened.buckets);
+    // Figures filed the other way are not shown under the new choice.
+    assert!(
+        screen(application)
+            .iter()
+            .any(|row| row.contains("Reading Usage Metrics")),
+        "{expected:?}"
+    );
+    let chosen = match expected {
+        UsageMetricsModelView::Selected => "Model: ▐Selected▌  Actual",
+        UsageMetricsModelView::Actual => "Model:  Selected  ▐Actual▌",
+    };
+    assert_eq!(
+        model_view_control(application, WIDTH).as_deref(),
+        Some(chosen)
+    );
+    answer(application, request_id, Ok(report(&query)));
+}
+
 #[test]
 fn m_and_clicks_choose_the_model_view_and_read_it_anew() {
     assert_eq!(
@@ -188,63 +219,51 @@ fn m_and_clicks_choose_the_model_view_and_read_it_anew() {
     let (_, request_id, opened) = ask(&mut application);
     answer(&mut application, request_id, Ok(report(&opened)));
 
-    for (act, expected) in [
-        (
-            Box::new(|application: &mut Application| press(application, 'm'))
-                as Box<dyn Fn(&mut Application) -> ApplicationTransition>,
-            UsageMetricsModelView::Actual,
-        ),
-        (
-            Box::new(|application: &mut Application| press(application, 'm')),
-            UsageMetricsModelView::Selected,
-        ),
-        (
-            Box::new(|application: &mut Application| click_at_width(application, WIDTH, "Actual")),
-            UsageMetricsModelView::Actual,
-        ),
-        (
-            Box::new(|application: &mut Application| {
-                click_at_width(application, WIDTH, "Selected")
-            }),
-            UsageMetricsModelView::Selected,
-        ),
-        (
-            Box::new(|application: &mut Application| {
-                invoke(
-                    application,
-                    SemanticCommandId::MetricsModelViewSelect(UsageMetricsModelView::Actual),
-                )
-            }),
-            UsageMetricsModelView::Actual,
-        ),
-        (
-            Box::new(|application: &mut Application| {
-                invoke(application, SemanticCommandId::MetricsModelViewToggle)
-            }),
-            UsageMetricsModelView::Selected,
-        ),
-    ] {
-        let (_, request_id, query) = expect_read(act(&mut application));
-        assert_eq!(query.model_view, expected);
-        assert_eq!(query.breakdown, UsageMetricsBreakdown::Model);
-        assert_eq!(query.buckets, opened.buckets);
-        // Figures filed the other way are not shown under the new choice.
-        assert!(
-            screen(&application)
-                .iter()
-                .any(|row| row.contains("Reading Usage Metrics")),
-            "{expected:?}"
-        );
-        let chosen = match expected {
-            UsageMetricsModelView::Selected => "Model: ▐Selected▌  Actual",
-            UsageMetricsModelView::Actual => "Model:  Selected  ▐Actual▌",
-        };
-        assert_eq!(
-            model_view_control(&application, WIDTH).as_deref(),
-            Some(chosen)
-        );
-        answer(&mut application, request_id, Ok(report(&query)));
-    }
+    let transition = press(&mut application, 'm');
+    reads_anew(
+        &mut application,
+        transition,
+        UsageMetricsModelView::Actual,
+        &opened,
+    );
+    let transition = press(&mut application, 'm');
+    reads_anew(
+        &mut application,
+        transition,
+        UsageMetricsModelView::Selected,
+        &opened,
+    );
+    let transition = click_at_width(&mut application, WIDTH, "Actual");
+    reads_anew(
+        &mut application,
+        transition,
+        UsageMetricsModelView::Actual,
+        &opened,
+    );
+    let transition = click_at_width(&mut application, WIDTH, "Selected");
+    reads_anew(
+        &mut application,
+        transition,
+        UsageMetricsModelView::Selected,
+        &opened,
+    );
+    let transition = invoke(
+        &mut application,
+        SemanticCommandId::MetricsModelViewSelect(UsageMetricsModelView::Actual),
+    );
+    reads_anew(
+        &mut application,
+        transition,
+        UsageMetricsModelView::Actual,
+        &opened,
+    );
+    let transition = invoke(&mut application, SemanticCommandId::MetricsModelViewToggle);
+    reads_anew(
+        &mut application,
+        transition,
+        UsageMetricsModelView::Selected,
+        &opened,
+    );
 
     // Choosing the view already shown reads nothing, by click or command.
     assert_eq!(
@@ -304,22 +323,21 @@ fn under_another_breakdown_m_does_nothing_and_the_model_breakdown_brings_back_th
     answer(&mut application, request_id, Ok(by_provider(&query)));
     let before = screen(&application);
 
-    for act in [
-        Box::new(|application: &mut Application| press(application, 'm'))
-            as Box<dyn Fn(&mut Application) -> ApplicationTransition>,
-        Box::new(|application: &mut Application| {
-            invoke(
-                application,
-                SemanticCommandId::MetricsModelViewSelect(UsageMetricsModelView::Selected),
-            )
-        }),
-        Box::new(|application: &mut Application| {
-            invoke(application, SemanticCommandId::MetricsModelViewToggle)
-        }),
-    ] {
-        assert_eq!(act(&mut application), ApplicationTransition::Continue);
-        assert_eq!(screen(&application), before, "nothing changes on screen");
-    }
+    let transitions = [
+        press(&mut application, 'm'),
+        invoke(
+            &mut application,
+            SemanticCommandId::MetricsModelViewSelect(UsageMetricsModelView::Selected),
+        ),
+        invoke(&mut application, SemanticCommandId::MetricsModelViewToggle),
+    ];
+    assert!(
+        transitions
+            .iter()
+            .all(|transition| *transition == ApplicationTransition::Continue),
+        "{transitions:?}"
+    );
+    assert_eq!(screen(&application), before, "nothing changes on screen");
     // Nor did it change what the next read asks.
     let (_, request_id, query) = expect_read(press(&mut application, 'r'));
     assert_eq!(query.model_view, UsageMetricsModelView::Actual);
@@ -486,9 +504,7 @@ fn at_eighty_columns_the_control_collapses_to_its_choice_as_the_breakdown_does()
 
 #[test]
 fn errands_keep_their_reserved_colour_and_never_fold_in_the_actual_view() {
-    let application = thirty_days_actual(|query| {
-        super::errands::with_errands(many_models(query, 9), 1_000, 0, 0)
-    });
+    let application = thirty_days_actual(|query| with_errands(many_models(query, 9), 1_000, 0, 0));
 
     let rows = screen(&application);
     assert_eq!(
@@ -496,9 +512,9 @@ fn errands_keep_their_reserved_colour_and_never_fold_in_the_actual_view() {
         rendered_row(&rows, "Errands") + 1,
         "Errands takes a place among the series kept"
     );
-    let selected = super::errands::thirty_days_with_errands();
+    let selected = thirty_days_with_errands();
     assert_eq!(
-        super::errands::swatch(&application, "Errands"),
-        super::errands::swatch(&selected, "Errands")
+        swatch(&application, "Errands"),
+        swatch(&selected, "Errands")
     );
 }
