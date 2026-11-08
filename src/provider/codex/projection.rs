@@ -1443,9 +1443,12 @@ async fn next_provider_event(
 
 /// Prices a Usage event from the rate table, which is the only Cost a Codex
 /// Turn can carry: Codex reports tokens and never dollars, so the Basis is
-/// always Estimated. A Model the table does not price, a table no fetch has
-/// ever filled, and an event that is not a Usage all pass through unchanged,
-/// leaving the Cost absent rather than zero.
+/// always Estimated. It is priced by the per-Share rule: each Model Share the
+/// event carries at its own Model, and only what they leave at the Model in
+/// force; an event with no Shares is one estimate at that Model. A Model the
+/// table does not price, a table no fetch has ever filled, and an event that
+/// is not a Usage all pass through unchanged, leaving the Cost absent rather
+/// than zero.
 ///
 /// A Subagent is priced only after its own attach/settings evidence establishes
 /// a Model. Usage already observed before that evidence becomes the pricing
@@ -1456,7 +1459,14 @@ fn estimate_cost(
     pricing: Option<&PricingSource>,
     mut event: AttributedProviderEvent,
 ) -> AttributedProviderEvent {
-    let (Some(pricing), ProviderEvent::Usage { usage, cost, .. }) = (pricing, &mut event.event)
+    let (
+        Some(pricing),
+        ProviderEvent::Usage {
+            usage,
+            cost,
+            model_shares,
+        },
+    ) = (pricing, &mut event.event)
     else {
         return event;
     };
@@ -1486,14 +1496,23 @@ fn estimate_cost(
             )
         }
     };
-    let estimated = pricing.estimate_cached(
+    // The Shares are priced as parts of `priceable_usage`, so they must be
+    // stated on its terms: a Subagent's priced stretch, not the reading's
+    // whole Usage, where the two differ.
+    let estimate = pricing.estimate_cached_by_share(
         &ModelsDevModel::new(super::MODELS_DEV_PROVIDER, model),
         &priceable_usage,
+        std::mem::take(model_shares),
     );
-    *cost = estimated.map(|estimated| {
+    *cost = estimate.cost().map(|estimated| {
         let metered = MeteredCost::from(estimated);
-        if partial { metered.partial() } else { metered }
+        if partial || estimate.is_partial() {
+            metered.partial()
+        } else {
+            metered
+        }
     });
+    *model_shares = estimate.into_model_shares();
     event
 }
 

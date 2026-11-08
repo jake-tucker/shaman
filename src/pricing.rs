@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{Mutex, OnceCell};
 
-use crate::protocol::{Cost, CostBasis, ModelId, ProviderId, Usage};
+use crate::protocol::{Cost, CostBasis, DividedUsage, ModelId, ModelShare, ProviderId, Usage};
 use crate::runtime::protect_current_user_file;
 
 const DEFAULT_SOURCE_ENDPOINT: &str = "https://models.dev/api.json";
@@ -50,6 +50,77 @@ impl EstimatedCost {
 
     pub const fn basis(self) -> CostBasis {
         CostBasis::Estimated
+    }
+}
+
+/// A Turn's reading priced from a rate table by the one rule every
+/// Estimated Cost follows: each Model Share's part of the Usage at that
+/// Share's Actual Model, and only the part the Shares leave — all of it, on
+/// a reading holding none — at the Agent Selection's Model. A reading with
+/// no Shares is priced exactly as one estimate at the Selection's Model.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ShareEstimate {
+    cost: Option<EstimatedCost>,
+    is_partial: bool,
+    model_shares: Vec<ModelShare>,
+}
+
+impl ShareEstimate {
+    /// Prices `usage` and its `model_shares` with `price`, which answers
+    /// what some Usage costs at one Model, absent where it has no price for
+    /// it. Each Share is priced at the part of `usage` [`DividedUsage`]
+    /// gives it, and any Cost it already states is replaced.
+    fn priced(
+        usage: &Usage,
+        selection: &ModelId,
+        mut model_shares: Vec<ModelShare>,
+        mut price: impl FnMut(&ModelId, &Usage) -> Option<Cost>,
+    ) -> Self {
+        let divided = DividedUsage::of(Some(usage), &model_shares);
+        let mut parts = Vec::with_capacity(model_shares.len() + 1);
+        for (share, part) in model_shares.iter_mut().zip(&divided.shares) {
+            share.cost = part.as_ref().and_then(|part| price(&share.model, part));
+            share.cost_is_partial = false;
+            parts.push(share.cost);
+        }
+        if model_shares.is_empty() || divided.leaves_usage() {
+            let left = divided.left.as_ref().unwrap_or(usage);
+            parts.push(price(selection, left));
+        }
+        let mut cost = None::<Cost>;
+        let mut is_partial = false;
+        for part in parts {
+            match part {
+                Some(part) => match cost.map_or(Some(part), |cost| cost.checked_add(part)) {
+                    Some(sum) => cost = Some(sum),
+                    None => is_partial = true,
+                },
+                None => is_partial = true,
+            }
+        }
+        Self {
+            cost: cost.map(|cost| EstimatedCost { cost }),
+            is_partial,
+            model_shares,
+        }
+    }
+
+    /// What the reading cost: its Shares' and its remainder's estimates
+    /// added up, absent where nothing priced any part of it.
+    pub const fn cost(&self) -> Option<EstimatedCost> {
+        self.cost
+    }
+
+    /// Whether some part of the reading — a Share, or the remainder — has
+    /// no price, so [`Self::cost`] says less than it cost.
+    pub const fn is_partial(&self) -> bool {
+        self.is_partial
+    }
+
+    /// The Shares, each stating its Estimated Cost at its Actual Model, or
+    /// none where that Model has no price for its part.
+    pub fn into_model_shares(self) -> Vec<ModelShare> {
+        self.model_shares
     }
 }
 
@@ -215,15 +286,37 @@ impl PricingSource {
     /// absence so streaming Provider output can always keep moving.
     pub fn estimate_cached(&self, model: &ModelsDevModel, usage: &Usage) -> Option<EstimatedCost> {
         let state = self.state.try_lock().ok()?;
+        self.fresh_catalog(&state)?.estimate(model, usage)
+    }
+
+    /// Prices a Turn's reading by the per-Share rule ([`ShareEstimate`]) from
+    /// only fresh in-memory rates, as [`Self::estimate_cached`] reads them:
+    /// each of `model_shares` at its own Model in `selection`'s catalog, and
+    /// what they leave of `usage` at `selection`. A cold, busy, or overdue
+    /// table prices nothing.
+    pub fn estimate_cached_by_share(
+        &self,
+        selection: &ModelsDevModel,
+        usage: &Usage,
+        model_shares: Vec<ModelShare>,
+    ) -> ShareEstimate {
+        let state = self.state.try_lock().ok();
+        let catalog = state.as_deref().and_then(|state| self.fresh_catalog(state));
+        ShareEstimate::priced(usage, &selection.model, model_shares, |model, usage| {
+            catalog?.price(&selection.provider, model, usage)
+        })
+    }
+
+    /// The table held in memory, where its last fetch attempt is within the
+    /// refresh interval.
+    fn fresh_catalog<'a>(&self, state: &'a PricingState) -> Option<&'a RateCatalog> {
         let document = state.document.as_ref()?;
-        if !within_refresh_interval(
+        within_refresh_interval(
             document.last_attempted_at_millis,
             now_millis(),
             self.refresh_interval,
-        ) {
-            return None;
-        }
-        document.catalog.estimate(model, usage)
+        )
+        .then_some(&document.catalog)
     }
 
     /// Keeps rates current while a consumer is alive. Multiple consumers share
@@ -373,12 +466,16 @@ impl PricingSource {
 
 impl RateCatalog {
     fn estimate(&self, model: &ModelsDevModel, usage: &Usage) -> Option<EstimatedCost> {
-        let cost = self
-            .providers
-            .get(&model.provider)?
-            .get(model.model.as_str())?
-            .price(usage)?;
+        let cost = self.price(&model.provider, &model.model, usage)?;
         Some(EstimatedCost { cost })
+    }
+
+    /// What `usage` costs at `model` of `provider`'s catalog.
+    fn price(&self, provider: &str, model: &ModelId, usage: &Usage) -> Option<Cost> {
+        self.providers
+            .get(provider)?
+            .get(model.as_str())?
+            .price(usage)
     }
 
     fn cache_rates(&self, model: &ModelsDevModel) -> Option<CacheRates> {
@@ -737,6 +834,192 @@ mod tests {
         );
         assert_eq!(pricing.cache_rates(&openai_model("unknown")).await, None);
         server.abort();
+    }
+
+    /// A source primed from a fixture table listing `cheap` at $1 and
+    /// `dear` at $10 a million tokens, in and out, under `openai`.
+    async fn primed_by_share_fixture() -> (PricingSource, tempfile::TempDir) {
+        let app = Router::new().route(
+            "/api.json",
+            get(|| async {
+                Json(json!({
+                    "openai": {
+                        "models": {
+                            "cheap": { "cost": { "input": 1.0, "output": 1.0 } },
+                            "dear": { "cost": { "input": 10.0, "output": 10.0 } }
+                        }
+                    }
+                }))
+            }),
+        );
+        let (endpoint, server) = serve_fixture(app).await;
+        let data_dir = tempfile::tempdir().expect("create data directory");
+        let pricing = PricingSource::new(data_dir.path())
+            .with_http_client(crate::runtime::loopback_http_client())
+            .with_source_endpoint(endpoint)
+            .with_refresh_interval(TEST_REFRESH_INTERVAL);
+        pricing.prime().await;
+        server.abort();
+        (pricing, data_dir)
+    }
+
+    fn fresh(tokens: u64) -> Usage {
+        Usage {
+            fresh_input_tokens: Some(tokens),
+            output_tokens: Some(0),
+            ..Usage::default()
+        }
+    }
+
+    fn unpriced_share(model: &str, usage: Usage) -> ModelShare {
+        ModelShare {
+            model: ModelId::new(model),
+            usage,
+            cost: None,
+            cost_is_partial: false,
+        }
+    }
+
+    fn priced_share(model: &str, usage: Usage, usd: f64) -> ModelShare {
+        ModelShare {
+            cost: Cost::from_usd(usd),
+            ..unpriced_share(model, usage)
+        }
+    }
+
+    fn estimated(estimate: &ShareEstimate) -> (Option<Cost>, bool) {
+        (
+            estimate.cost().map(EstimatedCost::cost),
+            estimate.is_partial(),
+        )
+    }
+
+    #[tokio::test]
+    async fn each_share_is_estimated_at_its_own_model_and_only_the_remainder_at_the_selection() {
+        let (pricing, _data_dir) = primed_by_share_fixture().await;
+        let shares = vec![
+            unpriced_share("cheap", fresh(1_000_000)),
+            unpriced_share("dear", fresh(1_000_000)),
+        ];
+
+        let auto = pricing.estimate_cached_by_share(
+            &openai_model("auto"),
+            &fresh(3_000_000),
+            shares.clone(),
+        );
+        assert_eq!(
+            estimated(&auto),
+            (Cost::from_usd(11.0), true),
+            "the remainder's 1M has no price at `auto`, so the Shares' $11 is partial"
+        );
+        assert_eq!(
+            auto.into_model_shares(),
+            vec![
+                priced_share("cheap", fresh(1_000_000), 1.0),
+                priced_share("dear", fresh(1_000_000), 10.0),
+            ]
+        );
+
+        let cheap =
+            pricing.estimate_cached_by_share(&openai_model("cheap"), &fresh(3_000_000), shares);
+        assert_eq!(
+            estimated(&cheap),
+            (Cost::from_usd(12.0), false),
+            "the remainder at the Selection's $1, and the dear Share at its own $10"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reading_without_shares_is_estimated_as_one_estimate_at_its_selection() {
+        let (pricing, _data_dir) = primed_by_share_fixture().await;
+        for (model, usage) in [
+            ("dear", fresh(2_000_000)),
+            ("dear", Usage::default()),
+            ("auto", fresh(2_000_000)),
+            ("auto", Usage::default()),
+        ] {
+            let model = openai_model(model);
+            let estimate = pricing.estimate_cached_by_share(&model, &usage, Vec::new());
+            assert_eq!(
+                estimate.cost(),
+                pricing.estimate_cached(&model, &usage),
+                "{model:?} over {usage:?}"
+            );
+            assert_eq!(
+                estimate.is_partial(),
+                estimate.cost().is_none(),
+                "unpriced only where nothing priced it"
+            );
+            assert!(estimate.into_model_shares().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_share_on_a_model_the_table_does_not_know_is_unpriced_and_leaves_the_estimate_partial()
+     {
+        let (pricing, _data_dir) = primed_by_share_fixture().await;
+        let estimate = pricing.estimate_cached_by_share(
+            &openai_model("auto"),
+            &fresh(2_000_000),
+            vec![
+                // A Cost a Share states already is the table's to replace.
+                priced_share("mystery", fresh(1_000_000), 99.0),
+                unpriced_share("dear", fresh(1_000_000)),
+            ],
+        );
+        assert_eq!(
+            estimated(&estimate),
+            (Cost::from_usd(10.0), true),
+            "the Shares leave nothing to the unpriced Selection; the unknown Share is left out"
+        );
+        assert_eq!(
+            estimate.into_model_shares(),
+            vec![
+                unpriced_share("mystery", fresh(1_000_000)),
+                priced_share("dear", fresh(1_000_000), 10.0),
+            ]
+        );
+
+        let nothing = pricing.estimate_cached_by_share(
+            &openai_model("auto"),
+            &fresh(1_000_000),
+            vec![unpriced_share("mystery", fresh(1_000_000))],
+        );
+        assert_eq!(estimated(&nothing), (None, true), "nothing priced any part");
+    }
+
+    #[tokio::test]
+    async fn shares_stating_more_than_the_reading_are_priced_at_what_is_left_of_it() {
+        let (pricing, _data_dir) = primed_by_share_fixture().await;
+        let estimate = pricing.estimate_cached_by_share(
+            &openai_model("cheap"),
+            &fresh(1_500_000),
+            vec![
+                unpriced_share("dear", fresh(1_000_000)),
+                unpriced_share("dear", fresh(1_000_000)),
+            ],
+        );
+        assert_eq!(estimated(&estimate), (Cost::from_usd(15.0), false));
+        assert_eq!(
+            estimate
+                .into_model_shares()
+                .into_iter()
+                .map(|share| share.cost)
+                .collect::<Vec<_>>(),
+            vec![Cost::from_usd(10.0), Cost::from_usd(5.0)]
+        );
+    }
+
+    #[test]
+    fn a_cold_table_prices_no_share() {
+        let data_dir = tempfile::tempdir().expect("create data directory");
+        let pricing = PricingSource::new(data_dir.path());
+        let estimate = pricing.estimate_cached_by_share(
+            &openai_model("cheap"),
+            &fresh(2_000_000),
+            vec![unpriced_share("cheap", fresh(1_000_000))],
+        );
+        assert_eq!(estimated(&estimate), (None, true));
     }
 
     #[test]
