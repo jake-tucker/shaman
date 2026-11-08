@@ -30,7 +30,7 @@ use crate::{
         SessionSnapshot, SettingMutation, SettingsDiagnostic, SettingsSnapshot, ShutdownReason,
         SkillCatalog, SkillCatalogRequest, TextSelectionCopy, TranscriptSettings, TurnId,
         TurnStatus, UnreachableReason, UpdateAgentSelectionRequest, UsageMetricsBreakdown,
-        Workspace, WorkspaceId, one_line_title,
+        UsageMetricsModelView, Workspace, WorkspaceId, one_line_title,
     },
     provider::built_in_providers,
     settings::SettingChoiceSurface,
@@ -77,7 +77,7 @@ use super::{
     },
     metrics::{
         BucketMove, FocusMove, MetricsReadRefusal, MetricsTab, MetricsView, OfferedBreakdown,
-        Receipt as MetricsReceipt,
+        OfferedModelView, Receipt as MetricsReceipt,
         calendar::MetricsRange,
         chart::MetricsMeasure,
         insights::{InsightsPanel, InsightsView, ItemMove, PanelMove, RowScroll},
@@ -10802,6 +10802,20 @@ impl Application {
         }
     }
 
+    /// Files the open Usage Metrics view's work under `model_view`, reading
+    /// it where that changed what the view shows, as a breakdown is chosen.
+    fn choose_metrics_model_view(
+        &mut self,
+        model_view: UsageMetricsModelView,
+    ) -> ApplicationTransition {
+        let view = &mut self.state.metrics_view;
+        if view.is_open() && view.choose_model_view(model_view) {
+            self.read_metrics_tab_lacking()
+        } else {
+            ApplicationTransition::Continue
+        }
+    }
+
     /// Plots `measure` in the open Usage Metrics view, as a range is chosen
     /// only there.
     fn choose_metrics_measure(&mut self, measure: MetricsMeasure) {
@@ -12810,6 +12824,13 @@ impl Application {
             SemanticCommandId::MetricsBreakdownNext => {
                 let breakdown = self.state.metrics_view.breakdown().next();
                 Ok(self.choose_metrics_breakdown(breakdown))
+            }
+            SemanticCommandId::MetricsModelViewSelect(model_view) => {
+                Ok(self.choose_metrics_model_view(model_view))
+            }
+            SemanticCommandId::MetricsModelViewToggle => {
+                let model_view = self.state.metrics_view.model_view().other();
+                Ok(self.choose_metrics_model_view(model_view))
             }
             SemanticCommandId::MetricsBucketPrevious => {
                 Ok(self.move_metrics_selection(BucketMove::Previous))

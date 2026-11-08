@@ -10,7 +10,7 @@ use super::{
 
 use crate::protocol::{
     ApprovalId, AttachmentId, Outlook, QuestionnaireId, SessionReference, TurnId,
-    UsageMetricsBreakdown, WorkspaceId,
+    UsageMetricsBreakdown, UsageMetricsModelView, WorkspaceId,
 };
 
 pub(super) const AUTOCOMPLETE_LIMIT: usize = 10;
@@ -135,6 +135,13 @@ pub enum SemanticCommandId {
     /// Splits the Usage Metrics view's bars by the breakdown after its own,
     /// the last turning back to the first.
     MetricsBreakdownNext,
+    /// Files the Usage Metrics view's work under the Models its Agent
+    /// Selections named or the Models that ran it, reading it anew, where
+    /// its bars are split by Model.
+    MetricsModelViewSelect(UsageMetricsModelView),
+    /// Files the Usage Metrics view's work under the other Model view, where
+    /// its bars are split by Model.
+    MetricsModelViewToggle,
     /// Selects the bucket before the Usage Metrics view's selected one, or
     /// the last where none is, stopping at the first.
     MetricsBucketPrevious,
@@ -840,6 +847,11 @@ impl SemanticCommandId {
                 UsageMetricsBreakdown::Workspace => "metrics.breakdown.workspace",
             },
             Self::MetricsBreakdownNext => "metrics.breakdown.next",
+            Self::MetricsModelViewSelect(view) => match view {
+                UsageMetricsModelView::Selected => "metrics.model-view.selected",
+                UsageMetricsModelView::Actual => "metrics.model-view.actual",
+            },
+            Self::MetricsModelViewToggle => "metrics.model-view.toggle",
             Self::MetricsBucketPrevious => "metrics.bucket.previous",
             Self::MetricsBucketNext => "metrics.bucket.next",
             Self::MetricsBucketFirst => "metrics.bucket.first",
@@ -1184,6 +1196,22 @@ const fn metrics_breakdown_descriptor(
         title,
         reach: SemanticReach::Client,
         description: "Split the Usage Metrics view's bars by one breakdown",
+        slash: None,
+        keybinding: None,
+    }
+}
+
+/// Choosing a Model view changes only what the view shows, so it reaches
+/// the Client, as choosing a breakdown does.
+const fn metrics_model_view_descriptor(
+    view: UsageMetricsModelView,
+    title: &'static str,
+) -> SemanticCommandDescriptor {
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::MetricsModelViewSelect(view),
+        title,
+        reach: SemanticReach::Client,
+        description: "File the Usage Metrics view's work by the Models chosen or those that ran",
         slash: None,
         keybinding: None,
     }
@@ -2109,6 +2137,22 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         title: "Next Metrics Breakdown",
         reach: SemanticReach::Client,
         description: "Split the Usage Metrics view's bars by the next breakdown",
+        slash: None,
+        keybinding: None,
+    },
+    metrics_model_view_descriptor(
+        UsageMetricsModelView::Selected,
+        "Show Metrics by Selected Model",
+    ),
+    metrics_model_view_descriptor(
+        UsageMetricsModelView::Actual,
+        "Show Metrics by Actual Model",
+    ),
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::MetricsModelViewToggle,
+        title: "Toggle Metrics Model View",
+        reach: SemanticReach::Client,
+        description: "File the Usage Metrics view's work by the other Model view",
         slash: None,
         keybinding: None,
     },

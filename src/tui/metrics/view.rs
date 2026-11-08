@@ -7,7 +7,9 @@
 //! refused, or when the range holds no Usage; Insights draws the range bar
 //! alone and its panels. Where the frame is narrow the controls shorten and
 //! the legend's series flow along a line; where it is smaller than the view
-//! can be drawn in, it asks for a larger terminal.
+//! can be drawn in, it asks for a larger terminal. Under the Model breakdown
+//! the Model view stands beneath the breakdown, on the row that says what
+//! became of a read: the controls row has no room for it in a narrow frame.
 
 use ratatui::{
     Frame,
@@ -27,8 +29,8 @@ use crate::{
 
 use super::{
     super::slots::truncate_to_width,
-    BREAKDOWNS, BarStrip, FocusedRow, LEGEND_SERIES, MetricsContent, MetricsReadRefusal,
-    MetricsTab, MetricsView, OfferedBreakdown,
+    BREAKDOWNS, BarStrip, FocusedRow, LEGEND_SERIES, MODEL_VIEWS, MetricsContent,
+    MetricsReadRefusal, MetricsTab, MetricsView, OfferedBreakdown, OfferedModelView,
     calendar::{MetricsRange, RangeBuckets},
     chart::{self, Figure, MetricsMeasure, Series},
     headline::{self, HEADLINE_ROWS},
@@ -50,6 +52,8 @@ const CONTROL_GAP: u16 = 4;
 const TAB_GAP: u16 = 1;
 /// What stands before the breakdowns on the controls row.
 const BREAKDOWN_LEAD: &str = "by ";
+/// What stands before the Model views beneath them.
+const MODEL_VIEW_LEAD: &str = "Model: ";
 /// What heads the Sessions that cost the most.
 const TOP_SESSIONS_HEADING: &str = "Most expensive Sessions";
 /// The fewest rows the chart keeps however many Sessions are listed under
@@ -184,9 +188,22 @@ pub(in crate::tui) fn render(
         );
     }
     // What is happening to the figures shown takes the row under the
-    // controls, where it has the whole width to say it in.
+    // controls, where it has the whole width to say it in, less what the
+    // Model view takes at its end.
     let status_y = controls_y + 1;
-    let room = usize::from(area.width.saturating_sub(INSET * 2));
+    let mut room = usize::from(area.width.saturating_sub(INSET * 2));
+    if view.offers_model_view() {
+        let model_view_x = render_model_views(
+            buffer,
+            lead_x,
+            status_y,
+            area.right().saturating_sub(INSET - 1),
+            controls.collapsed,
+            view,
+            theme,
+        );
+        room = usize::from(model_view_x.saturating_sub(area.x + INSET + CONTROL_GAP));
+    }
     if let Some(refusal) = view.stale_because() {
         // Figures that could not be read again stay, saying why above them.
         let note = truncate_to_width(&stale_note(refusal), room);
@@ -550,6 +567,51 @@ impl Controls {
         let gap = usize::from(CONTROL_GAP);
         inset + ranges + gap - 1 + measures + gap + BREAKDOWN_LEAD.width() + breakdowns + inset
     }
+}
+
+/// The Model views along row `y`, headed by their lead, from column `x` or
+/// as far before it as ends them by column `end`: both views, or, where
+/// `collapsed` as the breakdown is, the one chosen alone, which takes the
+/// other, as `m` does. Answers the column they start at.
+fn render_model_views(
+    buffer: &mut Buffer,
+    x: u16,
+    y: u16,
+    end: u16,
+    collapsed: bool,
+    view: &MetricsView,
+    theme: &Theme,
+) -> u16 {
+    let chosen = view.model_view();
+    let lead = u16::try_from(MODEL_VIEW_LEAD.width()).unwrap_or(0);
+    let tabs = if collapsed {
+        tabs_width([chosen.label()])
+    } else {
+        tabs_width(MODEL_VIEWS.map(OfferedModelView::label))
+    };
+    let width = lead + u16::try_from(tabs).unwrap_or(u16::MAX);
+    let x = x.min(end.saturating_sub(width));
+    buffer.set_string(x, y, MODEL_VIEW_LEAD, theme.text.subdued);
+    if collapsed {
+        render_tabs(
+            buffer,
+            x + lead,
+            y,
+            [(chosen.label(), true)],
+            |_, at| view.record_model_view_target(chosen.other(), at),
+            theme,
+        );
+    } else {
+        render_tabs(
+            buffer,
+            x + lead,
+            y,
+            MODEL_VIEWS.map(|offered| (offered.label(), offered == chosen)),
+            |place, at| view.record_model_view_target(MODEL_VIEWS[place], at),
+            theme,
+        );
+    }
+    x
 }
 
 /// The columns [`render_tabs`] draws `labels` in.

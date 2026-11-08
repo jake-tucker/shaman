@@ -22,7 +22,8 @@ use uuid::Uuid;
 
 use crate::protocol::{
     Outlook, SessionId, SessionReference, SessionTimestamp, UsageMetricsBreakdown,
-    UsageMetricsInterval, UsageMetricsKey, UsageMetricsQuery, UsageMetricsReport,
+    UsageMetricsInterval, UsageMetricsKey, UsageMetricsModelView, UsageMetricsQuery,
+    UsageMetricsReport,
 };
 
 use calendar::{MetricsRange, RangeBuckets};
@@ -83,6 +84,45 @@ impl OfferedBreakdown for UsageMetricsBreakdown {
             Self::Model => "Models",
             Self::Provider => "Providers",
             Self::Workspace => "Workspaces",
+        }
+    }
+}
+
+/// Every Model view, in the order the view offers them.
+pub(super) const MODEL_VIEWS: [UsageMetricsModelView; 2] = [
+    UsageMetricsModelView::Selected,
+    UsageMetricsModelView::Actual,
+];
+
+/// A Model view as the view offers it: one of the two of [`MODEL_VIEWS`],
+/// in the word its control uses.
+pub(super) trait OfferedModelView: Sized {
+    /// The view the control does not show.
+    fn other(self) -> Self;
+    /// Where the view stands in [`MODEL_VIEWS`].
+    fn place(self) -> usize;
+    fn label(self) -> &'static str;
+}
+
+impl OfferedModelView for UsageMetricsModelView {
+    fn other(self) -> Self {
+        match self {
+            Self::Selected => Self::Actual,
+            Self::Actual => Self::Selected,
+        }
+    }
+
+    fn place(self) -> usize {
+        MODEL_VIEWS
+            .iter()
+            .position(|view| *view == self)
+            .expect("every Model view is offered")
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Selected => "Selected",
+            Self::Actual => "Actual",
         }
     }
 }
@@ -154,6 +194,10 @@ pub(super) struct MetricsView {
     range: MetricsRange,
     measure: MetricsMeasure,
     breakdown: UsageMetricsBreakdown,
+    /// Which Model the Model breakdown files work under. It is held under
+    /// the other breakdowns, which it does not change, and offered again
+    /// with the Model breakdown.
+    model_view: UsageMetricsModelView,
     /// The read the view awaits, the Outlook it asked, and what it asked for.
     asked: Option<(Uuid, Outlook, Asked)>,
     /// The last report read, with the Outlook it was read from and the
@@ -166,8 +210,9 @@ pub(super) struct MetricsView {
     selected: Option<usize>,
     /// The series the chart leaves out of its stacks, by which series they
     /// are rather than where they stand, so they stay hidden through a
-    /// change of measure or a refresh. Only a new range or breakdown, whose
-    /// series are others, lets them go.
+    /// change of measure or a refresh. Only a new range, breakdown, or Model
+    /// view, whose series are others, lets them go: a key the Actual view
+    /// shares with the Selected stands for other work in each.
     hidden: HashSet<SeriesId>,
     /// A key the chart keeps as a series of its own even where it would
     /// fold into Other, so that it can be shown alone: the Workspace an
@@ -268,6 +313,8 @@ struct Targets {
     measures: [Option<Rect>; MetricsMeasure::ALL.len()],
     /// Each breakdown's place after them, in [`BREAKDOWNS`] order.
     breakdowns: [Option<Rect>; BREAKDOWNS.len()],
+    /// Each Model view's place beneath them, in [`MODEL_VIEWS`] order.
+    model_views: [Option<Rect>; MODEL_VIEWS.len()],
     /// The chart, or where it stands while there is none to draw.
     chart: Option<Rect>,
     /// The bars the chart drew, each a column of it a pointer selects by.
@@ -309,6 +356,7 @@ pub(super) enum MetricsTarget {
     Range(MetricsRange),
     Measure(MetricsMeasure),
     Breakdown(UsageMetricsBreakdown),
+    ModelView(UsageMetricsModelView),
     /// A bucket's bar, by its place among them, or the space above or
     /// before it in its slot.
     Bar(usize),
@@ -474,6 +522,29 @@ impl MetricsView {
         self.breakdown = breakdown;
         self.forget_figures();
         true
+    }
+
+    /// Chooses which Model the Model breakdown files work under, answering
+    /// whether that changed what the view shows, so that it must be read
+    /// anew, as a breakdown is chosen. Under another breakdown the view is
+    /// not offered, and choosing one changes nothing, not even the view
+    /// held for the Model breakdown's return.
+    pub(super) fn choose_model_view(&mut self, model_view: UsageMetricsModelView) -> bool {
+        if !self.offers_model_view() || self.model_view == model_view {
+            return false;
+        }
+        self.model_view = model_view;
+        self.forget_figures();
+        true
+    }
+
+    /// Whether the breakdown shown is one a Model view changes: by Model.
+    pub(super) fn offers_model_view(&self) -> bool {
+        self.breakdown == UsageMetricsBreakdown::Model
+    }
+
+    pub(super) fn model_view(&self) -> UsageMetricsModelView {
+        self.model_view
     }
 
     /// Lets go of every figure the view holds or awaits, once what it shows
@@ -764,7 +835,9 @@ impl MetricsView {
         let query = UsageMetricsQuery {
             buckets,
             breakdown: self.breakdown,
-            model_view: Default::default(),
+            // The view held, whatever the breakdown: the Server ignores it
+            // under the others, which read the same either way.
+            model_view: self.model_view,
             comparison,
             top_sessions: TOP_SESSIONS,
         };
@@ -909,6 +982,10 @@ impl MetricsView {
         self.update_targets(|targets| targets.breakdowns[breakdown.place()] = Some(area));
     }
 
+    pub(super) fn record_model_view_target(&self, model_view: UsageMetricsModelView, area: Rect) {
+        self.update_targets(|targets| targets.model_views[model_view.place()] = Some(area));
+    }
+
     pub(super) fn record_chart_target(&self, area: Rect) {
         self.update_targets(|targets| targets.chart = Some(area));
     }
@@ -967,6 +1044,12 @@ impl MetricsView {
             .find(|breakdown| on(targets.breakdowns[breakdown.place()]))
         {
             return Some(MetricsTarget::Breakdown(breakdown));
+        }
+        if let Some(model_view) = MODEL_VIEWS
+            .into_iter()
+            .find(|model_view| on(targets.model_views[model_view.place()]))
+        {
+            return Some(MetricsTarget::ModelView(model_view));
         }
         // Beside the bars, out to the frame's edges, the chart reaches for
         // the nearest of them, so a drag past either end stays at that end.

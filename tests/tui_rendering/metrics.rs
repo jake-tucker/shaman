@@ -30,6 +30,7 @@ use uuid::Uuid;
 
 mod errands;
 mod insights;
+mod model_view;
 
 const WIDTH: u16 = 120;
 const HEIGHT: u16 = 48;

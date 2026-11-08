@@ -22,7 +22,7 @@ use suru::{
 /// each day `fresh` tokens of fresh input and `cached` read from cache,
 /// costing `nano_usd`, in every bucket's whole and under the Errands key —
 /// never as a Session or a Turn.
-fn with_errands(
+pub(super) fn with_errands(
     mut report: UsageMetricsReport,
     fresh: u64,
     cached: u64,
@@ -66,7 +66,7 @@ fn by_workspace(answered: impl FnOnce(&UsageMetricsQuery) -> UsageMetricsReport)
     application
 }
 
-fn swatch(application: &Application, label: &str) -> Color {
+pub(super) fn swatch(application: &Application, label: &str) -> Color {
     let buffer = rendered_application_buffer(application, WIDTH, HEIGHT);
     let (x, y) = text_position(&buffer, label);
     buffer[(x - 2, y)].fg
@@ -122,7 +122,7 @@ fn errands_never_fold_into_other_and_keep_the_colour_reserved_for_them() {
 }
 
 /// Thirty days of [`report`]'s three Models, and Errands of 100K a day.
-fn thirty_days_with_errands() -> Application {
+pub(super) fn thirty_days_with_errands() -> Application {
     let mut application = reader_in(NEW_YORK, afternoon());
     let (_, request_id, query) = ask(&mut application);
     answer(

@@ -367,8 +367,10 @@ pub(super) fn command_for_metrics_view_event(
 /// bars does, then the focus, and with neither left closes the view — the
 /// selection first, since it changes what the legend reads, where a focus
 /// only marks a row — `c`/`t`/`s` or a click on a measure choose what the
-/// chart plots and Tab the next, and `b` splits the bars by the next
-/// breakdown and a click on one by that.
+/// chart plots and Tab the next, `b` splits the bars by the next
+/// breakdown and a click on one by that, and, under the Model breakdown,
+/// `m` files the work by the other Model view, Selected or Actual, and a
+/// click on one by that.
 fn command_for_overview_key(key: KeyEvent, keys: MetricsKeys) -> Option<SemanticCommandId> {
     let focused = keys.focused_row;
     Some(match (key.code, key.modifiers) {
@@ -412,12 +414,13 @@ fn command_for_overview_key(key: KeyEvent, keys: MetricsKeys) -> Option<Semantic
         }
         (KeyCode::Tab, KeyModifiers::NONE) => SemanticCommandId::MetricsMeasureNext,
         (KeyCode::Char('b'), KeyModifiers::NONE) => SemanticCommandId::MetricsBreakdownNext,
+        (KeyCode::Char('m'), KeyModifiers::NONE) => SemanticCommandId::MetricsModelViewToggle,
         _ => return None,
     })
 }
 
 /// Overview's own clicks, drags, and wheel, over the measures, breakdowns,
-/// chart, legend, and Sessions it drew.
+/// Model views, chart, legend, and Sessions it drew.
 fn command_for_overview_pointer(
     mouse: MouseEvent,
     target: MetricsTarget,
@@ -428,6 +431,9 @@ fn command_for_overview_pointer(
         }
         (MouseEventKind::Up(MouseButton::Left), MetricsTarget::Breakdown(breakdown)) => {
             SemanticCommandId::MetricsBreakdownSelect(breakdown)
+        }
+        (MouseEventKind::Up(MouseButton::Left), MetricsTarget::ModelView(model_view)) => {
+            SemanticCommandId::MetricsModelViewSelect(model_view)
         }
         (MouseEventKind::Up(MouseButton::Left), MetricsTarget::Bar(bucket)) => {
             SemanticCommandId::MetricsBucketSelect { bucket }
