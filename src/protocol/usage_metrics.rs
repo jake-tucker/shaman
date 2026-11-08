@@ -29,8 +29,9 @@ pub struct UsageMetricsQuery {
     pub buckets: Vec<UsageMetricsInterval>,
     pub breakdown: UsageMetricsBreakdown,
     /// Which Model a Turn's work is filed under when broken down by Model,
-    /// and which Model names a top Session's: the other breakdowns, the
-    /// buckets' totals, and the comparison read the same in either.
+    /// and, under that breakdown alone, which Model names a top Session's.
+    /// The Server ignores it under the Provider and Workspace breakdowns,
+    /// and the buckets' totals and the comparison read the same in either.
     #[serde(default)]
     pub model_view: UsageMetricsModelView,
     /// A span to compare the buckets with, whose figures the report gives

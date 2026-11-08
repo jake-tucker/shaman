@@ -226,13 +226,15 @@ impl Filing {
     /// The key the part of a Cost `contribution` is filed under: its
     /// Share's, or the remainder's.
     fn key_of(&self, contribution: &CostContribution) -> &UsageMetricsKey {
-        match contribution.model_share {
-            Some(ModelShareIndex(index)) => self
-                .shares
-                .get(index)
-                .expect("a contribution's Share is one its Turn holds"),
-            None => &self.remainder,
-        }
+        let Some(ModelShareIndex(index)) = contribution.model_share else {
+            return &self.remainder;
+        };
+        let share = self.shares.get(index);
+        debug_assert!(
+            share.is_some(),
+            "a contribution's Share is one its Turn holds"
+        );
+        share.unwrap_or(&self.remainder)
     }
 }
 
@@ -459,7 +461,7 @@ impl MeteredForest {
         // The Turns Cost Coverage leaves a part of their remainder.
         let remainder_costs = costs
             .iter()
-            .filter(|contribution: &&CostContribution| contribution.model_share.is_none())
+            .filter(|contribution| contribution.model_share.is_none())
             .map(|contribution| (contribution.session_id, contribution.turn_id))
             .collect::<HashSet<_>>();
         let mut turns = Vec::new();

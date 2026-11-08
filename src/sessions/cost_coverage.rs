@@ -429,11 +429,7 @@ fn contributions_of(forest: &impl CostForest, sessions: &[SessionId]) -> Vec<Cos
                                 *highest = (*highest).max(cost.nano_usd());
                                 Cost::from_nano_usd(added)
                             });
-                            SharedPart {
-                                index: share.index,
-                                cost,
-                                is_partial: share.is_partial,
-                            }
+                            share.part(cost)
                         })
                         .collect::<Vec<_>>();
                     contributions.extend(
@@ -472,11 +468,7 @@ fn contributions_of(forest: &impl CostForest, sessions: &[SessionId]) -> Vec<Cos
         let shares = record
             .shares
             .iter()
-            .map(|share| SharedPart {
-                index: share.index,
-                cost: share.cost,
-                is_partial: share.is_partial,
-            })
+            .map(|share| share.part(share.cost))
             .collect::<Vec<_>>();
         let Some(started_at) = record.turn_started_at else {
             contributions.extend(
@@ -605,6 +597,18 @@ struct ScopedShare {
     cost: Option<Cost>,
     /// Whether some of the Share's work is unpriced.
     is_partial: bool,
+}
+
+impl ScopedShare {
+    /// The Share's part of a contribution, adding `cost`: its whole Cost
+    /// for a Turn-scoped record, its increment for a running total.
+    fn part(&self, cost: Option<Cost>) -> SharedPart {
+        SharedPart {
+            index: self.index,
+            cost,
+            is_partial: self.is_partial,
+        }
+    }
 }
 
 fn cost_records(owner: SessionId, turn: &Turn) -> Vec<ScopedCost> {
