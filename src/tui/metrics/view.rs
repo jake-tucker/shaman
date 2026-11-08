@@ -29,8 +29,8 @@ use crate::{
 
 use super::{
     super::slots::truncate_to_width,
-    BREAKDOWNS, BarStrip, FocusedRow, LEGEND_SERIES, MODEL_VIEWS, MetricsContent,
-    MetricsReadRefusal, MetricsTab, MetricsView, OfferedBreakdown, OfferedModelView,
+    BarStrip, FocusedRow, LEGEND_SERIES, MetricsContent, MetricsReadRefusal, MetricsTab,
+    MetricsView, Offered, OfferedBreakdown,
     calendar::{MetricsRange, RangeBuckets},
     chart::{self, Figure, MetricsMeasure, Series},
     headline::{self, HEADLINE_ROWS},
@@ -167,26 +167,15 @@ pub(in crate::tui) fn render(
     let lead_x = measures_end + CONTROL_GAP;
     buffer.set_string(lead_x, controls_y, BREAKDOWN_LEAD, subdued);
     let breakdowns_x = lead_x + u16::try_from(BREAKDOWN_LEAD.width()).unwrap_or(0);
-    if controls.collapsed {
-        // Collapsed to its choice, the control takes the next, as `b` does.
-        render_tabs(
-            buffer,
-            breakdowns_x,
-            controls_y,
-            [(breakdown.label(), true)],
-            |_, at| view.record_breakdown_target(breakdown.next(), at),
-            theme,
-        );
-    } else {
-        render_tabs(
-            buffer,
-            breakdowns_x,
-            controls_y,
-            BREAKDOWNS.map(|chosen| (chosen.label(), chosen == breakdown)),
-            |place, at| view.record_breakdown_target(BREAKDOWNS[place], at),
-            theme,
-        );
-    }
+    render_choices(
+        buffer,
+        breakdowns_x,
+        controls_y,
+        breakdown,
+        controls.collapsed,
+        |breakdown, at| view.record_breakdown_target(breakdown, at),
+        theme,
+    );
     // What is happening to the figures shown takes the row under the
     // controls, where it has the whole width to say it in, less what the
     // Model view takes at its end.
@@ -558,11 +547,7 @@ impl Controls {
     fn width(self, breakdown: UsageMetricsBreakdown) -> usize {
         let ranges = tabs_width(MetricsRange::ALL.map(|range| self.range_label(range)));
         let measures = tabs_width(MetricsMeasure::ALL.map(MetricsMeasure::label));
-        let breakdowns = if self.collapsed {
-            tabs_width([breakdown.label()])
-        } else {
-            tabs_width(BREAKDOWNS.map(OfferedBreakdown::label))
-        };
+        let breakdowns = choices_width(breakdown, self.collapsed);
         let inset = usize::from(INSET - 1);
         let gap = usize::from(CONTROL_GAP);
         inset + ranges + gap - 1 + measures + gap + BREAKDOWN_LEAD.width() + breakdowns + inset
@@ -571,8 +556,8 @@ impl Controls {
 
 /// The Model views along row `y`, headed by their lead, from column `x` or
 /// as far before it as ends them by column `end`: both views, or, where
-/// `collapsed` as the breakdown is, the one chosen alone, which takes the
-/// other, as `m` does. Answers the column they start at.
+/// `collapsed` as the breakdown is, the one chosen alone. Answers the
+/// column they start at.
 fn render_model_views(
     buffer: &mut Buffer,
     x: u16,
@@ -584,40 +569,74 @@ fn render_model_views(
 ) -> u16 {
     let chosen = view.model_view();
     let lead = u16::try_from(MODEL_VIEW_LEAD.width()).unwrap_or(0);
-    let tabs = if collapsed {
-        tabs_width([chosen.label()])
-    } else {
-        tabs_width(MODEL_VIEWS.map(OfferedModelView::label))
-    };
-    let width = lead + u16::try_from(tabs).unwrap_or(u16::MAX);
-    let x = x.min(end.saturating_sub(width));
+    let tabs = u16::try_from(choices_width(chosen, collapsed)).unwrap_or(u16::MAX);
+    let x = x.min(end.saturating_sub(lead.saturating_add(tabs)));
     buffer.set_string(x, y, MODEL_VIEW_LEAD, theme.text.subdued);
-    if collapsed {
-        render_tabs(
-            buffer,
-            x + lead,
-            y,
-            [(chosen.label(), true)],
-            |_, at| view.record_model_view_target(chosen.other(), at),
-            theme,
-        );
-    } else {
-        render_tabs(
-            buffer,
-            x + lead,
-            y,
-            MODEL_VIEWS.map(|offered| (offered.label(), offered == chosen)),
-            |place, at| view.record_model_view_target(MODEL_VIEWS[place], at),
-            theme,
-        );
-    }
+    render_choices(
+        buffer,
+        x + lead,
+        y,
+        chosen,
+        collapsed,
+        |model_view, at| view.record_model_view_target(model_view, at),
+        theme,
+    );
     x
 }
 
+/// A control offering every one of `T`'s choices from `x` along row `y`,
+/// `chosen` among them, each recorded as the choice a click on it makes;
+/// or, where `collapsed`, `chosen` alone, which a click on takes the next,
+/// as the control's key does. Answers the column after the last.
+fn render_choices<T: Offered>(
+    buffer: &mut Buffer,
+    x: u16,
+    y: u16,
+    chosen: T,
+    collapsed: bool,
+    record: impl Fn(T, Rect),
+    theme: &Theme,
+) -> u16 {
+    if collapsed {
+        render_tabs(
+            buffer,
+            x,
+            y,
+            [(chosen.label(), true)],
+            |_, at| record(chosen.next(), at),
+            theme,
+        )
+    } else {
+        render_tabs(
+            buffer,
+            x,
+            y,
+            T::ALL
+                .iter()
+                .map(|offered| (offered.label(), *offered == chosen)),
+            |place, at| record(T::ALL[place], at),
+            theme,
+        )
+    }
+}
+
+/// The columns [`render_choices`] draws its control in.
+fn choices_width<T: Offered>(chosen: T, collapsed: bool) -> usize {
+    if collapsed {
+        tabs_width([chosen.label()])
+    } else {
+        tabs_width(T::ALL.iter().map(|offered| offered.label()))
+    }
+}
+
 /// The columns [`render_tabs`] draws `labels` in.
-fn tabs_width<const N: usize>(labels: [&str; N]) -> usize {
-    let tabs: usize = labels.iter().map(|label| label.width() + 2).sum();
-    tabs + usize::from(TAB_GAP) * N.saturating_sub(1)
+fn tabs_width<'a>(labels: impl IntoIterator<Item = &'a str>) -> usize {
+    let (tabs, count) = labels
+        .into_iter()
+        .fold((0, 0_usize), |(tabs, count), label| {
+            (tabs + label.width() + 2, count + 1)
+        });
+    tabs + usize::from(TAB_GAP) * count.saturating_sub(1)
 }
 
 /// The Sessions that cost the most under their heading, one to a row as
@@ -700,11 +719,11 @@ fn render_top_sessions(
 /// that a pointer can choose it by, recorded by its place in `tabs`, the
 /// chosen one drawn as a filled tab in those columns, so no label moves as
 /// the choice does. Answers the column after the last.
-fn render_tabs<const N: usize>(
+fn render_tabs<'a>(
     buffer: &mut ratatui::buffer::Buffer,
     mut x: u16,
     y: u16,
-    tabs: [(&str, bool); N],
+    tabs: impl IntoIterator<Item = (&'a str, bool)>,
     record: impl Fn(usize, Rect),
     theme: &Theme,
 ) -> u16 {

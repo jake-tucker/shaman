@@ -46,31 +46,34 @@ pub(super) const BREAKDOWNS: [UsageMetricsBreakdown; 3] = [
     UsageMetricsBreakdown::Workspace,
 ];
 
-/// A breakdown as the view offers it: in turn among [`BREAKDOWNS`], and in
-/// the words its controls and notes use.
-pub(super) trait OfferedBreakdown: Sized {
-    /// The breakdown after this one, the last turning back to the first.
-    fn next(self) -> Self;
-    /// Where the breakdown stands in [`BREAKDOWNS`].
-    fn place(self) -> usize;
-    /// What one of its keys is called.
+/// One of a few choices the view offers side by side in a control: in turn
+/// among [`Self::ALL`], in the word the control uses.
+pub(super) trait Offered: Copy + Eq + 'static {
+    /// Every choice, in the order the control offers them.
+    const ALL: &'static [Self];
+
+    /// The word the control names it by.
     fn label(self) -> &'static str;
-    /// What several of its keys are called.
-    fn plural(self) -> &'static str;
+
+    /// Where the choice stands in [`Self::ALL`].
+    fn place(self) -> usize {
+        Self::ALL
+            .iter()
+            .position(|offered| *offered == self)
+            .expect("every choice is offered")
+    }
+
+    /// The choice after this one, the last turning back to the first: of
+    /// two, the other.
+    fn next(self) -> Self {
+        Self::ALL[(self.place() + 1) % Self::ALL.len()]
+    }
 }
 
-impl OfferedBreakdown for UsageMetricsBreakdown {
-    fn next(self) -> Self {
-        BREAKDOWNS[(self.place() + 1) % BREAKDOWNS.len()]
-    }
+impl Offered for UsageMetricsBreakdown {
+    const ALL: &'static [Self] = &BREAKDOWNS;
 
-    fn place(self) -> usize {
-        BREAKDOWNS
-            .iter()
-            .position(|breakdown| *breakdown == self)
-            .expect("every breakdown is offered")
-    }
-
+    /// What one of its keys is called.
     fn label(self) -> &'static str {
         match self {
             Self::Model => "Model",
@@ -78,7 +81,15 @@ impl OfferedBreakdown for UsageMetricsBreakdown {
             Self::Workspace => "Workspace",
         }
     }
+}
 
+/// A breakdown in the words its notes use, beside its control's.
+pub(super) trait OfferedBreakdown: Offered {
+    /// What several of its keys are called.
+    fn plural(self) -> &'static str;
+}
+
+impl OfferedBreakdown for UsageMetricsBreakdown {
     fn plural(self) -> &'static str {
         match self {
             Self::Model => "Models",
@@ -94,30 +105,8 @@ pub(super) const MODEL_VIEWS: [UsageMetricsModelView; 2] = [
     UsageMetricsModelView::Actual,
 ];
 
-/// A Model view as the view offers it: one of the two of [`MODEL_VIEWS`],
-/// in the word its control uses.
-pub(super) trait OfferedModelView: Sized {
-    /// The view the control does not show.
-    fn other(self) -> Self;
-    /// Where the view stands in [`MODEL_VIEWS`].
-    fn place(self) -> usize;
-    fn label(self) -> &'static str;
-}
-
-impl OfferedModelView for UsageMetricsModelView {
-    fn other(self) -> Self {
-        match self {
-            Self::Selected => Self::Actual,
-            Self::Actual => Self::Selected,
-        }
-    }
-
-    fn place(self) -> usize {
-        MODEL_VIEWS
-            .iter()
-            .position(|view| *view == self)
-            .expect("every Model view is offered")
-    }
+impl Offered for UsageMetricsModelView {
+    const ALL: &'static [Self] = &MODEL_VIEWS;
 
     fn label(self) -> &'static str {
         match self {

@@ -1206,12 +1206,13 @@ const fn metrics_breakdown_descriptor(
 const fn metrics_model_view_descriptor(
     view: UsageMetricsModelView,
     title: &'static str,
+    description: &'static str,
 ) -> SemanticCommandDescriptor {
     SemanticCommandDescriptor {
         id: SemanticCommandId::MetricsModelViewSelect(view),
         title,
         reach: SemanticReach::Client,
-        description: "File the Usage Metrics view's work by the Models chosen or those that ran",
+        description,
         slash: None,
         keybinding: None,
     }
@@ -2143,10 +2144,12 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
     metrics_model_view_descriptor(
         UsageMetricsModelView::Selected,
         "Show Metrics by Selected Model",
+        "File the Usage Metrics view's work under the Models its Agent Selections named",
     ),
     metrics_model_view_descriptor(
         UsageMetricsModelView::Actual,
         "Show Metrics by Actual Model",
+        "File the Usage Metrics view's work under the Models that actually ran it",
     ),
     SemanticCommandDescriptor {
         id: SemanticCommandId::MetricsModelViewToggle,

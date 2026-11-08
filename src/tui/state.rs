@@ -76,8 +76,8 @@ use super::{
         command_for_workspace_picker_event, command_for_workspace_picker_menu_event,
     },
     metrics::{
-        BucketMove, FocusMove, MetricsReadRefusal, MetricsTab, MetricsView, OfferedBreakdown,
-        OfferedModelView, Receipt as MetricsReceipt,
+        BucketMove, FocusMove, MetricsReadRefusal, MetricsTab, MetricsView, Offered,
+        Receipt as MetricsReceipt,
         calendar::MetricsRange,
         chart::MetricsMeasure,
         insights::{InsightsPanel, InsightsView, ItemMove, PanelMove, RowScroll},
@@ -12829,7 +12829,7 @@ impl Application {
                 Ok(self.choose_metrics_model_view(model_view))
             }
             SemanticCommandId::MetricsModelViewToggle => {
-                let model_view = self.state.metrics_view.model_view().other();
+                let model_view = self.state.metrics_view.model_view().next();
                 Ok(self.choose_metrics_model_view(model_view))
             }
             SemanticCommandId::MetricsBucketPrevious => {
