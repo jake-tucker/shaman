@@ -137,6 +137,15 @@ named_identity!(AgentId);
 named_identity!(ProviderId);
 named_identity!(ModelId);
 named_identity!(ModelOptionId);
+
+impl ModelId {
+    /// The Model a Provider's `name` for one names, trimmed, or none where
+    /// the name is blank: the one test of whether a Provider named a Model.
+    pub fn named(name: &str) -> Option<Self> {
+        let name = name.trim();
+        (!name.is_empty()).then(|| Self::new(name))
+    }
+}
 named_identity!(ModelOptionChoiceId);
 named_identity!(SkillId);
 

@@ -48,10 +48,11 @@ impl<'a> SelectedModel<'a> {
 /// The attribution of an Agent Message the Provider's evidence says `actual` wrote under
 /// `selected`: none where `actual` names no Model, or names the one the Selection does.
 pub(super) fn attribution(selected: SelectedModel<'_>, actual: &str) -> Option<ModelAttribution> {
-    (!actual.trim().is_empty() && actual != selected.runs_as).then(|| ModelAttribution {
+    let actual = ModelId::named(actual)?;
+    (actual.as_str() != selected.runs_as).then(|| ModelAttribution {
         provider: selected.provider.clone(),
         selected: selected.model.clone(),
-        actual: ModelId::new(actual),
+        actual,
     })
 }
 

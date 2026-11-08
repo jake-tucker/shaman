@@ -130,6 +130,6 @@ fn selected(selection: &AgentSelection) -> SelectedModel<'_> {
 /// as Claude's catalog names it. This is the one place the wire's `model` is judged.
 fn ran(model: Option<&str>) -> Option<ModelId> {
     model
-        .filter(|model| !model.trim().is_empty() && *model != SYNTHETIC_MODEL)
-        .map(|model| ModelId::new(super::canonical_model(model)))
+        .filter(|model| model.trim() != SYNTHETIC_MODEL)
+        .and_then(|model| ModelId::named(super::canonical_model(model.trim())))
 }

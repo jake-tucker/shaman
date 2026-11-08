@@ -2327,13 +2327,12 @@ const REFUSAL_FALLBACK_CAUSE: &str = "refusal_fallback";
 /// deliberately not one for now: it moves the rest of the Session onto Auto, which reaches wider
 /// than a switch within one Turn, and how to show it is a decision of its own.
 fn refusal_fallback_reroute(change: &SessionModelChangeData) -> Option<ProviderEvent> {
-    (change.cause.as_deref() == Some(REFUSAL_FALLBACK_CAUSE)).then(|| ProviderEvent::Rerouted {
-        from: change
-            .previous_model
-            .as_deref()
-            .filter(|model| !model.is_empty())
-            .map(ModelId::new),
-        to: ModelId::new(&change.new_model),
+    if change.cause.as_deref() != Some(REFUSAL_FALLBACK_CAUSE) {
+        return None;
+    }
+    Some(ProviderEvent::Rerouted {
+        from: change.previous_model.as_deref().and_then(ModelId::named),
+        to: ModelId::named(&change.new_model)?,
         reason: Some("the Model declined the request".to_owned()),
     })
 }
@@ -2538,16 +2537,10 @@ fn priced_call(
         &usage,
     );
     Ok(PricedCall {
-        model: reported_model(&reported.model),
+        model: ModelId::named(&reported.model),
         usage,
         cost,
     })
-}
-
-/// The Model a usage report names as the one its call ran on, absent where it names none.
-fn reported_model(model: &str) -> Option<ModelId> {
-    let model = model.trim();
-    (!model.is_empty()).then(|| ModelId::new(model))
 }
 
 /// Adds one model call's `usage`, costing `reported_cost`, to the reading the conversation's Turn
@@ -2643,7 +2636,7 @@ fn compaction_usage(
         .model
         .as_deref()
         .and_then(|model| pricing.cost(model, None, None, &usage));
-    let model = used.model.as_deref().and_then(reported_model);
+    let model = used.model.as_deref().and_then(ModelId::named);
     Some(metered(streams, model, usage, reported_cost))
 }
 
@@ -2700,17 +2693,18 @@ fn project_conversation_event(
         }
         SessionEventType::AssistantMessage => {
             let message: AssistantMessageData = decode(event)?;
-            let actual = message
-                .model
-                .as_deref()
-                .filter(|model| !model.trim().is_empty() && *model != AUTO_MODEL_ID)
-                .or_else(|| {
+            let concrete = |model: Option<&str>| {
+                model
+                    .and_then(ModelId::named)
+                    .filter(|model| model.as_str() != AUTO_MODEL_ID)
+            };
+            let actual = concrete(message.model.as_deref()).or_else(|| {
+                concrete(
                     fusion
                         .as_ref()
-                        .and_then(|route| route.source_model.as_deref())
-                        .filter(|model| !model.trim().is_empty() && *model != AUTO_MODEL_ID)
-                })
-                .map(ModelId::new);
+                        .and_then(|route| route.source_model.as_deref()),
+                )
+            });
             let unscoped_child = matches!(routing.conversation, ConversationKind::Main)
                 && has_parent_tool_call(event);
             let reported_id = message.api_call_id.as_deref().filter(|id| !id.is_empty());

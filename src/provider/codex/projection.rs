@@ -3130,11 +3130,10 @@ fn project_model_rerouted(
     to_model: String,
     reason: Option<NativeRerouteReason>,
 ) -> Vec<AttributedProviderEvent> {
-    if to_model.trim().is_empty() {
+    let Some(to) = ModelId::named(&to_model) else {
         return Vec::new();
-    }
-    let from = (!from_model.trim().is_empty()).then(|| ModelId::new(from_model));
-    let to = ModelId::new(to_model);
+    };
+    let from = ModelId::named(&from_model);
     let attribution = if thread_id == correlation.thread_id {
         if correlation.active_turn_id.as_deref() != Some(turn_id) {
             return Vec::new();
