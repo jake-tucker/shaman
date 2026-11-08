@@ -29,29 +29,30 @@ struct PhaseEvidence {
     eligible: bool,
 }
 
+struct CallEvidence {
+    model: Option<ModelId>,
+    phase: Option<(String, String)>,
+}
+
 /// Each conversation has its own tracker; neither a parent's selection nor
 /// another conversation's dispatches establish what this conversation runs.
 #[derive(Default)]
 pub(super) struct WorkingModels {
     turns: HashMap<String, TurnEvidence>,
-    calls: HashMap<String, Vec<Option<ModelId>>>,
+    calls: HashMap<String, Vec<CallEvidence>>,
     phases: HashMap<(String, String), PhaseEvidence>,
     saw_phase: bool,
     uncertain: bool,
     published: Option<ModelId>,
-    own_auto: bool,
 }
 
 impl WorkingModels {
-    pub(super) fn own_auto(&self) -> bool {
-        self.own_auto
-    }
-
-    /// Marks a native Subagent's own evidence of Auto. The root instead uses
-    /// its explicitly selected Model.
-    pub(super) fn set_own_auto(&mut self, auto: bool) -> Option<ProviderEvent> {
-        self.own_auto = auto;
-        self.publish(auto)
+    pub(super) fn selection_changed(&mut self, auto: bool) -> Option<ProviderEvent> {
+        if auto {
+            self.publish(true)
+        } else {
+            self.clear()
+        }
     }
 
     /// Reads only lifecycle evidence; Auto resolution by itself is not a
@@ -76,7 +77,17 @@ impl WorkingModels {
                     return None;
                 }
                 self.turns.remove(&end.turn_id);
-                self.calls.remove(&end.turn_id);
+                if let Some(calls) = self.calls.remove(&end.turn_id) {
+                    if calls.iter().any(|call| call.phase.is_none()) {
+                        self.invalidate_phases();
+                    } else {
+                        for key in calls.into_iter().filter_map(|call| call.phase) {
+                            if let Some(phase) = self.phases.get_mut(&key) {
+                                phase.eligible = false;
+                            }
+                        }
+                    }
+                }
             }
             SessionEventType::ModelCallStart => {
                 let Some(start): Option<ModelCallStartData> = reported(event) else {
@@ -89,35 +100,66 @@ impl WorkingModels {
                     .entry(start.turn_id.clone())
                     .or_default()
                     .saw_call = true;
+                let phase = start.fusion.and_then(|fusion| {
+                    fusion.phase_id.map(|phase_id| (fusion.fusion_id, phase_id))
+                });
                 self.calls
                     .entry(start.turn_id)
                     .or_default()
-                    .push(concrete(start.model.as_deref()));
+                    .push(CallEvidence {
+                        model: concrete(start.model.as_deref()),
+                        phase,
+                    });
             }
             SessionEventType::ModelCallFinished => {
                 let Some(end): Option<ModelCallFinishedData> = reported(event) else {
                     return self.uncertain(auto);
                 };
                 self.turns.entry(end.turn_id.clone()).or_default().saw_call = true;
+                let mut phases = Vec::new();
+                let mut unknown_phase = false;
                 if let Some(calls) = self.calls.get_mut(&end.turn_id) {
+                    for call in calls.iter() {
+                        if let Some(phase) = &call.phase {
+                            phases.push(phase.clone());
+                        } else {
+                            unknown_phase = true;
+                        }
+                    }
                     calls.pop();
                     // Finish carries no call ID. When dispatches share a Turn
                     // ID, it cannot say which Model remains.
-                    if !calls.is_empty() {
-                        calls.fill(None);
+                    for call in calls.iter_mut() {
+                        call.model = None;
                     }
                     if calls.is_empty() {
                         self.calls.remove(&end.turn_id);
                     }
                 } else {
-                    for calls in self.calls.values_mut() {
-                        calls.fill(None);
-                    }
+                    self.discard_unmatched_calls();
+                    unknown_phase = true;
                 }
                 // A phase or turn may outlive its dispatch. Do not revive its
                 // earlier Model after a call has finished.
-                for phase in self.phases.values_mut() {
-                    phase.eligible = false;
+                if unknown_phase {
+                    self.invalidate_phases();
+                } else {
+                    for key in phases {
+                        if let Some(phase) = self.phases.get_mut(&key) {
+                            phase.eligible = false;
+                        }
+                    }
+                }
+            }
+            SessionEventType::ModelCallFailure => {
+                // Failure reports identify an API attempt, not necessarily
+                // the logical dispatch, and do not contractually name a turn.
+                // Leave the dispatch in place for its eventual finish while
+                // withholding stale live-model evidence during retry.
+                self.discard_unmatched_calls();
+                self.invalidate_phases();
+                for turn in self.turns.values_mut() {
+                    turn.saw_call = true;
                 }
             }
             SessionEventType::AssistantFusionPhaseStarted => {
@@ -177,7 +219,15 @@ impl WorkingModels {
 
     fn discard_unmatched_calls(&mut self) {
         for calls in self.calls.values_mut() {
-            calls.fill(None);
+            for call in calls {
+                call.model = None;
+            }
+        }
+    }
+
+    fn invalidate_phases(&mut self) {
+        for phase in self.phases.values_mut() {
+            phase.eligible = false;
         }
     }
 
@@ -200,12 +250,18 @@ impl WorkingModels {
         if self.uncertain {
             return None;
         }
-        let mut candidates: Vec<Option<ModelId>> = self.calls.values().flatten().cloned().collect();
+        let mut candidates: Vec<Option<ModelId>> = self
+            .calls
+            .values()
+            .flatten()
+            .map(|call| call.model.clone())
+            .collect();
         if !self.phases.is_empty() {
             candidates.extend(
                 self.phases
                     .values()
-                    .map(|phase| phase.eligible.then(|| phase.model.clone()).flatten()),
+                    .filter(|phase| phase.eligible)
+                    .map(|phase| phase.model.clone()),
             );
         } else if !self.saw_phase {
             candidates.extend(
@@ -354,6 +410,125 @@ mod tests {
             )),
             None
         );
+    }
+
+    #[test]
+    fn turn_end_does_not_revive_a_phase_whose_call_never_reported_a_finish() {
+        let mut models = WorkingModels::default();
+        assert_eq!(
+            phase(&mut models, "p1", "alpha"),
+            Some(Some("alpha".into()))
+        );
+        assert_eq!(
+            reading(models.read(
+                &event(
+                    "model.call_start",
+                    json!({
+                        "turnId": "t", "model": "alpha",
+                        "fusion": {
+                            "fusionId": "route", "phaseId": "p1",
+                            "syntheticModel": "fusion", "policy": "standard",
+                            "pattern": "cascade",
+                        },
+                    }),
+                ),
+                true,
+            )),
+            None
+        );
+        assert_eq!(
+            reading(models.read(&event("assistant.turn_end", json!({ "turnId": "t" })), true,)),
+            Some(None)
+        );
+    }
+
+    #[test]
+    fn a_fusion_phase_shows_each_new_dispatch_without_reviving_the_finished_one() {
+        let mut models = WorkingModels::default();
+        assert_eq!(
+            phase(&mut models, "p1", "alpha"),
+            Some(Some("alpha".into()))
+        );
+        let dispatch = |turn: &str| {
+            event(
+                "model.call_start",
+                json!({
+                    "turnId": turn,
+                    "model": "alpha",
+                    "fusion": {
+                        "fusionId": "route", "phaseId": "p1",
+                        "syntheticModel": "fusion", "policy": "standard",
+                        "pattern": "cascade",
+                    },
+                }),
+            )
+        };
+        assert_eq!(reading(models.read(&dispatch("first"), true)), None);
+        assert_eq!(finish(&mut models, "first"), Some(None));
+        assert_eq!(
+            reading(models.read(&dispatch("second"), true)),
+            Some(Some("alpha".into()))
+        );
+        assert_eq!(finish(&mut models, "second"), Some(None));
+    }
+
+    #[test]
+    fn a_failed_dispatch_does_not_stay_visible_during_retry_backoff() {
+        let mut models = WorkingModels::default();
+        assert_eq!(
+            start(&mut models, "first", Some("alpha")),
+            Some(Some("alpha".into()))
+        );
+        assert_eq!(
+            reading(models.read(
+                &event(
+                    "model.call_failure",
+                    json!({
+                        "turnId": "first", "model": "alpha", "source": "top_level",
+                    }),
+                ),
+                true,
+            )),
+            Some(None)
+        );
+        assert_eq!(finish(&mut models, "first"), None);
+        assert_eq!(
+            start(&mut models, "retry", Some("alpha")),
+            Some(Some("alpha".into()))
+        );
+    }
+
+    #[test]
+    fn finishing_one_identified_phase_keeps_other_live_phase_evidence() {
+        let mut models = WorkingModels::default();
+        assert_eq!(
+            phase(&mut models, "p1", "alpha"),
+            Some(Some("alpha".into()))
+        );
+        assert_eq!(phase(&mut models, "p2", "beta"), Some(None));
+        let dispatch = |turn: &str, phase: &str, model: &str| {
+            event(
+                "model.call_start",
+                json!({
+                    "turnId": turn, "model": model,
+                    "fusion": {
+                        "fusionId": "route", "phaseId": phase,
+                        "syntheticModel": "fusion", "policy": "standard",
+                        "pattern": "cascade",
+                    },
+                }),
+            )
+        };
+        assert_eq!(
+            reading(models.read(&dispatch("first", "p1", "alpha"), true)),
+            None
+        );
+        assert_eq!(
+            reading(models.read(&dispatch("second", "p2", "beta"), true)),
+            None
+        );
+        assert_eq!(finish(&mut models, "first"), Some(Some("beta".into())));
+        assert_eq!(finish(&mut models, "second"), Some(None));
     }
 
     #[test]

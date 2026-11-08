@@ -1156,6 +1156,10 @@ pub enum ProviderEvent {
         message: Option<ProviderMessageId>,
         model: crate::protocol::ModelAttribution,
     },
+    /// Retracts a named Message's attribution when later call evidence contradicts it.
+    AgentMessageModelCleared {
+        message: ProviderMessageId,
+    },
     AgentMessageCompleted,
     /// One model call the Provider reported beneath a routed selection.
     ModelCallRecorded {

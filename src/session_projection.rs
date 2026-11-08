@@ -108,9 +108,6 @@ impl ValidatedChanges {
                     next.icon.clone_from(icon);
                 }
                 SessionChange::AgentSelectionChanged { selection } => {
-                    if next.session.agent_selection.as_ref() != Some(selection) {
-                        next.current_model = None;
-                    }
                     next.session.agent_selection = Some(selection.clone());
                 }
                 SessionChange::AgentSelectionAvailabilityChanged { availability } => {
@@ -273,7 +270,7 @@ impl ValidatedChanges {
                     next.messages[resolved()].content.push_str(content);
                 }
                 SessionChange::MessageModelChanged { model, .. } => {
-                    next.messages[resolved()].model = Some(model.clone());
+                    next.messages[resolved()].model.clone_from(model);
                 }
                 SessionChange::MessageTruncated { .. } => {
                     next.messages[resolved()].truncated = true;
@@ -986,7 +983,9 @@ impl<'a> Validation<'a> {
                 if !message.from_agent {
                     bail!("Only Agent Messages carry a Model attribution");
                 }
-                validate_model_attribution(model)?;
+                if let Some(model) = model {
+                    validate_model_attribution(model)?;
+                }
                 Some(index)
             }
             SessionChange::MessageContentAppended { message_id, .. } => {
@@ -2023,7 +2022,7 @@ mod tests {
     }
 
     #[test]
-    fn a_current_model_is_transient_turn_scoped_and_cleared_on_selection_or_settle() {
+    fn a_current_model_follows_its_turn_not_the_next_agent_selection() {
         use crate::protocol::{AgentSelection, ModelId, ProviderId};
 
         let session_id = SessionId::new();
@@ -2093,7 +2092,14 @@ mod tests {
             }],
         );
         apply_update(&mut snapshot, &changed).unwrap();
-        assert!(snapshot.current_model.is_none());
+        assert_eq!(
+            snapshot
+                .current_model
+                .as_ref()
+                .map(|current| &current.model),
+            Some(&model),
+            "a Selection change affects the next Turn, not the one already running"
+        );
 
         let settled = update(
             &snapshot,

@@ -13,7 +13,7 @@ use uuid::Uuid;
 mod workspace_paths;
 pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths};
 
-pub const PROTOCOL_VERSION: u32 = 111;
+pub const PROTOCOL_VERSION: u32 = 112;
 mod attachment;
 mod pair_back;
 mod reading;
@@ -5708,10 +5708,10 @@ pub enum SessionChange {
         message_id: MessageId,
         content: String,
     },
-    /// Provider evidence of the Model that wrote an Agent Message.
+    /// Provider evidence of the Model that wrote an Agent Message, or its retraction.
     MessageModelChanged {
         message_id: MessageId,
-        model: ModelAttribution,
+        model: Option<ModelAttribution>,
     },
     MessageTruncated {
         message_id: MessageId,

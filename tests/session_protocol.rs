@@ -7,14 +7,14 @@ use suru::protocol::{
     AttachmentDescriptor, AttachmentId, AttachmentKind, Author, CompactSessionRequest,
     CompactionTrigger, Cost, CostBasis, CostTotal, CreateSessionRequest, Delegator, FileChange,
     InitialPrompt, Message, MessageId, MessageRole, MessageStatus, ModelAdvisory,
-    ModelAdvisorySeverity, ModelAvailability, ModelDescriptor, ModelDetails, ModelId,
-    ModelOptionChoice, ModelOptionChoiceId, ModelOptionDescriptor, ModelOptionId, ModelOptionKind,
-    ModelOptionRole, ModelOptionSelection, ModelOptionValue, ModelPrice, ModelPriceCategory,
-    ModelPriceTier, ModelPrices, PROTOCOL_VERSION, PreparationId, PreparationPrompt,
-    PrepareCheckoutRequest, Prompt, PromptDelivery, PromptId, PromptOrder, PromptStatus,
-    PromptWithdrawal, ProviderId, Question, QuestionAnswer, Questionnaire, QuestionnaireId,
-    QuestionnaireOutcome, Session, SessionChange, SessionError, SessionErrorCode, SessionId,
-    SessionRevision, SessionSnapshot, SessionStatus, SessionSummary, SessionTimestamp,
+    ModelAdvisorySeverity, ModelAttribution, ModelAvailability, ModelDescriptor, ModelDetails,
+    ModelId, ModelOptionChoice, ModelOptionChoiceId, ModelOptionDescriptor, ModelOptionId,
+    ModelOptionKind, ModelOptionRole, ModelOptionSelection, ModelOptionValue, ModelPrice,
+    ModelPriceCategory, ModelPriceTier, ModelPrices, PROTOCOL_VERSION, PreparationId,
+    PreparationPrompt, PrepareCheckoutRequest, Prompt, PromptDelivery, PromptId, PromptOrder,
+    PromptStatus, PromptWithdrawal, ProviderId, Question, QuestionAnswer, Questionnaire,
+    QuestionnaireId, QuestionnaireOutcome, Session, SessionChange, SessionError, SessionErrorCode,
+    SessionId, SessionRevision, SessionSnapshot, SessionStatus, SessionSummary, SessionTimestamp,
     SessionUpdate, SkillCatalog, SkillCatalogCapabilities, SkillCatalogRequest, SkillCatalogStatus,
     SkillDescriptor, SkillId, SkillInvocation, SkillPromptDelivery, TextSpan, TranscriptItem, Turn,
     TurnId, TurnStatus, UpdateAgentSelectionRequest, Usage, UsageTotal, ViewSessionOperationId,
@@ -24,6 +24,41 @@ use uuid::Uuid;
 
 fn fixture_id(value: &str) -> Uuid {
     Uuid::parse_str(value).expect("parse fixture identity")
+}
+
+#[test]
+fn message_model_evidence_and_its_retraction_have_versioned_wire_shapes() {
+    let message_id = MessageId::new();
+    let attribution = ModelAttribution {
+        provider: ProviderId::new("copilot"),
+        selected: ModelId::new("auto"),
+        actual: ModelId::new("fixture-model"),
+    };
+    for (model, expected) in [
+        (
+            Some(attribution),
+            json!({"provider": "copilot", "selected": "auto", "actual": "fixture-model"}),
+        ),
+        (None, json!(null)),
+    ] {
+        let change = SessionChange::MessageModelChanged { message_id, model };
+        let wire = json!({
+            "type": "message_model_changed",
+            "message_id": message_id,
+            "model": expected,
+        });
+        assert_eq!(serde_json::to_value(&change).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<SessionChange>(wire).unwrap(),
+            change
+        );
+    }
+    const {
+        assert!(
+            PROTOCOL_VERSION >= 112,
+            "Model attribution changes the wire"
+        );
+    }
 }
 
 #[test]
@@ -794,7 +829,8 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
         "own_cost": null,
         "watches": [],
         "attachments": [],
-        "waiting_on_subagents": null
+        "waiting_on_subagents": null,
+        "current_model": null
     });
 
     assert_eq!(

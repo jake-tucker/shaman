@@ -2066,7 +2066,7 @@ fn auto_model_labels_and_call_details_refresh_when_the_session_or_catalog_change
                 changes: vec![
                     SessionChange::MessageModelChanged {
                         message_id,
-                        model: auto_model("first"),
+                        model: Some(auto_model("first")),
                     },
                     SessionChange::ActivityAdded {
                         activity: Activity::ModelCalls {
@@ -2113,6 +2113,21 @@ fn auto_model_labels_and_call_details_refresh_when_the_session_or_catalog_change
         !renamed.contains("First Model") && !renamed.contains("Second Model"),
         "{renamed}"
     );
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(revision + 3),
+                changes: vec![SessionChange::MessageModelChanged {
+                    message_id,
+                    model: None,
+                }],
+            },
+        )))
+        .expect("retract the Message attribution");
+    let retracted = rendered_application_rows_at(&application, 80, 24).join("\n");
+    assert!(!retracted.contains("Auto · First Renamed"), "{retracted}");
+    assert!(retracted.contains("2 model calls"), "{retracted}");
 }
 
 #[test]

@@ -6270,7 +6270,26 @@ fn project_provider_event(
                         session_id,
                         SessionChange::MessageModelChanged {
                             message_id,
-                            model,
+                            model: Some(model),
+                        },
+                    )
+                    .map(|_| ProviderEventProjection::Continue)
+            }
+            ProviderEvent::AgentMessageModelCleared { message } => {
+                let Some(message_id) = active.identified_messages.get(&message).copied() else {
+                    return fail_invalid_provider_event(
+                        sessions,
+                        session_id,
+                        active,
+                        "Provider retracted the Model of an unknown Agent Message",
+                    );
+                };
+                sessions
+                    .publish_agent_output(
+                        session_id,
+                        SessionChange::MessageModelChanged {
+                            message_id,
+                            model: None,
                         },
                     )
                     .map(|_| ProviderEventProjection::Continue)

@@ -107,6 +107,24 @@ const AUTO_FUSION_LATE_USAGE: &str = r#"      event e1 session.fusion_resolved '
       event e8 session.idle '{}'
 "#;
 
+const AUTO_FUSION_COMMITTED_AUTHOR_AND_FAILURE: &str = r#"      event e1 session.fusion_resolved '{"contractVersion":1,"fusionId":"r","turnId":"r:turn","syntheticModel":"hydrafusion","policy":"standard","pattern":"cascade","primaryModel":"solver","fallbackModel":"fallback","followUpModel":"solver"}'
+      event e2 model.call_start '{"turnId":"t1","model":"failed-model"}'
+      event e3 model.call_failure '{"source":"top_level","model":"failed-model","apiCallId":"failed","isAuto":true}'
+      event e4 model.call_finished '{"turnId":"t1","dispatchDurationMs":10,"editClassifierVersion":1,"outcome":"error"}'
+      event e5 assistant.usage '{"apiCallId":"failed","model":"failed-model","isAuto":true,"inputTokens":1}'
+      event e6 assistant.message '{"messageId":"m1","apiCallId":"answer","content":"Answer","fusion":{"fusionId":"r","syntheticModel":"hydrafusion","policy":"standard","pattern":"cascade","phaseId":"r:primary","phaseKind":"primary","role":"solver"}}'
+      event e7 assistant.message '{"messageId":"m1","content":"Answer","fusion":{"fusionId":"r","syntheticModel":"hydrafusion","policy":"standard","pattern":"cascade","phaseId":"r:primary","phaseKind":"primary","role":"solver","commitId":"r:commit","sourceModel":"author-model"}}'
+      event e8 assistant.usage '{"apiCallId":"answer","model":"call-model","isAuto":true,"inputTokens":1}'
+      event e9 session.idle '{}'
+"#;
+
+const AUTO_WITH_FIXED_CALLS: &str = r#"      event e1 assistant.usage '{"apiCallId":"c1","model":"fixed-model","isAuto":false,"inputTokens":1}'
+      event e2 assistant.message '{"messageId":"m1","apiCallId":"c1","model":"fixed-model","content":"First"}'
+      event e3 assistant.message '{"messageId":"m2","apiCallId":"c2","model":"fixed-model","content":"Second"}'
+      event e4 assistant.usage '{"apiCallId":"c2","model":"fixed-model","isAuto":false,"inputTokens":1}'
+      event e5 session.idle '{}'
+"#;
+
 fn selection(model: &str, effort: &str, tier: &str) -> AgentSelection {
     AgentSelection {
         provider: ProviderId::new("copilot"),
@@ -259,6 +277,52 @@ async fn copilot_auto_attributes_late_usage_to_a_superseded_fusion_message() {
             .activities
             .iter()
             .any(|activity| matches!(activity, Activity::Route { .. }))
+    );
+}
+
+#[tokio::test]
+async fn copilot_auto_keeps_a_committed_author_and_records_a_failed_call_once() {
+    let settled = auto_snapshot(
+        AUTO_FUSION_COMMITTED_AUTHOR_AND_FAILURE,
+        "copilot-auto-committed-author",
+    )
+    .await;
+    let messages = agent_messages(&settled);
+    let [message] = messages.as_slice() else {
+        panic!("one staged Agent Message was expected: {messages:?}");
+    };
+    assert_eq!(
+        message.model.as_ref().map(|model| model.actual.as_str()),
+        Some("author-model")
+    );
+    let calls = settled
+        .activities
+        .iter()
+        .find_map(|activity| match activity {
+            Activity::ModelCalls { calls, .. } => Some(calls),
+            _ => None,
+        })
+        .expect("reported calls");
+    assert_eq!(
+        calls
+            .iter()
+            .map(|call| call.actual.as_str())
+            .collect::<Vec<_>>(),
+        ["failed-model", "call-model"]
+    );
+}
+
+#[tokio::test]
+async fn copilot_auto_does_not_label_calls_explicitly_reported_as_fixed() {
+    let settled = auto_snapshot(AUTO_WITH_FIXED_CALLS, "copilot-auto-fixed-calls").await;
+    let messages = agent_messages(&settled);
+    assert_eq!(messages.len(), 2);
+    assert!(messages.iter().all(|message| message.model.is_none()));
+    assert!(
+        settled
+            .activities
+            .iter()
+            .all(|activity| !matches!(activity, Activity::ModelCalls { .. }))
     );
 }
 
