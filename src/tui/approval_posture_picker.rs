@@ -5,7 +5,9 @@ use crate::protocol::{
     CopilotPermissions, UpdateApprovalPostureRequest,
 };
 
-use super::list_window::ListWindow;
+use ratatui::layout::Position;
+
+use super::{list_window::ListWindow, pointer_targets::PointerTargets};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum ApprovalPostureChoice {
@@ -22,6 +24,8 @@ pub(super) struct ApprovalPosturePicker {
     selected: usize,
     open: bool,
     window: ListWindow,
+    /// Where the last frame drew each choice's row, by its place.
+    targets: PointerTargets<usize>,
 }
 
 impl ApprovalPosturePicker {
@@ -57,12 +61,28 @@ impl ApprovalPosturePicker {
     pub(super) fn window(&self) -> &ListWindow {
         &self.window
     }
-    pub(super) fn rows(&self) -> impl Iterator<Item = (ApprovalPostureChoice, bool)> + '_ {
+    pub(super) fn targets(&self) -> &PointerTargets<usize> {
+        &self.targets
+    }
+    /// Moves focus onto the choice drawn under the pointer, answering whether
+    /// it moved. What was pointed at is in view already, so the window holds.
+    pub(super) fn point_at(&mut self, position: Position) -> bool {
+        match self.targets.at(position) {
+            Some(index) if index != self.selected => {
+                self.selected = index;
+                self.window.hold();
+                true
+            }
+            _ => false,
+        }
+    }
+    /// Every choice by its place, and whether focus stands on it.
+    pub(super) fn rows(&self) -> impl Iterator<Item = (usize, ApprovalPostureChoice, bool)> + '_ {
         self.rows
             .iter()
             .copied()
             .enumerate()
-            .map(|(index, row)| (row, index == self.selected))
+            .map(|(index, row)| (index, row, index == self.selected))
     }
     pub(super) fn choose(&mut self) -> Option<UpdateApprovalPostureRequest> {
         let request = match *self.rows.get(self.selected)? {

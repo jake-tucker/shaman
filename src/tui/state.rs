@@ -241,6 +241,37 @@ enum SurfaceAboveInterventions {
     UnreachableOrigin,
 }
 
+/// A list standing over the screen that follows the pointer: moving it onto
+/// an entry moves Row Focus there. Each is the list that also has the keys,
+/// so the pointer and the keys always drive the same focus.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PointerList {
+    Themes,
+    Models,
+    Sessions,
+    ApprovalPosture,
+    Worktrees,
+    ModelOptions,
+    /// The list editor, whose rows are where typing lands: a press moves
+    /// that place and saves nothing, which is what Enter does there.
+    ListEditor,
+    /// A Questionnaire's choices, where a press selects as Space does and
+    /// never moves on or submits as Enter would.
+    Questionnaire,
+    /// The completion list over the composer, which stands beside what it
+    /// covers rather than holding the pointer to itself: a press elsewhere
+    /// reaches whatever is drawn there.
+    Completions,
+}
+
+impl PointerList {
+    /// Whether the list holds the pointer to its box, as a picker the keys
+    /// are held by does: a press inside it on no entry moves nothing.
+    fn is_modal(self) -> bool {
+        !matches!(self, Self::Completions | Self::Questionnaire)
+    }
+}
+
 /// A run of cells on one row that a press can land on, as the frame that drew
 /// it recorded them. A frame that did not draw the affordance records nothing,
 /// so a stale reading can never answer a press.
@@ -601,6 +632,9 @@ pub struct TuiState {
     hyperlinks: bool,
     left_press: Option<LeftPress>,
     last_click: Option<LastClick>,
+    /// The cell the terminal last reported the pointer over, so motion that
+    /// reports the cell it already stood on moves no focus.
+    last_pointer: Option<Position>,
     click_interval: Duration,
     pub(super) text_selection: Cell<Option<TextSelection>>,
     pub(super) selection_frames: RefCell<Vec<SelectionFrame>>,
@@ -1089,6 +1123,7 @@ impl TuiState {
             hyperlinks: false,
             left_press: None,
             last_click: None,
+            last_pointer: None,
             click_interval: CLICK_INTERVAL,
             text_selection: Cell::new(None),
             selection_frames: RefCell::new(Vec::new()),
@@ -8724,6 +8759,9 @@ impl Application {
     /// order they were drawn: the Sidebar owns the columns it drew, and a
     /// click it does not claim reaches the composer or Transcript beside it.
     fn handle_click(&mut self, position: Position) -> Result<ApplicationTransition> {
+        if let Some(pressed) = self.press_pointer_list(position) {
+            return pressed;
+        }
         // The rename dialog stands over everything, the Icon Picker included,
         // since it is opened over a Session the way the picker is and never
         // from inside one. A press on its derive affordance asks for a
@@ -13916,6 +13954,16 @@ impl Application {
     /// of it, the armed removals any other key puts down — a key no mode has
     /// a use for included — and the transition that command asks for.
     pub fn take_terminal_event(&mut self, event: InputEvent) -> Result<TerminalEventTaken> {
+        if let InputEvent::Mouse(mouse) = &event {
+            let position = Position::new(mouse.column, mouse.row);
+            let moved = self.state.last_pointer.replace(position) != Some(position);
+            if mouse.kind == MouseEventKind::Moved {
+                return Ok(TerminalEventTaken {
+                    changed: moved && self.point_at(position),
+                    transition: ApplicationTransition::Continue,
+                });
+            }
+        }
         let mut changed = self.note_interaction(&event);
         let interaction = is_reader_interaction(&event);
         let command = self.command_for_terminal_input(event);
@@ -14569,6 +14617,114 @@ impl Application {
         self.state.origins_awaiting_grace()
     }
 
+    /// Whether a list that follows the pointer stands over the screen, which
+    /// is when the run loop asks the terminal to report the pointer's every
+    /// move rather than only its presses and drags.
+    pub fn wants_pointer_motion(&self) -> bool {
+        self.state.pointer_list().is_some()
+    }
+
+    /// Moves Row Focus onto the entry drawn under the pointer in the list the
+    /// pointer drives, answering whether it moved.
+    fn point_at(&mut self, position: Position) -> bool {
+        match self.state.pointer_list() {
+            Some(PointerList::Themes) => {
+                let moved = self.state.theme_picker.point_at(position);
+                if moved {
+                    self.resolve_theme();
+                }
+                moved
+            }
+            Some(PointerList::Models) => self.state.model_picker.keys().point_at(position),
+            Some(PointerList::Sessions) => self.state.session_picker.point_at(position),
+            Some(PointerList::Completions) => self.state.composer_completion.point_at(position),
+            Some(PointerList::ApprovalPosture) => {
+                self.state.approval_posture_picker.point_at(position)
+            }
+            Some(PointerList::Worktrees) => self.state.worktree_picker.point_at(position),
+            Some(PointerList::ModelOptions) => self.state.model_options.point_at(position),
+            Some(PointerList::Questionnaire) => self.state.questionnaires.point_at(position),
+            Some(PointerList::ListEditor) => self
+                .state
+                .settings_panel
+                .edit_list()
+                .is_some_and(|editor| editor.point_at(position)),
+            None => false,
+        }
+    }
+
+    /// Answers a press on the list the pointer drives, where one stands: a
+    /// press on an entry moves focus there and acts on it as Enter would, and
+    /// one anywhere else inside the list's box moves nothing. `None` leaves
+    /// the press to whatever else is drawn there.
+    fn press_pointer_list(&mut self, position: Position) -> Option<Result<ApplicationTransition>> {
+        let list = self.state.pointer_list()?;
+        self.point_at(position);
+        let command = match list {
+            PointerList::Themes => self
+                .state
+                .theme_picker
+                .targets()
+                .at(position)
+                .map(|_| CommandId::SelectTheme),
+            PointerList::Models => self
+                .state
+                .model_picker
+                .list()
+                .covers(position)
+                .then_some(CommandId::SelectModel),
+            PointerList::Sessions => self
+                .state
+                .session_picker
+                .targets()
+                .at(position)
+                .map(|_| CommandId::SelectSession),
+            PointerList::Completions => self
+                .state
+                .composer_completion
+                .targets()
+                .at(position)
+                .map(|_| CommandId::ConfirmSelectedCompletion),
+            PointerList::ApprovalPosture => self
+                .state
+                .approval_posture_picker
+                .targets()
+                .at(position)
+                .map(|_| CommandId::InvokeSemantic(SemanticCommandId::ApprovalPostureSelect)),
+            PointerList::Worktrees => self
+                .state
+                .worktree_picker
+                .targets
+                .at(position)
+                .map(|_| CommandId::InvokeSemantic(SemanticCommandId::WorktreeSelect)),
+            PointerList::ListEditor => None,
+            PointerList::ModelOptions => self
+                .state
+                .model_options
+                .targets()
+                .at(position)
+                .map(|_| CommandId::InvokeSemantic(SemanticCommandId::ModelOptionsSelect)),
+            // A panel still presenting itself takes no press, as it takes no
+            // key, so a reader mid-click answers nothing they have not read.
+            PointerList::Questionnaire => self
+                .state
+                .questionnaires
+                .covers(position)
+                .then(|| {
+                    self.state.armed_against(CommandId::InvokeSemantic(
+                        SemanticCommandId::QuestionnaireSelect,
+                    ))
+                })
+                .flatten(),
+        };
+        match command {
+            Some(command) => Some(self.handle_command(command)),
+            None => list
+                .is_modal()
+                .then_some(Ok(ApplicationTransition::Continue)),
+        }
+    }
+
     /// Whether anything on screen has live presentation, so the run loop
     /// ticks only while animation can be drawn and an idle TUI schedules zero
     /// wakeups.
@@ -14739,6 +14895,49 @@ impl TuiState {
     /// last: nothing of the panels is presented, but a surface the reader
     /// opened over them, the `/relay` list a login-needed offer opens say,
     /// still owns its keys.
+    /// The list the pointer drives, which is whichever list the keys reach
+    /// first, where that list follows the pointer at all.
+    fn pointer_list(&self) -> Option<PointerList> {
+        match self.surface_above_interventions() {
+            Some(SurfaceAboveInterventions::Selection(SelectionSurface::Themes)) => {
+                Some(PointerList::Themes)
+            }
+            Some(SurfaceAboveInterventions::Selection(SelectionSurface::Models)) => {
+                Some(PointerList::Models)
+            }
+            Some(SurfaceAboveInterventions::Selection(SelectionSurface::Sessions)) => {
+                Some(PointerList::Sessions)
+            }
+            Some(SurfaceAboveInterventions::Selection(SelectionSurface::Worktrees)) => {
+                Some(PointerList::Worktrees)
+            }
+            Some(SurfaceAboveInterventions::Selection(SelectionSurface::ListEditor)) => {
+                Some(PointerList::ListEditor)
+            }
+            Some(SurfaceAboveInterventions::Selection(SelectionSurface::ModelOptions)) => {
+                Some(PointerList::ModelOptions)
+            }
+            Some(SurfaceAboveInterventions::ApprovalPosture) => Some(PointerList::ApprovalPosture),
+            Some(
+                SurfaceAboveInterventions::Selection(_)
+                | SurfaceAboveInterventions::Sidebar
+                | SurfaceAboveInterventions::Aside,
+            ) => None,
+            Some(SurfaceAboveInterventions::UnreachableOrigin) | None => {
+                let session = self.session_reference.as_ref();
+                if self.approvals.is_open(session) {
+                    None
+                } else if self.questionnaires.is_open(session) {
+                    Some(PointerList::Questionnaire)
+                } else if self.composer_completion.is_visible() {
+                    Some(PointerList::Completions)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     fn surface_above_interventions(&self) -> Option<SurfaceAboveInterventions> {
         // The Usage Metrics view covers even the Approval Posture picker.
         if self.metrics_view.is_open() {

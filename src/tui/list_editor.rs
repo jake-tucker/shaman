@@ -14,7 +14,7 @@
 //! browsing: a directory chosen in the Directory Browser stands in the focused
 //! entry's place, or, chosen from the row past the last entry, is added there.
 
-use ratatui::text::Line;
+use ratatui::{layout::Position, text::Line};
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
@@ -25,6 +25,7 @@ use crate::{
 
 use super::{
     list_window::ListWindow,
+    pointer_targets::PointerTargets,
     slots::{truncate_from_left_to_width, truncate_to_width},
 };
 
@@ -40,6 +41,8 @@ pub(super) struct ListEditor {
     /// a complaint never outlives the attempt that earned it.
     error: Option<String>,
     window: ListWindow,
+    /// Where the last frame drew each row, by its place.
+    targets: PointerTargets<usize>,
 }
 
 /// The editor as a frame draws it.
@@ -60,6 +63,8 @@ pub(super) struct ListEditorView<'a> {
     pub(super) marked: bool,
     pub(super) error: Option<&'a str>,
     pub(super) window: &'a ListWindow,
+    /// Where a frame drew each row, by its place, for a host that records it.
+    pub(super) targets: &'a PointerTargets<usize>,
 }
 
 impl ListEditorView<'_> {
@@ -77,10 +82,21 @@ impl ListEditorView<'_> {
     /// each entry, and the row a new entry is added at, the focused one
     /// marked and cut from its start so the end being typed stays in view.
     pub(super) fn rows(&self, width: usize, capacity: usize, theme: &Theme) -> Vec<Line<'static>> {
+        self.shown_rows(width, capacity, theme).1
+    }
+
+    /// [`Self::rows`], beside the place of the first row shown.
+    pub(super) fn shown_rows(
+        &self,
+        width: usize,
+        capacity: usize,
+        theme: &Theme,
+    ) -> (usize, Vec<Line<'static>>) {
         let shown = self
             .window
             .settle_rows(self.entries.len() + 1, capacity, Some(self.focus));
-        shown
+        let first = shown.start;
+        let lines = shown
             .map(|index| {
                 let focused = self.marked && index == self.focus;
                 let marker = if focused { "› " } else { "  " };
@@ -96,7 +112,8 @@ impl ListEditorView<'_> {
                 };
                 Line::styled(format!("{marker}{text}"), style)
             })
-            .collect()
+            .collect();
+        (first, lines)
     }
 }
 
@@ -111,6 +128,7 @@ impl ListEditor {
             focus: 0,
             error: None,
             window,
+            targets: PointerTargets::default(),
         }
     }
 
@@ -133,6 +151,22 @@ impl ListEditor {
             marked: true,
             error: self.error.as_deref(),
             window: &self.window,
+            targets: &self.targets,
+        }
+    }
+
+    /// Moves focus onto the row drawn under the pointer, which is where
+    /// typing lands next, answering whether it moved. What was pointed at is
+    /// in view already, so the window holds.
+    pub(super) fn point_at(&mut self, position: Position) -> bool {
+        match self.targets.at(position) {
+            Some(index) if index != self.focus && index < self.rows() => {
+                self.error = None;
+                self.focus = index;
+                self.window.hold();
+                true
+            }
+            _ => false,
         }
     }
 

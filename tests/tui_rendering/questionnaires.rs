@@ -1,5 +1,5 @@
 use crate::tui_rendering::support::{
-    add_request, connected_application, enter_active_session, invoke, key,
+    add_request, connected_application, enter_active_session, invoke, key, left_click_at, point_at,
     rendered_application_rows, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -1387,5 +1387,47 @@ fn scrolling_the_question_leaves_focus_to_the_next_key() {
         drawn_choices(&app).last(),
         Some(&19),
         "and Alt+↓ stops at the foot of the question"
+    );
+}
+
+/// Where the panel drew `label`, on the frame the test rows are read from.
+fn choice_cell(app: &suru::tui::Application, label: &str) -> (u16, u16) {
+    let rows = rendered_application_rows(app);
+    let y = rows
+        .iter()
+        .position(|row| row.contains(label))
+        .unwrap_or_else(|| panic!("{label:?} is drawn"));
+    let x = rows[y][..rows[y].find(label).unwrap()].chars().count();
+    (x as u16, y as u16)
+}
+
+/// The pointer stands on a choice as the keys do, and pressing one selects
+/// it as Space does — never moving on, and never submitting, as Enter would.
+#[test]
+fn the_pointer_focuses_a_choice_and_pressing_one_selects_it() {
+    let mut app = open_on_choices(5);
+    assert!(app.wants_pointer_motion());
+
+    let third = choice_cell(&app, "Choice 03");
+    assert!(point_at(&mut app, third));
+    key(&mut app, KeyCode::Char(' '));
+    assert!(
+        rendered_application_rows(&app)
+            .join("\n")
+            .contains("[x] Choice 03"),
+        "Space selects the choice the pointer stands on"
+    );
+
+    let first = choice_cell(&app, "Choice 01");
+    assert_eq!(
+        left_click_at(&mut app, first),
+        ApplicationTransition::Continue
+    );
+    let drawn = rendered_application_rows(&app).join("\n");
+    assert!(drawn.contains("[x] Choice 01"), "{drawn}");
+    assert!(drawn.contains("[ ] Choice 03"), "{drawn}");
+    assert!(
+        drawn.contains("Which one?"),
+        "the question still stands: {drawn}"
     );
 }

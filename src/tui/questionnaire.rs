@@ -2,6 +2,7 @@
 use super::{
     commands::SemanticCommandId,
     list_window::{ListWindow, WindowEntry},
+    pointer_targets::PointerTargets,
     state::CommandId,
 };
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Position, Rect},
     text::Line,
     widgets::{Block, Borders, Paragraph, Wrap},
 };
@@ -28,6 +29,9 @@ pub(super) struct QuestionnairePanels {
     descendants: HashMap<SessionReference, Vec<SessionReference>>,
     unlisted_sessions: HashSet<SessionReference>,
     pub(super) visible: Option<(SessionReference, QuestionnaireId)>,
+    /// Where the last frame drew each choice of the question on show, by its
+    /// place among them.
+    targets: PointerTargets<usize>,
 }
 #[derive(Clone, Debug, Default)]
 struct Panel {
@@ -494,6 +498,43 @@ impl QuestionnairePanels {
         }
         None
     }
+    /// Gives up where the last frame drew the choices.
+    pub(super) fn forget_frame(&self) {
+        self.targets.forget();
+    }
+
+    /// Moves the keys onto the choice drawn under the pointer, answering
+    /// whether they moved. What was pointed at is in view already, so the
+    /// window holds.
+    pub(super) fn point_at(&mut self, position: Position) -> bool {
+        let Some(index) = self.targets.at(position) else {
+            return false;
+        };
+        let Some(panel) = self
+            .visible
+            .as_ref()
+            .and_then(|key| self.drafts.get_mut(key))
+        else {
+            return false;
+        };
+        if panel.submitting || panel.review {
+            return false;
+        }
+        let draft = &mut panel.questions[panel.current];
+        if draft.cursor == index && !draft.editing_text {
+            return false;
+        }
+        draft.editing_text = false;
+        draft.cursor = index;
+        panel.window.hold();
+        true
+    }
+
+    /// Whether a choice was drawn under `position`.
+    pub(super) fn covers(&self, position: Position) -> bool {
+        self.targets.at(position).is_some()
+    }
+
     /// Draws the panel over the composer, answering the area it covers.
     pub(super) fn render(
         &self,
@@ -576,6 +617,7 @@ impl QuestionnairePanels {
                     Line::styled(format!("    {description}"), theme.text.subdued)
                 });
                 body.choice(
+                    index,
                     std::iter::once(label).chain(description),
                     index == draft.cursor,
                 );
@@ -628,6 +670,7 @@ impl QuestionnairePanels {
             lines,
             entries,
             focus,
+            choices,
             ..
         } = body;
         let paragraph = Paragraph::new(lines)
@@ -669,6 +712,25 @@ impl QuestionnairePanels {
             .iter()
             .map(|entry| entry.rows)
             .sum::<usize>();
+        for (entry, choice) in choices {
+            let top = entries[..entry]
+                .iter()
+                .map(|entry| entry.rows)
+                .sum::<usize>();
+            let Some(top) = top.checked_sub(scroll) else {
+                continue;
+            };
+            let top = content.y.saturating_add(top as u16);
+            let bottom = top
+                .saturating_add(entries[entry].rows as u16)
+                .min(content.bottom());
+            if top < bottom {
+                self.targets.record(
+                    Rect::new(content.x, top, content.width, bottom - top),
+                    choice,
+                );
+            }
+        }
         frame.render_widget(
             paragraph.scroll((u16::try_from(scroll).unwrap_or(u16::MAX), 0)),
             content,
@@ -702,6 +764,8 @@ struct PanelBody {
     entries: Vec<WindowEntry>,
     /// The entry of the choice the keys are on.
     focus: Option<usize>,
+    /// Each choice's entry, beside its place among the choices.
+    choices: Vec<(usize, usize)>,
 }
 
 impl PanelBody {
@@ -711,6 +775,7 @@ impl PanelBody {
             lines: Vec::new(),
             entries: Vec::new(),
             focus: None,
+            choices: Vec::new(),
         }
     }
 
@@ -722,8 +787,13 @@ impl PanelBody {
         self.lines.push(line);
     }
 
-    /// One choice, as the single entry its lines make.
-    fn choice(&mut self, lines: impl IntoIterator<Item = Line<'static>>, focused: bool) {
+    /// Choice `index`, as the single entry its lines make.
+    fn choice(
+        &mut self,
+        index: usize,
+        lines: impl IntoIterator<Item = Line<'static>>,
+        focused: bool,
+    ) {
         let mut rows = 0;
         for line in lines {
             rows += self.wrapped_rows(&line);
@@ -732,6 +802,7 @@ impl PanelBody {
         if focused {
             self.focus = Some(self.entries.len());
         }
+        self.choices.push((self.entries.len(), index));
         self.entries.push(WindowEntry::focusable(rows));
     }
 

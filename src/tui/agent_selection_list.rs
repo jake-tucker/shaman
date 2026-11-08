@@ -8,7 +8,11 @@
 //! draws its rows, leaving the box around them, and whatever the reader's
 //! choice is for, to its host.
 
-use ratatui::{style::Modifier, text::Line};
+use ratatui::{
+    layout::{Position, Rect},
+    style::Modifier,
+    text::Line,
+};
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
@@ -23,6 +27,7 @@ use super::{
     fuzzy::fuzzy_matches,
     list_window::{ListWindow, WindowEntry},
     model_details::price_glyph,
+    pointer_targets::PointerTargets,
     selection::WrappedLine,
     slots::truncate_to_width,
     usage::compact_count,
@@ -30,7 +35,7 @@ use super::{
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct ModelKey {
+pub(super) struct ModelKey {
     provider: ProviderId,
     model: ModelId,
 }
@@ -49,8 +54,9 @@ impl ModelKey {
     }
 }
 
+/// A row focus can stand on, by what it is for.
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum ListSelection {
+pub(super) enum ListSelection {
     Named(usize),
     Model(ModelKey),
     Retry(ProviderId),
@@ -103,6 +109,8 @@ pub(super) struct AgentSelectionList {
     selected: Option<ListSelection>,
     cursor_moved: bool,
     window: ListWindow,
+    /// Where the host last placed the rows focus can stand on.
+    targets: PointerTargets<ListSelection>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -170,6 +178,21 @@ impl ListKeys<'_> {
     pub(super) fn page_next(self) {
         self.0.move_selection(10);
     }
+
+    /// Moves focus onto the row drawn under the pointer, answering whether it
+    /// moved. What was pointed at is in view already, so the window holds.
+    pub(super) fn point_at(self, position: Position) -> bool {
+        let list = self.0;
+        match list.targets.at(position) {
+            Some(selection) if list.selected.as_ref() != Some(&selection) => {
+                list.selected = Some(selection);
+                list.cursor_moved = true;
+                list.window.hold();
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 impl AgentSelectionRow<'_> {
@@ -199,6 +222,8 @@ pub(super) struct AgentSelectionLines<'a> {
     /// Each fix drawn beneath its retry row, placed by the line of `lines` it
     /// begins on.
     pub(super) wrapped: Vec<WrappedLine<'a>>,
+    /// The lines of `lines` each row focus can stand on took.
+    pub(super) entries: Vec<(std::ops::Range<usize>, ListSelection)>,
 }
 
 impl AgentSelectionList {
@@ -344,6 +369,37 @@ impl AgentSelectionList {
         matches!(self.selected, Some(ListSelection::Retry(_)))
     }
 
+    /// Notes where a host placed the rows it drew: `entries` as
+    /// [`Self::draw`] answered them, their first line drawn on `origin`'s top
+    /// row and none past its foot. A frame that places none leaves nothing to
+    /// point at.
+    pub(super) fn place(&self, entries: &[(std::ops::Range<usize>, ListSelection)], origin: Rect) {
+        self.targets.forget();
+        for (rows, selection) in entries {
+            let top = origin.y.saturating_add(rows.start as u16);
+            let bottom = origin
+                .y
+                .saturating_add(rows.end as u16)
+                .min(origin.bottom());
+            if top < bottom {
+                self.targets.record(
+                    Rect::new(origin.x, top, origin.width, bottom - top),
+                    selection.clone(),
+                );
+            }
+        }
+    }
+
+    /// Whether a row focus can stand on was placed under `position`.
+    pub(super) fn covers(&self, position: Position) -> bool {
+        self.targets.at(position).is_some()
+    }
+
+    /// Gives up where the rows were last placed.
+    pub(super) fn forget_placement(&self) {
+        self.targets.forget();
+    }
+
     /// What the reader's keys may do to the list.
     pub(super) fn keys(&mut self) -> ListKeys<'_> {
         ListKeys(self)
@@ -387,14 +443,14 @@ impl AgentSelectionList {
         capacity: usize,
         width: u16,
         current: Option<InForce<'_>>,
-    ) -> impl Iterator<Item = AgentSelectionRow<'_>> {
-        let rows = self.rows(current);
-        let selected = rows.iter().position(AgentSelectionRow::is_selected);
+    ) -> impl Iterator<Item = (Option<ListSelection>, AgentSelectionRow<'_>)> {
+        let rows = self.keyed_rows(current);
+        let selected = rows.iter().position(|(_, row)| row.is_selected());
         // A Provider's heading is a Row the keys step over, so it comes into
         // view with the Models around it rather than counting as one of them.
         let entries = rows
             .iter()
-            .map(|row| match row {
+            .map(|(_, row)| match row {
                 AgentSelectionRow::Provider { .. } => WindowEntry::passive(1),
                 AgentSelectionRow::Named { .. }
                 | AgentSelectionRow::Model { .. }
@@ -422,8 +478,10 @@ impl AgentSelectionList {
     ) -> AgentSelectionLines<'_> {
         let mut lines = Vec::new();
         let mut wrapped = Vec::new();
+        let mut entries = Vec::new();
         let columns = ComparisonColumns::of(self.listed_models());
-        for row in self.visible_rows(capacity, width, current) {
+        for (key, row) in self.visible_rows(capacity, width, current) {
+            let first = lines.len();
             match row {
                 AgentSelectionRow::Named {
                     label,
@@ -515,8 +573,15 @@ impl AgentSelectionList {
                     lines.extend(fix.lines(style));
                 }
             }
+            if let Some(key) = key {
+                entries.push((first..lines.len(), key));
+            }
         }
-        AgentSelectionLines { lines, wrapped }
+        AgentSelectionLines {
+            lines,
+            wrapped,
+            entries,
+        }
     }
 
     /// Where focus stands among the entries the window counts, Provider
@@ -635,6 +700,18 @@ impl AgentSelectionList {
     }
 
     fn rows(&self, current: Option<InForce<'_>>) -> Vec<AgentSelectionRow<'_>> {
+        self.keyed_rows(current)
+            .into_iter()
+            .map(|(_, row)| row)
+            .collect()
+    }
+
+    /// Every row the list draws, each beside what focus knows it by where
+    /// focus can stand on it.
+    fn keyed_rows(
+        &self,
+        current: Option<InForce<'_>>,
+    ) -> Vec<(Option<ListSelection>, AgentSelectionRow<'_>)> {
         let current = current.map(InForce::selection);
         let mut rows = self
             .named
@@ -642,11 +719,12 @@ impl AgentSelectionList {
             .enumerate()
             .map(|(index, label)| {
                 let named = Some(ListSelection::Named(index));
-                AgentSelectionRow::Named {
+                let row = AgentSelectionRow::Named {
                     label,
                     selected: self.selected == named,
                     current: current == named,
-                }
+                };
+                (named, row)
             })
             .collect::<Vec<_>>();
         for provider in &self.providers {
@@ -662,39 +740,46 @@ impl AgentSelectionList {
             if models.is_empty() && condition.is_none() {
                 continue;
             }
-            rows.push(AgentSelectionRow::Provider {
-                name: &provider.display_name,
-                refreshing: matches!(provider.status, ProviderCatalogStatus::Refreshing),
-            });
+            rows.push((
+                None,
+                AgentSelectionRow::Provider {
+                    name: &provider.display_name,
+                    refreshing: matches!(provider.status, ProviderCatalogStatus::Refreshing),
+                },
+            ));
             rows.extend(models.into_iter().map(|model| {
-                let row = Some(ListSelection::Model(ModelKey::from_model(model)));
-                AgentSelectionRow::Model {
+                let key = Some(ListSelection::Model(ModelKey::from_model(model)));
+                let row = AgentSelectionRow::Model {
                     model,
-                    selected: self.selected == row,
-                    current: current == row,
-                }
+                    selected: self.selected == key,
+                    current: current == key,
+                };
+                (key, row)
             }));
             if let Some(condition) = condition {
-                let selected =
-                    self.selected == Some(ListSelection::Retry(provider.provider.clone()));
-                rows.push(match condition {
-                    ProviderCondition::Failing(message) => AgentSelectionRow::Error {
-                        name: &provider.display_name,
-                        message,
-                        selected,
+                let key = Some(ListSelection::Retry(provider.provider.clone()));
+                let selected = self.selected == key;
+                rows.push((
+                    key,
+                    match condition {
+                        ProviderCondition::Failing(message) => AgentSelectionRow::Error {
+                            name: &provider.display_name,
+                            message,
+                            selected,
+                        },
+                        ProviderCondition::Unavailable {
+                            reason,
+                            message,
+                            fix,
+                        } => AgentSelectionRow::Unavailable {
+                            name: &provider.display_name,
+                            reason,
+                            message,
+                            fix,
+                            selected,
+                        },
                     },
-                    ProviderCondition::Unavailable {
-                        reason,
-                        message,
-                        fix,
-                    } => AgentSelectionRow::Unavailable {
-                        name: &provider.display_name,
-                        reason,
-                        message,
-                        fix,
-                        selected,
-                    },
-                });
+                ));
             }
         }
         rows

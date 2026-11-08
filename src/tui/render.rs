@@ -44,7 +44,7 @@ use super::{
     keymap::binding_label,
     list_window::WindowEntry,
     model_details::{self, DetailsPane},
-    model_options::ModelOptionChoiceRow,
+    model_options::{ModelOptionChoiceRow, ModelOptionsTarget},
     model_picker::SelectionPart,
     onboarding::OwnServer,
     pair_back::{self, OfferFix, PairBackOption, PickerRow},
@@ -195,6 +195,17 @@ pub(super) fn render_with_slots(
     // both start over with the frame, so a stale record from a frame that
     // drew neither can never answer a press.
     state.icon_picker.forget_frame();
+    state.theme_picker.targets().forget();
+    state.model_picker.list().forget_placement();
+    state.session_picker.targets().forget();
+    state.composer_completion.targets().forget();
+    state.approval_posture_picker.targets().forget();
+    state.worktree_picker.targets.forget();
+    state.model_options.targets().forget();
+    state.questionnaires.forget_frame();
+    if let Some(editor) = state.settings_panel.list_editor() {
+        editor.targets.forget();
+    }
     // The rename dialog's derive button is pointable on the same terms, as is
     // the header Title that opens the dialog.
     state.rename_dialog.forget_frame();
@@ -2371,7 +2382,16 @@ fn render_list_editor(frame: &mut Frame<'_>, state: &TuiState, main: Rect, theme
         truncate_to_width(editor.label, content_width),
         theme.text.subdued,
     )];
-    lines.extend(editor.rows(content_width, capacity, theme));
+    let (first, rows) = editor.shown_rows(content_width, capacity, theme);
+    let inner = area.inner(ratatui::layout::Margin::new(1, 1));
+    for offset in 0..rows.len() {
+        editor.targets.record_row(
+            inner,
+            inner.y + (lines.len() + offset) as u16,
+            first + offset,
+        );
+    }
+    lines.extend(rows);
     lines.push(Line::styled(
         truncate_to_width(editor.error.unwrap_or(""), content_width),
         theme.feedback.error,
@@ -2432,10 +2452,20 @@ fn render_session_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, th
         let footer_rows = usize::from(shows_search_and_footer);
         let row_capacity = usize::from(content_height).saturating_sub(lines.len() + footer_rows);
         let now = SessionTimestamp::now().0;
+        let inner = area.inner(ratatui::layout::Margin::new(1, 1));
+        let first = inner.y + lines.len() as u16;
         let rows = state
             .session_picker
             .visible_rows(row_capacity, current)
-            .map(|row| session_picker_row_line(row, usize::from(content_width), now, theme, state))
+            .enumerate()
+            .map(|(offset, row)| {
+                state.session_picker.targets().record_row(
+                    inner,
+                    first + offset as u16,
+                    row.reference.clone(),
+                );
+                session_picker_row_line(row, usize::from(content_width), now, theme, state)
+            })
             .collect::<Vec<_>>();
         if rows.is_empty() && lines.len() < usize::from(content_height).saturating_sub(footer_rows)
         {
@@ -2628,12 +2658,16 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         let shown = picker
             .window
             .settle_rows(rows.len(), available_rows, Some(picker.selected));
+        let inner = area.inner(ratatui::layout::Margin::new(1, 1));
         for (index, row) in rows
             .into_iter()
             .enumerate()
             .skip(shown.start)
             .take(shown.len())
         {
+            picker
+                .targets
+                .record_row(inner, inner.y + lines.len() as u16, index);
             lines.push(Line::styled(
                 truncate_to_width(
                     &format!("{} {row}", if index == picker.selected { "›" } else { " " }),
@@ -3631,6 +3665,14 @@ fn render_model_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, them
             theme,
         );
         let above = lines.len();
+        state.model_picker.list().place(
+            &drawn.entries,
+            Rect {
+                y: list_area.y + above as u16,
+                height: content_height.saturating_sub(above as u16),
+                ..list_area
+            },
+        );
         lines.extend(drawn.lines);
         wrapped.extend(drawn.wrapped.into_iter().map(|line| WrappedLine {
             row: above + line.row,
@@ -3818,12 +3860,19 @@ fn render_approval_posture_picker(
     let area = centered_rect(main, main.width.saturating_sub(8).min(58), height);
     let width = usize::from(area.width.saturating_sub(2));
     let capacity = usize::from(area.height.saturating_sub(2));
-    let selected = rows.iter().position(|(_, selected)| *selected);
+    let selected = rows.iter().position(|(_, _, selected)| *selected);
+    let inner = area.inner(ratatui::layout::Margin::new(1, 1));
     let lines = state
         .approval_posture_picker
         .window()
         .show(rows, capacity, selected)
-        .map(|(row, selected)| {
+        .enumerate()
+        .map(|(offset, (index, row, selected))| {
+            state.approval_posture_picker.targets().record_row(
+                inner,
+                inner.y + offset as u16,
+                index,
+            );
             let label = match row {
                 ApprovalPostureChoice::Value { label, .. } => label,
                 ApprovalPostureChoice::Reset => "Follow Server Settings (reset)",
@@ -3863,13 +3912,18 @@ fn render_theme_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, them
     }
     let footer_rows = usize::from(content_height >= 3);
     let row_capacity = usize::from(content_height).saturating_sub(lines.len() + footer_rows);
-    lines.extend(state.theme_picker.visible_rows(row_capacity).map(
-        |ThemePickerRow {
-             name,
-             source,
-             selected,
-             current,
-         }| {
+    let inner = area.inner(ratatui::layout::Margin::new(1, 1));
+    for ThemePickerRow {
+        index,
+        name,
+        source,
+        selected,
+        current,
+    } in state.theme_picker.visible_rows(row_capacity)
+    {
+        let y = inner.y + lines.len() as u16;
+        state.theme_picker.targets().record_row(inner, y, index);
+        lines.push({
             let marker = if selected { "› " } else { "  " };
             let current = if current { " · [current]" } else { "" };
             let source = if matches!(source, crate::theme::ThemeSource::User) {
@@ -3889,8 +3943,8 @@ fn render_theme_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, them
                     theme.text.primary
                 },
             )
-        },
-    ));
+        });
+    }
     if !state.theme_picker.has_rows() && lines.len() < usize::from(content_height) {
         lines.push(Line::styled("No Themes found", theme.text.subdued));
     }
@@ -4496,13 +4550,23 @@ fn render_model_options(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         let footer_rows = usize::from(content_height >= 3);
         let capacity = content_height.saturating_sub(lines.len() + footer_rows);
         let selected = choice_rows.iter().position(|row| row.selected);
-        lines.extend(
-            state
-                .model_options
-                .choices_window()
-                .show(choice_rows.iter().collect(), capacity, selected)
-                .map(|row| model_option_choice_line(row, content_width, split.is_none(), theme)),
-        );
+        for (index, row) in state.model_options.choices_window().show(
+            choice_rows.iter().enumerate().collect(),
+            capacity,
+            selected,
+        ) {
+            state.model_options.targets().record_row(
+                list_area,
+                list_area.y + lines.len() as u16,
+                ModelOptionsTarget::Choice(index),
+            );
+            lines.push(model_option_choice_line(
+                row,
+                content_width,
+                split.is_none(),
+                theme,
+            ));
+        }
         if footer_rows > 0 && lines.len() < content_height {
             lines.push(Line::styled(
                 truncate_to_width("Enter choose · Esc cancel all edits", content_width),
@@ -4524,11 +4588,16 @@ fn render_model_options(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
             .iter()
             .position(|row| row.selected)
             .or_else(|| option_rows.len().checked_sub(1));
-        for row in state.model_options.options_window().show(
-            option_rows.iter().collect(),
+        for (index, row) in state.model_options.options_window().show(
+            option_rows.iter().enumerate().collect(),
             capacity,
             selected,
         ) {
+            state.model_options.targets().record_row(
+                list_area,
+                list_area.y + lines.len() as u16,
+                ModelOptionsTarget::Option(index),
+            );
             let marker = if row.selected { "› " } else { "  " };
             let unavailable = if row.available { "" } else { " [unavailable]" };
             let description = row
@@ -4565,6 +4634,11 @@ fn render_model_options(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
             } else {
                 "Confirm [unavailable]"
             };
+            state.model_options.targets().record_row(
+                list_area,
+                list_area.y + lines.len() as u16,
+                ModelOptionsTarget::Option(option_rows.len()),
+            );
             lines.push(Line::styled(
                 truncate_to_width(&format!("{marker}{label}"), content_width),
                 if selected {
@@ -5004,12 +5078,31 @@ fn render_composer_completion(
     let ComposerDock { area, bordered } = ComposerDock::over(frame, composer_area, row_count);
     let row_capacity = area.height.saturating_sub(if bordered { 2 } else { 0 });
     let content_width = area.width.saturating_sub(if bordered { 2 } else { 0 });
+    let inner = if bordered {
+        area.inner(ratatui::layout::Margin::new(1, 1))
+    } else {
+        area
+    };
     let rows = state
         .composer_completion
         .visible_rows(usize::from(row_capacity))
         .into_iter()
-        .map(|(selected, row)| {
-            completion_row_line(row, selected, usize::from(content_width), true, theme)
+        .enumerate()
+        .map(|(offset, shown)| {
+            if let Some(candidate) = shown.candidate {
+                state.composer_completion.targets().record_row(
+                    inner,
+                    inner.y + offset as u16,
+                    candidate,
+                );
+            }
+            completion_row_line(
+                shown.row,
+                shown.selected,
+                usize::from(content_width),
+                true,
+                theme,
+            )
         })
         .collect::<Vec<_>>();
     let paragraph = if bordered {
@@ -5095,7 +5188,17 @@ fn render_split_composer_completion(
     let lines = completion
         .visible_listed_rows(usize::from(split.list.height))
         .into_iter()
-        .map(|(selected, row)| completion_row_line(row, selected, list_width, false, theme))
+        .enumerate()
+        .map(|(offset, shown)| {
+            if let Some(candidate) = shown.candidate {
+                completion.targets().record_row(
+                    split.list,
+                    split.list.y + offset as u16,
+                    candidate,
+                );
+            }
+            completion_row_line(shown.row, shown.selected, list_width, false, theme)
+        })
         .collect::<Vec<_>>();
     let mut pane = selected.pane;
     pane.fit(usize::from(split.pane_content().height), theme);

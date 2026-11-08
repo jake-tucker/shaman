@@ -1,11 +1,13 @@
 //! The model picker: listing, search, focus, and selection.
 
 use crate::tui_rendering::support::{
-    deliver_settings, key, model_descriptor, navigable_session_snapshot,
+    deliver_settings, key, left_click_at, model_descriptor, navigable_session_snapshot, point_at,
     rendered_application_buffer, rendered_application_rows, rendered_application_rows_at,
     rendered_row, selected_session_snapshot, text_position, type_terminal_text, workspace_dir,
 };
-use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{
+    Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use suru::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
@@ -2341,4 +2343,99 @@ fn a_model_whose_provider_publishes_no_details_is_described_by_its_options() {
     assert_eq!(effort, "Reasoning effort LOW … MAX");
     assert!(!text.contains("AI Credits"), "{text}");
     assert!(!text.contains("Context window"), "{text}");
+}
+
+/// Where `model` is drawn in the picker of thirty, on its 80 by 24 frame.
+fn model_cell(application: &Application, model: &str) -> (u16, u16) {
+    text_position(&rendered_application_buffer(application, 80, 24), model)
+}
+
+/// The cell of the first drawn row whose text satisfies `row`.
+fn cell_of_row(application: &Application, row: impl Fn(&str) -> bool) -> (u16, u16) {
+    let rows = rendered_application_rows_at(application, 80, 24);
+    let y = rows
+        .iter()
+        .position(|text| row(text))
+        .expect("the row is drawn");
+    let x = rows[y].chars().position(|c| c == '│').expect("a boxed row") + 2;
+    (x as u16, y as u16)
+}
+
+#[test]
+fn pointing_at_a_model_moves_row_focus_onto_it_and_nothing_else_does() {
+    let mut application = open_on_thirty_models();
+    assert!(application.wants_pointer_motion());
+    let model = model_cell(&application, "Model 05");
+
+    assert!(point_at(&mut application, model));
+    assert_eq!(drawn_models(&application).1, "Model 05");
+
+    let heading = cell_of_row(&application, |row| is_heading(row, "alpha"));
+    assert!(
+        !point_at(&mut application, heading),
+        "a Provider's heading is not there to point at"
+    );
+    assert!(
+        !point_at(&mut application, (0, 0)),
+        "nor is the frame outside the box"
+    );
+    assert_eq!(
+        drawn_models(&application).1,
+        "Model 05",
+        "focus stays where the pointer last left it"
+    );
+
+    let drag = MouseEvent {
+        kind: MouseEventKind::Drag(MouseButton::Left),
+        column: model.0,
+        row: model.1 + 2,
+        modifiers: KeyModifiers::NONE,
+    };
+    application
+        .handle_terminal_event(InputEvent::Mouse(drag))
+        .expect("deliver a drag");
+    assert_eq!(
+        drawn_models(&application).1,
+        "Model 05",
+        "a pointer dragging with a button held moves no focus"
+    );
+}
+
+#[test]
+fn a_list_moving_beneath_a_pointer_at_rest_leaves_focus_to_the_keys() {
+    let mut application = open_on_thirty_models();
+    let model = model_cell(&application, "Model 03");
+    assert!(point_at(&mut application, model));
+    for _ in 0..20 {
+        key(&mut application, KeyCode::Down);
+    }
+    let (drawn, focused) = drawn_models(&application);
+    assert_eq!(focused, "Model 23");
+    assert!(
+        !drawn.contains(&"Model 03".to_owned()),
+        "the list has moved"
+    );
+
+    assert!(
+        !point_at(&mut application, model),
+        "the terminal saying the pointer is still where it was moves nothing"
+    );
+    assert_eq!(drawn_models(&application).1, "Model 23");
+}
+
+#[test]
+fn pressing_a_model_chooses_it_as_enter_does() {
+    let mut application = open_on_thirty_models();
+    let model = model_cell(&application, "Model 07");
+
+    left_click_at(&mut application, model);
+    let rows = rendered_application_rows_at(&application, 80, 24).join("\n");
+    assert!(
+        !rows.contains(" Models "),
+        "choosing closes the picker: {rows}"
+    );
+    assert!(
+        rows.contains("Model 07"),
+        "the Landing reads the choice: {rows}"
+    );
 }

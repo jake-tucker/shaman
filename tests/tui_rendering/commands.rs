@@ -1,9 +1,10 @@
 //! Slash command dispatch and composer autocomplete.
 
 use crate::tui_rendering::support::{
-    buffer_rows, enter_active_session, enter_session, failed_session_snapshot,
-    rendered_application_buffer, rendered_application_cursor_at, rendered_application_rows,
-    rendered_application_rows_at, text_position, type_terminal_text, workspace_dir,
+    buffer_rows, enter_active_session, enter_session, failed_session_snapshot, left_click_at,
+    point_at, rendered_application_buffer, rendered_application_cursor_at,
+    rendered_application_rows, rendered_application_rows_at, text_position, type_terminal_text,
+    workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Position;
@@ -905,4 +906,48 @@ fn text_after_slash_compact_on_lines_of_its_own_is_instructions() {
                 .contains("Open a Session to compact its context")
         );
     }
+}
+
+/// Where the completion list drew `/name`'s row, on a frame 80 by 24.
+fn completion_cell(application: &Application, name: &str) -> (u16, u16) {
+    text_position(
+        &rendered_application_buffer(application, 80, 24),
+        &format!("/{name} "),
+    )
+}
+
+#[test]
+fn pointing_at_a_completion_selects_it_for_enter() {
+    let workspace = workspace_dir();
+    let mut application = Application::new(workspace.path(), Default::default());
+    let (_, _, _) = enter_active_session(&mut application, workspace.path());
+    type_terminal_text(&mut application, "/");
+    assert!(application.wants_pointer_motion());
+
+    let new = completion_cell(&application, "new");
+    assert!(point_at(&mut application, new));
+    assert_eq!(
+        application
+            .handle_terminal_event(InputEvent::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            )))
+            .expect("confirm the completion the pointer selected"),
+        ApplicationTransition::DetachSession
+    );
+    assert!(!application.wants_pointer_motion());
+}
+
+#[test]
+fn pressing_a_completion_confirms_it() {
+    let workspace = workspace_dir();
+    let mut application = Application::new(workspace.path(), Default::default());
+    let (_, _, _) = enter_active_session(&mut application, workspace.path());
+    type_terminal_text(&mut application, "/");
+
+    let new = completion_cell(&application, "new");
+    assert_eq!(
+        left_click_at(&mut application, new),
+        ApplicationTransition::DetachSession
+    );
 }

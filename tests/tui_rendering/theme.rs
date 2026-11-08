@@ -19,8 +19,9 @@ use suru::{
 
 use crate::tui_rendering::support::{
     MutatesSetting, connected_application, connected_application_with_terminal_facts,
-    deliver_settings, enter_session, rendered_application_buffer, rendered_application_rows,
-    rendered_application_rows_at, text_position, type_terminal_text, workspace_dir,
+    deliver_settings, enter_session, left_click_at, point_at, rendered_application_buffer,
+    rendered_application_rows, rendered_application_rows_at, text_position, type_terminal_text,
+    workspace_dir,
 };
 use crate::tui_rendering::transcript::{application_with_ansi_palette_output, assert_ansi_palette};
 
@@ -495,6 +496,70 @@ fn moving_and_filtering_preview_the_top_match_without_leaving_the_client() {
     }
     let restored = rendered_application_buffer(&application, 100, 20);
     assert_eq!(restored.cell((99, 0)).unwrap().bg, Color::Reset);
+}
+
+/// Where the picker drew `name`'s row, on a frame 80 by 15.
+fn theme_row(application: &Application, name: &str) -> (u16, u16) {
+    text_position(
+        &rendered_application_buffer(application, 80, 15),
+        &format!("  {name}"),
+    )
+}
+
+#[test]
+fn pointing_at_a_theme_previews_it_as_the_keys_would() {
+    let mut application = truecolor_application();
+    deliver_settings(&mut application, themed("system"));
+    open_theme_picker(&mut application);
+    assert!(
+        application.wants_pointer_motion(),
+        "an open picker follows the pointer"
+    );
+
+    let aura = theme_row(&application, "aura");
+    assert!(
+        point_at(&mut application, aura),
+        "moving onto another Theme changes the frame"
+    );
+    assert_eq!(
+        rendered_application_buffer(&application, 80, 15)
+            .cell((79, 0))
+            .unwrap()
+            .bg,
+        Color::Rgb(15, 15, 15),
+        "the Theme under the pointer is previewed"
+    );
+    assert!(
+        !point_at(&mut application, (aura.0 + 1, aura.1)),
+        "moving along the focused row changes nothing"
+    );
+
+    assert_eq!(
+        press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
+        MutatesSetting(SettingMutation::AppearanceTheme {
+            value: Some("aura".to_owned()),
+        }),
+        "Enter acts on the row the pointer left focus on"
+    );
+    assert!(
+        !application.wants_pointer_motion(),
+        "a closed picker no longer follows the pointer"
+    );
+}
+
+#[test]
+fn pressing_a_theme_pins_it_as_enter_does() {
+    let mut application = truecolor_application();
+    deliver_settings(&mut application, themed("system"));
+    open_theme_picker(&mut application);
+    let ayu = theme_row(&application, "ayu");
+
+    assert_eq!(
+        left_click_at(&mut application, ayu),
+        MutatesSetting(SettingMutation::AppearanceTheme {
+            value: Some("ayu".to_owned()),
+        })
+    );
 }
 
 #[test]

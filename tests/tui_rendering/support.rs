@@ -1087,3 +1087,34 @@ pub fn grace_elapses(application: &mut Application, outlook: suru::protocol::Out
         .handle_event(ApplicationEvent::ReconnectGraceElapsed(outlook))
         .expect("elapse the reconnect grace period");
 }
+
+/// Moves the pointer onto one cell with no button held, as a terminal that
+/// reports any motion does, answering whether anything on screen changed.
+pub fn point_at(application: &mut Application, (column, row): (u16, u16)) -> bool {
+    application
+        .take_terminal_event(InputEvent::Mouse(MouseEvent {
+            kind: MouseEventKind::Moved,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }))
+        .expect("deliver pointer motion")
+        .changed
+}
+
+/// Presses and releases the left button on one cell, as a click does.
+pub fn left_click_at(
+    application: &mut Application,
+    (column, row): (u16, u16),
+) -> ApplicationTransition {
+    click_mouse(
+        application,
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+    )
+    .expect("deliver a click")
+}

@@ -649,6 +649,8 @@ struct RunLoop {
     /// Set by anything that changes what is on screen, so an event the user
     /// cannot see costs no frame.
     needs_redraw: bool,
+    /// Whether the terminal is reporting the pointer's every move.
+    pointer_motion: PointerMotion,
     /// What follows the login at each Relay, by the request it answers. A
     /// later follower there takes the place of an earlier one, which nothing
     /// awaits any longer, and one that has answered is let go.
@@ -724,6 +726,7 @@ async fn run_loop(
         tree_loading_delay: None,
         spinner_tick: None,
         needs_redraw: true,
+        pointer_motion: PointerMotion::default(),
         relay_followers: HashMap::new(),
         notice_claimant: uuid::Uuid::new_v4(),
         title_proposal: None,
@@ -748,6 +751,15 @@ async fn run_loop(
             // And whether a Notice could be shown, which is when one of a
             // Relay needing a login is claimed of the Server.
             run.claim_relay_notices();
+        }
+        // The terminal reports the pointer's every move only while a list on
+        // screen follows it; one that cannot leaves such lists to clicks.
+        let wanted = run.application.wants_pointer_motion();
+        if let Err(error) = run
+            .pointer_motion
+            .follow(wanted, &mut TerminalOutput(terminal.backend_mut()))
+        {
+            tracing::warn!(%error, "could not change pointer motion reporting");
         }
         // Rendering records which animation is actually visible, including a
         // Working Indicator that may have scrolled out of the viewport.
@@ -4960,7 +4972,8 @@ struct TerminalSession {
 /// motion while a button is held (1002).
 /// Deliberately excludes any-motion tracking (1003), which crossterm's
 /// `EnableMouseCapture` turns on: motion tracking floods the input stream with
-/// pointer-move events nothing in the TUI consumes.
+/// pointer-move events, so [`PointerMotion`] asks for it only while a list on
+/// screen follows the pointer.
 struct EnableMouseButtonReporting;
 
 impl crossterm::Command for EnableMouseButtonReporting {
@@ -4979,11 +4992,59 @@ impl crossterm::Command for EnableMouseButtonReporting {
     }
 }
 
+/// Turns off everything mouse reporting turned on, any-motion tracking
+/// included, whether or not [`PointerMotion`] last left it on.
 struct DisableMouseButtonReporting;
 
 impl crossterm::Command for DisableMouseButtonReporting {
     fn write_ansi(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
-        f.write_str(concat!("\x1b[?1002l", "\x1b[?1006l", "\x1b[?1000l"))
+        f.write_str(concat!(
+            "\x1b[?1003l",
+            "\x1b[?1002l",
+            "\x1b[?1006l",
+            "\x1b[?1000l"
+        ))
+    }
+
+    #[cfg(windows)]
+    fn execute_winapi(&self) -> std::io::Result<()> {
+        Err(std::io::ErrorKind::Unsupported.into())
+    }
+
+    #[cfg(windows)]
+    fn is_ansi_code_supported(&self) -> bool {
+        true
+    }
+}
+
+/// Whether the terminal reports the pointer's every move (1003), which the
+/// run loop asks for only while the Application has a list on screen that
+/// follows the pointer, so an idle TUI is never woken by the pointer merely
+/// passing over it.
+#[derive(Debug, Default)]
+struct PointerMotion {
+    reported: bool,
+}
+
+impl PointerMotion {
+    /// Asks the terminal for motion reporting, or to stop it, where that is
+    /// not already what it does.
+    fn follow(&mut self, wanted: bool, output: &mut impl TerminalSink) -> std::io::Result<()> {
+        if wanted == self.reported {
+            return Ok(());
+        }
+        output.apply(AnyMotionReporting(wanted))?;
+        self.reported = wanted;
+        Ok(())
+    }
+}
+
+/// Turns any-motion tracking (1003) on or off.
+struct AnyMotionReporting(bool);
+
+impl crossterm::Command for AnyMotionReporting {
+    fn write_ansi(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+        f.write_str(if self.0 { "\x1b[?1003h" } else { "\x1b[?1003l" })
     }
 
     #[cfg(windows)]
@@ -5406,8 +5467,8 @@ mod tests {
     use super::{
         Application, ApplicationEvent, ClipboardContent, DisableMouseButtonReporting,
         EnableMouseButtonReporting, FRAME_BUFFER_CAPACITY, NativeClipboard, NativeClipboardSink,
-        PopModifiedKeyReporting, PushModifiedKeyReporting, TerminalSink, copy_to_clipboard,
-        draw_frame, enter_terminal_display,
+        PointerMotion, PopModifiedKeyReporting, PushModifiedKeyReporting, TerminalSink,
+        copy_to_clipboard, draw_frame, enter_terminal_display,
         frame_backend::{FrameBackend, ansi, finish_frame, register_hyperlink},
         ignore_unsupported, leave_terminal_display, remote_failure_from_session_error,
     };
@@ -6876,6 +6937,27 @@ mod tests {
             );
         }
     }
+    /// Any-motion tracking floods the input with the pointer's every move, so
+    /// it is asked for only while a list on screen follows the pointer, and
+    /// the terminal hears only of a change.
+    #[test]
+    fn pointer_motion_is_reported_only_while_a_list_follows_the_pointer() {
+        let mut output = AnsiTranscript(String::new());
+        let mut motion = PointerMotion::default();
+        for wanted in [false, true, true, false, false] {
+            motion
+                .follow(wanted, &mut output)
+                .expect("an ANSI transcript never fails to record");
+        }
+        assert_eq!(output.0, "\x1b[?1003h\x1b[?1003l");
+
+        let left = AnsiTranscript::record(leave_terminal_display);
+        assert!(
+            left.contains("\x1b[?1003l"),
+            "leaving the display stops motion reporting whether or not it was asked for"
+        );
+    }
+
     /// Pins the input feature sequences every supported platform receives.
     #[test]
     fn terminal_input_capabilities_enable_mouse_and_modified_key_reporting() {
@@ -7473,6 +7555,7 @@ mod ready_event_tests {
             tree_loading_delay: None,
             spinner_tick: None,
             needs_redraw: false,
+            pointer_motion: super::PointerMotion::default(),
             relay_followers: std::collections::HashMap::new(),
             notice_claimant: uuid::Uuid::new_v4(),
             title_proposal: None,

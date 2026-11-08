@@ -1,8 +1,8 @@
 //! Landing execution navigation through semantic commands and Server responses.
 use crate::tui_rendering::support::{
-    buffer_rows, click_mouse, deliver_settings, fixture_instance_id, ready_health,
-    rendered_application_buffer, rendered_application_rows_at, selector_label, type_terminal_text,
-    workspace_resolution,
+    buffer_rows, click_mouse, deliver_settings, fixture_instance_id, point_at, ready_health,
+    rendered_application_buffer, rendered_application_rows_at, selector_label, text_position,
+    type_terminal_text, workspace_resolution,
 };
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -3040,4 +3040,34 @@ fn successful_removal_marks_selected_exact_directory_unavailable_and_keeps_it_se
         ApplicationTransition::Continue
     ));
     assert!(text(&app).contains("Execution Directory unavailable"));
+}
+
+#[test]
+fn the_pointer_focuses_a_worktree_and_pressing_one_chooses_it() {
+    let layout = Layout::new();
+    let mut app = layout.app();
+    open(&mut app, layout.context.clone());
+    assert!(app.wants_pointer_motion());
+    let cell = |app: &Application, reading: &str| {
+        text_position(&rendered_application_buffer(app, 160, 30), reading)
+    };
+
+    let main = cell(&app, "main ·");
+    assert!(point_at(&mut app, main));
+    let rendered = text(&app);
+    let focused = rendered
+        .lines()
+        .find(|row| row.contains('›'))
+        .expect("a row is focused");
+    assert!(focused.contains("main ·"), "{rendered}");
+
+    let ApplicationTransition::ResolveWorkspace { request, .. } =
+        press_at(&mut app, (160, 30), main)
+    else {
+        panic!("pressing a Worktree chooses it on the Server")
+    };
+    assert_eq!(
+        request.checkout_id,
+        Some(layout.context.checkouts[0].association.id.clone())
+    );
 }

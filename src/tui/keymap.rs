@@ -238,8 +238,10 @@ pub(super) fn command_for_subagent_picker_event(event: InputEvent) -> Option<Com
 }
 
 pub(super) fn command_for_approval_posture_picker_event(event: InputEvent) -> Option<CommandId> {
-    let InputEvent::Key(key) = event else {
-        return None;
+    let key = match event {
+        InputEvent::Key(key) => key,
+        InputEvent::Mouse(mouse) => return command_for_list_click(mouse),
+        _ => return None,
     };
     if key.kind != KeyEventKind::Press {
         return None;
@@ -1292,8 +1294,10 @@ pub(super) fn command_for_sidebar_menu_event(event: InputEvent) -> Option<Comman
 }
 
 pub(super) fn command_for_model_options_event(event: InputEvent) -> Option<CommandId> {
-    let InputEvent::Key(key) = event else {
-        return None;
+    let key = match event {
+        InputEvent::Key(key) => key,
+        InputEvent::Mouse(mouse) => return command_for_list_click(mouse),
+        _ => return None,
     };
     if key.kind != KeyEventKind::Press {
         return None;
@@ -1414,6 +1418,7 @@ pub(super) fn command_for_list_editor_event(event: InputEvent) -> Option<Command
                 text,
             ));
         }
+        InputEvent::Mouse(mouse) => return command_for_list_click(mouse),
         _ => return None,
     };
     if key.kind != KeyEventKind::Press {
@@ -1548,8 +1553,17 @@ fn command_for_picker_event(
             }
         },
         InputEvent::Paste(text) => bindings.search.as_ref().map(|search| (search.insert)(text)),
+        InputEvent::Mouse(mouse) => command_for_list_click(mouse),
         _ => None,
     }
+}
+
+/// A click on a list that follows the pointer, which presses whatever entry
+/// it landed on; every other gesture over such a list asks nothing of it.
+pub(super) fn command_for_list_click(mouse: MouseEvent) -> Option<CommandId> {
+    (mouse.kind == MouseEventKind::Up(MouseButton::Left)).then_some(CommandId::ClickAt {
+        position: Position::new(mouse.column, mouse.row),
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -1827,8 +1841,10 @@ fn command_from_scoped_bindings(
 /// Worktree navigation uses semantic actions, and offers Worktrees alone: a
 /// directory below a Worktree is not chosen from here.
 pub(super) fn command_for_worktree_picker_event(event: InputEvent) -> Option<CommandId> {
-    let InputEvent::Key(key) = event else {
-        return None;
+    let key = match event {
+        InputEvent::Key(key) => key,
+        InputEvent::Mouse(mouse) => return command_for_list_click(mouse),
+        _ => return None,
     };
     if key.kind != KeyEventKind::Press {
         return None;

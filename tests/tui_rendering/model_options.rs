@@ -1,9 +1,9 @@
 //! Model option resolution and atomic option updates.
 
 use crate::tui_rendering::support::{
-    deliver_settings, model_descriptor, rendered_application_buffer, rendered_application_rows,
-    rendered_application_rows_at, selected_session_snapshot, text_position, type_terminal_text,
-    workspace_dir,
+    deliver_settings, left_click_at, model_descriptor, point_at, rendered_application_buffer,
+    rendered_application_rows, rendered_application_rows_at, selected_session_snapshot,
+    text_position, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use suru::{
@@ -1550,4 +1550,52 @@ fn a_selection_naming_a_routing_tier_no_longer_on_offer_reads_as_its_model() {
     assert!(summary.contains("Copilot · Auto"), "{summary}");
     assert!(!summary.contains("High"), "{summary}");
     assert!(!summary.contains("hydrafusion"), "{summary}");
+}
+
+#[test]
+fn the_pointer_walks_options_and_their_choices_and_pressing_acts_as_enter_does() {
+    let mut application = landing_on_the_tiered_model();
+    assert!(application.wants_pointer_motion());
+    let cell = |application: &Application, text: &str| {
+        text_position(&rendered_application_buffer(application, 80, 15), text)
+    };
+    let focused = |application: &Application| {
+        rendered_application_rows(application)
+            .into_iter()
+            .find(|row| row.contains('›'))
+            .expect("a row is focused")
+    };
+
+    let context = cell(&application, "Context · Default");
+    assert!(point_at(&mut application, context));
+    assert!(focused(&application).contains("Context · Default"));
+
+    left_click_at(&mut application, context);
+    assert!(
+        rendered_application_rows(&application)
+            .join("\n")
+            .contains("Context Choices")
+    );
+    let long = cell(&application, "Long context");
+    assert!(point_at(&mut application, long));
+    assert!(focused(&application).contains("Long context"));
+    left_click_at(&mut application, long);
+    assert!(
+        rendered_application_rows(&application)
+            .join("\n")
+            .contains("Context · Long context")
+    );
+
+    let confirm = cell(&application, "Confirm");
+    let ApplicationTransition::ConfirmLandingAgentSelection(confirmed) =
+        left_click_at(&mut application, confirm)
+    else {
+        panic!("pressing Confirm confirms the staged Agent Selection");
+    };
+    assert!(confirmed.options.contains(&ModelOptionSelection {
+        id: ModelOptionId::new("context_tier"),
+        value: ModelOptionValue::Select {
+            choice: ModelOptionChoiceId::new("long_context"),
+        },
+    }));
 }

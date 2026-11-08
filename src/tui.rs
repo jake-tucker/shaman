@@ -33,6 +33,7 @@ mod model_picker;
 mod notice;
 mod onboarding;
 mod pair_back;
+mod pointer_targets;
 mod provider_icons;
 mod questionnaire;
 mod relay_overlay;

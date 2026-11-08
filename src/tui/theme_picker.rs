@@ -5,7 +5,9 @@ use crate::{
     theme::{ThemeCatalog, ThemeChoice, ThemeSource},
 };
 
-use super::{fuzzy::fuzzy_matches, list_window::ListWindow};
+use ratatui::layout::Position;
+
+use super::{fuzzy::fuzzy_matches, list_window::ListWindow, pointer_targets::PointerTargets};
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct ThemePicker {
@@ -18,10 +20,13 @@ pub(super) struct ThemePicker {
     awaiting_snapshot: bool,
     pin: Option<fn(String) -> SettingMutation>,
     window: ListWindow,
+    /// Where the last frame drew each Theme's row, by its index.
+    targets: PointerTargets<usize>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ThemePickerRow<'a> {
+    pub(super) index: usize,
     pub(super) name: &'a str,
     pub(super) source: ThemeSource,
     pub(super) selected: bool,
@@ -142,6 +147,7 @@ impl ThemePicker {
         self.window.show(visible, capacity, selected).map(|index| {
             let theme = &self.themes[index];
             ThemePickerRow {
+                index,
                 name: &theme.name,
                 source: theme.source,
                 selected: index == self.selected,
@@ -160,6 +166,26 @@ impl ThemePicker {
             self.preview = Some(self.themes[index].name.clone());
         } else {
             self.preview = None;
+        }
+    }
+
+    /// Where the last frame drew each Theme's row.
+    pub(super) fn targets(&self) -> &PointerTargets<usize> {
+        &self.targets
+    }
+
+    /// Moves focus onto the Theme drawn under the pointer, previewing it as
+    /// the keys would, and answers whether focus moved. What was pointed at
+    /// is in view already, so the window holds.
+    pub(super) fn point_at(&mut self, position: Position) -> bool {
+        match self.targets.at(position) {
+            Some(index) if index != self.selected => {
+                self.selected = index;
+                self.preview = Some(self.themes[index].name.clone());
+                self.window.hold();
+                true
+            }
+            _ => false,
         }
     }
 

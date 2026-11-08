@@ -5,7 +5,20 @@ use crate::protocol::{
     ModelOptionId, ModelOptionKind, ModelOptionRole, ModelOptionSelection, ModelOptionValue,
 };
 
-use super::{list_window::ListWindow, model_picker::ModelPickerPurpose};
+use ratatui::layout::Position;
+
+use super::{
+    list_window::ListWindow, model_picker::ModelPickerPurpose, pointer_targets::PointerTargets,
+};
+
+/// A row of the options screen as a frame drew it: one of the Model's
+/// options, or Confirm past the last of them, by its place; or one of the
+/// choices of the option being chosen, by its place among them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ModelOptionsTarget {
+    Option(usize),
+    Choice(usize),
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ChoiceValue {
@@ -45,6 +58,8 @@ pub(super) struct ModelOptions {
     options_window: ListWindow,
     /// The window over the choices of the option being chosen.
     choices_window: ListWindow,
+    /// Where the last frame drew each row.
+    targets: PointerTargets<ModelOptionsTarget>,
 }
 
 #[derive(Clone, Debug)]
@@ -167,6 +182,51 @@ impl ModelOptions {
 
     pub(super) fn choices_window(&self) -> &ListWindow {
         &self.choices_window
+    }
+
+    /// Where the last frame drew each row.
+    pub(super) fn targets(&self) -> &PointerTargets<ModelOptionsTarget> {
+        &self.targets
+    }
+
+    /// Moves focus onto the row drawn under the pointer, answering whether it
+    /// moved: an option, or Confirm, while the options are shown, and a
+    /// choice while an option's choices are. What was pointed at is in view
+    /// already, so the window holds.
+    pub(super) fn point_at(&mut self, position: Position) -> bool {
+        match (self.targets.at(position), &mut self.choices) {
+            (Some(ModelOptionsTarget::Option(index)), None) if index != self.selected => {
+                self.selected = index;
+                self.options_window.hold();
+                true
+            }
+            (Some(ModelOptionsTarget::Choice(index)), Some(picker)) => {
+                let (Some(model), Some(staged)) = (&self.model, &self.staged) else {
+                    return false;
+                };
+                let Some(descriptor) = model
+                    .options
+                    .iter()
+                    .find(|descriptor| descriptor.id == picker.option)
+                else {
+                    return false;
+                };
+                let values = choice_values(
+                    descriptor,
+                    shown_value(staged, descriptor).as_ref(),
+                    self.purpose,
+                );
+                match values.into_iter().nth(index) {
+                    Some(value) if value != picker.selected => {
+                        picker.selected = value;
+                        self.choices_window.hold();
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
     }
 
     pub(super) fn select_previous(&mut self) {

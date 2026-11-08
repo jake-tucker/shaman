@@ -11,6 +11,7 @@ use super::{
     EverywhereListRequest, SessionListRequest, SessionListScope, SessionListSurface,
     fuzzy::fuzzy_matches,
     list_window::ListWindow,
+    pointer_targets::PointerTargets,
     session_listing::{
         ListedSession, PresentedSession, SessionListing, everywhere_origins, present, rooted_at,
     },
@@ -82,10 +83,13 @@ pub(super) struct SessionPicker {
     confirming_delete: Option<SessionReference>,
     deleting: Option<SessionReference>,
     window: ListWindow,
+    /// Where the last frame drew each Session's row.
+    targets: PointerTargets<SessionReference>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct SessionPickerRow<'a> {
+    pub(super) reference: &'a SessionReference,
     pub(super) origin: &'a Outlook,
     pub(super) title: &'a str,
     /// The Icon Catalog name standing beside this row's Title, carried raw
@@ -124,6 +128,7 @@ impl SessionPicker {
             confirming_delete: None,
             deleting: None,
             window: ListWindow::default(),
+            targets: PointerTargets::default(),
         }
     }
 
@@ -499,6 +504,26 @@ impl SessionPicker {
         self.move_selection(10);
     }
 
+    /// Where the last frame drew each Session's row.
+    pub(super) fn targets(&self) -> &PointerTargets<SessionReference> {
+        &self.targets
+    }
+
+    /// Moves focus onto the Session drawn under the pointer, as the keys
+    /// would, and answers whether it moved. What was pointed at is in view
+    /// already, so the window holds.
+    pub(super) fn point_at(&mut self, position: ratatui::layout::Position) -> bool {
+        match self.targets.at(position) {
+            Some(reference) if self.selected.as_ref() != Some(&reference) => {
+                self.confirming_delete = None;
+                self.selected = Some(reference);
+                self.window.hold();
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn begin_attach(&mut self) -> Option<SessionReference> {
         if self.is_loading() {
             return None;
@@ -642,6 +667,7 @@ impl SessionPicker {
                 // them.
                 let speaking = || row.speaking().filter_map(|session| session.readable());
                 SessionPickerRow {
+                    reference: summary.reference(),
                     origin: &summary.reference().origin,
                     pending_questionnaires: speaking()
                         .map(|summary| summary.standing_inputs.pending_questionnaire_count())

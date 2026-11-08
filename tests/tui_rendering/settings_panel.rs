@@ -13,10 +13,10 @@ use ratatui::{
 };
 
 use crate::tui_rendering::support::{
-    MutatesSetting, application_looking_at_studio, connected_application, model_descriptor,
-    rendered_application_buffer, rendered_application_rows, rendered_application_rows_at,
-    rendered_row, selected_session_snapshot, studio_stops_answering, text_position,
-    type_terminal_text, workspace_dir,
+    MutatesSetting, application_looking_at_studio, connected_application, left_click_at,
+    model_descriptor, point_at, rendered_application_buffer, rendered_application_rows,
+    rendered_application_rows_at, rendered_row, selected_session_snapshot, studio_stops_answering,
+    text_position, type_terminal_text, workspace_dir,
 };
 use suru::{
     managed_client::ManagedEvent,
@@ -6003,5 +6003,40 @@ fn the_pane_packs_its_detail_while_the_keys_are_on_the_providers() {
     assert!(
         pane_text(&application).ends_with("Applies on the Server Sidekicks read and change"),
         "the picked Setting shows to the foot of its detail: {details:#?}"
+    );
+}
+
+/// The list editor's rows are where typing lands, so the pointer moves that
+/// place as the keys do, and pressing a row moves it there rather than saving
+/// the list as Enter would.
+#[test]
+fn the_pointer_moves_the_list_editors_focus_and_a_press_saves_nothing() {
+    let workspace = workspace_dir();
+    let mut application = client_showing(
+        workspace.path(),
+        with_workspace_roots(&["~/src", WORK_ROOT]),
+        &["workspace.roots"],
+    );
+    open_workspace_roots_editor(&mut application);
+    assert!(application.wants_pointer_motion());
+    let cell = |application: &Application, text: &str| {
+        text_position(&rendered_application_buffer(application, 80, 15), text)
+    };
+
+    let work = cell(&application, WORK_ROOT);
+    assert!(point_at(&mut application, work));
+    assert!(screen(&application).contains(&format!("› {WORK_ROOT}")));
+
+    let addition = cell(&application, "add a Root");
+    assert_eq!(
+        left_click_at(&mut application, addition),
+        ApplicationTransition::Continue,
+        "pressing a row saves nothing"
+    );
+    type_terminal_text(&mut application, ARCHIVE_ROOT);
+    assert!(
+        screen(&application).contains(&format!("› {ARCHIVE_ROOT}")),
+        "typing lands on the row pressed: {}",
+        screen(&application)
     );
 }

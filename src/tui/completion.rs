@@ -8,8 +8,13 @@ use super::commands::{
     AUTOCOMPLETE_LIMIT, SemanticCommandDescriptor, SemanticCommandId, command_matches, descriptor,
     fuzzy_score, slash_trigger,
 };
-use super::list_window::{ListWindow, WindowEntry};
+use ratatui::layout::Position;
+
 use super::text_binding::skill_invocation_can_start;
+use super::{
+    list_window::{ListWindow, WindowEntry},
+    pointer_targets::PointerTargets,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CompletionTrigger {
@@ -262,6 +267,15 @@ pub(super) enum CompletionRow<'a> {
     Message(&'a str),
 }
 
+/// One row the popup's window shows.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ShownCompletion<'a> {
+    /// The candidate's place among them, for a row that is one.
+    pub(super) candidate: Option<usize>,
+    pub(super) selected: bool,
+    pub(super) row: CompletionRow<'a>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct ComposerCompletion {
     mode: Option<CompletionMode>,
@@ -269,6 +283,9 @@ pub(super) struct ComposerCompletion {
     /// The window over the rows, which opens afresh whenever what the reader
     /// typed makes them another list.
     window: ListWindow,
+    /// Where the last frame drew each candidate's row, by its place among
+    /// the candidates.
+    targets: PointerTargets<usize>,
 }
 
 impl ComposerCompletion {
@@ -371,6 +388,28 @@ impl ComposerCompletion {
         }
     }
 
+    /// Where the last frame drew each candidate's row.
+    pub(super) fn targets(&self) -> &PointerTargets<usize> {
+        &self.targets
+    }
+
+    /// Selects the candidate drawn under the pointer, as the keys would, and
+    /// answers whether the selection moved. What was pointed at is in view
+    /// already, so the window holds.
+    pub(super) fn point_at(&mut self, position: Position) -> bool {
+        let Some(mode) = self.mode.as_mut() else {
+            return false;
+        };
+        match self.targets.at(position) {
+            Some(index) if index != mode.selected && index < mode.candidates.len() => {
+                mode.selected = index;
+                self.window.hold();
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn title(&self) -> &'static str {
         self.mode
             .as_ref()
@@ -383,16 +422,17 @@ impl ComposerCompletion {
             .map_or_else(Vec::new, CompletionMode::rows)
     }
 
-    /// The rows the popup's window shows. Only a candidate can be chosen, so
-    /// the rows standing after them — Skills out of reach, and what the
-    /// catalog has to say — are ones the keys never stand on.
-    pub(super) fn visible_rows(&self, capacity: usize) -> Vec<(bool, CompletionRow<'_>)> {
+    /// The rows the popup's window shows, each a candidate's by its place
+    /// among them. Only a candidate can be chosen, so the rows standing after
+    /// them — Skills out of reach, and what the catalog has to say — are ones
+    /// the keys never stand on.
+    pub(super) fn visible_rows(&self, capacity: usize) -> Vec<ShownCompletion<'_>> {
         self.window_over(self.rows(), capacity)
     }
 
     /// [`Self::visible_rows`] short of what the catalog has to say, for a
     /// popup that says it apart from the list.
-    pub(super) fn visible_listed_rows(&self, capacity: usize) -> Vec<(bool, CompletionRow<'_>)> {
+    pub(super) fn visible_listed_rows(&self, capacity: usize) -> Vec<ShownCompletion<'_>> {
         self.window_over(
             self.mode
                 .as_ref()
@@ -413,7 +453,7 @@ impl ComposerCompletion {
         &self,
         rows: Vec<(bool, CompletionRow<'a>)>,
         capacity: usize,
-    ) -> Vec<(bool, CompletionRow<'a>)> {
+    ) -> Vec<ShownCompletion<'a>> {
         let candidates = self.mode.as_ref().map_or(0, |mode| mode.candidates.len());
         let entries = (0..rows.len())
             .map(|index| {
@@ -427,8 +467,14 @@ impl ComposerCompletion {
         let focus = rows.iter().position(|(selected, _)| *selected);
         let shown = self.window.settle(&entries, capacity, focus);
         rows.into_iter()
+            .enumerate()
             .skip(shown.start)
             .take(shown.len())
+            .map(|(index, (selected, row))| ShownCompletion {
+                candidate: (index < candidates).then_some(index),
+                selected,
+                row,
+            })
             .collect()
     }
 

@@ -2,8 +2,8 @@
 
 use crate::tui_rendering::support::{
     PANDA, connected_application, connected_application_homed, enter_active_session,
-    failed_session_snapshot, named_workspace_path, navigable_session_snapshot,
-    noncanonical_spelling, rendered_application_buffer, rendered_application_rows,
+    failed_session_snapshot, left_click_at, named_workspace_path, navigable_session_snapshot,
+    noncanonical_spelling, point_at, rendered_application_buffer, rendered_application_rows,
     rendered_application_rows_at, rendered_row, text_position, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
@@ -1805,4 +1805,58 @@ fn expect_session_list_request(
     };
     assert_eq!(request.scope(), &expected_scope);
     request
+}
+
+#[test]
+fn the_pointer_focuses_a_session_and_pressing_one_opens_it_as_enter_does() {
+    let workspace = workspace_dir();
+    let mut application = Application::new(workspace.path(), Default::default());
+    let (current_id, _, _) = enter_active_session(&mut application, workspace.path());
+    let newest_id = SessionId::new();
+    let oldest_id = SessionId::new();
+    open_session_picker_with(
+        &mut application,
+        vec![
+            session_summary(
+                oldest_id,
+                workspace.path(),
+                "Oldest work",
+                SessionStatus::Idle,
+                10,
+            ),
+            session_summary(
+                newest_id,
+                workspace.path(),
+                "Newest work",
+                SessionStatus::Idle,
+                30,
+            ),
+            session_summary(
+                current_id,
+                workspace.path(),
+                "Current work",
+                SessionStatus::Active,
+                20,
+            ),
+        ],
+    );
+    let cell = |application: &Application, title: &str| {
+        text_position(&rendered_application_buffer(application, 80, 15), title)
+    };
+    assert!(application.wants_pointer_motion());
+
+    let oldest = cell(&application, "Oldest work");
+    assert!(point_at(&mut application, oldest));
+    let rows = rendered_application_rows(&application);
+    assert!(rows[rendered_row(&rows, "Oldest work")].contains('›'));
+    assert!(!rows[rendered_row(&rows, "Current work")].contains('›'));
+
+    let newest = cell(&application, "Newest work");
+    assert_eq!(
+        left_click_at(&mut application, newest),
+        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
+            Outlook::Local,
+            newest_id,
+        ))
+    );
 }

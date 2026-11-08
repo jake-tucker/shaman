@@ -1,5 +1,6 @@
 use crate::tui_rendering::support::{
-    connected_application, rendered_application_rows_at, selected_session_snapshot,
+    connected_application, left_click_at, point_at, rendered_application_buffer,
+    rendered_application_rows_at, rendered_row, selected_session_snapshot, text_position,
     type_terminal_text, workspace_dir,
 };
 use suru::{
@@ -218,4 +219,62 @@ fn outstanding_native_posture_application_is_absent_from_the_composer() {
 
     let frame = rendered_application_rows_at(&application, 80, 24).join("\n");
     assert!(!frame.contains("Approval Posture: applying"), "{frame}");
+}
+
+#[test]
+fn the_pointer_focuses_a_posture_and_pressing_one_chooses_it() {
+    let workspace = workspace_dir();
+    let mut application = connected_application(workspace.path());
+    let session_id = SessionId::new();
+    let mut snapshot = selected_session_snapshot(
+        session_id,
+        workspace.path(),
+        AgentSelection {
+            provider: ProviderId::new("codex"),
+            model: ModelId::new("gpt-test"),
+            options: Vec::new(),
+        },
+    );
+    snapshot.session.approval_posture = Some(SessionApprovalPosture {
+        value: ApprovalPosture::Codex {
+            approval_policy: CodexApprovalPolicy::OnRequest,
+            sandbox_mode: CodexSandboxMode::WorkspaceWrite,
+        },
+        pinned: true,
+        application: suru::protocol::ApprovalPostureApplication::Applied,
+    });
+    application
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .unwrap();
+    application
+        .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
+            SemanticCommandId::ApprovalPostureOpen,
+        )))
+        .unwrap();
+    assert!(application.wants_pointer_motion());
+    let cell = |application: &suru::tui::Application, label: &str| {
+        text_position(&rendered_application_buffer(application, 80, 24), label)
+    };
+
+    let read_only = cell(&application, "Sandbox: read-only");
+    assert!(point_at(&mut application, read_only));
+    let rows = rendered_application_rows_at(&application, 80, 24);
+    assert!(rows[rendered_row(&rows, "Sandbox: read-only")].contains('›'));
+
+    let untrusted = cell(&application, "Approval policy: untrusted");
+    assert_eq!(
+        left_click_at(&mut application, untrusted),
+        ApplicationTransition::UpdateApprovalPosture {
+            session: suru::protocol::SessionReference::new(
+                suru::protocol::Outlook::Local,
+                session_id
+            ),
+            request: suru::protocol::UpdateApprovalPostureRequest {
+                posture: Some(ApprovalPosture::Codex {
+                    approval_policy: CodexApprovalPolicy::Untrusted,
+                    sandbox_mode: CodexSandboxMode::WorkspaceWrite,
+                }),
+            },
+        }
+    );
 }

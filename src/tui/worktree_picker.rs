@@ -4,7 +4,11 @@ use crate::protocol::{
     SourceControlAvailability, SourceControlCapability,
 };
 
-use super::{destination::DestinationPurpose, list_window::ListWindow};
+use ratatui::layout::Position;
+
+use super::{
+    destination::DestinationPurpose, list_window::ListWindow, pointer_targets::PointerTargets,
+};
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct WorktreePicker {
@@ -19,6 +23,8 @@ pub(super) struct WorktreePicker {
     pub(super) context: Option<ResolvedWorkspace>,
     pub(super) error: Option<String>,
     pub(super) window: ListWindow,
+    /// Where the last frame drew each row, by its place.
+    pub(super) targets: PointerTargets<usize>,
     /// Whether the picker has stepped aside for a picker one of its rows
     /// opened, drawing nothing and taking no keys while it keeps the row the
     /// reader was on (see [`Self::step_aside`] and [`Self::step_back`]).
@@ -48,6 +54,19 @@ pub(super) enum WorktreePickerRow {
 }
 
 impl WorktreePicker {
+    /// Moves focus onto the row drawn under the pointer, answering whether it
+    /// moved. What was pointed at is in view already, so the window holds.
+    pub(super) fn point_at(&mut self, position: Position) -> bool {
+        match self.targets.at(position) {
+            Some(index) if index != self.selected => {
+                self.selected = index;
+                self.window.hold();
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn open(&mut self, purpose: DestinationPurpose) {
         *self = Self {
             open: true,
