@@ -12,8 +12,11 @@ use github_copilot_sdk::{
 };
 
 use crate::{
-    protocol::{ModelAttribution, ModelId, ProviderId},
-    provider::ProviderEvent,
+    protocol::{ModelId, ProviderId},
+    provider::{
+        ProviderEvent,
+        actual_model::{self, SelectedModel},
+    },
 };
 
 use super::{COPILOT_PROVIDER_ID, reported};
@@ -265,11 +268,11 @@ impl WorkingModels {
             return None;
         }
         self.published.clone_from(&current);
+        let provider = ProviderId::new(COPILOT_PROVIDER_ID);
+        let auto = ModelId::new("auto");
         Some(ProviderEvent::CurrentModelChanged {
-            model: current.map(|actual| ModelAttribution {
-                provider: ProviderId::new(COPILOT_PROVIDER_ID),
-                selected: ModelId::new("auto"),
-                actual,
+            model: current.and_then(|actual| {
+                actual_model::attribution(SelectedModel::new(&provider, &auto), actual.as_str())
             }),
         })
     }

@@ -171,6 +171,7 @@ use crate::provider::{
     ProviderError, ProviderEvent, ProviderEventAttribution, ProviderEventStream,
     ProviderFileChangeStatus, ProviderMessageId, ProviderSubagentId, ProviderSubagentStatus,
     ProviderToolCallStatus, ProviderWatchId, ProviderWatchOutcome, ReportedMetering,
+    actual_model::{self, SelectedModel},
     concise_remote_message, exclusive_count, first_line,
     harness::SharedHarnessHandle,
     reasoning::{ReasoningSegment, ReasoningSummarySplitter},
@@ -2422,14 +2423,14 @@ fn reported_model_call(
     usage: bool,
 ) -> Vec<ProviderEvent> {
     let id = call_id.filter(|id| !id.is_empty());
-    if actual.trim().is_empty() || actual == selected.as_str() || (!usage && id.is_none()) {
+    let provider = ProviderId::new(super::COPILOT_PROVIDER_ID);
+    let Some(model) = actual_model::attribution(SelectedModel::new(&provider, selected), actual)
+    else {
+        return Vec::new();
+    };
+    if !usage && id.is_none() {
         return Vec::new();
     }
-    let model = ModelAttribution {
-        provider: ProviderId::new(super::COPILOT_PROVIDER_ID),
-        selected: selected.clone(),
-        actual: ModelId::new(actual),
-    };
     let first = id.is_none_or(|id| streams.recorded_model_calls.insert(id.to_owned()));
     let mut projected = if first {
         vec![ProviderEvent::ModelCallRecorded {
@@ -2731,15 +2732,15 @@ fn project_conversation_event(
                 && streams.call_selected_auto(reported_id, routing.selected.is_some()))
             .then_some(&auto)
             .or_else(|| reported_call.as_ref().map(|call| &call.selected));
+            let provider = ProviderId::new(super::COPILOT_PROVIDER_ID);
             let model = selected.and_then(|selected| {
                 actual.as_ref().map_or_else(
                     || reported_call.clone(),
                     |actual| {
-                        Some(ModelAttribution {
-                            provider: ProviderId::new(super::COPILOT_PROVIDER_ID),
-                            selected: selected.clone(),
-                            actual: actual.clone(),
-                        })
+                        actual_model::attribution(
+                            SelectedModel::new(&provider, selected),
+                            actual.as_str(),
+                        )
                     },
                 )
             });
