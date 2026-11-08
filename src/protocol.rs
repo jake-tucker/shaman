@@ -235,9 +235,9 @@ pub struct ModelDetails {
     pub prices: Option<ModelPrices>,
     /// What the Provider asks be shown beside the Model, warnings first.
     pub advisories: Vec<ModelAdvisory>,
-    /// The concrete Model the Provider resolves this one to today, where its
-    /// id is an alias — Claude's `default` or `opus` — so the Actual Model of
-    /// work done under it is named as it is here.
+    /// The concrete Model the Provider runs this one as today, where its id
+    /// names some other Model, so work reported under the concrete Model's id
+    /// can be named as the catalog names it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_model: Option<ModelId>,
 }
@@ -600,20 +600,22 @@ impl ModelCatalog {
             .find(|descriptor| descriptor.id == *model)
     }
 
-    /// The Model a catalog row names the Actual Model `model` by: the row
-    /// listed as it, or else the first row other than the default that
-    /// resolves to it — the default's name says how it was chosen rather
-    /// than what ran.
+    /// The catalog row naming the Actual Model `model`: the row listed as
+    /// it, or else, among the rows other than the default that resolve to
+    /// it, the one with the shortest id — the base row, ahead of those
+    /// naming a variant of it — and the first listed of those. The default's
+    /// name says how a Model was chosen rather than what ran.
     pub fn actual_model(&self, provider: &ProviderId, model: &ModelId) -> Option<&ModelDescriptor> {
         self.model(provider, model).or_else(|| {
             self.providers
                 .iter()
                 .filter(|catalog| catalog.provider == *provider)
                 .flat_map(|catalog| &catalog.models)
-                .find(|descriptor| {
+                .filter(|descriptor| {
                     !descriptor.is_default
                         && descriptor.details.resolved_model.as_ref() == Some(model)
                 })
+                .min_by_key(|descriptor| descriptor.id.as_str().len())
         })
     }
 }

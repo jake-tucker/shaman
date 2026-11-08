@@ -418,17 +418,43 @@ fn filed(report: &UsageMetricsReport) -> Vec<(UsageMetricsKey, String, Option<u6
         .collect()
 }
 
+/// The fixture's catalog with a base row for the Model `default` and `fixture[1m]` resolve to,
+/// listed after both, so the row a label is drawn from is not merely the first to resolve to it.
+fn catalog_with_a_base_row() -> String {
+    let mut rows: Vec<serde_json::Value> =
+        serde_json::from_str(CLAUDE_MODELS).expect("the fixture's Model rows are JSON");
+    rows.push(json!({
+        "value": "fixture",
+        "resolvedModel": FIXTURE_1,
+        "displayName": "Fixture",
+        "description": "Fixture 1 · Best for everyday tasks",
+    }));
+    serde_json::to_string(&rows).expect("the rows re-serialize")
+}
+
+/// A fixture over the catalog `models` playing `timeline` for every Prompt.
+fn over_catalog(models: &str, timeline: &str) -> ScriptedClaude {
+    ScriptedClaude::new(&format!(
+        "{}{}",
+        discovery_arms(models),
+        user_turn_arm(timeline)
+    ))
+}
+
 #[tokio::test]
 async fn a_turn_under_default_is_read_under_the_model_it_resolved_to_in_the_actual_view() {
-    let claude = conversation_fixture(&turn_by_turn(&[result(
-        "prov-session",
-        (400, 12),
-        0.0045,
-        Some(&[
-            Entry::on(FIXTURE_1).tokens(400, 12).cost(0.004),
-            Entry::on(FIXTURE_3).tokens(200, 7).cost(0.0005),
-        ]),
-    )]));
+    let claude = over_catalog(
+        &catalog_with_a_base_row(),
+        &turn_by_turn(&[result(
+            "prov-session",
+            (400, 12),
+            0.0045,
+            Some(&[
+                Entry::on(FIXTURE_1).tokens(400, 12).cost(0.004),
+                Entry::on(FIXTURE_3).tokens(200, 7).cost(0.0005),
+            ]),
+        )]),
+    );
     let session = DurableSession::start(&claude, None, "claude-shares-default").await;
     assert_eq!(
         session.read().await.turns[0]
@@ -463,7 +489,7 @@ async fn a_turn_under_default_is_read_under_the_model_it_resolved_to_in_the_actu
         [
             (
                 model_key(FIXTURE_1),
-                "Fixture (1M context)".to_owned(),
+                "Fixture".to_owned(),
                 Some(400),
                 Some(usd(0.004))
             ),
@@ -474,8 +500,8 @@ async fn a_turn_under_default_is_read_under_the_model_it_resolved_to_in_the_actu
                 Some(usd(0.0005))
             ),
         ],
-        "each Share is filed under the concrete Model, named by the catalog row other than the \
-         default that resolves to it"
+        "each Share is filed under the concrete Model, named by the base row among those other \
+         than the default that resolve to it, wherever the catalog lists it"
     );
     assert_eq!(
         filed(&selected),
