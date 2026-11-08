@@ -2536,12 +2536,17 @@ fn priced_call(
         cache_ttl_seconds,
         &usage,
     );
-    let model = reported.model.trim();
     Ok(PricedCall {
-        model: (!model.is_empty()).then(|| ModelId::new(model)),
+        model: reported_model(&reported.model),
         usage,
         cost,
     })
+}
+
+/// The Model a usage report names as the one its call ran on, absent where it names none.
+fn reported_model(model: &str) -> Option<ModelId> {
+    let model = model.trim();
+    (!model.is_empty()).then(|| ModelId::new(model))
 }
 
 /// Adds one model call's `usage`, costing `reported_cost`, to the reading the conversation's Turn
@@ -2637,12 +2642,7 @@ fn compaction_usage(
         .model
         .as_deref()
         .and_then(|model| pricing.cost(model, None, None, &usage));
-    let model = used
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|model| !model.is_empty())
-        .map(ModelId::new);
+    let model = used.model.as_deref().and_then(reported_model);
     Some(metered(streams, model, usage, reported_cost))
 }
 
