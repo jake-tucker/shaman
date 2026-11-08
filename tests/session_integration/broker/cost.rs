@@ -58,12 +58,14 @@ async fn a_brokered_subagent_is_counted_beneath_its_callers_whole_tree_cost() {
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(4_000, 1_000),
             cost: Some(MeteredCost::reported_subtree(usd(0.20), "caller-process")),
+            model_shares: Vec::new(),
         })
         .await;
     child_provider
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(2_000, 500),
             cost: Some(MeteredCost::reported(usd(0.05))),
+            model_shares: Vec::new(),
         })
         .await;
     child_provider
@@ -144,6 +146,7 @@ async fn a_brokered_subagents_report_covers_its_own_native_subagent_and_counts_b
             ProviderEvent::Usage {
                 usage: measured(100, 10),
                 cost: Some(MeteredCost::reported(usd(0.02))),
+                model_shares: Vec::new(),
             },
         )
         .await;
@@ -151,6 +154,7 @@ async fn a_brokered_subagents_report_covers_its_own_native_subagent_and_counts_b
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(300, 30),
             cost: Some(MeteredCost::reported_subtree(usd(0.04), "child-process")),
+            model_shares: Vec::new(),
         })
         .await;
     delegating
@@ -158,6 +162,7 @@ async fn a_brokered_subagents_report_covers_its_own_native_subagent_and_counts_b
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(4_000, 1_000),
             cost: Some(MeteredCost::reported_subtree(usd(0.10), "caller-process")),
+            model_shares: Vec::new(),
         })
         .await;
 

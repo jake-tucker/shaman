@@ -58,6 +58,7 @@ pub(super) fn metered(
         cost: None,
         cost_basis: None,
         cost_details: None,
+        model_shares: Vec::new(),
     }
 }
 
@@ -89,6 +90,7 @@ pub(super) fn by_model(buckets: &[(u64, u64)]) -> UsageMetricsQuery {
             .map(|(start, end)| interval(*start, *end))
             .collect(),
         breakdown: UsageMetricsBreakdown::Model,
+        model_view: Default::default(),
         comparison: None,
         top_sessions: 0,
     }

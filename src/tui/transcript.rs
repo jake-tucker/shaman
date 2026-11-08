@@ -7918,6 +7918,7 @@ mod tests {
                 cost: None,
                 cost_basis: None,
                 cost_details: None,
+                model_shares: Vec::new(),
             });
             snapshot.messages.append(&mut turn.messages);
             snapshot.activities.append(&mut turn.activities);

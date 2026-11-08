@@ -394,6 +394,7 @@ async fn unreadable_child_hydration_refreshes_root_usage_and_keeps_parent_owned_
                     ..Default::default()
                 },
                 cost: None,
+                model_shares: Vec::new(),
             },
         )
         .await;

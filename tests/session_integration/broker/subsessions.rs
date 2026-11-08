@@ -563,12 +563,14 @@ async fn a_subsession_works_apart_from_the_sidekick_that_began_it() {
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(100),
             cost: Some(MeteredCost::reported(usd(0.20))),
+            model_shares: Vec::new(),
         })
         .await;
     subsession_provider
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(500),
             cost: Some(MeteredCost::reported(usd(0.05))),
+            model_shares: Vec::new(),
         })
         .await;
 

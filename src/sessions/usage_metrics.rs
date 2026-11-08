@@ -20,6 +20,14 @@
 //! carrying it, so a running total over a whole tree counts under the
 //! Workspace of the Session that reported it.
 //!
+//! By Model, the query's Model view says which Model: the one the Turn's
+//! Agent Selection named, or its Actual Models. Under Actual each of the
+//! Turn's Model Shares is filed under the key of the Model it ran on, its
+//! Usage and its part of each Cost Coverage contribution with it, and the
+//! unattributed remainder under the Selection's key; the Turn counts under
+//! each key it holds a part in, and once in the bucket's whole, so the
+//! wholes, the comparison, and the other breakdowns read the same in both.
+//!
 //! A bucket counts each Session whose Turns it holds once — a top-level
 //! Session apart from a Subagent — in its whole and once in each key it
 //! worked under, so its keys can count more Sessions than it does. Distinct
@@ -59,8 +67,9 @@ use crate::protocol::{
     Author, Cost, CostBasis, CountedCost, KeyedUsageMetrics, MAX_USAGE_METRICS_BUCKETS,
     MAX_USAGE_METRICS_TOP_SESSIONS, ModelCatalog, ModelId, ProviderId, SessionId, SessionTimestamp,
     Turn, TurnId, TurnStatus, Usage, UsageMetricsAggregate, UsageMetricsBreakdown,
-    UsageMetricsBucket, UsageMetricsKey, UsageMetricsKeyLabel, UsageMetricsQuery,
-    UsageMetricsReport, UsageMetricsSession, Workspace, WorkspaceId, WorkspacePaths,
+    UsageMetricsBucket, UsageMetricsKey, UsageMetricsKeyLabel, UsageMetricsModelView,
+    UsageMetricsQuery, UsageMetricsReport, UsageMetricsSession, Workspace, WorkspaceId,
+    WorkspacePaths,
 };
 
 use super::{
@@ -123,27 +132,185 @@ impl UsageMetricsRefusal {
 
 /// What the read takes of one Turn: which it is, whether a Subagent ran it,
 /// the top-level Session its Cost is owned by, where it is placed in time,
-/// the key it is broken down under and the Model that ran it, how it ended,
-/// and its Usage.
+/// how it is filed under the breakdown's keys and among Models, how it
+/// ended, and its Usage.
 struct MeteredTurn {
     session_id: SessionId,
     turn_id: TurnId,
     is_subagent: bool,
     owner: SessionId,
     placed_at: Option<SessionTimestamp>,
-    key: UsageMetricsKey,
-    /// The Model key of the Agent that ran it, whatever the breakdown,
-    /// absent where its Agent is not known.
-    model: Option<UsageMetricsKey>,
+    /// How it is filed under the keys of the query's breakdown.
+    filing: Filing,
+    /// How it is filed among Model keys by the query's Model view, whatever
+    /// the breakdown: what names its top Session's Model.
+    models: Filing,
     status: TurnStatus,
     usage: Option<Usage>,
 }
 
-/// What the read takes of the store: every Turn it counts, and what each
-/// adds to the Server's Cost.
+/// How one Turn's work is filed under a breakdown's keys: each key it
+/// counts under, with the part of its Usage held there, and the key each of
+/// its Model Shares, and its unattributed remainder, files Cost under.
+#[derive(Clone)]
+struct Filing {
+    /// Each key the Turn counts under, none twice, with its Usage there.
+    parts: Vec<(UsageMetricsKey, Option<Usage>)>,
+    /// The key each of the Turn's Model Shares is filed under, by its place
+    /// among them; none where the whole Turn is filed under one key.
+    shares: Vec<UsageMetricsKey>,
+    /// The key the unattributed remainder is filed under: the Selection's.
+    remainder: UsageMetricsKey,
+}
+
+impl Filing {
+    /// The whole Turn under `key`, as the Selected view files it.
+    fn whole(key: UsageMetricsKey, usage: Option<Usage>) -> Self {
+        Self {
+            parts: vec![(key.clone(), usage)],
+            shares: Vec::new(),
+            remainder: key,
+        }
+    }
+
+    /// The Turn filed by its Actual Models: each Model Share under the key
+    /// for its Model as the Turn's Provider reached it, and the remainder
+    /// its Shares leave of its Usage under `selection`, the Selection's key.
+    /// A Share takes no more of each part of the Usage than the Shares
+    /// before it left, so the parts add up to the Turn's Usage and the
+    /// remainder is never negative. The Turn counts under `selection` only
+    /// where something is left there: where it holds no Shares, some of its
+    /// Usage, or of its Turn-scoped Cost, is left unattributed.
+    fn by_actual_model(turn: &Turn, selection: UsageMetricsKey) -> Self {
+        if turn.model_shares.is_empty() {
+            return Self::whole(selection, turn.usage.clone());
+        }
+        let provider = turn.agent.as_ref().map(|agent| &agent.selection.provider);
+        let mut left = turn.usage.clone().unwrap_or_default();
+        let mut filing = Self {
+            parts: Vec::new(),
+            shares: Vec::with_capacity(turn.model_shares.len()),
+            remainder: selection.clone(),
+        };
+        for share in &turn.model_shares {
+            let key = provider.map_or(UsageMetricsKey::Unknown, |provider| {
+                UsageMetricsKey::Model {
+                    provider: provider.clone(),
+                    model: share.model.clone(),
+                }
+            });
+            let taken = take_usage(&mut left, &share.usage);
+            filing.file(key.clone(), turn.usage.as_ref().map(|_| taken));
+            filing.shares.push(key);
+        }
+        let shared_cost = turn
+            .model_shares
+            .iter()
+            .filter_map(|share| share.cost)
+            .fold(0_u64, |sum, cost| sum.saturating_add(cost.nano_usd()));
+        let cost_left = turn.cost.is_some_and(|cost| cost.nano_usd() > shared_cost)
+            && turn
+                .cost_details
+                .as_ref()
+                .is_some_and(|details| details.coverage == crate::protocol::CostCoverage::Turn);
+        if usage_left(&left) || cost_left {
+            filing.file(selection, turn.usage.as_ref().map(|_| left));
+        }
+        filing
+    }
+
+    /// Files `usage` under `key`, adding it to what is filed there already.
+    fn file(&mut self, key: UsageMetricsKey, usage: Option<Usage>) {
+        match self.parts.iter_mut().find(|(held, _)| *held == key) {
+            Some((_, held)) => {
+                if let (Some(held), Some(usage)) = (held.as_mut(), usage) {
+                    add_usage(held, &usage);
+                }
+            }
+            None => self.parts.push((key, usage)),
+        }
+    }
+
+    /// The key the part of a Cost `contribution` is filed under: its
+    /// Share's, or the remainder's.
+    fn key_of(&self, contribution: &CostContribution) -> &UsageMetricsKey {
+        contribution
+            .model_share
+            .and_then(|share| self.shares.get(share))
+            .unwrap_or(&self.remainder)
+    }
+
+    /// The keys a Cost `contribution` lands under: its part's where it
+    /// counts an amount, and otherwise every key the Turn counts under,
+    /// since unpriced work of the Turn leaves each of them partial.
+    fn keys_of(&self, contribution: &CostContribution) -> impl Iterator<Item = &UsageMetricsKey> {
+        let unpriced = contribution.amount.is_none() && !self.parts.is_empty();
+        let own = (!unpriced).then(|| self.key_of(contribution));
+        self.parts
+            .iter()
+            .filter(move |_| unpriced)
+            .map(|(key, _)| key)
+            .chain(own)
+    }
+}
+
+/// Takes from `left` the part of each token count `share` states, no more
+/// than is left of it, answering what was taken: absent where either is.
+fn take_usage(left: &mut Usage, share: &Usage) -> Usage {
+    let take = |left: &mut Option<u64>, share: Option<u64>| match (left.as_mut(), share) {
+        (Some(left), Some(share)) => {
+            let taken = share.min(*left);
+            *left -= taken;
+            Some(taken)
+        }
+        _ => None,
+    };
+    Usage {
+        fresh_input_tokens: take(&mut left.fresh_input_tokens, share.fresh_input_tokens),
+        cache_read_tokens: take(&mut left.cache_read_tokens, share.cache_read_tokens),
+        cache_write_tokens: take(&mut left.cache_write_tokens, share.cache_write_tokens),
+        output_tokens: take(&mut left.output_tokens, share.output_tokens),
+        reasoning_tokens: take(&mut left.reasoning_tokens, share.reasoning_tokens),
+        native_meter: None,
+    }
+}
+
+/// Whether any token count is left in `usage`.
+fn usage_left(usage: &Usage) -> bool {
+    [
+        usage.fresh_input_tokens,
+        usage.cache_read_tokens,
+        usage.cache_write_tokens,
+        usage.output_tokens,
+        usage.reasoning_tokens,
+    ]
+    .into_iter()
+    .any(|count| count.is_some_and(|count| count > 0))
+}
+
+/// Adds `added` into `held` part by part, keeping a part absent where
+/// neither states it.
+fn add_usage(held: &mut Usage, added: &Usage) {
+    let add = |held: &mut Option<u64>, added: Option<u64>| {
+        *held = match (*held, added) {
+            (None, None) => None,
+            (held, added) => Some(held.unwrap_or(0).saturating_add(added.unwrap_or(0))),
+        };
+    };
+    add(&mut held.fresh_input_tokens, added.fresh_input_tokens);
+    add(&mut held.cache_read_tokens, added.cache_read_tokens);
+    add(&mut held.cache_write_tokens, added.cache_write_tokens);
+    add(&mut held.output_tokens, added.output_tokens);
+    add(&mut held.reasoning_tokens, added.reasoning_tokens);
+}
+
+/// What the read takes of the store: every Turn it counts, what each adds
+/// to the Server's Cost, and every Model key any of them can be filed under
+/// in either Model view.
 struct Metered {
     turns: Vec<MeteredTurn>,
     costs: Vec<CostContribution>,
+    models: HashSet<UsageMetricsKey>,
 }
 
 /// What names a report's keys: the Model Catalog, naming each Model and
@@ -196,7 +363,7 @@ impl SessionStore {
             None => ErrandReading::default(),
         };
         let forest = MeteredForest::index(copied);
-        let metered = forest.metered(query.breakdown);
+        let metered = forest.metered(query.breakdown, query.model_view);
         let names = KeyNames {
             catalog,
             workspace_paths,
@@ -339,31 +506,51 @@ impl MeteredForest {
     /// whose parent is gone, or one of a cycle — is in no tree Cost a
     /// listing shows, so neither its Usage nor its Cost is counted, and the
     /// two measures cover the same Sessions.
-    fn metered(&self, breakdown: UsageMetricsBreakdown) -> Metered {
+    fn metered(
+        &self,
+        breakdown: UsageMetricsBreakdown,
+        model_view: UsageMetricsModelView,
+    ) -> Metered {
         let roots = self.cost_tree_heads();
         let costs = roots
             .iter()
             .flat_map(|root| tree_contributions(self, *root))
             .collect();
         let mut turns = Vec::new();
+        let mut models = HashSet::new();
         for CountedSession { owner, session_id } in self.counted_sessions(&roots) {
             let session = &self.sessions[&session_id];
-            turns.extend(session.turns.iter().map(|turn| MeteredTurn {
-                session_id,
-                turn_id: turn.id,
-                is_subagent: session.parent.is_some(),
-                owner,
-                placed_at: placed_at(turn),
-                key: key_of(breakdown, session, turn),
-                model: match key_of(UsageMetricsBreakdown::Model, session, turn) {
-                    UsageMetricsKey::Unknown => None,
-                    model => Some(model),
-                },
-                status: turn.status,
-                usage: turn.usage.clone(),
+            turns.extend(session.turns.iter().map(|turn| {
+                models.extend(model_keys(turn));
+                let selected = key_of(UsageMetricsBreakdown::Model, session, turn);
+                let models = match model_view {
+                    UsageMetricsModelView::Selected => Filing::whole(selected, turn.usage.clone()),
+                    UsageMetricsModelView::Actual => Filing::by_actual_model(turn, selected),
+                };
+                let filing = match breakdown {
+                    UsageMetricsBreakdown::Model => models.clone(),
+                    UsageMetricsBreakdown::Provider | UsageMetricsBreakdown::Workspace => {
+                        Filing::whole(key_of(breakdown, session, turn), turn.usage.clone())
+                    }
+                };
+                MeteredTurn {
+                    session_id,
+                    turn_id: turn.id,
+                    is_subagent: session.parent.is_some(),
+                    owner,
+                    placed_at: placed_at(turn),
+                    filing,
+                    models,
+                    status: turn.status,
+                    usage: turn.usage.clone(),
+                }
             }));
         }
-        Metered { turns, costs }
+        Metered {
+            turns,
+            costs,
+            models,
+        }
     }
 
     /// Every Session heading a tree whose Cost the Server's Cost adds up.
@@ -479,6 +666,21 @@ fn key_of(
     }
 }
 
+/// Every Model key `turn` can be filed under in either Model view: its
+/// Selection's, and each of its Model Shares' as its Provider reached it.
+/// None where its Agent is not known.
+fn model_keys(turn: &Turn) -> impl Iterator<Item = UsageMetricsKey> + '_ {
+    turn.agent.iter().flat_map(|agent| {
+        let provider = &agent.selection.provider;
+        std::iter::once(&agent.selection.model)
+            .chain(turn.model_shares.iter().map(|share| &share.model))
+            .map(move |model| UsageMetricsKey::Model {
+                provider: provider.clone(),
+                model: model.clone(),
+            })
+    })
+}
+
 /// Where a Turn, and the Cost it carries, lands among the buckets, and
 /// whether in the comparison interval besides.
 #[derive(Clone, Copy)]
@@ -514,8 +716,9 @@ struct Part {
 }
 
 impl Part {
-    fn add(&mut self, turn: &MeteredTurn) {
-        if let Some(usage) = &turn.usage {
+    /// Counts `turn` once, adding `usage`, the part of its Usage this holds.
+    fn add(&mut self, turn: &MeteredTurn, usage: Option<&Usage>) {
+        if let Some(usage) = usage {
             self.aggregate.add_usage(usage);
         }
         self.aggregate.turns += 1;
@@ -544,18 +747,28 @@ impl Tally {
         add_errand_to(&mut errands.aggregate, errand);
     }
 
+    /// Counts `turn` once in the whole, and once under each key it is
+    /// filed under with the part of its Usage there.
     fn add(&mut self, turn: &MeteredTurn) {
-        self.total.add(turn);
-        match self.by_key.get_mut(&turn.key) {
-            Some(keyed) => keyed.add(turn),
-            None => self.by_key.entry(turn.key.clone()).or_default().add(turn),
+        self.total.add(turn, turn.usage.as_ref());
+        for (key, usage) in &turn.filing.parts {
+            match self.by_key.get_mut(key) {
+                Some(keyed) => keyed.add(turn, usage.as_ref()),
+                None => self
+                    .by_key
+                    .entry(key.clone())
+                    .or_default()
+                    .add(turn, usage.as_ref()),
+            }
         }
     }
 
-    fn add_cost(&mut self, key: &UsageMetricsKey, contribution: &CostContribution) {
+    fn add_cost(&mut self, filing: &Filing, contribution: &CostContribution) {
         add_contribution(&mut self.total.aggregate, contribution);
-        let keyed = self.by_key.entry(key.clone()).or_default();
-        add_contribution(&mut keyed.aggregate, contribution);
+        for key in filing.keys_of(contribution) {
+            let keyed = self.by_key.entry(key.clone()).or_default();
+            add_contribution(&mut keyed.aggregate, contribution);
+        }
     }
 
     fn into_bucket(mut self, keys: &[UsageMetricsKey]) -> UsageMetricsBucket {
@@ -575,36 +788,43 @@ impl Tally {
 }
 
 /// What a top-level Session's work across the buckets adds up to, as it is
-/// added: its Cost, and each Model's part of it and of its tokens, from
-/// which the Model it ran most is named.
+/// added: its Cost, and what each Model key its Turns are filed among holds
+/// of it and of its tokens — by the query's Model view, its Selections' or
+/// its Turns' Model Shares and remainders — from which the Model it ran
+/// most is named.
 #[derive(Default)]
 struct OwnedCost {
     cost: CountedCost,
-    models: HashMap<UsageMetricsKey, ModelShare>,
+    models: HashMap<UsageMetricsKey, ModelWork>,
 }
 
-/// One Model's part of a Session's work across the buckets.
+/// What one Model key holds of a Session's work across the buckets.
 #[derive(Clone, Copy, Default)]
-struct ModelShare {
+struct ModelWork {
     cost: CountedCost,
     tokens: u64,
 }
 
 impl OwnedCost {
     fn add_turn(&mut self, turn: &MeteredTurn) {
-        let Some(model) = &turn.model else {
-            return;
-        };
-        let tokens = turn.usage.as_ref().and_then(Usage::blended_tokens);
-        let share = self.models.entry(model.clone()).or_default();
-        share.tokens = share.tokens.saturating_add(tokens.unwrap_or(0));
+        for (model, usage) in &turn.models.parts {
+            if *model == UsageMetricsKey::Unknown {
+                continue;
+            }
+            let tokens = usage.as_ref().and_then(Usage::blended_tokens);
+            let work = self.models.entry(model.clone()).or_default();
+            work.tokens = work.tokens.saturating_add(tokens.unwrap_or(0));
+        }
     }
 
-    fn add_cost(&mut self, model: Option<&UsageMetricsKey>, contribution: &CostContribution) {
+    fn add_cost(&mut self, models: &Filing, contribution: &CostContribution) {
         self.cost.add(contribution.counted());
-        if let Some(model) = model {
-            let share = self.models.entry(model.clone()).or_default();
-            share.cost.add(contribution.counted());
+        for model in models.keys_of(contribution) {
+            if *model == UsageMetricsKey::Unknown {
+                continue;
+            }
+            let work = self.models.entry(model.clone()).or_default();
+            work.cost.add(contribution.counted());
         }
     }
 
@@ -612,8 +832,7 @@ impl OwnedCost {
     /// where none cost more than another, the first in a report's order
     /// among any still alike.
     fn main_model(&self) -> Option<&UsageMetricsKey> {
-        let weight =
-            |share: &ModelShare| (share.cost.amount.map_or(0, Cost::nano_usd), share.tokens);
+        let weight = |work: &ModelWork| (work.cost.amount.map_or(0, Cost::nano_usd), work.tokens);
         self.models
             .iter()
             .max_by(|(left_key, left), (right_key, right)| {
@@ -743,13 +962,14 @@ impl<P> TurnPlaces<P> {
     }
 }
 
-/// Where a Turn landed, the key it counts under, and the top-level Session
-/// and Model its Cost is owned by, for the Cost it carries to land beside it.
+/// Where a Turn landed, how it is filed under the breakdown's keys and
+/// among Models, and the top-level Session its Cost is owned by, for the
+/// Cost it carries to land beside it.
 struct Placed {
     place: Place,
-    key: UsageMetricsKey,
+    filing: Filing,
     owner: SessionId,
-    model: Option<UsageMetricsKey>,
+    models: Filing,
 }
 
 fn fold(
@@ -799,9 +1019,8 @@ fn fold(
     // Every Model and Workspace the counted Turns ran under, at any moment:
     // what a label is told apart from, so a key reads alike in every report
     // the Server gives, whatever else that report names.
-    let mut named = HashSet::<UsageMetricsKey>::new();
+    let mut named = metered.models;
     for turn in &metered.turns {
-        named.extend(turn.model.clone());
         named.insert(UsageMetricsKey::Workspace {
             workspace: forest.sessions[&turn.session_id].workspace.clone(),
         });
@@ -817,16 +1036,16 @@ fn fold(
             compared: compared(turn.placed_at),
         };
         if let Some(comparison) = comparison.as_mut().filter(|_| place.compared) {
-            comparison.add(&turn);
+            comparison.add(&turn, turn.usage.as_ref());
         }
         placed.place(
             turn.session_id,
             turn.turn_id,
             Placed {
                 place,
-                key: turn.key.clone(),
+                filing: turn.filing.clone(),
                 owner: turn.owner,
-                model: turn.model.clone(),
+                models: turn.models.clone(),
             },
         );
         if let Some(placed_at) = turn.placed_at {
@@ -841,14 +1060,14 @@ fn fold(
             Landing::Untimed => untimed.add(&turn),
             Landing::Outside => continue,
         }
-        across_buckets_and_untimed.add(&turn);
+        across_buckets_and_untimed.add(&turn, turn.usage.as_ref());
     }
     for contribution in &metered.costs {
         let Some(Placed {
             place,
-            key,
+            filing,
             owner,
-            model,
+            models,
         }) = placed.of(contribution)
         else {
             debug_assert!(false, "every contribution is of a Turn the read counts");
@@ -859,14 +1078,14 @@ fn fold(
         }
         match place.bucket {
             Landing::Bucket(index) => {
-                buckets[index].add_cost(key, contribution);
-                across_buckets.add_cost(key, contribution);
+                buckets[index].add_cost(filing, contribution);
+                across_buckets.add_cost(filing, contribution);
                 owned
                     .entry(*owner)
                     .or_default()
-                    .add_cost(model.as_ref(), contribution);
+                    .add_cost(models, contribution);
             }
-            Landing::Untimed => untimed.add_cost(key, contribution),
+            Landing::Untimed => untimed.add_cost(filing, contribution),
             Landing::Outside => continue,
         }
         add_contribution(&mut across_buckets_and_untimed.aggregate, contribution);

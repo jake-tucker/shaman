@@ -1371,6 +1371,7 @@ pub(super) fn prepare_prompt_delivery(
                 cost: None,
                 cost_basis: None,
                 cost_details: None,
+                model_shares: Vec::new(),
             },
         },
         SessionChange::MessageAdded {

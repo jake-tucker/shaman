@@ -47,6 +47,7 @@ fn turn(start: u64, end: Option<u64>, output: Option<u64>) -> Turn {
         cost: None,
         cost_basis: None,
         cost_details: None,
+        model_shares: Vec::new(),
     }
 }
 
@@ -77,6 +78,7 @@ fn priced_turn(
             is_partial: false,
             prior: Vec::new(),
         }),
+        model_shares: Vec::new(),
     }
 }
 
@@ -668,6 +670,7 @@ async fn restoring_many_disjoint_reporting_lifetimes_uses_indexed_coverage() {
                     is_partial: false,
                     prior: Vec::new(),
                 }),
+                model_shares: Vec::new(),
             }
         })
         .collect();
@@ -1272,6 +1275,7 @@ fn counted(session_id: SessionId, turn: &Turn, usd: f64, is_partial: bool) -> Co
             basis: CostBasis::Reported,
         }),
         is_partial,
+        model_share: None,
     }
 }
 
@@ -1312,6 +1316,7 @@ async fn all_time_metrics(
                     end: SessionTimestamp(u64::MAX),
                 }],
                 breakdown,
+                model_view: Default::default(),
                 comparison: None,
                 // Enough to rank every tree, so ranking them is measured.
                 top_sessions: 5,

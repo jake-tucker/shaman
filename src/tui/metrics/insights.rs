@@ -724,6 +724,7 @@ impl InsightsView {
             workspaces: UsageMetricsQuery {
                 buckets: vec![interval],
                 breakdown: UsageMetricsBreakdown::Workspace,
+                model_view: Default::default(),
                 comparison: None,
                 top_sessions: 0,
             },

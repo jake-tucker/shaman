@@ -552,6 +552,7 @@ async fn active_turn_admission_preserves_order_and_safe_steer_delivery() {
                         cost: None,
                         cost_basis: None,
                         cost_details: None,
+                        model_shares: Vec::new(),
                     },
                 },
                 SessionChange::MessageAdded {
@@ -616,6 +617,7 @@ async fn active_turn_admission_preserves_order_and_safe_steer_delivery() {
                             cost: None,
                             cost_basis: None,
                             cost_details: None,
+                            model_shares: Vec::new(),
                         },
                     },
                 ],

@@ -207,6 +207,7 @@ async fn real_session_stream_appends_and_completes_one_stable_agent_message() {
                         cost: None,
                         cost_basis: None,
                         cost_details: None,
+                        model_shares: Vec::new(),
                     },
                 },
                 SessionChange::MessageAdded {

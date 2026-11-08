@@ -1083,6 +1083,7 @@ fn subsession_owing_both(sidekick: &Sidekick, workspace: &Path) -> suru::protoco
         cost_basis: None,
         cost_details: None,
         compaction_requested: false,
+        model_shares: Vec::new(),
     });
     let approval = approval_activity(
         turn_id,

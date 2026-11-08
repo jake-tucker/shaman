@@ -1618,12 +1618,14 @@ async fn a_brokered_subagents_usage_and_cost_are_its_own_and_roll_into_its_calle
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(4_000, 1_000),
             cost: Some(MeteredCost::reported(usd(0.20))),
+            model_shares: Vec::new(),
         })
         .await;
     child_provider
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(2_000, 500),
             cost: Some(MeteredCost::reported(usd(0.05))),
+            model_shares: Vec::new(),
         })
         .await;
 

@@ -574,6 +574,7 @@ fn turn_for(prompt_id: PromptId) -> Turn {
         cost_basis: None,
         cost_details: None,
         last_output_at: None,
+        model_shares: Vec::new(),
     }
 }
 

@@ -107,6 +107,7 @@ fn session_running(commands: &[(&str, ActivityStatus)]) -> (SessionSnapshot, Vec
             cost: None,
             cost_basis: None,
             cost_details: None,
+            model_shares: Vec::new(),
         }],
         messages: Vec::new(),
         transcript: ids

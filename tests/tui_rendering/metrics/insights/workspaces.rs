@@ -34,6 +34,7 @@ fn switching_to_insights_reads_the_range_s_workspaces_as_one_bucket_beside_the_i
         UsageMetricsQuery {
             buckets: vec![reads.insights.interval],
             breakdown: UsageMetricsBreakdown::Workspace,
+            model_view: Default::default(),
             comparison: None,
             top_sessions: 0,
         },

@@ -16,8 +16,8 @@ use suru::{
         InsightsTool, ModelId, PromptId, ProviderId, QUARTER_HOUR_MS, RuntimeDescriptor,
         SessionError, SessionErrorCode, SessionTimestamp, TURN_DURATION_BINS, ToolTally,
         TurnDurations, TurnInsights, Usage, UsageMetricsAggregate, UsageMetricsBreakdown,
-        UsageMetricsInterval, UsageMetricsKey, UsageMetricsKeyLabel, UsageMetricsQuery,
-        UsageMetricsReport,
+        UsageMetricsInterval, UsageMetricsKey, UsageMetricsKeyLabel, UsageMetricsModelView,
+        UsageMetricsQuery, UsageMetricsReport,
     },
     provider::{
         ErrandConsumption, ErrandCost, MeteredCost, ProviderActivityId, ProviderEvent,
@@ -31,6 +31,7 @@ fn by_model(buckets: Vec<UsageMetricsInterval>) -> UsageMetricsQuery {
     UsageMetricsQuery {
         buckets,
         breakdown: UsageMetricsBreakdown::Model,
+        model_view: Default::default(),
         comparison: None,
         top_sessions: 0,
     }
@@ -64,6 +65,7 @@ async fn usage_metrics_are_read_over_the_api_and_a_bad_query_is_refused() {
                 ..Usage::default()
             },
             cost: Some(MeteredCost::reported(Cost::from_usd(0.25).unwrap())),
+            model_shares: Vec::new(),
         })
         .await;
     let snapshot = read_session_until(
@@ -230,6 +232,7 @@ async fn insights_are_read_over_the_api_and_a_backwards_interval_is_refused() {
                 ..Usage::default()
             },
             cost: None,
+            model_shares: Vec::new(),
         },
         ProviderEvent::ToolCallStarted {
             activity_id: issue.clone(),
@@ -499,6 +502,20 @@ async fn errand_is_read_over_the_api(
     // The Session's first Turn never began, its Provider never answering
     // its start, so the whole is the Errand's alone: no Session, no Turn.
     assert_eq!(report.buckets[0].total, errands.aggregate);
+
+    // The Model view moves no Errand: it stays under its reserved key, and
+    // the report reads the same.
+    let actual = ask(
+        &client,
+        &descriptor,
+        &UsageMetricsQuery {
+            model_view: UsageMetricsModelView::Actual,
+            ..all_of_time.clone()
+        },
+    )
+    .await;
+    assert!(actual.status().is_success(), "{}", actual.status());
+    assert_eq!(actual.json::<UsageMetricsReport>().await.unwrap(), report);
 
     // Insights count it as Delegation's Errands, and its input in the
     // cache's figures, but in no quarter-hour, since it is no Turn.

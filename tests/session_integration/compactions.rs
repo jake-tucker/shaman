@@ -1084,6 +1084,7 @@ async fn a_compaction_request_begins_a_turn_of_its_own_that_settles_as_its_manua
         ProviderEvent::Usage {
             usage: usage.clone(),
             cost: None,
+            model_shares: Vec::new(),
         },
     ] {
         fixture

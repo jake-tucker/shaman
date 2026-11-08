@@ -156,6 +156,7 @@ fn child_with_working_subagent(
             cost: None,
             cost_basis: None,
             cost_details: None,
+            model_shares: Vec::new(),
         }],
         messages: vec![Message {
             id: message_id,

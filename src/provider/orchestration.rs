@@ -6936,20 +6936,34 @@ fn project_provider_event(
             | ProviderEvent::SubagentWoken { .. }
             | ProviderEvent::SubagentSteered { .. }
             | ProviderEvent::SubagentDelegated { .. } => Ok(ProviderEventProjection::Continue),
-            ProviderEvent::Usage { usage, cost } => sessions
-                .publish_agent_output(
-                    session_id,
-                    SessionChange::TurnUsageChanged {
-                        turn_id: active.turn_id,
-                        usage,
-                        cost: cost.as_ref().map(MeteredCost::cost),
-                        cost_basis: cost.as_ref().map(MeteredCost::basis),
-                        cost_coverage: cost.as_ref().map(|cost| cost.coverage().clone()),
-                        cost_is_partial: cost.as_ref().is_some_and(MeteredCost::is_partial),
-                        cost_recorded_at: None,
-                    },
-                )
-                .map(|_| ProviderEventProjection::Continue),
+            ProviderEvent::Usage {
+                usage,
+                cost,
+                mut model_shares,
+            } => {
+                // A Share's Cost is on the reading's terms, so a reading
+                // stating none leaves nothing for a Share's to be stated on.
+                if cost.is_none() {
+                    for share in &mut model_shares {
+                        share.cost = None;
+                    }
+                }
+                sessions
+                    .publish_agent_output(
+                        session_id,
+                        SessionChange::TurnUsageChanged {
+                            turn_id: active.turn_id,
+                            usage,
+                            cost: cost.as_ref().map(MeteredCost::cost),
+                            cost_basis: cost.as_ref().map(MeteredCost::basis),
+                            cost_coverage: cost.as_ref().map(|cost| cost.coverage().clone()),
+                            cost_is_partial: cost.as_ref().is_some_and(MeteredCost::is_partial),
+                            cost_recorded_at: None,
+                            model_shares,
+                        },
+                    )
+                    .map(|_| ProviderEventProjection::Continue)
+            }
             ProviderEvent::TurnCompleted => {
                 // A Provider may reach its own boundary with streams it never
                 // settled — Codex completes a Turn without the `item/completed`

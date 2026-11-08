@@ -150,6 +150,7 @@ async fn a_parents_total_carries_its_subagents_usage_while_the_child_keeps_its_o
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(4_000, 1_000),
             cost: Cost::from_usd(0.20).map(MeteredCost::reported),
+            model_shares: Vec::new(),
         })
         .await;
     fixture
@@ -159,6 +160,7 @@ async fn a_parents_total_carries_its_subagents_usage_while_the_child_keeps_its_o
             ProviderEvent::Usage {
                 usage: measured(2_000, 500),
                 cost: Cost::from_usd(0.05).map(MeteredCost::reported),
+                model_shares: Vec::new(),
             },
         )
         .await;
@@ -219,6 +221,7 @@ async fn a_whole_tree_cost_counts_once_and_retains_proven_later_cost_as_partial(
             usage: measured(4_000, 1_000),
             cost: Cost::from_usd(0.20)
                 .map(|cost| MeteredCost::reported_subtree(cost, "provider-call-1")),
+            model_shares: Vec::new(),
         })
         .await;
     fixture
@@ -228,6 +231,7 @@ async fn a_whole_tree_cost_counts_once_and_retains_proven_later_cost_as_partial(
             ProviderEvent::Usage {
                 usage: measured(2_000, 500),
                 cost: Cost::from_usd(0.05).map(MeteredCost::reported),
+                model_shares: Vec::new(),
             },
         )
         .await;
@@ -262,6 +266,7 @@ async fn a_whole_tree_cost_counts_once_and_retains_proven_later_cost_as_partial(
             ProviderEvent::Usage {
                 usage: measured(900, 100),
                 cost: Cost::from_usd(0.03).map(MeteredCost::reported),
+                model_shares: Vec::new(),
             },
         )
         .await;
@@ -324,6 +329,7 @@ async fn an_ancestor_report_suppresses_an_overlapping_nested_report() {
                 usage: measured(100, 10),
                 cost: Cost::from_usd(0.05)
                     .map(|cost| MeteredCost::reported_subtree(cost, "child-lifetime")),
+                model_shares: Vec::new(),
             },
         )
         .await;
@@ -333,6 +339,7 @@ async fn an_ancestor_report_suppresses_an_overlapping_nested_report() {
             usage: measured(200, 20),
             cost: Cost::from_usd(0.10)
                 .map(|cost| MeteredCost::reported_subtree(cost, "parent-lifetime")),
+            model_shares: Vec::new(),
         })
         .await;
 
@@ -411,6 +418,7 @@ async fn output_without_a_price_keeps_a_known_total_partial_after_restart() {
             usage: measured(200, 20),
             cost: Cost::from_usd(0.10)
                 .map(|cost| MeteredCost::reported_subtree(cost, "output-lifetime")),
+            model_shares: Vec::new(),
         })
         .await;
     fixture
@@ -486,6 +494,7 @@ async fn a_settled_turn_with_output_and_its_own_price_stays_complete_after_resta
         ProviderEvent::Usage {
             usage: measured(300, 30),
             cost: Cost::from_usd(0.04).map(MeteredCost::reported),
+            model_shares: Vec::new(),
         },
         ProviderEvent::TurnCompleted,
     ] {
@@ -532,6 +541,7 @@ async fn independent_reporting_lifetimes_on_one_turn_survive_restart() {
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(100, 10),
             cost: Cost::from_usd(0.10).map(|cost| MeteredCost::reported_subtree(cost, "process-1")),
+            model_shares: Vec::new(),
         })
         .await;
     for event in [
@@ -551,6 +561,7 @@ async fn independent_reporting_lifetimes_on_one_turn_survive_restart() {
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(100, 10),
             cost: Cost::from_usd(0.02).map(|cost| MeteredCost::reported_subtree(cost, "process-2")),
+            model_shares: Vec::new(),
         })
         .await;
     fixture
@@ -632,6 +643,7 @@ async fn roll_up_recurses_through_a_subagents_own_subagents() {
             ProviderEvent::Usage {
                 usage: measured(900, 100),
                 cost: Cost::from_usd(0.01).map(MeteredCost::reported),
+                model_shares: Vec::new(),
             },
         )
         .await;
@@ -682,6 +694,7 @@ async fn the_catalog_announces_a_roll_up_without_the_session_open() {
             ProviderEvent::Usage {
                 usage: measured(2_000, 500),
                 cost: Cost::from_usd(0.05).map(MeteredCost::reported),
+                model_shares: Vec::new(),
             },
         )
         .await;
@@ -727,6 +740,7 @@ async fn usage_owed_to_a_subagent_after_its_spawning_turn_settled_still_rolls_up
             ProviderEvent::Usage {
                 usage: measured(2_000, 500),
                 cost: Cost::from_usd(0.05).map(MeteredCost::reported),
+                model_shares: Vec::new(),
             },
         )
         .await;
@@ -751,6 +765,7 @@ async fn usage_owed_to_a_subagent_after_its_spawning_turn_settled_still_rolls_up
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(1_000, 200),
             cost: Cost::from_usd(0.02).map(MeteredCost::reported),
+            model_shares: Vec::new(),
         })
         .await;
 
@@ -788,6 +803,7 @@ async fn a_restarted_server_derives_the_roll_up_again_from_the_turns_it_stored()
         .emit_and_wait_until_observed(ProviderEvent::Usage {
             usage: measured(4_000, 1_000),
             cost: Cost::from_usd(0.20).map(MeteredCost::reported),
+            model_shares: Vec::new(),
         })
         .await;
     fixture
@@ -797,6 +813,7 @@ async fn a_restarted_server_derives_the_roll_up_again_from_the_turns_it_stored()
             ProviderEvent::Usage {
                 usage: measured(2_000, 500),
                 cost: Cost::from_usd(0.05).map(MeteredCost::reported),
+                model_shares: Vec::new(),
             },
         )
         .await;

@@ -1557,6 +1557,7 @@ async fn turn_usage_survives_a_restart() {
             native_meter: None,
         },
         cost: Cost::from_usd(0.03).map(MeteredCost::reported),
+        model_shares: Vec::new(),
     });
     provider_session.emit(ProviderEvent::TurnCompleted);
     let completed = read_session_at_least_revision(

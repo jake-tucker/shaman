@@ -676,6 +676,7 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
             cost: Cost::from_usd(0.03),
             cost_basis: Some(CostBasis::Reported),
             cost_details: None,
+            model_shares: Vec::new(),
         }],
         messages: vec![Message {
             id: MessageId::from_uuid(fixture_id("0198b27e-310d-763a-9825-51cc8b2bef81")),
@@ -3112,6 +3113,7 @@ fn session_delta_status_and_error_contracts_use_stable_provider_neutral_shapes()
                 cost_coverage: Some(suru::protocol::CostCoverage::Turn),
                 cost_is_partial: false,
                 cost_recorded_at: Some(SessionTimestamp(1_755_000_004_100)),
+                model_shares: Vec::new(),
             },
             SessionChange::TurnStatusChanged {
                 turn_id,

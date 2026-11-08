@@ -764,6 +764,7 @@ impl MetricsView {
         let query = UsageMetricsQuery {
             buckets,
             breakdown: self.breakdown,
+            model_view: Default::default(),
             comparison,
             top_sessions: TOP_SESSIONS,
         };

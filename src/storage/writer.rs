@@ -1282,6 +1282,7 @@ mod tests {
             cost: None,
             cost_basis: None,
             cost_details: None,
+            model_shares: Vec::new(),
         }
     }
 
@@ -2095,6 +2096,7 @@ mod tests {
                     cost_coverage: None,
                     cost_is_partial: false,
                     cost_recorded_at: None,
+                    model_shares: Vec::new(),
                 },
                 SessionChange::MessageCompleted {
                     message_id: streaming,

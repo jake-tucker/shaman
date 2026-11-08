@@ -609,7 +609,11 @@ impl NativeCorrelation {
         let mut observed = vec![model_changed(model)];
         observed.extend(restated.map(|usage| AttributedProviderEvent {
             attribution: ProviderEventAttribution::Subagent(ProviderSubagentId::new(thread_id)),
-            event: ProviderEvent::Usage { usage, cost: None },
+            event: ProviderEvent::Usage {
+                usage,
+                cost: None,
+                model_shares: Vec::new(),
+            },
         }));
         observed
     }
@@ -1452,7 +1456,8 @@ fn estimate_cost(
     pricing: Option<&PricingSource>,
     mut event: AttributedProviderEvent,
 ) -> AttributedProviderEvent {
-    let (Some(pricing), ProviderEvent::Usage { usage, cost }) = (pricing, &mut event.event) else {
+    let (Some(pricing), ProviderEvent::Usage { usage, cost, .. }) = (pricing, &mut event.event)
+    else {
         return event;
     };
     let (model, priceable_usage, partial) = match &event.attribution {
@@ -2717,9 +2722,13 @@ fn project_token_usage(
         }
         let usage = correlation.root_metering.record(total, turn_id);
         return owning(
-            std::iter::once(ProviderEvent::Usage { usage, cost: None })
-                .chain(context_event)
-                .collect(),
+            std::iter::once(ProviderEvent::Usage {
+                usage,
+                cost: None,
+                model_shares: Vec::new(),
+            })
+            .chain(context_event)
+            .collect(),
         );
     }
     let attribution = ProviderEventAttribution::Subagent(ProviderSubagentId::new(thread_id));
@@ -2743,9 +2752,13 @@ fn project_token_usage(
     let usage = child.metering.record(total, &child.stretch_key());
     attributed(
         &attribution,
-        std::iter::once(ProviderEvent::Usage { usage, cost: None })
-            .chain(context_event)
-            .collect(),
+        std::iter::once(ProviderEvent::Usage {
+            usage,
+            cost: None,
+            model_shares: Vec::new(),
+        })
+        .chain(context_event)
+        .collect(),
     )
 }
 

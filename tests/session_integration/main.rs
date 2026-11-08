@@ -15,6 +15,7 @@ mod hydration;
 mod icons;
 mod managed_client;
 mod model_catalog;
+mod model_shares;
 mod monitoring;
 mod moves;
 mod multi_provider;

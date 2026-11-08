@@ -975,6 +975,7 @@ impl TurnRow {
                 cost: turn.cost,
                 cost_basis: turn.cost_basis,
                 cost_details: turn.cost_details.clone(),
+                model_shares: turn.model_shares.clone(),
             },
         )
     }
@@ -999,6 +1000,7 @@ impl TurnRow {
             cost: payload.cost,
             cost_basis: payload.cost_basis,
             cost_details: payload.cost_details,
+            model_shares: payload.model_shares,
         };
         if !turn.has_valid_cost_attribution() {
             return Err(StorageError::InvalidSession {
@@ -1433,6 +1435,10 @@ struct StoredTurnPayload {
     cost: Option<Cost>,
     cost_basis: Option<CostBasis>,
     cost_details: Option<crate::protocol::CostDetails>,
+    /// Absent on every Turn stored before Suru kept Model Shares, and on
+    /// every Turn whose Provider stated none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    model_shares: Vec<crate::protocol::ModelShare>,
 }
 
 /// A Message's payload, which borrows the Message's content to encode it and

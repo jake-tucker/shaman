@@ -134,6 +134,7 @@ fn child_session_snapshot(
             cost: None,
             cost_basis: None,
             cost_details: None,
+            model_shares: Vec::new(),
         }],
         messages: vec![Message {
             id: message_id,

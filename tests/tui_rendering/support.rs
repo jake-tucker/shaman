@@ -539,6 +539,7 @@ pub fn enter_active_session(
         cost: None,
         cost_basis: None,
         cost_details: None,
+        model_shares: Vec::new(),
     });
     snapshot.messages.push(Message {
         id: message_id,
@@ -749,6 +750,7 @@ pub fn navigable_session_snapshot(
             cost: None,
             cost_basis: None,
             cost_details: None,
+            model_shares: Vec::new(),
         });
         snapshot.messages.extend([
             Message {
@@ -826,6 +828,7 @@ impl FailedTurnFixture {
                 cost: None,
                 cost_basis: None,
                 cost_details: None,
+                model_shares: Vec::new(),
             },
             message: Message {
                 id: MessageId::new(),

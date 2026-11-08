@@ -28,6 +28,11 @@ pub struct UsageMetricsQuery {
     /// when the earliest Turn was.
     pub buckets: Vec<UsageMetricsInterval>,
     pub breakdown: UsageMetricsBreakdown,
+    /// Which Model a Turn's work is filed under when broken down by Model,
+    /// and which Model names a top Session's: the other breakdowns, the
+    /// buckets' totals, and the comparison read the same in either.
+    #[serde(default)]
+    pub model_view: UsageMetricsModelView,
     /// A span to compare the buckets with, whose figures the report gives
     /// taken together: the period before them, say. It stands apart from
     /// the buckets and may overlap them.
@@ -63,6 +68,23 @@ pub enum UsageMetricsBreakdown {
     /// By the Workspace of the Session that owns each Turn: a Subagent's
     /// Turns count under its own Session's Workspace, not its parent's.
     Workspace,
+}
+
+/// Which Model a Turn's work counts under in a breakdown by Model.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageMetricsModelView {
+    /// The Model its Agent Selection named, whatever ran: all of a Turn on
+    /// Auto counts under Auto.
+    #[default]
+    Selected,
+    /// Its Actual Models: each Model Share under a key for the Provider and
+    /// the Model it ran on, however that Model was reached, so a Model
+    /// reached through a routed Selection and the same Model chosen
+    /// directly are one key. The unattributed remainder — all of a Turn
+    /// holding no Shares — stays under the Selection's key. A Turn counts
+    /// under every key it holds a part in, and once in the bucket's total.
+    Actual,
 }
 
 /// One part of a breakdown.
@@ -152,7 +174,9 @@ pub struct UsageMetricsSession {
     pub workspace: String,
     /// The name of the Model the Session's work across the buckets cost the
     /// most under, or used the most tokens of where none cost more than
-    /// another; absent where no Turn there knows its Agent.
+    /// another, by the query's Model view: its Selections', or its Turns'
+    /// Model Shares and unattributed remainders under Actual; absent where
+    /// no Turn there knows its Agent.
     pub model: Option<String>,
     /// Always a known amount: only a Session whose work has one is named.
     /// Partial where work of the Session across the buckets has a Cost no

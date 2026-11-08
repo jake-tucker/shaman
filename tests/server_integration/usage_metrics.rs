@@ -35,6 +35,7 @@ async fn usage_metrics_are_read_from_the_server_the_outlook_names() {
             .usage_metrics(&UsageMetricsQuery {
                 buckets: vec![day],
                 breakdown: UsageMetricsBreakdown::Model,
+                model_view: Default::default(),
                 comparison: None,
                 top_sessions: 5,
             })

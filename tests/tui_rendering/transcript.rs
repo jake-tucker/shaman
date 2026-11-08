@@ -745,6 +745,7 @@ async fn streamed_agent_markdown_updates_one_unboxed_row_through_the_real_sessio
                         cost: None,
                         cost_basis: None,
                         cost_details: None,
+                        model_shares: Vec::new(),
                     },
                 },
                 SessionChange::MessageAdded {
@@ -1688,6 +1689,7 @@ fn message_anchor_survives_prompt_reconciliation_and_composer_dock_layout_change
                             cost: None,
                             cost_basis: None,
                             cost_details: None,
+                            model_shares: Vec::new(),
                         },
                     },
                     SessionChange::MessageAdded {
@@ -9417,6 +9419,7 @@ fn append_settled_turn(
         cost: None,
         cost_basis: None,
         cost_details: None,
+        model_shares: Vec::new(),
     });
     for (role, content) in [(MessageRole::User, prompt), (MessageRole::Agent, answer)] {
         let message = Message {
@@ -9887,6 +9890,7 @@ fn newer_turn_begins(
                     cost: None,
                     cost_basis: None,
                     cost_details: None,
+                    model_shares: Vec::new(),
                 },
             },
             SessionChange::MessageAdded {

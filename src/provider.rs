@@ -17,8 +17,8 @@ use crate::pricing::{CacheRateLookup, CacheRates, CacheRatesFuture, EstimatedCos
 use crate::protocol::{
     AgentIdentity, AgentSelection, ApprovalPosture, Cost, CostBasis, CostCoverage,
     EffectiveSettings, FileChange, ModelDescriptor, ModelId, ModelOptionKind, ModelOptionRole,
-    ProviderId, ProviderUnavailability, SkillCatalog, SkillCatalogCapabilities, SkillCatalogStatus,
-    SkillId, SkillInvocation, SkillPromptDelivery, TextSpan, Usage,
+    ModelShare, ProviderId, ProviderUnavailability, SkillCatalog, SkillCatalogCapabilities,
+    SkillCatalogStatus, SkillId, SkillInvocation, SkillPromptDelivery, TextSpan, Usage,
 };
 
 mod claude;
@@ -1457,9 +1457,19 @@ pub enum ProviderEvent {
     /// The Provider's latest complete reading of the active Turn. Each absent
     /// field remains absent through the protocol, and the Cost beside them is
     /// frozen by the Session store on the Basis the event names.
+    ///
+    /// `model_shares` splits the same reading by Actual Model, where the
+    /// Provider has evidence of which Model did which part: each Share's
+    /// Usage is part of `usage`, and its Cost is on `cost`'s terms — its
+    /// Basis, its Coverage, and, for a running total, its reporting
+    /// lifetime. What the Shares leave uncovered is the unattributed
+    /// remainder, which stays with the Agent Selection. A Provider with no
+    /// such evidence states none, and its whole Turn stays with the
+    /// Selection. Like the reading, the Shares replace the last ones whole.
     Usage {
         usage: Usage,
         cost: Option<MeteredCost>,
+        model_shares: Vec<ModelShare>,
     },
     TurnCompleted,
     TurnInterrupted,
@@ -1559,6 +1569,10 @@ pub(super) struct ReportedMetering {
     reported_cost: Option<Cost>,
     cost_complete: bool,
     native_meter_overflowed: bool,
+    /// The reading's Model Shares, each a reading of its own over the
+    /// reports that named that Model, in the order each Model was first
+    /// reported. A report naming no Model adds to the reading alone.
+    shares: Vec<(ModelId, ReportedMetering)>,
 }
 
 impl ReportedMetering {
@@ -1568,6 +1582,7 @@ impl ReportedMetering {
             reported_cost,
             cost_complete: reported_cost.is_some(),
             native_meter_overflowed: false,
+            shares: Vec::new(),
         }
     }
 
@@ -1578,13 +1593,35 @@ impl ReportedMetering {
         usage: Usage,
         reported_cost: Option<Cost>,
     ) -> &Self {
-        match slot {
+        Self::accumulate_on(slot, None, usage, reported_cost)
+    }
+
+    /// Adds one report to the reading `slot` holds, as
+    /// [`Self::accumulate`] does, and to the Model Share of `model` beside
+    /// it where the report names the Model whose call it measures.
+    pub(super) fn accumulate_on(
+        slot: &mut Option<Self>,
+        model: Option<ModelId>,
+        usage: Usage,
+        reported_cost: Option<Cost>,
+    ) -> &Self {
+        let share = model.map(|model| (model, usage.clone()));
+        let metering = match slot {
             Some(metering) => {
                 metering.add(usage, reported_cost);
                 metering
             }
             None => slot.insert(Self::new(usage, reported_cost)),
+        };
+        if let Some((model, usage)) = share {
+            match metering.shares.iter_mut().find(|(held, _)| *held == model) {
+                Some((_, share)) => share.add(usage, reported_cost),
+                None => metering
+                    .shares
+                    .push((model, Self::new(usage, reported_cost))),
+            }
         }
+        metering
     }
 
     pub(super) fn add(&mut self, usage: Usage, reported_cost: Option<Cost>) {
@@ -1658,6 +1695,15 @@ impl ReportedMetering {
                     metered.partial()
                 }
             }),
+            model_shares: self
+                .shares
+                .iter()
+                .map(|(model, share)| ModelShare {
+                    model: model.clone(),
+                    usage: share.usage.clone(),
+                    cost: share.reported_cost,
+                })
+                .collect(),
         }
     }
 
@@ -1678,6 +1724,7 @@ impl ReportedMetering {
             cost: self
                 .complete_cost()
                 .map(|cost| MeteredCost::reported_subtree(cost, reporting_lifetime)),
+            model_shares: Vec::new(),
         }
     }
 

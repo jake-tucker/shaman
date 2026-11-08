@@ -5163,6 +5163,31 @@ pub struct Turn {
     pub cost_basis: Option<CostBasis>,
     #[serde(default)]
     pub cost_details: Option<CostDetails>,
+    /// The parts of its Usage and Cost its Provider's evidence attributes to
+    /// each Actual Model, each a running figure on the same terms as the
+    /// Turn's own; whatever they leave uncovered stays with its Agent
+    /// Selection. Empty where the Provider reported no such evidence, as on
+    /// every Turn recorded before Suru kept them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub model_shares: Vec<ModelShare>,
+}
+
+/// The part of a Turn's Usage and Cost its Provider's evidence attributes to
+/// one Actual Model: the Model the work ran on, whether the Agent Selection
+/// named it, routed to it, or the Provider rerouted to it.
+///
+/// A Share's figures are stated on the Turn's own terms. Its Usage is part
+/// of the Turn's Usage. Its Cost shares the Turn's Cost Basis and Cost
+/// Coverage: Turn-scoped where the Turn's is, and a running total within
+/// the Turn's reporting lifetime where the Turn's Cost is one, so Cost
+/// Coverage places its increments as it places the Turn's. It is absent
+/// where nothing priced that Model's part.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelShare {
+    pub model: ModelId,
+    pub usage: Usage,
+    pub cost: Option<Cost>,
 }
 
 #[derive(Deserialize)]
@@ -5183,6 +5208,8 @@ struct TurnWire {
     cost_basis: Option<CostBasis>,
     #[serde(default)]
     cost_details: Option<CostDetails>,
+    #[serde(default)]
+    model_shares: Vec<ModelShare>,
 }
 
 impl TryFrom<TurnWire> for Turn {
@@ -5205,6 +5232,7 @@ impl TryFrom<TurnWire> for Turn {
             cost: turn.cost,
             cost_basis: turn.cost_basis,
             cost_details: turn.cost_details,
+            model_shares: turn.model_shares,
         };
         if !turn.has_valid_opening() {
             return Err("a Turn is begun by a Prompt or a Compaction request, never both");
@@ -5260,6 +5288,7 @@ impl Turn {
             cost: None,
             cost_basis: None,
             cost_details: None,
+            model_shares: Vec::new(),
         }
     }
 
@@ -5703,6 +5732,10 @@ pub enum SessionChange {
         cost_is_partial: bool,
         /// Filled by the authoritative store when the change commits.
         cost_recorded_at: Option<SessionTimestamp>,
+        /// The reading split by Actual Model, replacing the Turn's Shares
+        /// whole: see [`Turn::model_shares`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        model_shares: Vec<ModelShare>,
     },
     /// Filled by the authoritative store when Provider output commits.
     TurnOutputObserved {

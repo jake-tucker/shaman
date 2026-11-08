@@ -171,10 +171,12 @@ impl ValidatedChanges {
                     cost_coverage,
                     cost_is_partial,
                     cost_recorded_at,
+                    model_shares,
                     ..
                 } => {
                     let turn = &mut next.turns[resolved()];
                     turn.usage = Some(usage.clone());
+                    turn.model_shares.clone_from(model_shares);
                     if let (Some(cost), Some(basis), Some(coverage), Some(recorded_at)) =
                         (cost, cost_basis, cost_coverage, cost_recorded_at)
                     {
@@ -906,6 +908,7 @@ impl<'a> Validation<'a> {
                 cost_basis,
                 cost_coverage,
                 cost_recorded_at,
+                model_shares,
                 ..
             } => {
                 let Some((index, turn)) = self.turns.find(|turn| turn.id == *turn_id) else {
@@ -919,6 +922,9 @@ impl<'a> Validation<'a> {
                     || cost.is_some() != cost_recorded_at.is_some()
                 {
                     bail!("Session update recorded an incomplete Cost attribution");
+                }
+                if cost.is_none() && model_shares.iter().any(|share| share.cost.is_some()) {
+                    bail!("Session update recorded a Model Share's Cost beside no Turn Cost");
                 }
                 Some(index)
             }
@@ -2019,6 +2025,7 @@ mod tests {
             cost: None,
             cost_basis: None,
             cost_details: None,
+            model_shares: Vec::new(),
         }
     }
 
@@ -2399,6 +2406,7 @@ mod tests {
                         cost: None,
                         cost_basis: None,
                         cost_details: None,
+                        model_shares: Vec::new(),
                     },
                 }],
             },
@@ -2427,6 +2435,7 @@ mod tests {
                     cost_coverage: Some(crate::protocol::CostCoverage::Turn),
                     cost_is_partial: false,
                     cost_recorded_at: Some(SessionTimestamp(2)),
+                    model_shares: Vec::new(),
                 }],
             },
         )

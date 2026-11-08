@@ -107,6 +107,7 @@ fn session_snapshot(workspace: &std::path::Path, sections: usize) -> SessionSnap
             cost: None,
             cost_basis: None,
             cost_details: None,
+            model_shares: Vec::new(),
         });
         snapshot.messages.extend([
             Message {
