@@ -9,19 +9,19 @@
 //! its row and its Session's Turn name the Model it ran on.
 
 use crate::claude_integration::support::{
-    CLAUDE_MODELS, ScriptedClaude, agent_messages, discovery_arms, hosting, opened_session,
-    settled_session, user_turn_arm,
+    CLAUDE_MODELS, DurableSession, LiveTurn, ScriptedClaude, agent_messages, discovery_arms,
+    interrupt_arm, opened_session, settled_session, silent_interrupt_arm, user_turn_arm,
 };
+use crate::support::PROGRESS_DEADLINE;
 use suru::{
-    managed_client::ManagedClient,
     protocol::{
-        Activity, AdmitPromptRequest, AgentSelection, AgentSelectionOperationId,
-        CreateSessionRequest, InitialPrompt, Message, ModelAttribution, ModelId,
-        ModelOptionChoiceId, ModelOptionId, ModelOptionSelection, ModelOptionValue, PromptDelivery,
-        PromptId, ProviderId, SessionId, SessionSnapshot, TurnStatus, UpdateAgentSelectionRequest,
+        Activity, AdmitPromptRequest, AgentSelection, InitialPrompt, Message, MessageStatus,
+        ModelAttribution, ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection,
+        ModelOptionValue, PromptDelivery, PromptId, ProviderId, SessionSnapshot, TurnStatus,
     },
-    server::RunningServer,
+    provider::ClaudeRuntime,
 };
+use tokio::time::{Duration, timeout};
 
 /// Two Messages in one assistant message the CLI ran on `$actual`: the first completes before the
 /// CLI's snapshot of it names the Model, and the second streams after the Model is known. The
@@ -46,6 +46,7 @@ const RESOLVES_THE_MODEL_FLAG: &str = r#"actual=claude-fixture-1
 case " $* " in
   *" --model middling "*) actual=claude-fixture-2 ;;
   *" --model claude-fixture-2 "*) actual=claude-fixture-2 ;;
+  *" --model claude-fixture-2[1m] "*) actual=claude-fixture-2 ;;
 esac
 "#;
 
@@ -112,25 +113,36 @@ fn resolving_fixture(models: &str, timeline: &str) -> ScriptedClaude {
     )
 }
 
-/// The fixture's catalog with a row whose value is itself a concrete Model.
-fn catalog_with_a_concrete_row() -> String {
+/// The fixture's catalog with rows whose values are themselves concrete Models: one as the CLI
+/// names it, and one at its 1M-context tier.
+fn catalog_with_concrete_rows() -> String {
     let mut rows: Vec<serde_json::Value> =
         serde_json::from_str(CLAUDE_MODELS).expect("the fixture's Model rows are JSON");
-    rows.push(serde_json::json!({
-        "value": "claude-fixture-2",
-        "resolvedModel": "claude-fixture-2",
-        "displayName": "Fixture 2",
-        "description": "Fixture 2 pinned",
-    }));
+    for value in ["claude-fixture-2", "claude-fixture-2[1m]"] {
+        rows.push(serde_json::json!({
+            "value": value,
+            "resolvedModel": value,
+            "displayName": value,
+            "description": "Fixture 2 pinned",
+        }));
+    }
     serde_json::to_string(&rows).expect("the rows re-serialize")
 }
 
-fn attribution(selected: &str, actual: &str) -> Option<ModelAttribution> {
-    Some(ModelAttribution {
+fn concrete(model: &str) -> AgentSelection {
+    AgentSelection {
+        provider: ProviderId::new("claude"),
+        model: ModelId::new(model),
+        options: Vec::new(),
+    }
+}
+
+fn attributed(selected: &str, actual: &str) -> ModelAttribution {
+    ModelAttribution {
         provider: ProviderId::new("claude"),
         selected: ModelId::new(selected),
         actual: ModelId::new(actual),
-    })
+    }
 }
 
 /// Each agent Message's content beside the Model attribution it carries.
@@ -154,159 +166,48 @@ fn effort_selection(model: &str, effort: &str) -> AgentSelection {
     }
 }
 
-/// A Session on its own server and state, past its first Turn, which can outlive that server.
-struct HeldSession {
-    state_dir: tempfile::TempDir,
-    _workspace: tempfile::TempDir,
-    channel: &'static str,
-    server: RunningServer,
-    client: ManagedClient,
-    session_id: SessionId,
-}
+/// A Turn cut off mid-Message: the interrupt ends the loop before any snapshot names a Model.
+const CUT_OFF_MID_MESSAGE: &str = r#"      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Halfway"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+"#;
 
-impl HeldSession {
-    /// Opens a Session on `claude` under `selection` — the catalog default when `None` — and runs
-    /// its first Turn to its settle.
-    async fn start(
-        claude: &ScriptedClaude,
-        channel: &'static str,
-        selection: Option<AgentSelection>,
-    ) -> (Self, SessionSnapshot) {
-        let state_dir = tempfile::tempdir().expect("create isolated state directory");
-        let workspace = tempfile::tempdir().expect("create valid Workspace");
-        let (server, client) = hosting(claude, channel, state_dir.path()).await;
-        // A Selection is normalized against the catalog, so discover it before naming one.
-        client.list_models().await.expect("discover Claude Models");
-        let created = client
-            .create_session(CreateSessionRequest {
-                session_id: None,
-                preparation_id: None,
-                agent_selection: selection,
-                execution_directory: suru::protocol::ExecutionDirectory {
-                    path: workspace.path().to_owned(),
-                },
-                prompt: InitialPrompt {
-                    id: PromptId::new(),
-                    text: "Look around".to_owned(),
-                    skill_invocations: Vec::new(),
-                    attachments: Vec::new(),
-                },
-            })
-            .await
-            .expect("create Session");
-        let session_id = created.session.id;
-        let settled = settled_session(&client, session_id, 0).await;
-        assert_eq!(
-            settled.turns[0].status,
-            TurnStatus::Completed,
-            "the first Turn runs to completion: {:?}",
-            settled.activities
-        );
-        (
-            Self {
-                state_dir,
-                _workspace: workspace,
-                channel,
-                server,
-                client,
-                session_id,
-            },
-            settled,
-        )
-    }
+/// What the CLI writes once an interrupt has stopped its loop, as a live 2.1.280 CLI reports it.
+const ABORTED_RESULT: &str = r#"      emit '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"result","subtype":"error_during_execution","is_error":true,"duration_ms":11,"num_turns":1,"errors":[],"terminal_reason":"aborted_streaming","session_id":"prov-session"}'
+"#;
 
-    /// The Session as a replacement server on the same state reads it back once the original
-    /// server has stopped, which only storage can answer.
-    async fn restarted(self, claude: &ScriptedClaude) -> (Self, SessionSnapshot) {
-        let Self {
-            state_dir,
-            _workspace,
-            channel,
-            server,
-            client,
-            session_id,
-        } = self;
-        drop(client);
-        server.shutdown().await.expect("stop the original server");
-        let (server, client) = hosting(claude, channel, state_dir.path()).await;
-        let restored = client
-            .read_session(session_id)
-            .await
-            .expect("read the Session back after the restart");
-        (
-            Self {
-                state_dir,
-                _workspace,
-                channel,
-                server,
-                client,
-                session_id,
-            },
-            restored,
-        )
-    }
-
-    /// Puts `selection` in force and runs the next Turn, at `turn_index`, to its settle.
-    async fn continue_under(
-        &self,
-        selection: AgentSelection,
-        turn_index: usize,
-    ) -> SessionSnapshot {
-        self.client
-            .update_agent_selection(
-                self.session_id,
-                UpdateAgentSelectionRequest {
-                    operation_id: AgentSelectionOperationId::new(),
-                    selection,
-                },
-            )
-            .await
-            .expect("choose another Agent Selection between Turns");
-        self.client
-            .admit_prompt(
-                self.session_id,
-                AdmitPromptRequest {
-                    prompt: InitialPrompt {
-                        id: PromptId::new(),
-                        text: "Look again".to_owned(),
-                        skill_invocations: Vec::new(),
-                        attachments: Vec::new(),
-                    },
-                    delivery: PromptDelivery::Steer,
-                },
-            )
-            .await
-            .expect("admit a Prompt to the Session");
-        let settled = settled_session(&self.client, self.session_id, turn_index).await;
-        assert_eq!(
-            settled.turns[turn_index].status,
-            TurnStatus::Completed,
-            "the next Turn runs to completion: {:?}",
-            settled.activities
-        );
-        settled
-    }
-
-    async fn shutdown(self) {
-        let Self { server, client, .. } = self;
-        drop(client);
-        server.shutdown().await.expect("shut the server down");
-    }
-}
+/// The first child streams a Message whose Model nothing names and never answers the interrupt
+/// that follows, so Suru replaces it with a child resuming the conversation, which runs the next
+/// Turn on another Model.
+const RESTATED_AFTER_A_RESPAWN: &str = r#"      case " $* " in
+      *" --resume "*)
+      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Fresh."}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"assistant","message":{"role":"assistant","model":"claude-fixture-3","content":[{"type":"text","text":"Fresh."}]},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"result","subtype":"success","is_error":false,"duration_ms":900,"num_turns":1,"result":"Fresh.","session_id":"prov-session"}'
+      ;;
+      *)
+      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Cut off."}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      ;;
+      esac
+"#;
 
 #[tokio::test]
 async fn an_agent_message_under_default_names_the_concrete_model_its_assistant_message_ran_on() {
     let claude = resolving_fixture(CLAUDE_MODELS, TWO_MESSAGES_ON_ONE_MODEL);
-    let (session, settled) = HeldSession::start(&claude, "claude-actual-model-alias", None).await;
+    let session = DurableSession::start(&claude, None, "claude-actual-model-alias").await;
 
     assert_eq!(
-        attributions(&settled),
+        attributions(&session.read().await),
         [
             (
                 "Looking around.",
-                attribution("default", "claude-fixture-1")
+                Some(attributed("default", "claude-fixture-1"))
             ),
-            ("Found it.", attribution("default", "claude-fixture-1")),
+            ("Found it.", Some(attributed("default", "claude-fixture-1"))),
         ],
         "a Message the snapshot names after it completed, and one streamed once its Model was \
          known, both name what `default` resolved to"
@@ -317,22 +218,21 @@ async fn an_agent_message_under_default_names_the_concrete_model_its_assistant_m
 
 #[tokio::test]
 async fn a_message_under_a_concrete_selection_on_that_model_carries_no_attribution() {
-    let claude = resolving_fixture(&catalog_with_a_concrete_row(), FALLS_BACK_MID_TURN);
-    let concrete = AgentSelection {
-        provider: ProviderId::new("claude"),
-        model: ModelId::new("claude-fixture-2"),
-        options: Vec::new(),
-    };
-    let (session, settled) =
-        HeldSession::start(&claude, "claude-actual-model-concrete", Some(concrete)).await;
+    let claude = resolving_fixture(&catalog_with_concrete_rows(), FALLS_BACK_MID_TURN);
+    let session = DurableSession::start(
+        &claude,
+        Some(concrete("claude-fixture-2")),
+        "claude-actual-model-concrete",
+    )
+    .await;
 
     assert_eq!(
-        attributions(&settled),
+        attributions(&session.read().await),
         [
             ("On the chosen Model.", None),
             (
                 "On the fallback.",
-                attribution("claude-fixture-2", "claude-fixture-3")
+                Some(attributed("claude-fixture-2", "claude-fixture-3"))
             ),
         ],
         "a Message written on the Model its Selection names carries no attribution, as Copilot's \
@@ -344,21 +244,47 @@ async fn a_message_under_a_concrete_selection_on_that_model_carries_no_attributi
 }
 
 #[tokio::test]
-async fn the_model_an_alias_resolves_to_can_change_between_assistant_messages_of_one_turn() {
-    let claude = resolving_fixture(CLAUDE_MODELS, FALLS_BACK_MID_TURN);
-    let (session, settled) =
-        HeldSession::start(&claude, "claude-actual-model-fallback", None).await;
+async fn a_selection_at_its_one_million_context_tier_running_its_own_model_carries_no_attribution()
+{
+    let claude = resolving_fixture(&catalog_with_concrete_rows(), FALLS_BACK_MID_TURN);
+    let session = DurableSession::start(
+        &claude,
+        Some(concrete("claude-fixture-2[1m]")),
+        "claude-actual-model-context-tier",
+    )
+    .await;
 
     assert_eq!(
-        attributions(&settled),
+        attributions(&session.read().await),
+        [
+            ("On the chosen Model.", None),
+            (
+                "On the fallback.",
+                Some(attributed("claude-fixture-2[1m]", "claude-fixture-3"))
+            ),
+        ],
+        "the CLI names the Model that ran without the context tier it was chosen at, so that is \
+         still the Selection's own Model, and another one is still attributed"
+    );
+
+    session.shutdown().await;
+}
+
+#[tokio::test]
+async fn the_model_an_alias_resolves_to_can_change_between_assistant_messages_of_one_turn() {
+    let claude = resolving_fixture(CLAUDE_MODELS, FALLS_BACK_MID_TURN);
+    let session = DurableSession::start(&claude, None, "claude-actual-model-fallback").await;
+
+    assert_eq!(
+        attributions(&session.read().await),
         [
             (
                 "On the chosen Model.",
-                attribution("default", "claude-fixture-1")
+                Some(attributed("default", "claude-fixture-1"))
             ),
             (
                 "On the fallback.",
-                attribution("default", "claude-fixture-3")
+                Some(attributed("default", "claude-fixture-3"))
             ),
         ],
         "each assistant message's own Model names the Messages it wrote"
@@ -370,11 +296,10 @@ async fn the_model_an_alias_resolves_to_can_change_between_assistant_messages_of
 #[tokio::test]
 async fn an_assistant_message_naming_no_model_or_a_placeholder_attributes_nothing() {
     let claude = resolving_fixture(CLAUDE_MODELS, NAMES_NO_MODEL);
-    let (session, settled) =
-        HeldSession::start(&claude, "claude-actual-model-placeholder", None).await;
+    let session = DurableSession::start(&claude, None, "claude-actual-model-placeholder").await;
 
     assert_eq!(
-        attributions(&settled),
+        attributions(&session.read().await),
         [
             ("API Error: Repeated 529 Overloaded errors", None),
             ("Unattributed.", None),
@@ -389,15 +314,15 @@ async fn an_assistant_message_naming_no_model_or_a_placeholder_attributes_nothin
 #[tokio::test]
 async fn an_assistant_message_opening_with_its_model_names_it_without_a_snapshot() {
     let claude = resolving_fixture(CLAUDE_MODELS, OPENS_NAMING_ITS_MODEL);
-    let (session, settled) =
-        HeldSession::start(&claude, "claude-actual-model-message-start", None).await;
+    let session = DurableSession::start(&claude, None, "claude-actual-model-message-start").await;
 
     assert_eq!(
-        attributions(&settled),
+        attributions(&session.read().await),
         [(
             "Named from the start.",
-            attribution("default", "claude-fixture-1")
+            Some(attributed("default", "claude-fixture-1"))
         )],
+        "the Model the API's `message_start` names attributes the Message from its first chunk"
     );
 
     session.shutdown().await;
@@ -406,50 +331,170 @@ async fn an_assistant_message_opening_with_its_model_names_it_without_a_snapshot
 #[tokio::test]
 async fn a_messages_actual_model_survives_a_server_restart() {
     let claude = resolving_fixture(CLAUDE_MODELS, TWO_MESSAGES_ON_ONE_MODEL);
-    let (session, settled) = HeldSession::start(&claude, "claude-actual-model-restart", None).await;
-    let (session, restored) = session.restarted(&claude).await;
+    let session = DurableSession::start(&claude, None, "claude-actual-model-restart").await;
+    let settled = session.read().await;
+    let restored = session.restarted(&claude).await;
+    let read_back = restored.read().await;
 
     assert_eq!(
-        attributions(&restored),
+        attributions(&read_back),
         attributions(&settled),
         "the replacement server reads back the attribution the original recorded"
     );
     assert_eq!(
-        attributions(&restored)[0].1,
-        attribution("default", "claude-fixture-1")
+        attributions(&read_back)[0].1,
+        Some(attributed("default", "claude-fixture-1")),
+        "what it reads back is the Actual Model"
     );
 
-    session.shutdown().await;
+    restored.shutdown().await;
 }
 
 #[tokio::test]
 async fn a_turn_on_a_respawned_child_is_attributed_against_its_own_selection() {
     let claude = resolving_fixture(CLAUDE_MODELS, TWO_MESSAGES_ON_ONE_MODEL);
-    let (session, _) = HeldSession::start(&claude, "claude-actual-model-respawn", None).await;
+    let session = DurableSession::start(&claude, None, "claude-actual-model-respawn").await;
 
-    let settled = session
-        .continue_under(effort_selection("middling", "low"), 1)
-        .await;
+    session.select(effort_selection("middling", "low")).await;
+    let settled = session.continue_with("Look again", 1).await;
 
+    assert_eq!(settled.turns[1].status, TurnStatus::Completed);
     assert_eq!(
         attributions(&settled),
         [
             (
                 "Looking around.",
-                attribution("default", "claude-fixture-1")
+                Some(attributed("default", "claude-fixture-1"))
             ),
-            ("Found it.", attribution("default", "claude-fixture-1")),
+            ("Found it.", Some(attributed("default", "claude-fixture-1"))),
             (
                 "Looking around.",
-                attribution("middling", "claude-fixture-2")
+                Some(attributed("middling", "claude-fixture-2"))
             ),
-            ("Found it.", attribution("middling", "claude-fixture-2")),
+            (
+                "Found it.",
+                Some(attributed("middling", "claude-fixture-2"))
+            ),
         ],
         "the respawned child's Messages name what its own Selection resolved to, and the first \
          Turn's keep theirs"
     );
 
     session.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_turn_interrupted_mid_message_leaves_the_message_unattributed() {
+    let claude = ScriptedClaude::new(&format!(
+        "{}{}{}",
+        discovery_arms(CLAUDE_MODELS),
+        user_turn_arm(CUT_OFF_MID_MESSAGE),
+        interrupt_arm(ABORTED_RESULT),
+    ));
+    let mut live = LiveTurn::start(
+        ClaudeRuntime::new(claude.executable()),
+        "claude-actual-model-interrupted",
+        "Start and stop",
+    )
+    .await;
+    live.wait_for("the Message starts streaming", |snapshot| {
+        !agent_messages(snapshot).is_empty()
+    })
+    .await;
+
+    live.client
+        .interrupt_session(live.session_id)
+        .await
+        .expect("interrupt the Turn");
+    let settled = live
+        .wait_for("the interrupted Turn settles", |snapshot| {
+            snapshot.turns[0].status != TurnStatus::Active
+        })
+        .await;
+
+    assert_eq!(settled.turns[0].status, TurnStatus::Interrupted);
+    assert_eq!(
+        attributions(&settled),
+        [("Halfway", None)],
+        "nothing named the Model before the loop was stopped"
+    );
+
+    live.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_turn_after_a_respawn_attributes_none_of_the_replaced_childs_messages() {
+    let claude = ScriptedClaude::new(&format!(
+        "{}{}{}",
+        discovery_arms(CLAUDE_MODELS),
+        user_turn_arm(RESTATED_AFTER_A_RESPAWN),
+        silent_interrupt_arm(),
+    ));
+    let mut live = LiveTurn::start(
+        ClaudeRuntime::new(claude.executable())
+            .with_interrupt_request_timeout(Duration::from_millis(300)),
+        "claude-actual-model-abandoned",
+        "Start and stop",
+    )
+    .await;
+    live.wait_for("the first Message completes", |snapshot| {
+        agent_messages(snapshot)
+            .first()
+            .is_some_and(|message| message.status == MessageStatus::Completed)
+    })
+    .await;
+    timeout(
+        PROGRESS_DEADLINE,
+        live.client.interrupt_session(live.session_id),
+    )
+    .await
+    .expect("an interrupt the CLI never answers gives up on its own")
+    .expect_err("the unanswered interrupt fails");
+    live.wait_for("the abandoned Turn settles", |snapshot| {
+        snapshot.turns[0].status != TurnStatus::Active
+    })
+    .await;
+
+    live.client
+        .admit_prompt(
+            live.session_id,
+            AdmitPromptRequest {
+                prompt: InitialPrompt {
+                    id: PromptId::new(),
+                    text: "Try again".to_owned(),
+                    skill_invocations: Vec::new(),
+                    attachments: Vec::new(),
+                },
+                delivery: PromptDelivery::Steer,
+            },
+        )
+        .await
+        .expect("admit the next Prompt");
+    let settled = live
+        .wait_for("the next Turn settles", |snapshot| {
+            snapshot
+                .turns
+                .get(1)
+                .is_some_and(|turn| turn.status != TurnStatus::Active)
+        })
+        .await;
+
+    assert_eq!(
+        settled.turns[1].status,
+        TurnStatus::Completed,
+        "the replacement child's Turn runs to completion: {:?}",
+        settled.activities
+    );
+    assert_eq!(
+        attributions(&settled),
+        [
+            ("Cut off.", None),
+            ("Fresh.", Some(attributed("default", "claude-fixture-3"))),
+        ],
+        "the replaced child's Message stays unattributed, and the next Turn's names its own Model"
+    );
+
+    live.shutdown().await;
 }
 
 #[tokio::test]
@@ -461,7 +506,7 @@ async fn a_native_subagents_model_stays_its_own_beside_the_loops_actual_model() 
 
     assert_eq!(
         attributions(&settled),
-        [("Scouted.", attribution("default", "claude-fixture-1"))],
+        [("Scouted.", Some(attributed("default", "claude-fixture-1")))],
         "the loop's own Message names its Actual Model"
     );
     let Some(Activity::Subagent {

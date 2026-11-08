@@ -8,13 +8,21 @@
 //! Message is named as it opens, and attributed once a snapshot names the Model. A Message the CLI
 //! wrote itself carries its `<synthetic>` placeholder, which is no Model at all.
 //!
+//! The CLI names the Model that ran without the context tier a Selection may carry, so a Selection
+//! such as `claude-opus-5-5[1m]` running `claude-opus-5-5` ran its own Model.
+//!
+//! What is held speaks only of the assistant message streaming now, so it is forgotten at each
+//! boundary between them: the next `message_start`, the loop's `result`, and the end of the CLI's
+//! process — which a Turn that ends any other way, such as an interrupt the CLI never answered,
+//! comes to, since its child is replaced, and which rides ahead of all the replacement writes.
+//!
 //! A Subagent's conversation is not tracked here: what it ran on reaches its own row and Turn.
 
 use crate::{
     protocol::{AgentSelection, ModelId},
     provider::{
         ProviderEvent, ProviderMessageId,
-        actual_model::{self, ModelInForce},
+        actual_model::{self, ModelInForce, SelectedModel},
     },
 };
 
@@ -22,15 +30,8 @@ use crate::{
 /// error it reports, or a local command's output.
 const SYNTHETIC_MODEL: &str = "<synthetic>";
 
-/// The running Turn, by the count [`super::turn_in_flight::TurnInFlight::running_selection`]
-/// tells it apart by, and the Agent Selection it runs under.
-pub(super) type RunningTurn = (u64, AgentSelection);
-
 #[derive(Default)]
 pub(super) struct MessageModels {
-    /// The Turn what is held here was learned in. Nothing learned in one Turn speaks of the next,
-    /// whose Messages orchestration knows by no name given in this one.
-    turn: Option<u64>,
     /// The Model the assistant message streaming now ran on, once something has named it.
     in_force: ModelInForce,
     /// The Messages of the assistant message streaming now that opened before its Model was
@@ -43,42 +44,32 @@ pub(super) struct MessageModels {
 impl MessageModels {
     /// An assistant message of the loop's opens, naming the Model it runs on where its opening
     /// chunk says.
-    pub(super) fn assistant_message_started(
-        &mut self,
-        model: Option<&str>,
-        turn: Option<&RunningTurn>,
-    ) {
+    pub(super) fn assistant_message_started(&mut self, model: Option<&str>) {
         self.forget();
-        if let Some((ordinal, _)) = turn {
-            self.turn = Some(*ordinal);
-            if let Some(model) = ran(model) {
-                self.in_force.observe(model);
-            }
+        if let Some(model) = ran(model) {
+            self.in_force.observe(model);
         }
     }
 
     /// What follows the start of a Message the loop's assistant message streams: its attribution
     /// where the Model is known, and otherwise the name a later snapshot attributes it by.
-    pub(super) fn message_started(&mut self, turn: Option<&RunningTurn>) -> Vec<ProviderEvent> {
-        let Some((ordinal, selection)) = turn else {
-            return Vec::new();
-        };
-        self.enter(*ordinal);
+    pub(super) fn message_started(
+        &mut self,
+        selection: Option<&AgentSelection>,
+    ) -> Option<ProviderEvent> {
+        let selection = selection?;
         if self.in_force.is_known() {
-            return self
-                .in_force
-                .attribution(selection)
-                .map(|model| ProviderEvent::AgentMessageModelKnown {
+            return self.in_force.attribution(selected(selection)).map(|model| {
+                ProviderEvent::AgentMessageModelKnown {
                     message: None,
                     model,
-                })
-                .into_iter()
-                .collect();
+                }
+            });
         }
         self.named += 1;
         let message = ProviderMessageId::new(format!("claude-message-{}", self.named));
         self.awaiting.push(message.clone());
-        vec![ProviderEvent::AgentMessageIdentified { message }]
+        Some(ProviderEvent::AgentMessageIdentified { message })
     }
 
     /// A snapshot of the assistant message the loop is streaming names the Model it ran on: the
@@ -87,15 +78,14 @@ impl MessageModels {
     pub(super) fn snapshot_named(
         &mut self,
         model: Option<&str>,
-        turn: Option<&RunningTurn>,
+        selection: Option<&AgentSelection>,
     ) -> Vec<ProviderEvent> {
-        let (Some(model), Some((ordinal, selection))) = (ran(model), turn) else {
+        let (Some(model), Some(selection)) = (ran(model), selection) else {
             return Vec::new();
         };
-        self.enter(*ordinal);
         self.in_force.observe(model);
         let awaiting = std::mem::take(&mut self.awaiting);
-        let Some(model) = self.in_force.attribution(selection) else {
+        let Some(model) = self.in_force.attribution(selected(selection)) else {
             return Vec::new();
         };
         awaiting
@@ -111,14 +101,12 @@ impl MessageModels {
     /// streamed: the Model that snapshot names, which speaks of nothing else.
     pub(super) fn whole_message(
         model: Option<&str>,
-        turn: Option<&RunningTurn>,
+        selection: Option<&AgentSelection>,
     ) -> Option<ProviderEvent> {
-        let (model, (_, selection)) = (ran(model)?, turn?);
-        actual_model::attribution(selection, &ModelId::new(model)).map(|model| {
-            ProviderEvent::AgentMessageModelKnown {
-                message: None,
-                model,
-            }
+        let model = actual_model::attribution(selected(selection?), ran(model)?.as_str())?;
+        Some(ProviderEvent::AgentMessageModelKnown {
+            message: None,
+            model,
         })
     }
 
@@ -128,16 +116,17 @@ impl MessageModels {
         self.in_force.forget();
         self.awaiting.clear();
     }
-
-    fn enter(&mut self, ordinal: u64) {
-        if self.turn != Some(ordinal) {
-            self.forget();
-            self.turn = Some(ordinal);
-        }
-    }
 }
 
-/// `model` where it names a Model that ran, rather than nothing or the CLI's placeholder.
-fn ran(model: Option<&str>) -> Option<&str> {
-    model.filter(|model| !model.trim().is_empty() && *model != SYNTHETIC_MODEL)
+/// `selection`, compared as the CLI names the Model it runs.
+fn selected(selection: &AgentSelection) -> SelectedModel<'_> {
+    SelectedModel::of(selection).running_as(super::without_context_tier(selection.model.as_str()))
+}
+
+/// The Model `model` names where it is one that ran, rather than nothing or the CLI's placeholder.
+/// This is the one place the wire's `model` is judged.
+fn ran(model: Option<&str>) -> Option<ModelId> {
+    model
+        .filter(|model| !model.trim().is_empty() && *model != SYNTHETIC_MODEL)
+        .map(ModelId::new)
 }

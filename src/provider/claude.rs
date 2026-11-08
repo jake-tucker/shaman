@@ -66,6 +66,18 @@ const CLAUDE_AGENT_ID: &str = "claude";
 
 const REASONING_EFFORT_OPTION_ID: &str = "reasoning_effort";
 
+/// The suffix a 1M-context alias or Model carries, naming the context tier it runs at rather than
+/// another Model.
+const ONE_MILLION_CONTEXT_SUFFIX: &str = "[1m]";
+
+/// `model` without its 1M-context suffix: the Model the CLI names when it reports what ran, which
+/// never carries the tier, and the one models.dev prices.
+fn without_context_tier(model: &str) -> &str {
+    model
+        .strip_suffix(ONE_MILLION_CONTEXT_SUFFIX)
+        .unwrap_or(model)
+}
+
 /// What a Claude failure is called when the CLI itself said nothing usable.
 const CLAUDE_FAILURE_FALLBACK: &str = "Claude Provider failed";
 

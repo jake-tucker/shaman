@@ -39,8 +39,6 @@ use crate::{
 const CLAUDE_PATH_ENV: &str = "SURU_CLAUDE_PATH";
 /// The models.dev catalog Claude's canonical Models are priced in.
 const MODELS_DEV_PROVIDER: &str = "anthropic";
-/// The suffix a 1M-context alias or Model carries, which models.dev's Model IDs never do.
-const ONE_MILLION_CONTEXT_SUFFIX: &str = "[1m]";
 const CLAUDE_EXECUTABLE_NAME: &str = "claude";
 const CONTROL_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// A user stopping a Turn is waiting on the answer, so an interrupt — and each of the task stops
@@ -225,10 +223,7 @@ impl ProviderRuntime for ClaudeRuntime {
             .map(|resolved| {
                 let model = model.as_str();
                 let canonical = resolved.get(model).map_or(model, String::as_str);
-                canonical
-                    .strip_suffix(ONE_MILLION_CONTEXT_SUFFIX)
-                    .unwrap_or(canonical)
-                    .to_owned()
+                super::without_context_tier(canonical).to_owned()
             });
         Box::pin(async move {
             self.pricing

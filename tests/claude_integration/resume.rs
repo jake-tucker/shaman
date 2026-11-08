@@ -9,21 +9,18 @@
 //! an empty conversation under the same identifier.
 
 use crate::claude_integration::support::{
-    CLAUDE_MODELS, ScriptedClaude, agent_messages, connect, conversation_arms,
-    conversation_fixture, discovery_arms, flag_value, hosting, hosting_with_timings,
-    rejecting_resume_preamble, settled_session,
+    CLAUDE_MODELS, DurableSession, ScriptedClaude, agent_messages, connect, conversation_arms,
+    conversation_fixture, discovery_arms, flag_value, rejecting_resume_preamble, settled_session,
 };
 use suru::{
-    managed_client::ManagedClient,
     protocol::{
-        Activity, ActivityStatus, AdmitPromptRequest, AgentSelection, AgentSelectionOperationId,
-        ApprovalPosture, ApprovalPostureApplication, ClaudePermissionMode, CreateSessionRequest,
-        InitialPrompt, ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection,
-        ModelOptionValue, MoveDestination, MoveSessionRequest, PromptDelivery, PromptId,
-        ProviderId, SessionId, SessionSnapshot, SettingMutation, TurnId, TurnStatus,
-        UpdateAgentSelectionRequest,
+        Activity, ActivityStatus, AdmitPromptRequest, AgentSelection, ApprovalPosture,
+        ApprovalPostureApplication, ClaudePermissionMode, CreateSessionRequest, InitialPrompt,
+        ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection, ModelOptionValue,
+        MoveDestination, MoveSessionRequest, PromptDelivery, PromptId, ProviderId, SessionId,
+        SessionSnapshot, SettingMutation, TurnId, TurnStatus,
     },
-    server::{RunningServer, ServerTimings},
+    server::ServerTimings,
 };
 
 /// One agent Message streamed and the terminal result that Settles the Turn — enough for a Turn to
@@ -52,145 +49,6 @@ fn selection(model: &str, effort: &str) -> AgentSelection {
                 choice: ModelOptionChoiceId::new(effort),
             },
         }],
-    }
-}
-
-/// A Session past its first Turn, holding everything it runs on for as long as the test does —
-/// the state directory and the Workspace included, which are only alive while this is.
-struct DurableSession {
-    state_dir: tempfile::TempDir,
-    _workspace: tempfile::TempDir,
-    channel: &'static str,
-    server: RunningServer,
-    client: ManagedClient,
-    session_id: SessionId,
-}
-
-impl DurableSession {
-    /// Opens a Session on `claude` under `channel` and runs its first Turn to completion.
-    /// `channel` is the client channel, so each test needs its own.
-    async fn start(claude: &ScriptedClaude, channel: &'static str) -> Self {
-        Self::start_with(claude, channel, ServerTimings::default()).await
-    }
-
-    /// [`Self::start`] on a server run to `timings`.
-    async fn start_with(
-        claude: &ScriptedClaude,
-        channel: &'static str,
-        timings: ServerTimings,
-    ) -> Self {
-        let state_dir = tempfile::tempdir().expect("create isolated state directory");
-        let workspace = tempfile::tempdir().expect("create valid Workspace");
-        let execution_directory = workspace.path().join("packages/nested agent directory");
-        std::fs::create_dir_all(&execution_directory).unwrap();
-        let execution_directory = suru::paths::canonical(execution_directory).unwrap();
-        let (server, client) =
-            hosting_with_timings(claude, channel, state_dir.path(), timings).await;
-        let created = client
-            .create_session(CreateSessionRequest {
-                session_id: None,
-                preparation_id: None,
-                agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
-                    path: execution_directory.clone(),
-                },
-                prompt: InitialPrompt {
-                    id: PromptId::new(),
-                    text: "Open a durable Claude conversation".to_owned(),
-                    skill_invocations: Vec::new(),
-                    attachments: Vec::new(),
-                },
-            })
-            .await
-            .expect("create Session");
-        let session_id = created.session.id;
-        let settled = settled_session(&client, session_id, 0).await;
-        assert_eq!(
-            settled.turns[0].status,
-            TurnStatus::Completed,
-            "the Session's first Turn runs before anything asks it to carry on: {:?}",
-            settled.activities
-        );
-        Self {
-            state_dir,
-            _workspace: workspace,
-            channel,
-            server,
-            client,
-            session_id,
-        }
-    }
-
-    /// The same Suru Session on a replacement server, reached the way a user restarting Suru
-    /// reaches it. Every process the original server launched is gone before the replacement asks
-    /// for the conversation back, so only a child the replacement spawned itself can serve it.
-    async fn restarted(self, claude: &ScriptedClaude) -> Self {
-        let Self {
-            state_dir,
-            _workspace,
-            channel,
-            server,
-            client,
-            session_id,
-        } = self;
-        drop(client);
-        server.shutdown().await.expect("stop the original server");
-        claude.wait_for_exits(claude.launches()).await;
-
-        let (server, client) = hosting(claude, channel, state_dir.path()).await;
-        Self {
-            state_dir,
-            _workspace,
-            channel,
-            server,
-            client,
-            session_id,
-        }
-    }
-
-    /// Puts `selection` in force on the Session, for a Turn to run under next.
-    async fn select(&self, selection: AgentSelection) {
-        // The Agent Selection is normalized against the catalog, so discover it before naming one.
-        self.client
-            .list_models()
-            .await
-            .expect("discover Claude Models");
-        self.client
-            .update_agent_selection(
-                self.session_id,
-                UpdateAgentSelectionRequest {
-                    operation_id: AgentSelectionOperationId::new(),
-                    selection: selection.clone(),
-                },
-            )
-            .await
-            .expect("choose another Agent Selection between Turns");
-    }
-
-    /// Delivers `prompt` to the idle Session and comes back once the Turn it began settles.
-    async fn continue_with(&self, prompt: &str, turn_index: usize) -> SessionSnapshot {
-        self.client
-            .admit_prompt(
-                self.session_id,
-                AdmitPromptRequest {
-                    prompt: InitialPrompt {
-                        id: PromptId::new(),
-                        text: prompt.to_owned(),
-                        skill_invocations: Vec::new(),
-                        attachments: Vec::new(),
-                    },
-                    delivery: PromptDelivery::Steer,
-                },
-            )
-            .await
-            .expect("admit a Prompt to the Session");
-        settled_session(&self.client, self.session_id, turn_index).await
-    }
-
-    async fn shutdown(self) {
-        let Self { server, client, .. } = self;
-        drop(client);
-        server.shutdown().await.expect("shut the server down");
     }
 }
 
@@ -228,7 +86,7 @@ fn assert_second_child_resumed_the_first(claude: &ScriptedClaude, why: &str) {
 #[tokio::test]
 async fn a_session_reopened_after_a_restart_resumes_the_conversation_it_opened() {
     let claude = conversation_fixture(STREAMED_MESSAGE);
-    let restored = DurableSession::start(&claude, "claude-restart-resume")
+    let restored = DurableSession::start(&claude, None, "claude-restart-resume")
         .await
         .restarted(&claude)
         .await;
@@ -250,7 +108,7 @@ async fn a_session_reopened_after_a_restart_resumes_the_conversation_it_opened()
     assert_second_child_resumed_the_first(&claude, "the restart");
     let expected = suru::paths::canonical(
         restored
-            ._workspace
+            .workspace
             .path()
             .join("packages/nested agent directory"),
     )
@@ -269,6 +127,7 @@ async fn an_idle_sessions_child_is_stopped_and_its_next_turn_resumes_the_convers
     let claude = conversation_fixture(STREAMED_MESSAGE);
     let idle = DurableSession::start_with(
         &claude,
+        None,
         "claude-idle-resume",
         ServerTimings::default().with_provider_idle_shutdown(std::time::Duration::from_millis(50)),
     )
@@ -300,8 +159,8 @@ async fn an_idle_sessions_child_is_stopped_and_its_next_turn_resumes_the_convers
 #[tokio::test]
 async fn a_moved_sessions_next_turn_resumes_the_conversation_in_its_new_directory() {
     let claude = conversation_fixture(STREAMED_MESSAGE);
-    let session = DurableSession::start(&claude, "claude-moved-resume").await;
-    let destination = session._workspace.path().join("moved here");
+    let session = DurableSession::start(&claude, None, "claude-moved-resume").await;
+    let destination = session.workspace.path().join("moved here");
     std::fs::create_dir(&destination).unwrap();
     let destination = suru::paths::canonical(destination).unwrap();
     let origin = session
@@ -381,7 +240,7 @@ fn user_texts_sent(claude: &ScriptedClaude) -> Vec<String> {
 #[tokio::test]
 async fn a_resume_the_cli_rejects_fails_the_turn_rather_than_opening_a_new_conversation() {
     let claude = forgetful_fixture();
-    let restored = DurableSession::start(&claude, "claude-rejected-resume")
+    let restored = DurableSession::start(&claude, None, "claude-rejected-resume")
         .await
         .restarted(&claude)
         .await;
@@ -425,7 +284,7 @@ async fn a_resume_the_cli_rejects_fails_the_turn_rather_than_opening_a_new_conve
 #[tokio::test]
 async fn changing_the_model_between_turns_respawns_the_child_on_the_same_conversation() {
     let claude = conversation_fixture(STREAMED_MESSAGE);
-    let session = DurableSession::start(&claude, "claude-model-respawn").await;
+    let session = DurableSession::start(&claude, None, "claude-model-respawn").await;
 
     session.select(selection("middling", "low")).await;
     let settled = session.continue_with("Think less this time", 1).await;
@@ -463,7 +322,7 @@ async fn changing_the_model_between_turns_respawns_the_child_on_the_same_convers
 #[tokio::test]
 async fn changing_only_a_model_option_between_turns_respawns_the_child_just_the_same() {
     let claude = conversation_fixture(STREAMED_MESSAGE);
-    let session = DurableSession::start(&claude, "claude-option-respawn").await;
+    let session = DurableSession::start(&claude, None, "claude-option-respawn").await;
 
     // The Session's first Turn ran under the catalog default's own effort, so lowering it alone
     // leaves the Model where it was — and a Model Option is a spawn-time flag just the same.
@@ -494,7 +353,7 @@ async fn changing_only_a_model_option_between_turns_respawns_the_child_just_the_
 #[tokio::test]
 async fn an_unchanged_selection_between_turns_keeps_the_child_that_is_running() {
     let claude = conversation_fixture(STREAMED_MESSAGE);
-    let session = DurableSession::start(&claude, "claude-selection-unchanged").await;
+    let session = DurableSession::start(&claude, None, "claude-selection-unchanged").await;
 
     let settled = session.continue_with("Same Model, please", 1).await;
 
@@ -592,7 +451,7 @@ async fn agents_spawned_before_a_restart_resume_in_their_own_sessions_after_it()
         prompt_arm("Open a durable Claude conversation", SPAWNS_TWO_AGENTS),
         prompt_arm("Send the agents back in", RESUMES_BOTH_AGENTS),
     ));
-    let restored = DurableSession::start(&claude, "claude-restart-subagent-resume")
+    let restored = DurableSession::start(&claude, None, "claude-restart-subagent-resume")
         .await
         .restarted(&claude)
         .await;

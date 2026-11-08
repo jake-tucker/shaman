@@ -1900,7 +1900,6 @@ impl ClaudeProjection {
                         .message
                         .as_ref()
                         .and_then(|opened| opened.model.as_deref()),
-                    self.turn.running_selection().as_ref(),
                 );
             }
             "content_block_start" => {
@@ -2016,15 +2015,11 @@ impl ClaudeProjection {
         };
         let owner: ConversationKey = message.parent_tool_use_id;
         let claimed = self.claim_conversation(&owner);
-        let running = owner
-            .is_none()
-            .then(|| self.turn.running_selection())
-            .flatten();
-        let loop_model = message.message.model.clone();
         let observed_model = owner.as_ref().and_then(|conversation| {
             message
                 .message
                 .model
+                .as_deref()
                 .filter(|model| !model.is_empty())
                 .map(|model| (conversation.clone(), crate::protocol::ModelId::new(model)))
         });
@@ -2043,10 +2038,10 @@ impl ClaudeProjection {
             // The chunks already streamed what this restates, so all it adds is the Model that
             // wrote it.
             if owner.is_none() {
-                projected.extend(
-                    self.message_models
-                        .snapshot_named(loop_model.as_deref(), running.as_ref()),
-                );
+                projected.extend(self.message_models.snapshot_named(
+                    message.message.model.as_deref(),
+                    self.turn.running_selection().as_ref(),
+                ));
             }
         } else {
             for (index, block) in message.message.content.into_iter().enumerate() {
@@ -2057,8 +2052,8 @@ impl ClaudeProjection {
                             projected.push(ProviderEvent::AgentMessageStarted);
                             if owner.is_none() {
                                 projected.extend(MessageModels::whole_message(
-                                    loop_model.as_deref(),
-                                    running.as_ref(),
+                                    message.message.model.as_deref(),
+                                    self.turn.running_selection().as_ref(),
                                 ));
                             }
                             projected.push(ProviderEvent::AgentMessageDelta { content: text });

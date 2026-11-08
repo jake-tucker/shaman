@@ -392,7 +392,7 @@ fn context_fill(response: &Value, expected_model: &str) -> Option<ContextFill> {
     let model = response.get("model")?.as_str()?;
     // The CLI may append its context tier to the concrete model identity in /context while
     // reporting the bare concrete identity in init. Capacity still comes exclusively from rawMaxTokens.
-    if model.trim_end_matches("[1m]") != expected_model.trim_end_matches("[1m]") {
+    if super::without_context_tier(model) != super::without_context_tier(expected_model) {
         return None;
     }
     raw_context_fill(response)

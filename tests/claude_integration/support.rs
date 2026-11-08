@@ -10,8 +10,10 @@ use crate::support::PROGRESS_DEADLINE;
 use suru::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionSubscription},
     protocol::{
-        CreateSessionRequest, InitialPrompt, Message, MessageRole, ModelCatalog, PromptId,
-        ProviderId, ProviderModelCatalog, SessionId, SessionSnapshot, TurnId, TurnStatus,
+        AdmitPromptRequest, AgentSelection, AgentSelectionOperationId, CreateSessionRequest,
+        InitialPrompt, Message, MessageRole, ModelCatalog, PromptDelivery, PromptId, ProviderId,
+        ProviderModelCatalog, SessionId, SessionSnapshot, TurnId, TurnStatus,
+        UpdateAgentSelectionRequest,
     },
     provider::ClaudeRuntime,
     server::{self, RunningServer, ServerConfig},
@@ -1124,6 +1126,163 @@ impl LiveTurn {
             ..
         } = self;
         drop(feed);
+        drop(client);
+        server.shutdown().await.expect("shut the server down");
+    }
+}
+
+/// A Session past its first Turn, holding everything it runs on for as long as the test does —
+/// the state directory and the Workspace included, which are only alive while this is.
+pub struct DurableSession {
+    state_dir: tempfile::TempDir,
+    pub workspace: tempfile::TempDir,
+    channel: &'static str,
+    server: RunningServer,
+    pub client: ManagedClient,
+    pub session_id: SessionId,
+}
+
+impl DurableSession {
+    /// Opens a Session on `claude` under `selection` — the catalog default where `None` — and
+    /// runs its first Turn to completion. `channel` is the client channel, so each test needs its
+    /// own.
+    pub async fn start(
+        claude: &ScriptedClaude,
+        selection: Option<AgentSelection>,
+        channel: &'static str,
+    ) -> Self {
+        Self::start_with(claude, selection, channel, server::ServerTimings::default()).await
+    }
+
+    /// [`Self::start`] on a server run to `timings`.
+    pub async fn start_with(
+        claude: &ScriptedClaude,
+        selection: Option<AgentSelection>,
+        channel: &'static str,
+        timings: server::ServerTimings,
+    ) -> Self {
+        let state_dir = tempfile::tempdir().expect("create isolated state directory");
+        let workspace = tempfile::tempdir().expect("create valid Workspace");
+        let execution_directory = workspace.path().join("packages/nested agent directory");
+        std::fs::create_dir_all(&execution_directory).unwrap();
+        let execution_directory = suru::paths::canonical(execution_directory).unwrap();
+        let (server, client) =
+            hosting_with_timings(claude, channel, state_dir.path(), timings).await;
+        if selection.is_some() {
+            // A Selection is normalized against the catalog, so discover it before naming one.
+            client.list_models().await.expect("discover Claude Models");
+        }
+        let created = client
+            .create_session(CreateSessionRequest {
+                session_id: None,
+                preparation_id: None,
+                agent_selection: selection,
+                execution_directory: suru::protocol::ExecutionDirectory {
+                    path: execution_directory.clone(),
+                },
+                prompt: InitialPrompt {
+                    id: PromptId::new(),
+                    text: "Open a durable Claude conversation".to_owned(),
+                    skill_invocations: Vec::new(),
+                    attachments: Vec::new(),
+                },
+            })
+            .await
+            .expect("create Session");
+        let session_id = created.session.id;
+        let settled = settled_session(&client, session_id, 0).await;
+        assert_eq!(
+            settled.turns[0].status,
+            TurnStatus::Completed,
+            "the Session's first Turn runs before anything asks it to carry on: {:?}",
+            settled.activities
+        );
+        Self {
+            state_dir,
+            workspace,
+            channel,
+            server,
+            client,
+            session_id,
+        }
+    }
+
+    /// The same Suru Session on a replacement server, reached the way a user restarting Suru
+    /// reaches it. Every process the original server launched is gone before the replacement asks
+    /// for the conversation back, so only a child the replacement spawned itself can serve it.
+    pub async fn restarted(self, claude: &ScriptedClaude) -> Self {
+        let Self {
+            state_dir,
+            workspace,
+            channel,
+            server,
+            client,
+            session_id,
+        } = self;
+        drop(client);
+        server.shutdown().await.expect("stop the original server");
+        claude.wait_for_exits(claude.launches()).await;
+
+        let (server, client) = hosting(claude, channel, state_dir.path()).await;
+        Self {
+            state_dir,
+            workspace,
+            channel,
+            server,
+            client,
+            session_id,
+        }
+    }
+
+    /// Puts `selection` in force on the Session, for a Turn to run under next.
+    pub async fn select(&self, selection: AgentSelection) {
+        // The Agent Selection is normalized against the catalog, so discover it before naming one.
+        self.client
+            .list_models()
+            .await
+            .expect("discover Claude Models");
+        self.client
+            .update_agent_selection(
+                self.session_id,
+                UpdateAgentSelectionRequest {
+                    operation_id: AgentSelectionOperationId::new(),
+                    selection: selection.clone(),
+                },
+            )
+            .await
+            .expect("choose another Agent Selection between Turns");
+    }
+
+    /// Delivers `prompt` to the idle Session and comes back once the Turn it began settles.
+    pub async fn continue_with(&self, prompt: &str, turn_index: usize) -> SessionSnapshot {
+        self.client
+            .admit_prompt(
+                self.session_id,
+                AdmitPromptRequest {
+                    prompt: InitialPrompt {
+                        id: PromptId::new(),
+                        text: prompt.to_owned(),
+                        skill_invocations: Vec::new(),
+                        attachments: Vec::new(),
+                    },
+                    delivery: PromptDelivery::Steer,
+                },
+            )
+            .await
+            .expect("admit a Prompt to the Session");
+        settled_session(&self.client, self.session_id, turn_index).await
+    }
+
+    /// The Session as its server reads it now.
+    pub async fn read(&self) -> SessionSnapshot {
+        self.client
+            .read_session(self.session_id)
+            .await
+            .expect("read the Session")
+    }
+
+    pub async fn shutdown(self) {
+        let Self { server, client, .. } = self;
         drop(client);
         server.shutdown().await.expect("shut the server down");
     }

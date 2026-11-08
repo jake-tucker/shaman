@@ -43,8 +43,6 @@ pub(super) struct TurnInFlight {
 struct TurnState {
     /// The running CLI's selection, retained for work it resumes without a Prompt.
     selection: Option<AgentSelection>,
-    /// How many Turns have begun, so what was learned in one Turn is told apart from the next.
-    turns_begun: u64,
     /// Whether a Turn runs: from its Prompt, or from the native loop that began a Continuation,
     /// until the `result` that Settles it or until it is abandoned.
     running: bool,
@@ -99,7 +97,6 @@ impl TurnInFlight {
         state.selection = Some(selection);
         state.settle();
         state.running = true;
-        state.turns_begun += 1;
         state.untaken.insert(uuid.clone());
         uuid
     }
@@ -132,18 +129,13 @@ impl TurnInFlight {
         let selection = state.selection.clone()?;
         state.settle();
         state.running = true;
-        state.turns_begun += 1;
         Some(selection)
     }
 
-    /// The running Turn — by how many Turns had begun when it did — and the Agent Selection it
-    /// runs under, or `None` while no Turn runs.
-    pub(super) fn running_selection(&self) -> Option<(u64, AgentSelection)> {
+    /// The Agent Selection the running Turn runs under, or `None` while no Turn runs.
+    pub(super) fn running_selection(&self) -> Option<AgentSelection> {
         let state = self.state();
-        if !state.running {
-            return None;
-        }
-        Some((state.turns_begun, state.selection.clone()?))
+        state.running.then(|| state.selection.clone()).flatten()
     }
 
     /// Accepts a steer into the running Turn, answering the uuid to write it under. Answers `None`
