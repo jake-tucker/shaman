@@ -33,6 +33,7 @@ use super::{
     attachment_preview::{AttachmentPreviews, AttachmentRows, ReservedStrip},
     commands::{SemanticCommandId, SemanticInvocation},
     completion::CompletionRow,
+    completion_details::CompletionDetails,
     composer::{ComposerBindings, ComposerKey, ComposerMemory},
     connect_overlay::{ConnectDetails, ConnectOverlay, LoginStep},
     context_overlay::{ContextOverlayView, ContextRow},
@@ -4952,6 +4953,7 @@ impl ComposerDock {
         Self::spanning(
             frame,
             composer_area,
+            frame.area(),
             composer_area.width.clamp(1, Self::WIDTH),
             desired_rows,
         )
@@ -4968,8 +4970,14 @@ impl ComposerDock {
     }
 
     /// [`Self::over`], `width` columns wide, centered on the composer's
-    /// columns as far as the frame allows.
-    fn spanning(frame: &Frame<'_>, composer_area: Rect, width: u16, desired_rows: u16) -> Self {
+    /// columns as far as the columns of `bounds` allow.
+    fn spanning(
+        frame: &Frame<'_>,
+        composer_area: Rect,
+        bounds: Rect,
+        width: u16,
+        desired_rows: u16,
+    ) -> Self {
         let room_above = composer_area.y.saturating_sub(frame.area().y);
         let bordered = room_above >= 3;
         let height = if bordered {
@@ -4980,8 +4988,8 @@ impl ComposerDock {
         let center = composer_area.x.saturating_add(composer_area.width / 2);
         let x = center
             .saturating_sub(width / 2)
-            .min(frame.area().right().saturating_sub(width))
-            .max(frame.area().x);
+            .min(bounds.right().saturating_sub(width))
+            .max(bounds.x);
         let y = composer_area.y.saturating_sub(height).max(frame.area().y);
         Self {
             area: Rect::new(x, y, width, height),
@@ -4992,7 +5000,7 @@ impl ComposerDock {
 
 /// The share of a split completion dock's width its list keeps, in
 /// twentieths.
-const COMPLETION_SPLIT_LIST: u16 = 8;
+const COMPLETION_SPLIT_LIST: u16 = 9;
 /// The most rows a split completion dock grows to for its pane: a long
 /// description is cut short with an ellipsis rather than standing the dock
 /// up over the whole view.
@@ -5022,60 +5030,7 @@ fn render_composer_completion(
         .visible_rows(usize::from(row_capacity))
         .into_iter()
         .map(|(selected, row)| {
-            let content = match row {
-                CompletionRow::Command(command) => {
-                    let slash = command
-                        .slash
-                        .expect("Command completion only contains slash-enabled commands");
-                    truncate_to_width(
-                        &format!(
-                            "/{}  {} · {}",
-                            slash.name, command.title, command.description
-                        ),
-                        usize::from(content_width),
-                    )
-                }
-                CompletionRow::Insertion(canonical) => {
-                    truncate_to_width(canonical, usize::from(content_width))
-                }
-                CompletionRow::Skill(skill) => {
-                    let scope = skill
-                        .scope
-                        .as_deref()
-                        .map_or(String::new(), |scope| format!(" · {scope}"));
-                    truncate_to_width(
-                        &format!("${}  {}{}", skill.name, skill.description, scope),
-                        usize::from(content_width),
-                    )
-                }
-                CompletionRow::StaleSkill(skill) => {
-                    let scope = skill
-                        .scope
-                        .as_deref()
-                        .map_or(String::new(), |scope| format!(" · {scope}"));
-                    truncate_to_width(
-                        &format!("${}  {}{} · stale", skill.name, skill.description, scope),
-                        usize::from(content_width),
-                    )
-                }
-                CompletionRow::DisabledSkill(skill) => truncate_to_width(
-                    &format!("${}  {} · limit reached", skill.name, skill.description),
-                    usize::from(content_width),
-                ),
-                CompletionRow::Message(message) => {
-                    truncate_to_width(message, usize::from(content_width))
-                }
-            };
-            Line::styled(
-                content,
-                if matches!(row, CompletionRow::DisabledSkill(_)) {
-                    theme.action.disabled
-                } else if selected {
-                    theme.selection.focused
-                } else {
-                    theme.text.primary
-                },
-            )
+            completion_row_line(row, selected, usize::from(content_width), true, theme)
         })
         .collect::<Vec<_>>();
     let paragraph = if bordered {
@@ -5092,10 +5047,11 @@ fn render_composer_completion(
 }
 
 /// Draws the completion list docked over the composer with the selected
-/// Command or Skill detailed in a pane beside it, answering whether it did:
-/// a list with nothing selected to detail, or without the rows above the
-/// composer to show the start of every row's description, is drawn as
-/// one-line rows instead.
+/// slash command or Skill detailed in a pane beside it, and what the catalog
+/// has to say across the foot of the box, answering whether it did: a list
+/// with nothing selected to detail, or without the rows above the composer to
+/// show the start of every row's description, is drawn as one-line rows
+/// instead.
 fn render_split_composer_completion(
     frame: &mut Frame<'_>,
     state: &TuiState,
@@ -5103,23 +5059,39 @@ fn render_split_composer_completion(
     main: Rect,
     theme: &Theme,
 ) -> bool {
-    let rows = state.composer_completion.rows();
+    let completion = &state.composer_completion;
+    let split = |area| {
+        let body = SplitBox::inner(area);
+        // What the catalog has to say takes the box's last row whole.
+        let message_rows = u16::from(completion.message().is_some()).min(body.height);
+        let body = Rect {
+            height: body.height - message_rows,
+            ..body
+        };
+        let message = Rect {
+            y: body.bottom(),
+            height: message_rows,
+            ..body
+        };
+        (SplitBox::new(area, body, COMPLETION_SPLIT_LIST), message)
+    };
+    let width = ComposerDock::split_width(composer_area, main);
+    // The pane is as wide whatever the dock's height, so its width is
+    // measured on a box of the dock's width before the dock is stood up.
+    let pane_width = split(Rect::new(0, 0, width, 3)).0.pane_content().width;
+    let rows = completion.rows();
     let Some(selected) = rows
         .iter()
         .find_map(|(selected, row)| selected.then_some(*row))
-        .filter(|row| matches!(row, CompletionRow::Command(_) | CompletionRow::Skill(_)))
+        .and_then(|row| CompletionDetails::of(row, pane_width, theme))
     else {
         return false;
     };
-    let split = |area| SplitBox::new(area, SplitBox::inner(area), COMPLETION_SPLIT_LIST);
-    // The pane's width does not hang on the dock's height, so the dock can
-    // stand as tall as the longest detail among the rows, and holds still as
-    // the selection moves.
-    let width = ComposerDock::split_width(composer_area, main);
-    let pane_width = split(Rect::new(0, 0, width, 3)).pane_content().width;
+    // Sizing the dock to every row's pane, not only the selected one's,
+    // holds it still as the selection moves.
     let details = rows
         .iter()
-        .filter_map(|(_, row)| completion_details(*row, pane_width, theme))
+        .filter_map(|(_, row)| CompletionDetails::of(*row, pane_width, theme))
         .collect::<Vec<_>>();
     let pane_rows = details
         .iter()
@@ -5127,64 +5099,44 @@ fn render_split_composer_completion(
         .max()
         .unwrap_or_default()
         .min(COMPLETION_SPLIT_PANE_ROWS);
-    // Every row's pane must reach its description's first line, and the
-    // ellipsis beneath it where there is more, or the split would show less
-    // than a one-line row; asking it of every row, not only the selected
-    // one, keeps the dock from changing shape as the selection moves.
     let least_rows = details
         .iter()
-        .map(|details| details.pane.lines.len().min(details.description + 2))
+        .map(CompletionDetails::least_rows)
         .max()
         .unwrap_or_default();
-    let desired_rows = u16::try_from(rows.len().max(pane_rows)).unwrap_or(u16::MAX);
+    let message_rows = usize::from(completion.message().is_some());
+    let listed_rows = rows.len() - message_rows;
+    let desired_rows = u16::try_from(listed_rows.max(pane_rows) + message_rows).unwrap_or(u16::MAX);
     let ComposerDock { area, bordered } =
-        ComposerDock::spanning(frame, composer_area, width, desired_rows);
-    if !bordered || usize::from(SplitBox::inner(area).height) < least_rows {
+        ComposerDock::spanning(frame, composer_area, main, width, desired_rows);
+    let (split, message_area) = split(area);
+    if !bordered || usize::from(split.pane_content().height) < least_rows {
         return false;
     }
-    let split = split(area);
     let list_width = usize::from(split.list.width);
-    let lines = state
-        .composer_completion
-        .visible_rows(usize::from(split.list.height))
+    let lines = completion
+        .visible_listed_rows(usize::from(split.list.height))
         .into_iter()
-        .map(|(selected, row)| {
-            let content = match row {
-                CompletionRow::Command(command) => {
-                    let slash = command
-                        .slash
-                        .expect("Command completion only contains slash-enabled commands");
-                    format!("/{}  {}", slash.name, command.title)
-                }
-                CompletionRow::Insertion(canonical) => canonical.to_owned(),
-                CompletionRow::Skill(skill) => format!("${}", skill.name),
-                CompletionRow::StaleSkill(skill) => format!("${} · stale", skill.name),
-                CompletionRow::DisabledSkill(skill) => format!("${} · limit reached", skill.name),
-                CompletionRow::Message(message) => message.to_owned(),
-            };
-            Line::styled(
-                truncate_to_width(&content, list_width),
-                if matches!(row, CompletionRow::DisabledSkill(_)) {
-                    theme.action.disabled
-                } else if selected {
-                    theme.selection.focused
-                } else {
-                    theme.text.primary
-                },
-            )
-        })
+        .map(|(selected, row)| completion_row_line(row, selected, list_width, false, theme))
         .collect::<Vec<_>>();
-    let mut pane = completion_details(selected, split.pane_content().width, theme)
-        .expect("a Command or Skill is detailed")
-        .pane;
+    let mut pane = selected.pane;
     pane.fit(usize::from(split.pane_content().height), theme);
     clear_over(frame, state, area);
-    frame.render_widget(
-        titled_overlay_block(state.composer_completion.title(), theme),
-        area,
-    );
+    frame.render_widget(titled_overlay_block(completion.title(), theme), area);
     frame.render_widget(Paragraph::new(lines), split.list);
     split.draw_pane(frame, pane.lines, false, theme);
+    if let Some(message) = completion.message() {
+        frame.render_widget(
+            Paragraph::new(completion_row_line(
+                CompletionRow::Message(message),
+                false,
+                usize::from(message_area.width),
+                false,
+                theme,
+            )),
+            message_area,
+        );
+    }
     split.record_selection(
         frame,
         state,
@@ -5193,74 +5145,69 @@ fn render_split_composer_completion(
             list: &[],
             pane: &pane.wrapped,
         },
-        &[],
+        &[message_area],
     );
     true
 }
 
-/// What the completion list's pane says of a row, and the row of the pane its
-/// description begins on.
-struct CompletionDetails<'a> {
-    pane: DrawnPane<'a>,
-    description: usize,
-}
-
-/// What the completion list's pane says of `row`, `width` columns wide: a
-/// Command's title, the other names it answers to and its keybinding, and a
-/// Skill's name and scope, each above its description. Only a Command or a
-/// Skill that can be chosen is detailed.
-fn completion_details<'a>(
-    row: CompletionRow<'a>,
-    width: u16,
+/// A completion row on one line `width` columns wide, cut short where it is
+/// wider. A row that is `described` carries its description and scope beside
+/// its name; one whose details stand in a pane beside the list leaves them to
+/// the pane.
+fn completion_row_line(
+    row: CompletionRow<'_>,
+    selected: bool,
+    width: usize,
+    described: bool,
     theme: &Theme,
-) -> Option<CompletionDetails<'a>> {
-    let heading = theme.text.primary.add_modifier(Modifier::BOLD);
-    let mut pane = DrawnPane::default();
-    let description = match row {
-        CompletionRow::Command(command) => {
-            pane.line(command.title, width, heading);
-            let aliases = command.slash.map_or(&[][..], |slash| slash.aliases);
-            if !aliases.is_empty() {
-                let label = if aliases.len() == 1 {
-                    "Alias"
-                } else {
-                    "Aliases"
-                };
-                let names = aliases
-                    .iter()
-                    .map(|alias| format!("/{alias}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                pane.line(&format!("{label} {names}"), width, theme.text.subdued);
-            }
-            if let Some(keybinding) = command.keybinding {
-                pane.line(
-                    &format!("Key {}", keybinding.label),
-                    width,
-                    theme.text.subdued,
-                );
-            }
-            command.description
+) -> Line<'static> {
+    let describe = |description: &str, scope: Option<&str>| {
+        if !described {
+            return String::new();
         }
-        CompletionRow::Skill(skill) => {
-            pane.line(&format!("${}", skill.name), width, heading);
-            if let Some(scope) = &skill.scope {
-                pane.line(scope, width, theme.text.subdued);
-            }
-            skill.description.as_str()
-        }
-        CompletionRow::Insertion(_)
-        | CompletionRow::StaleSkill(_)
-        | CompletionRow::DisabledSkill(_)
-        | CompletionRow::Message(_) => return None,
+        let scope = scope.map_or(String::new(), |scope| format!(" · {scope}"));
+        format!("  {description}{scope}")
     };
-    pane.blank();
-    let start = pane.lines.len();
-    pane.wrap(description, "", width, theme.text.primary);
-    Some(CompletionDetails {
-        pane,
-        description: start,
-    })
+    let content = match row {
+        CompletionRow::Command(command) => {
+            let slash = command
+                .slash
+                .expect("Command completion only contains slash-enabled commands");
+            let description = if described {
+                format!(" · {}", command.description)
+            } else {
+                String::new()
+            };
+            format!("/{}  {}{description}", slash.name, command.title)
+        }
+        CompletionRow::Insertion(canonical) => canonical.to_owned(),
+        CompletionRow::Skill(skill) => format!(
+            "${}{}",
+            skill.name,
+            describe(&skill.description, skill.scope.as_deref())
+        ),
+        CompletionRow::StaleSkill(skill) => format!(
+            "${}{} · stale",
+            skill.name,
+            describe(&skill.description, skill.scope.as_deref())
+        ),
+        CompletionRow::DisabledSkill(skill) => format!(
+            "${}{} · limit reached",
+            skill.name,
+            describe(&skill.description, None)
+        ),
+        CompletionRow::Message(message) => message.to_owned(),
+    };
+    Line::styled(
+        truncate_to_width(&content, width),
+        if matches!(row, CompletionRow::DisabledSkill(_)) {
+            theme.action.disabled
+        } else if selected {
+            theme.selection.focused
+        } else {
+            theme.text.primary
+        },
+    )
 }
 
 /// Draws the Subagent Picker docked over the composer, as the completion list

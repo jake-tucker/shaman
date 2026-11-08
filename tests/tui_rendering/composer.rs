@@ -813,6 +813,64 @@ fn skill_completion_details_the_selected_skill_beside_the_list_and_copies_it_as_
 }
 
 #[test]
+fn a_catalog_warning_spans_the_split_skill_completion_beneath_the_list_and_pane() {
+    const WARNING: &str =
+        "Some Skills failed to load from the Workspace: review/SKILL.md has no description";
+    let workspace = workspace_dir();
+    let mut application = Application::new(workspace.path(), Default::default());
+    application
+        .handle_event(ApplicationEvent::Managed(ManagedEvent::Connected(
+            ready_health(Uuid::new_v4(), 42).with_landing_agent_selection(Some(AgentSelection {
+                provider: ProviderId::new("codex"),
+                model: ModelId::new("gpt-fixture"),
+                options: Vec::new(),
+            })),
+        )))
+        .expect("connect application");
+    let request = SkillCatalogRequest {
+        provider: ProviderId::new("codex"),
+        execution_directory: suru::protocol::ExecutionDirectory {
+            path: workspace.path().to_owned(),
+        },
+    };
+    application
+        .handle_event(ApplicationEvent::SkillsListed {
+            request: request.clone(),
+            catalog: SkillCatalog {
+                provider: request.provider,
+                execution_directory: request.execution_directory,
+                skills: vec![SkillDescriptor {
+                    id: SkillId::new("test-id"),
+                    name: "test".to_owned(),
+                    description: "Test the change".to_owned(),
+                    scope: None,
+                }],
+                capabilities: SkillCatalogCapabilities {
+                    max_distinct_invocations: None,
+                    supported_deliveries: vec![SkillPromptDelivery::Initial],
+                },
+                status: SkillCatalogStatus::Fresh {
+                    warning: Some(WARNING.to_owned()),
+                },
+            },
+        })
+        .expect("load Skill Catalog");
+    type_terminal_text(&mut application, "$");
+
+    let buffer = rendered_application_buffer(&application, 120, 30);
+    let rows = buffer_rows(&buffer);
+    let name = text_position(&buffer, "$test");
+    let description = text_position(&buffer, "Test the change");
+    let warning = text_position(&buffer, WARNING);
+    assert!(description.0 > name.0, "the pane stands beside the list");
+    assert_eq!(warning.0, name.0, "the warning starts at the list's column");
+    assert!(
+        warning.1 > description.1,
+        "the warning reads whole beneath the list and pane: {rows:#?}"
+    );
+}
+
+#[test]
 fn provider_limit_disables_new_choices_and_rejects_manual_over_limit_input() {
     let review = SkillDescriptor {
         id: SkillId::new("review-id"),

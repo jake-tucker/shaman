@@ -10,6 +10,7 @@ mod clipboard;
 mod clipboard_paste;
 mod commands;
 mod completion;
+mod completion_details;
 mod composer;
 mod connect_overlay;
 mod context_overlay;

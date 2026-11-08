@@ -1,7 +1,8 @@
 //! What a details pane drew: the rows it filled, and each line it wrapped over
 //! rows of its own, so a selection reads the line back as the one line it was
-//! written as (ADR-0020). The Model picker and the settings panel each detail
-//! what focus stands on in a pane beside their list, and both lay it out here.
+//! written as (ADR-0020). The Model picker, the settings panel and the
+//! composer's completion list each detail what focus stands on in a pane
+//! beside their list, and all of them lay it out here.
 
 use std::{borrow::Cow, ops::Range};
 

@@ -199,6 +199,17 @@ impl CompletionMode {
     }
 
     fn rows(&self) -> Vec<(bool, CompletionRow<'_>)> {
+        let mut rows = self.listed_rows();
+        rows.extend(
+            self.message
+                .as_deref()
+                .map(|message| (false, CompletionRow::Message(message))),
+        );
+        rows
+    }
+
+    /// The rows short of what the catalog has to say.
+    fn listed_rows(&self) -> Vec<(bool, CompletionRow<'_>)> {
         let mut rows = self
             .candidates
             .iter()
@@ -223,11 +234,6 @@ impl CompletionMode {
             self.presentations
                 .iter()
                 .map(|skill| (false, CompletionRow::StaleSkill(skill))),
-        );
-        rows.extend(
-            self.message
-                .as_deref()
-                .map(|message| (false, CompletionRow::Message(message))),
         );
         rows
     }
@@ -381,7 +387,33 @@ impl ComposerCompletion {
     /// the rows standing after them — Skills out of reach, and what the
     /// catalog has to say — are ones the keys never stand on.
     pub(super) fn visible_rows(&self, capacity: usize) -> Vec<(bool, CompletionRow<'_>)> {
-        let rows = self.rows();
+        self.window_over(self.rows(), capacity)
+    }
+
+    /// [`Self::visible_rows`] short of what the catalog has to say, for a
+    /// popup that says it apart from the list.
+    pub(super) fn visible_listed_rows(&self, capacity: usize) -> Vec<(bool, CompletionRow<'_>)> {
+        self.window_over(
+            self.mode
+                .as_ref()
+                .map_or_else(Vec::new, CompletionMode::listed_rows),
+            capacity,
+        )
+    }
+
+    /// What the catalog has to say beside the rows: that it is loading or
+    /// refreshing, or why it could not be read.
+    pub(super) fn message(&self) -> Option<&str> {
+        self.mode.as_ref()?.message.as_deref()
+    }
+
+    /// The run of `rows` the window shows in `capacity` rows, following the
+    /// selected candidate.
+    fn window_over<'a>(
+        &self,
+        rows: Vec<(bool, CompletionRow<'a>)>,
+        capacity: usize,
+    ) -> Vec<(bool, CompletionRow<'a>)> {
         let candidates = self.mode.as_ref().map_or(0, |mode| mode.candidates.len());
         let entries = (0..rows.len())
             .map(|index| {
