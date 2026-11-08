@@ -4752,13 +4752,10 @@ mod tests {
                 }),
             ),
         );
-        assert!(matches!(
-            &child_end[..],
-            [AttributedProviderEvent {
-                attribution: ProviderEventAttribution::Subagent(agent),
-                event: ProviderEvent::CurrentModelChanged { model: None },
-            }] if agent.as_str() == "agent-1"
-        ));
+        assert!(
+            child_end.is_empty(),
+            "the child's Model stands between calls"
+        );
         let root_end = project(
             &mut correlation,
             "model.call_finished",
@@ -4767,10 +4764,59 @@ mod tests {
                 "editClassifierVersion": 1, "outcome": "success",
             }),
         );
-        assert!(matches!(
-            &root_end[..],
-            [ProviderEvent::CurrentModelChanged { model: None }]
-        ));
+        assert!(root_end.is_empty(), "the root's Model stands between calls");
+    }
+
+    #[test]
+    fn a_subagents_error_withdraws_the_model_it_held() {
+        let mut correlation = with_subagent();
+        project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "session.auto_mode_resolved",
+                json!({ "chosenModel": "child-model" }),
+            ),
+        );
+        let started = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "model.call_start",
+                json!({ "turnId": "child", "model": "child-model" }),
+            ),
+        );
+        assert!(started.iter().any(|event| matches!(
+            &event.event,
+            ProviderEvent::CurrentModelChanged { model: Some(model) }
+                if model.actual.as_str() == "child-model"
+        )));
+        let transient = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "session.error",
+                json!({ "errorType": "model_call", "message": "retrying" }),
+            ),
+        );
+        assert!(
+            !transient
+                .iter()
+                .any(|event| matches!(event.event, ProviderEvent::CurrentModelChanged { .. })),
+            "a transient error is one the loop retries through"
+        );
+        let failed = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "session.error",
+                json!({ "errorType": "quota", "message": "out of credits" }),
+            ),
+        );
+        assert!(failed.iter().any(|event| matches!(
+            &event.event,
+            ProviderEvent::CurrentModelChanged { model: None }
+        )));
     }
 
     #[test]
@@ -5268,7 +5314,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_auto_call_is_recorded_once_and_clears_the_current_model() {
+    fn a_failed_auto_call_is_recorded_once_and_keeps_the_current_model() {
         let mut correlation = in_turn();
         correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
         project(
@@ -5285,9 +5331,10 @@ mod tests {
             }),
         );
         assert!(
-            failed
+            !failed
                 .iter()
-                .any(|event| matches!(event, ProviderEvent::CurrentModelChanged { model: None }))
+                .any(|event| matches!(event, ProviderEvent::CurrentModelChanged { .. })),
+            "the retry runs on the Model nothing has contradicted"
         );
         assert!(failed.iter().any(|event| matches!(
             event,
@@ -5347,18 +5394,15 @@ mod tests {
             }),
         );
         assert!(failure.is_empty());
-        let finished = project(
+        let next = project(
             &mut correlation,
-            "model.call_finished",
-            json!({
-                "turnId": "active", "dispatchDurationMs": 1,
-                "editClassifierVersion": 1, "outcome": "success",
-            }),
+            "model.call_start",
+            json!({ "turnId": "next", "model": "next-model" }),
         );
         assert!(
-            finished
-                .iter()
-                .any(|event| matches!(event, ProviderEvent::CurrentModelChanged { model: None }))
+            next.iter()
+                .any(|event| matches!(event, ProviderEvent::CurrentModelChanged { model: None })),
+            "the sampling failure left the active call's evidence in place"
         );
     }
 
@@ -5416,7 +5460,7 @@ mod tests {
     }
 
     #[test]
-    fn phase_usage_clears_live_model_evidence_before_a_tool_runs() {
+    fn phase_usage_ends_live_phase_evidence_before_a_tool_runs() {
         for child in [false, true] {
             let mut correlation = with_subagent();
             correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
@@ -5460,10 +5504,12 @@ mod tests {
                     json!({ "model": "alpha", "inputTokens": 1 }),
                 ),
             );
-            assert!(used.iter().any(|event| matches!(
-                event.event,
-                ProviderEvent::CurrentModelChanged { model: None }
-            )));
+            assert!(
+                !used
+                    .iter()
+                    .any(|event| matches!(event.event, ProviderEvent::CurrentModelChanged { .. })),
+                "alpha stands until something contradicts it"
+            );
             project_attributed(
                 &mut correlation,
                 scoped(

@@ -5237,7 +5237,8 @@ pub struct ModelAttribution {
     pub actual: ModelId,
 }
 
-/// Provider evidence of a concrete Model currently working in a Turn.
+/// Provider evidence of the concrete Model working in a Turn: the one last
+/// seen executing, while nothing since contradicts it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkingModel {
@@ -5391,7 +5392,9 @@ pub struct SessionSnapshot {
     /// Indicator's Working is spent on.
     #[serde(default)]
     pub waiting_on_subagents: Option<TurnId>,
-    /// A Model the Provider reports as currently working, never stored.
+    /// The Model the Provider last saw working in the active Turn, held
+    /// through the pauses between its calls until evidence contradicts it;
+    /// never stored.
     #[serde(default)]
     pub current_model: Option<WorkingModel>,
 }
@@ -5696,7 +5699,7 @@ pub enum SessionChange {
     SessionWaitingOnSubagentsChanged {
         waiting_on_subagents: Option<TurnId>,
     },
-    /// Evidence of the Model currently executing in this Turn, or its end.
+    /// Evidence of the Model working in this Turn, or its withdrawal.
     CurrentModelChanged {
         turn_id: TurnId,
         model: Option<ModelAttribution>,

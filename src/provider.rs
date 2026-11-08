@@ -1165,7 +1165,9 @@ pub enum ProviderEvent {
     ModelCallRecorded {
         model: crate::protocol::ModelAttribution,
     },
-    /// Evidence of a currently executing Model, cleared when that work ends.
+    /// Evidence of the Model working in the Turn. It stands through the pauses
+    /// between calls, and is cleared once evidence contradicts it or the work
+    /// stops.
     CurrentModelChanged {
         model: Option<crate::protocol::ModelAttribution>,
     },

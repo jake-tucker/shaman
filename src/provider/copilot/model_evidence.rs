@@ -1,4 +1,4 @@
-//! Transient evidence of Models actually executing in a Copilot conversation.
+//! Transient evidence of the Model working in a Copilot conversation.
 
 use std::collections::HashMap;
 
@@ -32,10 +32,19 @@ struct PhaseEvidence {
 struct CallEvidence {
     model: Option<ModelId>,
     phase: Option<(String, String)>,
+    /// Whether this call still tells which Model runs. A call that can no
+    /// longer be told apart from the others keeps its place for its finish,
+    /// but says nothing more.
+    live: bool,
 }
 
 /// Each conversation has its own tracker; neither a parent's selection nor
 /// another conversation's dispatches establish what this conversation runs.
+///
+/// The Model last seen working stands while nothing runs that could be
+/// another, so the gaps between one dispatch and the next leave it in place;
+/// a dispatch, turn, or phase naming a different Model replaces it, and live
+/// work that names none or disagrees withdraws it.
 #[derive(Default)]
 pub(super) struct WorkingModels {
     turns: HashMap<String, TurnEvidence>,
@@ -43,6 +52,8 @@ pub(super) struct WorkingModels {
     phases: HashMap<(String, String), PhaseEvidence>,
     saw_phase: bool,
     uncertain: bool,
+    /// The Model last seen working, while nothing since contradicts it.
+    held: Option<ModelId>,
     published: Option<ModelId>,
 }
 
@@ -56,7 +67,7 @@ impl WorkingModels {
     }
 
     /// Reads only lifecycle evidence; Auto resolution by itself is not a
-    /// dispatch and therefore cannot establish a currently executing Model.
+    /// dispatch and therefore cannot establish which Model works.
     pub(super) fn read(&mut self, event: &SessionEvent, auto: bool) -> Option<ProviderEvent> {
         match event.parsed_type() {
             SessionEventType::AssistantTurnStart => {
@@ -109,6 +120,7 @@ impl WorkingModels {
                     .push(CallEvidence {
                         model: concrete(start.model.as_deref()),
                         phase,
+                        live: true,
                     });
             }
             SessionEventType::ModelCallFinished => {
@@ -130,13 +142,13 @@ impl WorkingModels {
                     // Finish carries no call ID. When dispatches share a Turn
                     // ID, it cannot say which Model remains.
                     for call in calls.iter_mut() {
-                        call.model = None;
+                        call.live = false;
                     }
                     if calls.is_empty() {
                         self.calls.remove(&end.turn_id);
                     }
                 } else {
-                    self.discard_unmatched_calls();
+                    self.retire_calls();
                     unknown_phase = true;
                 }
                 // A phase or turn may outlive its dispatch. Do not revive its
@@ -154,9 +166,9 @@ impl WorkingModels {
             SessionEventType::ModelCallFailure => {
                 // Failure reports identify an API attempt, not necessarily
                 // the logical dispatch, and do not contractually name a turn.
-                // Leave the dispatch in place for its eventual finish while
-                // withholding stale live-model evidence during retry.
-                self.discard_unmatched_calls();
+                // Leave the dispatch in place for its eventual finish; the
+                // Model it ran stands through retry until one names another.
+                self.retire_calls();
                 self.invalidate_phases();
                 for turn in self.turns.values_mut() {
                     turn.saw_call = true;
@@ -165,7 +177,7 @@ impl WorkingModels {
             SessionEventType::AssistantUsage
             | SessionEventType::AssistantMessage
             | SessionEventType::ToolExecutionStart => {
-                self.discard_unmatched_calls();
+                self.retire_calls();
                 self.invalidate_phases();
                 for turn in self.turns.values_mut() {
                     turn.saw_call = true;
@@ -190,7 +202,7 @@ impl WorkingModels {
                 };
                 self.saw_phase = true;
                 self.phases.remove(&(phase.fusion_id, phase.phase_id));
-                self.discard_unmatched_calls();
+                self.retire_calls();
             }
             SessionEventType::AssistantFusionPhaseFailed => {
                 let Some(phase): Option<AssistantFusionPhaseFailedData> = reported(event) else {
@@ -198,14 +210,15 @@ impl WorkingModels {
                 };
                 self.saw_phase = true;
                 self.phases.remove(&(phase.fusion_id, phase.phase_id));
-                self.discard_unmatched_calls();
+                self.retire_calls();
             }
             SessionEventType::SessionFusionCompleted
             | SessionEventType::SessionFusionRouteFailed => {
                 self.saw_phase = true;
                 self.phases.clear();
-                self.discard_unmatched_calls();
+                self.retire_calls();
             }
+            SessionEventType::SessionError if !event.is_transient_error() => return self.clear(),
             SessionEventType::Abort | SessionEventType::AgentInterrupted => return self.clear(),
             _ => return None,
         }
@@ -218,6 +231,7 @@ impl WorkingModels {
         self.phases.clear();
         self.saw_phase = false;
         self.uncertain = false;
+        self.held = None;
         self.publish(false)
     }
 
@@ -226,10 +240,12 @@ impl WorkingModels {
         self.publish(auto)
     }
 
-    fn discard_unmatched_calls(&mut self) {
+    /// Keeps every open call in place for its finish while it stops saying
+    /// which Model runs.
+    fn retire_calls(&mut self) {
         for calls in self.calls.values_mut() {
             for call in calls {
-                call.model = None;
+                call.live = false;
             }
         }
     }
@@ -241,6 +257,9 @@ impl WorkingModels {
     }
 
     fn publish(&mut self, auto: bool) -> Option<ProviderEvent> {
+        if !auto {
+            self.held = None;
+        }
         let current = auto.then(|| self.current()).flatten();
         if self.published == current {
             return None;
@@ -255,7 +274,7 @@ impl WorkingModels {
         })
     }
 
-    fn current(&self) -> Option<ModelId> {
+    fn current(&mut self) -> Option<ModelId> {
         if self.uncertain {
             return None;
         }
@@ -263,6 +282,7 @@ impl WorkingModels {
             .calls
             .values()
             .flatten()
+            .filter(|call| call.live)
             .map(|call| call.model.clone())
             .collect();
         if !self.phases.is_empty() {
@@ -273,18 +293,26 @@ impl WorkingModels {
                     .map(|phase| phase.model.clone()),
             );
         } else if !self.saw_phase {
+            // A turn names its Model only when it knows it, and its calls
+            // report it anyway, so a turn naming none contradicts nothing.
             candidates.extend(
                 self.turns
                     .values()
-                    .filter(|turn| !turn.saw_call)
+                    .filter(|turn| !turn.saw_call && turn.model.is_some())
                     .map(|turn| turn.model.clone()),
             );
         }
-        let first = candidates.first()?.as_ref()?;
-        candidates
-            .iter()
-            .all(|candidate| candidate.as_ref() == Some(first))
-            .then(|| first.clone())
+        if let Some(first) = candidates.first() {
+            self.held = first
+                .as_ref()
+                .filter(|first| {
+                    candidates
+                        .iter()
+                        .all(|candidate| candidate.as_ref() == Some(*first))
+                })
+                .cloned();
+        }
+        self.held.clone()
     }
 }
 
@@ -378,7 +406,44 @@ mod tests {
         assert_eq!(finish(&mut models, "second"), Some(Some("alpha".into())));
         assert_eq!(start(&mut models, "unknown", None), Some(None));
         assert_eq!(finish(&mut models, "unknown"), Some(Some("alpha".into())));
-        assert_eq!(finish(&mut models, "first"), Some(None));
+        assert_eq!(finish(&mut models, "first"), None);
+    }
+
+    #[test]
+    fn the_last_model_seen_working_stands_until_evidence_contradicts_it() {
+        let mut models = WorkingModels::default();
+        assert_eq!(
+            start(&mut models, "first", Some("alpha")),
+            Some(Some("alpha".into()))
+        );
+        assert_eq!(finish(&mut models, "first"), None);
+        assert_eq!(
+            reading(models.read(
+                &event("assistant.turn_end", json!({ "turnId": "first" })),
+                true,
+            )),
+            None
+        );
+        assert_eq!(
+            reading(models.read(
+                &event("assistant.turn_start", json!({ "turnId": "second" })),
+                true,
+            )),
+            None,
+            "a turn that names no Model says nothing of which one runs"
+        );
+        assert_eq!(start(&mut models, "second", Some("alpha")), None);
+        assert_eq!(finish(&mut models, "second"), None);
+        assert_eq!(
+            start(&mut models, "third", Some("beta")),
+            Some(Some("beta".into()))
+        );
+        assert_eq!(finish(&mut models, "third"), None);
+        assert_eq!(
+            start(&mut models, "fourth", None),
+            Some(None),
+            "a dispatch that names no Model may be running another"
+        );
     }
 
     #[test]
@@ -389,6 +454,43 @@ mod tests {
             Some(Some("alpha".into()))
         );
         assert_eq!(start(&mut models, "same", Some("beta")), Some(None));
+        assert_eq!(finish(&mut models, "same"), None);
+        assert_eq!(finish(&mut models, "same"), None);
+    }
+
+    #[test]
+    fn a_message_before_its_calls_finish_leaves_the_model_standing() {
+        let mut models = WorkingModels::default();
+        assert_eq!(
+            start(&mut models, "first", Some("alpha")),
+            Some(Some("alpha".into()))
+        );
+        assert_eq!(
+            reading(models.read(
+                &event(
+                    "assistant.message",
+                    json!({ "messageId": "m", "content": "Answer" })
+                ),
+                true,
+            )),
+            None
+        );
+        assert_eq!(finish(&mut models, "first"), None);
+        assert_eq!(
+            start(&mut models, "second", Some("beta")),
+            Some(Some("beta".into())),
+            "the call the message retired no longer claims alpha"
+        );
+    }
+
+    #[test]
+    fn calls_that_agreed_keep_their_model_when_a_finish_cannot_say_which_ended() {
+        let mut models = WorkingModels::default();
+        assert_eq!(
+            start(&mut models, "same", Some("alpha")),
+            Some(Some("alpha".into()))
+        );
+        assert_eq!(start(&mut models, "same", Some("alpha")), None);
         assert_eq!(finish(&mut models, "same"), None);
         assert_eq!(finish(&mut models, "same"), None);
     }
@@ -408,7 +510,7 @@ mod tests {
         );
         assert_eq!(phase(&mut models, "p1", "alpha"), None);
         assert_eq!(start(&mut models, "t", Some("alpha")), None);
-        assert_eq!(finish(&mut models, "t"), Some(None));
+        assert_eq!(finish(&mut models, "t"), None);
         assert_eq!(
             reading(models.read(
                 &event(
@@ -418,6 +520,11 @@ mod tests {
                 true,
             )),
             None
+        );
+        assert_eq!(
+            start(&mut models, "u", Some("beta")),
+            Some(Some("beta".into())),
+            "neither the finished turn nor its phase still claims alpha"
         );
     }
 
@@ -447,7 +554,12 @@ mod tests {
         );
         assert_eq!(
             reading(models.read(&event("assistant.turn_end", json!({ "turnId": "t" })), true,)),
-            Some(None)
+            None
+        );
+        assert_eq!(
+            start(&mut models, "u", Some("beta")),
+            Some(Some("beta".into())),
+            "the phase whose call ended no longer claims alpha"
         );
     }
 
@@ -474,12 +586,13 @@ mod tests {
             );
             assert_eq!(
                 reading(models.read(&event(kind, data), true)),
-                Some(None),
-                "{kind} ends the evidence of a live dispatch"
+                None,
+                "nothing after {kind} contradicts alpha"
             );
             assert_eq!(
-                start(&mut models, "next", Some("alpha")),
-                Some(Some("alpha".into()))
+                start(&mut models, "next", Some("beta")),
+                Some(Some("beta".into())),
+                "{kind} ends the phase's evidence of a live dispatch"
             );
         }
     }
@@ -491,12 +604,12 @@ mod tests {
             phase(&mut models, "p1", "alpha"),
             Some(Some("alpha".into()))
         );
-        let dispatch = |turn: &str| {
+        let dispatch = |turn: &str, model: &str| {
             event(
                 "model.call_start",
                 json!({
                     "turnId": turn,
-                    "model": "alpha",
+                    "model": model,
                     "fusion": {
                         "fusionId": "route", "phaseId": "p1",
                         "syntheticModel": "fusion", "policy": "standard",
@@ -505,17 +618,21 @@ mod tests {
                 }),
             )
         };
-        assert_eq!(reading(models.read(&dispatch("first"), true)), None);
-        assert_eq!(finish(&mut models, "first"), Some(None));
         assert_eq!(
-            reading(models.read(&dispatch("second"), true)),
-            Some(Some("alpha".into()))
+            reading(models.read(&dispatch("first", "alpha"), true)),
+            None
         );
-        assert_eq!(finish(&mut models, "second"), Some(None));
+        assert_eq!(finish(&mut models, "first"), None);
+        assert_eq!(
+            reading(models.read(&dispatch("second", "beta"), true)),
+            Some(Some("beta".into())),
+            "the phase's finished dispatch no longer claims alpha"
+        );
+        assert_eq!(finish(&mut models, "second"), None);
     }
 
     #[test]
-    fn a_failed_dispatch_does_not_stay_visible_during_retry_backoff() {
+    fn a_failed_dispatch_keeps_its_model_through_retry_backoff() {
         let mut models = WorkingModels::default();
         assert_eq!(
             start(&mut models, "first", Some("alpha")),
@@ -531,12 +648,14 @@ mod tests {
                 ),
                 true,
             )),
-            Some(None)
+            None
         );
         assert_eq!(finish(&mut models, "first"), None);
+        assert_eq!(start(&mut models, "retry", Some("alpha")), None);
+        assert_eq!(finish(&mut models, "retry"), None);
         assert_eq!(
-            start(&mut models, "retry", Some("alpha")),
-            Some(Some("alpha".into()))
+            start(&mut models, "rerouted", Some("beta")),
+            Some(Some("beta".into()))
         );
     }
 
@@ -570,7 +689,7 @@ mod tests {
             None
         );
         assert_eq!(finish(&mut models, "first"), Some(Some("beta".into())));
-        assert_eq!(finish(&mut models, "second"), Some(None));
+        assert_eq!(finish(&mut models, "second"), None);
     }
 
     #[test]

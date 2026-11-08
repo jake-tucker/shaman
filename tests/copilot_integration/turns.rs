@@ -86,6 +86,8 @@ const AUTO_LIVE_MODELS: &str = r#"      event r1 session.auto_mode_resolved '{"c
       (
         wait_for "$COPILOT_FIXTURE_RELEASE"
         event f1 model.call_finished '{"turnId":"t1","dispatchDurationMs":10,"editClassifierVersion":1,"outcome":"success"}'
+        event e1 assistant.turn_end '{"turnId":"t1"}'
+        event s2 assistant.turn_start '{"turnId":"t2"}'
         event d2 assistant.message_delta '{"messageId":"m1","deltaContent":" waiting"}'
         wait_for "$COPILOT_FIXTURE_RELEASE-next"
         event c2 model.call_start '{"turnId":"t2","model":"other-fixture"}'
@@ -486,9 +488,12 @@ async fn assert_live_models(timeline: &str, channel: &'static str, tool_gate: bo
             wait_for_text(s, "tool")
         })
         .await;
-        assert!(
-            tool.current_model.is_none(),
-            "a Fusion phase is not live model evidence while its tool runs"
+        assert_eq!(
+            tool.current_model
+                .as_ref()
+                .map(|current| current.model.actual.as_str()),
+            Some("claude-fixture"),
+            "nothing contradicts the phase's Model while its tool runs"
         );
     }
     copilot.release_gate("next");
@@ -510,9 +515,13 @@ async fn assert_live_models(timeline: &str, channel: &'static str, tool_gate: bo
         Some("claude-fixture"),
         "the live Model is based on the current dispatch or Fusion phase"
     );
-    assert!(
-        between.current_model.is_none(),
-        "the Model does not remain live after a dispatch or usage report"
+    assert_eq!(
+        between
+            .current_model
+            .as_ref()
+            .map(|current| current.model.actual.as_str()),
+        Some("claude-fixture"),
+        "the Model stands between dispatches until one contradicts it"
     );
     assert_eq!(
         second
@@ -526,12 +535,12 @@ async fn assert_live_models(timeline: &str, channel: &'static str, tool_gate: bo
 }
 
 #[tokio::test]
-async fn copilot_auto_current_model_tracks_dispatches_and_clears_between_them() {
+async fn copilot_auto_current_model_tracks_dispatches_and_holds_between_them() {
     assert_live_models(AUTO_LIVE_MODELS, "copilot-auto-live-model", false).await;
 }
 
 #[tokio::test]
-async fn copilot_auto_fusion_phase_clears_live_model_after_usage_and_during_tools() {
+async fn copilot_auto_fusion_phase_holds_its_model_after_usage_and_during_tools() {
     assert_live_models(
         AUTO_FUSION_LIVE_MODELS,
         "copilot-auto-fusion-live-model",
