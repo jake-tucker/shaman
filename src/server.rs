@@ -48,12 +48,12 @@ use crate::protocol::{
     SUBAGENT_TREE_SNAPSHOT_EVENT, SUBAGENT_TREE_UPDATED_EVENT, ServerIdentity, ServerShutdown,
     SessionCatalogRevision, SessionChange, SessionError, SessionErrorCode, SessionId,
     SessionReadingQuery, SessionRevision, SessionTitleProposal, SessionTitleProposalOffer,
-    SessionUpdate, SetSessionIconRequest, SetSessionTitleRequest, SetWorkspaceDescriptionRequest,
-    SetWorkspaceIconRequest, SettingMutation, SettingsSnapshot, SettleSessionRequest,
-    ShortCodeStanding, ShutdownReason, SkillCatalog, SkillCatalogRequest, SubagentTreeRevision,
-    SubagentTreeUpdate, TurnId, UpdateAgentSelectionRequest, UpdateApprovalPostureRequest,
-    UsageMetricsQuery, ViewSessionRequest, WORKSPACE_LISTING_EVENT, WorkspaceListing,
-    WorkspaceListingRevision,
+    SessionUpdate, SetRemoteIconRequest, SetSessionIconRequest, SetSessionTitleRequest,
+    SetWorkspaceDescriptionRequest, SetWorkspaceIconRequest, SettingMutation, SettingsSnapshot,
+    SettleSessionRequest, ShortCodeStanding, ShutdownReason, SkillCatalog, SkillCatalogRequest,
+    SubagentTreeRevision, SubagentTreeUpdate, TurnId, UpdateAgentSelectionRequest,
+    UpdateApprovalPostureRequest, UsageMetricsQuery, ViewSessionRequest, WORKSPACE_LISTING_EVENT,
+    WorkspaceListing, WorkspaceListingRevision,
 };
 use crate::provider::{
     ContextBreakdownError, ProviderOrchestrator, ProviderRuntime, ProviderUpdateGate,
@@ -2061,6 +2061,7 @@ async fn start(
         .route("/v1/pairing/invites/delivery", post(fetch_short_invite))
         .route("/v1/pairing/remotes", get(list_remotes).post(redeem_invite))
         .route("/v1/pairing/remotes/{name}/health", post(probe_remote))
+        .route("/v1/pairing/remotes/{name}/icon", post(set_remote_icon))
         .route(
             "/v1/pairing/remotes/{name}",
             axum::routing::delete(remove_remote),
@@ -2908,6 +2909,32 @@ async fn proxy_remote(
     *request.uri_mut() = uri;
     match state.serving.proxy_remote(&name, request, None).await {
         Ok(response) => response,
+        Err(error) => pairing_error_response(error),
+    }
+}
+
+/// Sets the Icon the user chose for one of this Server's Remotes, refused
+/// where the Icon Catalog carries no such Icon or no Remote has that name. It
+/// is this Server's own record that changes, so the Remote itself is never
+/// asked, and an unreachable Remote takes an Icon as readily as one that
+/// answers.
+async fn set_remote_icon(
+    State(state): State<AppState>,
+    AxumPath(name): AxumPath<String>,
+    request: Request,
+) -> Response {
+    let request = match decode_session_command::<SetRemoteIconRequest>(
+        &state,
+        request,
+        "Remote Icon",
+    )
+    .await
+    {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    match state.serving.set_remote_icon(&name, &request.icon) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => pairing_error_response(error),
     }
 }

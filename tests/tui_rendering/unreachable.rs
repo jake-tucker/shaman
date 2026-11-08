@@ -789,6 +789,7 @@ fn turning_the_outlook_away_from_an_unreachable_remote_still_works() {
                     "10.0.0.8:7777".parse().expect("parse the address"),
                 )],
                 status: suru::protocol::RemoteStatus::Available,
+                icon: None,
             },
         ]))
         .expect("list the paired Remotes");
@@ -933,6 +934,7 @@ fn local_work_is_untouched_while_a_remote_is_unreachable() {
                     "10.0.0.8:7777".parse().expect("parse the address"),
                 )],
                 status: suru::protocol::RemoteStatus::Available,
+                icon: None,
             },
         ]))
         .expect("list the paired Remotes");
@@ -1289,6 +1291,7 @@ fn turn_toward_studio(application: &mut Application) {
                     "10.0.0.8:7777".parse().expect("parse the address"),
                 )],
                 status: suru::protocol::RemoteStatus::Available,
+                icon: None,
             },
         ]))
         .expect("list the paired Remotes");

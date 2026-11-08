@@ -1410,6 +1410,7 @@ fn remote(name: &str) -> Remote {
         fingerprint: format!("{name}-fingerprint"),
         ways: Vec::new(),
         status: RemoteStatus::Available,
+        icon: None,
     }
 }
 

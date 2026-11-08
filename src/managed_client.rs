@@ -27,7 +27,7 @@ use crate::{
         SessionId, SessionListItem, SessionMonitoringChanged, SessionRemoteSubsessionsChanged,
         SessionSettlementChanged, SessionSnapshot, SessionStandingInputsChanged, SessionSummary,
         SessionTitleChanged, SessionTitleProposal, SessionTitleProposalOffer, SessionUsageChanged,
-        SessionWorkingChanged, SetSessionIconRequest, SetSessionTitleRequest,
+        SessionWorkingChanged, SetRemoteIconRequest, SetSessionIconRequest, SetSessionTitleRequest,
         SetWorkspaceDescriptionRequest, SetWorkspaceIconRequest, SettingMutation, SettingsSnapshot,
         SettleSessionRequest, ShutdownReason, SkillCatalog, SkillCatalogRequest,
         UpdateAgentSelectionRequest, UpdateApprovalPostureRequest, ViewSessionRequest,
@@ -704,6 +704,10 @@ impl ManagedClient {
 
     pub async fn remove_remote(&self, name: &str) -> Result<RemoteRemoval> {
         self.session_commands().remove_remote(name).await
+    }
+
+    pub async fn set_remote_icon(&self, name: &str, icon: &str) -> Result<()> {
+        self.session_commands().set_remote_icon(name, icon).await
     }
 
     /// The Relays the Client's own Server holds entries for, whichever way
@@ -2087,6 +2091,23 @@ impl SessionCommandClient {
         decode_api_response(response, "Remote removal").await
     }
 
+    /// Sets the Icon the user chose for the Remote `name` on the Client's own
+    /// Server, which keeps it beside the Remote's name.
+    pub(crate) async fn set_remote_icon(&self, name: &str, icon: &str) -> Result<()> {
+        let descriptor = self.descriptor.borrow().clone();
+        let response = self
+            .http
+            .post(remote_icon_url(&descriptor.base_url, name)?)
+            .bearer_auth(&descriptor.token)
+            .json(&SetRemoteIconRequest {
+                icon: icon.to_owned(),
+            })
+            .send()
+            .await
+            .context("send Remote Icon command")?;
+        decode_empty_api_response(response, "Remote Icon").await
+    }
+
     pub(crate) async fn list_offers(&self) -> Result<crate::protocol::PairBackOffers> {
         self.get_pairing_resource("/v1/pairing/offers", "Offer listing")
             .await
@@ -2749,6 +2770,14 @@ fn relay_url(base_url: &str, segments: &[&str]) -> Result<reqwest::Url> {
         .map_err(|()| anyhow!("server base URL cannot contain path segments"))?
         .extend(["v1", "relays"])
         .extend(segments);
+    Ok(url)
+}
+
+fn remote_icon_url(base_url: &str, name: &str) -> Result<reqwest::Url> {
+    let mut url = reqwest::Url::parse(base_url).context("parse server base URL")?;
+    url.path_segments_mut()
+        .map_err(|()| anyhow!("server base URL cannot contain path segments"))?
+        .extend(["v1", "pairing", "remotes", name, "icon"]);
     Ok(url)
 }
 

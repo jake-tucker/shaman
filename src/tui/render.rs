@@ -45,6 +45,7 @@ use super::{
     list_window::WindowEntry,
     model_details::{self, DetailsPane},
     model_options::ModelOptionChoiceRow,
+    model_picker::SelectionPart,
     onboarding::OwnServer,
     pair_back::{self, OfferFix, PairBackOption, PickerRow},
     provider_icons::provider_label,
@@ -70,9 +71,9 @@ use super::{
     slots::{
         ApplicationNoticeSlotContext, LandingFooterSlotContext, PromptContextSlotContext,
         PromptFooterSlotContext, RenderSlots, RenderedSlot, SessionComposerTopSlotContext,
-        SlotText, WorkingIndicatorInterrupt, WorkingIndicatorSlotContext, WorkingIndicatorState,
-        truncate_from_left_to_width, truncate_middle_to_width, truncate_slot_text,
-        truncate_to_width,
+        SlotPress, SlotText, WorkingIndicatorInterrupt, WorkingIndicatorSlotContext,
+        WorkingIndicatorState, truncate_from_left_to_width, truncate_middle_to_width,
+        truncate_slot_text, truncate_to_width,
     },
     spinner,
     state::{
@@ -215,9 +216,10 @@ pub(super) fn render_with_slots(
     // So are the names of the Sidekicks that sent queued Prompts, and
     // whether a Notice could be drawn.
     state.queued_sidekick_names.borrow_mut().clear();
-    // The readings beneath the Landing's composer are pointable on the same
-    // terms, and only on a frame that drew the Landing.
-    state.landing_readings.borrow_mut().clear();
+    // The readings that are ways in — beneath the Landing's composer, in the
+    // Session header, and in the footers — are pointable on the same terms,
+    // and only on a frame that drew them.
+    state.pointable_readings.borrow_mut().clear();
     state.notice_presentable.set(false);
     state.connect_overlay.offers().forget_frame();
     // Current-Session animation is likewise a fact about this frame, not the
@@ -5865,9 +5867,16 @@ fn sidebar_entry_lines(
                 ..
             } => sidebar_active_row_lines(
                 row,
-                workspace
-                    .map(|path| state.workspace_name(&row.reference.origin, path))
-                    .unwrap_or_default(),
+                SidebarLocation {
+                    workspace: workspace
+                        .map(|path| state.workspace_name(&row.reference.origin, path))
+                        .unwrap_or_default(),
+                    remote_glyph: row
+                        .reference
+                        .origin
+                        .remote_name()
+                        .map_or(NF_MD_MONITOR, |remote| remote_glyph(state, remote)),
+                },
                 sidebar_active_slot(
                     row.standing,
                     SidebarLiveness {
@@ -6036,11 +6045,19 @@ fn sidebar_plain_line(
     Line::from(sidebar_plain_span(label, width, selected, unselected))
 }
 
+/// Where an active Session's work lives, as its Sidebar row names it: the
+/// Workspace's name, and the glyph its Remote, if it has one, is drawn
+/// beside.
+struct SidebarLocation {
+    workspace: String,
+    remote_glyph: char,
+}
+
 /// One active Session, as three lines: where the work lives beside what its
 /// right slot reads, then what the work is, then its current checkout.
 fn sidebar_active_row_lines(
     row: SidebarRow<'_>,
-    workspace: String,
+    location: SidebarLocation,
     slot: String,
     width: usize,
     driving: bool,
@@ -6049,6 +6066,10 @@ fn sidebar_active_row_lines(
 ) -> [Line<'static>; sidebar::ACTIVE_ROW_LINES] {
     let highlight = sidebar_row_style(row, driving, theme);
     let label_style = highlight.unwrap_or(theme.text.subdued);
+    let SidebarLocation {
+        workspace,
+        remote_glyph,
+    } = location;
     let workspace_icon = match row.shelf {
         SidebarShelf::Active { workspace_icon, .. } => workspace_icon,
         SidebarShelf::Settled { .. } => None,
@@ -6066,7 +6087,7 @@ fn sidebar_active_row_lines(
         .reference
         .origin
         .remote_name()
-        .map(|remote| icon_label(show_icons, NF_MD_MONITOR, remote))
+        .map(|remote| icon_label(show_icons, remote_glyph, remote))
         .into_iter()
         .chain((!workspace.is_empty()).then_some(workspace))
         .collect::<Vec<_>>()
@@ -6588,9 +6609,10 @@ impl ExecutionReading {
 /// The Workspace is a way into the Workspace Picker, the Checkout State and a
 /// pending Worktree intent into the Worktree Selector, and the subdirectory
 /// into the Directory Browser, which roots itself at the Execution Directory
-/// that subdirectory names. The separators, a Remote's name, the unavailable
-/// markers an Execution Directory or a Checkout State that cannot be read
-/// wears, and the Spinner of a resolution still in flight are not choices.
+/// that subdirectory names, and the Remote into `/connect`. The separators,
+/// the unavailable markers an Execution Directory or a Checkout State that
+/// cannot be read wears, and the Spinner of a resolution still in flight are
+/// not choices.
 fn execution_readings(state: &TuiState, show_icons: bool, width: usize) -> Vec<ExecutionReading> {
     // A Workspace whose Server has yet to answer for it is named with the
     // Spinner a reading on its way carries, where its Checkout State will
@@ -6722,7 +6744,6 @@ fn render_landing(
     let footer_width = area
         .width
         .saturating_sub(horizontal_padding(area.width).saturating_mul(2));
-    let agent = agent_selection_context(state, footer_detail);
     // At minimum height, the composer and Workspace need all four rows above
     // the footer. Carry submission errors in the footer to keep input usable.
     let footer_error = state
@@ -6730,8 +6751,11 @@ fn render_landing(
         .as_deref()
         .filter(|_| area.height == MINIMUM_TERMINAL_HEIGHT);
     let context = match footer_error {
-        Some(error) => SlotText::new(format!("Error: {error}"), theme.form_field.invalid),
-        None => SlotText::new(agent, theme.text.subdued),
+        Some(error) => vec![SlotText::new(
+            format!("Error: {error}"),
+            theme.form_field.invalid,
+        )],
+        None => agent_selection_readings(state, footer_detail, theme.text.subdued),
     };
     let footer = slots.landing_footer(&LandingFooterSlotContext {
         width: footer_width,
@@ -6833,36 +6857,44 @@ fn render_landing(
     );
     // Each reading that is a way in answers a press over the cells it was
     // drawn in.
-    state
-        .landing_readings
-        .borrow_mut()
-        .extend(presses.into_iter().map(|(columns, press)| {
-            let column = |offset: usize| {
-                panel
-                    .x
-                    .saturating_add(u16::try_from(offset).unwrap_or(u16::MAX))
-            };
-            (
-                PointableSpan::new(execution_row, column(columns.start)..column(columns.end)),
-                press,
-            )
-        }));
+    record_readings(state, execution_row, panel.x, presses);
     // The Spinner that line carries for a Workspace still resolving turns
     // only while the presentation tick runs.
     if state.resolving_workspace().is_some() {
         state.session_animation_on_screen.set(true);
     }
 
-    render_slot(
+    let presses = render_slot(
         frame,
         horizontally_inset(footer_area, horizontal_padding(area.width)),
         footer,
         theme,
     );
+    state.pointable_readings.borrow_mut().extend(presses);
     RenderedComposer {
         area: composer_area,
         cursor,
     }
+}
+
+/// Records each of `presses` — columns counted from `left` on `row` — as a
+/// reading a press there leads in by.
+fn record_readings(
+    state: &TuiState,
+    row: u16,
+    left: u16,
+    presses: Vec<(std::ops::Range<usize>, SemanticInvocation)>,
+) {
+    let column = |offset: usize| left.saturating_add(u16::try_from(offset).unwrap_or(u16::MAX));
+    state
+        .pointable_readings
+        .borrow_mut()
+        .extend(presses.into_iter().map(|(columns, press)| {
+            (
+                PointableSpan::new(row, column(columns.start)..column(columns.end)),
+                press,
+            )
+        }));
 }
 
 /// The shell a Session the reader has been carried into is drawn as until its
@@ -7310,8 +7342,8 @@ fn render_session_surface(
     }
     let usage = session_footer_metrics_text(snapshot, content_width)
         .map(|text| SlotText::new(text, theme.text.subdued));
-    let (agent, agent_style) = if let Some(error) = state.submission_error.as_ref() {
-        (
+    let agent = if let Some(error) = state.submission_error.as_ref() {
+        vec![SlotText::new(
             session_footer_error(
                 error,
                 &agent_selection_context(state, ResponsiveDetail::CoreOnly),
@@ -7320,15 +7352,12 @@ fn render_session_surface(
                 }),
             ),
             theme.feedback.error,
-        )
+        )]
     } else if snapshot.session.status == SessionStatus::Active && !content_detail.shows_secondary()
     {
-        (String::new(), theme.text.subdued)
+        Vec::new()
     } else {
-        (
-            agent_selection_context(state, content_detail),
-            theme.text.subdued,
-        )
+        agent_selection_readings(state, content_detail, theme.text.subdued)
     };
     let footer = slots.prompt_footer(
         &PromptFooterSlotContext {
@@ -7337,7 +7366,7 @@ fn render_session_surface(
         },
         &PromptContextSlotContext {
             session_id,
-            agent: SlotText::new(agent, agent_style),
+            agent,
             usage,
         },
     );
@@ -7657,7 +7686,7 @@ fn render_session_surface(
             Rect::new(footer_area.x, footer_area.y, footer_area.width, 1),
         );
     }
-    render_slot(
+    let presses = render_slot(
         frame,
         Rect::new(
             footer_area.x,
@@ -7668,6 +7697,7 @@ fn render_session_surface(
         footer,
         theme,
     );
+    state.pointable_readings.borrow_mut().extend(presses);
     RenderedComposer {
         area: composer_area,
         cursor,
@@ -7884,30 +7914,7 @@ fn render_session_header(
 ) {
     let show_icons = state.settings().appearance.show_icons;
     let width = usize::from(area.width);
-    let mut orientation = if detail.shows_secondary() {
-        let workspace_icon = snapshot
-            .session
-            .workspace
-            .icon
-            .as_deref()
-            .and_then(crate::icon_catalog::glyph)
-            .unwrap_or(NF_COD_FOLDER);
-        icon_label(
-            show_icons,
-            workspace_icon,
-            &state.workspace_name(&state.outlook, &snapshot.session.workspace.path),
-        )
-    } else {
-        String::new()
-    };
-    if let Some(remote) = state.outlook.remote_name() {
-        let remote = icon_label(show_icons, NF_MD_MONITOR, remote);
-        orientation = [remote.as_str(), orientation.as_str()]
-            .into_iter()
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join(" · ");
-    }
+    let orientation = header_orientation_readings(state, snapshot, detail, show_icons);
     let title = snapshot
         .title
         .split_whitespace()
@@ -7930,7 +7937,8 @@ fn render_session_header(
     let centered_side = (width.saturating_sub(icon_width + title.width()) / 2)
         .saturating_sub(SESSION_HEADER_TITLE_GAP);
     let side_width = (width / 3).max(centered_side);
-    let orientation = truncate_to_width(&orientation, side_width);
+    let (orientation, orientation_presses) = fit_execution_readings(orientation, side_width);
+    record_readings(state, area.y, area.x, orientation_presses);
     let branch = detail
         .shows_secondary()
         .then(|| {
@@ -7997,6 +8005,58 @@ fn render_session_header(
     }
 }
 
+/// Where a Session header says the Session is, reading by reading: its
+/// Remote, when the Outlook is turned toward one, and its Workspace, where
+/// the header has room for it. The Remote's name is a way into `/connect`,
+/// and each Icon, where Icons are drawn, into the Icon Picker over what it
+/// stands for. The Workspace's name and the separator are not choices.
+fn header_orientation_readings(
+    state: &TuiState,
+    snapshot: &SessionSnapshot,
+    detail: ResponsiveDetail,
+    show_icons: bool,
+) -> Vec<ExecutionReading> {
+    let mut readings = Vec::new();
+    if let Some(remote) = state.outlook.remote_name() {
+        if show_icons {
+            readings.push(ExecutionReading::pressable(
+                format!("{} ", remote_glyph(state, remote)),
+                SemanticCommandId::RemoteIconChoose.on_origin(state.outlook.clone()),
+            ));
+        }
+        readings.push(ExecutionReading::pressable(
+            remote,
+            SemanticCommandId::ConnectOpen,
+        ));
+    }
+    if detail.shows_secondary() {
+        if !readings.is_empty() {
+            readings.push(ExecutionReading::inert(" · "));
+        }
+        let workspace = &snapshot.session.workspace;
+        if show_icons {
+            let workspace_icon = workspace
+                .icon
+                .as_deref()
+                .and_then(crate::icon_catalog::glyph)
+                .unwrap_or(NF_COD_FOLDER);
+            let icon = format!("{workspace_icon} ");
+            readings.push(match state.session_reference.as_ref() {
+                Some(reference) => ExecutionReading::pressable(
+                    icon,
+                    SemanticCommandId::WorkspaceIconChoose
+                        .on_workspace(reference.origin.clone(), workspace.id.clone()),
+                ),
+                None => ExecutionReading::inert(icon),
+            });
+        }
+        readings.push(ExecutionReading::inert(
+            state.workspace_name(&state.outlook, &workspace.path),
+        ));
+    }
+    readings
+}
+
 /// A Session header names the branch its Worktree stands on across from the
 /// Workspace, and stays quiet where there is no branch to name: a detached
 /// commit or an unreadable Worktree is not orientation.
@@ -8016,22 +8076,44 @@ fn checkout_branch_context(
 }
 
 fn agent_selection_context(state: &TuiState, detail: ResponsiveDetail) -> String {
-    match state.agent_selection() {
-        None => "Agent unavailable".to_owned(),
-        Some(selection) => {
-            let detailed = detail.shows_secondary();
-            let summary = state.model_picker.selection_summary(selection, detailed);
-            if detailed {
-                provider_label(
-                    state.settings().appearance.show_icons,
-                    &selection.provider,
-                    &summary,
-                )
-            } else {
-                summary
-            }
+    agent_selection_readings(state, detail, Style::default())
+        .into_iter()
+        .map(|reading| reading.text)
+        .collect()
+}
+
+/// The Agent Selection as [`agent_selection_context`] says it, reading by
+/// reading in `style`: the Provider and the Model are ways into `/models`,
+/// and each Model Option chosen — the reasoning effort, the Context, and the
+/// rest — into `/options`. The separators are not choices.
+fn agent_selection_readings(
+    state: &TuiState,
+    detail: ResponsiveDetail,
+    style: Style,
+) -> Vec<SlotText> {
+    let Some(selection) = state.agent_selection() else {
+        return vec![SlotText::new("Agent unavailable", style)];
+    };
+    let detailed = detail.shows_secondary();
+    let show_icons = state.settings().appearance.show_icons;
+    let mut readings = Vec::new();
+    for reading in state.model_picker.selection_readings(selection, detailed) {
+        if !readings.is_empty() {
+            readings.push(SlotText::new(" · ", style));
         }
+        let (text, press) = match reading.part {
+            // The Provider's glyph leads the detailed summary, as part of the
+            // Provider it stands for.
+            SelectionPart::Provider => (
+                provider_label(show_icons, &selection.provider, &reading.text),
+                SemanticCommandId::ModelList,
+            ),
+            SelectionPart::Model => (reading.text, SemanticCommandId::ModelList),
+            SelectionPart::Option => (reading.text, SemanticCommandId::ModelOptions),
+        };
+        readings.push(SlotText::new(text, style).pressing(Some(press.into())));
     }
+    readings
 }
 
 /// The columns a Session's content is drawn in: the frame's own padding, then
@@ -8564,16 +8646,45 @@ fn in_column(area: Rect, column: Rect) -> Rect {
     Rect::new(column.x, area.y, column.width, area.height)
 }
 
+/// Draws `slot` into `area`, answering where the presses its built-in content
+/// carries landed: beneath any failures it reports, and only on rows `area`
+/// had room for.
 fn render_slot(
     frame: &mut Frame<'_>,
     area: Rect,
     slot: RenderedSlot<Line<'static>>,
     theme: &Theme,
-) {
+) -> Vec<(PointableSpan, SemanticInvocation)> {
+    let failures = slot.failures.len();
+    let presses = slot
+        .presses
+        .iter()
+        .filter_map(
+            |SlotPress {
+                 line,
+                 columns,
+                 invocation,
+             }| {
+                let row = u16::try_from(failures + line)
+                    .ok()
+                    .filter(|row| *row < area.height)?;
+                let column = |offset: usize| {
+                    area.x
+                        .saturating_add(u16::try_from(offset).unwrap_or(u16::MAX))
+                        .min(area.right())
+                };
+                Some((
+                    PointableSpan::new(area.y + row, column(columns.start)..column(columns.end)),
+                    invocation.clone(),
+                ))
+            },
+        )
+        .collect();
     frame.render_widget(
         Paragraph::new(rendered_slot_lines(slot, area.width, theme)),
         area,
     );
+    presses
 }
 
 fn rendered_slot_lines(
@@ -8615,10 +8726,17 @@ fn connection_status_text(state: &TuiState, detail: ResponsiveDetail) -> String 
     }
 }
 
+/// The glyph the Remote `name` is drawn beside: the Icon chosen for it, or
+/// the plain monitor where none was.
+fn remote_glyph(state: &TuiState, name: &str) -> char {
+    state.remote_icon(name).unwrap_or(NF_MD_MONITOR)
+}
+
 /// The Workspace an execution context names: its Remote, when it has one, and
 /// its path, cut from the left to fit `width`. The path always keeps at least
 /// the marker saying it was cut. The Workspace is a way into the Workspace
-/// Picker; the Remote's name beside it is not a choice.
+/// Picker, and the Remote beside it into `/connect`, which turns the Outlook
+/// toward another.
 fn workspace_readings(
     state: &TuiState,
     workspace: &crate::protocol::Workspace,
@@ -8628,28 +8746,35 @@ fn workspace_readings(
     let remote = state
         .outlook
         .remote_name()
-        .map(|remote| format!("{} · ", icon_label(show_icons, NF_MD_MONITOR, remote)))
+        .map(|remote| icon_label(show_icons, remote_glyph(state, remote), remote))
         .unwrap_or_default();
+    let separator = if remote.is_empty() { "" } else { " · " };
     let workspace_icon = workspace
         .icon
         .as_deref()
         .and_then(crate::icon_catalog::glyph)
         .unwrap_or(NF_COD_FOLDER);
     let path_budget = width
-        .saturating_sub(remote.width())
+        .saturating_sub(remote.width() + separator.width())
         .saturating_sub(icon_label(show_icons, workspace_icon, "").width())
         .max(1);
     let path = truncate_from_left_to_width(
         &state.workspace_label(&state.outlook, &workspace.path),
         path_budget,
     );
-    vec![
-        ExecutionReading::inert(remote),
-        ExecutionReading::pressable(
-            icon_label(show_icons, workspace_icon, &path),
-            SemanticCommandId::WorkspaceList,
-        ),
-    ]
+    let mut readings = Vec::new();
+    if !remote.is_empty() {
+        readings.push(ExecutionReading::pressable(
+            remote,
+            SemanticCommandId::ConnectOpen,
+        ));
+        readings.push(ExecutionReading::inert(separator));
+    }
+    readings.push(ExecutionReading::pressable(
+        icon_label(show_icons, workspace_icon, &path),
+        SemanticCommandId::WorkspaceList,
+    ));
+    readings
 }
 
 fn centered_rect(area: Rect, preferred_width: u16, preferred_height: u16) -> Rect {
@@ -8744,7 +8869,7 @@ mod tests {
 
     use super::super::{
         slots::{
-            Placement, PromptContextSlotContext, PromptFooterSlotContext, RenderSlots, SlotText,
+            Placement, PromptContextSlotContext, PromptFooterSlotContext, RenderSlots,
             TestContribution,
         },
         state::{Application, ApplicationEvent},
@@ -9301,7 +9426,7 @@ mod tests {
             },
             &PromptContextSlotContext {
                 session_id,
-                agent: SlotText::new("", Style::default()),
+                agent: Vec::new(),
                 usage: None,
             },
         );

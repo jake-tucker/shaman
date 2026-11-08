@@ -2329,6 +2329,7 @@ fn model_names_follow_the_open_sessions_origin_for_messages_and_working() {
             fingerprint: "studio-fingerprint".to_owned(),
             ways: Vec::new(),
             status: RemoteStatus::Available,
+            icon: None,
         }]))
         .expect("list the remote");
     application

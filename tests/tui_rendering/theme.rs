@@ -395,6 +395,7 @@ fn a_remote_outlook_keeps_reading_the_clients_config_root() {
                 "10.0.0.8:7777".parse().expect("parse remote address"),
             )],
             status: RemoteStatus::Available,
+            icon: None,
         }]))
         .expect("list Remotes");
     application

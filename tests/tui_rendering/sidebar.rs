@@ -5797,6 +5797,7 @@ fn remote(name: &str, status: RemoteStatus) -> Remote {
         fingerprint: format!("{name}-fingerprint"),
         ways: Vec::new(),
         status,
+        icon: None,
     }
 }
 

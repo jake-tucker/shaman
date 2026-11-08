@@ -1040,10 +1040,11 @@ fn a_reading_the_line_cuts_short_answers_over_what_is_left_of_it() {
 }
 
 /// On a Remote the Remote's name stands before the Workspace. The Workspace
-/// after it still opens the Workspace Picker; the name is not a choice and
-/// takes no press.
+/// after it still opens the Workspace Picker, and the name leads into
+/// `/connect`, which turns the Outlook toward another; the separator between
+/// them is not a choice.
 #[test]
-fn on_a_remote_the_workspace_after_the_remotes_name_opens_the_workspace_picker() {
+fn on_a_remote_the_remotes_name_opens_connect_and_the_workspace_after_it_the_workspace_picker() {
     let layout = Layout::new();
     let on_studio = || {
         let mut app = layout.app();
@@ -1066,9 +1067,17 @@ fn on_a_remote_the_workspace_after_the_remotes_name_opens_the_workspace_picker()
     let workspace = column + u16::try_from(named.chars().count()).unwrap();
     assert_eq!(press_at(&mut app, size, (workspace, row)), asked);
 
-    assert!(
-        press_moves_nothing(&mut on_studio(), size, "studio"),
-        "the Remote's name takes no press"
+    let connect = command(&mut on_studio(), SemanticCommandId::ConnectOpen);
+    assert_eq!(
+        press_reading(&mut on_studio(), size, "studio"),
+        connect,
+        "the Remote's name leads into /connect"
+    );
+    let separator = column + u16::try_from("studio".chars().count()).unwrap();
+    assert_eq!(
+        press_at(&mut on_studio(), size, (separator, row)),
+        ApplicationTransition::Continue,
+        "the separator after the Remote's name takes no press"
     );
 }
 
@@ -1459,6 +1468,7 @@ fn same_workspace_identity_on_another_origin_has_independent_execution_memory() 
         fingerprint: "studio-fingerprint".to_owned(),
         ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
         status: RemoteStatus::Available,
+        icon: None,
     }]))
     .unwrap();
     key(&mut app, KeyCode::Up);

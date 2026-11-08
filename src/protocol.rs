@@ -2440,6 +2440,21 @@ pub struct Remote {
     /// The last status observed by this Server, refreshed by explicit probes
     /// and Remote API use so it survives beyond the request that discovered it.
     pub status: RemoteStatus,
+    /// The Icon Catalog name its user chose for it, kept beside its name on
+    /// this Server, since both are this Server's own words for the Remote
+    /// rather than anything the Remote says of itself. `None` until one is
+    /// chosen, and a Remote with none is drawn beside the plain monitor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+}
+
+/// The Icon a user chose for one of the Remotes this Server is paired with,
+/// named from the Icon Catalog. Refused where the Catalog carries no such
+/// Icon, or where this Server is paired with no Remote of that name.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetRemoteIconRequest {
+    pub icon: String,
 }
 
 /// The Server whose world a Client is presently presenting. This is Client

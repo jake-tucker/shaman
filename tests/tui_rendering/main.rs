@@ -33,6 +33,7 @@ mod onboarding;
 mod pairing_back;
 mod prompts;
 mod provisional_session;
+mod reading_presses;
 mod reasoning_cycle;
 mod relay_login_needed;
 mod relay_pairing;

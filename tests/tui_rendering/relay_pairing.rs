@@ -3698,6 +3698,7 @@ fn redeemed(application: &mut Application, request: ConnectRequest) {
                 fingerprint: FINGERPRINT.to_owned(),
                 ways: vec![Way::Relay(COMPANY.to_owned())],
                 status: RemoteStatus::Available,
+                icon: None,
             },
         })
         .expect("take the Remote redeemed");

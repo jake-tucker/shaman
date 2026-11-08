@@ -140,6 +140,32 @@ impl<'a> CatalogStatuses<'a> {
     }
 }
 
+/// What one part of an Agent Selection's summary names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum SelectionPart {
+    Provider,
+    Model,
+    /// One Model Option's chosen value: the reasoning effort, the Context,
+    /// the speed, or the routing tier.
+    Option,
+}
+
+/// One part of an Agent Selection's summary, as it is drawn.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct SelectionReading {
+    pub(super) part: SelectionPart,
+    pub(super) text: String,
+}
+
+impl SelectionReading {
+    fn new(part: SelectionPart, text: impl Into<String>) -> Self {
+        Self {
+            part,
+            text: text.into(),
+        }
+    }
+}
+
 impl ModelPicker {
     pub(super) fn cached_model_for_options(
         &self,
@@ -415,6 +441,20 @@ impl ModelPicker {
     }
 
     pub(super) fn selection_summary(&self, selection: &AgentSelection, detailed: bool) -> String {
+        self.selection_readings(selection, detailed)
+            .into_iter()
+            .map(|reading| reading.text)
+            .collect::<Vec<_>>()
+            .join(" · ")
+    }
+
+    /// What [`Self::selection_summary`] says, part by part, each beside what
+    /// it names: the Provider, the Model, and each Model Option chosen.
+    pub(super) fn selection_readings(
+        &self,
+        selection: &AgentSelection,
+        detailed: bool,
+    ) -> Vec<SelectionReading> {
         let presentation = self.selection_presentations.iter().find(|presentation| {
             presentation.outlook == self.outlook && presentation.selection == *selection
         });
@@ -435,17 +475,20 @@ impl ModelPicker {
                     .find(|model| model.id == selection.model)
             })
             .or_else(|| presentation.and_then(|presentation| presentation.model.as_ref()));
+        let provider = SelectionReading::new(SelectionPart::Provider, provider_display_name);
         let Some(model) = model else {
+            let model = SelectionReading::new(SelectionPart::Model, selection.model.to_string());
             return if detailed {
-                format!("{provider_display_name} · {}", selection.model)
+                vec![provider, model]
             } else {
-                selection.model.to_string()
+                vec![model]
             };
         };
+        let model_reading = SelectionReading::new(SelectionPart::Model, model.display_name.clone());
         if !detailed {
-            return model.display_name.clone();
+            return vec![model_reading];
         }
-        let mut parts = vec![provider_display_name.to_owned(), model.display_name.clone()];
+        let mut parts = vec![provider, model_reading];
         for role in [
             ModelOptionRole::ReasoningEffort,
             ModelOptionRole::Context,
@@ -482,9 +525,9 @@ impl ModelPicker {
                 }
                 _ => continue,
             };
-            parts.push(value);
+            parts.push(SelectionReading::new(SelectionPart::Option, value));
         }
-        parts.join(" · ")
+        parts
     }
 
     /// Keeps the best presentation currently available beside the durable

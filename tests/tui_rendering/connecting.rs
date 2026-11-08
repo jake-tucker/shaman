@@ -34,6 +34,7 @@ fn choosing_a_remote_names_it_beside_the_workspace_on_landing_and_in_the_session
             fingerprint: "studio-fingerprint".to_owned(),
             ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
             status: RemoteStatus::Available,
+            icon: None,
         }]))
         .unwrap();
     application
@@ -215,6 +216,7 @@ fn choosing_local_again_restores_the_local_outlook_and_workspace() {
             fingerprint: "studio-fingerprint".to_owned(),
             ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
             status: RemoteStatus::Available,
+            icon: None,
         }]))
         .unwrap();
     application
@@ -238,6 +240,7 @@ fn choosing_local_again_restores_the_local_outlook_and_workspace() {
             fingerprint: "studio-fingerprint".to_owned(),
             ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
             status: RemoteStatus::Available,
+            icon: None,
         }]))
         .unwrap();
     application
@@ -413,6 +416,7 @@ fn choosing_the_current_outlook_only_closes_the_picker() {
             fingerprint: "studio-fingerprint".to_owned(),
             ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
             status: RemoteStatus::Available,
+            icon: None,
         }]))
         .unwrap();
 
@@ -593,6 +597,7 @@ fn a_remote_session_row_carries_its_origin_into_its_attach() {
             fingerprint: "studio-fingerprint".to_owned(),
             ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
             status: RemoteStatus::Available,
+            icon: None,
         }]))
         .unwrap();
     application
@@ -672,6 +677,7 @@ fn a_remote_workspace_pick_is_validated_by_that_remote() {
             fingerprint: "studio-fingerprint".to_owned(),
             ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
             status: RemoteStatus::Available,
+            icon: None,
         }]))
         .unwrap();
     application
@@ -762,6 +768,7 @@ fn studio_remote() -> Remote {
         fingerprint: "studio-fingerprint".to_owned(),
         ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
         status: RemoteStatus::Available,
+        icon: None,
     }
 }
 
@@ -808,6 +815,7 @@ fn paired_remote_picker_shows_each_pairing_status() {
         fingerprint: format!("{name}-fingerprint"),
         ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
         status: RemoteStatus::Available,
+        icon: None,
     };
     application
         .handle_event(ApplicationEvent::RemotesListed(vec![
@@ -889,6 +897,7 @@ fn a_remote_its_relay_joins_nothing_more_for_names_the_cap_on_its_row_and_says_w
                 fingerprint: "workstation-fingerprint".to_owned(),
                 ways: vec![Way::Relay("https://relay.company.example".to_owned())],
                 status: RemoteStatus::Available,
+                icon: None,
             }]))
             .unwrap();
         application
@@ -944,6 +953,7 @@ fn a_remote_its_relay_joins_under_another_account_says_so_on_its_row_and_why_ben
                 fingerprint: "workstation-fingerprint".to_owned(),
                 ways: vec![Way::Relay("https://relay.company.example".to_owned())],
                 status: RemoteStatus::Available,
+                icon: None,
             }]))
             .unwrap();
         application
@@ -1042,6 +1052,7 @@ fn the_selected_remote_lists_its_relays_whole_saying_which_this_server_uses() {
                     Way::Relay(elsewhere.to_owned()),
                 ],
                 status: RemoteStatus::Available,
+                icon: None,
             }]))
             .unwrap();
         application
@@ -1127,6 +1138,7 @@ fn pairing_another_remote_refuses_a_duplicate_prefilled_name_in_the_draft() {
             fingerprint: "known".to_owned(),
             ways: vec![Way::Direct("10.0.0.4:7777".parse().unwrap())],
             status: RemoteStatus::Available,
+            icon: None,
         }]))
         .unwrap();
 
@@ -1351,6 +1363,7 @@ fn successful_redemption_opens_the_paired_remote_picker() {
                 fingerprint: "fingerprint".to_owned(),
                 ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
                 status: RemoteStatus::Available,
+                icon: None,
             },
         })
         .unwrap();
@@ -1371,6 +1384,7 @@ fn pairing_another_remote_keeps_every_paired_remote_in_the_picker() {
             fingerprint: "studio-fingerprint".to_owned(),
             ways: vec![Way::Direct("10.0.0.4:7777".parse().unwrap())],
             status: RemoteStatus::Available,
+            icon: None,
         }]))
         .unwrap();
     press(&mut application, KeyCode::Char('a'));
@@ -1404,6 +1418,7 @@ fn pairing_another_remote_keeps_every_paired_remote_in_the_picker() {
                 fingerprint: "laptop-fingerprint".to_owned(),
                 ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
                 status: RemoteStatus::Available,
+                icon: None,
             },
         })
         .unwrap();

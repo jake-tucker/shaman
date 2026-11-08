@@ -263,6 +263,10 @@ pub enum SemanticCommandId {
     /// [`Self::SessionIconChoose`] opens it over a Session: inert while
     /// `appearance.showIcons` is off.
     WorkspaceIconChoose,
+    /// Opens the Icon Picker over a Remote — the one its Origin subject
+    /// names — on the same terms [`Self::SessionIconChoose`] opens it over a
+    /// Session: inert while `appearance.showIcons` is off.
+    RemoteIconChoose,
     /// Opens the rename dialog over a Session — the one its subject names, or
     /// the open one where it names none. `/rename <title>` names the Title
     /// itself, which is set at once where it can stand as written.
@@ -899,6 +903,7 @@ impl SemanticCommandId {
             Self::MetricsInsightsScrollDown => "metrics.insights.scroll.down",
             Self::SessionIconChoose => "session.icon.choose",
             Self::WorkspaceIconChoose => "workspace.icon.choose",
+            Self::RemoteIconChoose => "remote.icon.choose",
             Self::SessionRename => "session.rename",
             Self::SessionMove => "session.move",
             Self::RenameInsert => "rename.insert",
@@ -2467,6 +2472,20 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         // Workspace Picker row's context menu rather than from a key or a
         // slash that would have no way to say which Workspace it meant.
         description: "Open the Icon Picker over a Workspace, while Icons are shown",
+        slash: None,
+        keybinding: None,
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::RemoteIconChoose,
+        title: "Choose Remote Icon",
+        // The Icon is kept by the Client's own Server beside the Remote's
+        // name, so a Remote that does not answer takes one all the same.
+        reach: SemanticReach::Client,
+        // The command names the Remote it acts on, so it is invoked from a
+        // press on that Remote's Icon in the Session header rather than from
+        // a key or a slash that would have no way to say which Remote it
+        // meant.
+        description: "Open the Icon Picker over a Remote, while Icons are shown",
         slash: None,
         keybinding: None,
     },

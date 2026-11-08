@@ -4405,6 +4405,55 @@ async fn removing_a_remote_withdraws_its_peer_record_without_revoking_it() {
     pair.shutdown().await;
 }
 
+/// A Remote's Icon is the local Server's own word for it, kept beside its
+/// name: it is listed from then on and survives in the record, and a name
+/// the Catalog does not carry or a Remote never paired is refused.
+#[tokio::test]
+async fn a_remotes_chosen_icon_is_kept_beside_its_name() {
+    let pair = paired_servers("remote-icon").await;
+    assert_eq!(
+        pair.connecting_client.list_remotes().await.unwrap()[0].icon,
+        None,
+        "a Remote has no Icon until one is chosen"
+    );
+
+    pair.connecting_client
+        .set_remote_icon("workstation", "md-bug")
+        .await
+        .expect("choose the Remote's Icon");
+    assert_eq!(
+        pair.connecting_client.list_remotes().await.unwrap()[0]
+            .icon
+            .as_deref(),
+        Some("md-bug")
+    );
+    let stored = std::fs::read_to_string(pair.connecting_data_dir.join("remotes.json"))
+        .expect("read the Remote records");
+    assert!(stored.contains("md-bug"), "the Icon is stored: {stored}");
+
+    let error = pair
+        .connecting_client
+        .set_remote_icon("workstation", "md-not-a-glyph")
+        .await
+        .expect_err("a name the Catalog does not carry is refused");
+    assert_eq!(pairing_error_code(&error), SessionErrorCode::InvalidIcon);
+    let error = pair
+        .connecting_client
+        .set_remote_icon("elsewhere", "md-bug")
+        .await
+        .expect_err("a Remote never paired is refused");
+    assert_eq!(pairing_error_code(&error), SessionErrorCode::RemoteNotFound);
+    assert_eq!(
+        pair.connecting_client.list_remotes().await.unwrap()[0]
+            .icon
+            .as_deref(),
+        Some("md-bug"),
+        "a refusal leaves the Icon chosen before it"
+    );
+
+    pair.shutdown().await;
+}
+
 #[tokio::test]
 async fn removing_a_remote_that_never_answers_forgets_it_here_all_the_same() {
     let mut pair = paired_servers_with_withdrawal_timeout(

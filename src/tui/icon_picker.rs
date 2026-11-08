@@ -1,5 +1,6 @@
 //! The Icon Picker: a Workspace-Picker-style overlay a reader opens over one
-//! Session or one Workspace to choose its Icon from the Icon Catalog by hand.
+//! Session, one Workspace, or one Remote to choose its Icon from the Icon
+//! Catalog by hand.
 //!
 //! Where the Workspace Picker narrows a single column of rows, this picker
 //! narrows a grid: the Catalog is around 150 to 250 glyphs, far more than a
@@ -56,9 +57,10 @@ pub(super) const CELL_WIDTH: u16 = 3;
 /// Blank columns between adjacent cells.
 pub(super) const CELL_GUTTER: u16 = 1;
 
-/// What one Icon Picker is choosing an Icon for: one Session, or one
-/// Workspace — either named by Origin and identity, so a listing moving
-/// behind the picker can never retarget a choice already in flight.
+/// What one Icon Picker is choosing an Icon for: one Session, one Workspace,
+/// or one Remote — the first two named by Origin and identity, so a listing
+/// moving behind the picker can never retarget a choice already in flight,
+/// and a Remote by the name the Client's own Server knows it by.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum IconPickerTarget {
     Session(SessionReference),
@@ -66,6 +68,7 @@ pub(super) enum IconPickerTarget {
         origin: Outlook,
         workspace_id: WorkspaceId,
     },
+    Remote(String),
 }
 
 /// One cell the grid draws: the Catalog entry it stands for, and whether it

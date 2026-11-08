@@ -9,6 +9,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::protocol::{SessionId, SessionTimestamp};
 
+use super::commands::SemanticInvocation;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[allow(dead_code)] // Registration is crate-private until the deferred plugin loader exists.
 pub(super) enum Placement {
@@ -21,6 +23,11 @@ pub(super) enum Placement {
 pub(super) struct SlotText {
     pub(super) text: String,
     pub(super) style: Style,
+    /// What a press on this text invokes, for built-in content that is a way
+    /// into the surface changing what it says. A slot's composed content says
+    /// where each press landed only while the built-in default stands; text a
+    /// contribution draws is rendered content alone.
+    pub(super) press: Option<SemanticInvocation>,
 }
 
 impl SlotText {
@@ -28,8 +35,26 @@ impl SlotText {
         Self {
             text: text.into(),
             style,
+            press: None,
         }
     }
+
+    /// This text as a way in: a press over the columns it is drawn in invokes
+    /// `press`.
+    pub(super) fn pressing(mut self, press: Option<SemanticInvocation>) -> Self {
+        self.press = press;
+        self
+    }
+}
+
+/// Where a press on a slot's built-in content lands: on which of the slot's
+/// content lines, over which columns counted from that line's start, and
+/// what it invokes there.
+#[derive(Clone, Debug)]
+pub(super) struct SlotPress {
+    pub(super) line: usize,
+    pub(super) columns: std::ops::Range<usize>,
+    pub(super) invocation: SemanticInvocation,
 }
 
 #[derive(Clone, Debug)]
@@ -43,7 +68,9 @@ pub(super) struct ApplicationNoticeSlotContext {
 #[derive(Clone, Debug)]
 pub(super) struct LandingFooterSlotContext {
     pub(super) width: u16,
-    pub(super) context: SlotText,
+    /// The Agent Selection, reading by reading, so each part that is a way in
+    /// answers a press on its own.
+    pub(super) context: Vec<SlotText>,
     pub(super) connection: SlotText,
 }
 
@@ -105,7 +132,9 @@ pub(super) struct WorkingIndicatorSlotContext {
 #[derive(Clone, Debug)]
 pub(super) struct PromptContextSlotContext {
     pub(super) session_id: SessionId,
-    pub(super) agent: SlotText,
+    /// The Agent Selection, reading by reading, as the Landing's footer
+    /// carries it.
+    pub(super) agent: Vec<SlotText>,
     pub(super) usage: Option<SlotText>,
 }
 
@@ -119,6 +148,9 @@ pub(super) struct SlotFailure {
 pub(super) struct RenderedSlot<Content> {
     pub(super) content: Vec<Content>,
     pub(super) failures: Vec<SlotFailure>,
+    /// Where the built-in content that is a way in stands among `content`:
+    /// none where a contribution replaced it.
+    pub(super) presses: Vec<SlotPress>,
 }
 
 impl<Content> RenderedSlot<Content> {
@@ -126,6 +158,7 @@ impl<Content> RenderedSlot<Content> {
         Self {
             content: Vec::new(),
             failures: Vec::new(),
+            presses: Vec::new(),
         }
     }
 
@@ -172,6 +205,18 @@ impl<Context, Content> Slot<Context, Content> {
     }
 
     fn compose(&self, context: &Context, default: Vec<Content>) -> RenderedSlot<Content> {
+        self.compose_pressable(context, default, Vec::new())
+    }
+
+    /// Composes as [`Self::compose`] does, carrying where `default`'s presses
+    /// land along with it: after whatever was prepended, and nowhere at all
+    /// once a contribution replaces it.
+    fn compose_pressable(
+        &self,
+        context: &Context,
+        default: Vec<Content>,
+        default_presses: Vec<SlotPress>,
+    ) -> RenderedSlot<Content> {
         let mut prepended = Vec::new();
         let mut replacement = None;
         let mut appended = Vec::new();
@@ -191,11 +236,24 @@ impl<Context, Content> Slot<Context, Content> {
             }
         }
 
+        let presses = if replacement.is_some() {
+            Vec::new()
+        } else {
+            let offset = prepended.len();
+            default_presses
+                .into_iter()
+                .map(|press| SlotPress {
+                    line: press.line + offset,
+                    ..press
+                })
+                .collect()
+        };
         prepended.extend(replacement.unwrap_or(default));
         prepended.extend(appended);
         RenderedSlot {
             content: prepended,
             failures,
+            presses,
         }
     }
 }
@@ -209,7 +267,7 @@ enum FooterSide {
 #[derive(Clone)]
 struct FooterItem {
     side: FooterSide,
-    content: SlotText,
+    content: Vec<SlotText>,
 }
 
 pub(super) struct RenderSlots {
@@ -255,14 +313,13 @@ impl RenderSlots {
         &self,
         context: &LandingFooterSlotContext,
     ) -> RenderedSlot<Line<'static>> {
-        self.landing_footer.compose(
-            context,
-            vec![spread_line(
-                context.width,
-                &context.context,
-                &context.connection,
-            )],
-        )
+        let (line, presses) = spread_slot_text(
+            context.width,
+            context.context.clone(),
+            vec![context.connection.clone()],
+        );
+        self.landing_footer
+            .compose_pressable(context, vec![line], on_line(0, presses))
     }
 
     pub(super) fn session_composer_top(
@@ -303,19 +360,24 @@ impl RenderSlots {
             })
             .chain(context.usage.clone().map(|content| FooterItem {
                 side: FooterSide::Right,
-                content,
+                content: vec![content],
             }))
             .collect(),
         );
         let mut failures = context.failures;
-        let default = context
+        let (default, presses) = if context
             .content
             .iter()
-            .any(|item| !item.content.text.is_empty())
-            .then(|| spread_footer_items(footer.width, context.content))
-            .into_iter()
-            .collect();
-        let mut rendered = self.prompt_footer.compose(footer, default);
+            .any(|item| item.content.iter().any(|text| !text.text.is_empty()))
+        {
+            let (line, presses) = spread_footer_items(footer.width, context.content);
+            (vec![line], on_line(0, presses))
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        let mut rendered = self
+            .prompt_footer
+            .compose_pressable(footer, default, presses);
         failures.append(&mut rendered.failures);
         rendered.failures = failures;
         rendered
@@ -333,7 +395,28 @@ fn one_line(width: u16, text: &SlotText) -> Line<'static> {
     )
 }
 
-fn spread_footer_items(width: u16, items: impl IntoIterator<Item = FooterItem>) -> Line<'static> {
+/// `presses` standing on the content line `line`.
+fn on_line(
+    line: usize,
+    presses: Vec<(std::ops::Range<usize>, SemanticInvocation)>,
+) -> Vec<SlotPress> {
+    presses
+        .into_iter()
+        .map(|(columns, invocation)| SlotPress {
+            line,
+            columns,
+            invocation,
+        })
+        .collect()
+}
+
+fn spread_footer_items(
+    width: u16,
+    items: impl IntoIterator<Item = FooterItem>,
+) -> (
+    Line<'static>,
+    Vec<(std::ops::Range<usize>, SemanticInvocation)>,
+) {
     let mut left = Vec::new();
     let mut right = Vec::new();
     for item in items {
@@ -345,22 +428,32 @@ fn spread_footer_items(width: u16, items: impl IntoIterator<Item = FooterItem>) 
     spread_slot_text(width, join_slot_text(left), join_slot_text(right))
 }
 
-fn join_slot_text(items: Vec<SlotText>) -> Vec<SlotText> {
+fn join_slot_text(items: Vec<Vec<SlotText>>) -> Vec<SlotText> {
     let mut joined = Vec::new();
-    for item in items.into_iter().filter(|item| !item.text.is_empty()) {
+    for item in items
+        .into_iter()
+        .filter(|item| item.iter().any(|text| !text.text.is_empty()))
+    {
         if !joined.is_empty() {
             joined.push(SlotText::new(" · ", Style::default()));
         }
-        joined.push(item);
+        joined.extend(item);
     }
     joined
 }
 
-fn spread_line(width: u16, left: &SlotText, right: &SlotText) -> Line<'static> {
-    spread_slot_text(width, vec![left.clone()], vec![right.clone()])
-}
-
-fn spread_slot_text(width: u16, left: Vec<SlotText>, right: Vec<SlotText>) -> Line<'static> {
+/// `left` and `right` spread across one line `width` columns wide, beside the
+/// columns each text that is a way in was drawn over. A text the fitting cut
+/// short answers only over what is left of it, and one it cut away entirely
+/// answers nowhere.
+fn spread_slot_text(
+    width: u16,
+    left: Vec<SlotText>,
+    right: Vec<SlotText>,
+) -> (
+    Line<'static>,
+    Vec<(std::ops::Range<usize>, SemanticInvocation)>,
+) {
     let width = usize::from(width);
     let left = left
         .into_iter()
@@ -378,17 +471,24 @@ fn spread_slot_text(width: u16, left: Vec<SlotText>, right: Vec<SlotText>) -> Li
     let left_width = width.saturating_sub(right_width.saturating_add(gap));
     let left = truncate_slot_text(left, left_width);
     let spacing = " ".repeat(width.saturating_sub(slot_text_width(&left) + right_width));
-    let spans = left
+    let mut presses = Vec::new();
+    let mut column = 0;
+    let mut spans = Vec::new();
+    for item in left
         .into_iter()
-        .map(|item| Span::styled(item.text, item.style))
-        .chain(std::iter::once(Span::raw(spacing)))
-        .chain(
-            right
-                .into_iter()
-                .map(|item| Span::styled(item.text, item.style)),
-        )
-        .collect::<Vec<_>>();
-    Line::from(spans)
+        .chain(std::iter::once(SlotText::new(spacing, Style::default())))
+        .chain(right)
+    {
+        let end = column + item.text.width();
+        if let Some(press) = item.press
+            && end > column
+        {
+            presses.push((column..end, press));
+        }
+        column = end;
+        spans.push(Span::styled(item.text, item.style));
+    }
+    (Line::from(spans), presses)
 }
 
 fn slot_text_width(items: &[SlotText]) -> usize {
@@ -428,7 +528,7 @@ pub(super) fn truncate_slot_text(items: Vec<SlotText>, width: usize) -> Vec<Slot
             used += grapheme_width;
         }
         if !text.is_empty() {
-            result.push(SlotText::new(text, item.style));
+            result.push(SlotText::new(text, item.style).pressing(item.press.clone()));
         }
         if reached_limit {
             break;
@@ -646,7 +746,7 @@ impl RenderSlots {
                         .contribute(contribution.placement, move |_| match result {
                             Ok(text) => Ok(vec![FooterItem {
                                 side: FooterSide::Left,
-                                content: SlotText::new(text, style),
+                                content: vec![SlotText::new(text, style)],
                             }]),
                             Err(message) => Err(message.to_owned()),
                         })
@@ -675,5 +775,66 @@ impl RenderSlots {
                 ))])
             });
         slots
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::commands::SemanticCommandId;
+
+    fn footer(width: u16, model: &str) -> LandingFooterSlotContext {
+        LandingFooterSlotContext {
+            width,
+            context: vec![
+                SlotText::new("Codex", Style::default())
+                    .pressing(Some(SemanticCommandId::ModelList.into())),
+                SlotText::new(" · ", Style::default()),
+                SlotText::new(model, Style::default())
+                    .pressing(Some(SemanticCommandId::ModelOptions.into())),
+            ],
+            connection: SlotText::new("Connected", Style::default()),
+        }
+    }
+
+    fn columns(rendered: &RenderedSlot<Line<'static>>) -> Vec<(usize, std::ops::Range<usize>)> {
+        rendered
+            .presses
+            .iter()
+            .map(|press| (press.line, press.columns.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn built_in_presses_land_over_the_columns_their_text_is_drawn_in() {
+        let rendered = RenderSlots::builtins().landing_footer(&footer(40, "High"));
+        assert_eq!(columns(&rendered), vec![(0, 0..5), (0, 8..12)]);
+    }
+
+    #[test]
+    fn prepended_content_carries_the_presses_down_with_the_default() {
+        let slots = RenderSlots::testing([TestContribution::landing_footer(
+            Placement::Prepend,
+            Ok("above"),
+        )]);
+        let rendered = slots.landing_footer(&footer(40, "High"));
+        assert_eq!(columns(&rendered), vec![(1, 0..5), (1, 8..12)]);
+    }
+
+    #[test]
+    fn replaced_content_answers_no_press() {
+        let slots = RenderSlots::testing([TestContribution::landing_footer(
+            Placement::Replace,
+            Ok("instead"),
+        )]);
+        assert!(slots.landing_footer(&footer(40, "High")).presses.is_empty());
+    }
+
+    #[test]
+    fn text_cut_short_answers_only_over_what_is_left_of_it() {
+        // Nine columns go to "Connected" and two to the gap, leaving the
+        // left eleven: "Codex · Ex" and the marker saying it was cut.
+        let rendered = RenderSlots::builtins().landing_footer(&footer(22, "Extra High"));
+        assert_eq!(columns(&rendered), vec![(0, 0..5), (0, 8..10)]);
     }
 }

@@ -1483,6 +1483,14 @@ impl RunLoop {
                     self.channels.submissions.clone(),
                 );
             }
+            ApplicationTransition::SetRemoteIcon { name, icon } => {
+                spawn_remote_icon_set(
+                    self.client.session_commands(),
+                    name,
+                    icon,
+                    self.channels.submissions.clone(),
+                );
+            }
             ApplicationTransition::SetWorkspaceDescription {
                 origin,
                 workspace_id,
@@ -1958,6 +1966,12 @@ impl RunLoop {
                     tracing::warn!("could not warm the Model Catalog on connect: {error:#}");
                 }
             });
+            // What the Client draws beside each Remote's name, its Icon, is
+            // the local Server's to say, and it says so in its listing.
+            spawn_remotes_known(
+                self.client.session_commands(),
+                self.channels.pairing.clone(),
+            );
         }
         let transition = self
             .application
@@ -2003,6 +2017,7 @@ impl RunLoop {
             | ApplicationTransition::AskTitleProposalOffer { .. }
             | ApplicationTransition::ProposeSessionTitle { .. }
             | ApplicationTransition::SetWorkspaceIcon { .. }
+            | ApplicationTransition::SetRemoteIcon { .. }
             | ApplicationTransition::SetWorkspaceDescription { .. }
             | ApplicationTransition::AdmitPrompt { .. }
             | ApplicationTransition::PromotePrompt { .. }
@@ -2520,6 +2535,18 @@ impl RunLoop {
                 self.application
                     .handle_event(ApplicationEvent::SessionOperationFailed { asked_from, error })?;
             }
+            SubmissionResult::RemoteIconSet { name, icon } => {
+                self.application
+                    .handle_event(ApplicationEvent::RemoteIconSet { name, icon })?;
+            }
+            // A Remote's Icon is no Session's, so whichever is open says so,
+            // whichever way the Outlook is turned: the Icon is the local
+            // Server's to keep.
+            SubmissionResult::RemoteIconSetFailed { error } => {
+                let asked_from = self.application.session_reference();
+                self.application
+                    .handle_event(ApplicationEvent::SessionOperationFailed { asked_from, error })?;
+            }
             SubmissionResult::WorkspaceDescriptionSaved {
                 origin,
                 workspace_id,
@@ -2769,6 +2796,7 @@ impl RunLoop {
             }
             PairingResult::PeerRemoved(peer_id) => ApplicationEvent::PeerRemoved(peer_id),
             PairingResult::RemotesListed(remotes) => ApplicationEvent::RemotesListed(remotes),
+            PairingResult::RemotesKnown(remotes) => ApplicationEvent::RemotesKnown(remotes),
             PairingResult::RemoteListingFailed(error) => {
                 ApplicationEvent::RemoteListingFailed(error)
             }
@@ -2982,6 +3010,9 @@ enum PairingResult {
     PeerRemoved(String),
     RemotesListed(Vec<crate::protocol::Remote>),
     RemoteListingFailed(String),
+    /// The Remotes listed as the Client connected, for what it draws beside
+    /// their names rather than for any surface listing them.
+    RemotesKnown(Vec<crate::protocol::Remote>),
     MachineRelaysKnown {
         request: crate::tui::ConnectRequest,
         relays: Vec<String>,
@@ -3228,6 +3259,20 @@ fn spawn_remote_listing(commands: SessionCommandClient, results: UnboundedSender
             {
                 return;
             }
+        }
+    });
+}
+
+/// Lists the Remotes the Client's own Server is paired with for what the
+/// Client draws beside their names. A listing that fails leaves the Remotes
+/// drawn as they were, beside the plain monitor where none was known.
+fn spawn_remotes_known(commands: SessionCommandClient, results: UnboundedSender<PairingResult>) {
+    tokio::spawn(async move {
+        match commands.list_remotes().await {
+            Ok(remotes) => {
+                let _ = results.send(PairingResult::RemotesKnown(remotes));
+            }
+            Err(error) => tracing::warn!("could not list Remotes on connect: {error:#}"),
         }
     });
 }
@@ -3988,6 +4033,17 @@ enum SubmissionResult {
         origin: Outlook,
         error: String,
     },
+    /// The Client's own Server kept a user's chosen Remote Icon. Nothing
+    /// else carries a Remote's Icon to this Client, so the success is what
+    /// it redraws from.
+    RemoteIconSet {
+        name: String,
+        icon: String,
+    },
+    /// A user's chosen Remote Icon was refused or could not be sent.
+    RemoteIconSetFailed {
+        error: String,
+    },
     /// A Description the reader saved landed; the Description itself reaches
     /// every client through the catalog stream.
     WorkspaceDescriptionSaved {
@@ -4599,6 +4655,26 @@ fn spawn_workspace_icon_set(
                 error: error.to_string(),
             });
         }
+    });
+}
+
+/// Sends a user's chosen Remote Icon to the Client's own Server, which keeps
+/// it beside the Remote's name, and reports how it went: nothing else tells
+/// this Client a Remote's Icon changed.
+fn spawn_remote_icon_set(
+    commands: SessionCommandClient,
+    name: String,
+    icon: String,
+    results: UnboundedSender<SubmissionResult>,
+) {
+    tokio::spawn(async move {
+        let result = match commands.set_remote_icon(&name, &icon).await {
+            Ok(()) => SubmissionResult::RemoteIconSet { name, icon },
+            Err(error) => SubmissionResult::RemoteIconSetFailed {
+                error: error.to_string(),
+            },
+        };
+        let _ = results.send(result);
     });
 }
 
@@ -5389,6 +5465,7 @@ mod tests {
                     fingerprint: "studio-fingerprint".to_owned(),
                     ways: Vec::new(),
                     status: RemoteStatus::Available,
+                    icon: None,
                 }],
             })
             .expect("discover the Remote");

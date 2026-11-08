@@ -1452,6 +1452,7 @@ mod tests {
                 fingerprint: crate::serving::fingerprint(key),
                 ways: Vec::new(),
                 status: crate::protocol::RemoteStatus::Available,
+                icon: None,
             },
             public_key: key.to_vec(),
             answered: Vec::new(),

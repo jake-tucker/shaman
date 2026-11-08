@@ -1514,6 +1514,7 @@ impl ServingController {
             fingerprint: fingerprint(&invite.server_key),
             ways,
             status: RemoteStatus::Available,
+            icon: None,
         };
         // Stored ahead of the commit that makes it, so a crash can leave this
         // Server an offer the other does not hold, and never the reverse.
@@ -1808,6 +1809,34 @@ impl ServingController {
             tokio::time::timeout(self.withdrawal_timeout, withdrawal).await,
             Ok(Ok(_))
         )
+    }
+
+    /// Sets the Icon the user chose for the Remote `name`, refused where the
+    /// Icon Catalog carries no such Icon or this Server is paired with no
+    /// Remote of that name. A choice always stands over the one before it.
+    /// What reaches the Remote is untouched: the Icon is this Server's own
+    /// word for it, as its name is.
+    pub(crate) fn set_remote_icon(
+        &self,
+        name: &str,
+        icon: &str,
+    ) -> std::result::Result<(), PairingFailure> {
+        if crate::icon_catalog::glyph(icon).is_none() {
+            return Err(PairingFailure::new(
+                SessionErrorCode::InvalidIcon,
+                format!("`{icon}` is not an Icon Catalog name"),
+            ));
+        }
+        self.change_remotes(|remotes| {
+            let Some(stored) = remotes.iter_mut().find(|stored| stored.remote.name == name) else {
+                return Err(PairingFailure::new(
+                    SessionErrorCode::RemoteNotFound,
+                    "Remote not found",
+                ));
+            };
+            stored.remote.icon = Some(icon.to_owned());
+            Ok(())
+        })
     }
 
     fn delete_remote(&self, name: &str) -> std::result::Result<(), PairingFailure> {
@@ -8127,6 +8156,7 @@ mod tests {
                 fingerprint: String::new(),
                 ways: vec![way.clone()],
                 status: RemoteStatus::Available,
+                icon: None,
             },
             public_key: Vec::new(),
             answered: Vec::new(),

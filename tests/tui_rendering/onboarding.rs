@@ -148,6 +148,7 @@ fn open_connect(application: &mut Application) {
                 fingerprint: "studio-fingerprint".to_owned(),
                 ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
                 status: RemoteStatus::Available,
+                icon: None,
             },
         ]))
         .unwrap();

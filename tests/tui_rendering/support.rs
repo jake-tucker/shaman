@@ -1032,6 +1032,7 @@ pub fn application_looking_at_studio() -> Application {
                     "10.0.0.8:7777".parse().expect("parse the Remote address"),
                 )],
                 status: suru::protocol::RemoteStatus::Available,
+                icon: None,
             },
         ]))
         .expect("list the paired Remotes");

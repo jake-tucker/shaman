@@ -748,6 +748,7 @@ fn everything_else_stays_live_while_a_relay_needs_a_login_or_is_unreachable() {
                 fingerprint: "studio-fingerprint".to_owned(),
                 ways: vec![suru::protocol::Way::Relay(COMPANY.to_owned())],
                 status: suru::protocol::RemoteStatus::Available,
+                icon: None,
             },
         ]))
         .expect("list the paired Remotes");

@@ -372,6 +372,7 @@ fn accepting_refuses_a_name_taken_and_says_what_the_server_refused() {
             fingerprint: "other".to_owned(),
             ways: Vec::new(),
             status: RemoteStatus::Available,
+            icon: None,
         }],
     );
     press(&mut application, KeyCode::Down);
@@ -495,6 +496,7 @@ fn studio() -> Remote {
         fingerprint: "fingerprint".to_owned(),
         ways: Vec::new(),
         status: RemoteStatus::Available,
+        icon: None,
     }
 }
 

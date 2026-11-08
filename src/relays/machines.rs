@@ -88,6 +88,7 @@ mod tests {
             fingerprint: fingerprint.to_owned(),
             ways: Vec::new(),
             status,
+            icon: None,
         }
     }
 

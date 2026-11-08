@@ -846,13 +846,21 @@ pub struct TuiState {
     /// Sidekick that sent one and whose Session may still be opened, beside
     /// that Sidekick's Session, so a press on the name opens it.
     pub(super) queued_sidekick_names: RefCell<Vec<(PointableSpan, SessionId)>>,
-    /// Where the last frame drew each reading beneath the Landing's composer
-    /// that is a way in, beside the command a press there invokes: the
-    /// Workspace opens the Workspace Picker, the Checkout State or a pending
-    /// Worktree intent the Worktree Selector, and the subdirectory the
-    /// Directory Browser rooted there. The parts of that line that are not
-    /// choices record nothing, so a press there reaches nothing.
-    pub(super) landing_readings: RefCell<Vec<(PointableSpan, SemanticInvocation)>>,
+    /// Where the last frame drew each reading that is a way in, beside the
+    /// command a press there invokes. Beneath the Landing's composer, the
+    /// Remote opens `/connect`, the Workspace the Workspace Picker, the
+    /// Checkout State or a pending Worktree intent the Worktree Selector, and
+    /// the subdirectory the Directory Browser rooted there. In a Session's
+    /// header, the Remote's name opens `/connect` and its Icon, or the
+    /// Workspace's, the Icon Picker over it. In either footer, the Provider
+    /// and Model open `/models` and each Model Option `/options`. The parts
+    /// of those lines that are not choices record nothing, so a press there
+    /// reaches nothing.
+    pub(super) pointable_readings: RefCell<Vec<(PointableSpan, SemanticInvocation)>>,
+    /// The Icon Catalog name the Client's own Server keeps for each Remote it
+    /// is paired with that has one chosen, by Remote name, as its last
+    /// listing of them said, and as a choice made here has since changed it.
+    remote_icons: HashMap<String, String>,
     /// The Sessions this client has heard were deleted. A Sidekick whose
     /// Session is among them is still named where it sent a Prompt, by the
     /// Title it sent under, but nothing offers the way into a Session that is
@@ -1189,7 +1197,8 @@ impl TuiState {
             relay_notice_area: RefCell::new(None),
             notice_presentable: Cell::new(false),
             queued_sidekick_names: RefCell::new(Vec::new()),
-            landing_readings: RefCell::new(Vec::new()),
+            pointable_readings: RefCell::new(Vec::new()),
+            remote_icons: HashMap::new(),
             departed_sessions: HashSet::new(),
             opening_led: None,
             connect_overlay: ConnectOverlay::default(),
@@ -2090,6 +2099,25 @@ impl TuiState {
             || root.to_string_lossy().into_owned(),
             |paths| paths.worktree_location(root, presented_root),
         )
+    }
+
+    /// The glyph the Icon chosen for the Remote `name` draws as, and `None`
+    /// for one with no Icon chosen, or one whose Icon the Catalog no longer
+    /// carries.
+    pub(super) fn remote_icon(&self, name: &str) -> Option<char> {
+        self.remote_icons
+            .get(name)
+            .and_then(|icon| crate::icon_catalog::glyph(icon))
+    }
+
+    /// Takes the Icons a listing of the Remotes says they carry as the ones
+    /// they now have. A listing names every Remote paired, so one it names
+    /// with no Icon has none, and one it does not name is paired no longer.
+    fn know_remote_icons(&mut self, remotes: &[crate::protocol::Remote]) {
+        self.remote_icons = remotes
+            .iter()
+            .filter_map(|remote| remote.icon.clone().map(|icon| (remote.name.clone(), icon)))
+            .collect();
     }
 
     pub(super) fn workspace_name(&self, origin: &Outlook, path: &Path) -> String {
@@ -5684,6 +5712,16 @@ pub enum ApplicationEvent {
     PeerRemoved(String),
     RemotesListed(Vec<crate::protocol::Remote>),
     RemoteListingFailed(String),
+    /// The Remotes the Client's own Server is paired with, as it listed them
+    /// for no surface in particular: what the Client draws of each beside
+    /// its name, its Icon, is read from here.
+    RemotesKnown(Vec<crate::protocol::Remote>),
+    /// The Client's own Server has kept the Icon a reader chose for the
+    /// Remote `name`.
+    RemoteIconSet {
+        name: String,
+        icon: String,
+    },
     /// The paired-Remote list requested specifically for an Everywhere
     /// Session surface. It is distinct from the Connect overlay's listing,
     /// which also probes the Remotes it presents.
@@ -6136,6 +6174,13 @@ pub enum ApplicationTransition {
     SetWorkspaceIcon {
         origin: Outlook,
         workspace_id: WorkspaceId,
+        icon: String,
+    },
+    /// A user's own choice of a Remote's Icon by Icon Catalog name, made
+    /// through the Icon Picker. Sent to the Client's own Server, which keeps
+    /// it beside the Remote's name, whichever way the Outlook is turned.
+    SetRemoteIcon {
+        name: String,
         icon: String,
     },
     /// What a reader wrote as a Workspace's Description in the Workspace
@@ -7194,9 +7239,18 @@ impl Application {
                 Ok(ApplicationTransition::Continue)
             }
             ApplicationEvent::RemotesListed(remotes) => {
+                self.state.know_remote_icons(&remotes);
                 self.state
                     .connect_overlay
                     .load_remotes(remotes, &self.state.outlook);
+                Ok(ApplicationTransition::Continue)
+            }
+            ApplicationEvent::RemotesKnown(remotes) => {
+                self.state.know_remote_icons(&remotes);
+                Ok(ApplicationTransition::Continue)
+            }
+            ApplicationEvent::RemoteIconSet { name, icon } => {
+                self.state.remote_icons.insert(name, icon);
                 Ok(ApplicationTransition::Continue)
             }
             ApplicationEvent::RemoteListingFailed(error) => {
@@ -7218,6 +7272,7 @@ impl Application {
                 Ok(ApplicationTransition::Continue)
             }
             ApplicationEvent::EverywhereRemotesListed { request, remotes } => {
+                self.state.know_remote_icons(&remotes);
                 let requests = match request.surface() {
                     SessionListSurface::SessionPicker => self
                         .state
@@ -8790,11 +8845,12 @@ impl Application {
         {
             return self.invoke_semantic(SemanticCommandId::SessionRename.on_session(session));
         }
-        // A reading beneath the Landing's composer is a way into the surface
-        // that changes it, invoked as that surface's own command is.
+        // A reading that is a way in — beneath the Landing's composer, in the
+        // Session header, or in either footer — leads into the surface that
+        // changes it, invoked as that surface's own command is.
         let reading = self
             .state
-            .landing_readings
+            .pointable_readings
             .borrow()
             .iter()
             .find(|(span, _)| span.contains(position))
@@ -13027,6 +13083,20 @@ impl Application {
                 }
                 Ok(ApplicationTransition::Continue)
             }
+            // The Remote its Origin names is the picker's target: a press on
+            // that Remote's Icon in the Session header builds the invocation
+            // with one. Inert while Icons are off, for the same reason
+            // choosing a Session's Icon is, and for Local, which no Remote
+            // record stands for.
+            SemanticCommandId::RemoteIconChoose => {
+                self.state.command_mode = CommandMode::Composer;
+                if self.state.settings().appearance.show_icons
+                    && let SemanticSubject::Origin(Outlook::Remote(name)) = invocation.subject
+                {
+                    self.state.icon_picker.open(IconPickerTarget::Remote(name));
+                }
+                Ok(ApplicationTransition::Continue)
+            }
             // The Session it names — a Sidebar row or the header's Title names
             // one — or the open one, which is what the slash means. Text after
             // `/rename` is the Title itself: set at once where it can stand as
@@ -13573,6 +13643,7 @@ impl Application {
                 workspace_id,
                 icon,
             },
+            IconPickerTarget::Remote(name) => ApplicationTransition::SetRemoteIcon { name, icon },
         }
     }
 
