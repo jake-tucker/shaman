@@ -97,6 +97,37 @@ const AUTO_LIVE_MODELS: &str = r#"      event r1 session.auto_mode_resolved '{"c
       ) &
 "#;
 
+const AUTO_FUSION_LIVE_MODELS: &str = r#"      event r1 session.auto_mode_resolved '{"chosenModel":"claude-fixture"}'
+      event p1 assistant.fusion_phase_started '{"fusionId":"r","phaseId":"p1","phaseKind":"primary","role":"solver","conversationScope":"root","pattern":"single","model":"claude-fixture"}'
+      event m1 assistant.message_start '{"messageId":"m1"}'
+      event d1 assistant.message_delta '{"messageId":"m1","deltaContent":"running"}'
+      (
+        wait_for "$COPILOT_FIXTURE_RELEASE"
+        event u1 assistant.usage '{"apiCallId":"c1","model":"claude-fixture","isAuto":true,"inputTokens":1}'
+        event d2 assistant.message_delta '{"messageId":"m1","deltaContent":" waiting"}'
+        wait_for "$COPILOT_FIXTURE_RELEASE-tool"
+        event t1 tool.execution_start '{"toolCallId":"tool","toolName":"custom","arguments":{}}'
+        event d3 assistant.message_delta '{"messageId":"m1","deltaContent":" tool"}'
+        wait_for "$COPILOT_FIXTURE_RELEASE-next"
+        event t2 tool.execution_complete '{"toolCallId":"tool","success":true,"result":{"content":"ok"}}'
+        event c2 model.call_start '{"turnId":"t2","model":"other-fixture"}'
+        event d4 assistant.message_delta '{"messageId":"m1","deltaContent":" next"}'
+        wait_for "$COPILOT_FIXTURE_RELEASE-finish"
+        event f2 model.call_finished '{"turnId":"t2","dispatchDurationMs":10,"editClassifierVersion":1,"outcome":"success"}'
+        event m2 assistant.message '{"messageId":"m1","content":"running waiting tool next","model":"other-fixture"}'
+        event i1 session.idle '{}'
+      ) &
+"#;
+
+const AUTO_SUBAGENT: &str = r#"      agent_event s1 agent-1 subagent.started '{"toolCallId":"t-spawn","agentName":"researcher","agentDisplayName":"Researcher","agentDescription":"Scout"}'
+      agent_event r1 agent-1 session.auto_mode_resolved '{"chosenModel":"claude-fixture"}'
+      agent_event u1 agent-1 assistant.usage '{"apiCallId":"child-call","model":"claude-fixture","isAuto":true,"inputTokens":1}'
+      agent_event m1 agent-1 assistant.message '{"messageId":"child-message","apiCallId":"child-call","content":"Child answer"}'
+      agent_event s2 agent-1 subagent.completed '{"toolCallId":"t-spawn","agentName":"researcher","agentDisplayName":"Researcher"}'
+      event m2 assistant.message '{"messageId":"parent-message","content":"Parent answer"}'
+      event i1 session.idle '{}'
+"#;
+
 const AUTO_FUSION_LATE_USAGE: &str = r#"      event e1 session.fusion_resolved '{"contractVersion":1,"fusionId":"r","turnId":"r:turn","syntheticModel":"hydrafusion","policy":"standard","pattern":"cascade","primaryModel":"solver","fallbackModel":"fallback","followUpModel":"solver"}'
       event e2 assistant.message '{"messageId":"m1","apiCallId":"c1","content":"Attempt","fusion":{"fusionId":"r","syntheticModel":"hydrafusion","policy":"standard","pattern":"cascade","phaseId":"r:primary","phaseKind":"primary","role":"solver"}}'
       event e3 assistant.usage '{"apiCallId":"c2","model":"repair-model","isAuto":true,"inputTokens":1}'
@@ -122,7 +153,12 @@ const AUTO_WITH_FIXED_CALLS: &str = r#"      event e1 assistant.usage '{"apiCall
       event e2 assistant.message '{"messageId":"m1","apiCallId":"c1","model":"fixed-model","content":"First"}'
       event e3 assistant.message '{"messageId":"m2","apiCallId":"c2","model":"fixed-model","content":"Second"}'
       event e4 assistant.usage '{"apiCallId":"c2","model":"fixed-model","isAuto":false,"inputTokens":1}'
-      event e5 session.idle '{}'
+      event e5 assistant.usage '{"model":"fixed-model","isAuto":false,"inputTokens":1}'
+      event e6 assistant.message '{"messageId":"m3","model":"fixed-model","content":"Third"}'
+      event e7 model.call_start '{"turnId":"t4","model":"fixed-model"}'
+      event e8 assistant.message '{"messageId":"m4","model":"fixed-model","content":"Fourth"}'
+      event e9 assistant.usage '{"model":"fixed-model","isAuto":false,"inputTokens":1}'
+      event e10 session.idle '{}'
 "#;
 
 fn selection(model: &str, effort: &str, tier: &str) -> AgentSelection {
@@ -146,7 +182,10 @@ fn selection(model: &str, effort: &str, tier: &str) -> AgentSelection {
     }
 }
 
-async fn auto_snapshot(timeline: &str, channel: &'static str) -> SessionSnapshot {
+async fn auto_snapshots(
+    timeline: &str,
+    channel: &'static str,
+) -> (SessionSnapshot, Option<SessionSnapshot>) {
     let copilot = conversation_fixture(timeline);
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
@@ -184,9 +223,25 @@ async fn auto_snapshot(timeline: &str, channel: &'static str) -> SessionSnapshot
         .await
         .expect("create Session on Auto");
     let settled = settled_session(&client, created.session.id, 0).await;
+    let child_id = settled
+        .activities
+        .iter()
+        .find_map(|activity| match activity {
+            Activity::Subagent { session_id, .. } => Some(*session_id),
+            _ => None,
+        });
+    let child = if let Some(id) = child_id {
+        Some(settled_session(&client, id, 0).await)
+    } else {
+        None
+    };
     drop(client);
     server.shutdown().await.expect("shut the server down");
-    settled
+    (settled, child)
+}
+
+async fn auto_snapshot(timeline: &str, channel: &'static str) -> SessionSnapshot {
+    auto_snapshots(timeline, channel).await.0
 }
 
 #[tokio::test]
@@ -216,6 +271,40 @@ async fn copilot_auto_message_records_the_reported_model_without_changing_the_se
             .as_str(),
         "auto",
         "attribution never changes what the user selected"
+    );
+}
+
+#[tokio::test]
+async fn copilot_auto_child_model_reports_do_not_replace_agent_selections() {
+    let (parent, child) = auto_snapshots(AUTO_SUBAGENT, "copilot-auto-child-selection").await;
+    let child = child.expect("the native Subagent has a Session");
+    assert_eq!(
+        parent
+            .session
+            .agent_selection
+            .as_ref()
+            .map(|selection| selection.model.as_str()),
+        Some("auto")
+    );
+    assert!(
+        child.session.agent_selection.is_none(),
+        "a native Subagent's Session does not acquire a user selection"
+    );
+    assert_eq!(
+        child.turns[0]
+            .agent
+            .as_ref()
+            .map(|agent| agent.selection.model.as_str()),
+        Some("claude-fixture"),
+        "the child Turn retains its confirmed Model for cost estimation"
+    );
+    let messages = agent_messages(&child);
+    let [message] = messages.as_slice() else {
+        panic!("one child Agent Message was expected: {messages:?}");
+    };
+    assert_eq!(
+        message.model.as_ref().map(|model| model.actual.as_str()),
+        Some("claude-fixture")
     );
 }
 
@@ -316,31 +405,39 @@ async fn copilot_auto_keeps_a_committed_author_and_records_a_failed_call_once() 
 async fn copilot_auto_does_not_label_calls_explicitly_reported_as_fixed() {
     let settled = auto_snapshot(AUTO_WITH_FIXED_CALLS, "copilot-auto-fixed-calls").await;
     let messages = agent_messages(&settled);
-    assert_eq!(messages.len(), 2);
+    assert_eq!(messages.len(), 4);
     assert!(messages.iter().all(|message| message.model.is_none()));
-    assert!(
-        settled
-            .activities
+    let calls = settled
+        .activities
+        .iter()
+        .find_map(|activity| match activity {
+            Activity::ModelCalls { calls, .. } => Some(calls),
+            _ => None,
+        })
+        .expect("fixed calls still belong to the routed Turn");
+    assert_eq!(
+        calls
             .iter()
-            .all(|activity| !matches!(activity, Activity::ModelCalls { .. }))
+            .map(|call| call.actual.as_str())
+            .collect::<Vec<_>>(),
+        ["fixed-model"; 4]
     );
 }
 
-#[tokio::test]
-async fn copilot_auto_current_model_tracks_dispatches_and_clears_between_them() {
-    let copilot = conversation_fixture(AUTO_LIVE_MODELS);
+async fn assert_live_models(timeline: &str, channel: &'static str, tool_gate: bool) {
+    let copilot = conversation_fixture(timeline);
     let state = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let titling = titling_turned_off();
     let server = server::spawn_with_provider(
-        ServerConfig::new(state.path(), "copilot-auto-live-model")
+        ServerConfig::new(state.path(), channel)
             .expect("configure server")
             .with_config_dir(titling.path()),
         Arc::new(CopilotRuntime::new(copilot.executable())),
     )
     .await
     .expect("spawn server");
-    let client = connect(state.path(), "copilot-auto-live-model").await;
+    let client = connect(state.path(), channel).await;
     client.list_models().await.expect("discover Copilot Models");
     let id = client
         .create_session(CreateSessionRequest {
@@ -383,6 +480,17 @@ async fn copilot_auto_current_model_tracks_dispatches_and_clears_between_them() 
         wait_for_text(s, "waiting")
     })
     .await;
+    if tool_gate {
+        copilot.release_gate("tool");
+        let tool = session_where(&client, &mut feed, id, "the tool is running", |s| {
+            wait_for_text(s, "tool")
+        })
+        .await;
+        assert!(
+            tool.current_model.is_none(),
+            "a Fusion phase is not live model evidence while its tool runs"
+        );
+    }
     copilot.release_gate("next");
     let second = session_where(&client, &mut feed, id, "the second call is running", |s| {
         wait_for_text(s, "next")
@@ -395,20 +503,41 @@ async fn copilot_auto_current_model_tracks_dispatches_and_clears_between_them() 
     drop(client);
     server.shutdown().await.expect("shut the server down");
     assert_eq!(
-        serde_json::to_value(&first).unwrap()["current_model"]["model"]["actual"],
-        "claude-fixture",
-        "the live Model is based on the open dispatch"
+        first
+            .current_model
+            .as_ref()
+            .map(|current| current.model.actual.as_str()),
+        Some("claude-fixture"),
+        "the live Model is based on the current dispatch or Fusion phase"
     );
     assert!(
-        serde_json::to_value(&between).unwrap()["current_model"].is_null(),
-        "a completed dispatch does not remain the live Model"
+        between.current_model.is_none(),
+        "the Model does not remain live after a dispatch or usage report"
     );
     assert_eq!(
-        serde_json::to_value(&second).unwrap()["current_model"]["model"]["actual"],
-        "other-fixture",
+        second
+            .current_model
+            .as_ref()
+            .map(|current| current.model.actual.as_str()),
+        Some("other-fixture"),
         "a later dispatch replaces the current Model"
     );
-    assert!(serde_json::to_value(&settled).unwrap()["current_model"].is_null());
+    assert!(settled.current_model.is_none());
+}
+
+#[tokio::test]
+async fn copilot_auto_current_model_tracks_dispatches_and_clears_between_them() {
+    assert_live_models(AUTO_LIVE_MODELS, "copilot-auto-live-model", false).await;
+}
+
+#[tokio::test]
+async fn copilot_auto_fusion_phase_clears_live_model_after_usage_and_during_tools() {
+    assert_live_models(
+        AUTO_FUSION_LIVE_MODELS,
+        "copilot-auto-fusion-live-model",
+        true,
+    )
+    .await;
 }
 
 #[tokio::test]

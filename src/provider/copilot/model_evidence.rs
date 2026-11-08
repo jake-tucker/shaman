@@ -162,6 +162,15 @@ impl WorkingModels {
                     turn.saw_call = true;
                 }
             }
+            SessionEventType::AssistantUsage
+            | SessionEventType::AssistantMessage
+            | SessionEventType::ToolExecutionStart => {
+                self.discard_unmatched_calls();
+                self.invalidate_phases();
+                for turn in self.turns.values_mut() {
+                    turn.saw_call = true;
+                }
+            }
             SessionEventType::AssistantFusionPhaseStarted => {
                 let Some(phase): Option<AssistantFusionPhaseStartedData> = reported(event) else {
                     return self.uncertain(auto);
@@ -440,6 +449,39 @@ mod tests {
             reading(models.read(&event("assistant.turn_end", json!({ "turnId": "t" })), true,)),
             Some(None)
         );
+    }
+
+    #[test]
+    fn a_phase_is_not_live_after_usage_message_or_tool_start() {
+        for (kind, data) in [
+            (
+                "assistant.usage",
+                json!({ "model": "alpha", "inputTokens": 1 }),
+            ),
+            (
+                "assistant.message",
+                json!({ "messageId": "m", "content": "Answer" }),
+            ),
+            (
+                "tool.execution_start",
+                json!({ "toolCallId": "t", "toolName": "bash" }),
+            ),
+        ] {
+            let mut models = WorkingModels::default();
+            assert_eq!(
+                phase(&mut models, "p1", "alpha"),
+                Some(Some("alpha".into()))
+            );
+            assert_eq!(
+                reading(models.read(&event(kind, data), true)),
+                Some(None),
+                "{kind} ends the evidence of a live dispatch"
+            );
+            assert_eq!(
+                start(&mut models, "next", Some("alpha")),
+                Some(Some("alpha".into()))
+            );
+        }
     }
 
     #[test]

@@ -3205,8 +3205,8 @@ pub enum Activity {
         turn_id: TurnId,
         text: String,
     },
-    /// The concrete Models reported for individual calls beneath a routed
-    /// selection, in the order the Provider reported them.
+    /// The concrete Models attributed to calls in a routed Turn, in the
+    /// order the Provider reported them, including calls reported as fixed.
     ModelCalls {
         id: ActivityId,
         turn_id: TurnId,

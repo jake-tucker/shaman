@@ -591,14 +591,22 @@ struct ConversationStreams {
     observed_model_calls: HashSet<String>,
     recorded_model_calls: HashSet<String>,
     fixed_model_calls: HashSet<String>,
+    call_auto_selections: HashMap<String, bool>,
     reported_model_calls: HashMap<String, ModelAttribution>,
     pending_model_messages: HashMap<String, Vec<PendingModelMessage>>,
     attributed_model_messages: HashMap<String, Vec<ProviderMessageId>>,
+    anonymous_fixed_call: bool,
+    anonymous_attributed_messages: Vec<ProviderMessageId>,
     identified_messages: HashSet<ProviderMessageId>,
 }
 
 impl ConversationStreams {
-    fn observe_model_call(&mut self, id: Option<&str>, previous: &HashSet<String>) -> bool {
+    fn observe_model_call(
+        &mut self,
+        id: Option<&str>,
+        previous: &HashSet<String>,
+        selected_auto: bool,
+    ) -> bool {
         let Some(id) = id.filter(|id| !id.is_empty()) else {
             return true;
         };
@@ -606,7 +614,15 @@ impl ConversationStreams {
             return false;
         }
         self.observed_model_calls.insert(id.to_owned());
+        self.call_auto_selections
+            .entry(id.to_owned())
+            .or_insert(selected_auto);
         true
+    }
+
+    fn call_selected_auto(&self, id: Option<&str>, fallback: bool) -> bool {
+        id.and_then(|id| self.call_auto_selections.get(id).copied())
+            .unwrap_or(fallback)
     }
 }
 
@@ -1878,6 +1894,14 @@ fn project_session_event(
         }
         let compacting = known.compaction.holds_stretch();
         let streams = &mut working.streams;
+        if !compacting
+            && matches!(
+                event.parsed_type(),
+                SessionEventType::AssistantTurnStart | SessionEventType::ModelCallStart
+            )
+        {
+            streams.anonymous_fixed_call = false;
+        }
         if event.parsed_type() == SessionEventType::AssistantUsage {
             let usage: AssistantUsageData = decode(&event)?;
             let previous_call = usage
@@ -1908,8 +1932,17 @@ fn project_session_event(
                 compacting,
             );
             let current_call = conversation
-                && streams
-                    .observe_model_call(usage.api_call_id.as_deref(), &known.previous_model_calls);
+                && streams.observe_model_call(
+                    usage.api_call_id.as_deref(),
+                    &known.previous_model_calls,
+                    known.auto_selection,
+                );
+            if current_call
+                && !compacting
+                && let Some(current) = streams.working_models.read(&event, known.auto_selection)
+            {
+                projected.push(attributed(Some(&subagent), current));
+            }
             if current_call && usage.is_auto == Some(false) {
                 projected.extend(
                     fixed_model_call(streams, usage.api_call_id.as_deref())
@@ -1917,8 +1950,8 @@ fn project_session_event(
                         .map(|event| attributed(Some(&subagent), event)),
                 );
             }
-            let auto =
-                usage.is_auto == Some(true) || (usage.is_auto.is_none() && known.auto_selection);
+            let auto = usage.is_auto == Some(true)
+                || streams.call_selected_auto(usage.api_call_id.as_deref(), known.auto_selection);
             if current_call && auto {
                 projected.extend(
                     reported_model_call(
@@ -1943,9 +1976,11 @@ fn project_session_event(
                 &failure,
                 ConversationKind::Subagent,
                 compacting,
-            ) || !streams
-                .observe_model_call(failure.api_call_id.as_deref(), &known.previous_model_calls)
-            {
+            ) || !streams.observe_model_call(
+                failure.api_call_id.as_deref(),
+                &known.previous_model_calls,
+                known.auto_selection,
+            ) {
                 return Ok(Vec::new());
             }
             let mut projected = (!compacting)
@@ -1962,7 +1997,7 @@ fn project_session_event(
                 );
             }
             let auto = failure.is_auto == Some(true)
-                || (failure.is_auto.is_none() && known.auto_selection);
+                || streams.call_selected_auto(failure.api_call_id.as_deref(), known.auto_selection);
             if auto && let Some(model) = failure.model.as_deref() {
                 projected.extend(
                     reported_model_call(
@@ -1978,11 +2013,12 @@ fn project_session_event(
             }
             return Ok(projected);
         }
-        let current_model = if compacting {
-            None
-        } else {
-            streams.working_models.read(&event, known.auto_selection)
-        };
+        let current_model =
+            if compacting || is_previous_model_call(&event, &known.previous_model_calls) {
+                None
+            } else {
+                streams.working_models.read(&event, known.auto_selection)
+            };
         let auto = ModelId::new(AUTO_MODEL_ID);
         let routed_selection = known.auto_selection.then_some(&auto);
         let mut projected = current_model
@@ -2019,10 +2055,20 @@ fn project_session_event(
         | SessionEventType::ModelCallStart
         | SessionEventType::ModelCallFinished
         | SessionEventType::Abort
-        | SessionEventType::AgentInterrupted => Ok(correlation
-            .project_current_model(&event)
-            .into_iter()
-            .collect()),
+        | SessionEventType::AgentInterrupted => {
+            if matches!(
+                event.parsed_type(),
+                SessionEventType::AssistantTurnStart | SessionEventType::ModelCallStart
+            ) && !has_parent_tool_call(&event)
+                && let Some(turn) = correlation.turn.as_mut()
+            {
+                turn.streams.anonymous_fixed_call = false;
+            }
+            Ok(correlation
+                .project_current_model(&event)
+                .into_iter()
+                .collect())
+        }
         SessionEventType::SessionAutoTierSwitchFailed => Ok(reported(&event)
             .map(|refusal| correlation.project_tier_refused(refusal))
             .unwrap_or_default()),
@@ -2102,7 +2148,17 @@ fn project_session_event(
                 && turn.streams.observe_model_call(
                     usage.api_call_id.as_deref(),
                     &correlation.previous_model_calls,
+                    selection.is_some(),
                 );
+            if current_call
+                && !compacting
+                && let Some(current) = turn
+                    .streams
+                    .working_models
+                    .read(&event, selection.is_some())
+            {
+                projected.push(attributed(None, current));
+            }
             if current_call && usage.is_auto == Some(false) {
                 projected.extend(
                     fixed_model_call(&mut turn.streams, usage.api_call_id.as_deref())
@@ -2112,7 +2168,6 @@ fn project_session_event(
             }
             if let Some(selected) = selection
                 && current_call
-                && usage.is_auto != Some(false)
             {
                 projected.extend(
                     reported_model_call(
@@ -2147,6 +2202,7 @@ fn project_session_event(
             if !turn.streams.observe_model_call(
                 failure.api_call_id.as_deref(),
                 &correlation.previous_model_calls,
+                auto,
             ) {
                 return Ok(Vec::new());
             }
@@ -2163,10 +2219,7 @@ fn project_session_event(
                         .map(|event| attributed(None, event)),
                 );
             }
-            if auto
-                && failure.is_auto != Some(false)
-                && let Some(model) = failure.model.as_deref()
-            {
+            if auto && let Some(model) = failure.model.as_deref() {
                 projected.extend(
                     reported_model_call(
                         &mut turn.streams,
@@ -2200,26 +2253,41 @@ fn project_session_event(
             let stretch = correlation.stretches;
             let routed_selection = (correlation.selection.model.as_str() == AUTO_MODEL_ID)
                 .then_some(&correlation.selection.model);
+            let compacting = correlation.compaction.holds_stretch();
+            let previous_call = is_previous_model_call(&event, &correlation.previous_model_calls);
             let turn = correlation
                 .turn
                 .as_mut()
                 .expect("the main conversation's streams live inside its Turn");
-            Ok(project_conversation_event(
-                &mut turn.streams,
-                &mut correlation.delegations,
-                &correlation.execution_directory,
-                &mut correlation.routes,
-                stretch,
-                ModelRouting {
-                    selected: routed_selection,
-                    conversation: ConversationKind::Main,
-                    previous_calls: &correlation.previous_model_calls,
-                },
-                &event,
-            )?
-            .into_iter()
-            .map(|projected| attributed(None, projected))
-            .collect())
+            let current = if compacting || previous_call || has_parent_tool_call(&event) {
+                None
+            } else {
+                turn.streams
+                    .working_models
+                    .read(&event, routed_selection.is_some())
+            };
+            let mut projected = current
+                .map(|event| attributed(None, event))
+                .into_iter()
+                .collect::<Vec<_>>();
+            projected.extend(
+                project_conversation_event(
+                    &mut turn.streams,
+                    &mut correlation.delegations,
+                    &correlation.execution_directory,
+                    &mut correlation.routes,
+                    stretch,
+                    ModelRouting {
+                        selected: routed_selection,
+                        conversation: ConversationKind::Main,
+                        previous_calls: &correlation.previous_model_calls,
+                    },
+                    &event,
+                )?
+                .into_iter()
+                .map(|projected| attributed(None, projected)),
+            );
+            Ok(projected)
         }
         _ => Ok(Vec::new()),
     }
@@ -2275,6 +2343,14 @@ fn has_parent_tool_call(event: &SessionEvent) -> bool {
         .is_some_and(|id| !id.is_empty())
 }
 
+fn is_previous_model_call(event: &SessionEvent, previous: &HashSet<String>) -> bool {
+    event
+        .data
+        .get("apiCallId")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|id| previous.contains(id))
+}
+
 fn is_conversation_model_failure(
     event: &SessionEvent,
     failure: &ModelCallFailureData,
@@ -2301,10 +2377,8 @@ fn reported_model_call(
     selected: &ModelId,
     usage: bool,
 ) -> Vec<ProviderEvent> {
-    if actual.trim().is_empty()
-        || actual == selected.as_str()
-        || call_id.is_some_and(|id| streams.fixed_model_calls.contains(id))
-    {
+    let id = call_id.filter(|id| !id.is_empty());
+    if actual.trim().is_empty() || actual == selected.as_str() || (!usage && id.is_none()) {
         return Vec::new();
     }
     let model = ModelAttribution {
@@ -2312,7 +2386,6 @@ fn reported_model_call(
         selected: selected.clone(),
         actual: ModelId::new(actual),
     };
-    let id = call_id.filter(|id| !id.is_empty());
     let first = id.is_none_or(|id| streams.recorded_model_calls.insert(id.to_owned()));
     let mut projected = if first {
         vec![ProviderEvent::ModelCallRecorded {
@@ -2321,7 +2394,7 @@ fn reported_model_call(
     } else {
         Vec::new()
     };
-    if let Some(id) = id.filter(|_| usage) {
+    if let Some(id) = id.filter(|id| usage && !streams.fixed_model_calls.contains(*id)) {
         streams
             .reported_model_calls
             .insert(id.to_owned(), model.clone());
@@ -2361,14 +2434,12 @@ fn fixed_model_call(
     call_id: Option<&str>,
 ) -> Vec<ProviderEvent> {
     let Some(id) = call_id.filter(|id| !id.is_empty()) else {
-        return Vec::new();
+        streams.anonymous_fixed_call = true;
+        return std::mem::take(&mut streams.anonymous_attributed_messages)
+            .into_iter()
+            .map(|message| ProviderEvent::AgentMessageModelCleared { message })
+            .collect();
     };
-    if streams.recorded_model_calls.contains(id) {
-        tracing::warn!(
-            call_id = id,
-            "Copilot reported conflicting Auto evidence for a model call already recorded"
-        );
-    }
     streams.fixed_model_calls.insert(id.to_owned());
     streams.reported_model_calls.remove(id);
     streams.pending_model_messages.remove(id);
@@ -2569,18 +2640,24 @@ fn project_conversation_event(
             let unscoped_child = matches!(routing.conversation, ConversationKind::Main)
                 && has_parent_tool_call(event);
             let reported_id = message.api_call_id.as_deref().filter(|id| !id.is_empty());
-            let current_call =
-                !unscoped_child && streams.observe_model_call(reported_id, routing.previous_calls);
+            let current_call = !unscoped_child
+                && streams.observe_model_call(
+                    reported_id,
+                    routing.previous_calls,
+                    routing.selected.is_some(),
+                );
             let auto_call = current_call
-                && !reported_id.is_some_and(|id| streams.fixed_model_calls.contains(id));
+                && !reported_id.is_some_and(|id| streams.fixed_model_calls.contains(id))
+                && !(reported_id.is_none() && streams.anonymous_fixed_call);
             let call_id = reported_id.filter(|_| auto_call);
             let reported_call = call_id
                 .and_then(|id| streams.reported_model_calls.get(id))
                 .cloned();
-            let selected = routing
-                .selected
-                .filter(|_| auto_call)
-                .or_else(|| reported_call.as_ref().map(|call| &call.selected));
+            let auto = ModelId::new(AUTO_MODEL_ID);
+            let selected = (auto_call
+                && streams.call_selected_auto(reported_id, routing.selected.is_some()))
+            .then_some(&auto)
+            .or_else(|| reported_call.as_ref().map(|call| &call.selected));
             let model = selected.and_then(|selected| {
                 actual.as_ref().map_or_else(
                     || reported_call.clone(),
@@ -2612,6 +2689,13 @@ fn project_conversation_event(
                             }
                             for id in associated_calls {
                                 remember_attributed_message(streams, &id, &message_id);
+                            }
+                            if reported_id.is_none()
+                                && !streams.anonymous_attributed_messages.contains(&message_id)
+                            {
+                                streams
+                                    .anonymous_attributed_messages
+                                    .push(message_id.clone());
                             }
                         } else if let Some(call_id) = call_id
                             && selected.is_some()
@@ -2673,6 +2757,21 @@ fn project_conversation_event(
                             });
                     }
                 }
+                if reported_id.is_none() && model.is_some() {
+                    let provider_message = ProviderMessageId::new(message.message_id.clone());
+                    if !projected.iter().any(|event| {
+                        matches!(event, ProviderEvent::AgentMessageIdentified { message }
+                            if message == &provider_message)
+                    }) {
+                        projected.insert(
+                            index,
+                            ProviderEvent::AgentMessageIdentified {
+                                message: provider_message,
+                            },
+                        );
+                        index += 1;
+                    }
+                }
                 if let Some(model) = model {
                     projected.insert(
                         index,
@@ -2700,6 +2799,17 @@ fn project_conversation_event(
                 let message_id = ProviderMessageId::new(message.message_id.clone());
                 if streams.identified_messages.contains(&message_id) {
                     remember_attributed_message(streams, call_id, &message_id);
+                }
+            } else if reported_id.is_none()
+                && projected
+                    .iter()
+                    .any(|event| matches!(event, ProviderEvent::AgentMessageModelKnown { .. }))
+            {
+                let message_id = ProviderMessageId::new(message.message_id.clone());
+                if streams.identified_messages.contains(&message_id)
+                    && !streams.anonymous_attributed_messages.contains(&message_id)
+                {
+                    streams.anonymous_attributed_messages.push(message_id);
                 }
             }
             Ok(projected)
@@ -4600,8 +4710,32 @@ mod tests {
                 json!({ "chosenModel": "child-model" }),
             ),
         );
+        assert!(
+            resolved.is_empty(),
+            "Auto resolution cannot revive a dispatch whose usage has already arrived"
+        );
+        let child_end = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "model.call_finished",
+                json!({
+                    "turnId": "child", "dispatchDurationMs": 1,
+                    "editClassifierVersion": 1, "outcome": "success",
+                }),
+            ),
+        );
+        assert!(child_end.is_empty());
+        let child_next = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "model.call_start",
+                json!({ "turnId": "child-next", "model": "child-model" }),
+            ),
+        );
         assert!(matches!(
-            &resolved[..],
+            &child_next[..],
             [AttributedProviderEvent {
                 attribution: ProviderEventAttribution::Subagent(agent),
                 event: ProviderEvent::CurrentModelChanged { model: Some(model) },
@@ -4613,7 +4747,7 @@ mod tests {
                 "agent-1",
                 "model.call_finished",
                 json!({
-                    "turnId": "child", "dispatchDurationMs": 1,
+                    "turnId": "child-next", "dispatchDurationMs": 1,
                     "editClassifierVersion": 1, "outcome": "success",
                 }),
             ),
@@ -4734,6 +4868,154 @@ mod tests {
                 if message == &ProviderMessageId::new("late-message")
                     && model.selected.as_str() == "auto"
                     && model.actual.as_str() == "message-model"
+        )));
+    }
+
+    #[test]
+    fn anonymous_fixed_usage_withholds_or_retracts_anonymous_auto_labels() {
+        for usage_first in [true, false] {
+            let mut correlation = in_turn();
+            correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
+            let usage = || {
+                event(
+                    "assistant.usage",
+                    json!({ "model": "fixed-model", "isAuto": false, "inputTokens": 1 }),
+                )
+            };
+            let message = || {
+                event(
+                    "assistant.message",
+                    json!({ "messageId": "m1", "model": "fixed-model", "content": "Answer" }),
+                )
+            };
+            if usage_first {
+                project_attributed(&mut correlation, usage());
+                let emitted = project_attributed(&mut correlation, message());
+                assert!(!emitted.iter().any(|event| matches!(
+                    event.event,
+                    ProviderEvent::AgentMessageModelKnown { .. }
+                )));
+            } else {
+                project_attributed(&mut correlation, message());
+                let emitted = project_attributed(&mut correlation, usage());
+                assert!(emitted.iter().any(|event| matches!(
+                    &event.event,
+                    ProviderEvent::AgentMessageModelCleared { message }
+                        if message == &ProviderMessageId::new("m1")
+                )));
+            }
+        }
+    }
+
+    #[test]
+    fn a_childs_prior_fixed_message_is_not_claimed_after_it_switches_to_auto() {
+        let mut correlation = with_subagent();
+        project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "assistant.message",
+                json!({
+                    "messageId": "fixed", "apiCallId": "old-call",
+                    "model": "fixed-model", "content": "Answer",
+                }),
+            ),
+        );
+        project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "session.auto_mode_resolved",
+                json!({ "chosenModel": "auto-model" }),
+            ),
+        );
+        let usage = project_attributed(
+            &mut correlation,
+            agent_event(
+                "agent-1",
+                "assistant.usage",
+                json!({ "apiCallId": "old-call", "model": "fixed-model", "inputTokens": 1 }),
+            ),
+        );
+        assert!(!usage.iter().any(|event| matches!(
+            event.event,
+            ProviderEvent::ModelCallRecorded { .. } | ProviderEvent::AgentMessageModelKnown { .. }
+        )));
+    }
+
+    #[test]
+    fn a_child_call_keeps_the_selection_seen_before_a_later_model_change() {
+        for initially_auto in [false, true] {
+            for first_report in ["assistant.usage", "model.call_failure"] {
+                let mut correlation = with_subagent();
+                if initially_auto {
+                    project_attributed(
+                        &mut correlation,
+                        agent_event(
+                            "agent-1",
+                            "session.auto_mode_resolved",
+                            json!({ "chosenModel": "first-model" }),
+                        ),
+                    );
+                }
+                let data = match first_report {
+                    "assistant.usage" => {
+                        json!({ "apiCallId": "c1", "model": "first-model", "inputTokens": 1 })
+                    }
+                    _ => json!({
+                        "source": "subagent", "apiCallId": "c1", "model": "first-model",
+                    }),
+                };
+                project_attributed(&mut correlation, agent_event("agent-1", first_report, data));
+                let (change, data) = if initially_auto {
+                    (
+                        "session.model_change",
+                        json!({ "newModel": "fixed-model", "previousModel": "auto" }),
+                    )
+                } else {
+                    (
+                        "session.auto_mode_resolved",
+                        json!({ "chosenModel": "auto-model" }),
+                    )
+                };
+                project_attributed(&mut correlation, agent_event("agent-1", change, data));
+                let message = project_attributed(
+                    &mut correlation,
+                    agent_event(
+                        "agent-1",
+                        "assistant.message",
+                        json!({
+                            "messageId": "m1", "apiCallId": "c1",
+                            "model": "first-model", "content": "Answer",
+                        }),
+                    ),
+                );
+                assert_eq!(
+                    message.iter().any(|event| matches!(
+                        &event.event,
+                        ProviderEvent::AgentMessageModelKnown { model, .. }
+                            if model.actual.as_str() == "first-model"
+                    )),
+                    initially_auto,
+                    "initially_auto={initially_auto}, first_report={first_report}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fixed_calls_still_appear_in_a_routed_turns_call_history() {
+        let mut correlation = in_turn();
+        correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
+        let usage = project(
+            &mut correlation,
+            "assistant.usage",
+            json!({ "apiCallId": "c1", "model": "fixed-model", "isAuto": false, "inputTokens": 1 }),
+        );
+        assert!(usage.iter().any(|event| matches!(
+            event,
+            ProviderEvent::ModelCallRecorded { model }
+                if model.actual.as_str() == "fixed-model"
         )));
     }
 
@@ -5024,6 +5306,30 @@ mod tests {
     }
 
     #[test]
+    fn anonymous_failure_and_usage_do_not_invent_two_identifiable_calls() {
+        let mut correlation = in_turn();
+        correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
+        let failure = project(
+            &mut correlation,
+            "model.call_failure",
+            json!({ "model": "alpha", "isAuto": true, "source": "top_level" }),
+        );
+        let usage = project(
+            &mut correlation,
+            "assistant.usage",
+            json!({ "model": "alpha", "isAuto": true, "inputTokens": 1 }),
+        );
+        assert_eq!(
+            failure
+                .iter()
+                .chain(&usage)
+                .filter(|event| matches!(event, ProviderEvent::ModelCallRecorded { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     fn sampling_failures_neither_clear_nor_enter_a_conversations_calls() {
         let mut correlation = in_turn();
         correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
@@ -5107,6 +5413,77 @@ mod tests {
                 if message == &ProviderMessageId::new("m1")
                     && model.actual.as_str() == "author-model"
         )));
+    }
+
+    #[test]
+    fn phase_usage_clears_live_model_evidence_before_a_tool_runs() {
+        for child in [false, true] {
+            let mut correlation = with_subagent();
+            correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
+            if child {
+                project_attributed(
+                    &mut correlation,
+                    agent_event(
+                        "agent-1",
+                        "session.auto_mode_resolved",
+                        json!({ "chosenModel": "alpha" }),
+                    ),
+                );
+            }
+            let scoped = |kind, data| {
+                if child {
+                    agent_event("agent-1", kind, data)
+                } else {
+                    event(kind, data)
+                }
+            };
+            let started = project_attributed(
+                &mut correlation,
+                scoped(
+                    "assistant.fusion_phase_started",
+                    json!({
+                        "fusionId": "r", "phaseId": "p1", "phaseKind": "primary",
+                        "role": "solver", "conversationScope": "root",
+                        "pattern": "single", "model": "alpha",
+                    }),
+                ),
+            );
+            assert!(started.iter().any(|event| matches!(
+                &event.event,
+                ProviderEvent::CurrentModelChanged { model: Some(model) }
+                    if model.actual.as_str() == "alpha"
+            )));
+            let used = project_attributed(
+                &mut correlation,
+                scoped(
+                    "assistant.usage",
+                    json!({ "model": "alpha", "inputTokens": 1 }),
+                ),
+            );
+            assert!(used.iter().any(|event| matches!(
+                event.event,
+                ProviderEvent::CurrentModelChanged { model: None }
+            )));
+            project_attributed(
+                &mut correlation,
+                scoped(
+                    "tool.execution_start",
+                    json!({ "toolCallId": "t1", "toolName": "custom", "arguments": {} }),
+                ),
+            );
+            let next = project_attributed(
+                &mut correlation,
+                scoped(
+                    "model.call_start",
+                    json!({ "turnId": "next", "model": "beta" }),
+                ),
+            );
+            assert!(next.iter().any(|event| matches!(
+                &event.event,
+                ProviderEvent::CurrentModelChanged { model: Some(model) }
+                    if model.actual.as_str() == "beta"
+            )));
+        }
     }
 
     #[test]
