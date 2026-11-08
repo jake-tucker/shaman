@@ -418,26 +418,22 @@ struct CacheUse {
 
 impl CacheTally {
     /// Adds a Turn's Usage to the input, and what it read from cache and
-    /// wrote to it to the Models that did the work: each Model Share's part,
-    /// as [`DividedUsage`] gives it, to that Share's Actual Model under the
-    /// Turn's Provider, and the part the Shares leave — all of it, on a Turn
-    /// holding none — to its Selection's Model.
+    /// wrote to it to the Models that did the work, as
+    /// [`DividedUsage::by_model`] attributes it: each Model Share's part to
+    /// that Share's Actual Model under the Turn's Provider, and the
+    /// unattributed remainder — all of it, on a Turn holding none — to its
+    /// Selection's Model.
     fn add_turn(&mut self, turn: &Turn) {
-        let Some(usage) = &turn.usage else {
+        let (Some(usage), Some(divided)) = (&turn.usage, DividedUsage::of_turn(turn)) else {
             return;
         };
         self.input.add_usage(usage);
-        let selection = turn.agent.as_ref().map(|agent| &agent.selection);
-        let divided = DividedUsage::of_turn(turn);
-        for (share, usage) in turn.model_shares.iter().zip(&divided.shares) {
-            if let Some(usage) = usage {
-                let model = selection.map(|selection| (&selection.provider, &share.model));
-                self.add(usage, model);
-            }
-        }
-        if let Some(left) = &divided.left {
-            let model = selection.map(|selection| (&selection.provider, &selection.model));
-            self.add(left, model);
+        let Some(selection) = turn.agent.as_ref().map(|agent| &agent.selection) else {
+            self.add(usage, None);
+            return;
+        };
+        for (model, part) in divided.by_model(&selection.model) {
+            self.add(part, Some((&selection.provider, model)));
         }
     }
 

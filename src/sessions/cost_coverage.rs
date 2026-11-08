@@ -479,7 +479,8 @@ fn contributions_of(forest: &impl CostForest, sessions: &[SessionId]) -> Vec<Cos
             let remainder = !unpriced
                 || turn.model_shares.is_empty()
                 || turn.status == TurnStatus::Active
-                || DividedUsage::of_turn(turn).leaves_usage();
+                || DividedUsage::of_turn(turn)
+                    .is_some_and(|divided| divided.remainder_holds_usage());
             if unpriced {
                 contributions.extend((0..turn.model_shares.len()).map(|index| {
                     CostContribution::unpriced_share(owner, turn.id, ModelShareIndex(index))
@@ -553,8 +554,8 @@ impl ScopedShare {
 fn cost_records(owner: SessionId, turn: &Turn) -> Vec<ScopedCost> {
     let records = turn_cost_records(turn);
     let current = records.len().checked_sub(1);
-    let remainder_holds_usage =
-        turn.model_shares.is_empty() || DividedUsage::of_turn(turn).leaves_usage();
+    let remainder_holds_usage = turn.model_shares.is_empty()
+        || DividedUsage::of_turn(turn).is_some_and(|divided| divided.remainder_holds_usage());
     records
         .into_iter()
         .enumerate()

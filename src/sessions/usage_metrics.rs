@@ -193,18 +193,39 @@ impl Filing {
             shares: Vec::with_capacity(turn.model_shares.len()),
             remainder: selection.clone(),
         };
-        for (share, usage) in turn.model_shares.iter().zip(divided.shares.iter()) {
+        // A Turn recording no Usage still files each of its Shares, with
+        // none.
+        let shares: Vec<(&ModelId, Option<&Usage>)> = match &divided {
+            Some(divided) => divided
+                .shares()
+                .iter()
+                .map(|(model, part)| (*model, Some(part)))
+                .collect(),
+            None => turn
+                .model_shares
+                .iter()
+                .map(|share| (&share.model, None))
+                .collect(),
+        };
+        for (model, usage) in shares {
             let key = provider.map_or(UsageMetricsKey::Unknown, |provider| {
                 UsageMetricsKey::Model {
                     provider: provider.clone(),
-                    model: share.model.clone(),
+                    model: model.clone(),
                 }
             });
-            filing.file(key.clone(), usage.clone());
+            filing.file(key.clone(), usage.cloned());
             filing.shares.push(key);
         }
-        if remainder_cost || divided.leaves_usage() {
-            filing.file(selection, divided.left);
+        if remainder_cost
+            || divided
+                .as_ref()
+                .is_some_and(DividedUsage::remainder_holds_usage)
+        {
+            filing.file(
+                selection,
+                divided.as_ref().map(|divided| divided.remainder().clone()),
+            );
         }
         filing
     }
