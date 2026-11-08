@@ -63,8 +63,8 @@ use super::{
 use crate::{
     pricing::{ModelsDevModel, PricingSource},
     protocol::{
-        AgentSelection, Approval, ApprovalSubject, CommandAction, FileChange, ModelId,
-        ModelOptionChoiceId, ModelOptionId, ModelOptionSelection, ModelOptionValue, Usage,
+        AgentSelection, Approval, ApprovalSubject, CommandAction, DividedUsage, FileChange,
+        ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection, ModelOptionValue, Usage,
     },
     provider::{
         AttributedProviderEvent, MeteredCost, ProviderActivityId, ProviderCommandStatus,
@@ -1454,6 +1454,11 @@ async fn next_provider_event(
 /// a Model. Usage already observed before that evidence becomes the pricing
 /// baseline, and an ambiguous later Model change stops further estimates until
 /// a resume begins another stretch.
+///
+/// The Shares are priced as parts of the Usage being priced, which for a
+/// Subagent is the stretch since that baseline rather than the event's whole
+/// Usage. A Subagent's Usage event must therefore state its Shares on that
+/// stretch, within it; debug builds assert they fit.
 fn estimate_cost(
     correlation: &mut NativeCorrelation,
     pricing: Option<&PricingSource>,
@@ -1496,13 +1501,22 @@ fn estimate_cost(
             )
         }
     };
-    // The Shares are priced as parts of `priceable_usage`, so they must be
-    // stated on its terms: a Subagent's priced stretch, not the reading's
-    // whole Usage, where the two differ.
+    let shares: Vec<(ModelId, Usage)> = std::mem::take(model_shares)
+        .into_iter()
+        .map(|share| (share.model, share.usage))
+        .collect();
+    debug_assert!(
+        DividedUsage::of(
+            &priceable_usage,
+            shares.iter().map(|(model, usage)| (model, usage))
+        )
+        .fits(),
+        "a Codex reading's Model Shares are stated within the Usage it prices"
+    );
     let estimate = pricing.estimate_cached_by_share(
         &ModelsDevModel::new(super::MODELS_DEV_PROVIDER, model),
         &priceable_usage,
-        std::mem::take(model_shares),
+        &shares,
     );
     *cost = estimate.cost().map(|estimated| {
         let metered = MeteredCost::from(estimated);
