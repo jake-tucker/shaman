@@ -252,6 +252,13 @@ enum PointerList {
     ApprovalPosture,
     Worktrees,
     ModelOptions,
+    SidebarMenu,
+    WorkspacePickerMenu,
+    Workspaces,
+    Subagents,
+    Icons,
+    DirectoryBrowser,
+    Settings,
     /// The list editor, whose rows are where typing lands: a press moves
     /// that place and saves nothing, which is what Enter does there.
     ListEditor,
@@ -265,6 +272,44 @@ enum PointerList {
 }
 
 impl PointerList {
+    /// The list `surface` is, where it follows the pointer at all. The Usage
+    /// Metrics view is a whole view rather than a list, and the other
+    /// overlays offer no list to walk.
+    fn over(surface: SelectionSurface) -> Option<Self> {
+        Some(match surface {
+            SelectionSurface::Themes => Self::Themes,
+            SelectionSurface::Models => Self::Models,
+            SelectionSurface::Sessions => Self::Sessions,
+            SelectionSurface::Worktrees => Self::Worktrees,
+            SelectionSurface::ModelOptions => Self::ModelOptions,
+            SelectionSurface::SidebarMenu => Self::SidebarMenu,
+            SelectionSurface::WorkspacePickerMenu => Self::WorkspacePickerMenu,
+            SelectionSurface::Workspaces => Self::Workspaces,
+            SelectionSurface::Subagents => Self::Subagents,
+            SelectionSurface::Icons => Self::Icons,
+            SelectionSurface::DirectoryBrowser => Self::DirectoryBrowser,
+            SelectionSurface::Settings => Self::Settings,
+            SelectionSurface::ListEditor => Self::ListEditor,
+            _ => return None,
+        })
+    }
+
+    /// Whether a press on the list is answered here. Lists that answered
+    /// presses before they followed the pointer go on answering them where
+    /// they always have, each in its own way.
+    fn answers_presses(self) -> bool {
+        !matches!(
+            self,
+            Self::SidebarMenu
+                | Self::WorkspacePickerMenu
+                | Self::Workspaces
+                | Self::Subagents
+                | Self::Icons
+                | Self::DirectoryBrowser
+                | Self::Settings
+        )
+    }
+
     /// Whether the list holds the pointer to its box, as a picker the keys
     /// are held by does: a press inside it on no entry moves nothing.
     fn is_modal(self) -> bool {
@@ -14644,6 +14689,17 @@ impl Application {
             Some(PointerList::Worktrees) => self.state.worktree_picker.point_at(position),
             Some(PointerList::ModelOptions) => self.state.model_options.point_at(position),
             Some(PointerList::Questionnaire) => self.state.questionnaires.point_at(position),
+            Some(PointerList::SidebarMenu) => self.state.sidebar.point_menu_at(position),
+            Some(PointerList::WorkspacePickerMenu) => {
+                self.state.workspace_picker.point_menu_at(position)
+            }
+            Some(PointerList::Workspaces) => self.state.workspace_picker.point_at(position),
+            Some(PointerList::Subagents) => self.state.subagent_picker.point_at(position),
+            Some(PointerList::Icons) => self.state.icon_picker.point_at(position),
+            Some(PointerList::DirectoryBrowser) => self.state.directory_browser.point_at(position),
+            Some(PointerList::Settings) => {
+                self.state.settings_panel.point_at(position.x, position.y)
+            }
             Some(PointerList::ListEditor) => self
                 .state
                 .settings_panel
@@ -14653,12 +14709,17 @@ impl Application {
         }
     }
 
-    /// Answers a press on the list the pointer drives, where one stands: a
-    /// press on an entry moves focus there and acts on it as Enter would, and
-    /// one anywhere else inside the list's box moves nothing. `None` leaves
-    /// the press to whatever else is drawn there.
+    /// Answers a press on the list the pointer drives, where one stands and
+    /// answers presses here: a press on an entry moves focus there and acts on
+    /// it as Enter would — save in a list whose Enter is not about the entry,
+    /// which the press only focuses or selects — and one anywhere else inside
+    /// a list holding the pointer to its box moves nothing. `None` leaves the
+    /// press to whatever else is drawn there.
     fn press_pointer_list(&mut self, position: Position) -> Option<Result<ApplicationTransition>> {
-        let list = self.state.pointer_list()?;
+        let list = self
+            .state
+            .pointer_list()
+            .filter(|list| list.answers_presses())?;
         self.point_at(position);
         let command = match list {
             PointerList::Themes => self
@@ -14716,6 +14777,13 @@ impl Application {
                     ))
                 })
                 .flatten(),
+            PointerList::SidebarMenu
+            | PointerList::WorkspacePickerMenu
+            | PointerList::Workspaces
+            | PointerList::Subagents
+            | PointerList::Icons
+            | PointerList::DirectoryBrowser
+            | PointerList::Settings => None,
         };
         match command {
             Some(command) => Some(self.handle_command(command)),
@@ -14899,30 +14967,9 @@ impl TuiState {
     /// first, where that list follows the pointer at all.
     fn pointer_list(&self) -> Option<PointerList> {
         match self.surface_above_interventions() {
-            Some(SurfaceAboveInterventions::Selection(SelectionSurface::Themes)) => {
-                Some(PointerList::Themes)
-            }
-            Some(SurfaceAboveInterventions::Selection(SelectionSurface::Models)) => {
-                Some(PointerList::Models)
-            }
-            Some(SurfaceAboveInterventions::Selection(SelectionSurface::Sessions)) => {
-                Some(PointerList::Sessions)
-            }
-            Some(SurfaceAboveInterventions::Selection(SelectionSurface::Worktrees)) => {
-                Some(PointerList::Worktrees)
-            }
-            Some(SurfaceAboveInterventions::Selection(SelectionSurface::ListEditor)) => {
-                Some(PointerList::ListEditor)
-            }
-            Some(SurfaceAboveInterventions::Selection(SelectionSurface::ModelOptions)) => {
-                Some(PointerList::ModelOptions)
-            }
+            Some(SurfaceAboveInterventions::Selection(surface)) => PointerList::over(surface),
             Some(SurfaceAboveInterventions::ApprovalPosture) => Some(PointerList::ApprovalPosture),
-            Some(
-                SurfaceAboveInterventions::Selection(_)
-                | SurfaceAboveInterventions::Sidebar
-                | SurfaceAboveInterventions::Aside,
-            ) => None,
+            Some(SurfaceAboveInterventions::Sidebar | SurfaceAboveInterventions::Aside) => None,
             Some(SurfaceAboveInterventions::UnreachableOrigin) | None => {
                 let session = self.session_reference.as_ref();
                 if self.approvals.is_open(session) {

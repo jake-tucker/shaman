@@ -12,10 +12,10 @@ use crate::tui_rendering::support::{
     NEW_SESSION, PANDA, SELECTOR_ROW, SIDEBAR_PRESS_HEIGHT as PRESS_HEIGHT, SIDEBAR_WIDE as WIDE,
     answer_workspace_resolution, application_looking_at_studio, connected_application,
     deliver_settings, drawn_in_sidebar, enter_active_session, enter_session,
-    failed_session_snapshot, fixture_instance_id, noncanonical_spelling, press_new_session,
-    rendered_application_buffer, rendered_application_rows_at, rendered_row, selector_label,
-    sidebar_column, studio_stops_answering, text_on, text_position, type_terminal_text,
-    workspace_dir,
+    failed_session_snapshot, fixture_instance_id, noncanonical_spelling, point_at,
+    press_new_session, rendered_application_buffer, rendered_application_rows_at, rendered_row,
+    selector_label, sidebar_column, studio_stops_answering, text_on, text_position,
+    type_terminal_text, workspace_dir,
 };
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -10829,4 +10829,27 @@ fn an_active_row_with_room_for_only_its_first_line_still_shows_that_line_at_the_
         !rows.iter().any(|row| row.contains("Row 3")),
         "the cut row's Title stands beyond the foot: {rows:#?}"
     );
+}
+
+#[test]
+fn the_pointer_walks_the_menu_as_the_arrows_do() {
+    let workspace = workspace_dir();
+    let wanted = SessionId::new();
+    let mut application = sidebar_showing(workspace.path(), two_listed(workspace.path(), wanted));
+
+    let anchor = open_menu_on(&mut application, "Wanted work");
+    assert!(application.wants_pointer_motion());
+    let _ = rendered_application_rows_at(&application, WIDE, PRESS_HEIGHT);
+    assert!(point_at(
+        &mut application,
+        (SIDEBAR_CELL + 1, anchor + 1 + 2)
+    ));
+
+    assert_eq!(
+        press_sidebar_key(&mut application, KeyCode::Enter),
+        ApplicationTransition::Continue,
+        "Enter acts on the item the pointer stands on, and Delete asks again"
+    );
+    let items = menu_items(&application, anchor);
+    assert!(items[2].contains("confirm"), "{items:?}");
 }

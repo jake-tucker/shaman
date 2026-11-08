@@ -989,6 +989,21 @@ impl WorkspacePicker {
         )
     }
 
+    /// Moves the row menu's selection onto the item drawn under the pointer,
+    /// as the arrows would, answering whether it moved.
+    pub(super) fn point_menu_at(&mut self, position: Position) -> bool {
+        let before = self.menu.as_ref().map(|menu| menu.selected);
+        self.menu_hit(position) && self.menu.as_ref().map(|menu| menu.selected) != before
+    }
+
+    /// Moves the reader onto the row drawn under the pointer, as the arrows
+    /// would, answering whether they moved. What was pointed at is in view
+    /// already, so the window holds where it stands.
+    pub(super) fn point_at(&mut self, position: Position) -> bool {
+        let before = self.selected.clone();
+        self.row_hit(position) && self.selected != before
+    }
+
     /// Puts the reader on the menu item drawn at `position`, answering
     /// whether one is drawn there — so a press acts on the item it landed
     /// on, through the same path Enter takes.

@@ -6,8 +6,9 @@
 //! to browse the key stays inert and composer history keeps its meaning.
 
 use crate::tui_rendering::support::{
-    connected_application, enter_session, failed_session_snapshot, rendered_application_buffer,
-    rendered_application_rows_at, text_position, type_terminal_text, workspace_dir,
+    connected_application, enter_session, failed_session_snapshot, point_at,
+    rendered_application_buffer, rendered_application_rows_at, text_position, type_terminal_text,
+    workspace_dir,
 };
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -892,5 +893,36 @@ fn escape_interrupts_the_session_when_only_subagents_keep_it_working() {
             ),
         },
         "the second Esc interrupts the Session even with no Turn active"
+    );
+}
+
+#[test]
+fn the_pointer_chooses_a_row_for_enter_as_the_arrows_do() {
+    let workspace = workspace_dir();
+    let (snapshot, spawned) = parent_with_working_subagents(
+        workspace.path(),
+        &[
+            ("Explore", "Map the provider seams"),
+            ("Plan", "Design the picker"),
+        ],
+    );
+    let mut application = connected_application(workspace.path());
+    application
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .expect("attach a Session with working Subagents");
+    press_key(&mut application, KeyCode::Down);
+    assert!(application.wants_pointer_motion());
+
+    let plan = text_position(
+        &rendered_application_buffer(&application, 80, 22),
+        "└ ⠋ Plan: Design the picker",
+    );
+    assert!(point_at(&mut application, plan));
+    assert_eq!(
+        press_key(&mut application, KeyCode::Enter),
+        ApplicationTransition::AttachSession(suru::protocol::SessionReference::new(
+            suru::protocol::Outlook::Local,
+            spawned[1].child_id,
+        ))
     );
 }

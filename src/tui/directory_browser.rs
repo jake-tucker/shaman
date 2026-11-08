@@ -655,6 +655,33 @@ impl DirectoryBrowser {
             .push(DrawnRow { line, columns, key });
     }
 
+    /// Moves focus onto the directory's row drawn under the pointer, as the
+    /// arrows would, answering whether it moved. A row the keys have since
+    /// taken out of the tree is no longer there to point at, and what was
+    /// pointed at is in view already, so the window holds.
+    pub(super) fn point_at(&mut self, position: Position) -> bool {
+        if !self.is_open() {
+            return false;
+        }
+        let directories = self.directories();
+        let row = self
+            .drawn
+            .borrow()
+            .rows
+            .iter()
+            .find(|row| row.contains(position))
+            .map(|row| row.key.clone())
+            .filter(|key| directories.contains(key));
+        match row {
+            Some(key) if key != self.focused => {
+                self.focus(key);
+                self.window.hold();
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Answers a press at `position` with the command it asks for. A press
     /// on a directory's row puts focus there and asks for the row to be
     /// opened or closed, as Space does — or, where it `repeats` a press that

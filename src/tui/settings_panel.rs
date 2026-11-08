@@ -750,6 +750,34 @@ impl SettingsPanel {
         }
     }
 
+    /// Moves focus onto the row drawn under the pointer, as the keys would,
+    /// answering whether it moved: one of the tab's rows, or one of the
+    /// focused Provider's own Settings. A tab is no row, so passing over the
+    /// tab bar shows no other tab; only pressing a tab does.
+    pub(super) fn point_at(&mut self, column: u16, row: u16) -> bool {
+        if !self.open {
+            return false;
+        }
+        let hit = self.layout.borrow().hit(column, row);
+        match hit {
+            Some(PanelHit::Row(row)) => {
+                if self.places[self.tab.position()].focus == row && !self.provider_place.entered {
+                    return false;
+                }
+                self.focus_row(row);
+                true
+            }
+            Some(PanelHit::ProviderSetting(row)) => {
+                if self.provider_place.entered && self.provider_place.focus == row {
+                    return false;
+                }
+                self.focus_provider_setting(row);
+                true
+            }
+            Some(PanelHit::Tab(_)) | None => false,
+        }
+    }
+
     /// Notes the listing the read in force is waiting on, which is the one
     /// answer that may settle it.
     pub(super) fn await_listing(&mut self, request: ModelListRequest) {

@@ -6040,3 +6040,33 @@ fn the_pointer_moves_the_list_editors_focus_and_a_press_saves_nothing() {
         screen(&application)
     );
 }
+
+/// The pointer stands focus on a row as the arrows do, and passing over the
+/// tab bar shows no other tab: a tab is shown by pressing it, never by
+/// pointing at it.
+#[test]
+fn the_pointer_focuses_a_row_and_passing_over_a_tab_shows_nothing_else() {
+    let workspace = workspace_dir();
+    let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
+    open_transcript_tab(&mut application);
+    assert!(application.wants_pointer_motion());
+
+    let rows = rendered_application_rows(&application);
+    let reasoning = (
+        label_column(&application, "Reasoning visibility") as u16,
+        row_index(&rows, "Reasoning visibility") as u16,
+    );
+    assert!(point_at(&mut application, reasoning));
+    assert_eq!(focused_key(&application), "transcript.reasoningVisibility");
+
+    let tab = text_position(
+        &rendered_application_buffer(&application, 80, 15),
+        "Providers",
+    );
+    assert!(!point_at(&mut application, tab));
+    assert_eq!(
+        focused_key(&application),
+        "transcript.reasoningVisibility",
+        "the tab shown stays shown"
+    );
+}

@@ -10,7 +10,7 @@ use std::{
 use crate::tui_rendering::support::{
     PANDA, SIDEBAR_WIDE, answer_workspace_resolution, application_looking_at_studio,
     connected_application, deliver_settings, drawn_in_sidebar, enter_active_session,
-    fixture_instance_id, model_descriptor, noncanonical_spelling, ready_health,
+    fixture_instance_id, model_descriptor, noncanonical_spelling, point_at, ready_health,
     rendered_application_buffer, rendered_application_rows, rendered_application_rows_at,
     rendered_row, selected_session_snapshot, selector_label, sidebar_column,
     studio_stops_answering, text_position, type_terminal_text, workspace_dir, workspace_resolution,
@@ -3568,5 +3568,51 @@ fn a_long_workspace_path_gives_up_its_front_to_what_the_landing_asks() {
     assert!(
         line.contains("repository.git · Choose a working copy to start a Session"),
         "the path keeps its end, and what to do comes whole after it: {line}"
+    );
+}
+
+#[test]
+fn the_pointer_walks_the_rows_and_a_rows_menu_as_the_arrows_do() {
+    let here = workspace(&["work", "here"]);
+    let ledger = workspace(&["work", "ledger"]);
+    let atlas = workspace(&["work", "atlas"]);
+    let mut application = connected_application(&here);
+    let mut settings = EffectiveSettings::default();
+    settings.appearance.show_icons = true;
+    deliver_settings(&mut application, settings);
+    open_picker_with(
+        &mut application,
+        vec![registered(&atlas), registered(&ledger)],
+    );
+    assert!(application.wants_pointer_motion());
+    let cell = |application: &Application, needle: &str| {
+        text_position(&rendered_application_buffer(application, 80, 15), needle)
+    };
+
+    let ledger_cell = cell(&application, "ledger");
+    assert!(point_at(&mut application, ledger_cell));
+    let lines = picker_lines(&application);
+    assert!(
+        lines
+            .iter()
+            .any(|row| row.starts_with('›') && row.contains("ledger")),
+        "{lines:?}"
+    );
+
+    press_row(&mut application, (80, 15), MouseButton::Right, "atlas");
+    let edit = cell(&application, "Edit description");
+    assert!(
+        point_at(&mut application, edit),
+        "the pointer walks the row's menu once it stands"
+    );
+    press(&mut application, KeyCode::Enter);
+    let drawn = rendered_application_rows(&application).join("\n");
+    assert!(
+        !drawn.contains("Edit description"),
+        "Enter acts on the item the pointer stands on: {drawn}"
+    );
+    assert!(
+        !drawn.contains("Choose icon"),
+        "rather than the Icon the menu opened on: {drawn}"
     );
 }

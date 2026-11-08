@@ -1317,6 +1317,23 @@ impl Sidebar {
         self.act_on_menu_item(menu.selected)
     }
 
+    /// Moves the menu's selection onto the item drawn under the pointer, as
+    /// the arrows would, answering whether it moved.
+    pub(super) fn point_menu_at(&mut self, position: Position) -> bool {
+        let show_icons = self.show_icons;
+        let Some(index) = self.geometry.borrow().menu_hit(position) else {
+            return false;
+        };
+        let Some(menu) = &mut self.menu else {
+            return false;
+        };
+        if index == menu.selected || index >= menu.items(show_icons).len() {
+            return false;
+        }
+        menu.selected = index;
+        true
+    }
+
     /// Puts the menu away, leaving the row it stood on alone.
     pub(super) fn close_menu(&mut self) {
         self.menu = None;

@@ -4,7 +4,7 @@
 //! by typing, and chooses from with the arrows and Enter or a pointer press.
 
 use crate::tui_rendering::support::{
-    click_mouse, connected_application, deliver_settings, enter_session,
+    click_mouse, connected_application, deliver_settings, enter_session, point_at,
     rendered_application_buffer, rendered_application_rows_at, text_position, workspace_dir,
 };
 use crossterm::event::{
@@ -709,4 +709,23 @@ fn pointer_choice_over_a_workspace_picker_row_does_the_same() {
     assert_eq!(chosen, workspace_id);
     assert_eq!(icon, "dev-rust");
     assert!(!picker_is_drawn(&application));
+}
+
+#[test]
+fn the_pointer_focuses_a_cell_for_enter_as_the_arrows_do() {
+    let workspace = workspace_dir();
+    let mut application = application_with_open_session_icon(workspace.path(), "md-bug");
+    let buffer = rendered_application_buffer(&application, WIDE, TALL);
+    let (column, row) = text_position(&buffer, "\u{f00e4}");
+    press(&mut application, MouseButton::Left, column, row);
+    assert!(application.wants_pointer_motion());
+
+    let buffer = rendered_application_buffer(&application, WIDE, TALL);
+    let other = text_position(&buffer, "\u{f0674}");
+    assert!(point_at(&mut application, other));
+    let transition = press_key(&mut application, KeyCode::Enter);
+    let ApplicationTransition::SetSessionIcon { icon, .. } = transition else {
+        panic!("Enter chooses the glyph the pointer stands on, got {transition:?}");
+    };
+    assert_ne!(icon, "md-bug");
 }

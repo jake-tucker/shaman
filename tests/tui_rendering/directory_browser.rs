@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use crate::tui_rendering::support::{
     SIDEBAR_WIDE, application_looking_at_studio, click_mouse, connected_application,
     deliver_settings, drawn_in_sidebar, enter_active_session, fixture_instance_id, invoke, key,
-    listed_session, model_descriptor, ready_health, rendered_application_buffer,
+    listed_session, model_descriptor, point_at, ready_health, rendered_application_buffer,
     rendered_application_rows_at, rendered_row, selected_session_snapshot, selector_label,
     sidebar_column, studio_stops_answering, text_position, type_terminal_text,
     workspace_resolution,
@@ -4762,4 +4762,26 @@ fn inside_box(row: &str) -> &str {
         (Some(end), Some(start)) => &row[start + '│'.len_utf8()..end],
         _ => row,
     }
+}
+
+/// The pointer stands focus on a row as the arrows do, and a press after it
+/// is still a single press: it opens the row rather than choosing it.
+#[test]
+fn the_pointer_focuses_a_row_and_a_press_after_it_still_opens_the_row() {
+    let here = directory(&["nowhere", "here"]);
+    let (mut application, _) = browsing(&here, &["alpha", "beta"]);
+    assert!(application.wants_pointer_motion());
+    let beta = text_position(
+        &rendered_application_buffer(&application, WIDTH, HEIGHT),
+        "beta",
+    );
+
+    assert!(point_at(&mut application, beta));
+    assert_eq!(
+        tree(&application),
+        ["  ▾ here · [current]", "    ▸ alpha", "›   ▸ beta"]
+    );
+
+    let (_, _, request) = expect_listing(press_at(&mut application, beta));
+    assert_eq!(request.path, here.join("beta"), "the press opens the row");
 }

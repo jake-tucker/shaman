@@ -169,6 +169,20 @@ impl SubagentPicker {
         });
     }
 
+    /// Moves the reader onto the row drawn under the pointer, as the arrows
+    /// would, answering whether they moved. What was pointed at is in view
+    /// already, so the window holds.
+    pub(super) fn point_at(&mut self, position: Position) -> bool {
+        match self.hit(position) {
+            Some(session) if self.selected.as_ref() != Some(&session) => {
+                self.selected = Some(session);
+                self.window.hold();
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// The Subagent whose row the reader pressed, or `None` for a press
     /// outside every row — which is how a reader puts the picker away.
     pub(super) fn hit(&self, position: Position) -> Option<SessionReference> {

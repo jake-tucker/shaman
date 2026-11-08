@@ -182,6 +182,20 @@ impl IconPicker {
         self.selected = Some(name);
     }
 
+    /// Moves the reader onto the cell drawn under the pointer, as the arrows
+    /// would, answering whether they moved. What was pointed at is in view
+    /// already, so the window holds.
+    pub(super) fn point_at(&mut self, position: Position) -> bool {
+        match self.hit(position) {
+            Some(name) if self.selected != Some(name) => {
+                self.selected = Some(name);
+                self.window.hold();
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// The Catalog entry the reader is on, and `None` while a query offers
     /// nothing at all.
     pub(super) fn focused_entry(&self) -> Option<&'static IconEntry> {
