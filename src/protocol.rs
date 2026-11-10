@@ -5195,9 +5195,9 @@ pub enum PromptWithdrawal {
     /// began, which settled without its Compaction completing and without
     /// delivering it. Behind a manual Compaction any such settling withdraws
     /// it, so it never reaches a context its writer expected compacted (ADR
-    /// 0041); behind a scheduled one only an interrupt that reached the
-    /// Compaction does, or Suru stopping with nothing left to deliver it (ADR
-    /// 0073).
+    /// 0041); behind a scheduled one only an interrupt that reached its Turn
+    /// before the Compaction completed does, or Suru stopping with nothing
+    /// left to deliver it (ADR 0073).
     CompactionUnfinished { turn_id: TurnId },
 }
 

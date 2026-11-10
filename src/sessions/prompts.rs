@@ -170,10 +170,12 @@ impl SessionStoreState {
     /// no reader can be asked to wait on an Agent that will never be asked to
     /// answer — so restoring one is withdrawing it, exactly as interrupting it
     /// would have (ADR 0024). One held behind a requested Compaction, manual
-    /// or scheduled, is withdrawn saying so, as Suru stopping gracefully
-    /// mid-Compaction withdraws it: the restart leaves the Compaction
-    /// unfinished and nothing to deliver the Prompt, and its writer is owed
-    /// the text back (ADR 0041, 0073). A Prompt waiting behind a Turn in the
+    /// or scheduled, is withdrawn saying behind which, as Suru stopping
+    /// gracefully mid-Compaction withdraws it: the restart leaves the
+    /// Compaction unfinished and nothing to deliver the Prompt (ADR 0041,
+    /// 0073). Withdrawing it only marks it so; its text is recovered only by
+    /// a client still holding it, since nothing that survives the stop
+    /// carries it back to a composer. A Prompt waiting behind a Turn in the
     /// queue is not one of these: its delivery is the Session's own to make
     /// when that Turn settles.
     ///

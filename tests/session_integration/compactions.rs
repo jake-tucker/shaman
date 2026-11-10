@@ -12,7 +12,9 @@
 //! That Turn takes no steer: a Prompt sent while it runs is held to begin the
 //! next Turn once the Compaction completes, and withdrawn if it fails or is
 //! interrupted — or, behind a scheduled Compaction Suru began of its own
-//! accord, delivered however it settles short of an interrupt.
+//! accord, delivered whether it completes or fails, and withdrawn only if an
+//! interrupt reaches it first or Suru stops, which withdraws any Prompt still
+//! owed a Turn.
 
 use crate::session_integration::support::{
     WorkingTurn, compact, controlled_selection, interrupt, read_session, read_session_until,
