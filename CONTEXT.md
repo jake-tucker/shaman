@@ -188,7 +188,7 @@ A Provider's short-lived store of a Session's context, which lets the next Promp
 _Avoid_: Session cache, session expiry, expire, TTL, stale
 
 **Lapse Penalty**:
-Suru's forecast of what a cold Session's next Prompt will cost beyond what it would have cost warm, figured from the Session's Context Fill and the token prices of its Agent Selection — its Model, under any Model Option that moves the price — and absent where either is unknown. A warm Session whose Agent Selection differs from the one its Prompt Cache was written under pays it too, since its next Prompt reads none of the cache. It is a forecast and never a Cost: nothing records it.
+Suru's forecast of what a cold Session's next Prompt will cost beyond what it would have cost warm, figured from the Session's Context Fill and the token prices of its Agent Selection and absent where either is unknown. A warm Session whose Agent Selection differs from the one its Prompt Cache was written under may pay it too, since its next Prompt may read none of the cache. It is a forecast and never a Cost: nothing records it.
 _Avoid_: Estimated cost, cache cost, re-cache cost
 
 **Compaction**:
