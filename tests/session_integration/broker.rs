@@ -57,6 +57,7 @@ mod moves;
 mod posture;
 mod prompt_cache;
 mod reports;
+mod scheduled_compaction;
 mod send_wait;
 mod sidekick;
 mod sidekick_acts;

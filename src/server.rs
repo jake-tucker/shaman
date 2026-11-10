@@ -240,6 +240,9 @@ pub struct ServerTimings {
     /// or pipes however many there are. Its conversation resumes from its
     /// stored Resume State at its next Turn.
     pub provider_idle_shutdown: Duration,
+    /// How long before a Session's Prompt Cache lapses a scheduled Compaction
+    /// of it falls due (ADR 0073). Fixed in production at two minutes.
+    pub scheduled_compaction_lead: Duration,
     /// How long a pending Move waits for the Continuation a Subagent settling
     /// past its Turn leaves owed, before giving it up.
     pub move_continuation_grace: Duration,
@@ -432,6 +435,7 @@ impl Default for ServerTimings {
             worktree_naming_timeout: DEFAULT_WORKTREE_NAMING_TIMEOUT,
             provider_stop_timeout: crate::provider::PROVIDER_STOP_TIMEOUT,
             provider_idle_shutdown: crate::provider::PROVIDER_IDLE_SHUTDOWN,
+            scheduled_compaction_lead: crate::provider::SCHEDULED_COMPACTION_LEAD,
             move_continuation_grace: crate::provider::MOVE_CONTINUATION_GRACE,
             invite_ttl: Duration::from_secs(10 * 60),
             remote_withdrawal_timeout: Duration::from_secs(5),
@@ -628,6 +632,14 @@ impl ServerTimings {
     /// without waiting out the default.
     pub fn with_provider_idle_shutdown(mut self, idle: Duration) -> Self {
         self.provider_idle_shutdown = idle;
+        self
+    }
+
+    /// Sets how long before a Prompt Cache lapses a scheduled Compaction
+    /// falls due; injectable so tests choose a lead apart from the lifetimes
+    /// they inject.
+    pub fn with_scheduled_compaction_lead(mut self, lead: Duration) -> Self {
+        self.scheduled_compaction_lead = lead;
         self
     }
 
@@ -1954,7 +1966,8 @@ async fn start(
         timings.clock.clone(),
         broker_access.clone(),
         attachment_store.clone(),
-    );
+    )
+    .with_scheduled_compaction_lead(timings.scheduled_compaction_lead);
     // A Provider may know no prices until its harness has run, which is when
     // its catalog comes; a Lapse Penalty that found none is asked again then.
     tokio::spawn(

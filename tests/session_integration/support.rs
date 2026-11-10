@@ -192,15 +192,27 @@ pub async fn working_turn_with_timings(
     channel: &str,
     timings: ServerTimings,
 ) -> WorkingTurn {
+    working_turn_configured(state_dir, channel, timings, None).await
+}
+
+/// [`working_turn_with_timings`] on a server reading its Config Documents
+/// from `config_dir`, where one is given, so a test can pin Settings before
+/// it starts and change them through the server while it runs.
+pub async fn working_turn_configured(
+    state_dir: &std::path::Path,
+    channel: &str,
+    timings: ServerTimings,
+    config_dir: Option<&std::path::Path>,
+) -> WorkingTurn {
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let (runtime, mut provider) = ControlledProvider::new();
-    let server = server::spawn_with_provider_and_timings(
-        ServerConfig::new(state_dir, channel).expect("configure server"),
-        runtime.clone(),
-        timings,
-    )
-    .await
-    .expect("spawn server");
+    let mut config = ServerConfig::new(state_dir, channel).expect("configure server");
+    if let Some(config_dir) = config_dir {
+        config = config.with_config_dir(config_dir);
+    }
+    let server = server::spawn_with_provider_and_timings(config, runtime.clone(), timings)
+        .await
+        .expect("spawn server");
     let client = crate::support::loopback_client();
     let descriptor = server.descriptor().clone();
     let created = client

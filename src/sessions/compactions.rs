@@ -268,7 +268,7 @@ fn is_working(snapshot: &SessionSnapshot) -> bool {
 /// The Agent a Compaction request's Turn runs under: the Provider's identity
 /// for it from the Session's latest bound Turn, under the Session's own Agent
 /// Selection where it has one.
-fn requested_agent(snapshot: &SessionSnapshot) -> Option<AgentIdentity> {
+pub(super) fn requested_agent(snapshot: &SessionSnapshot) -> Option<AgentIdentity> {
     let previous = snapshot
         .turns
         .iter()

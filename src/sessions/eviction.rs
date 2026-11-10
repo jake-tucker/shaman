@@ -306,7 +306,7 @@ impl SessionStoreState {
 
     /// Whether Reports are owed to a Sidekick among `members`, to be told to
     /// it by Sessions here or elsewhere, or by a Remote.
-    fn owes_reports_to_sidekicks_of(&self, members: &[SessionId]) -> bool {
+    pub(super) fn owes_reports_to_sidekicks_of(&self, members: &[SessionId]) -> bool {
         let members = members.iter().copied().collect::<HashSet<_>>();
         self.sessions.values().any(|record| {
             record
@@ -321,7 +321,7 @@ impl SessionStoreState {
     /// Whether work runs in `session_id`, whose record is `record`, or is
     /// owed there: anything its Provider may yet act on or answer, or that
     /// still waits on it, whoever reads the Session meanwhile.
-    fn holds_work(&self, session_id: SessionId, record: &super::SessionRecord) -> bool {
+    pub(super) fn holds_work(&self, session_id: SessionId, record: &super::SessionRecord) -> bool {
         let snapshot = &record.snapshot;
         let session = &snapshot.session;
         // Work runs in it, or is owed there.

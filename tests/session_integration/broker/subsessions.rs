@@ -56,7 +56,7 @@ fn sidekick_author(sidekick: SessionId) -> Author {
 }
 
 /// `begin_session`'s answer to `arguments`, having checked it is no refusal.
-async fn begun(client: &mut McpClient, arguments: Value) -> Value {
+pub(super) async fn begun(client: &mut McpClient, arguments: Value) -> Value {
     let result = timeout(
         PROGRESS_DEADLINE,
         client.call_tool("begin_session", arguments),
@@ -72,7 +72,7 @@ async fn begun(client: &mut McpClient, arguments: Value) -> Value {
 }
 
 /// The id of the Session a `begin_session` answer names.
-fn begun_id(answer: &Value) -> SessionId {
+pub(super) fn begun_id(answer: &Value) -> SessionId {
     serde_json::from_value(answer["session_id"].clone())
         .unwrap_or_else(|_| panic!("begin_session names the Session it began: {answer}"))
 }
@@ -156,7 +156,7 @@ async fn choose_landing_agent(descriptor: &RuntimeDescriptor, selection: &AgentS
 /// Starts the Provider `provider` was just asked to start for a Session on
 /// `selection`, and its first Turn, answering that Turn's Provider session
 /// and what the Turn was asked.
-async fn run_first_turn(
+pub(super) async fn run_first_turn(
     provider: &mut ControlledProvider,
     selection: AgentSelection,
 ) -> (ControlledProviderSession, String) {

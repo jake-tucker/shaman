@@ -23,6 +23,7 @@ mod prompt_cache;
 mod prompts;
 mod provider_enablement;
 mod renames;
+mod scheduled_compaction;
 mod selection;
 mod settlement;
 mod skills;

@@ -62,6 +62,10 @@ mod restoration;
 #[cfg(test)]
 mod restoration_tests;
 mod saves;
+mod scheduled_compaction;
+pub(crate) use scheduled_compaction::{
+    IdleStretch, ScheduledCompactionRule, ScheduledCompactionSkip,
+};
 mod selection;
 mod session_moves;
 pub(crate) use session_moves::{
