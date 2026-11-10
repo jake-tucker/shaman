@@ -4442,7 +4442,6 @@ pub struct SubagentTreeTopLevel {
     pub sidekick: bool,
     /// The presented root of the Workspace the top-level Session works in,
     /// which a client names it by as it names any Workspace.
-    #[serde(default)]
     pub workspace_path: PathBuf,
     /// The Icon Catalog name of that Workspace's Icon, where it has one.
     #[serde(default)]
@@ -4672,8 +4671,10 @@ pub enum SubagentTreeChange {
     },
     /// The top-level Session's Agent Selection changed: the Provider and
     /// Model it names now, carried whole.
-    TopLevelSelectionChanged {
+    TopLevelAgentSelectionChanged {
+        #[serde(default)]
         provider: Option<ProviderId>,
+        #[serde(default)]
         model: Option<ModelId>,
     },
     /// Whether one Session of the tree — the top-level Session or any
@@ -4775,7 +4776,7 @@ impl SubagentTreeSnapshot {
                 self.top_level.workspace_path = workspace_path;
                 self.top_level.workspace_icon = workspace_icon;
             }
-            SubagentTreeChange::TopLevelSelectionChanged { provider, model } => {
+            SubagentTreeChange::TopLevelAgentSelectionChanged { provider, model } => {
                 self.top_level.provider = provider;
                 self.top_level.model = model;
             }

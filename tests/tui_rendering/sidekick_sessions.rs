@@ -405,6 +405,39 @@ fn each_workspace_is_named_beside_its_icon_where_icons_are_drawn() {
 }
 
 #[test]
+fn the_sidekicks_own_entry_names_its_workspace_beside_its_icon_and_follows_it_as_it_changes() {
+    let workspace = workspace_dir();
+    let sidekick = Sidekick::new(workspace.path());
+    let mut application = client(workspace.path(), true);
+    open(&mut application, workspace.path(), sidekick.top);
+    deliver(
+        &mut application,
+        sidekick.top,
+        SubagentTreeEvent::Snapshot(sidekick.snapshot()),
+    );
+    assert_eq!(
+        aside_rows(&application)[2],
+        format!("│ {FOLDER} sidekick"),
+        "the Sidekick's own entry names its Workspace on its second line"
+    );
+
+    change(
+        &mut application,
+        sidekick.top,
+        SubagentTreeChange::TopLevelWorkspaceChanged {
+            workspace_path: sidekick.root.join("planning"),
+            workspace_icon: Some("md-bug".to_owned()),
+        },
+    );
+
+    assert_eq!(
+        aside_rows(&application)[2],
+        format!("│ {BUG} planning"),
+        "and names the Workspace it works in now, beside that Workspace's Icon"
+    );
+}
+
+#[test]
 fn an_act_moves_its_session_up_and_settled_work_moves_down_but_stays_drawn_as_settled() {
     let (mut application, sidekick, _workspace) = sidekick_open(false);
 

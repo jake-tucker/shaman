@@ -682,7 +682,7 @@ fn tree_changes(before: &SubagentTree, after: &SubagentTree) -> Option<Vec<Subag
     if before.top_level.provider != after.top_level.provider
         || before.top_level.model != after.top_level.model
     {
-        changes.push(SubagentTreeChange::TopLevelSelectionChanged {
+        changes.push(SubagentTreeChange::TopLevelAgentSelectionChanged {
             provider: after.top_level.provider.clone(),
             model: after.top_level.model.clone(),
         });
@@ -859,7 +859,8 @@ pub(super) fn moves_subagent_tree(change: &SessionChange) -> bool {
             | SessionChange::TitleChanged { .. }
             | SessionChange::TurnAdded { .. }
             | SessionChange::TurnStatusChanged { .. }
-            // What a Sidekick's tree says of a Session beneath it.
+            // What the top-level entry, and a Sidekick's tree of each Session
+            // beneath it, says of where it works and on what.
             | SessionChange::AgentSelectionChanged { .. }
             | SessionChange::WorkspaceChanged { .. }
             | SessionChange::Moved { .. }
@@ -1045,7 +1046,7 @@ mod tests {
                     workspace_path: std::path::PathBuf::from("suru-move"),
                     workspace_icon: Some("md-bug".to_owned()),
                 },
-                SubagentTreeChange::TopLevelSelectionChanged {
+                SubagentTreeChange::TopLevelAgentSelectionChanged {
                     provider: Some(crate::protocol::ProviderId::new("claude")),
                     model: Some(ModelId::new("opus")),
                 },

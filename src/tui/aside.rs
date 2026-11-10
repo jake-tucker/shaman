@@ -1098,6 +1098,13 @@ impl SubagentTreeReading {
         self.tree.top_level.sidekick
     }
 
+    /// The guides leading the lines beneath the top-level entry's first: in
+    /// the column its Marker took, the rule the entries beneath it hang from,
+    /// where any stand beneath it.
+    pub(super) fn top_level_continuation_guides(&self) -> String {
+        if self.entry_count() > 0 { "│ " } else { "  " }.to_owned()
+    }
+
     /// How many entries stand beneath the top-level Session, at any depth.
     pub(super) fn entry_count(&self) -> usize {
         self.tree.subagents.len() + self.tree.sessions.len()

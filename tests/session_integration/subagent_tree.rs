@@ -594,7 +594,7 @@ async fn the_top_level_entry_says_where_and_on_what_it_works_and_follows_its_age
 
     assert_eq!(
         next_change(&mut updates, &mut revision).await,
-        SubagentTreeChange::TopLevelSelectionChanged {
+        SubagentTreeChange::TopLevelAgentSelectionChanged {
             provider: Some(ProviderId::new("controlled")),
             model: Some(ModelId::new("gpt-next")),
         },

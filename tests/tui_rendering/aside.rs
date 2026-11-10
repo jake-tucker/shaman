@@ -428,6 +428,58 @@ fn a_model_confirmed_after_the_snapshot_updates_its_entry_in_place() {
     );
 }
 
+#[test]
+fn a_new_agent_selection_renames_the_top_level_entrys_model_in_place() {
+    let workspace = workspace_dir();
+    let (mut application, tree) = tree_open_at_top(workspace.path());
+    let before = aside_rows(&application, WIDTH);
+    assert_eq!(before[2], "│ Claude · opus                 1m 5s");
+
+    change(
+        &mut application,
+        tree.top,
+        SubagentTreeChange::TopLevelAgentSelectionChanged {
+            provider: Some(ProviderId::new("claude")),
+            model: Some(ModelId::new("sonnet")),
+        },
+    );
+
+    let mut expected = before;
+    expected[2] = "│ Claude · sonnet               1m 5s".to_owned();
+    assert_eq!(
+        aside_rows(&application, WIDTH),
+        expected,
+        "the Model the new Agent Selection names takes the old one's place, and nothing \
+         else moves"
+    );
+}
+
+#[test]
+fn a_top_level_session_that_has_not_worked_wears_no_marker_and_no_time() {
+    let workspace = workspace_dir();
+    let mut application = client(workspace.path());
+    let tree = Tree::new();
+    open(&mut application, workspace.path(), tree.top, None);
+    let mut snapshot = tree.snapshot();
+    snapshot.top_level.status = None;
+    snapshot.top_level.worked_ms = None;
+    deliver_tree(
+        &mut application,
+        tree.top,
+        SubagentTreeEvent::Snapshot(snapshot),
+    );
+
+    assert_eq!(
+        aside_rows(&application, WIDTH)[1..4],
+        [
+            "Map every seam",
+            "│ Claude · opus",
+            "├ ✓ Map the provider seams"
+        ],
+        "its Title stands where the Marker would, its Selection still named beneath it"
+    );
+}
+
 /// A brokered Subagent — its row in the delegating Transcript the Broker's —
 /// reaches the Section as the protocol reports one: spawned with no Model
 /// known, told the Model its own Provider confirmed once that Provider takes

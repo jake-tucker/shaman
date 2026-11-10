@@ -17,8 +17,8 @@ use ratatui::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::protocol::{
-    ActivityStatus, ModelId, Outlook, ProviderId, SessionReference, SessionTimestamp,
-    SubagentTreeEntry, SubagentTreeSession,
+    ActivityStatus, ModelId, ProviderId, SessionReference, SessionTimestamp, SubagentTreeEntry,
+    SubagentTreeSession,
 };
 use crate::provider::provider_name;
 use crate::theme::Theme;
@@ -218,7 +218,6 @@ fn subagent_row(
                 guides: entry.guides(),
                 marker: Some((marker.to_owned(), marker_style)),
                 title: &subagent.title,
-                right: None,
             },
             open,
             width,
@@ -280,8 +279,9 @@ fn subagent_row(
 /// The top-level Session's entry, and whether it works, drawn as the entry
 /// of a Session beneath a Sidekick is: its own Marker and Title; where a
 /// Sidekick's Session heads the tree, its Workspace beside its Icon; and the
-/// Model its Agent Selection names with the time its own Turns took. The rule
-/// what it spawned hang from begins beneath its Marker.
+/// Provider and Model its Agent Selection names, with the time its own Turns
+/// took. The rule the entries beneath it hang from begins beneath its
+/// Marker.
 fn top_level_row(
     tree: &SubagentTreeReading,
     open: bool,
@@ -307,7 +307,7 @@ fn top_level_row(
         },
         EntryGuides {
             first: String::new(),
-            beneath: if tree.entry_count() > 0 { "│ " } else { "  " }.to_owned(),
+            beneath: tree.top_level_continuation_guides(),
         },
         tree.is_sidekicks(),
         reference.as_ref(),
@@ -415,14 +415,14 @@ struct EntryGuides {
 }
 
 /// The lines of a Session's entry, and whether it works: its Marker and
-/// Title; where `located`, its Workspace beside its Icon, preceded by its
+/// Title; where `names_workspace`, its Workspace beside its Icon, preceded by its
 /// Remote where it lives on one; and the Provider and Model of its Agent
 /// Selection, with its outcome where the Marker would not tell, and the time
 /// a Subagent's entry carries.
 fn session_lines(
     parts: &SessionParts<'_>,
     guides: EntryGuides,
-    located: bool,
+    names_workspace: bool,
     reference: Option<&SessionReference>,
     open: bool,
     context: &SectionContext<'_>,
@@ -470,16 +470,15 @@ fn session_lines(
                 guides: guides.first,
                 marker: marker.map(|(marker, style)| (marker.to_owned(), style)),
                 title: parts.title,
-                right: None,
             },
             open,
             width,
             context,
         )
     }];
-    if located {
+    if names_workspace {
         lines.push(location_line(
-            workspace_location(parts, guides.beneath.clone(), context),
+            parts.location(guides.beneath.clone(), reference, context),
             width,
             context,
         ));
@@ -504,42 +503,46 @@ fn session_lines(
     (lines, working)
 }
 
-/// Where a Session's entry says it works: its Remote, where it lives on one,
-/// and its Workspace beside its Icon, named in its own Server's paths where
-/// the client has heard how that Server spells them.
-fn workspace_location<'a>(
-    parts: &SessionParts<'a>,
-    guides: String,
-    context: &SectionContext<'_>,
-) -> LocationParts<'a> {
-    let paths = match parts.origin {
-        None => context.workspace_paths,
-        Some(remote) => context
-            .remote_workspace_paths
-            .get(&Outlook::Remote(remote.to_owned())),
-    };
-    // One whose Remote does not answer keeps the Workspace it was last
-    // known by, where it was known by one.
-    let workspace = if parts.workspace_path.as_os_str().is_empty() {
-        String::new()
-    } else {
-        paths.map_or_else(
-            || any_workspace_name(parts.workspace_path),
-            |paths| paths.name(parts.workspace_path),
-        )
-    };
-    let icon = (context.show_icons && !workspace.is_empty()).then(|| {
-        parts
-            .workspace_icon
-            .and_then(crate::icon_catalog::glyph)
-            .unwrap_or(FOLDER_GLYPH)
-    });
-    LocationParts {
-        guides,
-        remote: parts.origin,
-        remote_icon: context.show_icons.then_some(REMOTE_GLYPH),
-        icon,
-        workspace,
+impl<'a> SessionParts<'a> {
+    /// Where the entry says the Session works: its Remote, where it lives on
+    /// one, and its Workspace beside its Icon, named in the paths of the
+    /// Server `reference` reaches it on, where the client has heard how that
+    /// Server spells them.
+    fn location(
+        &self,
+        guides: String,
+        reference: Option<&SessionReference>,
+        context: &SectionContext<'_>,
+    ) -> LocationParts<'a> {
+        let paths = reference.and_then(|reference| {
+            if reference.origin == context.open.origin {
+                context.workspace_paths
+            } else {
+                context.remote_workspace_paths.get(&reference.origin)
+            }
+        });
+        // One whose Remote does not answer keeps the Workspace it was last
+        // known by, where it was known by one.
+        let workspace = if self.workspace_path.as_os_str().is_empty() {
+            String::new()
+        } else {
+            paths.map_or_else(
+                || any_workspace_name(self.workspace_path),
+                |paths| paths.name(self.workspace_path),
+            )
+        };
+        let icon = (context.show_icons && !workspace.is_empty()).then(|| {
+            self.workspace_icon
+                .and_then(crate::icon_catalog::glyph)
+                .unwrap_or(FOLDER_GLYPH)
+        });
+        LocationParts {
+            guides,
+            remote: self.origin,
+            remote_icon: context.show_icons.then_some(REMOTE_GLYPH),
+            icon,
+            workspace,
+        }
     }
 }
 
@@ -636,7 +639,6 @@ impl SubagentsSection {
                 guides: String::new(),
                 marker: working.then(|| (spinner::MARKER.to_owned(), context.theme.accent.primary)),
                 title,
-                right: None,
             },
             true,
             usize::from(context.width),
@@ -743,8 +745,6 @@ struct TitleParts<'a> {
     guides: String,
     marker: Option<(String, Style)>,
     title: &'a str,
-    /// What the line's right-aligned slot says, in its style.
-    right: Option<(String, Style)>,
 }
 
 struct DetailParts<'a> {
@@ -825,9 +825,8 @@ const fn outcome_word(status: ActivityStatus) -> Option<&'static str> {
     }
 }
 
-/// An entry's first line: tree guides, the Marker, then the Title, with the
-/// right slot right-aligned where there is one. The Title gives way to the
-/// slot.
+/// An entry's first line: tree guides, the Marker, then the Title, which has
+/// the rest of the line.
 fn title_line(
     parts: TitleParts<'_>,
     open: bool,
@@ -835,7 +834,7 @@ fn title_line(
     context: &SectionContext<'_>,
 ) -> Line<'static> {
     let theme = context.theme;
-    let mut line = Pieces::beside(width, parts.right.as_ref());
+    let mut line = Pieces::beside(width, None);
     line.push_within(&parts.guides, theme.text.subdued);
     if let Some((marker, style)) = parts.marker {
         line.push_within(&marker, style);
@@ -847,7 +846,6 @@ fn title_line(
     };
     let room = line.room_beside(&[]);
     line.push(truncate_to_width(parts.title, room), title_style);
-    line.finish_with(parts.right, width, theme);
     Line::from(line.spans)
 }
 
