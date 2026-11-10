@@ -9,8 +9,8 @@
 use std::time::Duration;
 
 use super::{
-    Idle, LEAD, LIFETIME, ON, RATES, admit_prompt, advance, compactions, completed, filled,
-    idle_built, millis, scheduled_timings,
+    Idle, LEAD, LIFETIME, ON, RATES, WAKE_AHEAD, admit_prompt, advance, compactions, completed,
+    filled, idle_built, millis, scheduled_timings,
 };
 use crate::session_integration::support::{controlled_selection, read_session, read_session_until};
 use crate::support::PROGRESS_DEADLINE;
@@ -959,30 +959,15 @@ async fn a_penalty_still_unpriced_at_the_moment_is_skipped_not_deferred_until_pr
     restarted.shutdown().await;
 }
 
-/// The time ahead of the moment a Session is read in for, in place of a
-/// minute: longer than the eviction injected, so a tree read in ahead is
-/// evicted again before its moment.
-const WAKE_AHEAD: Duration = Duration::from_secs(20);
-
-/// A tree read in ahead of its moment and evicted again before it — the
-/// clock parked inside the time ahead across many sweeps — is read in again
-/// at the moment, and the Compaction fires: what wakes for it reads it in
-/// once ahead and once at the moment, and not at each sweep between.
+/// An evicted tree is read in ahead of its moment, with the clock parked
+/// inside the time ahead, and starts nothing before the moment; at the
+/// moment, the Compaction fires. That it is read in at most twice for the
+/// stretch, and the stretch then given up, is pinned where eviction can be
+/// driven step by step: in the orchestrator's own tests.
 #[tokio::test]
-async fn a_tree_read_in_ahead_and_evicted_again_is_woken_at_the_moment() {
+async fn an_evicted_tree_read_in_ahead_of_its_moment_starts_nothing_until_it() {
     let state = tempfile::tempdir().unwrap();
-    let mut idle = idle_with(
-        state.path(),
-        "carried-evicted-parked",
-        ON,
-        |timings| {
-            timings
-                .with_session_eviction(EVICTION.0, EVICTION.1)
-                .with_scheduled_compaction_wake_ahead(WAKE_AHEAD)
-        },
-        |_| {},
-    )
-    .await;
+    let mut idle = idle_and_evictable(state.path(), "carried-evicted-parked", ON).await;
     let due_at = idle.due_at().await;
     timeout(
         PROGRESS_DEADLINE,
@@ -992,8 +977,6 @@ async fn a_tree_read_in_ahead_and_evicted_again_is_woken_at_the_moment() {
     .expect("the tree is evicted");
 
     idle.advance_to(SessionTimestamp(due_at.0 - millis(WAKE_AHEAD) / 2));
-    // Parked, through many sweeps: the tree read in ahead goes unused again.
-    tokio::time::sleep(EVICTION.0 * 5).await;
     assert_nothing_starts(&mut idle.provider, "it is not yet due").await;
 
     idle.advance_to(due_at);

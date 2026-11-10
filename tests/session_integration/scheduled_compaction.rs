@@ -41,6 +41,11 @@ const LIFETIME: Duration = Duration::from_secs(10 * 60);
 /// Compaction falls due is told apart from any the production lead would set.
 const LEAD: Duration = Duration::from_secs(30);
 
+/// How long ahead of its moment a Session no actor runs for is read in,
+/// injected in place of the production minute, so every moment a test
+/// positions the clock at is one the Server it runs is told of.
+const WAKE_AHEAD: Duration = Duration::from_secs(20);
+
 /// The least of the cache's life that must be left, injected in place of the
 /// production twenty seconds.
 const MARGIN: Duration = Duration::from_secs(5);
@@ -224,6 +229,7 @@ fn scheduled_timings(clock: &ServerClock) -> ServerTimings {
         .with_clock(clock.clone())
         .with_scheduled_compaction_lead(LEAD)
         .with_scheduled_compaction_margin(MARGIN)
+        .with_scheduled_compaction_wake_ahead(WAKE_AHEAD)
 }
 
 impl Idle {
