@@ -3289,3 +3289,128 @@ async fn a_prompt_held_behind_a_copilot_compaction_that_is_interrupted_is_withdr
     );
     shutdown(opened).await;
 }
+
+/// The first Turn's answer, with a reading of the context and a model call reporting that the
+/// cache it wrote, kept an hour, lapses at `LAPSES_AT`.
+const ANSWER_LAPSING: &str = r#"      context_event() {
+        reply '{"jsonrpc":"2.0","method":"session.event","params":{"sessionId":"'"$sid"'","event":{"id":"'"$1"'","timestamp":"2026-01-01T00:00:00Z","ephemeral":true,"agentId":null,"type":"session.usage_info","data":'"$2"'}}}'
+      }
+      context_event c1 '{"currentTokens":12400,"tokenLimit":128000,"messagesLength":3}'
+      event u1 assistant.usage '{"model":"claude-fixture","inputTokens":1000,"outputTokens":200,"cost":1,"cacheExpiresAt":"LAPSES_AT","cacheTtlSeconds":3600,"maxPromptTokens":128000}'
+      event answer assistant.message '{"messageId":"m-answer","content":"Carrying on."}'
+      event idle session.idle '{}'
+"#;
+
+/// A scheduled Compaction reaches Copilot as the manual one does, `session.history.compact` with
+/// nothing asked of the summary, two minutes before the lapse Copilot reported, at the production
+/// lead; its Turn and the
+/// Compaction it holds are recorded as scheduled.
+#[tokio::test]
+async fn a_scheduled_compaction_is_copilots_manual_compact_asked_ahead_of_its_reported_lapse() {
+    // An hour from now: ahead of the Server's clock, which a hand moves, and well short of the
+    // days a Session is left alone before it settles on its own.
+    let lapsing = jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1);
+    let copilot = ScriptedCopilot::new(&format!(
+        "{}{}{}",
+        conversation_arms(),
+        send_arm(&ANSWER_LAPSING.replace("LAPSES_AT", &lapsing.to_string())),
+        compact_arm(&format!(
+            "{MANUAL_STARTED}{SUMMARISING}{MANUAL_COMPLETED}{}",
+            answer_compaction(COMPACTED)
+        )),
+    ));
+    let state_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    std::fs::write(
+        config_dir.path().join("suru.jsonc"),
+        r#"{ "compaction": { "scheduled": { "enabled": true } } }"#,
+    )
+    .unwrap();
+    let (clock, hand) = suru::server::ServerClock::manual();
+    let channel = "copilot-scheduled-compaction";
+    let server = suru::server::spawn_with_provider_and_timings(
+        suru::server::ServerConfig::new(state_dir.path(), channel)
+            .unwrap()
+            .with_config_dir(config_dir.path()),
+        std::sync::Arc::new(CopilotRuntime::new(copilot.executable())),
+        suru::server::ServerTimings::default().with_clock(clock.clone()),
+    )
+    .await
+    .unwrap();
+    let client = crate::copilot_integration::support::connect(state_dir.path(), channel).await;
+    let created = client
+        .create_session(suru::protocol::CreateSessionRequest {
+            session_id: None,
+            preparation_id: None,
+            agent_selection: None,
+            execution_directory: suru::protocol::ExecutionDirectory {
+                path: workspace.path().to_owned(),
+            },
+            prompt: InitialPrompt {
+                id: PromptId::new(),
+                text: "Keep going".to_owned(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+        })
+        .await
+        .unwrap();
+    let session_id = created.session.id;
+    let mut feed = client.subscribe_session(session_id).await.unwrap();
+    let idle = session_where(
+        &client,
+        &mut feed,
+        session_id,
+        "the first Turn settles with its lapse forecast",
+        |snapshot| {
+            snapshot.session.working_since.is_none()
+                && snapshot
+                    .session
+                    .prompt_cache
+                    .as_ref()
+                    .is_some_and(|cache| cache.lapse_penalty.is_some())
+        },
+    )
+    .await;
+    let lapses_at = idle.session.prompt_cache.unwrap().lapses_at;
+    let due_at = lapses_at.0 - 2 * 60 * 1000;
+    hand.advance(Duration::from_millis(due_at - 1 - clock.now().0));
+    assert!(
+        copilot.requests().iter().all(|request| {
+            request.get("method").and_then(serde_json::Value::as_str)
+                != Some("session.history.compact")
+        }),
+        "nothing is asked before it is due"
+    );
+    hand.advance(Duration::from_millis(1));
+
+    let compact = copilot.wait_for_request("session.history.compact").await;
+    assert_eq!(compact["params"]["trigger"], "manual", "{compact}");
+    assert!(
+        compact["params"].get("customInstructions").is_none(),
+        "nothing is asked of the summary: {compact}"
+    );
+    let settled = settled_session(&client, session_id, 1).await;
+    let turn = &settled.turns[1];
+    assert_eq!(
+        (turn.compaction_requested, turn.status),
+        (Some(CompactionRequest::Scheduled), TurnStatus::Completed)
+    );
+    let [
+        Activity::Compaction {
+            status, trigger, ..
+        },
+    ] = compactions(&settled)[..]
+    else {
+        panic!("one Compaction: {:?}", settled.activities);
+    };
+    assert_eq!(
+        (*status, *trigger),
+        (ActivityStatus::Completed, CompactionTrigger::Scheduled)
+    );
+    assert!(turn.usage.is_some(), "its Usage is recorded: {turn:?}");
+    drop(feed);
+    drop(client);
+    server.shutdown().await.unwrap();
+}

@@ -84,6 +84,7 @@ pub struct OpenedSession {
     pub session_id: SessionId,
     _state_dir: tempfile::TempDir,
     _workspace: tempfile::TempDir,
+    _config_dir: Option<tempfile::TempDir>,
 }
 
 /// Opens a Session on `prompt` against `codex`. `channel` is the client channel, so each test
@@ -99,14 +100,40 @@ pub async fn opened_session_on(
     channel: &str,
     prompt: &str,
 ) -> OpenedSession {
-    let state_dir = tempfile::tempdir().expect("create isolated state directory");
-    let workspace = tempfile::tempdir().expect("create valid Workspace");
-    let server = server::spawn_with_provider(
-        ServerConfig::new(state_dir.path(), channel).expect("configure server"),
-        Arc::new(runtime),
+    opened_session_configured(
+        runtime,
+        channel,
+        prompt,
+        server::ServerTimings::default(),
+        None,
     )
     .await
-    .expect("spawn server");
+}
+
+/// The same Session on a server run to `timings`, pinning the Settings `document` holds where
+/// there is one.
+pub async fn opened_session_configured(
+    runtime: CodexRuntime,
+    channel: &str,
+    prompt: &str,
+    timings: server::ServerTimings,
+    document: Option<&str>,
+) -> OpenedSession {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let workspace = tempfile::tempdir().expect("create valid Workspace");
+    let config_dir = document.map(|document| {
+        let directory = tempfile::tempdir().expect("create isolated config directory");
+        std::fs::write(directory.path().join("suru.jsonc"), document)
+            .expect("write Config Document");
+        directory
+    });
+    let mut config = ServerConfig::new(state_dir.path(), channel).expect("configure server");
+    if let Some(directory) = &config_dir {
+        config = config.with_config_dir(directory.path());
+    }
+    let server = server::spawn_with_provider_and_timings(config, Arc::new(runtime), timings)
+        .await
+        .expect("spawn server");
     let mut client = ManagedClient::connect(
         ManagedClientConfig::new(state_dir.path(), channel).expect("configure client"),
     )
@@ -136,6 +163,7 @@ pub async fn opened_session_on(
         session_id: created.session.id,
         _state_dir: state_dir,
         _workspace: workspace,
+        _config_dir: config_dir,
     }
 }
 

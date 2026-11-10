@@ -1280,3 +1280,43 @@ async fn a_compaction_codex_never_begins_a_turn_for_gives_the_connection_up() {
         .await
         .expect("shut the server down");
 }
+
+/// Codex's Prompt Cache is taken not to lapse on idle, so Codex declares no Cache Lifetime: with
+/// scheduled Compaction on and hours gone by, its Session carries no lapse moment, and Codex is
+/// never asked to compact on Suru's own account.
+#[tokio::test]
+async fn a_codex_session_has_no_lapse_to_get_ahead_of_and_is_never_scheduled() {
+    let codex = compacting_on_request(ACCEPT_COMPACTION, "", false);
+    let (clock, hand) = suru::server::ServerClock::manual();
+    let opened = crate::codex_integration::support::opened_session_configured(
+        suru::provider::CodexRuntime::new(codex.executable()),
+        "codex-scheduled-compaction",
+        "Keep going",
+        suru::server::ServerTimings::default().with_clock(clock),
+        Some(r#"{ "compaction": { "scheduled": { "enabled": true, "minimumPenalty": 0 } } }"#),
+    )
+    .await;
+    let settled = settled_session(&opened.client, opened.session_id, 0).await;
+    assert_eq!(settled.session.prompt_cache, None, "no lapse is published");
+
+    hand.advance(std::time::Duration::from_secs(60 * 60));
+    prompt(&opened, "Carry on").await;
+    let settled = settled_session(&opened.client, opened.session_id, 1).await;
+    assert_eq!(settled.session.prompt_cache, None);
+    assert!(
+        settled
+            .turns
+            .iter()
+            .all(|turn| turn.compaction_requested.is_none()),
+        "no Turn is begun for a Compaction: {:?}",
+        settled.turns
+    );
+    assert!(
+        codex
+            .requests()
+            .iter()
+            .all(|request| request["method"] != "thread/compact/start"),
+        "Codex is never asked to compact"
+    );
+    opened.server.shutdown().await.expect("shut down server");
+}
