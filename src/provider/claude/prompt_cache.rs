@@ -16,7 +16,27 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::wire::reported_token_count;
-use crate::provider::CacheLifetime;
+use crate::{
+    pricing::{CacheRates, PromptRateTier, PromptRates},
+    provider::CacheLifetime,
+};
+
+/// What a cache write kept an hour costs, as a multiple of the Model's fresh input rate:
+/// Anthropic's published prompt-caching pricing writes one-hour entries at 2× base input (and
+/// five-minute ones at 1.25×, which the rate table lists itself).
+const HOUR_WRITE_PER_INPUT: f64 = 2.0;
+
+/// The prices Claude's Prompt Cache is forecast at for a Model the rate table prices at `rates`:
+/// exactly those, with an hour-long write priced by Anthropic's published rule at twice the fresh
+/// input rate, since models.dev lists only the five-minute write. Nothing else is derived.
+pub(super) fn with_hour_writes(rates: CacheRates) -> PromptRates {
+    PromptRates::tiered(vec![PromptRateTier {
+        max_prompt_tokens: None,
+        rates,
+        hour_cache_write: Some(rates.input * HOUR_WRITE_PER_INPUT),
+    }])
+    .expect("one tier is a schedule")
+}
 
 /// The lifetimes Claude keeps a cache write for, and the one Suru assumes for a Session none of
 /// whose requests has yet written anything. Injectable through
@@ -89,6 +109,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::{
+        pricing::{CacheRates, CacheWrite},
+        protocol::LapsePenalty,
+    };
 
     const LIFETIMES: ClaudeCacheLifetimes = ClaudeCacheLifetimes {
         five_minute_tier: Duration::from_millis(5),
@@ -142,6 +166,42 @@ mod tests {
             written(json!({"cache_creation": {"ephemeral_5m_input_tokens": "lots"}})),
             None
         );
+    }
+
+    /// A Model the table prices at $5 input, $0.50 a read and $6.25 a five-minute write.
+    const TABLE: CacheRates = CacheRates {
+        input: 5.0,
+        cache_read: Some(0.5),
+        cache_write: Some(6.25),
+    };
+
+    fn penalty_on_400k(lifetime: Duration) -> Option<LapsePenalty> {
+        with_hour_writes(TABLE).lapse_penalty(
+            400_000,
+            CacheWrite {
+                lifetime: Some(lifetime),
+                prompt_limit_tokens: None,
+            },
+        )
+    }
+
+    #[test]
+    fn an_hour_long_write_is_priced_at_twice_the_fresh_input_rate() {
+        assert_eq!(
+            penalty_on_400k(Duration::from_secs(60 * 60)),
+            LapsePenalty::from_usd(400_000.0 * (2.0 * 5.0 - 0.5) / 1_000_000.0),
+            "400,000 tokens written for an hour at $10 a million rather than read at $0.50"
+        );
+    }
+
+    #[test]
+    fn the_table_prices_everything_else_exactly_as_it_says() {
+        assert_eq!(
+            penalty_on_400k(Duration::from_secs(5 * 60)),
+            LapsePenalty::from_usd(400_000.0 * (6.25 - 0.5) / 1_000_000.0),
+            "a five-minute write keeps the table's own price"
+        );
+        assert_eq!(with_hour_writes(TABLE).standard(), TABLE);
     }
 
     #[test]

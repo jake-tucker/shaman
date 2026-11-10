@@ -60,16 +60,17 @@ fn fixture() -> ScriptedClaude {
     ))
 }
 
-/// A Session on `runtime`, its first Turn served from the cache, on a Server whose clock moves
-/// only by hand and `timings` otherwise.
+/// A Session on `runtime` keeping its cache for `lifetimes`, its first Turn served from the cache,
+/// on a Server whose clock moves only by hand and `timings` otherwise.
 async fn session(
     channel: &'static str,
     runtime: ClaudeRuntime,
+    lifetimes: ClaudeCacheLifetimes,
     timings: ServerTimings,
 ) -> (DurableSession, ServerClock, ManualClock) {
     let (clock, hand) = ServerClock::manual();
     let session = DurableSession::start_on(
-        runtime.with_cache_lifetimes(LIFETIMES),
+        runtime.with_cache_lifetimes(lifetimes),
         None,
         channel,
         timings.with_clock(clock.clone()),
@@ -95,8 +96,13 @@ async fn a_claude_cache_lapses_at_the_shortest_lifetime_its_latest_request_wrote
     let claude = fixture();
     let (pricing, _cache) = anthropic_rates().await;
     let runtime = ClaudeRuntime::new(claude.executable()).with_pricing_source(pricing);
-    let (session, clock, hand) =
-        session("claude-cache-lifetime", runtime, ServerTimings::default()).await;
+    let (session, clock, hand) = session(
+        "claude-cache-lifetime",
+        runtime,
+        LIFETIMES,
+        ServerTimings::default(),
+    )
+    .await;
     let default = ModelId::new("default");
 
     // The first Turn's request was served from the cache, and nothing was ever observed.
@@ -135,20 +141,27 @@ async fn a_claude_cache_lapses_at_the_shortest_lifetime_its_latest_request_wrote
     );
 
     // Once Claude's prices and the Context Fill are in, the penalty is published with the
-    // moment: 400,000 tokens written afresh at $6.25 a million rather than read at $0.50.
+    // moment: 400,000 tokens written afresh at the table's $6.25 a million five-minute write
+    // rather than read at $0.50.
     session
         .client
         .list_models()
         .await
         .expect("discover Claude Models");
     hand.advance(Duration::from_secs(60));
-    session.continue_with("Write at the hour tier", 3).await;
+    session.continue_with("Write at both tiers", 3).await;
+    assert_eq!(priced_penalty(&session).await, LapsePenalty::from_usd(2.30));
+    session.shutdown().await;
+}
+
+/// The Session's Lapse Penalty once one is forecast.
+async fn priced_penalty(session: &DurableSession) -> Option<LapsePenalty> {
     let mut feed = session
         .client
         .subscribe_session(session.session_id)
         .await
         .expect("follow the Session");
-    let priced = session_where(
+    session_where(
         &session.client,
         &mut feed,
         session.session_id,
@@ -161,13 +174,41 @@ async fn a_claude_cache_lapses_at_the_shortest_lifetime_its_latest_request_wrote
                 .is_some_and(|cache| cache.lapse_penalty.is_some())
         },
     )
+    .await
+    .session
+    .prompt_cache
+    .and_then(|cache| cache.lapse_penalty)
+}
+
+/// A cache written for an hour costs twice the fresh input rate to write again, as Anthropic
+/// publishes it, which the rate table does not list. The hour-long tier is an hour here, since an
+/// hour is the lifetime that write price is for; nothing waits on it, the Server's clock being
+/// moved by hand.
+#[tokio::test]
+async fn a_claude_cache_written_for_an_hour_is_priced_at_twice_the_input_rate() {
+    let claude = fixture();
+    let (pricing, _cache) = anthropic_rates().await;
+    let (session, _clock, hand) = session(
+        "claude-cache-hour-price",
+        ClaudeRuntime::new(claude.executable()).with_pricing_source(pricing),
+        ClaudeCacheLifetimes {
+            one_hour_tier: Duration::from_secs(60 * 60),
+            ..LIFETIMES
+        },
+        ServerTimings::default(),
+    )
     .await;
+    session
+        .client
+        .list_models()
+        .await
+        .expect("discover Claude Models");
+    hand.advance(Duration::from_secs(60));
+    session.continue_with("Write at the hour tier", 1).await;
     assert_eq!(
-        priced
-            .session
-            .prompt_cache
-            .and_then(|cache| cache.lapse_penalty),
-        LapsePenalty::from_usd(2.30)
+        priced_penalty(&session).await,
+        LapsePenalty::from_usd(3.80),
+        "400,000 tokens written for an hour at $10 a million rather than read at $0.50"
     );
     session.shutdown().await;
 }
@@ -181,6 +222,7 @@ async fn a_request_served_from_the_cache_keeps_the_lifetime_last_observed_across
     let (session, clock, hand) = session(
         "claude-cache-carried",
         ClaudeRuntime::new(claude.executable()),
+        LIFETIMES,
         ServerTimings::default().with_provider_idle_shutdown(Duration::from_millis(50)),
     )
     .await;

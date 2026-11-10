@@ -19,14 +19,14 @@ use super::{
     catalog::model_descriptors,
     claude_error, claude_error_context,
     errand::run_claude_errand,
-    prompt_cache::ClaudeCacheLifetimes,
+    prompt_cache::{ClaudeCacheLifetimes, with_hour_writes},
     session::{ClaudeTimings, start_claude_session},
     skills::ClaudeSkills,
     transport::{ClaudeConnection, ClaudeSettingSources, StreamJsonTransport},
     wire::{ControlRequest, NativeModel, NativeModelList},
 };
 use crate::{
-    pricing::{ModelsDevModel, PricingSource, PromptRates, PromptRatesFuture},
+    pricing::{ModelsDevModel, PricingSource, PromptRatesFuture},
     protocol::{
         AgentSelection, ClaudePermissionMode, EffectiveSettings, ModelId, ProviderId, SkillCatalog,
     },
@@ -230,8 +230,9 @@ impl ProviderRuntime for ClaudeRuntime {
     /// The models.dev `anthropic` rates of the canonical Model `model` ran: an alias of the last
     /// listed catalog is read as the Model it resolved to then — today's, which may not be the
     /// one an older Turn ran — and any other ID as itself, a 1M-context suffix set aside. The
-    /// cache-write rate models.dev lists is the five-minute one, and no long-context premium is
-    /// priced. None until a catalog has been listed, since nothing is launched only to answer.
+    /// cache-write rate models.dev lists is the five-minute one; an hour-long write is priced at
+    /// twice the fresh input rate, Anthropic's published rule ([`super::prompt_cache`]), and no
+    /// long-context premium is priced. None until a catalog has been listed, since nothing is launched only to answer.
     fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
         let canonical = self
             .resolved_models
@@ -251,7 +252,7 @@ impl ProviderRuntime for ClaudeRuntime {
                     ModelId::new(canonical?),
                 ))
                 .await
-                .map(PromptRates::flat)
+                .map(with_hour_writes)
         })
     }
 

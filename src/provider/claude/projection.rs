@@ -1927,7 +1927,9 @@ impl ClaudeProjection {
                 let model = opened.and_then(|opened| opened.model.as_deref());
                 self.message_models.assistant_message_started(model);
                 // Each of the loop's own requests opens one assistant message, whose usage says
-                // what it wrote to the Session's Prompt Cache.
+                // what it wrote to the Session's Prompt Cache. Anthropic counts the cache's
+                // lifetime from the request's start, so it is stated here, the earliest the wire
+                // shows the request, rather than once the answer is out.
                 if let Some(written_lifetime) = self
                     .cache_lifetimes
                     .written(opened.and_then(|opened| opened.usage.as_ref()))
