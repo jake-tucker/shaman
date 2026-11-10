@@ -1656,3 +1656,158 @@ async fn a_reading_a_late_boundary_prompts_measures_the_continuation_its_complet
         .await
         .expect("shut the server down");
 }
+
+/// A Turn whose one request wrote 900 tokens to the cache for an hour, then answered.
+const WRITTEN_FOR_AN_HOUR: &str = r#"      emit '{"type":"system","subtype":"init","model":"claude-fixture-1","session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant","model":"claude-fixture-1","usage":{"input_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":900,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":900}}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Done."}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"assistant","message":{"role":"assistant","model":"claude-fixture-1","content":[{"type":"text","text":"Done."}]},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"message_stop"},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"result","subtype":"success","is_error":false,"duration_ms":5,"num_turns":1,"result":"Done.","terminal_reason":"completed","session_id":"prov-session"}'
+"#;
+
+/// The CLI's answer to `get_context_usage`: 400,000 tokens of context, which written afresh for
+/// an hour forecast a penalty well past the default minimum.
+const LARGE_CONTEXT_ARM: &str = r#"    *'"subtype":"get_context_usage"'*)
+      emit '{"type":"control_response","response":{"subtype":"success","request_id":"'"$request_id"'","response":{"totalTokens":400000,"rawMaxTokens":1000000,"maxTokens":1000000,"model":"claude-fixture-1"}}}'
+      ;;
+"#;
+
+/// Claude's lifetimes at a test's scale, the hour-long one long enough to hold the lead.
+const SCALED_LIFETIMES: suru::provider::ClaudeCacheLifetimes =
+    suru::provider::ClaudeCacheLifetimes {
+        five_minute_lifetime: std::time::Duration::from_millis(300),
+        one_hour_lifetime: std::time::Duration::from_millis(3_600),
+        unobserved: std::time::Duration::from_millis(150),
+    };
+const SCALED_LEAD: std::time::Duration = std::time::Duration::from_millis(1_000);
+const SCALED_MARGIN: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// A scheduled Compaction reaches Claude through its adapter as the manual one does — the same
+/// `/compact` — ahead of the lapse inferred from the request that wrote the cache for an hour, and
+/// is recorded as scheduled. Its Compaction completing with no request after it leaves Claude's
+/// requests describing a context the next Prompt no longer sends, so the Session publishes no
+/// lapse moment, nothing it could be warned of, and is owed nothing more until its next Turn.
+#[tokio::test]
+async fn a_scheduled_compaction_is_claudes_compact_command_ahead_of_an_inferred_lapse() {
+    let claude = ScriptedClaude::new(&format!(
+        r#"{}    *'"text":"/compact'*)
+{COMPACTING_ON_REQUEST}{COMPACTED_AFTER_BOUNDARY}      ;;
+{}{LARGE_CONTEXT_ARM}"#,
+        discovery_arms(CLAUDE_MODELS),
+        user_turn_arm(WRITTEN_FOR_AN_HOUR),
+    ));
+    let (pricing, _rates) = crate::claude_integration::models::anthropic_rates().await;
+    let (clock, hand) = suru::server::ServerClock::manual();
+    let session = crate::claude_integration::support::DurableSession::start_configured_on(
+        suru::provider::ClaudeRuntime::new(claude.executable())
+            .with_pricing_source(pricing)
+            .with_cache_lifetimes(SCALED_LIFETIMES),
+        None,
+        "claude-compaction-scheduled",
+        suru::server::ServerTimings::default()
+            .with_clock(clock.clone())
+            .with_scheduled_compaction_lead(SCALED_LEAD)
+            .with_scheduled_compaction_margin(SCALED_MARGIN),
+        Some(r#"{ "compaction": { "scheduled": { "enabled": true } } }"#),
+    )
+    .await;
+    session
+        .client
+        .list_models()
+        .await
+        .expect("discover Claude's Models and their prices");
+    session.continue_with("Keep going on the parser", 1).await;
+    let mut feed = session
+        .client
+        .subscribe_session(session.session_id)
+        .await
+        .expect("follow the Session");
+    let priced = session_where(
+        &session.client,
+        &mut feed,
+        session.session_id,
+        "the lapse and its penalty are forecast",
+        |snapshot| {
+            snapshot
+                .session
+                .prompt_cache
+                .as_ref()
+                .is_some_and(|cache| cache.lapse_penalty.is_some())
+        },
+    )
+    .await;
+    let cache = priced
+        .session
+        .prompt_cache
+        .clone()
+        .expect("a lapse is published");
+    assert_eq!(
+        (cache.written_in, cache.lifetime_ms),
+        (Some(priced.turns[1].id), Some(3_600)),
+        "the Turn's request wrote the cache for an hour"
+    );
+
+    let lead = u64::try_from(SCALED_LEAD.as_millis()).unwrap();
+    hand.advance(std::time::Duration::from_millis(
+        cache.lapses_at.0 - lead - clock.now().0,
+    ));
+    let compacted = settled_session(&session.client, session.session_id, 2).await;
+    let turn = &compacted.turns[2];
+    assert_eq!(
+        (turn.compaction_requested, turn.status),
+        (
+            Some(suru::protocol::CompactionRequest::Scheduled),
+            TurnStatus::Completed
+        )
+    );
+    let [
+        Activity::Compaction {
+            status, trigger, ..
+        },
+    ] = compactions(&compacted)[..]
+    else {
+        panic!("one Compaction: {:?}", compacted.activities);
+    };
+    assert_eq!(
+        (*status, *trigger),
+        (ActivityStatus::Completed, CompactionTrigger::Scheduled)
+    );
+    assert_eq!(
+        compacted.session.prompt_cache, None,
+        "a Compaction no request followed leaves no moment to warn of or get ahead of"
+    );
+
+    // With no moment there is no stretch owed anything: another lifetime on, the actor — which
+    // reads a request for the context only after any wake it was owed — has begun nothing.
+    hand.advance(SCALED_LIFETIMES.one_hour_lifetime);
+    let _ = session.client.context_breakdown(session.session_id).await;
+    assert_eq!(
+        session.read().await.turns.len(),
+        3,
+        "no Compaction is begun once the moment is gone"
+    );
+
+    // A manual Compaction asks Claude in the same words.
+    session
+        .client
+        .compact_session(session.session_id, CompactSessionRequest::default())
+        .await
+        .expect("the idle Session takes the request");
+    settled_session(&session.client, session.session_id, 3).await;
+    let sent = user_message_contents(&claude);
+    let [.., scheduled, manual] = &sent[..] else {
+        panic!("both Compactions were asked for: {sent:?}");
+    };
+    assert_eq!(
+        scheduled, manual,
+        "a scheduled Compaction is the same /compact a manual one sends"
+    );
+    assert_eq!(
+        user_messages_sent(&claude).last().map(String::as_str),
+        Some("/compact")
+    );
+    drop(feed);
+    session.shutdown().await;
+}

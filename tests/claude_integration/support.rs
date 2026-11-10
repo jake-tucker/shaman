@@ -809,13 +809,25 @@ async fn hosting_runtime_with_timings(
     state_dir: &std::path::Path,
     timings: server::ServerTimings,
 ) -> (RunningServer, ManagedClient) {
-    let server = server::spawn_with_provider_and_timings(
-        ServerConfig::new(state_dir, name).expect("configure server"),
-        std::sync::Arc::new(runtime),
-        timings,
-    )
-    .await
-    .expect("spawn server");
+    hosting_runtime_configured(runtime, name, state_dir, timings, None).await
+}
+
+/// The same server reading its Config Documents from `config_dir`, where one is given.
+async fn hosting_runtime_configured(
+    runtime: ClaudeRuntime,
+    name: &'static str,
+    state_dir: &std::path::Path,
+    timings: server::ServerTimings,
+    config_dir: Option<&std::path::Path>,
+) -> (RunningServer, ManagedClient) {
+    let mut config = ServerConfig::new(state_dir, name).expect("configure server");
+    if let Some(config_dir) = config_dir {
+        config = config.with_config_dir(config_dir);
+    }
+    let server =
+        server::spawn_with_provider_and_timings(config, std::sync::Arc::new(runtime), timings)
+            .await
+            .expect("spawn server");
     let mut client = ManagedClient::connect(
         ManagedClientConfig::new(state_dir, name).expect("configure client"),
     )
@@ -1132,6 +1144,9 @@ pub struct DurableSession {
     server: RunningServer,
     pub client: ManagedClient,
     pub session_id: SessionId,
+    /// Where the Config Documents the server reads are, for a Session begun
+    /// under Settings a test pinned.
+    _config_dir: Option<tempfile::TempDir>,
 }
 
 impl DurableSession {
@@ -1169,13 +1184,36 @@ impl DurableSession {
         channel: &'static str,
         timings: server::ServerTimings,
     ) -> Self {
+        Self::start_configured_on(runtime, selection, channel, timings, None).await
+    }
+
+    /// [`Self::start_on`] on a server pinning the Settings `document` holds, where there is one.
+    pub async fn start_configured_on(
+        runtime: ClaudeRuntime,
+        selection: Option<AgentSelection>,
+        channel: &'static str,
+        timings: server::ServerTimings,
+        document: Option<&str>,
+    ) -> Self {
+        let config_dir = document.map(|document| {
+            let directory = tempfile::tempdir().expect("create isolated config directory");
+            std::fs::write(directory.path().join("suru.jsonc"), document)
+                .expect("write Config Document");
+            directory
+        });
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let workspace = tempfile::tempdir().expect("create valid Workspace");
         let execution_directory = workspace.path().join("packages/nested agent directory");
         std::fs::create_dir_all(&execution_directory).unwrap();
         let execution_directory = suru::paths::canonical(execution_directory).unwrap();
-        let (server, client) =
-            hosting_runtime_with_timings(runtime, channel, state_dir.path(), timings).await;
+        let (server, client) = hosting_runtime_configured(
+            runtime,
+            channel,
+            state_dir.path(),
+            timings,
+            config_dir.as_ref().map(tempfile::TempDir::path),
+        )
+        .await;
         if selection.is_some() {
             // A Selection is normalized against the catalog, so discover it before naming one.
             client.list_models().await.expect("discover Claude Models");
@@ -1212,6 +1250,7 @@ impl DurableSession {
             server,
             client,
             session_id,
+            _config_dir: config_dir,
         }
     }
 
@@ -1226,6 +1265,7 @@ impl DurableSession {
             server,
             client,
             session_id,
+            _config_dir,
         } = self;
         drop(client);
         server.shutdown().await.expect("stop the original server");
@@ -1239,6 +1279,7 @@ impl DurableSession {
             server,
             client,
             session_id,
+            _config_dir,
         }
     }
 
