@@ -3126,6 +3126,9 @@ async fn run_provider_session(
                                     &sessions, &updates, &runtime, session_id, &event,
                                 );
                             }
+                            // Nor is a request's use of the cache, which a
+                            // Provider states within the Turn that sent it.
+                            ProviderEvent::PromptCacheRefreshed { .. } => {}
                             ProviderEvent::ContextFill { report } => {
                                 if let Some(turn_id) = report.turn_id.or_else(|| {
                                     sessions.snapshot(session_id).and_then(|snapshot| {
@@ -7049,9 +7052,8 @@ fn project_provider_event(
             // The actor follows the owning Session's Prompt Cache before
             // anything projects; a native Subagent's lands nowhere, since no
             // one converses with one.
-            ProviderEvent::PromptCacheLapseReported { .. } => {
-                Ok(ProviderEventProjection::Continue)
-            }
+            ProviderEvent::PromptCacheLapseReported { .. }
+            | ProviderEvent::PromptCacheRefreshed { .. } => Ok(ProviderEventProjection::Continue),
             // The actor records Watches before anything projects too, because
             // a Watch is no output of the Turn it outlives, and wakes the
             // Subagents they woke, because that work is no output of it

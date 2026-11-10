@@ -447,7 +447,9 @@ async fn an_assumed_lifetime_counts_from_each_turns_last_output_on_the_servers_c
         .price_cache(sessions_model(&fixture).await, RATES);
     let lifetime_ms = u64::try_from(lifetime.as_millis()).unwrap();
 
+    answer(&fixture.provider_session, "Done.").await;
     let first_output = clock.now();
+    hand.advance(Duration::from_secs(1));
     settle(&fixture.provider_session).await;
     let first = read_until(
         &fixture,
@@ -461,7 +463,7 @@ async fn an_assumed_lifetime_counts_from_each_turns_last_output_on_the_servers_c
     assert_eq!(
         first.lapses_at,
         SessionTimestamp(first_output.0 + lifetime_ms),
-        "the cache lapses a lifetime after the Turn's last output"
+        "the cache lapses a lifetime after the Turn's last output, which its settling is not"
     );
     assert_eq!(first.lifetime_ms, Some(lifetime_ms));
     assert_eq!(
@@ -471,6 +473,7 @@ async fn an_assumed_lifetime_counts_from_each_turns_last_output_on_the_servers_c
 
     hand.advance(Duration::from_secs(60));
     prompt_again(&mut fixture).await;
+    answer(&fixture.provider_session, "Done again.").await;
     let second_output = clock.now();
     settle(&fixture.provider_session).await;
     read_until(&fixture, "the next Turn moves the lapse on", |snapshot| {
@@ -1189,5 +1192,362 @@ async fn a_native_subagents_lapse_never_reaches_its_parent() {
     })
     .await;
     assert_eq!(settled.session.prompt_cache, None);
+    fixture.server.shutdown().await.unwrap();
+}
+
+/// The lifetime a fixture Provider inferring its Cache Lifetime assumes
+/// where it has observed none, at a test's scale.
+const ASSUMED: Duration = Duration::from_millis(300);
+
+/// The hour-long tier a fixture Provider's requests may write at, at a
+/// test's scale.
+const LONG_TIER: Duration = Duration::from_millis(3_600);
+
+fn ms(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap()
+}
+
+/// A request of the owning conversation that wrote the cache at `written`,
+/// or wrote nothing.
+fn refreshed(written: Option<Duration>) -> ProviderEvent {
+    ProviderEvent::PromptCacheRefreshed {
+        written_lifetime: written,
+        model: None,
+    }
+}
+
+/// An agent Message `provider` writes whole.
+async fn answer(provider: &ControlledProviderSession, text: &str) {
+    for event in [
+        ProviderEvent::AgentMessageStarted,
+        ProviderEvent::AgentMessageDelta {
+            content: text.to_owned(),
+        },
+        ProviderEvent::AgentMessageCompleted,
+    ] {
+        provider.emit_and_wait_until_observed(event).await;
+    }
+}
+
+/// The fixture Session's first Turn, on a Server whose clock moves only by
+/// hand, its Provider inferring its Cache Lifetime from each request and
+/// assuming [`ASSUMED`] where it has observed none.
+async fn inferring(
+    state: &std::path::Path,
+    channel: &str,
+) -> (WorkingTurn, ServerClock, server::ManualClock) {
+    let (clock, hand) = ServerClock::manual();
+    let fixture = working_turn_with_timings(
+        state,
+        channel,
+        ServerTimings::default().with_clock(clock.clone()),
+    )
+    .await;
+    fixture
+        .runtime
+        .declare_cache_lifetime(CacheLifetime::Inferred { assumed: ASSUMED });
+    (fixture, clock, hand)
+}
+
+/// The Session's Prompt Cache once the Turn at `index` has settled.
+async fn settled_cache(fixture: &WorkingTurn, index: usize) -> Option<PromptCache> {
+    read_until(fixture, "the Turn settles", |snapshot| {
+        snapshot.turns.len() > index && snapshot.turns[index].status.is_terminal()
+    })
+    .await
+    .session
+    .prompt_cache
+}
+
+fn lapse_and_lifetime(cache: Option<PromptCache>) -> Option<(SessionTimestamp, Option<u64>)> {
+    cache.map(|cache| (cache.lapses_at, cache.lifetime_ms))
+}
+
+#[tokio::test]
+async fn an_inferred_lifetime_is_the_one_the_latest_request_wrote_counted_from_that_request() {
+    let state = tempfile::tempdir().unwrap();
+    let (mut fixture, clock, hand) = inferring(state.path(), "prompt-cache-inferred").await;
+    let provider = &fixture.provider_session;
+
+    // A request writing at the long tier, then a minute of the answer it
+    // streams and a tool's output: the cache was used at the request.
+    provider
+        .emit_and_wait_until_observed(refreshed(Some(LONG_TIER)))
+        .await;
+    let requested = clock.now();
+    hand.advance(Duration::from_secs(60));
+    answer(provider, "Done.").await;
+    settle(provider).await;
+    assert_eq!(
+        lapse_and_lifetime(settled_cache(&fixture, 0).await),
+        Some((
+            SessionTimestamp(requested.0 + ms(LONG_TIER)),
+            Some(ms(LONG_TIER))
+        )),
+        "the cache lapses the tier the request wrote at after the request"
+    );
+
+    // The next Turn's requests: one at the long tier, then the latest at
+    // the short one, which lapses first.
+    hand.advance(Duration::from_secs(60));
+    prompt_again(&mut fixture).await;
+    let provider = &fixture.provider_session;
+    provider
+        .emit_and_wait_until_observed(refreshed(Some(LONG_TIER)))
+        .await;
+    hand.advance(Duration::from_secs(1));
+    provider
+        .emit_and_wait_until_observed(refreshed(Some(ASSUMED)))
+        .await;
+    let latest = clock.now();
+    settle(provider).await;
+    assert_eq!(
+        lapse_and_lifetime(settled_cache(&fixture, 1).await),
+        Some((SessionTimestamp(latest.0 + ms(ASSUMED)), Some(ms(ASSUMED)))),
+        "the latest request sets the lifetime"
+    );
+    fixture.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_request_that_wrote_nothing_keeps_the_lifetime_last_observed_and_restarts_the_clock() {
+    let state = tempfile::tempdir().unwrap();
+    let channel = "prompt-cache-inferred-carried";
+    let (mut fixture, clock, hand) = inferring(state.path(), channel).await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(refreshed(Some(LONG_TIER)))
+        .await;
+    settle(&fixture.provider_session).await;
+    settled_cache(&fixture, 0).await;
+
+    // A follow-up served entirely from the cache.
+    hand.advance(Duration::from_secs(60));
+    prompt_again(&mut fixture).await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(refreshed(None))
+        .await;
+    let read_only = clock.now();
+    settle(&fixture.provider_session).await;
+    assert_eq!(
+        lapse_and_lifetime(settled_cache(&fixture, 1).await),
+        Some((
+            SessionTimestamp(read_only.0 + ms(LONG_TIER)),
+            Some(ms(LONG_TIER))
+        )),
+        "a request served from the cache keeps the tier last observed"
+    );
+
+    // The tier last observed is the Session's, so it outlives the Server
+    // that observed it, as it outlives a Provider process stopped for
+    // idleness: the next request writing nothing still counts it.
+    let model = sessions_model(&fixture).await;
+    let id = fixture.session_id;
+    drop(fixture.provider_session);
+    fixture.server.shutdown().await.unwrap();
+    let (runtime, mut provider) = ControlledProvider::new();
+    runtime.declare_cache_lifetime(CacheLifetime::Inferred { assumed: ASSUMED });
+    let restarted = server::spawn_with_provider_and_timings(
+        ServerConfig::new(state.path(), channel).unwrap(),
+        runtime,
+        ServerTimings::default().with_clock(clock.clone()),
+    )
+    .await
+    .unwrap();
+    hand.advance(Duration::from_secs(60));
+    let session = prompt_restarted(&restarted, id, &mut provider, &model).await;
+    session.emit_and_wait_until_observed(refreshed(None)).await;
+    let after_restart = clock.now();
+    session
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    let restored = read_session_until(
+        &crate::support::loopback_client(),
+        restarted.descriptor(),
+        id,
+        "the Turn after the restart settles",
+        |snapshot| snapshot.turns.len() == 3 && snapshot.turns[2].status.is_terminal(),
+    )
+    .await;
+    assert_eq!(
+        lapse_and_lifetime(restored.session.prompt_cache),
+        Some((
+            SessionTimestamp(after_restart.0 + ms(LONG_TIER)),
+            Some(ms(LONG_TIER))
+        ))
+    );
+    restarted.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn an_inferred_lifetime_with_nothing_observed_is_the_one_assumed() {
+    let state = tempfile::tempdir().unwrap();
+    let (fixture, clock, _hand) = inferring(state.path(), "prompt-cache-inferred-assumed").await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(refreshed(None))
+        .await;
+    let requested = clock.now();
+    settle(&fixture.provider_session).await;
+    assert_eq!(
+        lapse_and_lifetime(settled_cache(&fixture, 0).await),
+        Some((
+            SessionTimestamp(requested.0 + ms(ASSUMED)),
+            Some(ms(ASSUMED))
+        ))
+    );
+    fixture.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn under_an_inferred_lifetime_output_with_no_request_behind_it_leaves_the_moment_standing() {
+    let state = tempfile::tempdir().unwrap();
+    let (mut fixture, _clock, hand) =
+        inferring(state.path(), "prompt-cache-inferred-no-request").await;
+    fixture
+        .runtime
+        .price_cache(sessions_model(&fixture).await, RATES);
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(refreshed(Some(LONG_TIER)))
+        .await;
+    settle(&fixture.provider_session).await;
+    let standing = settled_cache(&fixture, 0).await;
+    assert!(standing.is_some());
+
+    // A Turn failing on an API error the Provider writes up itself, with no
+    // request behind it.
+    hand.advance(Duration::from_secs(60));
+    prompt_again(&mut fixture).await;
+    answer(&fixture.provider_session, "API Error: Overloaded").await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::TurnFailed {
+            message: "Overloaded".to_owned(),
+        })
+        .await;
+    assert_eq!(
+        lapse_and_lifetime(settled_cache(&fixture, 1).await),
+        lapse_and_lifetime(standing.clone()),
+        "a cold Session does not read warm for a Turn that called nothing"
+    );
+
+    // A Turn whose only Model Share is another Model's — a native
+    // Subagent's — while the conversation itself sent nothing.
+    prompt_again(&mut fixture).await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::Usage {
+            usage: suru::protocol::Usage {
+                fresh_input_tokens: Some(1_000),
+                ..suru::protocol::Usage::default()
+            },
+            cost: None,
+            model_shares: vec![suru::protocol::ModelShare {
+                model: ModelId::new("subagent-model"),
+                usage: suru::protocol::Usage {
+                    fresh_input_tokens: Some(1_000),
+                    ..suru::protocol::Usage::default()
+                },
+                cost: None,
+                cost_is_partial: false,
+            }],
+        })
+        .await;
+    settle(&fixture.provider_session).await;
+    assert_eq!(
+        lapse_and_lifetime(settled_cache(&fixture, 2).await),
+        lapse_and_lifetime(standing),
+        "a Subagent's Model is no evidence the conversation ran elsewhere"
+    );
+    fixture.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn under_an_inferred_lifetime_only_requests_after_a_compaction_describe_the_cache() {
+    let state = tempfile::tempdir().unwrap();
+    let (mut fixture, clock, hand) =
+        inferring(state.path(), "prompt-cache-inferred-compaction").await;
+    let compacted = ProviderEvent::CompactionCompleted {
+        before_tokens: Some(400_000),
+        after_tokens: Some(20_000),
+        summary: None,
+    };
+    // The Provider compacts mid-Turn and carries on: the request after the
+    // Compaction writes the context the next Prompt sends.
+    for event in [
+        refreshed(Some(LONG_TIER)),
+        ProviderEvent::CompactionStarted,
+        compacted.clone(),
+    ] {
+        fixture
+            .provider_session
+            .emit_and_wait_until_observed(event)
+            .await;
+    }
+    hand.advance(Duration::from_secs(1));
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(refreshed(None))
+        .await;
+    let after = clock.now();
+    settle(&fixture.provider_session).await;
+    assert_eq!(
+        lapse_and_lifetime(settled_cache(&fixture, 0).await),
+        Some((
+            SessionTimestamp(after.0 + ms(LONG_TIER)),
+            Some(ms(LONG_TIER))
+        ))
+    );
+
+    // A Compaction whose own summarising request used the cache, with no
+    // request after it: the cache that request read is the old context's.
+    prompt_again(&mut fixture).await;
+    for event in [
+        ProviderEvent::CompactionStarted,
+        refreshed(Some(LONG_TIER)),
+        compacted,
+        ProviderEvent::TurnCompleted,
+    ] {
+        fixture
+            .provider_session
+            .emit_and_wait_until_observed(event)
+            .await;
+    }
+    assert_eq!(settled_cache(&fixture, 1).await, None);
+    fixture.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn under_an_assumed_lifetime_a_turn_that_failed_before_any_output_leaves_the_moment_standing()
+{
+    let state = tempfile::tempdir().unwrap();
+    let (clock, hand) = ServerClock::manual();
+    let mut fixture = working_turn_with_timings(
+        state.path(),
+        "prompt-cache-assumed-failed",
+        ServerTimings::default().with_clock(clock.clone()),
+    )
+    .await;
+    fixture
+        .runtime
+        .declare_cache_lifetime(CacheLifetime::Assumed(ASSUMED));
+    answer(&fixture.provider_session, "Done.").await;
+    settle(&fixture.provider_session).await;
+    let standing = settled_cache(&fixture, 0).await;
+    assert!(standing.is_some());
+
+    hand.advance(Duration::from_secs(60));
+    prompt_again(&mut fixture).await;
+    settle_as(
+        &fixture,
+        ProviderEvent::TurnFailed {
+            message: "quota exceeded".to_owned(),
+        },
+        1,
+    )
+    .await;
+    assert_eq!(settled_cache(&fixture, 1).await, standing);
     fixture.server.shutdown().await.unwrap();
 }

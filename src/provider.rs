@@ -158,6 +158,16 @@ pub enum CacheLifetime {
     /// of the Session's latest Turn. A moment the Provider reports all the
     /// same still outranks the assumption.
     Assumed(std::time::Duration),
+    /// The Provider states, as [`ProviderEvent::PromptCacheRefreshed`], each
+    /// request the conversation sends and how long the cache it wrote is
+    /// kept, and Suru infers the lapse from them: the cache lapses the
+    /// lifetime the latest request wrote at after that request, or, where it
+    /// wrote nothing, the lifetime last observed for the Session, or
+    /// `assumed` where none ever was. Only those requests move the moment:
+    /// output with no request behind it — a Turn failing before any call, a
+    /// local command's reply — leaves it standing. A moment the Provider
+    /// reports all the same still outranks the inference.
+    Inferred { assumed: std::time::Duration },
 }
 
 /// Why a Provider's declared [`ManualCompaction`] refuses a request.
@@ -1486,6 +1496,23 @@ pub enum ProviderEvent {
         /// The largest prompt, in tokens, that call could send, where the
         /// Provider said: a Provider pricing by tier priced the call by it.
         prompt_limit_tokens: Option<u64>,
+    },
+    /// A request of the conversation the event is attributed to used its
+    /// Prompt Cache, which keeps the cache from lapsing, as a Provider
+    /// declaring [`CacheLifetime::Inferred`] states each one. Suru takes the
+    /// moment it arrives, on the Server's clock, as the moment of the
+    /// request. Only the owning Session's are kept, and one is no output of
+    /// any Turn on its own: it begins no Continuation.
+    PromptCacheRefreshed {
+        /// How long the Provider keeps what the request wrote to the cache —
+        /// the shortest, where it wrote at several lifetimes — and none where
+        /// it wrote nothing, read from the cache alone, so the lifetime last
+        /// observed holds.
+        written_lifetime: Option<std::time::Duration>,
+        /// The Model that ran the request, where it is not the one the Turn
+        /// selected: the Provider fell back to another, or the selection
+        /// routes its calls.
+        model: Option<ModelId>,
     },
     /// The Provider revised what it needs to carry the owning Session's
     /// conversation across a restart, replacing the Resume State its startup

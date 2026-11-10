@@ -15,14 +15,16 @@ use futures_util::FutureExt;
 
 use crate::pricing::PromptRates;
 use crate::sessions::{
-    CacheOutput, LapseRateRequest, LapseRateSource, RatesAnswer, RatesFor, ReportedLapse,
-    SessionStore,
+    CacheOutput, CacheRefresh, LapseRateRequest, LapseRateSource, RatesAnswer, RatesFor,
+    ReportedLapse, SessionStore,
 };
 
 use super::{ProviderEvent, ProviderRuntime, ProviderUpdateGate};
 
 /// What `event` says of the Prompt Cache, where it says anything: Context
-/// Fill and Resume State are no output the Model wrote.
+/// Fill and Resume State are no output the Model wrote, nor are a Turn's
+/// settling and its Agent Selection, which a Turn that called nothing reports
+/// all the same.
 fn cache_output(event: &ProviderEvent) -> Option<CacheOutput> {
     match event {
         ProviderEvent::PromptCacheLapseReported {
@@ -36,8 +38,42 @@ fn cache_output(event: &ProviderEvent) -> Option<CacheOutput> {
             lifetime: *lifetime,
             prompt_limit_tokens: *prompt_limit_tokens,
         })),
-        ProviderEvent::ContextFill { .. } | ProviderEvent::ResumeStateChanged { .. } => None,
+        ProviderEvent::PromptCacheRefreshed {
+            written_lifetime,
+            model,
+        } => Some(CacheOutput::Refreshed(CacheRefresh {
+            written_lifetime: *written_lifetime,
+            model: model.clone(),
+        })),
+        ProviderEvent::CompactionCompleted { .. } => Some(CacheOutput::Compacted),
+        ProviderEvent::ContextFill { .. }
+        | ProviderEvent::ResumeStateChanged { .. }
+        | ProviderEvent::TurnCompleted
+        | ProviderEvent::TurnInterrupted
+        | ProviderEvent::TurnFailed { .. }
+        | ProviderEvent::AgentSelectionChanged { .. }
+        | ProviderEvent::AgentSelectionCorrected { .. }
+        | ProviderEvent::AgentSelectionRejected { .. } => None,
         _ => Some(CacheOutput::Written),
+    }
+}
+
+/// Whether a Provider whose cache lasts `lifetime` reads anything into
+/// `output`: a reported moment wherever the cache lapses; the Model's output
+/// where Suru assumes a lifetime counted from it; and, where Suru infers the
+/// lifetime, the requests the Provider states and a Compaction that leaves
+/// the cache they wrote describing a context the next Prompt no longer sends.
+fn reads(lifetime: CacheLifetime, output: &CacheOutput) -> bool {
+    match (lifetime, output) {
+        (CacheLifetime::None, _) => false,
+        (_, CacheOutput::Lapse(_)) => true,
+        (CacheLifetime::Reported, _) => false,
+        (CacheLifetime::Assumed(_), CacheOutput::Written | CacheOutput::Compacted) => true,
+        (CacheLifetime::Assumed(_), CacheOutput::Refreshed(_)) => false,
+        (CacheLifetime::Inferred { .. }, CacheOutput::Refreshed(_) | CacheOutput::Compacted) => {
+            true
+        }
+        (CacheLifetime::Inferred { .. }, CacheOutput::Written) => false,
     }
 }
 
@@ -76,11 +112,8 @@ impl PromptCacheNotes {
                 .is_some_and(|model| runtime.takes_routing_tier(&model));
             sessions.note_prompt_cache_turn(session_id, turn_id, lifetime, routes);
         }
-        let output = match (lifetime, cache_output(event)) {
-            (CacheLifetime::None, _) | (_, None) => return,
-            // Only an assumed lifetime counts from the output itself.
-            (CacheLifetime::Reported, Some(CacheOutput::Written)) => return,
-            (_, Some(output)) => output,
+        let Some(output) = cache_output(event).filter(|output| reads(lifetime, output)) else {
+            return;
         };
         sessions.note_prompt_cache_output(session_id, turn_id, lifetime, clock.now(), output);
     }
