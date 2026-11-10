@@ -72,12 +72,7 @@ impl ComposerTop {
     /// however far the two clocks disagree, which a lifetime of minutes
     /// leaves unnoticed.
     fn of_prompt_cache(cache: &PromptCache, now: SessionTimestamp) -> Self {
-        let Some(left) = cache
-            .lapses_at
-            .0
-            .checked_sub(now.0)
-            .filter(|left| *left > 0)
-        else {
+        if cache.has_lapsed(now) {
             let line = match cache.lapse_penalty {
                 Some(penalty) if penalty.nano_usd() < LAPSE_PENALTY_FLOOR_NANO_USD => None,
                 penalty => Some(ComposerTopLine::Lapsed { penalty }),
@@ -86,7 +81,8 @@ impl ComposerTop {
                 line,
                 changes_at: None,
             };
-        };
+        }
+        let left = cache.lapses_at.0 - now.0;
         let stretch = final_stretch_ms(cache);
         if left > stretch {
             return Self {
