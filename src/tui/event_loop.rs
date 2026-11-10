@@ -7660,7 +7660,7 @@ mod ready_event_tests {
     use std::{
         sync::{
             Arc,
-            atomic::{AtomicBool, Ordering},
+            atomic::{AtomicBool, AtomicU64, Ordering},
         },
         time::Duration,
     };
@@ -7678,7 +7678,7 @@ mod ready_event_tests {
         protocol::{
             ModelAvailability, Outlook, SESSION_SNAPSHOT_EVENT, Session, SessionChange,
             SessionDeleted, SessionErrorCode, SessionId, SessionRevision, SessionSnapshot,
-            SessionStatus, SessionUpdate, Workspace,
+            SessionStatus, SessionTimestamp, SessionUpdate, Workspace,
         },
         tui::{ApplicationEvent, ApplicationTransition, ModelListRequest, composer::ComposerKey},
     };
@@ -7735,6 +7735,87 @@ mod ready_event_tests {
             notice_claimant: uuid::Uuid::new_v4(),
             title_proposal: None,
         }
+    }
+
+    /// A run loop with an idle Session open whose Prompt Cache lapses 25
+    /// seconds after the moment its Session clock, `wall`, reads.
+    fn lapsing_run_loop(workspace: &std::path::Path, wall: Arc<AtomicU64>) -> RunLoop {
+        let mut snapshot = streamed_snapshot(workspace);
+        snapshot.session.prompt_cache = Some(crate::protocol::PromptCache {
+            lapses_at: SessionTimestamp(wall.load(Ordering::SeqCst) + 25_000),
+            written_by: crate::protocol::ModelId::new("gpt-fixture"),
+            lifetime_ms: None,
+            lapse_penalty: None,
+        });
+        let mut application = Application::new(workspace, Default::default())
+            .with_session_clock(move || SessionTimestamp(wall.load(Ordering::SeqCst)));
+        application
+            .handle_event(ApplicationEvent::SessionAttached(snapshot))
+            .expect("open the Session");
+        let mut run = offline_run_loop(application);
+        run.needs_redraw = false;
+        run
+    }
+
+    fn draws_the_lapse(run: &RunLoop) -> bool {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 24)).unwrap();
+        terminal
+            .draw(|frame| run.application.render(frame))
+            .expect("draw the frame");
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>()
+            .contains("Prompt cache lapsed")
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_idle_loop_wakes_to_draw_the_lapse_once_the_wall_clock_passes_it() {
+        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
+        let mut run = lapsing_run_loop(workspace.path(), wall.clone());
+        run.sync_prompt_cache_lapse();
+
+        // The wakeup comes before the moment, the wall clock keeping pace:
+        // nothing is drawn, and the loop waits again for what is left.
+        wall.fetch_add(10_000, Ordering::SeqCst);
+        super::wait_for_prompt_cache_lapse(&mut run.prompt_cache_lapse).await;
+        let _ = run.wake_for_prompt_cache_lapse();
+        assert!(!run.needs_redraw);
+        assert!(!draws_the_lapse(&run));
+        run.sync_prompt_cache_lapse();
+        assert!(run.prompt_cache_lapse.is_some(), "the loop waits again");
+
+        // A suspend moves the wall clock past the moment while the sleep
+        // stands still; the next wakeup comes within the recheck, and draws.
+        wall.fetch_add(60_000, Ordering::SeqCst);
+        tokio::time::timeout(
+            super::PROMPT_CACHE_LAPSE_RECHECK,
+            super::wait_for_prompt_cache_lapse(&mut run.prompt_cache_lapse),
+        )
+        .await
+        .expect("no wakeup sleeps past the recheck");
+        let _ = run.wake_for_prompt_cache_lapse();
+        assert!(run.needs_redraw, "the lapse is drawn with no input");
+        assert!(draws_the_lapse(&run));
+        run.sync_prompt_cache_lapse();
+        assert!(run.prompt_cache_lapse.is_none(), "nothing more to wake for");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_lapse_passed_before_its_wakeup_is_drawn_at_the_next_sync() {
+        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
+        let mut run = lapsing_run_loop(workspace.path(), wall.clone());
+        run.sync_prompt_cache_lapse();
+        wall.fetch_add(30_000, Ordering::SeqCst);
+        run.sync_prompt_cache_lapse();
+        assert!(run.needs_redraw);
+        assert!(run.prompt_cache_lapse.is_none());
     }
 
     /// An idle Session at its first revision with nothing in it.
