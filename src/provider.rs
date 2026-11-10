@@ -1962,6 +1962,12 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// fresh input, cache reads, and cache writes alike. Never launches
     /// anything only to answer, so a Provider whose rates live in a harness
     /// not running now answers none.
+    ///
+    /// The Session store may poll the future once with its own lock held, to
+    /// land a Lapse Penalty with the revision that wants it, and drop it if it
+    /// is not ready. So before the future first waits it must not block, nor
+    /// do synchronous I/O — read a file, start a fetch — nor call into the
+    /// store; what it holds in memory it may answer from at once.
     fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
         let _ = model;
         Box::pin(async { None })

@@ -302,7 +302,7 @@ impl ProviderRuntime for CodexRuntime {
         Box::pin(async move {
             self.pricing
                 .as_ref()?
-                .cache_rates(&ModelsDevModel::new(
+                .cache_rates_without_blocking(&ModelsDevModel::new(
                     super::MODELS_DEV_PROVIDER,
                     model.clone(),
                 ))

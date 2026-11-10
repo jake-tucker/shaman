@@ -235,7 +235,7 @@ impl ProviderRuntime for ClaudeRuntime {
         Box::pin(async move {
             self.pricing
                 .as_ref()?
-                .cache_rates(&ModelsDevModel::new(
+                .cache_rates_without_blocking(&ModelsDevModel::new(
                     MODELS_DEV_PROVIDER,
                     ModelId::new(canonical?),
                 ))

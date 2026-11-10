@@ -479,6 +479,21 @@ impl PricingSource {
         self.fetch_catalog().await?.cache_rates(model)
     }
 
+    /// [`Self::cache_rates`] for a caller that may poll once and give up, as
+    /// a [`ProviderRuntime::prompt_rates`](crate::provider::ProviderRuntime::prompt_rates)
+    /// polled under the Session store's lock does: answered at once from a
+    /// fresh table held in memory, and otherwise doing nothing — no disk
+    /// read, no fetch — before it first yields.
+    pub async fn cache_rates_without_blocking(&self, model: &ModelsDevModel) -> Option<CacheRates> {
+        if let Ok(state) = self.state.try_lock()
+            && let Some(catalog) = self.fresh_catalog(&state)
+        {
+            return catalog.cache_rates(model);
+        }
+        tokio::task::yield_now().await;
+        self.cache_rates(model).await
+    }
+
     async fn fetch_catalog(&self) -> Option<RateCatalog> {
         let mut state = self.state.lock().await;
         if !state.cache_loaded {
@@ -956,6 +971,52 @@ mod tests {
             rates(None, None)
         );
         assert_eq!(pricing.cache_rates(&openai_model("unknown")).await, None);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn rates_asked_without_blocking_touch_no_disk_nor_network_before_they_wait() {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let counted = requests.clone();
+        let app = Router::new().route(
+            "/api.json",
+            get(move || {
+                counted.fetch_add(1, Ordering::SeqCst);
+                async {
+                    Json(json!({
+                        "openai": { "models": { "cached-model": { "cost": {
+                            "input": 2.0, "output": 4.0, "cache_read": 0.5, "cache_write": 2.5,
+                        }}}}
+                    }))
+                }
+            }),
+        );
+        let (endpoint, server) = serve_fixture(app).await;
+        let data_dir = tempfile::tempdir().expect("create data directory");
+        let pricing = PricingSource::new(data_dir.path())
+            .with_http_client(crate::runtime::loopback_http_client())
+            .with_source_endpoint(endpoint);
+        let model = openai_model("cached-model");
+        use futures_util::FutureExt;
+
+        assert_eq!(
+            pricing.cache_rates_without_blocking(&model).now_or_never(),
+            None,
+            "with no table held, a single poll answers nothing"
+        );
+        assert!(
+            !pricing.state.lock().await.cache_loaded,
+            "nor reads the table on disk"
+        );
+        assert_eq!(requests.load(Ordering::SeqCst), 0, "nor starts a fetch");
+
+        let rates = pricing.cache_rates_without_blocking(&model).await;
+        assert_eq!(rates.map(|rates| rates.cache_write), Some(Some(2.5)));
+        assert_eq!(
+            pricing.cache_rates_without_blocking(&model).now_or_never(),
+            Some(rates),
+            "a fresh table held in memory answers at once"
+        );
         server.abort();
     }
 
