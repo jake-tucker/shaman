@@ -291,6 +291,20 @@ impl SessionStoreState {
                 own_working_since: work.and_then(|work| work.working_since),
                 needs_intervention: needs_intervention(record),
                 sidekick: self.is_sidekicks(top_level),
+                workspace_path: record.snapshot.session.workspace.path.clone(),
+                workspace_icon: record.snapshot.session.workspace.icon.clone(),
+                provider: record
+                    .snapshot
+                    .session
+                    .agent_selection
+                    .as_ref()
+                    .map(|selection| selection.provider.clone()),
+                model: record
+                    .snapshot
+                    .session
+                    .agent_selection
+                    .as_ref()
+                    .map(|selection| selection.model.clone()),
             },
             subagents,
             sessions,
@@ -657,6 +671,22 @@ fn tree_changes(before: &SubagentTree, after: &SubagentTree) -> Option<Vec<Subag
             own_working_since: after.top_level.own_working_since,
         });
     }
+    if before.top_level.workspace_path != after.top_level.workspace_path
+        || before.top_level.workspace_icon != after.top_level.workspace_icon
+    {
+        changes.push(SubagentTreeChange::TopLevelWorkspaceChanged {
+            workspace_path: after.top_level.workspace_path.clone(),
+            workspace_icon: after.top_level.workspace_icon.clone(),
+        });
+    }
+    if before.top_level.provider != after.top_level.provider
+        || before.top_level.model != after.top_level.model
+    {
+        changes.push(SubagentTreeChange::TopLevelSelectionChanged {
+            provider: after.top_level.provider.clone(),
+            model: after.top_level.model.clone(),
+        });
+    }
     if before.top_level.needs_intervention != after.top_level.needs_intervention {
         changes.push(SubagentTreeChange::NeedsInterventionChanged {
             session_id: after.top_level.session_id,
@@ -887,6 +917,10 @@ mod tests {
             monitoring_since: None,
             needs_intervention: false,
             sidekick: false,
+            workspace_path: std::path::PathBuf::new(),
+            workspace_icon: None,
+            provider: None,
+            model: None,
         }
     }
 
@@ -983,6 +1017,40 @@ mod tests {
             needs_intervention: false,
             acted_at: SessionTimestamp(acted_at),
         }
+    }
+
+    #[test]
+    fn the_top_level_moving_workspace_or_agent_selection_is_announced_whole() {
+        let top = SessionId::new();
+        let before = SubagentTree {
+            top_level: top_level(top, "Delegate the mapping"),
+            subagents: Vec::new(),
+            sessions: Vec::new(),
+        };
+        let mut moved = top_level(top, "Delegate the mapping");
+        moved.workspace_path = std::path::PathBuf::from("suru-move");
+        moved.workspace_icon = Some("md-bug".to_owned());
+        moved.provider = Some(crate::protocol::ProviderId::new("claude"));
+        moved.model = Some(ModelId::new("opus"));
+        let after = SubagentTree {
+            top_level: moved,
+            subagents: Vec::new(),
+            sessions: Vec::new(),
+        };
+
+        assert_eq!(
+            tree_changes(&before, &after),
+            Some(vec![
+                SubagentTreeChange::TopLevelWorkspaceChanged {
+                    workspace_path: std::path::PathBuf::from("suru-move"),
+                    workspace_icon: Some("md-bug".to_owned()),
+                },
+                SubagentTreeChange::TopLevelSelectionChanged {
+                    provider: Some(crate::protocol::ProviderId::new("claude")),
+                    model: Some(ModelId::new("opus")),
+                },
+            ])
+        );
     }
 
     #[test]

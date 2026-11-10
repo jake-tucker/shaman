@@ -75,14 +75,18 @@ impl Sidekick {
             revision: SubagentTreeRevision::INITIAL,
             top_level: SubagentTreeTopLevel {
                 own_working_since: None,
-                status: None,
-                worked_ms: None,
+                status: Some(ActivityStatus::Completed),
+                worked_ms: Some(65_000),
                 session_id: self.top,
                 title: "Plan the week".to_owned(),
                 working_since: None,
                 monitoring_since: None,
                 needs_intervention: false,
                 sidekick: true,
+                workspace_path: self.root.join("sidekick"),
+                workspace_icon: None,
+                provider: Some(ProviderId::new("claude")),
+                model: Some(ModelId::new("opus")),
             },
             subagents: vec![
                 subagent(
@@ -319,10 +323,12 @@ fn a_sidekicks_tree_is_headed_sessions_and_lists_them_working_first_then_by_its_
 
     let rows = aside_rows(&application);
     assert_eq!(
-        rows[..16],
+        rows[..18],
         [
             "Sessions 5 (2 active)",
-            "Plan the week",
+            "✓ Plan the week",
+            "│ sidekick",
+            "│ Claude · opus                 1m 5s",
             "├ ✓ Survey the Sessions",
             "│   Explore                       12s",
             "├ ⠋ Untangle the build",
@@ -341,7 +347,8 @@ fn a_sidekicks_tree_is_headed_sessions_and_lists_them_working_first_then_by_its_
         "headed Sessions and counted the usual way, the Sidekick's own Subagent \
          first, then the Session that works, then the rest by the Sidekick's latest \
          act — the Subsession it began drawn as the Sessions it only acted on are — \
-         each in three lines with its own Subagents beneath it: {rows:#?}"
+         each in three lines with its own Subagents beneath it, as the Sidekick's own \
+         Session is above them: {rows:#?}"
     );
 }
 
@@ -361,8 +368,14 @@ fn a_sidekick_that_has_a_hand_in_nothing_yet_is_headed_sessions_all_the_same() {
     );
 
     assert_eq!(
-        aside_rows(&application)[..3],
-        ["Sessions 0", "Plan the week", ""]
+        aside_rows(&application)[..5],
+        [
+            "Sessions 0",
+            "✓ Plan the week",
+            "  sidekick",
+            "  Claude · opus                 1m 5s",
+            ""
+        ]
     );
 }
 
@@ -443,10 +456,12 @@ fn an_act_moves_its_session_up_and_settled_work_moves_down_but_stays_drawn_as_se
     );
     let rows = aside_rows(&application);
     assert_eq!(
-        rows[..16],
+        rows[..18],
         [
             "Sessions 5",
-            "Plan the week",
+            "✓ Plan the week",
+            "│ sidekick",
+            "│ Claude · opus                 1m 5s",
             "├ ✓ Survey the Sessions",
             "│   Explore                       12s",
             "├ × Tidy the docs",
@@ -515,7 +530,7 @@ fn entry_lines(
         sidekick.top,
         SubagentTreeEvent::Snapshot(snapshot),
     );
-    aside_rows(&application)[2..5].to_vec()
+    aside_rows(&application)[4..7].to_vec()
 }
 
 #[test]
@@ -712,6 +727,10 @@ fn opening_a_subsession_keeps_the_sidekicks_tree_and_a_session_only_acted_on_sho
                 monitoring_since: None,
                 needs_intervention: false,
                 sidekick: false,
+                workspace_path: std::path::PathBuf::new(),
+                workspace_icon: None,
+                provider: None,
+                model: None,
             },
             subagents: Vec::new(),
             sessions: Vec::new(),
@@ -751,6 +770,10 @@ fn deleting_the_sidekick_leaves_an_open_subsession_showing_its_own_tree() {
                 monitoring_since: None,
                 needs_intervention: false,
                 sidekick: false,
+                workspace_path: std::path::PathBuf::new(),
+                workspace_icon: None,
+                provider: None,
+                model: None,
             },
             subagents: Vec::new(),
             sessions: Vec::new(),
@@ -999,7 +1022,7 @@ fn remote_entry_lines(workspace: &str, show_icons: bool) -> Vec<String> {
         remote_entry(SessionId::new(), "Bind the ledger", workspace),
         show_icons,
     );
-    aside_rows(&application)[2..5].to_vec()
+    aside_rows(&application)[4..7].to_vec()
 }
 
 #[test]
@@ -1058,7 +1081,7 @@ fn a_session_whose_remote_does_not_answer_keeps_what_named_it_and_says_it_does_n
     let rows = aside_rows(&application);
     assert_eq!(rows[0], "Sessions 1", "it is listed still");
     assert_eq!(
-        rows[2..5],
+        rows[4..7],
         [
             "└ Bind the ledger".to_owned(),
             format!("    {MONITOR} workstation · {FOLDER} ledger"),
@@ -1069,8 +1092,8 @@ fn a_session_whose_remote_does_not_answer_keeps_what_named_it_and_says_it_does_n
     let buffer = rendered_application_buffer(&application, WIDTH, HEIGHT);
     let column = WIDTH - ASIDE_WIDTH + 2;
     assert_eq!(
-        (buffer[(column + 2, 2)].symbol(), buffer[(column + 2, 2)].fg),
-        ("B", buffer[(column + 4, 3)].fg),
+        (buffer[(column + 2, 4)].symbol(), buffer[(column + 2, 4)].fg),
+        ("B", buffer[(column + 4, 5)].fg),
         "its Title drawn dimmed, as its Workspace is"
     );
 
@@ -1081,7 +1104,7 @@ fn a_session_whose_remote_does_not_answer_keeps_what_named_it_and_says_it_does_n
     };
     let (application, _) = sidekick_listing(never_said, true);
     assert_eq!(
-        aside_rows(&application)[2..5],
+        aside_rows(&application)[4..7],
         [
             "└ not answering".to_owned(),
             format!("    {MONITOR} workstation"),
@@ -1102,7 +1125,7 @@ fn a_session_the_sidekicks_act_on_is_not_yet_confirmed_stands_as_one_not_answeri
     };
     let (application, _) = sidekick_listing(unconfirmed, false);
     assert_eq!(
-        aside_rows(&application)[2..5],
+        aside_rows(&application)[4..7],
         [
             "└ Bind the ledger",
             "    workstation · ledger",
@@ -1184,7 +1207,7 @@ fn a_subagent_whose_remote_does_not_answer_is_named_dimmed_with_nothing_of_its_w
     );
     let rows = aside_rows(&application);
     assert_eq!(
-        rows[5..7],
+        rows[7..9],
         ["  └ Read the old entries", "      Explore · not answering"],
         "named as it last was, beneath its Session, with no Marker, outcome or time"
     );
@@ -1204,13 +1227,13 @@ fn a_remote_session_whose_subagents_are_not_all_shown_says_opening_it_shows_them
     };
     let (application, _) = sidekick_listing(cut.clone(), false);
     assert_eq!(
-        aside_rows(&application)[4],
+        aside_rows(&application)[6],
         "    sonnet-4-5 · open for all Subage…",
         "beside its Model, cut where the line runs short"
     );
     let (application, _) = sidekick_listing(SubagentTreeSession { model: None, ..cut }, false);
     assert_eq!(
-        aside_rows(&application)[4],
+        aside_rows(&application)[6],
         "    open for all Subagents",
         "and whole where it has the line"
     );
@@ -1295,7 +1318,7 @@ fn opening_a_subsession_begun_on_a_remote_keeps_the_sidekicks_tree_here() {
     );
     assert_eq!(
         aside_rows(&application)[1],
-        "Plan the month",
+        "✓ Plan the month",
         "and it is still followed through this client's own Server"
     );
 
@@ -1396,7 +1419,7 @@ fn a_remote_sessions_subagents_stand_beneath_it_alone_and_open_on_its_remote() {
     );
     let rows = aside_rows(&application);
     assert_eq!(
-        rows[2..10],
+        rows[4..12],
         [
             "├ ✓ Bind the ledger",
             "│ │ workstation · ledger",
@@ -1515,7 +1538,7 @@ fn selection_lines(catalog: Option<ModelCatalog>, show_icons: bool) -> [String; 
         SubagentTreeEvent::Snapshot(snapshot),
     );
     let rows = aside_rows(&application);
-    [rows[4].clone(), rows[7].clone()]
+    [rows[6].clone(), rows[9].clone()]
 }
 
 #[test]
@@ -1569,7 +1592,7 @@ fn a_subagents_model_is_named_as_its_servers_catalog_names_it_where_it_does() {
             sidekick.top,
             SubagentTreeEvent::Snapshot(snapshot),
         );
-        aside_rows(&application)[3].clone()
+        aside_rows(&application)[5].clone()
     };
 
     assert_eq!(
@@ -1620,7 +1643,7 @@ fn a_remote_sessions_provider_and_model_are_named_as_its_remotes_catalog_names_t
         "{catalog_origins:?}"
     );
     assert_eq!(
-        aside_rows(&application)[4],
+        aside_rows(&application)[6],
         "    Claude · sonnet",
         "until it is heard, the Model goes by what its Agent Selection calls it"
     );
@@ -1632,7 +1655,7 @@ fn a_remote_sessions_provider_and_model_are_named_as_its_remotes_catalog_names_t
         })
         .expect("take in the Remote's catalog");
     assert_eq!(
-        aside_rows(&application)[4],
+        aside_rows(&application)[6],
         "    Claude · Sonnet 4.5",
         "and then by what its Remote's catalog calls it"
     );
@@ -1672,7 +1695,7 @@ fn at_the_narrowest_aside_the_providers_glyph_gives_way_before_the_slot() {
     );
 
     let rows = aside_rows_at(&application, NARROWEST);
-    let line = &rows[4];
+    let line = &rows[6];
     assert!(
         line.ends_with(" · Stopped 1m 1s") && line.chars().count() <= usize::from(NARROWEST - 3),
         "the outcome and the whole slot stand, and nothing runs past the Aside: {rows:#?}"

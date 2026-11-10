@@ -892,7 +892,7 @@ mod aside {
     fn aside_rows(application: &Application) -> Vec<String> {
         rendered_application_rows_at(application, WIDTH, HEIGHT)
             .iter()
-            .take(4)
+            .take(5)
             .map(|row| {
                 row.chars()
                     .skip(usize::from(WIDTH - ASIDE_WIDTH + 2))
@@ -916,6 +916,10 @@ mod aside {
                 monitoring_since: None,
                 needs_intervention: false,
                 sidekick: false,
+                workspace_path: std::path::PathBuf::new(),
+                workspace_icon: None,
+                provider: None,
+                model: None,
             },
             subagents: vec![SubagentTreeEntry {
                 unanswered: false,
@@ -996,10 +1000,11 @@ mod aside {
             .expect("take the Session's tree");
 
         assert_eq!(
-            aside_rows(&application)[..4],
+            aside_rows(&application)[..5],
             [
                 "Subagents 1 (1 active)",
                 "Rename the widget",
+                "│",
                 "└ ⠋ Find the widget",
                 "    Explore",
             ],

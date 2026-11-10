@@ -60,6 +60,10 @@ fn session_with_its_tree(
                     monitoring_since: None,
                     needs_intervention: false,
                     sidekick: false,
+                    workspace_path: std::path::PathBuf::new(),
+                    workspace_icon: None,
+                    provider: None,
+                    model: None,
                 },
                 subagents: vec![SubagentTreeEntry {
                     unanswered: false,
@@ -213,13 +217,14 @@ fn an_open_intervention_panel_outranks_an_aside_holding_the_keys_until_it_closes
     assert!(!screen(&application).contains("Approval · Choose Decision"));
     assert_eq!(
         focused_aside_rows(&application),
-        [1],
-        "with the panel put away the Aside has the keys it was given, focus on the open entry"
+        [1, 2],
+        "with the panel put away the Aside has the keys it was given, focus on the open \
+         entry's two lines"
     );
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
     assert_eq!(
         focused_aside_rows(&application),
-        [2, 3],
+        [3, 4],
         "and they walk its entries, a Subagent's two lines painted as one"
     );
 }
@@ -230,14 +235,14 @@ fn an_intervention_arriving_while_the_aside_holds_the_keys_waits_for_them() {
     let mut application = client(workspace.path(), 32);
     let (mut snapshot, turn_id) = session_with_its_tree(&mut application, workspace.path());
     invoke(&mut application, SemanticCommandId::AsideToggle);
-    assert_eq!(focused_aside_rows(&application), [1]);
+    assert_eq!(focused_aside_rows(&application), [1, 2]);
 
     an_approval_arrives(&mut application, &mut snapshot, turn_id);
     assert!(
         !screen(&application).contains("Approval · Choose Decision"),
         "an arrival does not take the keys from a column the reader is driving, as with the Sidebar"
     );
-    assert_eq!(focused_aside_rows(&application), [1]);
+    assert_eq!(focused_aside_rows(&application), [1, 2]);
 
     press(&mut application, KeyCode::Esc, KeyModifiers::NONE);
     assert!(

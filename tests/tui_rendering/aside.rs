@@ -15,7 +15,7 @@ use suru::{
     managed_client::SubagentTreeEvent,
     protocol::{
         Activity, ActivityStatus, AsideSettings, AsideVisibility, EffectiveSettings, ModelId,
-        Outlook, PromptId, SessionId, SessionReference, SessionSnapshot, SessionStatus,
+        Outlook, PromptId, ProviderId, SessionId, SessionReference, SessionSnapshot, SessionStatus,
         SessionTimestamp, SidebarVisibility, SubagentTreeChange, SubagentTreeEntry,
         SubagentTreeRevision, SubagentTreeSnapshot, SubagentTreeTopLevel, TurnStatus,
     },
@@ -52,14 +52,18 @@ impl Tree {
             revision: SubagentTreeRevision::INITIAL,
             top_level: SubagentTreeTopLevel {
                 own_working_since: None,
-                status: None,
-                worked_ms: None,
+                status: Some(ActivityStatus::Completed),
+                worked_ms: Some(65_000),
                 session_id: self.top,
                 title: "Map every seam".to_owned(),
                 working_since: None,
                 monitoring_since: None,
                 needs_intervention: false,
                 sidekick: false,
+                workspace_path: std::path::PathBuf::new(),
+                workspace_icon: None,
+                provider: Some(ProviderId::new("claude")),
+                model: Some(ModelId::new("opus")),
             },
             subagents: vec![
                 entry(
@@ -264,10 +268,11 @@ fn entries_run_depth_first_over_two_lines_with_guides_marker_title_name_and_a_fi
 
     let rows = aside_rows(&application, WIDTH);
     assert_eq!(
-        rows[..8],
+        rows[..9],
         [
             "Subagents 3 (1 active)",
-            "Map every seam",
+            "✓ Map every seam",
+            "│ Claude · opus                 1m 5s",
             "├ ✓ Map the provider seams",
             "│ │ Explore                       12s",
             "│ └ ⠋ Check the mapped seams",
@@ -275,8 +280,9 @@ fn entries_run_depth_first_over_two_lines_with_guides_marker_title_name_and_a_fi
             "└ ✓ Weigh the options",
             "    Plan",
         ],
-        "the top-level Session heads the tree; each Subagent follows its spawner, the \
-         branch still working ahead of the settled one, over two lines, its Marker and Title first and its name and time \
+        "the top-level Session heads the tree over two lines, its own Marker and Title and \
+         then its Provider, Model and time, its rule running down to what it spawned; each \
+         Subagent follows its spawner, the branch still working ahead of the settled one, over two lines, its Marker and Title first and its name and time \
          beneath, the guides running on through the second line to the entries it \
          spawned; and a settle with no known duration leaves the time blank: {rows:#?}"
     );
@@ -351,7 +357,7 @@ fn the_title_has_the_first_line_and_the_name_and_time_the_second() {
 
     let rows = aside_rows(&application, WIDTH);
     assert_eq!(
-        rows[2..4],
+        rows[3..5],
         [
             "└ ✓ Chart every Provider seam the or…",
             "    Cartographer                  12s",
@@ -379,7 +385,7 @@ fn a_subagents_confirmed_model_follows_its_name_and_an_unconfirmed_one_is_left_u
 
     let rows = aside_rows(&application, WIDTH);
     assert_eq!(
-        rows[2..8],
+        rows[3..9],
         [
             "├ ✓ Map the provider seams",
             "│ │ Explore · sonnet              12s",
@@ -399,7 +405,7 @@ fn a_model_confirmed_after_the_snapshot_updates_its_entry_in_place() {
     let (mut application, tree) = tree_open_at_top(workspace.path());
     let before = aside_rows(&application, WIDTH);
     assert_eq!(
-        before[4..6],
+        before[5..7],
         ["│ └ ⠋ Check the mapped seams", "│     Review"]
     );
 
@@ -413,7 +419,7 @@ fn a_model_confirmed_after_the_snapshot_updates_its_entry_in_place() {
     );
 
     let mut expected = before;
-    expected[5] = "│     Review · haiku".to_owned();
+    expected[6] = "│     Review · haiku".to_owned();
     assert_eq!(
         aside_rows(&application, WIDTH),
         expected,
@@ -463,6 +469,10 @@ fn a_brokered_subagents_entry_shows_the_model_its_provider_confirmed_and_its_out
                 monitoring_since: None,
                 needs_intervention: false,
                 sidekick: false,
+                workspace_path: std::path::PathBuf::new(),
+                workspace_icon: None,
+                provider: None,
+                model: None,
             },
             subagents: Vec::new(),
             sessions: Vec::new(),
@@ -540,7 +550,7 @@ fn at_the_launch_width_the_name_is_left_out_before_the_model_is_cut() {
             tree.top,
             SubagentTreeEvent::Snapshot(snapshot),
         );
-        aside_rows(&application, WIDTH)[3].clone()
+        aside_rows(&application, WIDTH)[4].clone()
     };
 
     assert_eq!(
@@ -583,7 +593,16 @@ fn a_session_with_no_subagents_lists_only_its_own_entry() {
     );
 
     let rows = aside_rows(&application, WIDTH);
-    assert_eq!(rows[..3], ["Subagents 0", "Map every seam", ""]);
+    assert_eq!(
+        rows[..4],
+        [
+            "Subagents 0",
+            "✓ Map every seam",
+            "  Claude · opus                 1m 5s",
+            ""
+        ],
+        "with nothing beneath it, no rule runs down from its Marker"
+    );
 }
 
 #[test]
@@ -653,7 +672,7 @@ fn the_last_settle_in_a_branch_moves_it_behind_newer_settled_siblings() {
 
     let rows = aside_rows(&application, WIDTH);
     assert_eq!(
-        rows[2..8],
+        rows[3..9],
         [
             "├ ✓ Weigh the options",
             "│   Plan",
@@ -691,7 +710,7 @@ fn a_late_spawn_stands_beneath_its_spawner_ahead_of_older_siblings() {
     let rows = aside_rows(&application, WIDTH);
     assert_eq!(rows[0], "Subagents 4 (2 active)");
     assert_eq!(
-        rows[4..10],
+        rows[5..11],
         [
             "│ ├ ⠋ Probe a seam",
             "│ │   Probe",
@@ -776,7 +795,7 @@ fn switching_within_a_tree_keeps_the_section_and_another_tree_does_not_borrow_it
     );
     assert_eq!(
         aside_rows(&application, WIDTH)[1],
-        "Map every Provider seam"
+        "✓ Map every Provider seam"
     );
 
     let elsewhere = SessionId::new();
@@ -1237,7 +1256,7 @@ fn a_tree_still_arriving_is_blank_and_then_says_loading() {
         tree.top,
         SubagentTreeEvent::Snapshot(tree.snapshot()),
     );
-    assert_eq!(aside_rows(&application, WIDTH)[1], "Map every seam");
+    assert_eq!(aside_rows(&application, WIDTH)[1], "✓ Map every seam");
 }
 
 #[test]
@@ -1254,7 +1273,7 @@ fn a_fast_arrival_never_flashes_loading_and_moving_within_the_tree_never_blanks(
         SubagentTreeEvent::Snapshot(tree.snapshot()),
     );
     let arrived = aside_rows(&application, WIDTH);
-    assert_eq!(arrived[1], "Map every seam");
+    assert_eq!(arrived[1], "✓ Map every seam");
 
     advance(&now, 400);
     assert_eq!(
@@ -1336,7 +1355,7 @@ fn a_tree_that_cannot_be_read_says_so_until_a_session_of_it_is_opened_again() {
     );
     assert_eq!(
         aside_rows(&application, WIDTH)[..2],
-        ["Subagents 3 (1 active)", "Map every seam"],
+        ["Subagents 3 (1 active)", "✓ Map every seam"],
         "the retried subscription's tree is taken"
     );
 }
@@ -1367,7 +1386,7 @@ fn a_tree_lost_while_in_hand_is_retried_from_any_session_of_it() {
         tree.review,
         SubagentTreeEvent::Snapshot(tree.snapshot()),
     );
-    assert_eq!(aside_rows(&application, WIDTH)[1], "Map every seam");
+    assert_eq!(aside_rows(&application, WIDTH)[1], "✓ Map every seam");
 }
 
 #[test]
@@ -1417,7 +1436,7 @@ fn an_unreachable_remote_leaves_the_last_tree_standing() {
         SubagentTreeEvent::Snapshot(tree.snapshot()),
     );
     let before = aside_rows(&application, WIDTH);
-    assert_eq!(before[1], "Map every seam");
+    assert_eq!(before[1], "✓ Map every seam");
 
     crate::tui_rendering::support::studio_stops_answering(
         &mut application,
@@ -1823,78 +1842,110 @@ fn a_settled_entry_whose_end_went_unlearned_leaves_its_time_blank() {
     );
 }
 
+/// The top-level entry tells its own work as every entry beneath it does:
+/// its own Marker before its Title, and beneath them the time its own Turns
+/// took — counting while it works and fixed once it settles — however long
+/// the tree it heads goes on working without it.
 #[test]
-fn the_top_level_entry_wears_the_working_marker_and_time_only_while_working() {
+fn the_top_level_entry_wears_its_own_marker_and_time_beneath_its_title() {
     let workspace = workspace_dir();
     let (mut application, now) = session_clocked_client(workspace.path());
     let tree = Tree::new();
     open(&mut application, workspace.path(), tree.top, None);
     let mut snapshot = tree.snapshot();
-    // Nothing else in the tree is live, so what ticks is the top level alone.
+    // Nothing else in the tree is live, so what ticks is the top level alone:
+    // 20s of earlier Turns, and one begun 22s ago.
     snapshot.subagents[1].status = ActivityStatus::Completed;
-    snapshot.top_level.working_since = Some(before_start(42_000));
+    snapshot.top_level.status = Some(ActivityStatus::Active);
+    snapshot.top_level.worked_ms = Some(20_000);
+    snapshot.top_level.own_working_since = Some(before_start(22_000));
+    snapshot.top_level.working_since = Some(before_start(22_000));
     deliver_tree(
         &mut application,
         tree.top,
         SubagentTreeEvent::Snapshot(snapshot),
     );
 
-    let working = aside_rows(&application, WIDTH)[1].clone();
-    assert!(
-        working.starts_with("⠋ Map every seam") && working.ends_with(" 42s"),
-        "a Working top-level Session wears the Working Marker and its elapsed time: {working:?}"
+    let rows = aside_rows(&application, WIDTH);
+    assert_eq!(
+        rows[1..3],
+        ["⠋ Map every seam", "│ Claude · opus                   42s"],
+        "a working top-level Session wears the Working Marker, and beneath it the time \
+         its Turns have worked, counted up from its earlier ones: {rows:#?}"
     );
     assert!(
         application.wants_spinner(),
         "its Marker spins and its time rises"
     );
     advance_session_clock(&now, 3_000);
-    assert!(aside_rows(&application, WIDTH)[1].ends_with(" 45s"));
+    assert_eq!(
+        aside_rows(&application, WIDTH)[2],
+        "│ Claude · opus                   45s"
+    );
 
     change(
         &mut application,
         tree.top,
         SubagentTreeChange::TopLevelWorkingChanged {
             own_working_since: None,
-            status: None,
-            worked_ms: None,
+            status: Some(ActivityStatus::Completed),
+            worked_ms: Some(45_000),
             working_since: None,
             monitoring_since: None,
         },
     );
     assert_eq!(
-        aside_rows(&application, WIDTH)[1],
-        "Map every seam",
-        "both clear once it stops Working"
+        aside_rows(&application, WIDTH)[1..3],
+        ["✓ Map every seam", "│ Claude · opus                   45s"],
+        "once its Turn settles it wears its outcome and its time stands"
     );
     assert!(!application.wants_spinner());
 
+    // A Subagent beneath it works again while the top-level Session itself
+    // stays settled: the tree Works, the top-level entry does not.
+    change(
+        &mut application,
+        tree.top,
+        SubagentTreeChange::SubagentWorkingChanged {
+            session_id: tree.review,
+            status: ActivityStatus::Active,
+            worked_ms: Some(0),
+            working_since: Some(SessionTimestamp(CLOCK_START + 3_000)),
+            monitoring_since: None,
+        },
+    );
     change(
         &mut application,
         tree.top,
         SubagentTreeChange::TopLevelWorkingChanged {
             own_working_since: None,
-            status: None,
-            worked_ms: None,
-            // Begun at the moment the clock now reads.
+            status: Some(ActivityStatus::Completed),
+            worked_ms: Some(45_000),
             working_since: Some(SessionTimestamp(CLOCK_START + 3_000)),
             monitoring_since: None,
         },
     );
     advance_session_clock(&now, 2_000);
-    let resumed = aside_rows(&application, WIDTH)[1].clone();
-    assert!(
-        resumed.starts_with("⠋ Map every seam") && resumed.ends_with(" 2s"),
-        "and come back, counting afresh, when it Works again: {resumed:?}"
+    let rows = aside_rows(&application, WIDTH);
+    assert_eq!(
+        rows[1..3],
+        ["✓ Map every seam", "│ Claude · opus                   45s"],
+        "the top-level entry keeps its own outcome and time while only the tree \
+         beneath it works: {rows:#?}"
     );
+    assert!(
+        aside_row(&application, "Check the mapped seams").starts_with("│ └ ⠋ "),
+        "the Subagent that works wears the Working Marker"
+    );
+    assert!(application.wants_spinner());
 }
 
 /// A settled Subagent whose Watches outlive it keeps the Marker it settled
-/// with and says **monitoring** where its time would stand, while the
-/// top-level Session Monitoring through it wears the Working Marker and the
-/// time since Monitoring began — both clearing once the Watches settle.
+/// with and says **monitoring** where its time would stand, and the settled
+/// top-level Session Monitoring through it says so alike — both standing at
+/// their times again once the Watches settle.
 #[test]
-fn a_monitoring_subagent_says_so_in_its_times_place_and_the_top_level_counts_its_monitoring() {
+fn a_monitoring_subagent_and_the_top_level_monitoring_through_it_say_so_in_their_times_place() {
     let workspace = workspace_dir();
     let (mut application, now) = session_clocked_client(workspace.path());
     let tree = Tree::new();
@@ -1920,13 +1971,23 @@ fn a_monitoring_subagent_says_so_in_its_times_place_and_the_top_level_counts_its
         !aside_row(&application, "Plan").contains("monitoring"),
         "only the Subagent whose Session is Monitoring says so"
     );
-    let top_level = aside_rows(&application, WIDTH)[1].clone();
-    assert!(
-        top_level.starts_with("⠋ Map every seam") && top_level.ends_with(" 20s"),
-        "the top-level entry shows Monitoring the way it shows Working: {top_level:?}"
+    let rows = aside_rows(&application, WIDTH);
+    assert_eq!(
+        rows[1..3],
+        ["✓ Map every seam", "│ Claude · opus            monitoring"],
+        "the settled top-level entry keeps its outcome and says monitoring where its \
+         time would stand, as a Subagent's does: {rows:#?}"
     );
     advance_session_clock(&now, 5_000);
-    assert!(aside_rows(&application, WIDTH)[1].ends_with(" 25s"));
+    assert_eq!(
+        aside_rows(&application, WIDTH)[2],
+        "│ Claude · opus            monitoring",
+        "nothing of it ticks while it only Monitors"
+    );
+    assert!(
+        !application.wants_spinner(),
+        "nothing in the tree works, so nothing spins"
+    );
 
     change(
         &mut application,
@@ -1944,8 +2005,8 @@ fn a_monitoring_subagent_says_so_in_its_times_place_and_the_top_level_counts_its
         tree.top,
         SubagentTreeChange::TopLevelWorkingChanged {
             own_working_since: None,
-            status: None,
-            worked_ms: None,
+            status: Some(ActivityStatus::Completed),
+            worked_ms: Some(65_000),
             working_since: None,
             monitoring_since: None,
         },
@@ -1954,7 +2015,11 @@ fn a_monitoring_subagent_says_so_in_its_times_place_and_the_top_level_counts_its
         aside_row(&application, "Explore").ends_with(" 12s"),
         "once its Watches settle the entry stands at its time again"
     );
-    assert_eq!(aside_rows(&application, WIDTH)[1], "Map every seam");
+    assert_eq!(
+        aside_rows(&application, WIDTH)[1..3],
+        ["✓ Map every seam", "│ Claude · opus                 1m 5s"],
+        "and so does the top-level entry"
+    );
     assert!(!application.wants_spinner());
 }
 
@@ -1966,6 +2031,9 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
     open(&mut application, workspace.path(), tree.top, None);
     let mut snapshot = tree.snapshot();
     snapshot.top_level.working_since = Some(before_start(30_000));
+    snapshot.top_level.status = Some(ActivityStatus::Active);
+    snapshot.top_level.worked_ms = Some(0);
+    snapshot.top_level.own_working_since = Some(before_start(30_000));
     snapshot.subagents[1].working_since = Some(before_start(5_000));
     snapshot.subagents[1].needs_intervention = true;
     snapshot.subagents[1].name = "Reviewer of every seam".to_owned();
@@ -1977,16 +2045,16 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
 
     let rows = aside_rows(&application, WIDTH);
     assert!(
-        rows[4].starts_with("│ └ ⠋ ") && rows[5] == "│     Reviewer of… Needs Intervention",
+        rows[5].starts_with("│ └ ⠋ ") && rows[6] == "│     Reviewer of… Needs Intervention",
         "the nested Subagent whose own Session waits says so in its time's place, its \
          name giving way: {rows:#?}"
     );
     assert_eq!(
-        needs_intervention_colour(&application, 5),
+        needs_intervention_colour(&application, 6),
         Some(PANDA.warning)
     );
     assert!(
-        rows[3].ends_with(" 12s") && rows[1].ends_with(" 30s"),
+        rows[4].ends_with(" 12s") && rows[2].ends_with(" 30s"),
         "while neither its spawner nor the top-level Session repeats it: {rows:#?}"
     );
 
@@ -2000,7 +2068,7 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
     );
     let answered = aside_rows(&application, WIDTH);
     assert!(
-        answered[5].contains("Review") && answered[5].ends_with(" 5s"),
+        answered[6].contains("Review") && answered[6].ends_with(" 5s"),
         "answered, the entry has its time back: {answered:#?}"
     );
     assert!(!answered.join("\n").contains("Needs Intervention"));
@@ -2015,11 +2083,14 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
     );
     let asked = aside_rows(&application, WIDTH);
     assert!(
-        asked[1].starts_with("⠋ ") && asked[1].ends_with(" Needs Intervention"),
-        "the top-level entry says so too, where the Intervention is its own: {asked:#?}"
+        asked[1].starts_with("⠋ ")
+            && asked[2].starts_with("│ Claude · opus")
+            && asked[2].ends_with(" Needs Intervention"),
+        "the top-level entry says so too, in its time's place beneath its Title, where \
+         the Intervention is its own: {asked:#?}"
     );
     assert_eq!(
-        needs_intervention_colour(&application, 1),
+        needs_intervention_colour(&application, 2),
         Some(PANDA.warning)
     );
     assert_eq!(
@@ -2039,7 +2110,7 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
             needs_intervention: false,
         },
     );
-    assert!(aside_rows(&application, WIDTH)[1].ends_with(" 30s"));
+    assert!(aside_rows(&application, WIDTH)[2].ends_with(" 30s"));
 }
 
 // Row focus and scrolling: the Aside driven by the keys, and a tree taller
@@ -2108,7 +2179,7 @@ fn row_focus_begins_on_the_open_entry_and_walks_with_the_arrows_and_ctrl_p_n() {
     press(&mut application, KeyCode::Char('n'), KeyModifiers::CONTROL);
     assert_eq!(
         focused_aside_rows(&application),
-        ["Map every seam"],
+        ["✓ Map every seam", "│ Claude · opus                 1m 5s"],
         "Ctrl+N walks on, wrapping past the end"
     );
     press(&mut application, KeyCode::Up, KeyModifiers::NONE);
@@ -2168,7 +2239,7 @@ fn esc_hands_the_keys_back_and_focus_begins_again_on_the_open_entry() {
     invoke(&mut application, SemanticCommandId::AsideToggle);
     assert_eq!(
         focused_aside_rows(&application),
-        ["Map every seam"],
+        ["✓ Map every seam", "│ Claude · opus                 1m 5s"],
         "taking the keys again begins on the open entry, not where focus was left"
     );
 }
@@ -2269,7 +2340,10 @@ fn focus_is_painted_only_while_the_aside_holds_the_keys() {
     );
 
     invoke(&mut application, SemanticCommandId::AsideToggle);
-    assert_eq!(focused_aside_rows(&application), ["Map every seam"]);
+    assert_eq!(
+        focused_aside_rows(&application),
+        ["✓ Map every seam", "│ Claude · opus                 1m 5s"]
+    );
 
     // Read wide enough for the Sidebar, the main view and the Aside all at
     // their launch widths, so the Sidebar's arrival squeezes nothing.
@@ -2282,7 +2356,7 @@ fn focus_is_painted_only_while_the_aside_holds_the_keys() {
     invoke(&mut application, SemanticCommandId::AsideToggle);
     assert_eq!(
         focused_aside_rows_at(&application, all_three),
-        ["Map every seam"],
+        ["✓ Map every seam", "│ Claude · opus                 1m 5s"],
         "and the Aside takes them back"
     );
 
@@ -2329,6 +2403,10 @@ fn tall_tree(top: SessionId) -> (SubagentTreeSnapshot, Vec<SessionId>) {
             monitoring_since: None,
             needs_intervention: false,
             sidekick: false,
+            workspace_path: std::path::PathBuf::new(),
+            workspace_icon: None,
+            provider: None,
+            model: None,
         },
         subagents: children
             .iter()
@@ -2419,7 +2497,7 @@ fn a_tall_tree_scrolls_to_keep_two_entries_beyond_the_open_then_the_focused_entr
     for _ in 0..34 {
         press(&mut application, KeyCode::Up, KeyModifiers::NONE);
     }
-    assert_eq!(focused_aside_rows(&application), ["Map every seam"]);
+    assert_eq!(focused_aside_rows(&application), ["Map every seam", "│"]);
     assert_eq!(window_edges(&application).0, "Map every seam");
 }
 
@@ -2497,9 +2575,9 @@ fn an_entry_with_room_for_only_its_first_line_still_shows_that_line_at_the_foot(
     open(&mut application, workspace.path(), top, None);
     let (snapshot, _) = tall_tree(top);
     deliver_tree(&mut application, top, SubagentTreeEvent::Snapshot(snapshot));
-    // One line short of the launch height, the window has room for the top
-    // entry, ten whole Subagents, and the first line of the eleventh.
-    let rows = rendered_application_rows_at(&application, WIDTH, HEIGHT - 1)
+    // At the launch height, the window has room for the top entry's two
+    // lines, ten whole Subagents, and the first line of the eleventh.
+    let rows = rendered_application_rows_at(&application, WIDTH, HEIGHT)
         .iter()
         .map(|row| {
             row.chars()

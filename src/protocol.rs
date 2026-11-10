@@ -4440,6 +4440,21 @@ pub struct SubagentTreeTopLevel {
     /// acted on any yet.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub sidekick: bool,
+    /// The presented root of the Workspace the top-level Session works in,
+    /// which a client names it by as it names any Workspace.
+    #[serde(default)]
+    pub workspace_path: PathBuf,
+    /// The Icon Catalog name of that Workspace's Icon, where it has one.
+    #[serde(default)]
+    pub workspace_icon: Option<String>,
+    /// The Provider of the top-level Session's Agent Selection, where it has
+    /// one.
+    #[serde(default)]
+    pub provider: Option<ProviderId>,
+    /// The Model the top-level Session's Agent Selection names, where it
+    /// names one.
+    #[serde(default)]
+    pub model: Option<ModelId>,
 }
 
 /// One Session a Sidekick has a hand in, standing beneath the Sidekick's
@@ -4648,6 +4663,19 @@ pub enum SubagentTreeChange {
         #[serde(default)]
         own_working_since: Option<SessionTimestamp>,
     },
+    /// The top-level Session moved to another Workspace, or its Workspace's
+    /// Icon changed: where it works now, carried whole.
+    TopLevelWorkspaceChanged {
+        workspace_path: PathBuf,
+        #[serde(default)]
+        workspace_icon: Option<String>,
+    },
+    /// The top-level Session's Agent Selection changed: the Provider and
+    /// Model it names now, carried whole.
+    TopLevelSelectionChanged {
+        provider: Option<ProviderId>,
+        model: Option<ModelId>,
+    },
     /// Whether one Session of the tree — the top-level Session or any
     /// Subagent's — holds a live Intervention of its own changed.
     NeedsInterventionChanged {
@@ -4739,6 +4767,17 @@ impl SubagentTreeSnapshot {
                 self.top_level.status = status;
                 self.top_level.worked_ms = worked_ms;
                 self.top_level.own_working_since = own_working_since;
+            }
+            SubagentTreeChange::TopLevelWorkspaceChanged {
+                workspace_path,
+                workspace_icon,
+            } => {
+                self.top_level.workspace_path = workspace_path;
+                self.top_level.workspace_icon = workspace_icon;
+            }
+            SubagentTreeChange::TopLevelSelectionChanged { provider, model } => {
+                self.top_level.provider = provider;
+                self.top_level.model = model;
             }
             SubagentTreeChange::NeedsInterventionChanged {
                 session_id,

@@ -17,8 +17,8 @@ use ratatui::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::protocol::{
-    ActivityStatus, Outlook, SessionReference, SessionTimestamp, SubagentTreeEntry,
-    SubagentTreeSession,
+    ActivityStatus, ModelId, Outlook, ProviderId, SessionReference, SessionTimestamp,
+    SubagentTreeEntry, SubagentTreeSession,
 };
 use crate::provider::provider_name;
 use crate::theme::Theme;
@@ -124,7 +124,6 @@ impl Section for SubagentsSection {
                 return Ok(self.stand_in(title, working, context));
             }
         };
-        let width = usize::from(context.width);
         let mut rows = Vec::new();
         let mut current = None;
         let mut animates = false;
@@ -135,38 +134,10 @@ impl Section for SubagentsSection {
         if open_top_level {
             current = Some(rows.len());
         }
-        // The top-level entry wears the Working Marker and its elapsed time
-        // only while it is Working or Monitoring, as its Sidebar row tells
-        // its duration: Monitoring's counted from when Monitoring began.
-        let top_level_since = top_level.working_since.or(top_level.monitoring_since);
-        let top_level_working = top_level_since.is_some();
-        animates |= top_level_working;
-        rows.push(SectionRow {
-            lines: vec![title_line(
-                TitleParts {
-                    guides: String::new(),
-                    marker: top_level_working
-                        .then(|| (spinner::MARKER.to_owned(), theme.accent.primary)),
-                    title: &top_level.title,
-                    right: right_slot(
-                        top_level.needs_intervention,
-                        top_level_since.map(|since| ticking(since, context.now)),
-                        theme,
-                    ),
-                },
-                open_top_level,
-                width,
-                context,
-            )],
-            invocation: open_invocation(
-                SemanticCommandId::SubagentOpen,
-                tree,
-                top_level.session_id,
-                context.open,
-            ),
-            key: Some(entry_key(tree, top_level.session_id)),
-        });
-        if top_level_working && let Some(row) = rows.last_mut() {
+        let (row, working) = top_level_row(tree, open_top_level, context);
+        animates |= working;
+        rows.push(row);
+        if working && let Some(row) = rows.last_mut() {
             spinner::overlay_frame(&mut row.lines, &[0], context.spinner_frame / 3);
         }
         for entry in tree.depth_first() {
@@ -306,6 +277,56 @@ fn subagent_row(
     (row, working)
 }
 
+/// The top-level Session's entry, and whether it works, drawn as the entry
+/// of a Session beneath a Sidekick is: its own Marker and Title; where a
+/// Sidekick's Session heads the tree, its Workspace beside its Icon; and the
+/// Model its Agent Selection names with the time its own Turns took. The rule
+/// what it spawned hang from begins beneath its Marker.
+fn top_level_row(
+    tree: &SubagentTreeReading,
+    open: bool,
+    context: &SectionContext<'_>,
+) -> (SectionRow, bool) {
+    let top_level = tree.top_level();
+    let reference = tree.reference_to(None, top_level.session_id);
+    let (lines, working) = session_lines(
+        &SessionParts {
+            origin: None,
+            title: &top_level.title,
+            workspace_path: &top_level.workspace_path,
+            workspace_icon: top_level.workspace_icon.as_deref(),
+            provider: top_level.provider.as_ref(),
+            model: top_level.model.as_ref(),
+            status: top_level.status,
+            worked_ms: top_level.worked_ms,
+            working_since: top_level.own_working_since,
+            monitoring: top_level.monitoring_since.is_some(),
+            needs_intervention: top_level.needs_intervention,
+            subagents_unshown: false,
+            silent: None,
+        },
+        EntryGuides {
+            first: String::new(),
+            beneath: if tree.entry_count() > 0 { "│ " } else { "  " }.to_owned(),
+        },
+        tree.is_sidekicks(),
+        reference.as_ref(),
+        open,
+        context,
+    );
+    let row = SectionRow {
+        lines,
+        invocation: open_invocation(
+            SemanticCommandId::SubagentOpen,
+            tree,
+            top_level.session_id,
+            context.open,
+        ),
+        key: Some(entry_key(tree, top_level.session_id)),
+    };
+    (row, working)
+}
+
 /// The entry of a Session a Sidekick has a hand in, and whether it works,
 /// drawn alike whether the Sidekick began it or only acted on it. It takes
 /// three lines: its Marker and Title; where it works, its Workspace beside
@@ -317,72 +338,8 @@ fn session_row(
     session: &SubagentTreeSession,
     context: &SectionContext<'_>,
 ) -> (SectionRow, bool) {
-    let theme = context.theme;
-    let width = usize::from(context.width);
     let reference = tree.reference_to(session.origin.as_deref(), session.session_id);
     let open = reference.as_ref() == Some(context.open);
-    let marker = session.status.map(|status| subagent_marker(status, theme));
-    let working = session.status == Some(ActivityStatus::Active);
-    let time = work_time(
-        working,
-        session.worked_ms,
-        session.working_since,
-        session.monitoring_since.is_some(),
-        context.now,
-    );
-    // A Remote's Session is named in its Remote's own paths, where the
-    // client has heard how it spells them.
-    let paths = match &session.origin {
-        None => context.workspace_paths,
-        Some(remote) => context
-            .remote_workspace_paths
-            .get(&Outlook::Remote(remote.clone())),
-    };
-    // One whose Remote does not answer keeps the Workspace it was last
-    // known by, where it was known by one.
-    let workspace = if session.workspace_path.as_os_str().is_empty() {
-        String::new()
-    } else {
-        paths.map_or_else(
-            || any_workspace_name(&session.workspace_path),
-            |paths| paths.name(&session.workspace_path),
-        )
-    };
-    let icon = (context.show_icons && !workspace.is_empty()).then(|| {
-        session
-            .workspace_icon
-            .as_deref()
-            .and_then(crate::icon_catalog::glyph)
-            .unwrap_or(FOLDER_GLYPH)
-    });
-    // Its Provider and Model are named as its own Server's catalog names
-    // them, where the client has heard that catalog.
-    let origin = reference.as_ref().map(|reference| &reference.origin);
-    let provider = session.provider.as_ref().map(|provider| ProviderPart {
-        glyph: context
-            .show_icons
-            .then(|| provider_icon(provider))
-            .flatten(),
-        name: origin
-            .and_then(|origin| context.catalog_names.provider(origin, provider))
-            .map_or_else(|| provider_name(provider), ToOwned::to_owned),
-    });
-    let model = session.model.as_ref().map(|model| {
-        origin
-            .and_then(|origin| {
-                context
-                    .catalog_names
-                    .model(origin, session.provider.as_ref(), model)
-            })
-            .unwrap_or(model.as_str())
-    });
-    // A Remote's Session whose Subagents are not all shown here says so
-    // beside its Model, its tree there running past what is kept of one.
-    let model = match (model, session.subagents_unshown) {
-        (Some(model), true) => Some(format!("{model} · {NOT_ALL_SHOWN}")),
-        (None, true) => Some(NOT_ALL_SHOWN.to_owned()),
-        (model, false) => model.map(ToOwned::to_owned),
-    };
     // One the Sidekick's act on is not known to have reached stands as one
     // whose Remote does not answer does, saying which it is.
     let silent = if session.unanswered {
@@ -390,52 +347,33 @@ fn session_row(
     } else {
         session.unconfirmed.then_some(NOT_CONFIRMED)
     };
+    let (lines, working) = session_lines(
+        &SessionParts {
+            origin: session.origin.as_deref(),
+            title: &session.title,
+            workspace_path: &session.workspace_path,
+            workspace_icon: session.workspace_icon.as_deref(),
+            provider: session.provider.as_ref(),
+            model: session.model.as_ref(),
+            status: session.status,
+            worked_ms: session.worked_ms,
+            working_since: session.working_since,
+            monitoring: session.monitoring_since.is_some(),
+            needs_intervention: session.needs_intervention,
+            subagents_unshown: session.subagents_unshown,
+            silent,
+        },
+        EntryGuides {
+            first: entry.guides(),
+            beneath: entry.continuation_guides(),
+        },
+        true,
+        reference.as_ref(),
+        open,
+        context,
+    );
     let row = SectionRow {
-        lines: vec![
-            if let Some(silent) = silent {
-                unanswered_title_line(entry.guides(), &session.title, silent, open, width, context)
-            } else {
-                title_line(
-                    TitleParts {
-                        guides: entry.guides(),
-                        marker: marker.map(|(marker, style)| (marker.to_owned(), style)),
-                        title: &session.title,
-                        right: None,
-                    },
-                    open,
-                    width,
-                    context,
-                )
-            },
-            location_line(
-                LocationParts {
-                    guides: entry.continuation_guides(),
-                    remote: session.origin.as_deref(),
-                    remote_icon: context.show_icons.then_some(REMOTE_GLYPH),
-                    icon,
-                    workspace: &workspace,
-                },
-                width,
-                context,
-            ),
-            if let Some(silent) = silent {
-                not_answering_line(entry.continuation_guides(), silent, width, context)
-            } else {
-                selection_line(
-                    SelectionParts {
-                        guides: entry.continuation_guides(),
-                        provider,
-                        model: model.as_deref(),
-                        outcome: session.status.and_then(|status| {
-                            Some((outcome_word(status)?, subagent_marker(status, theme).1))
-                        }),
-                        right: right_slot(session.needs_intervention, time, theme),
-                    },
-                    width,
-                    context,
-                )
-            },
-        ],
+        lines,
         invocation: reference
             .as_ref()
             .filter(|reference| *reference != context.open)
@@ -445,6 +383,164 @@ fn session_row(
         }))),
     };
     (row, working)
+}
+
+/// What a Session's entry says of it, whether the Session heads the tree or
+/// stands beneath a Sidekick.
+struct SessionParts<'a> {
+    /// The Remote the Session lives on, by the name the tree's Server knows
+    /// it by, where it lives on one.
+    origin: Option<&'a str>,
+    title: &'a str,
+    workspace_path: &'a std::path::Path,
+    workspace_icon: Option<&'a str>,
+    provider: Option<&'a ProviderId>,
+    model: Option<&'a ModelId>,
+    status: Option<ActivityStatus>,
+    worked_ms: Option<u64>,
+    /// When the work the Session itself does now began, while it does any.
+    working_since: Option<SessionTimestamp>,
+    monitoring: bool,
+    needs_intervention: bool,
+    /// Whether some of the Subagents beneath it are not shown.
+    subagents_unshown: bool,
+    /// Why nothing of its work is current, where nothing is.
+    silent: Option<&'static str>,
+}
+
+/// The guides leading an entry's lines: its first, and those beneath it.
+struct EntryGuides {
+    first: String,
+    beneath: String,
+}
+
+/// The lines of a Session's entry, and whether it works: its Marker and
+/// Title; where `located`, its Workspace beside its Icon, preceded by its
+/// Remote where it lives on one; and the Provider and Model of its Agent
+/// Selection, with its outcome where the Marker would not tell, and the time
+/// a Subagent's entry carries.
+fn session_lines(
+    parts: &SessionParts<'_>,
+    guides: EntryGuides,
+    located: bool,
+    reference: Option<&SessionReference>,
+    open: bool,
+    context: &SectionContext<'_>,
+) -> (Vec<Line<'static>>, bool) {
+    let theme = context.theme;
+    let width = usize::from(context.width);
+    let marker = parts.status.map(|status| subagent_marker(status, theme));
+    let working = parts.status == Some(ActivityStatus::Active);
+    let time = work_time(
+        working,
+        parts.worked_ms,
+        parts.working_since,
+        parts.monitoring,
+        context.now,
+    );
+    // Its Provider and Model are named as its own Server's catalog names
+    // them, where the client has heard that catalog.
+    let origin = reference.map(|reference| &reference.origin);
+    let provider = parts.provider.map(|provider| ProviderPart {
+        glyph: context
+            .show_icons
+            .then(|| provider_icon(provider))
+            .flatten(),
+        name: origin
+            .and_then(|origin| context.catalog_names.provider(origin, provider))
+            .map_or_else(|| provider_name(provider), ToOwned::to_owned),
+    });
+    let model = parts.model.map(|model| {
+        origin
+            .and_then(|origin| context.catalog_names.model(origin, parts.provider, model))
+            .unwrap_or(model.as_str())
+    });
+    // A Remote's Session whose Subagents are not all shown here says so
+    // beside its Model, its tree there running past what is kept of one.
+    let model = match (model, parts.subagents_unshown) {
+        (Some(model), true) => Some(format!("{model} · {NOT_ALL_SHOWN}")),
+        (None, true) => Some(NOT_ALL_SHOWN.to_owned()),
+        (model, false) => model.map(ToOwned::to_owned),
+    };
+    let mut lines = vec![if let Some(silent) = parts.silent {
+        unanswered_title_line(guides.first, parts.title, silent, open, width, context)
+    } else {
+        title_line(
+            TitleParts {
+                guides: guides.first,
+                marker: marker.map(|(marker, style)| (marker.to_owned(), style)),
+                title: parts.title,
+                right: None,
+            },
+            open,
+            width,
+            context,
+        )
+    }];
+    if located {
+        lines.push(location_line(
+            workspace_location(parts, guides.beneath.clone(), context),
+            width,
+            context,
+        ));
+    }
+    lines.push(if let Some(silent) = parts.silent {
+        not_answering_line(guides.beneath, silent, width, context)
+    } else {
+        selection_line(
+            SelectionParts {
+                guides: guides.beneath,
+                provider,
+                model: model.as_deref(),
+                outcome: parts.status.and_then(|status| {
+                    Some((outcome_word(status)?, subagent_marker(status, theme).1))
+                }),
+                right: right_slot(parts.needs_intervention, time, theme),
+            },
+            width,
+            context,
+        )
+    });
+    (lines, working)
+}
+
+/// Where a Session's entry says it works: its Remote, where it lives on one,
+/// and its Workspace beside its Icon, named in its own Server's paths where
+/// the client has heard how that Server spells them.
+fn workspace_location<'a>(
+    parts: &SessionParts<'a>,
+    guides: String,
+    context: &SectionContext<'_>,
+) -> LocationParts<'a> {
+    let paths = match parts.origin {
+        None => context.workspace_paths,
+        Some(remote) => context
+            .remote_workspace_paths
+            .get(&Outlook::Remote(remote.to_owned())),
+    };
+    // One whose Remote does not answer keeps the Workspace it was last
+    // known by, where it was known by one.
+    let workspace = if parts.workspace_path.as_os_str().is_empty() {
+        String::new()
+    } else {
+        paths.map_or_else(
+            || any_workspace_name(parts.workspace_path),
+            |paths| paths.name(parts.workspace_path),
+        )
+    };
+    let icon = (context.show_icons && !workspace.is_empty()).then(|| {
+        parts
+            .workspace_icon
+            .and_then(crate::icon_catalog::glyph)
+            .unwrap_or(FOLDER_GLYPH)
+    });
+    LocationParts {
+        guides,
+        remote: parts.origin,
+        remote_icon: context.show_icons.then_some(REMOTE_GLYPH),
+        icon,
+        workspace,
+    }
 }
 
 /// The name of the Workspace at `path` where the client has not heard how
@@ -674,7 +770,7 @@ struct LocationParts<'a> {
     /// The glyph the Workspace is named beside, where Icons are drawn.
     icon: Option<char>,
     /// The Workspace's name.
-    workspace: &'a str,
+    workspace: String,
 }
 
 struct SelectionParts<'a> {
@@ -843,7 +939,10 @@ fn location_line(
         line.push_within(&icon, theme.text.subdued);
     }
     let room = line.room_beside(&[]);
-    line.push(truncate_to_width(parts.workspace, room), theme.text.subdued);
+    line.push(
+        truncate_to_width(&parts.workspace, room),
+        theme.text.subdued,
+    );
     Line::from(line.spans)
 }
 

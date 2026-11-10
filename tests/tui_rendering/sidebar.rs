@@ -10503,6 +10503,10 @@ impl Family {
                 monitoring_since: None,
                 needs_intervention: false,
                 sidekick: false,
+                workspace_path: std::path::PathBuf::new(),
+                workspace_icon: None,
+                provider: None,
+                model: None,
             },
             subagents: vec![
                 entry(self.child, self.top, "Explore"),

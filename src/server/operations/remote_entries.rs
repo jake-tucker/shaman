@@ -1239,6 +1239,10 @@ mod tests {
                 monitoring_since: None,
                 needs_intervention: false,
                 sidekick: true,
+                workspace_path: std::path::PathBuf::new(),
+                workspace_icon: None,
+                provider: None,
+                model: None,
             },
             subagents: vec![
                 entry(child, head),

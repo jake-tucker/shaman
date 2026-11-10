@@ -21,10 +21,10 @@ use suru::{
     protocol::{
         ActivityStatus, AdmitPromptRequest, Approval, ApprovalId, ApprovalSubject,
         CreateSessionRequest, Decision, InitialPrompt, ModelId, Outlook, PromptDelivery, PromptId,
-        Question, Questionnaire, QuestionnaireId, RuntimeDescriptor, SUBAGENT_TREE_SNAPSHOT_EVENT,
-        SUBAGENT_TREE_UPDATED_EVENT, SessionError, SessionErrorCode, SessionId, SessionTimestamp,
-        SubagentTreeChange, SubagentTreeEntry, SubagentTreeSnapshot, SubagentTreeUpdate,
-        TurnStatus,
+        ProviderId, Question, Questionnaire, QuestionnaireId, RuntimeDescriptor,
+        SUBAGENT_TREE_SNAPSHOT_EVENT, SUBAGENT_TREE_UPDATED_EVENT, SessionChange, SessionError,
+        SessionErrorCode, SessionId, SessionTimestamp, SubagentTreeChange, SubagentTreeEntry,
+        SubagentTreeSnapshot, SubagentTreeUpdate, TurnStatus,
     },
     provider::{
         ProviderEvent, ProviderEventAttribution, ProviderSubagentId, ProviderSubagentStatus,
@@ -547,6 +547,62 @@ async fn a_derived_title_retitles_the_top_level_entry() {
     );
 
     server.shutdown().await.expect("shut down server");
+}
+
+#[tokio::test]
+async fn the_top_level_entry_says_where_and_on_what_it_works_and_follows_its_agent_selection() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let fixture = working_turn(state_dir.path(), "subagent-tree-top-level-selection-test").await;
+    let session = read_session(fixture.server.descriptor(), fixture.session_id).await;
+
+    let (snapshot, mut updates) = open_tree(fixture.server.descriptor(), fixture.session_id).await;
+    let mut revision = snapshot.revision;
+    assert_eq!(
+        (
+            &snapshot.top_level.workspace_path,
+            &snapshot.top_level.workspace_icon
+        ),
+        (
+            &session.session.workspace.path,
+            &session.session.workspace.icon
+        ),
+        "the top-level entry names the Workspace its Session works in"
+    );
+    assert_eq!(
+        (
+            snapshot.top_level.provider.as_ref(),
+            snapshot.top_level.model.as_ref()
+        ),
+        (
+            Some(&ProviderId::new("controlled")),
+            Some(&ModelId::new("gpt-subagent"))
+        ),
+        "and the Provider and Model its Agent Selection names"
+    );
+
+    fixture
+        .server
+        .session_event_sink()
+        .publish(
+            fixture.session_id,
+            vec![SessionChange::AgentSelectionChanged {
+                selection: hosted_selection("controlled", "gpt-next"),
+            }],
+        )
+        .await
+        .expect("publish a later Agent Selection");
+
+    assert_eq!(
+        next_change(&mut updates, &mut revision).await,
+        SubagentTreeChange::TopLevelSelectionChanged {
+            provider: Some(ProviderId::new("controlled")),
+            model: Some(ModelId::new("gpt-next")),
+        },
+        "a new Agent Selection reaches the top-level entry as it happens"
+    );
+
+    drop(fixture.provider_session);
+    fixture.server.shutdown().await.expect("shut down server");
 }
 
 #[tokio::test]
