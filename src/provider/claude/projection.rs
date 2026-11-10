@@ -887,7 +887,8 @@ pub(super) struct ClaudeProjection {
     execution_directory: PathBuf,
     /// How long Claude keeps what each request writes to the Prompt Cache.
     cache_lifetimes: ClaudeCacheLifetimes,
-    /// The Model the loop's `init` said it runs on: what the Selection resolved to.
+    /// The Model the loop's `init` said it runs on, as the wire wrote it: what the Selection
+    /// resolved to. [`MessageModels`] judges it.
     launched_on: Option<String>,
 }
 
@@ -963,16 +964,6 @@ impl ClaudeProjection {
             cache_lifetimes,
             launched_on: None,
         }
-    }
-
-    /// The Model a request of the loop's that opened on `model` ran on, where the CLI fell back to
-    /// it from the one it launched on. Where what it launched on is unknown, an alias Selection
-    /// could not be told from a fallback, so the request is taken to run on the Selection.
-    fn fallen_back_to(&self, model: Option<&str>) -> Option<crate::protocol::ModelId> {
-        let launched_on = super::canonical_model(self.launched_on.as_deref()?.trim());
-        MessageModels::off_selection(model, self.turn.running_selection().as_ref())
-            .map(|attribution| attribution.actual)
-            .filter(|actual| actual.as_str() != launched_on)
     }
 
     /// The attribution one conversation's events land under: the owning Session for the loop's
@@ -1936,7 +1927,11 @@ impl ClaudeProjection {
                 {
                     projected.push(ProviderEvent::PromptCacheRefreshed {
                         written_lifetime,
-                        model: self.fallen_back_to(model),
+                        model: MessageModels::fallen_back_to(
+                            model,
+                            self.launched_on.as_deref(),
+                            self.turn.running_selection().as_ref(),
+                        ),
                     });
                 }
             }
@@ -5465,6 +5460,32 @@ mod tests {
             "a request on what the Selection `default` launched on names no Model, one the CLI \
              fell back to names it, and one served from the cache wrote at no lifetime"
         );
+    }
+
+    #[test]
+    fn a_launch_naming_no_model_is_no_launch_at_all() {
+        for blank in ["", "   "] {
+            let (mut projection, _prompt) = prompted_projection();
+            let events = project(
+                &mut projection,
+                &[
+                    launched_on(blank),
+                    message_start_with(
+                        None,
+                        "claude-fixture-1",
+                        json!({"cache_creation_input_tokens": 900}),
+                    ),
+                ],
+            );
+            assert_eq!(
+                cache_refreshes(&events),
+                [&owning(ProviderEvent::PromptCacheRefreshed {
+                    written_lifetime: Some(ClaudeCacheLifetimes::default().five_minute_tier),
+                    model: None,
+                })],
+                "an `init` whose Model is {blank:?} leaves the request on the Selection"
+            );
+        }
     }
 
     #[test]

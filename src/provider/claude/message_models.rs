@@ -114,11 +114,27 @@ impl MessageModels {
 
     /// The attribution of a call of the loop's to the Model `model` names, where it is one that
     /// ran and not the Model `selection` names.
-    pub(super) fn off_selection(
+    fn off_selection(
         model: Option<&str>,
         selection: Option<&AgentSelection>,
     ) -> Option<ModelAttribution> {
         actual_model::attribution(selected(selection?), ran(model)?.as_str())
+    }
+
+    /// The Model a call of the loop's that opened on `model` ran on, where the CLI fell back to
+    /// it: one that ran, other than the Model `selection` names and the one the loop's `init`
+    /// said it launched on, `launched_on`. That is what an alias Selection resolved to, so a
+    /// launch naming no Model that ran leaves a call on the Selection: an alias could not be
+    /// told from a fallback.
+    pub(super) fn fallen_back_to(
+        model: Option<&str>,
+        launched_on: Option<&str>,
+        selection: Option<&AgentSelection>,
+    ) -> Option<ModelId> {
+        let launched_on = ran(launched_on)?;
+        Self::off_selection(model, selection)
+            .map(|attribution| attribution.actual)
+            .filter(|actual| *actual != launched_on)
     }
 
     /// The loop's assistant messages are over — its `result` is out, or its process ended — so
