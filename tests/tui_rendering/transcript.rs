@@ -12930,8 +12930,9 @@ fn resolving_catalog() -> ModelCatalog {
     }
 }
 
-#[test]
-fn a_message_names_its_actual_model_by_the_catalog_row_resolving_to_it() {
+/// The Transcript, every Turn Fold open, of a settled Session whose Agent Message, in `status`,
+/// was written on `claude-fixture-1` under the catalog row `selected`.
+fn rows_of_a_message_on_the_fixture_model(selected: &str, status: MessageStatus) -> Vec<String> {
     let workspace = workspace_dir();
     let mut snapshot = navigable_session_snapshot(SessionId::new(), workspace.path(), 1);
     let answer = snapshot
@@ -12940,9 +12941,10 @@ fn a_message_names_its_actual_model_by_the_catalog_row_resolving_to_it() {
         .find(|message| message.role == MessageRole::Agent)
         .expect("fixture contains an Agent Message");
     answer.content = "Resolved.".to_owned();
+    answer.status = status;
     answer.model = Some(ModelAttribution {
         provider: ProviderId::new("claude"),
-        selected: ModelId::new("default"),
+        selected: ModelId::new(selected),
         actual: ModelId::new("claude-fixture-1"),
     });
     let mut application = connected_application(workspace.path());
@@ -12954,8 +12956,19 @@ fn a_message_names_its_actual_model_by_the_catalog_row_resolving_to_it() {
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
         .expect("attach a settled Session");
+    // A passed-over Message stands behind its Turn's Fold, so every Fold is opened.
+    press_leader_chord(&mut application, 'f');
+    application
+        .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
+            SemanticCommandId::TranscriptTurnsToggle,
+        )))
+        .expect("open every Turn Fold");
+    rendered_application_rows_at(&application, 80, 24)
+}
 
-    let rows = rendered_application_rows_at(&application, 80, 24);
+#[test]
+fn a_message_names_its_actual_model_by_the_catalog_row_resolving_to_it() {
+    let rows = rows_of_a_message_on_the_fixture_model("default", MessageStatus::Completed);
     let heading = rows
         .iter()
         .find(|row| row.contains("Default (recommended) ·"))
@@ -12967,4 +12980,27 @@ fn a_message_names_its_actual_model_by_the_catalog_row_resolving_to_it() {
         "the Actual Model reads as Usage Metrics names it, from the base row resolving to it: \
          {heading:?}"
     );
+}
+
+#[test]
+fn a_message_on_the_model_its_selection_is_named_for_has_no_model_heading() {
+    let rows = rows_of_a_message_on_the_fixture_model("fixture", MessageStatus::Completed);
+    let screen = rows.join("\n");
+    assert!(screen.contains("Resolved."), "the answer: {screen}");
+    assert!(
+        !screen.contains("Fixture"),
+        "naming one Model twice says nothing the Selection has not: {screen}"
+    );
+}
+
+#[test]
+fn a_passed_over_message_on_the_model_its_selection_is_named_for_names_no_model() {
+    let rows = rows_of_a_message_on_the_fixture_model("fixture", MessageStatus::Superseded);
+    let screen = rows.join("\n");
+    assert!(screen.contains("Resolved."), "the Message: {screen}");
+    assert!(
+        rows.iter().any(|row| row.trim() == "Passed over"),
+        "the label stands alone: {screen}"
+    );
+    assert!(!screen.contains("Fixture"), "no Model is named: {screen}");
 }

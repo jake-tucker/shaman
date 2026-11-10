@@ -725,10 +725,19 @@ pub(super) fn model_display_name(
         .join(" ")
 }
 
-fn model_heading(names: Option<TranscriptModelNames<'_>>, model: &ModelAttribution) -> String {
+/// What heads an Agent Message that names its Actual Model: the Model its
+/// Selection named beside the one that wrote it. A Message whose Actual Model
+/// reads as its Selection does has no heading, since naming one Model twice
+/// says nothing the Selection has not — as under a Claude alias the catalog
+/// names for the Model it resolves to, where the Provider attributes every
+/// Message to that Model.
+fn model_heading(
+    names: Option<TranscriptModelNames<'_>>,
+    model: &ModelAttribution,
+) -> Option<String> {
     let selected = model_display_name(names, &model.provider, &model.selected);
     let actual = model_display_name(names, &model.provider, &model.actual);
-    format!("{selected} · {actual}")
+    (selected != actual).then(|| format!("{selected} · {actual}"))
 }
 
 impl TranscriptCache {
@@ -3626,15 +3635,11 @@ fn render_message_with_model_names(
             None
         }
         (MessageRole::Agent, _) => {
-            if let Some(model) = &message.model
-                && (!message.content.is_empty() || message.truncated)
+            if (!message.content.is_empty() || message.truncated)
+                && let Some(model) = &message.model
+                && let Some(heading) = model_heading(model_names, model)
             {
-                push_prefixed_lines(
-                    lines,
-                    "  ",
-                    &model_heading(model_names, model),
-                    theme.text.subdued,
-                );
+                push_prefixed_lines(lines, "  ", &heading, theme.text.subdued);
             }
             push_agent_message(
                 lines,
@@ -6158,12 +6163,11 @@ fn push_superseded_message_with_model_names(
         StyledSpan::chrome("  ", theme.text.subdued),
         StyledSpan::text(SUPERSEDED_LABEL, theme.text.subdued),
     ];
-    if let Some(model) = &message.model {
+    if let Some(model) = &message.model
+        && let Some(model_heading) = model_heading(model_names, model)
+    {
         heading.push(StyledSpan::chrome(" · ", theme.text.subdued));
-        heading.push(StyledSpan::text(
-            model_heading(model_names, model),
-            theme.text.subdued,
-        ));
+        heading.push(StyledSpan::text(model_heading, theme.text.subdued));
     }
     lines.push(StyledLine::from(heading));
     let content = lines.len();
