@@ -1,0 +1,22 @@
+# Begin a scheduled Compaction ahead of a Prompt Cache lapse
+
+A Provider keeps a Session's context in a Prompt Cache for a Cache Lifetime of idleness; once it lapses, the next Prompt re-reads the whole context at fresh prices, which on a large context costs dollars. We decided that Suru may, behind an Experimental Setting that is off by default, begin a Compaction of its own two minutes before the lapse, so the summary is made while the context is still cheap to read and the Session goes cold small rather than large. It is a third kind of Compaction, **scheduled**, beside the automatic and manual kinds ADR 0041 distinguished, and it begins a Turn of its own exactly as a manual one does.
+
+Suru spends the user's money here without being asked in the moment, so the decision is bounded on every side. It fires only where the Lapse Penalty reaches a Setting's dollar threshold, because the penalty is the one quantity the Compaction exists to save and it scales across Models where a token count does not. A second Setting keeps it to Sessions that are not Settled unless the user widens it to all. It fires at most once for each idle stretch and is never tried again after failing. It fires only on an idle top-level Session or Subsession: never a Subagent, whose context dies with its work, and never a Session that is Working, Monitoring, or has Subagents working beneath it when the moment arrives, which is skipped rather than deferred. A Provider that declares no Cache Lifetime has no lapse to get ahead of, so its Sessions are never compacted this way.
+
+## Considered Options
+
+- **Widen "manual" to cover it.** Rejected: the Transcript would say the user asked for something they did not, and the two differ in what a held Prompt is owed (below).
+- **Keep the cache warm with a periodic ping instead.** Rejected: it preserves the Agent's memory but pays a warm read of the whole context every Cache Lifetime for as long as the Session sits, where a Compaction pays once.
+- **Gate on a minimum Context Fill**, as t3-code does at 200,000 tokens. Rejected for the dollar threshold: the same fill costs very different amounts on different Models.
+- **Fire only on a Cache Lifetime the Provider reported.** Rejected: a lifetime Suru assumes drives the scheduled Compaction as it drives the warning, since the only Provider with nothing to go on is one whose cache does not lapse at all.
+
+## Consequences
+
+A scheduled Compaction may find its Session's Provider process already stopped, since ADR 0058 stops an idle Claude or Codex process after ten minutes and a Cache Lifetime can be an hour. It starts the process again rather than holding it alive until then: ADR 0058 exists to free those processes, and the Prompt Cache lives with the Provider, not the process.
+
+A Prompt sent to steer while a scheduled Compaction runs is held, as ADR 0041 holds one behind a manual Compaction, but it is delivered to begin the next Turn however the Compaction settles. ADR 0041 withdraws it when a manual Compaction fails because its writer expected a compacted context; nobody expected this one. An interrupt still stops the Compaction and returns the Prompt.
+
+A Session's lapse moment is stored, so a restarted Server still knows which Sessions are cold and which scheduled Compactions are still ahead of it; one whose moment passed while the Server was down is skipped.
+
+The Turn records Usage and Cost like any other, so what Suru spent compacting unasked is visible in the Session's Cost and in Usage Metrics.
