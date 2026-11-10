@@ -506,6 +506,26 @@ impl Reader {
         }
     }
 
+    /// Presses for an interrupt and confirms it, as a reader stopping the
+    /// Session does, answering whether the client then asked its Server to
+    /// interrupt the Session — which the test does for it, since the reader's
+    /// client sends nothing itself.
+    pub fn interrupt(&mut self) -> bool {
+        for command in [
+            suru::tui::CommandId::RequestInterrupt,
+            suru::tui::CommandId::ConfirmInterrupt,
+        ] {
+            if let suru::tui::ApplicationTransition::InterruptSession { .. } = self
+                .application
+                .handle_event(suru::tui::ApplicationEvent::Command(command))
+                .expect("press for an interrupt")
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Asks the Server to admit `request` as the reader's client would, and
     /// tells the reader the Server answered, answering how.
     pub async fn admit(

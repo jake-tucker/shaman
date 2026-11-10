@@ -197,7 +197,7 @@ impl SessionStore {
             None,
             interventions,
         );
-        changes.extend(record.held_prompt_withdrawals(turn_id, TurnStatus::Failed));
+        changes.extend(record.held_prompt_withdrawals(turn_id, TurnStatus::Failed, interventions));
         state.commit(&self.storage, session_id, changes)
     }
 
@@ -312,7 +312,7 @@ impl SessionStore {
             pending_steers.sort_unstable_by_key(|prompt| prompt.admission_order);
             (
                 pending_steers,
-                record.held_prompt_withdrawals(turn_id, status),
+                record.held_prompt_withdrawals(turn_id, status, OpenInterventions::TurnEnded),
                 settle_in_flight_changes(
                     &record.snapshot,
                     turn_id,

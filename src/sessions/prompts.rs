@@ -169,12 +169,13 @@ impl SessionStoreState {
     /// admitted it — nothing durable carries that debt across a restart, and
     /// no reader can be asked to wait on an Agent that will never be asked to
     /// answer — so restoring one is withdrawing it, exactly as interrupting it
-    /// would have (ADR 0024). One held behind a requested Compaction is
-    /// withdrawn as that Compaction's failing would have withdrawn it, since
-    /// the restart leaves it unfinished: its writer is owed the text back
-    /// (ADR 0041). A Prompt waiting behind a Turn in the queue is not one of
-    /// these: its delivery is the Session's own to make when that Turn
-    /// settles.
+    /// would have (ADR 0024). One held behind a requested Compaction, manual
+    /// or scheduled, is withdrawn saying so, as Suru stopping gracefully
+    /// mid-Compaction withdraws it: the restart leaves the Compaction
+    /// unfinished and nothing to deliver the Prompt, and its writer is owed
+    /// the text back (ADR 0041, 0073). A Prompt waiting behind a Turn in the
+    /// queue is not one of these: its delivery is the Session's own to make
+    /// when that Turn settles.
     ///
     /// The exception is a Session a stored Worktree preparation can still
     /// bring to its first Turn: that intention is the durable record of a

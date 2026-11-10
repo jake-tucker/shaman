@@ -1173,6 +1173,13 @@ impl TurnInterrupt {
             .send(Ok(ProviderInterruption::AlreadyEnded))
             .unwrap_or_else(|_| panic!("Provider interruption response remains connected"));
     }
+
+    /// The Provider could not be asked to stop the work at all.
+    pub fn fail(self, message: impl Into<String>) {
+        self.response
+            .send(Err(ProviderError::new(message)))
+            .unwrap_or_else(|_| panic!("Provider interruption response remains connected"));
+    }
 }
 
 impl SubagentsStop {

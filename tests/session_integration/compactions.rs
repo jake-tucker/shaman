@@ -11,7 +11,8 @@
 //! one left is stored under Suru's cap, which flags what it cut as Truncation.
 //! That Turn takes no steer: a Prompt sent while it runs is held to begin the
 //! next Turn once the Compaction completes, and withdrawn if it fails or is
-//! interrupted.
+//! interrupted — or, behind a scheduled Compaction Suru began of its own
+//! accord, delivered however it settles short of an interrupt.
 
 use crate::session_integration::support::{
     WorkingTurn, compact, controlled_selection, interrupt, read_session, read_session_until,

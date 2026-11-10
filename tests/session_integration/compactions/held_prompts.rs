@@ -1,9 +1,11 @@
 //! A Prompt sent while a requested Compaction runs. The Turn the request
 //! began takes no steer (ADR 0041), so the Prompt is held, admitted and owed
-//! the next Turn, with the Session Working throughout: it begins that Turn once
-//! the Compaction completes, and is withdrawn — its text handed back to the
-//! client that wrote it — if the Turn settles any other way. Suru holds it
-//! itself, whatever the Provider would queue.
+//! the next Turn, with the Session Working throughout: behind a manual
+//! Compaction it begins that Turn once the Compaction completes, and is
+//! withdrawn — its text handed back to the client that wrote it — if the Turn
+//! settles any other way. Suru holds it itself, whatever the Provider would
+//! queue. Behind a scheduled one it begins the next Turn however the
+//! Compaction settles (see `scheduled`).
 
 use super::{
     compaction_statuses, completed, failed, idle_session, request_compaction, session_where,
@@ -24,6 +26,8 @@ use suru::{
     provider::ProviderEvent,
 };
 use tokio::time::timeout;
+
+mod scheduled;
 
 /// Sends `text` to the fixture's Session the way a client submits a Prompt by
 /// default, to steer whatever Turn is running, answering the Prompt the

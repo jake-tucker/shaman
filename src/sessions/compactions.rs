@@ -10,9 +10,12 @@
 //! the Continuation it would have begun.
 //!
 //! The Turn takes no steer, so a Prompt admitted while it runs is held behind
-//! it, owed the next Turn. Its writer expects that Turn to begin on a
-//! compacted context: the Prompt begins it once the Compaction completes, and
-//! is withdrawn as the Turn settles any other way (ADR 0024).
+//! it, owed the next Turn. Behind a manual Compaction its writer expects that
+//! Turn to begin on a compacted context: the Prompt begins it once the
+//! Compaction completes, and is withdrawn as the Turn settles any other way
+//! (ADR 0024). Behind a scheduled one its writer expected nothing of the
+//! context, so the Prompt begins the next Turn however the Compaction settles,
+//! short of an interrupt stopping it (ADR 0073).
 
 use crate::{
     protocol::{
@@ -194,7 +197,11 @@ impl SessionStore {
             None,
             OpenInterventions::TurnEnded,
         );
-        changes.extend(record.held_prompt_withdrawals(turn_id, TurnStatus::Failed));
+        changes.extend(record.held_prompt_withdrawals(
+            turn_id,
+            TurnStatus::Failed,
+            OpenInterventions::TurnEnded,
+        ));
         state.commit(&self.storage, session_id, changes)?;
         Ok(Some(turn_id))
     }
@@ -202,38 +209,80 @@ impl SessionStore {
 
 impl SessionRecord {
     /// The withdrawal of every Prompt held behind `turn_id`, owed to its
-    /// settling as `status`. Only an active Turn a Compaction request began
-    /// holds any: it takes no steer, so each Prompt admitted to begin a Turn
-    /// while it runs waits behind it — and those are the only Prompts it can
-    /// owe a Turn, since the request was taken only while it owed none. A
-    /// Turn settling as completed leaves them to begin the next Turn on the
-    /// context it compacted; any other settling withdraws them in the same
-    /// commit (ADR 0024), so none reaches a context its writer expected
-    /// compacted, and the Session stops Working with the Turn. Each says why
-    /// it was withdrawn, so its writer takes the text back however little of
-    /// the hold it saw.
+    /// settling as `status` with what it leaves open read as `open`. Only an
+    /// active Turn a Compaction request began holds any: it takes no steer,
+    /// so each Prompt admitted to begin a Turn while it runs waits behind it
+    /// — and those are the only Prompts it can owe a Turn, since the request
+    /// was taken only while it owed none. Those it does not withdraw begin the
+    /// next Turn; those it does are withdrawn in the same commit (ADR 0024),
+    /// so the Session stops Working with the Turn. Each says why it was
+    /// withdrawn, so its writer takes the text back however little of the
+    /// hold it saw.
     pub(super) fn held_prompt_withdrawals(
         &self,
         turn_id: TurnId,
         status: TurnStatus,
+        open: OpenInterventions,
     ) -> Vec<SessionChange> {
-        if holding_turn(&self.snapshot) != Some(turn_id) || status == TurnStatus::Completed {
+        let Some(holding) = holding(&self.snapshot).filter(|turn| turn.id == turn_id) else {
+            return Vec::new();
+        };
+        if !self.withdraws_held_prompts(holding, status, open) {
             return Vec::new();
         }
         undelivered_turn_starts(&self.snapshot, &self.turn_start_admissions)
             .map(|prompt| held_prompt_withdrawal(prompt.id, turn_id))
             .collect()
     }
+
+    /// Whether `holding`, the active Turn a Compaction request began,
+    /// withdraws the Prompts held behind it as it settles as `status`.
+    ///
+    /// None is withdrawn from a Turn that completed, an interrupt that landed
+    /// after its Compaction completed included: the context is compacted,
+    /// which is all a held Prompt waited for. Behind a manual Compaction any
+    /// other settling withdraws them, so none reaches a context its writer
+    /// expected compacted (ADR 0041). Behind a scheduled one nobody expected
+    /// anything of the context, so they begin the next Turn however it
+    /// settles (ADR 0073), unless an interrupt reached the Turn — someone
+    /// asked the work to stop, whatever the Provider then made of the stop —
+    /// or the process that would deliver them is gone with the Turn, leaving
+    /// nothing to.
+    fn withdraws_held_prompts(
+        &self,
+        holding: &Turn,
+        status: TurnStatus,
+        open: OpenInterventions,
+    ) -> bool {
+        if status == TurnStatus::Completed {
+            return false;
+        }
+        match holding.compaction_requested {
+            Some(CompactionRequest::Manual) => true,
+            Some(CompactionRequest::Scheduled) => {
+                status == TurnStatus::Interrupted
+                    || open == OpenInterventions::Abandoned
+                    || self
+                        .work_interrupted_at
+                        .zip(holding.started_at)
+                        .is_some_and(|(interrupted, started)| interrupted > started)
+            }
+            None => false,
+        }
+    }
 }
 
 /// The active Turn a Compaction request began, which holds every Prompt
 /// admitted to begin a Turn while it runs.
 pub(super) fn holding_turn(snapshot: &SessionSnapshot) -> Option<TurnId> {
+    holding(snapshot).map(|turn| turn.id)
+}
+
+fn holding(snapshot: &SessionSnapshot) -> Option<&Turn> {
     snapshot
         .turns
         .iter()
         .find(|turn| turn.begun_for_compaction() && turn.status == TurnStatus::Active)
-        .map(|turn| turn.id)
 }
 
 /// The withdrawal of `prompt_id`, held behind `turn_id`, whose Compaction

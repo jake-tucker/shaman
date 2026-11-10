@@ -53,12 +53,12 @@ const RATES: CacheRates = CacheRates {
 
 /// The Settings a test starts with: scheduled Compaction on, and nothing
 /// else pinned.
-const ON: &str = r#"{ "compaction": { "scheduled": { "enabled": true } } }"#;
+pub(crate) const ON: &str = r#"{ "compaction": { "scheduled": { "enabled": true } } }"#;
 
 /// A Session idle after its first Turn on a Server whose clock a hand moves,
 /// and that hand.
-struct Idle {
-    fixture: WorkingTurn,
+pub(crate) struct Idle {
+    pub(crate) fixture: WorkingTurn,
     hand: ManualClock,
     clock: ServerClock,
     _config: tempfile::TempDir,
@@ -97,7 +97,12 @@ fn penalty(usd: f64) -> Option<LapsePenalty> {
 /// 400,000 tokens of context and settled, under the Settings `settings`
 /// pins, its scheduled Compaction falling due [`LEAD`] before the lapse.
 /// `priced` says whether the Provider knows its Model's prices.
-async fn idle(state: &std::path::Path, channel: &str, settings: &str, priced: bool) -> Idle {
+pub(crate) async fn idle(
+    state: &std::path::Path,
+    channel: &str,
+    settings: &str,
+    priced: bool,
+) -> Idle {
     idle_on(
         state,
         channel,
@@ -179,11 +184,11 @@ async fn idle_on(
 }
 
 impl Idle {
-    async fn snapshot(&self) -> SessionSnapshot {
+    pub(crate) async fn snapshot(&self) -> SessionSnapshot {
         read_session(self.fixture.server.descriptor(), self.fixture.session_id).await
     }
 
-    async fn until(
+    pub(crate) async fn until(
         &self,
         described: &str,
         predicate: impl Fn(&SessionSnapshot) -> bool,
@@ -200,7 +205,7 @@ impl Idle {
 
     /// When the Session's scheduled Compaction falls due, as its published
     /// lapse moment says.
-    async fn due_at(&self) -> SessionTimestamp {
+    pub(crate) async fn due_at(&self) -> SessionTimestamp {
         let lapses_at = self
             .snapshot()
             .await
@@ -212,7 +217,7 @@ impl Idle {
     }
 
     /// Moves the Server's clock on to `at`.
-    fn advance_to(&self, at: SessionTimestamp) {
+    pub(crate) fn advance_to(&self, at: SessionTimestamp) {
         let now = self.clock.now();
         assert!(at >= now, "the clock only moves forward");
         self.hand.advance(Duration::from_millis(at.0 - now.0));
@@ -340,7 +345,7 @@ impl Idle {
     /// Takes the Compaction the Provider is asked for next, checking it was
     /// asked with no instructions in a Turn begun for a scheduled
     /// Compaction, which the Session works at.
-    async fn scheduled(&mut self) -> CompactionAsked {
+    pub(crate) async fn scheduled(&mut self) -> CompactionAsked {
         let asked = timeout(
             PROGRESS_DEADLINE,
             self.fixture.provider_session.next_compaction(),
@@ -370,7 +375,7 @@ impl Idle {
         asked
     }
 
-    async fn emit(&self, events: impl IntoIterator<Item = ProviderEvent>) {
+    pub(crate) async fn emit(&self, events: impl IntoIterator<Item = ProviderEvent>) {
         for event in events {
             self.fixture
                 .provider_session
@@ -379,7 +384,7 @@ impl Idle {
         }
     }
 
-    async fn shutdown(self) {
+    pub(crate) async fn shutdown(self) {
         self.fixture
             .server
             .shutdown()
@@ -396,7 +401,7 @@ fn compactions(snapshot: &SessionSnapshot) -> Vec<&Activity> {
         .collect()
 }
 
-fn completed(before_tokens: u64, after_tokens: u64) -> ProviderEvent {
+pub(crate) fn completed(before_tokens: u64, after_tokens: u64) -> ProviderEvent {
     ProviderEvent::CompactionCompleted {
         before_tokens: Some(before_tokens),
         after_tokens: Some(after_tokens),
@@ -884,16 +889,16 @@ async fn a_prompt_sent_before_it_falls_due_calls_it_off() {
     idle.shutdown().await;
 }
 
-/// A Prompt admitted at the very moment the Compaction falls due wins
-/// cleanly, whichever way the two interleave. The judgement and the Turn it
-/// opens are one act under the store's lock, and so is the Prompt's
-/// admission. Where the admission takes the lock first, the Session is
-/// Working when the actor judges, so the Compaction never begins and the
-/// Prompt's Turn runs. Where the judgement takes it first, the admission finds
-/// the Compaction's Turn at work and is held behind it, unsteered, to begin
-/// the next Turn once it completes, as behind a manual one. Which comes first
-/// is the scheduler's, so the test accepts either and checks each in full;
-/// [`a_prompt_sent_while_it_runs_is_held_to_begin_the_next_turn`] drives the
+/// A Prompt admitted at the very moment the Compaction falls due is
+/// delivered, whichever way the two interleave, and never shares a Turn with
+/// the Compaction. The judgement and the Turn it opens are one act under the
+/// store's lock, and so is the Prompt's admission. Where the admission takes
+/// the lock first, the Session is Working when the actor judges, so the
+/// Compaction never begins and the Prompt's Turn runs. Where the judgement
+/// takes it first, the admission finds the Compaction's Turn at work and is
+/// held behind it, unsteered, to begin the next Turn however the Compaction
+/// settles — here, failing. Which comes first is the scheduler's, so the test
+/// accepts either and checks each in full; the held-prompt suite drives the
 /// second on purpose, and [`a_prompt_sent_before_it_falls_due_calls_it_off`]
 /// the first.
 #[tokio::test]
@@ -918,67 +923,122 @@ async fn a_prompt_admitted_as_it_falls_due_never_shares_a_turn_with_it() {
     })
     .await
     .expect("the Provider is asked for one or the other");
-    match first {
-        Err(turn) => {
-            turn.succeed();
-            idle.emit(answered()).await;
-            idle.emit([ProviderEvent::TurnCompleted]).await;
-            idle.assert_nothing_scheduled(2, "the Prompt came first")
-                .await;
-            let snapshot = idle.snapshot().await;
-            assert!(snapshot.turns[1].prompt_id.is_some());
-        }
+    let compacted_first = first.is_ok();
+    let turn = match first {
+        Err(turn) => turn,
         Ok(asked) => {
             asked.succeed();
-            assert!(
-                idle.fixture.provider_session.try_next_steer().is_none(),
-                "the Prompt is held, never steered into the Compaction"
-            );
-            idle.emit([completed(400_000, 300_000), ProviderEvent::TurnCompleted])
-                .await;
+            idle.emit([
+                ProviderEvent::CompactionStarted,
+                ProviderEvent::CompactionFailed {
+                    error: Some("Conversation too long".to_owned()),
+                },
+                ProviderEvent::TurnCompleted,
+            ])
+            .await;
             timeout(PROGRESS_DEADLINE, idle.fixture.provider_session.next_turn())
                 .await
-                .expect("the held Prompt begins the next Turn")
-                .succeed();
-            let snapshot = idle.snapshot().await;
-            assert_eq!(
-                snapshot.turns[1].compaction_requested,
-                Some(CompactionRequest::Scheduled)
-            );
-            assert!(snapshot.turns[2].prompt_id.is_some());
+                .expect("the held Prompt begins the next Turn though the Compaction failed")
         }
-    }
-    idle.shutdown().await;
-}
-
-/// A Prompt sent to steer while a scheduled Compaction runs is held behind
-/// it, as behind a manual one, and begins the next Turn once it completes.
-#[tokio::test]
-async fn a_prompt_sent_while_it_runs_is_held_to_begin_the_next_turn() {
-    let state = tempfile::tempdir().unwrap();
-    let mut idle = idle(state.path(), "scheduled-compaction-held", ON, true).await;
-    let due_at = idle.due_at().await;
-    idle.advance_to(due_at);
-    idle.scheduled().await.succeed();
-    idle.emit([ProviderEvent::CompactionStarted]).await;
-    idle.send_prompt(PromptDelivery::Steer).await;
-    idle.emit([completed(400_000, 300_000)]).await;
+    };
+    assert_eq!(turn.prompt(), "Carry on");
     assert!(
         idle.fixture.provider_session.try_next_steer().is_none(),
         "the Prompt is never steered into the Compaction"
     );
+    turn.succeed();
+    idle.emit(answered()).await;
     idle.emit([ProviderEvent::TurnCompleted]).await;
+    let snapshot = idle
+        .until("the Prompt's Turn settles", |snapshot| {
+            snapshot
+                .turns
+                .last()
+                .is_some_and(|turn| turn.prompt_id.is_some())
+                && snapshot.session.working_since.is_none()
+        })
+        .await;
+    let prompted = snapshot.turns.last().expect("the Prompt began a Turn");
+    assert!(
+        snapshot
+            .prompts
+            .iter()
+            .any(|prompt| Some(prompt.id) == prompted.prompt_id
+                && prompt.status == suru::protocol::PromptStatus::Delivered),
+        "the Prompt is delivered either way: {:?}",
+        snapshot.prompts
+    );
+    if compacted_first {
+        assert_eq!(
+            snapshot.turns[1].compaction_requested,
+            Some(CompactionRequest::Scheduled)
+        );
+        assert_eq!(snapshot.turns[1].status, TurnStatus::Failed);
+        assert_eq!(snapshot.turns.len(), 3, "the Prompt's Turn follows it");
+    } else {
+        assert_eq!(snapshot.turns.len(), 2, "no Compaction began");
+        idle.assert_nothing_scheduled(2, "the Prompt came first")
+            .await;
+    }
+    idle.shutdown().await;
+}
+
+/// The Turn a held Prompt begins after a failed scheduled Compaction is a
+/// Prompt's like any other: it writes the cache afresh, beginning a stretch
+/// of its own, which is owed a scheduled Compaction ahead of its own lapse.
+/// That Compaction's Turn begins no stretch, so with no Prompt after it
+/// nothing more is ever scheduled.
+#[tokio::test]
+async fn the_turn_a_held_prompt_begins_after_a_failed_one_is_owed_one_of_its_own_and_no_more() {
+    let state = tempfile::tempdir().unwrap();
+    let mut idle = idle(state.path(), "scheduled-compaction-after-held", ON, true).await;
+    let first_due = idle.due_at().await;
+    idle.advance_to(first_due);
+    idle.scheduled().await.succeed();
+    idle.emit([ProviderEvent::CompactionStarted]).await;
+    idle.send_prompt(PromptDelivery::Steer).await;
+    let failing = [
+        ProviderEvent::CompactionFailed {
+            error: Some("Conversation too long".to_owned()),
+        },
+        ProviderEvent::TurnCompleted,
+    ];
+    idle.emit(failing.clone()).await;
     timeout(PROGRESS_DEADLINE, idle.fixture.provider_session.next_turn())
         .await
         .expect("the held Prompt begins the next Turn")
         .succeed();
-    let snapshot = idle
-        .until("the Prompt's Turn begins", |snapshot| {
+    idle.emit([filled(2, 400_000)]).await;
+    idle.emit(answered()).await;
+    idle.emit([ProviderEvent::TurnCompleted]).await;
+    let settled = idle
+        .until("the held Prompt's Turn settles", |snapshot| {
             snapshot.turns.len() == 3
+                && snapshot.turns[2].status.is_terminal()
+                && snapshot.session.working_since.is_none()
         })
         .await;
-    assert_eq!(snapshot.turns[1].status, TurnStatus::Completed);
-    assert!(snapshot.turns[2].prompt_id.is_some());
+    assert!(settled.turns[2].prompt_id.is_some());
+
+    let second_due = idle.due_at().await;
+    assert!(
+        second_due > first_due,
+        "its Turn moved the lapse on: {second_due:?} after {first_due:?}"
+    );
+    idle.advance_to(second_due);
+    idle.scheduled().await.succeed();
+    idle.emit([ProviderEvent::CompactionStarted]).await;
+    idle.emit(failing).await;
+    idle.until("the second Compaction's Turn settles", |snapshot| {
+        snapshot.turns.len() == 4
+            && snapshot.turns[3].status.is_terminal()
+            && snapshot.session.working_since.is_none()
+    })
+    .await;
+    let third_due = idle.due_at().await;
+    idle.advance_to(third_due.max(second_due));
+    idle.assert_nothing_scheduled(4, "a Compaction's own Turn begins no stretch")
+        .await;
     idle.shutdown().await;
 }
 

@@ -5192,9 +5192,12 @@ pub struct PromptTaking {
 #[serde(deny_unknown_fields, rename_all = "snake_case", tag = "reason")]
 pub enum PromptWithdrawal {
     /// The Prompt was held behind `turn_id`, the Turn a Compaction request
-    /// began, which settled without its Compaction completing, so the
-    /// Prompt never reached a context its writer expected compacted
-    /// (ADR 0041).
+    /// began, which settled without its Compaction completing and without
+    /// delivering it. Behind a manual Compaction any such settling withdraws
+    /// it, so it never reaches a context its writer expected compacted (ADR
+    /// 0041); behind a scheduled one only an interrupt that reached the
+    /// Compaction does, or Suru stopping with nothing left to deliver it (ADR
+    /// 0073).
     CompactionUnfinished { turn_id: TurnId },
 }
 
