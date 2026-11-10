@@ -78,9 +78,9 @@ pub(super) struct LandingFooterSlotContext {
 pub(super) struct SessionComposerTopSlotContext {
     pub(super) session_id: SessionId,
     pub(super) width: u16,
-    /// The line saying how the Session's Prompt Cache stands — counting down
-    /// to its lapse, or lapsed — part by part, already worded and styled:
-    /// none where nothing is to be said of it.
+    /// The line the Session gives above its composer, part by part, already
+    /// worded and styled, as `ComposerTop` judges it: none where nothing is
+    /// to be said.
     pub(super) line: Vec<SlotText>,
 }
 

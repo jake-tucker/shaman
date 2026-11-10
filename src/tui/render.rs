@@ -236,7 +236,9 @@ pub(super) fn render_with_slots(
     state.notice_presentable.set(false);
     state.connect_overlay.offers().forget_frame();
     // Current-Session animation is likewise a fact about this frame, not the
-    // Session in the abstract: its transient tail may have scrolled away.
+    // Session in the abstract: its transient tail may have scrolled away. So
+    // is the line above the composer, which Usage Metrics or a terminal too
+    // small for the Session leaves undrawn.
     state.session_animation_on_screen.set(false);
     state.composer_top_drawn.set(None);
     if terminal_is_too_small(frame.area()) {
