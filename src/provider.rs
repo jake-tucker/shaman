@@ -2018,10 +2018,8 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// how it runs Errands rather than silently running none.
     fn run_errand(&self, errand: ProviderErrand) -> ErrandFuture<'_>;
 
-    /// What this Provider prices a prompt's input on `model` under `options`
-    /// at today, by how large the prompt is and how long its cache is kept —
-    /// narrowed to what `options` choose where one moves the price, as a
-    /// context tier does, and every tier where none does: the one
+    /// What this Provider prices a prompt's input on `model` at today, by
+    /// how large the prompt is and how long its cache is kept: the one
     /// declaration of its prices, from which a Session's Lapse Penalty is
     /// forecast and Insights estimates what caching saved, at the standard
     /// tier. Absent where it knows no rate table that prices the Model's
@@ -2034,6 +2032,13 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// is not ready. So before the future first waits it must not block, nor
     /// do synchronous I/O — read a file, start a fetch — nor call into the
     /// store; what it holds in memory it may answer from at once.
+    ///
+    /// `options` are the Model Options the prompt is sent under. Where one
+    /// moves the price, as a context tier does, the rates are narrowed to
+    /// what it chooses; where none does, every tier is answered. They may name
+    /// options `model` does not offer — a routing Selection's options are
+    /// passed with the Model that wrote the cache — and an implementation
+    /// ignores those.
     fn prompt_rates<'a>(
         &'a self,
         model: &'a ModelId,
