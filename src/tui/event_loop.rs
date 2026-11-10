@@ -5040,11 +5040,21 @@ impl PointerMotion {
 }
 
 /// Turns any-motion tracking (1003) on or off.
+///
+/// Turning it off asks again for button reporting (1000) and button-motion
+/// reporting (1002). Most terminals keep one mouse tracking mode rather than
+/// a flag per mode, so resetting 1003 leaves them reporting nothing at all,
+/// and the pointer falls back to the terminal's own text selection. A
+/// terminal that does keep a flag per mode hears only what it already does.
 struct AnyMotionReporting(bool);
 
 impl crossterm::Command for AnyMotionReporting {
     fn write_ansi(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
-        f.write_str(if self.0 { "\x1b[?1003h" } else { "\x1b[?1003l" })
+        f.write_str(if self.0 {
+            "\x1b[?1003h"
+        } else {
+            concat!("\x1b[?1003l", "\x1b[?1000h", "\x1b[?1002h")
+        })
     }
 
     #[cfg(windows)]
@@ -6949,7 +6959,11 @@ mod tests {
                 .follow(wanted, &mut output)
                 .expect("an ANSI transcript never fails to record");
         }
-        assert_eq!(output.0, "\x1b[?1003h\x1b[?1003l");
+        assert_eq!(
+            output.0, "\x1b[?1003h\x1b[?1003l\x1b[?1000h\x1b[?1002h",
+            "a terminal keeping one mouse tracking mode drops button reporting \
+             with motion reporting, so it is asked for again"
+        );
 
         let left = AnsiTranscript::record(leave_terminal_display);
         assert!(
