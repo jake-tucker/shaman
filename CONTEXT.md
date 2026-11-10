@@ -184,7 +184,7 @@ What occupies a Session's context, as its Provider attributes it when asked: the
 _Avoid_: Context usage, context attribution
 
 **Prompt Cache**:
-A Provider's short-lived store of a Session's context, which lets the next Prompt read that context at a fraction of its fresh price. It survives idle for its **Cache Lifetime**, which the Provider reports or Suru assumes for it, and then **lapses**, leaving the Session **cold** until its next Turn writes the cache afresh. A Provider whose cache does not lapse on idle has no Cache Lifetime, and its Sessions are never cold.
+A Provider's short-lived store of a Session's context, which lets the next Prompt read that context at a fraction of its fresh price. It survives idle for its **Cache Lifetime**, which the Provider reports, Suru infers from how long each of the Session's own requests asked the cache to keep what it wrote, or Suru assumes, and then **lapses**, leaving the Session **cold** until its next Turn writes the cache afresh. A Provider whose cache does not lapse on idle has no Cache Lifetime, and its Sessions are never cold.
 _Avoid_: Session cache, session expiry, expire, TTL, stale
 
 **Lapse Penalty**:

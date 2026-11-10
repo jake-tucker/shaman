@@ -37,6 +37,23 @@ From each entry Suru reads `inputTokens`, `outputTokens`, `cacheReadInputTokens`
 
 Suru reads an assistant message's `model` for Message attribution, not for Cost. It names the concrete Model that wrote the message, which is how Suru learns what an alias such as `default` resolved to, or what the CLI fell back to mid-Turn. Suru reads it from the loop's own `message_start` where the stream carries it there, and otherwise from the snapshot restating each block. An Agent Message of the loop's own conversation written on a Model other than its Agent Selection's carries that Model as its Message attribution; one written on the Selection's own Model carries none. The CLI names the Model without the 1M-context tier, so a Selection such as `claude-opus-5-5[1m]` that ran `claude-opus-5-5` ran its own Model. The evidence holds for its assistant message alone, so a Message streamed before its snapshot arrives is attributed once the snapshot names the Model. The CLI's `<synthetic>` placeholder, written on messages no Model produced, such as an API error, is not a Model. A native Subagent's `model` keeps its own handling: it names the Subagent's row and Turn.
 
+### How Suru reads the Prompt Cache
+
+Claude states no Cache Lifetime, so Suru infers it (#624). It reads each `message_start` of the loop's own conversation (`parent_tool_use_id` null). That is the API's own opening of one request's response, and its `usage` carries the request's real cache figures, unlike the snapshots' placeholder output counts:
+
+- `cache_creation.ephemeral_5m_input_tokens` and `cache_creation.ephemeral_1h_input_tokens` say how many tokens the request wrote at each lifetime. The request's lifetime is the shortest it wrote any tokens at, since that part lapses first.
+- A `usage` with no `cache_creation` breakdown but a positive `cache_creation_input_tokens` wrote at the default five-minute lifetime, the only one an API without the breakdown offers.
+- A request that wrote nothing, such as a follow-up served from the cache, says nothing of the lifetime. Suru keeps the one last observed for the Session, which is stored with the lapse moment, so it outlives an idle stop and a Server restart. A Session with nothing observed assumes five minutes.
+- The moment is counted from the request's arrival on the Server's clock. A `message_start` with no `usage`, or one Suru cannot read, is no evidence of a request, and moves nothing.
+- The request runs on the Model the loop's `system/init` names unless its `message.model` names another (a fallback). Only then is the cache recorded as written by that Model, rather than the Selection's.
+
+What this cannot tell apart, and why it does not need to:
+
+- **A native Subagent's requests.** Its conversation never streams, so no `message_start` of its own reaches Suru. Its cache is its own and moves nothing of the Session's. Its Models still appear in the Turn's Model Shares (ADR 0071), so for Claude those Shares are not read as the conversation running elsewhere.
+- **`result.usage` and `modelUsage`.** These are totals over the loop and the conversation, including the Subagents. They do not say which request wrote at which lifetime, so neither is read for the cache.
+- **A `/compact`.** The summarising call is the CLI's own. The 2.1.283 capture (docs/validation/0462-claude-manual-compaction.md) shows no assistant message for it, but it ran without partial messages, so whether that call streams a `message_start` is unverified. Either way, a completed Compaction with no request after it leaves no moment standing, because the cache any request before it wrote holds the old context.
+- **The hour-long write price.** models.dev lists one `cache_write` rate for Anthropic's Models, the five-minute one, and no hour-long rate. A cache written at the hour tier therefore has no write price, and its Lapse Penalty is absent: the cold warning shows without a figure rather than at the five-minute price.
+
 ## Claude Code CLI 2.1.237
 
 Verified against the then-suggested Claude Code CLI **2.1.237** while implementing issue [#324](https://github.com/suru-ai/suru/issues/324). The published `@anthropic-ai/claude-code-linux-x64@2.1.237` binary ran in stream-json input/output mode against a local HTTP fixture serving deterministic Anthropic message streams. These measurements exercise the real CLI's accounting with synthetic API usage; they do not measure billing.
