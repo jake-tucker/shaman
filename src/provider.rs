@@ -2411,7 +2411,7 @@ mod tests {
     #[cfg(windows)]
     use super::executable_shadowed_by_windows_app_alias;
     use super::{
-        AgentSelection, ErrandFuture, MAX_REMOTE_ERROR_CHARS, ManualCompaction,
+        AgentSelection, CacheLifetime, ErrandFuture, MAX_REMOTE_ERROR_CHARS, ManualCompaction,
         ManualCompactionRefusal, ProviderErrand, ProviderFuture, ProviderId,
         ProviderModelDiscovery, ProviderRuntime, ProviderSessionConnection, ProviderSessionRequest,
         built_in_providers, concise_remote_message, resolve_executable, runtimes,
@@ -2499,6 +2499,29 @@ mod tests {
                 ("codex".to_owned(), ManualCompaction::Supported),
                 ("copilot".to_owned(), ManualCompaction::WithInstructions),
                 ("claude".to_owned(), ManualCompaction::WithInstructions),
+            ]
+        );
+    }
+
+    /// Copilot reports when its Prompt Cache lapses; Codex's is taken not to
+    /// lapse on idle; Claude declares none until it infers its own.
+    #[test]
+    fn each_built_in_runtime_declares_the_cache_lifetime_its_provider_has() {
+        let declared = runtimes(None)
+            .iter()
+            .map(|runtime| {
+                (
+                    runtime.provider_id().as_str().to_owned(),
+                    runtime.cache_lifetime(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            declared,
+            [
+                ("codex".to_owned(), CacheLifetime::None),
+                ("copilot".to_owned(), CacheLifetime::Reported),
+                ("claude".to_owned(), CacheLifetime::None),
             ]
         );
     }

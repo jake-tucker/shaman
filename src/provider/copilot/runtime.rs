@@ -26,8 +26,8 @@ use crate::{
         ProviderUnavailability, SkillCatalog,
     },
     provider::{
-        ErrandFuture, ManualCompaction, ProviderErrand, ProviderFuture, ProviderModelDiscovery,
-        ProviderRuntime, ProviderSessionConnection, ProviderSessionRequest,
+        CacheLifetime, ErrandFuture, ManualCompaction, ProviderErrand, ProviderFuture,
+        ProviderModelDiscovery, ProviderRuntime, ProviderSessionConnection, ProviderSessionRequest,
         harness::{HarnessSpec, SharedHarness},
         resolve_executable,
     },
@@ -162,6 +162,12 @@ impl ProviderRuntime for CopilotRuntime {
 
     fn offers_context_breakdown(&self) -> bool {
         true
+    }
+
+    // Each `assistant.usage` that writes or refreshes the Prompt Cache states
+    // its `cacheExpiresAt`, which the projection reports as it stands.
+    fn cache_lifetime(&self) -> CacheLifetime {
+        CacheLifetime::Reported
     }
 
     fn list_models(&self) -> ProviderFuture<'_, ProviderModelDiscovery> {

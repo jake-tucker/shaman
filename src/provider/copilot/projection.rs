@@ -2183,6 +2183,16 @@ fn project_session_event(
             {
                 projected.push(attributed(None, current));
             }
+            // A call of the conversation that wrote or refreshed its Prompt
+            // Cache says when that cache lapses; Suru takes the moment as given.
+            if current_call
+                && let Some(lapses_at) = usage.cache_expires_at.as_deref().and_then(lapse_moment)
+            {
+                projected.push(attributed(
+                    None,
+                    ProviderEvent::PromptCacheLapseReported { lapses_at },
+                ));
+            }
             if current_call && usage.is_auto == Some(false) {
                 projected.extend(
                     fixed_model_call(&mut turn.streams, usage.api_call_id.as_deref())
@@ -2555,6 +2565,16 @@ fn metered(
     reported_cost: Option<Cost>,
 ) -> ProviderEvent {
     ReportedMetering::accumulate_on(&mut streams.metering, model, usage, reported_cost).event()
+}
+
+/// The moment a call's `cacheExpiresAt` names, an RFC 3339 timestamp, as
+/// milliseconds since the Unix epoch; none where it names no moment Suru can
+/// read, or one before the epoch.
+fn lapse_moment(cache_expires_at: &str) -> Option<crate::protocol::SessionTimestamp> {
+    let moment = cache_expires_at.parse::<jiff::Timestamp>().ok()?;
+    u64::try_from(moment.as_millisecond())
+        .ok()
+        .map(crate::protocol::SessionTimestamp)
 }
 
 fn reported_cache_ttl(event: &SessionEvent) -> Option<i64> {

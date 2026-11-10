@@ -45,11 +45,11 @@ use crate::{
         SkillCatalog,
     },
     provider::{
-        ErrandFuture, ManualCompaction, ProviderCompactionInput, ProviderDecisionDelivery,
-        ProviderErrand, ProviderError, ProviderFuture, ProviderInput, ProviderInterruption,
-        ProviderModelDiscovery, ProviderResumeState, ProviderRuntime, ProviderSession,
-        ProviderSessionConnection, ProviderSessionRequest, ProviderSteerInput, ProviderSubagentId,
-        ProviderTurnInput,
+        CacheLifetime, ErrandFuture, ManualCompaction, ProviderCompactionInput,
+        ProviderDecisionDelivery, ProviderErrand, ProviderError, ProviderFuture, ProviderInput,
+        ProviderInterruption, ProviderModelDiscovery, ProviderResumeState, ProviderRuntime,
+        ProviderSession, ProviderSessionConnection, ProviderSessionRequest, ProviderSteerInput,
+        ProviderSubagentId, ProviderTurnInput,
         harness::{ProcessGuard, ProcessRegistry},
         resolve_executable,
     },
@@ -199,6 +199,12 @@ impl ProviderRuntime for CodexRuntime {
     // should keep.
     fn manual_compaction(&self) -> ManualCompaction {
         ManualCompaction::Supported
+    }
+
+    // Codex's Prompt Cache is taken not to lapse on idle, so its Sessions are
+    // never cold. Should it turn out to, this is where its lifetime goes.
+    fn cache_lifetime(&self) -> CacheLifetime {
+        CacheLifetime::None
     }
 
     // Every Session runs an app-server process of its own.

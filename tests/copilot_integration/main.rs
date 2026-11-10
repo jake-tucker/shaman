@@ -23,6 +23,7 @@ mod interruption;
 mod model_shares;
 mod models;
 mod monitoring;
+mod prompt_cache;
 mod reroutes;
 mod resume;
 mod routing_tiers;
