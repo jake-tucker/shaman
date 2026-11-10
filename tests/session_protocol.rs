@@ -2454,6 +2454,51 @@ fn a_completed_compaction_is_measured_after_by_the_sessions_next_context_fill_re
 }
 
 #[test]
+fn a_prompt_cache_change_carries_the_whole_cache_or_its_absence() {
+    let session_id = SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f"));
+    let update = SessionUpdate {
+        session_id,
+        revision: SessionRevision(9),
+        changes: vec![
+            SessionChange::PromptCacheChanged {
+                prompt_cache: Some(suru::protocol::PromptCache {
+                    lapses_at: SessionTimestamp(1_767_225_900_000),
+                    written_by: ModelId::new("gpt-5"),
+                    lifetime_ms: None,
+                    prompt_limit_tokens: Some(272_000),
+                    lapse_penalty: suru::protocol::LapsePenalty::from_usd(0.46),
+                }),
+            },
+            SessionChange::PromptCacheChanged { prompt_cache: None },
+        ],
+    };
+    let expected = json!({
+        "session_id": "0198b27e-26ec-7c4c-a83b-a83a4787453f",
+        "revision": 9,
+        "changes": [
+            {
+                "type": "prompt_cache_changed",
+                "prompt_cache": {
+                    "lapses_at": 1_767_225_900_000_u64,
+                    "written_by": "gpt-5",
+                    "prompt_limit_tokens": 272_000,
+                    "lapse_penalty": 0.46
+                }
+            },
+            { "type": "prompt_cache_changed", "prompt_cache": null }
+        ]
+    });
+    assert_eq!(
+        serde_json::to_value(&update).expect("encode the change"),
+        expected
+    );
+    assert_eq!(
+        serde_json::from_value::<SessionUpdate>(expected).expect("decode the change"),
+        update
+    );
+}
+
+#[test]
 fn a_watch_outcome_is_added_already_settled_with_its_status_description_and_summary() {
     let session_id = SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f"));
     let turn_id = TurnId::from_uuid(fixture_id("0198b27e-2dc4-76ba-9895-f43db821fe3d"));
