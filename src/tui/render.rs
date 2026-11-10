@@ -238,6 +238,7 @@ pub(super) fn render_with_slots(
     // Current-Session animation is likewise a fact about this frame, not the
     // Session in the abstract: its transient tail may have scrolled away.
     state.session_animation_on_screen.set(false);
+    state.composer_top_drawn.set(None);
     if terminal_is_too_small(frame.area()) {
         render_terminal_too_small(frame, theme);
         return;
@@ -7410,9 +7411,7 @@ fn render_session_surface(
             attachments.row_count(),
         )
     };
-    // A Subagent's view has no composer to warn above, and the Session shown
-    // here is only ever this one: a Subagent's own cache never reaches its
-    // parent's composer.
+    // What stands here, and for which Session, is ComposerTop's to judge.
     let composer_top = slots.session_composer_top(&SessionComposerTopSlotContext {
         session_id,
         width: content_width,
@@ -7784,6 +7783,7 @@ fn render_session_surface(
         );
     }
     render_slot(frame, composer_top_area, composer_top, theme);
+    state.composer_top_drawn.set(Some(session_id));
     let cursor = if subagent_view {
         frame.render_widget(
             Paragraph::new(Line::styled(

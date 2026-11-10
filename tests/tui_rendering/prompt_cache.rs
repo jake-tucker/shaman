@@ -95,13 +95,21 @@ fn screen(application: &Application) -> String {
 
 /// What the line above the composer says, its rows read back as one: a row
 /// breaks only between its parts, so they are joined as they were parted.
-fn lapsed_line(application: &Application) -> Option<String> {
-    let rows = lapsed_rows(application);
+fn composer_top_line(application: &Application) -> Option<String> {
+    let rows = composer_top_rows(application);
     (!rows.is_empty()).then(|| rows.join(" · "))
 }
 
+/// How long the client would sleep before the line above the composer next
+/// changes, once a frame has laid it out: a line no frame has drawn wakes
+/// nothing.
+fn wakeup_after_a_frame(application: &Application) -> Option<std::time::Duration> {
+    drawn(application);
+    application.composer_top_wakeup()
+}
+
 /// The rows the line above the composer stands on, each trimmed.
-fn lapsed_rows(application: &Application) -> Vec<String> {
+fn composer_top_rows(application: &Application) -> Vec<String> {
     let rows = buffer_rows(&drawn(application));
     let Some(first) = rows.iter().position(|row| row.contains("Prompt cache")) else {
         return Vec::new();
@@ -127,9 +135,9 @@ fn a_cold_session_states_its_lapse_penalty_in_the_warning_colour_just_above_the_
     let snapshot = session(&workspace, SessionTimestamp(NOW.0 - 1), Some(1.65));
     let application = open(&workspace, snapshot, clock_at(NOW));
 
-    assert_eq!(lapsed_line(&application).as_deref(), Some(PRICED));
+    assert_eq!(composer_top_line(&application).as_deref(), Some(PRICED));
     assert_eq!(
-        lapsed_rows(&application),
+        composer_top_rows(&application),
         [
             "Prompt cache lapsed · next prompt costs ~$1.65 more",
             "/compact first to shrink it",
@@ -186,7 +194,7 @@ fn a_column_wide_enough_holds_the_whole_line_on_one_row() {
         .expect("fill the terminal's width");
 
     assert_eq!(
-        lapsed_rows(&application),
+        composer_top_rows(&application),
         [PRICED],
         "{}",
         screen(&application)
@@ -199,7 +207,7 @@ fn a_cold_session_whose_penalty_is_unknown_says_the_whole_context_is_read_again(
     let snapshot = session(&workspace, NOW, None);
     let application = open(&workspace, snapshot, clock_at(NOW));
 
-    assert_eq!(lapsed_line(&application).as_deref(), Some(UNPRICED));
+    assert_eq!(composer_top_line(&application).as_deref(), Some(UNPRICED));
 }
 
 #[test]
@@ -211,7 +219,7 @@ fn a_known_penalty_under_five_cents_draws_no_line_and_five_cents_does() {
         session(&workspace, lapsed, Some(0.0499)),
         clock_at(NOW),
     );
-    assert_eq!(lapsed_line(&small), None, "{}", screen(&small));
+    assert_eq!(composer_top_line(&small), None, "{}", screen(&small));
 
     let enough = open(
         &workspace,
@@ -219,7 +227,7 @@ fn a_known_penalty_under_five_cents_draws_no_line_and_five_cents_does() {
         clock_at(NOW),
     );
     assert_eq!(
-        lapsed_line(&enough).as_deref(),
+        composer_top_line(&enough).as_deref(),
         Some("Prompt cache lapsed · next prompt costs ~$0.05 more · /compact first to shrink it"),
     );
 }
@@ -234,10 +242,15 @@ fn a_warm_session_draws_nothing_before_its_final_stretch_and_the_cold_line_at_it
         session(&workspace, lapses_at, Some(1.65)),
         clock.clone(),
     );
-    assert_eq!(lapsed_line(&application), None, "{}", screen(&application));
+    assert_eq!(
+        composer_top_line(&application),
+        None,
+        "{}",
+        screen(&application)
+    );
 
     clock.store(lapses_at.0, Ordering::SeqCst);
-    assert_eq!(lapsed_line(&application).as_deref(), Some(PRICED));
+    assert_eq!(composer_top_line(&application).as_deref(), Some(PRICED));
 }
 
 #[test]
@@ -248,7 +261,12 @@ fn a_working_session_draws_no_line_however_long_ago_its_cache_lapsed() {
     snapshot.session.working_since = Some(SessionTimestamp(NOW.0 - 1_000));
     let application = open(&workspace, snapshot, clock_at(NOW));
 
-    assert_eq!(lapsed_line(&application), None, "{}", screen(&application));
+    assert_eq!(
+        composer_top_line(&application),
+        None,
+        "{}",
+        screen(&application)
+    );
 }
 
 #[test]
@@ -259,7 +277,7 @@ fn the_line_outlasts_interaction_and_never_holds_back_a_prompt() {
 
     type_terminal_text(&mut application, "One more thing");
     assert_eq!(
-        lapsed_line(&application).as_deref(),
+        composer_top_line(&application).as_deref(),
         Some(PRICED),
         "typing dismisses nothing, since the line is no Notice"
     );
@@ -279,7 +297,7 @@ fn the_line_clears_once_the_next_turn_has_written_the_cache_afresh() {
     let session_id = snapshot.session.id;
     let revision = snapshot.revision;
     let mut application = open(&workspace, snapshot, clock_at(NOW));
-    assert_eq!(lapsed_line(&application).as_deref(), Some(PRICED));
+    assert_eq!(composer_top_line(&application).as_deref(), Some(PRICED));
 
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
@@ -298,7 +316,12 @@ fn the_line_clears_once_the_next_turn_has_written_the_cache_afresh() {
             },
         )))
         .expect("the next Turn's lapse arrives");
-    assert_eq!(lapsed_line(&application), None, "{}", screen(&application));
+    assert_eq!(
+        composer_top_line(&application),
+        None,
+        "{}",
+        screen(&application)
+    );
 }
 
 #[test]
@@ -308,7 +331,12 @@ fn a_subagents_view_draws_no_line_for_its_own_lapse() {
     snapshot.session.parent = Some(SessionId::new());
     let application = open(&workspace, snapshot, clock_at(NOW));
 
-    assert_eq!(lapsed_line(&application), None, "{}", screen(&application));
+    assert_eq!(
+        composer_top_line(&application),
+        None,
+        "{}",
+        screen(&application)
+    );
 }
 
 #[test]
@@ -322,14 +350,14 @@ fn an_idle_client_wakes_when_the_countdown_comes_to_stand_and_not_after_the_laps
         clock.clone(),
     );
     assert_eq!(
-        application.composer_top_wakeup(),
+        wakeup_after_a_frame(&application),
         Some(std::time::Duration::from_secs(45)),
         "the client first wakes when the countdown comes to stand"
     );
 
     clock.store(lapses_at.0, Ordering::SeqCst);
     assert_eq!(
-        application.composer_top_wakeup(),
+        wakeup_after_a_frame(&application),
         None,
         "a lapse already drawn wants no further wakeup"
     );
@@ -337,7 +365,7 @@ fn an_idle_client_wakes_when_the_countdown_comes_to_stand_and_not_after_the_laps
     let mut subagent = session(&workspace, lapses_at, Some(1.65));
     subagent.session.parent = Some(SessionId::new());
     let viewing_a_subagent = open(&workspace, subagent, clock_at(NOW));
-    assert_eq!(viewing_a_subagent.composer_top_wakeup(), None);
+    assert_eq!(wakeup_after_a_frame(&viewing_a_subagent), None);
 }
 
 const FIVE_MINUTES: u64 = 300_000;
@@ -367,7 +395,7 @@ fn counting_down(
 /// The line above the composer with the Session clock at `moment`.
 fn line_at(application: &Application, clock: &AtomicU64, moment: u64) -> Option<String> {
     clock.store(moment, Ordering::SeqCst);
-    lapsed_line(application)
+    composer_top_line(application)
 }
 
 #[test]
@@ -507,7 +535,7 @@ fn a_countdown_to_a_lapse_under_five_cents_gives_way_to_nothing() {
         clock.clone(),
     );
 
-    assert_eq!(lapsed_line(&application), Some(lapses_in("0:01")));
+    assert_eq!(composer_top_line(&application), Some(lapses_in("0:01")));
     assert_eq!(
         line_at(&application, &clock, lapses_at.0),
         None,
@@ -522,12 +550,12 @@ fn a_session_first_shown_after_its_lapse_draws_the_cold_line_and_no_countdown() 
     let lapses_at = SessionTimestamp(NOW.0 - 1);
     let (application, _) = counting_down(&workspace, lapses_at, Some(FIVE_MINUTES));
 
-    assert_eq!(lapsed_line(&application).as_deref(), Some(PRICED));
+    assert_eq!(composer_top_line(&application).as_deref(), Some(PRICED));
     assert!(!screen(&application).contains("lapses in"));
 }
 
 #[test]
-fn a_working_session_draws_no_countdown_and_wants_no_tick() {
+fn a_working_session_draws_no_countdown_and_wants_no_wakeup() {
     let workspace = workspace_dir();
     let lapses_at = SessionTimestamp(NOW.0 + 30_000);
     let mut snapshot = session_kept_for(&workspace, lapses_at, Some(1.65), Some(FIVE_MINUTES));
@@ -535,8 +563,13 @@ fn a_working_session_draws_no_countdown_and_wants_no_tick() {
     snapshot.session.working_since = Some(SessionTimestamp(NOW.0 - 1_000));
     let application = open(&workspace, snapshot, clock_at(NOW));
 
-    assert_eq!(lapsed_line(&application), None, "{}", screen(&application));
-    assert_eq!(application.composer_top_wakeup(), None);
+    assert_eq!(
+        composer_top_line(&application),
+        None,
+        "{}",
+        screen(&application)
+    );
+    assert_eq!(wakeup_after_a_frame(&application), None);
 }
 
 #[test]
@@ -555,7 +588,7 @@ fn a_session_whose_provider_keeps_no_cache_lifetime_never_counts_down() {
     for moment in [NOW.0, NOW.0 + 240_000, NOW.0 + 299_999, NOW.0 + 3_600_000] {
         assert_eq!(line_at(&application, &clock, moment), None);
     }
-    assert_eq!(application.composer_top_wakeup(), None);
+    assert_eq!(wakeup_after_a_frame(&application), None);
 }
 
 #[test]
@@ -565,8 +598,13 @@ fn a_subagents_view_draws_no_countdown() {
     snapshot.session.parent = Some(SessionId::new());
     let application = open(&workspace, snapshot, clock_at(NOW));
 
-    assert_eq!(lapsed_line(&application), None, "{}", screen(&application));
-    assert_eq!(application.composer_top_wakeup(), None);
+    assert_eq!(
+        composer_top_line(&application),
+        None,
+        "{}",
+        screen(&application)
+    );
+    assert_eq!(wakeup_after_a_frame(&application), None);
 }
 
 #[test]
@@ -577,7 +615,7 @@ fn a_turn_that_moves_the_lapse_starts_the_countdown_afresh() {
     let session_id = snapshot.session.id;
     let revision = snapshot.revision;
     let mut application = open(&workspace, snapshot, clock_at(NOW));
-    assert_eq!(lapsed_line(&application), Some(lapses_in("0:30")));
+    assert_eq!(composer_top_line(&application), Some(lapses_in("0:30")));
 
     let moved = SessionTimestamp(NOW.0 + FIVE_MINUTES);
     application
@@ -597,9 +635,14 @@ fn a_turn_that_moves_the_lapse_starts_the_countdown_afresh() {
             },
         )))
         .expect("the next Turn's lapse arrives");
-    assert_eq!(lapsed_line(&application), None, "{}", screen(&application));
     assert_eq!(
-        application.composer_top_wakeup(),
+        composer_top_line(&application),
+        None,
+        "{}",
+        screen(&application)
+    );
+    assert_eq!(
+        wakeup_after_a_frame(&application),
         Some(std::time::Duration::from_secs(240)),
         "nothing wakes the client until the new final stretch begins"
     );
@@ -613,7 +656,7 @@ fn a_client_wakes_when_the_final_stretch_begins_then_each_second_until_the_lapse
     let lapse = lapses_at.0;
     let wakeup_at = |moment: u64| {
         clock.store(moment, Ordering::SeqCst);
-        application.composer_top_wakeup()
+        wakeup_after_a_frame(&application)
     };
 
     assert_eq!(
@@ -635,4 +678,22 @@ fn a_client_wakes_when_the_final_stretch_begins_then_each_second_until_the_lapse
         Some(std::time::Duration::from_millis(1))
     );
     assert_eq!(wakeup_at(lapse), None, "and none once the cache is cold");
+}
+
+#[test]
+fn a_countdown_no_frame_has_room_for_wants_no_wakeup() {
+    let workspace = workspace_dir();
+    let lapses_at = SessionTimestamp(NOW.0 + 30_000);
+    let (application, _) = counting_down(&workspace, lapses_at, Some(FIVE_MINUTES));
+    assert_eq!(
+        wakeup_after_a_frame(&application),
+        Some(std::time::Duration::from_secs(1))
+    );
+
+    rendered_application_buffer(&application, 20, 4);
+    assert_eq!(
+        application.composer_top_wakeup(),
+        None,
+        "a terminal too small to draw the Session wakes nothing for its line"
+    );
 }

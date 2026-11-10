@@ -806,6 +806,11 @@ pub struct TuiState {
     /// Session's, or the Landing's while its Workspace is still resolving. A
     /// Working Indicator that scrolled away cannot justify 32ms redraws.
     pub(super) session_animation_on_screen: Cell<bool>,
+    /// The Session whose composer the last frame laid the line above out
+    /// for, and None where it drew no Session surface: a fact about this
+    /// frame, as [`Self::session_animation_on_screen`] is, so a line covered
+    /// by Usage Metrics or a terminal too small for it wakes nothing.
+    pub(super) composer_top_drawn: Cell<Option<SessionId>>,
     /// The Monitoring Session whose Watches the reader has confirmed stopping,
     /// with when that Monitoring began. The stop settles nothing itself — the
     /// Session stops Monitoring once the Watches settle — so the Working
@@ -1229,6 +1234,7 @@ impl TuiState {
             shimmer_clock: super::shimmer::Clock::default(),
             rail_origins: RefCell::new(HashMap::new()),
             session_animation_on_screen: Cell::new(false),
+            composer_top_drawn: Cell::new(None),
             watch_stop: None,
             live_outputs_started_at: HashMap::new(),
             live_output_visibility: LiveOutputVisibility::default(),
@@ -6780,8 +6786,9 @@ impl Application {
     /// its Prompt Cache's lapse comes to stand, each second it counts, and the
     /// lapse itself, none of which anything its Server sends will draw. None
     /// once nothing will change until the Server says so — before any
-    /// Prompt Cache, while Working, once cold — and for a Subagent's view,
-    /// which has no composer to speak above.
+    /// Prompt Cache, while Working, once cold — for a Subagent's view, which
+    /// has no composer to speak above, and wherever the last frame did not
+    /// lay the line out, so a line nobody can see wakes nothing.
     pub fn composer_top_wakeup(&self) -> Option<Duration> {
         self.composer_top_due().map(|(_, wait)| wait)
     }
@@ -6791,6 +6798,9 @@ impl Application {
     pub(super) fn composer_top_due(&self) -> Option<(crate::protocol::SessionTimestamp, Duration)> {
         let now = self.state.session_now();
         let snapshot = self.state.session.as_ref()?.snapshot();
+        if self.state.composer_top_drawn.get() != Some(snapshot.session.id) {
+            return None;
+        }
         let changes_at = super::composer_top::ComposerTop::of(snapshot, now).changes_at?;
         let ahead = changes_at.0.checked_sub(now.0).filter(|ahead| *ahead > 0)?;
         Some((changes_at, Duration::from_millis(ahead)))

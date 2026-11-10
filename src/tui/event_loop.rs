@@ -754,6 +754,9 @@ async fn run_loop(
         run.sync_title_proposal();
         run.sync_subagent_tree();
         run.sync_thumbnail_fetches();
+        // Before the frame, so a line the wall clock has moved past while no
+        // wakeup came — as across a suspend — is drawn by this frame.
+        run.redraw_passed_composer_top_change();
         if run.needs_redraw && run.application.first_frame_ready() {
             draw_frame(
                 terminal,
@@ -2156,38 +2159,55 @@ impl RunLoop {
         });
     }
 
-    /// Keeps exactly one wakeup for the next moment the line above the open
-    /// Session's composer changes, while that is still ahead, and none once
-    /// nothing will change of its own accord: the Session has gone, is
-    /// Working, or is cold. A Turn that moves the lapse moves the wakeup with
-    /// it, so the countdown starts afresh. Whenever the moment wanted is not
-    /// the one armed, the line may have changed with it — the wall clock leapt
-    /// past a second or the lapse, as across a suspend — so it is drawn.
-    fn sync_composer_top_change(&mut self) {
-        let wanted = self.application.composer_top_due();
-        let armed = self.composer_top_change.as_ref().map(|(moment, _)| *moment);
-        if armed == wanted.as_ref().map(|(moment, _)| *moment) {
-            return;
-        }
-        if armed.is_some() {
+    /// Asks for a frame where the moment the line above the composer was
+    /// to change has passed on the wall clock with its wakeup still asleep,
+    /// as across a suspend, which a monotonic sleep does not follow. It runs
+    /// before the frame is drawn, so whatever event woke the loop, even one
+    /// that draws nothing itself, is followed by the line as it now stands.
+    fn redraw_passed_composer_top_change(&mut self) {
+        let now = self.application.state.session_now();
+        if self
+            .composer_top_change
+            .as_ref()
+            .is_some_and(|(moment, _)| *moment <= now)
+        {
             self.needs_redraw = true;
         }
-        self.composer_top_change =
-            wanted.map(|(moment, wait)| (moment, Box::pin(tokio::time::sleep(wait))));
+    }
+
+    /// Keeps exactly one wakeup for the next moment the line above the open
+    /// Session's composer changes, while that is still ahead and the frame
+    /// just drawn laid the line out, and none once nothing will change of its
+    /// own accord. It runs after the frame, which records what it laid out.
+    /// Every sync sets the wakeup's deadline afresh from the wall clock, since
+    /// a monotonic sleep armed before a suspend is late by the suspend's
+    /// length: any event after a resume puts it right. A Turn that moves the
+    /// lapse moves the wakeup with it, so the countdown starts afresh.
+    fn sync_composer_top_change(&mut self) {
+        let Some((moment, wait)) = self.application.composer_top_due() else {
+            self.composer_top_change = None;
+            return;
+        };
+        let deadline = tokio::time::Instant::now() + wait;
+        match &mut self.composer_top_change {
+            Some((armed, wakeup)) => {
+                *armed = moment;
+                wakeup.as_mut().reset(deadline);
+            }
+            None => {
+                self.composer_top_change =
+                    Some((moment, Box::pin(tokio::time::sleep_until(deadline))));
+            }
+        }
     }
 
     /// Draws the line above the composer as it stands now on the wall clock,
     /// once the moment it was to change has passed; a wakeup that came before
-    /// it lets the next sync wait again for what is left.
+    /// it, the wall clock having been set back, draws nothing, and the next
+    /// sync waits again for what is left.
     fn wake_for_composer_top_change(&mut self) -> ControlFlow<Exit> {
-        let armed = self.composer_top_change.take().map(|(moment, _)| moment);
-        let wanted = self
-            .application
-            .composer_top_due()
-            .map(|(moment, _)| moment);
-        if wanted != armed {
-            self.needs_redraw = true;
-        }
+        self.redraw_passed_composer_top_change();
+        self.composer_top_change = None;
         ControlFlow::Continue(())
     }
 
@@ -7807,13 +7827,50 @@ mod ready_event_tests {
         slept
     }
 
+    /// One pass of the run loop around a frame, as it runs them: the check
+    /// before drawing, the frame, which records what it laid out, and the
+    /// sync after it. Answers what the frame drew above the composer.
+    fn pass(run: &mut RunLoop) -> Option<String> {
+        run.redraw_passed_composer_top_change();
+        let drawn = composer_top(run);
+        run.needs_redraw = false;
+        run.sync_composer_top_change();
+        drawn
+    }
+
+    /// How long the run loop's wakeup for the line above the composer sleeps
+    /// on the monotonic clock from now, and None where none is armed.
+    fn armed_wait(run: &RunLoop) -> Option<Duration> {
+        run.composer_top_change
+            .as_ref()
+            .map(|(_, wakeup)| wakeup.deadline() - tokio::time::Instant::now())
+    }
+
+    /// Applies `change` to the run loop's open Session at its next revision.
+    fn update(run: &mut RunLoop, change: SessionChange) {
+        let snapshot = run
+            .application
+            .state
+            .session
+            .as_ref()
+            .expect("a Session is open")
+            .snapshot();
+        let update = SessionUpdate {
+            session_id: snapshot.session.id,
+            revision: SessionRevision(snapshot.revision.0 + 1),
+            changes: vec![change],
+        };
+        run.application
+            .handle_event(ApplicationEvent::Session(SessionEvent::Updated(update)))
+            .expect("the update applies");
+    }
+
     #[tokio::test(start_paused = true)]
     async fn an_idle_loop_first_wakes_when_the_final_stretch_begins() {
         let workspace = tempfile::tempdir().expect("create a Workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 90_000);
-        run.sync_composer_top_change();
-        assert_eq!(composer_top(&run), None);
+        assert_eq!(pass(&mut run), None);
 
         assert_eq!(
             wait_for_the_line(&mut run, &wall).await,
@@ -7821,7 +7878,7 @@ mod ready_event_tests {
             "nothing wakes the loop before the countdown comes to stand"
         );
         assert!(run.needs_redraw, "the countdown is drawn with no input");
-        assert_eq!(composer_top(&run).as_deref(), Some("1:00"));
+        assert_eq!(pass(&mut run).as_deref(), Some("1:00"));
     }
 
     #[tokio::test(start_paused = true)]
@@ -7829,27 +7886,22 @@ mod ready_event_tests {
         let workspace = tempfile::tempdir().expect("create a Workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 60_000);
-        run.sync_composer_top_change();
-        assert_eq!(composer_top(&run).as_deref(), Some("1:00"));
+        assert_eq!(pass(&mut run).as_deref(), Some("1:00"));
 
         for left in (1..60).rev() {
-            run.needs_redraw = false;
             assert_eq!(
                 wait_for_the_line(&mut run, &wall).await,
                 Duration::from_secs(1)
             );
             assert!(run.needs_redraw);
-            assert_eq!(composer_top(&run), Some(format!("0:{left:02}")));
-            run.sync_composer_top_change();
+            assert_eq!(pass(&mut run), Some(format!("0:{left:02}")));
         }
-        run.needs_redraw = false;
         assert_eq!(
             wait_for_the_line(&mut run, &wall).await,
             Duration::from_secs(1)
         );
         assert!(run.needs_redraw, "the lapse is drawn with no input");
-        assert_eq!(composer_top(&run).as_deref(), Some("lapsed"));
-        run.sync_composer_top_change();
+        assert_eq!(pass(&mut run).as_deref(), Some("lapsed"));
         assert!(
             run.composer_top_change.is_none(),
             "nothing more to wake for"
@@ -7857,55 +7909,222 @@ mod ready_event_tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_tick_after_a_suspend_reads_the_wall_clock_afresh() {
+    async fn a_wakeup_after_a_suspend_reads_the_wall_clock_afresh() {
         let workspace = tempfile::tempdir().expect("create a Workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 50_000);
-        run.sync_composer_top_change();
-        assert_eq!(composer_top(&run).as_deref(), Some("0:50"));
+        assert_eq!(pass(&mut run).as_deref(), Some("0:50"));
 
         // The laptop sleeps for half a minute within the second the wakeup
         // waits: the wall clock moves on by both while the monotonic wakeup
         // counts only the second.
         wall.fetch_add(31_000, Ordering::SeqCst);
-        run.needs_redraw = false;
         let started = tokio::time::Instant::now();
         super::wait_for_composer_top_change(&mut run.composer_top_change).await;
         assert_eq!(started.elapsed(), Duration::from_secs(1));
         let _ = run.wake_for_composer_top_change();
         assert!(run.needs_redraw);
-        assert_eq!(composer_top(&run).as_deref(), Some("0:19"));
-        run.sync_composer_top_change();
+        assert_eq!(pass(&mut run).as_deref(), Some("0:19"));
         assert_eq!(
-            run.application.composer_top_wakeup(),
+            armed_wait(&run),
             Some(Duration::from_secs(1)),
             "the count goes on from the wall clock's second"
         );
 
         // A longer sleep carries it past the lapse.
         wall.fetch_add(60_000, Ordering::SeqCst);
-        run.needs_redraw = false;
         super::wait_for_composer_top_change(&mut run.composer_top_change).await;
         let _ = run.wake_for_composer_top_change();
         assert!(run.needs_redraw);
-        assert_eq!(composer_top(&run).as_deref(), Some("lapsed"));
-        run.sync_composer_top_change();
+        assert_eq!(pass(&mut run).as_deref(), Some("lapsed"));
         assert!(run.composer_top_change.is_none());
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_lapse_passed_before_its_wakeup_is_drawn_at_the_next_sync() {
+    async fn a_suspend_before_the_final_stretch_moves_its_first_wakeup_by_the_wall_clock() {
+        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
+        let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 300_000);
+        assert_eq!(pass(&mut run), None);
+        assert_eq!(armed_wait(&run), Some(Duration::from_secs(240)));
+
+        // Ten seconds in, the lid closes for a hundred: the wall clock moves
+        // on by them while the monotonic wakeup does not.
+        tokio::time::advance(Duration::from_secs(10)).await;
+        wall.fetch_add(110_000, Ordering::SeqCst);
+        // Ten seconds after the lid opens, a key is pressed.
+        tokio::time::advance(Duration::from_secs(10)).await;
+        wall.fetch_add(10_000, Ordering::SeqCst);
+        assert_eq!(pass(&mut run), None);
+        assert_eq!(
+            armed_wait(&run),
+            Some(Duration::from_secs(120)),
+            "the event re-arms the wakeup by the wall clock"
+        );
+
+        assert_eq!(
+            wait_for_the_line(&mut run, &wall).await,
+            Duration::from_secs(120)
+        );
+        assert_eq!(pass(&mut run).as_deref(), Some("1:00"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_lapse_passed_before_its_wakeup_is_drawn_by_the_next_frame() {
         let workspace = tempfile::tempdir().expect("create a Workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 90_000);
-        run.sync_composer_top_change();
+        assert_eq!(pass(&mut run), None);
         // A suspend moves the wall clock past the moment while the sleep
-        // stands still; the next event's sync draws it.
+        // stands still. The next event, whatever it is and though it draws
+        // nothing of its own, is followed by a frame drawing the lapse.
         wall.fetch_add(95_000, Ordering::SeqCst);
-        run.sync_composer_top_change();
-        assert!(run.needs_redraw);
-        assert_eq!(composer_top(&run).as_deref(), Some("lapsed"));
+        run.redraw_passed_composer_top_change();
+        assert!(run.needs_redraw, "the frame after the event is drawn");
+        assert_eq!(pass(&mut run).as_deref(), Some("lapsed"));
         assert!(run.composer_top_change.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_wakeup_that_comes_early_draws_nothing_and_waits_for_the_rest() {
+        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
+        let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
+        assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
+
+        // The wall clock is set back half a second while the wakeup sleeps.
+        wall.fetch_add(500, Ordering::SeqCst);
+        super::wait_for_composer_top_change(&mut run.composer_top_change).await;
+        let _ = run.wake_for_composer_top_change();
+        assert!(!run.needs_redraw, "nothing on screen has changed");
+        run.redraw_passed_composer_top_change();
+        assert!(!run.needs_redraw);
+        run.sync_composer_top_change();
+        assert_eq!(armed_wait(&run), Some(Duration::from_millis(500)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_session_going_working_mid_countdown_stands_the_wakeup_down_until_it_is_idle() {
+        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
+        let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
+        assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
+
+        update(
+            &mut run,
+            SessionChange::SessionWorkingChanged {
+                working_since: Some(SessionTimestamp(wall.load(Ordering::SeqCst))),
+            },
+        );
+        assert_eq!(pass(&mut run), None);
+        assert!(
+            run.composer_top_change.is_none(),
+            "a Working Session wakes nothing"
+        );
+
+        tokio::time::advance(Duration::from_secs(5)).await;
+        wall.fetch_add(5_000, Ordering::SeqCst);
+        update(
+            &mut run,
+            SessionChange::SessionWorkingChanged {
+                working_since: None,
+            },
+        );
+        assert_eq!(pass(&mut run).as_deref(), Some("0:25"));
+        assert_eq!(armed_wait(&run), Some(Duration::from_secs(1)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_lapse_moved_or_dropped_mid_countdown_moves_or_drops_the_wakeup() {
+        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
+        let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
+        assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
+
+        update(
+            &mut run,
+            SessionChange::PromptCacheChanged {
+                prompt_cache: Some(crate::protocol::PromptCache {
+                    lapses_at: SessionTimestamp(wall.load(Ordering::SeqCst) + 300_000),
+                    written_by: crate::protocol::ModelId::new("gpt-fixture"),
+                    lifetime_ms: Some(300_000),
+                    prompt_limit_tokens: None,
+                    lapse_penalty: None,
+                }),
+            },
+        );
+        assert_eq!(pass(&mut run), None);
+        assert_eq!(
+            armed_wait(&run),
+            Some(Duration::from_secs(240)),
+            "the countdown starts afresh with the new final stretch"
+        );
+
+        update(
+            &mut run,
+            SessionChange::PromptCacheChanged { prompt_cache: None },
+        );
+        assert_eq!(pass(&mut run), None);
+        assert!(run.composer_top_change.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn opening_another_session_arms_the_wakeup_for_its_line() {
+        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
+        let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
+        assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
+
+        let mut other = streamed_snapshot(workspace.path());
+        other.session.prompt_cache = Some(crate::protocol::PromptCache {
+            lapses_at: SessionTimestamp(wall.load(Ordering::SeqCst) + 90_000),
+            written_by: crate::protocol::ModelId::new("gpt-fixture"),
+            lifetime_ms: Some(300_000),
+            prompt_limit_tokens: None,
+            lapse_penalty: None,
+        });
+        run.application
+            .handle_event(ApplicationEvent::SessionAttached(other))
+            .expect("open the other Session");
+        assert_eq!(pass(&mut run), None);
+        assert_eq!(armed_wait(&run), Some(Duration::from_secs(30)));
+
+        let mut quiet = streamed_snapshot(workspace.path());
+        quiet.session.prompt_cache = None;
+        run.application
+            .handle_event(ApplicationEvent::SessionAttached(quiet))
+            .expect("open a Session with no Prompt Cache");
+        assert_eq!(pass(&mut run), None);
+        assert!(run.composer_top_change.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn no_wakeup_is_armed_while_usage_metrics_cover_the_session() {
+        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
+        let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
+        assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
+
+        run.application
+            .handle_event(ApplicationEvent::Command(
+                crate::tui::CommandId::InvokeSemantic(crate::tui::SemanticCommandId::MetricsShow),
+            ))
+            .expect("open Usage Metrics");
+        assert_eq!(pass(&mut run), None);
+        assert!(
+            run.composer_top_change.is_none(),
+            "a countdown nobody can see wakes nothing"
+        );
+
+        tokio::time::advance(Duration::from_secs(10)).await;
+        wall.fetch_add(10_000, Ordering::SeqCst);
+        run.application
+            .handle_event(ApplicationEvent::Command(
+                crate::tui::CommandId::InvokeSemantic(crate::tui::SemanticCommandId::MetricsClose),
+            ))
+            .expect("close Usage Metrics");
+        assert_eq!(pass(&mut run).as_deref(), Some("0:20"));
+        assert_eq!(armed_wait(&run), Some(Duration::from_secs(1)));
     }
 
     /// An idle Session at its first revision with nothing in it.
