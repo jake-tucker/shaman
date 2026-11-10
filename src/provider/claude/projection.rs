@@ -1139,7 +1139,8 @@ impl ClaudeProjection {
         ]
     }
 
-    /// The CLI's own bookkeeping beside the conversations: the task lifecycle, and compaction.
+    /// The CLI's own bookkeeping beside the conversations: the Model the loop's `init` says it
+    /// launched on, which projects nothing of itself, the task lifecycle, and compaction.
     fn project_system(&mut self, message: Value) -> Vec<AttributedProviderEvent> {
         let Ok(message) = serde_json::from_value::<SystemMessage>(message) else {
             return Vec::new();
@@ -5433,7 +5434,7 @@ mod tests {
     }
 
     #[test]
-    fn each_request_of_the_loops_own_states_the_shortest_lifetime_it_wrote_its_cache_at() {
+    fn each_request_of_the_loops_own_states_what_it_wrote_and_any_model_it_fell_back_to() {
         let (mut projection, _prompt) = prompted_projection();
         let lifetimes = ClaudeCacheLifetimes::default();
         let events = project(
@@ -5479,6 +5480,33 @@ mod tests {
     }
 
     #[test]
+    fn a_request_writing_for_two_lifetimes_states_the_shorter() {
+        let (mut projection, _prompt) = prompted_projection();
+        let events = project(
+            &mut projection,
+            &[message_start_with(
+                None,
+                "claude-fixture-1",
+                json!({
+                    "cache_creation_input_tokens": 900,
+                    "cache_creation": {
+                        "ephemeral_5m_input_tokens": 100,
+                        "ephemeral_1h_input_tokens": 800,
+                    },
+                }),
+            )],
+        );
+        assert_eq!(
+            cache_refreshes(&events),
+            [&owning(ProviderEvent::PromptCacheRefreshed {
+                written: Some(five_minutes()),
+                model: None,
+            })],
+            "the part written for five minutes lapses first, at the five-minute price"
+        );
+    }
+
+    #[test]
     fn a_launch_naming_no_model_is_no_launch_at_all() {
         for blank in ["", "   "] {
             let (mut projection, _prompt) = prompted_projection();
@@ -5502,6 +5530,30 @@ mod tests {
                 "an `init` whose Model is {blank:?} leaves the request on the Selection"
             );
         }
+    }
+
+    #[test]
+    fn a_system_message_whose_model_is_no_name_still_projects() {
+        let mut projection = fresh_projection();
+        let events = project(
+            &mut projection,
+            &[json!({
+                "type": "system",
+                "subtype": "task_started",
+                "task_id": "agent-task-1",
+                "tool_use_id": "task_1",
+                "description": "Scout the workspace",
+                "task_type": "local_agent",
+                "subagent_type": "Explore",
+                "model": {"id": "claude-fixture-3"},
+            })],
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event.event, ProviderEvent::SubagentStarted { .. })),
+            "a `model` of another shape leaves the task's start read: {events:?}"
+        );
     }
 
     #[test]

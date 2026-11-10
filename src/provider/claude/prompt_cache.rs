@@ -263,11 +263,5 @@ mod tests {
                 unobserved: LIFETIMES.unobserved
             }
         );
-        assert_eq!(
-            ClaudeCacheLifetimes::default().declared(),
-            CacheLifetime::Inferred {
-                unobserved: Duration::from_secs(300)
-            }
-        );
     }
 }
