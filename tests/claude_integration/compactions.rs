@@ -1811,3 +1811,96 @@ async fn a_scheduled_compaction_is_claudes_compact_command_ahead_of_an_inferred_
     drop(feed);
     session.shutdown().await;
 }
+
+/// A scheduled Compaction due after its Session's `claude` was stopped for idleness launches it
+/// again, resuming the conversation as the next Turn would, and sends the same `/compact` there;
+/// once that Compaction's Turn has settled, the process is stopped for idleness again.
+#[tokio::test]
+async fn a_scheduled_compaction_due_after_claude_stopped_for_idleness_resumes_it_to_compact() {
+    let claude = ScriptedClaude::new(&format!(
+        r#"{}    *'"text":"/compact'*)
+{COMPACTING_ON_REQUEST}{COMPACTED_AFTER_BOUNDARY}      ;;
+{}{LARGE_CONTEXT_ARM}"#,
+        discovery_arms(CLAUDE_MODELS),
+        user_turn_arm(WRITTEN_FOR_AN_HOUR),
+    ));
+    let (pricing, _rates) = crate::claude_integration::models::anthropic_rates().await;
+    let (clock, hand) = suru::server::ServerClock::manual();
+    let session = crate::claude_integration::support::DurableSession::start_configured_on(
+        suru::provider::ClaudeRuntime::new(claude.executable())
+            .with_pricing_source(pricing)
+            .with_cache_lifetimes(SCALED_LIFETIMES),
+        None,
+        "claude-compaction-scheduled-stopped",
+        suru::server::ServerTimings::default()
+            .with_clock(clock.clone())
+            .with_scheduled_compaction_lead(SCALED_LEAD)
+            .with_scheduled_compaction_margin(SCALED_MARGIN)
+            .with_provider_idle_shutdown(std::time::Duration::from_millis(100)),
+        Some(r#"{ "compaction": { "scheduled": { "enabled": true } } }"#),
+    )
+    .await;
+    session
+        .client
+        .list_models()
+        .await
+        .expect("discover Claude's Models and their prices");
+    session.continue_with("Keep going on the parser", 1).await;
+    let mut feed = session
+        .client
+        .subscribe_session(session.session_id)
+        .await
+        .expect("follow the Session");
+    let priced = session_where(
+        &session.client,
+        &mut feed,
+        session.session_id,
+        "the lapse and its penalty are forecast",
+        |snapshot| {
+            snapshot
+                .session
+                .prompt_cache
+                .as_ref()
+                .is_some_and(|cache| cache.lapse_penalty.is_some())
+        },
+    )
+    .await;
+    drop(feed);
+    let lapses_at = priced
+        .session
+        .prompt_cache
+        .expect("a lapse is published")
+        .lapses_at;
+
+    // Idle, every `claude` stops, the Session's own included, its Compaction still pending.
+    claude.wait_for_exits(claude.launches()).await;
+    let launched = claude.launches();
+    assert_eq!(session.read().await.turns.len(), 2, "nothing is begun yet");
+
+    let lead = u64::try_from(SCALED_LEAD.as_millis()).unwrap();
+    hand.advance(std::time::Duration::from_millis(
+        lapses_at.0 - lead - clock.now().0,
+    ));
+    let compacted = settled_session(&session.client, session.session_id, 2).await;
+    let turn = &compacted.turns[2];
+    assert_eq!(
+        (turn.compaction_requested, turn.status),
+        (
+            Some(suru::protocol::CompactionRequest::Scheduled),
+            TurnStatus::Completed
+        )
+    );
+    assert!(
+        claude.launches() > launched && claude.launch_carrying("--resume").carries("--resume"),
+        "the Compaction launched Claude again, resuming the conversation"
+    );
+    assert_eq!(
+        user_messages_sent(&claude).last().map(String::as_str),
+        Some("/compact"),
+        "and asked it the same /compact a manual one sends"
+    );
+
+    // Its Turn settled, the resumed `claude` waits idle and is stopped as usual.
+    claude.wait_for_exits(claude.launches()).await;
+    session.shutdown().await;
+}
