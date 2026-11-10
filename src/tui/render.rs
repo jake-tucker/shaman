@@ -36,6 +36,7 @@ use super::{
     completion_details::CompletionDetails,
     composer::{ComposerBindings, ComposerKey, ComposerMemory},
     composer_menu::ComposerMenuGeometry,
+    composer_top::{ComposerTop, ComposerTopLine, countdown},
     connect_overlay::{ConnectDetails, ConnectOverlay, LoginStep},
     context_overlay::{ContextOverlayView, ContextRow},
     directory_browser::{DirectoryBrowserRow, DirectoryBrowserRowKind},
@@ -7415,16 +7416,7 @@ fn render_session_surface(
     let composer_top = slots.session_composer_top(&SessionComposerTopSlotContext {
         session_id,
         width: content_width,
-        lapse: prompt_cache_lapse_parts(
-            snapshot
-                .session
-                .prompt_cache
-                .as_ref()
-                .filter(|_| !subagent_view),
-            snapshot.working_since().is_some(),
-            state.session_now(),
-            theme,
-        ),
+        line: composer_top_parts(ComposerTop::of(snapshot, state.session_now()).line, theme),
     });
     let working_indicator = match &tail {
         SessionTail::Quiet | SessionTail::Refused(_) => RenderedSlot::empty(),
@@ -7903,49 +7895,39 @@ fn session_footer_metrics_text(snapshot: &SessionSnapshot, width: u16) -> Option
         .find(|text| UnicodeWidthStr::width(text.as_str()) <= usize::from(width))
 }
 
-/// The least Lapse Penalty worth a line, in billionths of a USD: five cents.
-/// Below it a cold Session is no surprise worth warning of.
-const LAPSE_PENALTY_FLOOR_NANO_USD: u64 = 50_000_000;
-
-/// What the line above the composer of a Session whose Prompt Cache has
-/// lapsed says, part by part: that it lapsed, what the next Prompt costs
+/// What the line above a Session's composer says, part by part. In the
+/// final stretch before the Prompt Cache lapses, a dim countdown. Once it has
+/// lapsed, in the warning colour, that it lapsed, what the next Prompt costs
 /// beyond what it would have warm — or that it re-reads the whole context,
-/// where that cannot be priced — and how to shrink it, all in the warning
-/// colour. Nothing while the Session is Working, while the cache is warm, and
-/// where the penalty is known to fall under the floor.
-///
-/// Whether the cache has lapsed is judged against this client's own clock,
-/// `now`, by the absolute moment its Server published, as every Session
-/// timestamp is read: a client on another machine is out by however far the
-/// two clocks disagree, which a lifetime of minutes leaves unnoticed. It is a
-/// line about the Session rather than a Notice: no interaction dismisses it,
-/// and it stands for as long as it is true, until the next Turn has written
-/// the cache afresh.
-fn prompt_cache_lapse_parts(
-    cache: Option<&crate::protocol::PromptCache>,
-    working: bool,
-    now: SessionTimestamp,
-    theme: &Theme,
-) -> Vec<SlotText> {
-    let Some(cache) = cache.filter(|cache| !working && cache.has_lapsed(now)) else {
-        return Vec::new();
-    };
-    let consequence = match cache.lapse_penalty {
-        Some(penalty) if penalty.nano_usd() < LAPSE_PENALTY_FLOOR_NANO_USD => return Vec::new(),
-        Some(penalty) => format!(
-            "next prompt costs ~{} more",
-            compact_dollars(penalty.nano_usd())
-        ),
-        None => "next prompt re-reads the whole context".to_owned(),
-    };
-    [
-        "Prompt cache lapsed".to_owned(),
-        consequence,
-        "/compact first to shrink it".to_owned(),
-    ]
-    .into_iter()
-    .map(|part| SlotText::new(part, theme.feedback.warning))
-    .collect()
+/// where that cannot be priced — and how to shrink it. It is a line about the
+/// Session rather than a Notice: no interaction dismisses it, and it stands
+/// for as long as it is true, until the next Turn has written the cache
+/// afresh.
+fn composer_top_parts(line: Option<ComposerTopLine>, theme: &Theme) -> Vec<SlotText> {
+    match line {
+        None => Vec::new(),
+        Some(ComposerTopLine::LapsesIn { seconds }) => vec![SlotText::new(
+            format!("Prompt cache lapses in {}", countdown(seconds)),
+            theme.text.subdued,
+        )],
+        Some(ComposerTopLine::Lapsed { penalty }) => {
+            let consequence = match penalty {
+                Some(penalty) => format!(
+                    "next prompt costs ~{} more",
+                    compact_dollars(penalty.nano_usd())
+                ),
+                None => "next prompt re-reads the whole context".to_owned(),
+            };
+            [
+                "Prompt cache lapsed".to_owned(),
+                consequence,
+                "/compact first to shrink it".to_owned(),
+            ]
+            .into_iter()
+            .map(|part| SlotText::new(part, theme.feedback.warning))
+            .collect()
+        }
+    }
 }
 
 /// One Cost figure as the footer states it: a known zero only where more may

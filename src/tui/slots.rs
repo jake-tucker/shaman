@@ -78,9 +78,10 @@ pub(super) struct LandingFooterSlotContext {
 pub(super) struct SessionComposerTopSlotContext {
     pub(super) session_id: SessionId,
     pub(super) width: u16,
-    /// The line saying the Prompt Cache has lapsed, part by part, already
-    /// worded and styled: none where nothing is to be said of it.
-    pub(super) lapse: Vec<SlotText>,
+    /// The line saying how the Session's Prompt Cache stands — counting down
+    /// to its lapse, or lapsed — part by part, already worded and styled:
+    /// none where nothing is to be said of it.
+    pub(super) line: Vec<SlotText>,
 }
 
 /// `parts` joined by ` · ` on as few rows of `width` as hold them whole, a
@@ -361,7 +362,7 @@ impl RenderSlots {
         context: &SessionComposerTopSlotContext,
     ) -> RenderedSlot<Line<'static>> {
         let _ = context.session_id;
-        let default = parted_lines(context.width, &context.lapse);
+        let default = parted_lines(context.width, &context.line);
         self.session_composer_top.compose(context, default)
     }
 

@@ -13,6 +13,7 @@ mod completion;
 mod completion_details;
 mod composer;
 mod composer_menu;
+mod composer_top;
 mod connect_overlay;
 mod context_overlay;
 mod destination;

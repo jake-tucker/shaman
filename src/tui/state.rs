@@ -6775,29 +6775,25 @@ impl Application {
             .map(|deadline| deadline.saturating_duration_since(self.state.presentation_clock.now()))
     }
 
-    /// How long until the open Session's Prompt Cache lapses on the Session
-    /// clock, while that is still ahead: when the line above its composer
-    /// comes to stand, which nothing its Server sends will draw. None for a
-    /// Subagent's view, which has no composer to warn above.
-    pub fn prompt_cache_lapse_wakeup(&self) -> Option<Duration> {
-        self.prompt_cache_lapse_due().map(|(_, wait)| wait)
+    /// How long until the line above the open Session's composer next
+    /// changes of its own accord, on the Session clock: when the countdown to
+    /// its Prompt Cache's lapse comes to stand, each second it counts, and the
+    /// lapse itself, none of which anything its Server sends will draw. None
+    /// once nothing will change until the Server says so — before any
+    /// Prompt Cache, while Working, once cold — and for a Subagent's view,
+    /// which has no composer to speak above.
+    pub fn composer_top_wakeup(&self) -> Option<Duration> {
+        self.composer_top_due().map(|(_, wait)| wait)
     }
 
-    /// The moment the open Session's Prompt Cache lapses, and how long until
-    /// then, as [`Self::prompt_cache_lapse_wakeup`] reads them.
-    pub(super) fn prompt_cache_lapse_due(
-        &self,
-    ) -> Option<(crate::protocol::SessionTimestamp, Duration)> {
-        let session = &self.state.session.as_ref()?.snapshot().session;
-        if session.parent.is_some() {
-            return None;
-        }
-        let lapses_at = session.prompt_cache.as_ref()?.lapses_at;
-        let ahead = lapses_at
-            .0
-            .checked_sub(self.state.session_now().0)
-            .filter(|ahead| *ahead > 0)?;
-        Some((lapses_at, Duration::from_millis(ahead)))
+    /// The moment the line above the open Session's composer next changes,
+    /// and how long until then, as [`Self::composer_top_wakeup`] reads them.
+    pub(super) fn composer_top_due(&self) -> Option<(crate::protocol::SessionTimestamp, Duration)> {
+        let now = self.state.session_now();
+        let snapshot = self.state.session.as_ref()?.snapshot();
+        let changes_at = super::composer_top::ComposerTop::of(snapshot, now).changes_at?;
+        let ahead = changes_at.0.checked_sub(now.0).filter(|ahead| *ahead > 0)?;
+        Some((changes_at, Duration::from_millis(ahead)))
     }
 
     pub(super) fn opening_loading_deadline(&self) -> Option<Instant> {
