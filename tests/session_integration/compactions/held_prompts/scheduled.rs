@@ -2,16 +2,17 @@
 //! no steer, as a manual Compaction's does, so the Prompt is held, admitted
 //! and owed the next Turn, with the Session Working throughout. Nobody asked
 //! for this Compaction, so its writer expected nothing of the context: the
-//! Prompt begins the next Turn however the Compaction settles, completed or
-//! failed, and is handed back to the client that wrote it only where an
-//! interrupt reached the Compaction before it completed, or where Suru stopped
-//! with nothing left to deliver it.
+//! Prompt begins the next Turn whether the Compaction completes or fails, and
+//! is withdrawn, its text returned to the client that wrote it, only where an
+//! interrupt reached the Compaction's Turn before the Compaction completed.
+//! Suru stopping withdraws it too, as it does any Prompt still owed a Turn,
+//! saying why; its text is then recovered only by a client still holding it.
 
-use super::super::{compaction_statuses, failed, turn_settled, user_messages};
+use super::super::{compaction_statuses, failed, turn_settled};
 use super::{
-    actor_reads_every_command_sent_so_far, admit_queued, admit_steer, admitted, held,
-    interrupt_acknowledged, left_mid_compaction, next_turn_begun_after, prompt_status, unfinished,
-    withdrawal,
+    actor_reads_every_command_sent_so_far, admit_queued, admit_steer, assert_held, held,
+    interrupt_acknowledged, left_mid_compaction, next_turn_begun_after, promotion_refused,
+    prompt_status, unfinished, withdrawal,
 };
 use crate::session_integration::{
     provider_support::CompactionRequest as CompactionAsked,
@@ -43,28 +44,6 @@ async fn scheduled(idle: &mut Idle) -> (SessionSnapshot, CompactionAsked) {
     (idle.snapshot().await, asked)
 }
 
-/// Asserts `prompt`, just sent to steer, stands held behind the Compaction
-/// whose Turn `begun` shows beginning: owed the next Turn, joining no Turn,
-/// and the Session Working as it was.
-async fn assert_held(idle: &Idle, begun: &SessionSnapshot, prompt: &Prompt) {
-    let holding = idle.snapshot().await;
-    assert!(
-        held(&holding, prompt.id),
-        "the Prompt is held, owed the next Turn: {:?}",
-        holding.prompts
-    );
-    assert_eq!(holding.turns.len(), 2, "no Turn begins over the Compaction");
-    assert_eq!(
-        user_messages(&holding),
-        user_messages(begun),
-        "nothing joins the Compaction's Turn"
-    );
-    assert_eq!(
-        holding.session.working_since, begun.session.working_since,
-        "the Session is Working as it was"
-    );
-}
-
 /// A scheduled Compaction of the Session at work, its Provider having
 /// reported compacting where `reported`, with [`SENT`] sent to steer while it
 /// runs held behind it: the Session as the Compaction's Turn began, and the
@@ -79,7 +58,7 @@ async fn held_behind_a_scheduled_compaction(
         idle.emit([ProviderEvent::CompactionStarted]).await;
     }
     let prompt = admit_steer(&idle.fixture, SENT).await;
-    assert_held(idle, &begun, &prompt).await;
+    assert_held(&idle.fixture, &begun, &prompt).await;
     (begun, prompt)
 }
 
@@ -126,9 +105,9 @@ async fn begins_the_next_turn(
     delivered
 }
 
-/// Asserts the held `prompt` was handed back as the Compaction's Turn settled
+/// Asserts the held `prompt` was withdrawn as the Compaction's Turn settled
 /// short of completing, saying why, and left nothing Working.
-fn assert_handed_back(settled: &SessionSnapshot, prompt: &Prompt, described: &str) {
+fn assert_withdrawn(settled: &SessionSnapshot, prompt: &Prompt, described: &str) {
     assert_eq!(
         prompt_status(settled, prompt.id),
         PromptStatus::Cancelled,
@@ -250,7 +229,7 @@ async fn a_prompt_held_behind_a_scheduled_compaction_its_provider_refuses_still_
     let mut idle = idle(state.path(), "scheduled-held-refused", ON, true).await;
     let (begun, asked) = scheduled(&mut idle).await;
     let prompt = admit_steer(&idle.fixture, SENT).await;
-    assert_held(&idle, &begun, &prompt).await;
+    assert_held(&idle.fixture, &begun, &prompt).await;
     asked.fail("the CLI is not reading its input");
     let delivered = begins_the_next_turn(
         &mut idle,
@@ -265,10 +244,12 @@ async fn a_prompt_held_behind_a_scheduled_compaction_its_provider_refuses_still_
 }
 
 #[tokio::test]
-async fn a_prompt_held_behind_a_scheduled_compaction_that_is_interrupted_is_handed_back() {
+async fn a_prompt_held_behind_a_scheduled_compaction_that_is_interrupted_is_withdrawn() {
     // However the Provider ends the work an interrupt stopped before its
     // Compaction settled, the Turn settles interrupted (ADR 0039), and the
-    // interrupt is the one thing that asks for the Prompt back.
+    // held Prompt is withdrawn with it: the interrupt asked for the
+    // Compaction to stop, not for the Prompt back, but nobody who pressed
+    // interrupt should watch a Turn begin with it.
     for (described, reported, ending, compacted) in [
         (
             "the Provider reports the Compaction cancelled",
@@ -316,7 +297,7 @@ async fn a_prompt_held_behind_a_scheduled_compaction_that_is_interrupted_is_hand
             "when {described}"
         );
         assert_eq!(compaction_statuses(&settled), compacted, "when {described}");
-        assert_handed_back(&settled, &prompt, described);
+        assert_withdrawn(&settled, &prompt, described);
         assert_eq!(
             next_turn_begun_after(&mut idle.fixture).await,
             "Start over on the lexer",
@@ -352,7 +333,7 @@ async fn a_prompt_held_behind_a_scheduled_compaction_that_completed_before_an_in
 }
 
 #[tokio::test]
-async fn an_interrupt_that_reached_a_scheduled_compaction_hands_its_prompt_back_however_the_turn_fails()
+async fn an_interrupt_that_reached_a_scheduled_compaction_withdraws_its_prompt_however_the_turn_fails()
  {
     // Someone asked the work to stop, so the Prompt comes back even where the
     // Turn settles failed rather than interrupted: the Compaction had failed
@@ -409,13 +390,13 @@ async fn an_interrupt_that_reached_a_scheduled_compaction_hands_its_prompt_back_
             "when {described}"
         );
         assert_eq!(compaction_statuses(&settled), [ActivityStatus::Failed]);
-        assert_handed_back(&settled, &prompt, described);
+        assert_withdrawn(&settled, &prompt, described);
         idle.shutdown().await;
     }
 }
 
 #[tokio::test]
-async fn each_prompt_held_behind_a_failed_scheduled_compaction_begins_a_turn_of_its_own_bindings_and_all()
+async fn each_prompt_held_behind_a_failed_scheduled_compaction_begins_a_turn_of_its_own_attachment_and_all()
  {
     let state = tempfile::tempdir().unwrap();
     let mut idle = idle(state.path(), "scheduled-held-several", ON, true).await;
@@ -450,7 +431,7 @@ async fn each_prompt_held_behind_a_failed_scheduled_compaction_begins_a_turn_of_
         .expect("admit a Prompt");
     assert_eq!(response.status(), StatusCode::CREATED);
     let second = response.json::<Prompt>().await.expect("decode the Prompt");
-    assert_held(&idle, &begun, &second).await;
+    assert_held(&idle.fixture, &begun, &second).await;
 
     idle.emit([
         failed("Conversation too long to summarise"),
@@ -497,31 +478,7 @@ async fn a_queued_prompt_waits_behind_a_scheduled_compaction_and_is_never_promot
     let (begun, held_prompt) = held_behind_a_scheduled_compaction(&mut idle, true).await;
     let queued = admit_queued(&idle.fixture, "Then the printer").await;
 
-    let descriptor = idle.fixture.server.descriptor();
-    let response = idle
-        .fixture
-        .client
-        .post(format!(
-            "{}/v1/sessions/{}/prompts/{}/promote",
-            descriptor.base_url, idle.fixture.session_id, queued.id
-        ))
-        .bearer_auth(&descriptor.token)
-        .send()
-        .await
-        .expect("ask to promote the queued Prompt");
-    assert_eq!(response.status(), StatusCode::CONFLICT);
-    let refusal = response
-        .json::<SessionError>()
-        .await
-        .expect("a refusal carries a typed Session error");
-    assert_eq!(refusal.code, SessionErrorCode::CompactionInProgress);
-    let refused = idle.snapshot().await;
-    let still_queued = admitted(&refused, queued.id);
-    assert_eq!(
-        (still_queued.status, still_queued.delivery),
-        (PromptStatus::Pending, PromptDelivery::Queue),
-        "it stays queued"
-    );
+    promotion_refused(&idle.fixture, queued.id).await;
 
     // The held Prompt goes first, as it would behind a completed one; the
     // queued one waits its turn behind that.
@@ -554,7 +511,7 @@ async fn a_held_prompt_goes_ahead_of_a_queued_one_when_the_provider_refuses_the_
     let mut idle = idle(state.path(), "scheduled-held-refused-queue", ON, true).await;
     let (begun, asked) = scheduled(&mut idle).await;
     let prompt = admit_steer(&idle.fixture, SENT).await;
-    assert_held(&idle, &begun, &prompt).await;
+    assert_held(&idle.fixture, &begun, &prompt).await;
     let queued = admit_queued(&idle.fixture, "Then the printer").await;
     asked.fail("the CLI could not be started");
     begins_the_next_turn(
@@ -601,8 +558,8 @@ async fn a_held_prompt_whose_start_was_read_still_begins_the_next_turn_after_a_f
 /// returns to the composer of the client that wrote it, as a draft, and not
 /// to the client that interrupted (ADR 0041).
 #[tokio::test]
-async fn the_writer_and_not_the_interrupter_takes_back_a_prompt_held_behind_a_scheduled_compaction()
-{
+async fn the_writer_and_not_the_interrupter_takes_back_a_prompt_withdrawn_behind_a_scheduled_compaction()
+ {
     for interrupted in [false, true] {
         let described = if interrupted {
             "another client interrupts the Compaction"
@@ -691,12 +648,14 @@ async fn the_writer_and_not_the_interrupter_takes_back_a_prompt_held_behind_a_sc
 }
 
 /// Suru stopping mid-Compaction leaves nothing to deliver the held Prompt, so
-/// it is handed back to its writer as any Prompt still owed a Turn is
-/// withdrawn when its process goes (ADR 0024), saying behind which
-/// Compaction: whether the Server stopped gracefully, settling the Turn as it
-/// went, or died, leaving the Turn to settle failed at the next start.
+/// it is stored withdrawn, as any Prompt still owed a Turn is when its process
+/// goes (ADR 0024), saying behind which Compaction: whether the Server stopped
+/// gracefully, settling the Turn as it went, or died, leaving the Turn to
+/// settle failed at the next start. Nothing returns its text after a restart
+/// but a client still holding it.
 #[tokio::test]
-async fn a_prompt_held_behind_a_scheduled_compaction_when_suru_stops_is_handed_back() {
+async fn a_prompt_held_behind_a_scheduled_compaction_when_suru_stops_is_stored_withdrawn_saying_why()
+ {
     for died in [false, true] {
         let described = if died {
             "the Server dies mid-Compaction"

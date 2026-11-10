@@ -149,6 +149,14 @@ async fn held_behind_a_requested_compaction(
         .emit_and_wait_until_observed(ProviderEvent::CompactionStarted)
         .await;
     let prompt = admit_steer(fixture, text).await;
+    assert_held(fixture, &requested, &prompt).await;
+    (requested, prompt)
+}
+
+/// Asserts `prompt`, just sent to steer the fixture's Session, stands held
+/// behind the Compaction whose Turn `begun` shows beginning: owed the next
+/// Turn, joining no Turn, and the Session Working as it was.
+async fn assert_held(fixture: &WorkingTurn, begun: &SessionSnapshot, prompt: &Prompt) {
     let holding = read_session(fixture.server.descriptor(), fixture.session_id).await;
     assert!(
         held(&holding, prompt.id),
@@ -158,14 +166,48 @@ async fn held_behind_a_requested_compaction(
     assert_eq!(holding.turns.len(), 2, "no Turn begins over the Compaction");
     assert_eq!(
         user_messages(&holding),
-        user_messages(&requested),
+        user_messages(begun),
         "nothing joins the Compaction's Turn"
     );
     assert_eq!(
-        holding.session.working_since, requested.session.working_since,
+        holding.session.working_since, begun.session.working_since,
         "the Session is Working as it was"
     );
-    (requested, prompt)
+}
+
+/// Asks the fixture's Session to promote the queued `prompt` to steer while a
+/// Compaction's Turn runs, which it refuses with nothing to steer, and checks
+/// the Prompt stays queued.
+async fn promotion_refused(fixture: &WorkingTurn, prompt: PromptId) {
+    let descriptor = fixture.server.descriptor();
+    let response = fixture
+        .client
+        .post(format!(
+            "{}/v1/sessions/{}/prompts/{prompt}/promote",
+            descriptor.base_url, fixture.session_id
+        ))
+        .bearer_auth(&descriptor.token)
+        .send()
+        .await
+        .expect("ask to promote the queued Prompt");
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let refusal = response
+        .json::<SessionError>()
+        .await
+        .expect("a refusal carries a typed Session error");
+    assert_eq!(
+        refusal.code,
+        SessionErrorCode::CompactionInProgress,
+        "a Turn begun by a Compaction request has nothing for it to steer: {}",
+        refusal.message
+    );
+    let refused = read_session(descriptor, fixture.session_id).await;
+    let still_queued = admitted(&refused, prompt);
+    assert_eq!(
+        (still_queued.status, still_queued.delivery),
+        (PromptStatus::Pending, PromptDelivery::Queue),
+        "it stays queued"
+    );
 }
 
 /// After the Session's Turns have settled, asks it for one more and answers
@@ -1061,40 +1103,7 @@ async fn a_queued_prompt_is_not_promoted_while_a_requested_compaction_runs_and_s
     let session_id = fixture.session_id;
     let (_, held_prompt) = held_behind_a_requested_compaction(&mut fixture, "Now the lexer").await;
     let queued = admit_queued(&fixture, "Then the printer").await;
-
-    let descriptor = fixture.server.descriptor();
-    let response = fixture
-        .client
-        .post(format!(
-            "{}/v1/sessions/{session_id}/prompts/{}/promote",
-            descriptor.base_url, queued.id
-        ))
-        .bearer_auth(&descriptor.token)
-        .send()
-        .await
-        .expect("ask to promote the queued Prompt");
-    assert_eq!(response.status(), StatusCode::CONFLICT);
-    let refusal = response
-        .json::<SessionError>()
-        .await
-        .expect("a refusal carries a typed Session error");
-    assert_eq!(
-        refusal.code,
-        SessionErrorCode::CompactionInProgress,
-        "a Turn begun by a Compaction request has nothing for it to steer: {}",
-        refusal.message
-    );
-    let refused = read_session(descriptor, session_id).await;
-    let still_queued = refused
-        .prompts
-        .iter()
-        .find(|prompt| prompt.id == queued.id)
-        .expect("the queued Prompt stands");
-    assert_eq!(
-        (still_queued.status, still_queued.delivery),
-        (PromptStatus::Pending, PromptDelivery::Queue),
-        "it stays queued"
-    );
+    promotion_refused(&fixture, queued.id).await;
 
     for event in [
         completed(Some(182_000), Some(31_000)),
