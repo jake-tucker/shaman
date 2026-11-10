@@ -43,8 +43,9 @@ pub(in crate::tui) struct SectionContext<'a> {
     /// has said; a Workspace is named by the last part of its path where it
     /// has not.
     pub(in crate::tui) workspace_paths: Option<&'a WorkspacePaths>,
-    /// How each Remote the client has heard from spells and names its
-    /// paths, for a Session a Sidekick has a hand in there.
+    /// How each Server the client has heard from — its own and each Remote —
+    /// spells and names its paths, for an entry of a Session on a Server
+    /// other than the open Session's.
     pub(in crate::tui) remote_workspace_paths: &'a HashMap<Outlook, WorkspacePaths>,
     /// How each Server the client has heard a catalog from names its
     /// Providers and Models, for naming a Session's Agent Selection as its

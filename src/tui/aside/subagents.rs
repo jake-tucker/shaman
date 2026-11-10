@@ -415,10 +415,10 @@ struct EntryGuides {
 }
 
 /// The lines of a Session's entry, and whether it works: its Marker and
-/// Title; where `names_workspace`, its Workspace beside its Icon, preceded by its
-/// Remote where it lives on one; and the Provider and Model of its Agent
-/// Selection, with its outcome where the Marker would not tell, and the time
-/// a Subagent's entry carries.
+/// Title; where `names_workspace`, its Workspace beside its Icon, preceded
+/// by its Remote where it lives on one; and the Provider and Model of its
+/// Agent Selection, with its outcome where the Marker would not tell, and
+/// the time a Subagent's entry carries.
 fn session_lines(
     parts: &SessionParts<'_>,
     guides: EntryGuides,

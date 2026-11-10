@@ -10,8 +10,9 @@
 //! interrupting it.
 
 use crate::tui_rendering::support::{
-    PANDA, click_mouse, connected_application, deliver_settings, failed_session_snapshot, invoke,
-    model_descriptor, rendered_application_buffer, rendered_application_rows_at, workspace_dir,
+    PANDA, click_mouse, connected_application, deliver_settings, failed_session_snapshot,
+    fixture_instance_id, invoke, model_descriptor, ready_health, rendered_application_buffer,
+    rendered_application_rows_at, workspace_dir,
 };
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -23,7 +24,7 @@ use suru::{
         PromptId, ProviderCatalogStatus, ProviderId, ProviderModelCatalog, SessionId,
         SessionReference, SessionTimestamp, SidebarVisibility, SubagentTreeChange,
         SubagentTreeEntry, SubagentTreeRevision, SubagentTreeSession, SubagentTreeSnapshot,
-        SubagentTreeTopLevel,
+        SubagentTreeTopLevel, WorkspacePaths,
     },
     tui::{Application, ApplicationEvent, ApplicationTransition, SemanticCommandId},
 };
@@ -1363,6 +1364,46 @@ fn opening_a_subsession_begun_on_a_remote_keeps_the_sidekicks_tree_here() {
         aside_rows(&application)[..2],
         ["Subagents", ""],
         "a Session only acted on there heads its own tree there"
+    );
+}
+
+/// The Sidekick's own entry is named in its own Server's paths, so it reads
+/// as the Sidekick Workspace even while a Subsession on a Remote is open,
+/// whose Server has said nothing of how this one names its paths.
+#[test]
+fn the_sidekicks_entry_names_its_workspace_in_its_own_servers_paths_beside_a_remote_subsession() {
+    let workspace = workspace_dir();
+    let sidekick = Sidekick::new(workspace.path());
+    let mut application = client(workspace.path(), false);
+    application
+        .handle_event(ApplicationEvent::Managed(ManagedEvent::Connected(
+            ready_health(fixture_instance_id(), 42).with_workspace_paths(
+                WorkspacePaths::default().with_sidekick_workspace(&sidekick.root.join("sidekick")),
+            ),
+        )))
+        .expect("connect naming the Sidekick Workspace");
+    open(&mut application, workspace.path(), sidekick.top);
+    let ledger = SessionId::new();
+    let mut snapshot = sidekick.snapshot();
+    snapshot.subagents.clear();
+    snapshot.sessions = vec![SubagentTreeSession {
+        subsession: true,
+        ..remote_entry(ledger, "Bind the ledger", "ledger")
+    }];
+    deliver(
+        &mut application,
+        sidekick.top,
+        SubagentTreeEvent::Snapshot(snapshot),
+    );
+    assert_eq!(aside_rows(&application)[2], "│ Sidekick");
+
+    click_on(&mut application, "Bind the ledger");
+    open(&mut application, workspace.path(), ledger);
+
+    assert_eq!(
+        aside_rows(&application)[2],
+        "│ Sidekick",
+        "the Sidekick's Workspace is still named as its own Server names it"
     );
 }
 
