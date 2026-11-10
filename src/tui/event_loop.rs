@@ -644,8 +644,10 @@ struct RunLoop {
     /// tree still arriving is redrawn saying Loading.
     tree_loading_delay: Option<(Instant, Pin<Box<tokio::time::Sleep>>)>,
     /// The one-shot wakeup at the moment the open Session's Prompt Cache
-    /// lapses, paired with that moment, so the line saying so is drawn then
-    /// rather than at whatever event comes next.
+    /// lapses, paired with that moment, so an idle TUI draws the line saying
+    /// so then, and schedules nothing else for it (ADR 0009). The sleep is
+    /// monotonic, so after a suspend the wall clock has passed the moment
+    /// first, and the line is drawn at the next event of any kind.
     prompt_cache_lapse: Option<(
         crate::protocol::SessionTimestamp,
         Pin<Box<tokio::time::Sleep>>,
@@ -2151,11 +2153,10 @@ impl RunLoop {
 
     /// Keeps exactly one wakeup for the moment the open Session's Prompt
     /// Cache lapses, while that is still ahead, and none once it has passed,
-    /// the Session has gone, or its next Turn has moved the moment on.
-    ///
-    /// The moment is on the wall clock, which a monotonic sleep does not
-    /// follow through a suspend, so no wakeup waits longer than
-    /// [`PROMPT_CACHE_LAPSE_RECHECK`] before the wall clock is read again.
+    /// the Session has gone, or its next Turn has moved the moment on. A
+    /// moment the wall clock passed before its wakeup came — as across a
+    /// suspend, which a monotonic sleep does not follow — is drawn at this
+    /// sync, which the next event of any kind runs.
     fn sync_prompt_cache_lapse(&mut self) {
         let wanted = self.application.prompt_cache_lapse_due();
         let armed = self.prompt_cache_lapse.as_ref().map(|(moment, _)| *moment);
@@ -2167,10 +2168,8 @@ impl RunLoop {
         if armed.is_some() && wanted.is_none() {
             self.needs_redraw = true;
         }
-        self.prompt_cache_lapse = wanted.map(|(moment, wait)| {
-            let wait = wait.min(PROMPT_CACHE_LAPSE_RECHECK);
-            (moment, Box::pin(tokio::time::sleep(wait)))
-        });
+        self.prompt_cache_lapse =
+            wanted.map(|(moment, wait)| (moment, Box::pin(tokio::time::sleep(wait))));
     }
 
     /// Draws the line saying the open Session's Prompt Cache has lapsed, once
@@ -5001,10 +5000,6 @@ async fn wait_for_opening_loading_delay(
     }
 }
 
-/// The longest a wakeup for a Prompt Cache's lapse sleeps before the wall
-/// clock is read again: what a suspended laptop can leave the line late by.
-const PROMPT_CACHE_LAPSE_RECHECK: Duration = Duration::from_secs(10);
-
 async fn wait_for_prompt_cache_lapse(
     lapse: &mut Option<(
         crate::protocol::SessionTimestamp,
@@ -7775,31 +7770,18 @@ mod ready_event_tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn an_idle_loop_wakes_to_draw_the_lapse_once_the_wall_clock_passes_it() {
+    async fn an_idle_loop_wakes_once_to_draw_the_lapse_at_its_moment() {
         let workspace = tempfile::tempdir().expect("create a Workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone());
         run.sync_prompt_cache_lapse();
-
-        // The wakeup comes before the moment, the wall clock keeping pace:
-        // nothing is drawn, and the loop waits again for what is left.
-        wall.fetch_add(10_000, Ordering::SeqCst);
-        super::wait_for_prompt_cache_lapse(&mut run.prompt_cache_lapse).await;
-        let _ = run.wake_for_prompt_cache_lapse();
-        assert!(!run.needs_redraw);
         assert!(!draws_the_lapse(&run));
-        run.sync_prompt_cache_lapse();
-        assert!(run.prompt_cache_lapse.is_some(), "the loop waits again");
 
-        // A suspend moves the wall clock past the moment while the sleep
-        // stands still; the next wakeup comes within the recheck, and draws.
-        wall.fetch_add(60_000, Ordering::SeqCst);
-        tokio::time::timeout(
-            super::PROMPT_CACHE_LAPSE_RECHECK,
-            super::wait_for_prompt_cache_lapse(&mut run.prompt_cache_lapse),
-        )
-        .await
-        .expect("no wakeup sleeps past the recheck");
+        // One wakeup, at the moment itself, the wall clock keeping pace.
+        let started = tokio::time::Instant::now();
+        wall.fetch_add(25_000, Ordering::SeqCst);
+        super::wait_for_prompt_cache_lapse(&mut run.prompt_cache_lapse).await;
+        assert_eq!(started.elapsed(), Duration::from_secs(25));
         let _ = run.wake_for_prompt_cache_lapse();
         assert!(run.needs_redraw, "the lapse is drawn with no input");
         assert!(draws_the_lapse(&run));
@@ -7813,9 +7795,12 @@ mod ready_event_tests {
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone());
         run.sync_prompt_cache_lapse();
+        // A suspend moves the wall clock past the moment while the sleep
+        // stands still; the next event's sync draws it.
         wall.fetch_add(30_000, Ordering::SeqCst);
         run.sync_prompt_cache_lapse();
         assert!(run.needs_redraw);
+        assert!(draws_the_lapse(&run));
         assert!(run.prompt_cache_lapse.is_none());
     }
 

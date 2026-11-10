@@ -7,7 +7,7 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::protocol::{PromptCache, SessionId, SessionTimestamp};
+use crate::protocol::{SessionId, SessionTimestamp};
 
 use super::commands::SemanticInvocation;
 
@@ -78,9 +78,6 @@ pub(super) struct LandingFooterSlotContext {
 pub(super) struct SessionComposerTopSlotContext {
     pub(super) session_id: SessionId,
     pub(super) width: u16,
-    /// The Session's own Prompt Cache as its Server published it: absent
-    /// where its Provider has no Cache Lifetime, or no Turn has written it.
-    pub(super) prompt_cache: Option<PromptCache>,
     /// The line saying the Prompt Cache has lapsed, part by part, already
     /// worded and styled: none where nothing is to be said of it.
     pub(super) lapse: Vec<SlotText>,
@@ -363,7 +360,7 @@ impl RenderSlots {
         &self,
         context: &SessionComposerTopSlotContext,
     ) -> RenderedSlot<Line<'static>> {
-        let _ = (context.session_id, &context.prompt_cache);
+        let _ = context.session_id;
         let default = parted_lines(context.width, &context.lapse);
         self.session_composer_top.compose(context, default)
     }

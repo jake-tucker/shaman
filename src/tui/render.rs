@@ -7412,21 +7412,19 @@ fn render_session_surface(
     // A Subagent's view has no composer to warn above, and the Session shown
     // here is only ever this one: a Subagent's own cache never reaches its
     // parent's composer.
-    let prompt_cache = snapshot
-        .session
-        .prompt_cache
-        .clone()
-        .filter(|_| !subagent_view);
     let composer_top = slots.session_composer_top(&SessionComposerTopSlotContext {
         session_id,
         width: content_width,
         lapse: prompt_cache_lapse_parts(
-            prompt_cache.as_ref(),
+            snapshot
+                .session
+                .prompt_cache
+                .as_ref()
+                .filter(|_| !subagent_view),
             snapshot.working_since().is_some(),
             state.session_now(),
             theme,
         ),
-        prompt_cache,
     });
     let working_indicator = match &tail {
         SessionTail::Quiet | SessionTail::Refused(_) => RenderedSlot::empty(),
