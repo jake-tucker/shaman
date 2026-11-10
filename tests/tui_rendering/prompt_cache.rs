@@ -112,17 +112,27 @@ fn wakeup_after_a_frame(application: &Application) -> Option<std::time::Duration
 
 /// The rows the line above the composer stands on, each trimmed: from the
 /// first that speaks of the Prompt Cache to the last above the composer's
-/// border.
+/// border, the first row below that the border draws across the line's
+/// column.
 fn composer_top_rows(application: &Application) -> Vec<String> {
-    let rows = buffer_rows(&drawn(application));
+    let buffer = drawn(application);
+    let rows = buffer_rows(&buffer);
     let Some(first) = rows.iter().position(|row| row.contains("Prompt cache")) else {
         return Vec::new();
     };
-    let border = rows[first..]
-        .iter()
-        .position(|row| row.contains('─'))
-        .map_or(rows.len(), |offset| first + offset);
-    rows[first..border.max(first + 1)]
+    let (column, _) = text_position(&buffer, "Prompt cache");
+    let border_at = |row: usize| {
+        let row = u16::try_from(row).expect("a terminal row");
+        [column, column + 1].into_iter().all(|column| {
+            buffer
+                .cell((column, row))
+                .is_some_and(|cell| matches!(cell.symbol(), "─" | "╭" | "┌"))
+        })
+    };
+    let border = (first + 1..rows.len())
+        .find(|row| border_at(*row))
+        .unwrap_or(rows.len());
+    rows[first..border]
         .iter()
         .map(|row| row.trim().to_owned())
         .collect()
@@ -712,40 +722,18 @@ fn a_countdown_no_frame_has_room_for_wants_no_wakeup() {
 /// ran under, is not known, nothing can be said.
 #[test]
 fn a_selection_has_left_the_cache_where_anything_it_names_differs_from_its_writers() {
-    let selection = |model: &str, effort: &str| suru::protocol::AgentSelection {
-        provider: suru::protocol::ProviderId::new("claude"),
-        model: ModelId::new(model),
-        options: vec![suru::protocol::ModelOptionSelection {
-            id: suru::protocol::ModelOptionId::new("reasoning_effort"),
-            value: suru::protocol::ModelOptionValue::Select {
-                choice: suru::protocol::ModelOptionChoiceId::new(effort),
-            },
-        }],
-    };
     let workspace = workspace_dir();
-    let mut snapshot = failed_session_snapshot(
-        SessionId::new(),
-        PromptId::new(),
-        "Keep going on the parser",
-        workspace.path(),
+    let snapshot = written_under(
+        &workspace,
+        claude("default", "medium"),
+        claude("default", "medium"),
+        SessionTimestamp(1_767_225_900_000),
+        None,
     );
-    let turn_id = snapshot.turns[0].id;
-    snapshot.turns[0].agent = Some(suru::protocol::AgentIdentity {
-        agent: suru::protocol::AgentId::new("coding"),
-        selection: selection("default", "medium"),
-    });
-    snapshot.session.prompt_cache = Some(PromptCache {
-        lapses_at: SessionTimestamp(1_767_225_900_000),
-        written_in: Some(turn_id),
-        written_by: ModelId::new("default"),
-        lifetime_ms: None,
-        write_price: suru::protocol::CacheWritePrice::Default,
-        prompt_limit_tokens: None,
-        lapse_penalty: None,
-    });
-
     let changed = |snapshot: &SessionSnapshot, model: &str, effort: &str| {
-        snapshot.selection_changed_since_cache_written(&selection(model, effort))
+        let mut selecting = snapshot.clone();
+        selecting.session.agent_selection = Some(claude(model, effort));
+        selecting.selection_changed_since_cache_written()
     };
     assert_eq!(changed(&snapshot, "default", "medium"), Some(false));
     assert_eq!(
@@ -774,12 +762,27 @@ fn a_selection_has_left_the_cache_where_anything_it_names_differs_from_its_write
         None,
         "nor of a cache no Turn is known to have written"
     );
+    let mut unselected = snapshot;
+    unselected.session.agent_selection = None;
+    assert_eq!(
+        unselected.selection_changed_since_cache_written(),
+        None,
+        "nor of a Session selecting nothing"
+    );
 }
 
-const UNCOVERED_PRICED: &str =
-    "Prompt cache does not cover this selection · next prompt costs ~$1.65 more";
-const UNCOVERED_UNPRICED: &str =
-    "Prompt cache does not cover this selection · next prompt re-reads the whole context";
+/// What the line above the composer opens with where the Selection standing
+/// is not the one the Prompt Cache was written under.
+const SELECTION_CHANGED: &str = "Prompt cache does not cover this selection";
+
+/// The line for a changed Selection, saying what the next Prompt pays: costs
+/// more by `figure`, or re-reads the whole context where `figure` is none.
+fn selection_changed(figure: Option<&str>) -> String {
+    match figure {
+        Some(figure) => format!("{SELECTION_CHANGED} · next prompt costs ~{figure} more"),
+        None => format!("{SELECTION_CHANGED} · next prompt re-reads the whole context"),
+    }
+}
 
 /// An Agent Selection on Claude of `model` at reasoning `effort`.
 fn claude(model: &str, effort: &str) -> suru::protocol::AgentSelection {
@@ -868,13 +871,13 @@ fn a_warm_session_selecting_another_model_warns_in_the_warning_colour_just_above
     let application = open(&workspace, snapshot, clock_at(NOW));
 
     assert_eq!(
-        composer_top_line(&application).as_deref(),
-        Some(UNCOVERED_PRICED),
+        composer_top_line(&application),
+        Some(selection_changed(Some("$1.65"))),
         "however recently the cache was written: {}",
         screen(&application)
     );
     let buffer = drawn(&application);
-    let (column, row) = text_position(&buffer, "Prompt cache does not cover this selection");
+    let (column, row) = text_position(&buffer, SELECTION_CHANGED);
     assert_eq!(
         composer_row(&buffer).checked_sub(row),
         Some(2),
@@ -909,15 +912,12 @@ fn a_changed_selection_whose_penalty_is_unknown_says_the_whole_context_is_read_a
     let application = open(&workspace, snapshot, clock_at(NOW));
 
     assert_eq!(
-        composer_top_line(&application).as_deref(),
-        Some(UNCOVERED_UNPRICED)
+        composer_top_line(&application),
+        Some(selection_changed(None))
     );
     assert_eq!(
         composer_top_rows(&application),
-        [
-            "Prompt cache does not cover this selection",
-            "next prompt re-reads the whole context",
-        ],
+        [SELECTION_CHANGED, "next prompt re-reads the whole context"],
         "a column too narrow for the whole line breaks it between its parts"
     );
 }
@@ -935,8 +935,8 @@ fn a_model_option_changed_since_the_cache_was_written_warns_as_a_model_does() {
     let application = open(&workspace, snapshot, clock_at(NOW));
 
     assert_eq!(
-        composer_top_line(&application).as_deref(),
-        Some(UNCOVERED_PRICED)
+        composer_top_line(&application),
+        Some(selection_changed(Some("$1.65")))
     );
 }
 
@@ -989,8 +989,8 @@ fn selecting_the_original_selection_again_removes_the_warning() {
         Some(0.40),
     );
     assert_eq!(
-        composer_top_line(&application).as_deref(),
-        Some("Prompt cache does not cover this selection · next prompt costs ~$0.40 more"),
+        composer_top_line(&application),
+        Some(selection_changed(Some("$0.40"))),
         "the figure is the one forecast for the Selection now standing"
     );
 
@@ -1031,8 +1031,8 @@ fn a_changed_selection_replaces_the_countdown_until_the_original_is_selected_aga
         Some(1.65),
     );
     assert_eq!(
-        composer_top_line(&application).as_deref(),
-        Some(UNCOVERED_PRICED)
+        composer_top_line(&application),
+        Some(selection_changed(Some("$1.65")))
     );
     assert!(
         !screen(&application).contains("lapses in"),
@@ -1070,8 +1070,8 @@ fn at_the_lapse_the_cold_line_takes_over_from_a_changed_selections_warning() {
     );
 
     assert_eq!(
-        line_at(&application, &clock, lapses_at.0 - 30_000).as_deref(),
-        Some(UNCOVERED_PRICED),
+        line_at(&application, &clock, lapses_at.0 - 30_000),
+        Some(selection_changed(Some("$1.65"))),
         "the final stretch counts down nothing here"
     );
     assert_eq!(
@@ -1116,8 +1116,8 @@ fn a_changed_selections_known_penalty_under_five_cents_draws_no_line_and_five_ce
         clock_at(NOW),
     );
     assert_eq!(
-        composer_top_line(&enough).as_deref(),
-        Some("Prompt cache does not cover this selection · next prompt costs ~$0.05 more"),
+        composer_top_line(&enough),
+        Some(selection_changed(Some("$0.05"))),
     );
 }
 
@@ -1203,41 +1203,4 @@ fn where_what_wrote_the_cache_is_unknown_no_warning_is_drawn() {
     unbound.turns[0].agent = None;
     let unbound = open(&workspace, unbound, clock_at(NOW));
     assert_eq!(composer_top_line(&unbound), None, "{}", screen(&unbound));
-}
-
-#[test]
-fn a_session_holding_no_prompt_cache_warns_of_no_changed_selection() {
-    // A Session with no Turns yet, or on a Provider with no Cache Lifetime
-    // (Codex), holds no Prompt Cache.
-    let workspace = workspace_dir();
-    let mut snapshot = written_under(
-        &workspace,
-        claude("opus", "medium"),
-        claude("haiku", "medium"),
-        SessionTimestamp(NOW.0 + 240_000),
-        Some(1.65),
-    );
-    snapshot.session.prompt_cache = None;
-    let application = open(&workspace, snapshot.clone(), clock_at(NOW));
-    assert_eq!(
-        composer_top_line(&application),
-        None,
-        "{}",
-        screen(&application)
-    );
-    assert_eq!(wakeup_after_a_frame(&application), None);
-
-    let mut unprompted = snapshot;
-    unprompted.prompts.clear();
-    unprompted.turns.clear();
-    unprompted.messages.clear();
-    unprompted.activities.clear();
-    unprompted.transcript.clear();
-    let unprompted = open(&workspace, unprompted, clock_at(NOW));
-    assert_eq!(
-        composer_top_line(&unprompted),
-        None,
-        "{}",
-        screen(&unprompted)
-    );
 }

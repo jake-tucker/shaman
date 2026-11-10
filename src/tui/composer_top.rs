@@ -35,7 +35,7 @@ pub(super) enum ComposerTopLine {
     /// reads none of it and costs `penalty` more, where that can be priced.
     /// It counts nothing down: it stands until the lapse, when the Session is
     /// cold whatever is selected.
-    SelectionUncovered { penalty: Option<LapsePenalty> },
+    SelectionChanged { penalty: Option<LapsePenalty> },
 }
 
 /// The line above a Session's composer at one moment, and the moment it
@@ -68,17 +68,22 @@ impl ComposerTop {
             .prompt_cache
             .as_ref()
             .map_or(Self::QUIET, |cache| {
-                Self::of_prompt_cache(cache, selection_uncovered(snapshot), now)
+                // Where that cannot be told nothing is said, since the user
+                // may have changed nothing.
+                let selection_changed = snapshot
+                    .selection_changed_since_cache_written()
+                    .unwrap_or(false);
+                Self::of_prompt_cache(cache, selection_changed, now)
             })
     }
 
     /// The line a Prompt Cache gives, the first of these that holds:
     ///
     /// 1. from the lapse on, the cold line, whatever is selected;
-    /// 2. while it is warm under a Selection it does not cover
-    ///    (`uncovered`), a warning that the next Prompt reads it cold, in
-    ///    place of any countdown, since the lapse it would count to changes
-    ///    nothing the next Prompt pays;
+    /// 2. while it is warm under an Agent Selection other than the one it was
+    ///    written under (`selection_changed`), a warning that the next Prompt
+    ///    reads the context cold, in place of any countdown, since the lapse
+    ///    it would count to changes nothing the next Prompt pays;
     /// 3. a countdown through its final stretch;
     /// 4. nothing.
     ///
@@ -90,7 +95,11 @@ impl ComposerTop {
     /// Session timestamp is read: a client on another machine is out by
     /// however far the two clocks disagree, which a lifetime of minutes
     /// leaves unnoticed.
-    fn of_prompt_cache(cache: &PromptCache, uncovered: bool, now: SessionTimestamp) -> Self {
+    fn of_prompt_cache(
+        cache: &PromptCache,
+        selection_changed: bool,
+        now: SessionTimestamp,
+    ) -> Self {
         let penalty = cache.lapse_penalty;
         if cache.has_lapsed(now) {
             return Self {
@@ -98,12 +107,12 @@ impl ComposerTop {
                 changes_at: None,
             };
         }
-        if uncovered {
+        if selection_changed {
             // The cold line that follows at the lapse warns of the same
             // penalty, so where this one is under the floor so is that.
             return if worth_warning(penalty) {
                 Self {
-                    line: Some(ComposerTopLine::SelectionUncovered { penalty }),
+                    line: Some(ComposerTopLine::SelectionChanged { penalty }),
                     changes_at: Some(cache.lapses_at),
                 }
             } else {
@@ -124,18 +133,6 @@ impl ComposerTop {
             changes_at: Some(SessionTimestamp(cache.lapses_at.0 - (seconds - 1) * 1_000)),
         }
     }
-}
-
-/// Whether the Agent Selection `snapshot`'s Session now stands under is known
-/// to differ from the one its Prompt Cache was written under. Where that
-/// cannot be told nothing is said, since the user may have changed nothing.
-fn selection_uncovered(snapshot: &SessionSnapshot) -> bool {
-    snapshot
-        .session
-        .agent_selection
-        .as_ref()
-        .and_then(|selection| snapshot.selection_changed_since_cache_written(selection))
-        .unwrap_or(false)
 }
 
 /// Whether a line warning of `penalty` is worth drawing: unless the penalty

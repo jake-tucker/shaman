@@ -174,10 +174,7 @@ fn judge(
         return Err(Skip::Subagent);
     }
     if snapshot
-        .session
-        .agent_selection
-        .as_ref()
-        .and_then(|selection| snapshot.selection_changed_since_cache_written(selection))
+        .selection_changed_since_cache_written()
         // Unknown is taken as changed: skipping costs nothing, and compacting
         // a cold context costs the whole penalty.
         .unwrap_or(true)

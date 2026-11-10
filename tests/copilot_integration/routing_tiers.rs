@@ -697,11 +697,7 @@ async fn a_refusal_landing_on_the_default_tier_is_the_same_choice_as_picking_it(
         "the refused Turn wrote the cache: {:?}",
         first.session.prompt_cache
     );
-    assert_eq!(
-        selected(&first)
-            .and_then(|selection| first.selection_changed_since_cache_written(selection)),
-        Some(false)
-    );
+    assert_eq!(first.selection_changed_since_cache_written(), Some(false));
 
     let mut feed = client
         .subscribe_session(session_id)
@@ -735,8 +731,7 @@ async fn a_refusal_landing_on_the_default_tier_is_the_same_choice_as_picking_it(
         )
         .await;
         assert_eq!(
-            selected(&chosen)
-                .and_then(|selection| chosen.selection_changed_since_cache_written(selection)),
+            chosen.selection_changed_since_cache_written(),
             expected,
             "after choosing `{tier}`, the Session selects {:?} and the writer ran under {:?}",
             selected(&chosen),

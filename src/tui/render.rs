@@ -7901,9 +7901,8 @@ fn session_footer_metrics_text(snapshot: &SessionSnapshot, width: u16) -> Option
 /// Selection standing is not the one its Prompt Cache was written under. It
 /// names no change of the user's, since a Provider's fallback is none, and
 /// suggests no `/compact`, since compacting would itself read the context
-/// cold. Its wording awaits the product owner's word, so it is kept here
-/// alone.
-const SELECTION_UNCOVERED: &str = "Prompt cache does not cover this selection";
+/// cold.
+const SELECTION_CHANGED: &str = "Prompt cache does not cover this selection";
 
 /// What the line above a Session's composer says, part by part. In the
 /// final stretch before the Prompt Cache lapses, a dim countdown. Once it has
@@ -7933,8 +7932,8 @@ fn composer_top_parts(line: Option<ComposerTopLine>, theme: &Theme) -> Vec<SlotT
             cold_prompt_cost(penalty),
             "/compact first to shrink it".to_owned(),
         ]),
-        Some(ComposerTopLine::SelectionUncovered { penalty }) => warning(vec![
-            SELECTION_UNCOVERED.to_owned(),
+        Some(ComposerTopLine::SelectionChanged { penalty }) => warning(vec![
+            SELECTION_CHANGED.to_owned(),
             cold_prompt_cost(penalty),
         ]),
     }

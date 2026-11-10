@@ -5953,20 +5953,19 @@ pub struct SessionSnapshot {
 }
 
 impl SessionSnapshot {
-    /// Whether `selection` differs from the Agent Selection the Turn that
-    /// last wrote the Session's Prompt Cache ran under, in its Provider, its
-    /// Model or any Model Option: a Prompt sent under another may read none
-    /// of the cache, since a Provider keys its cache by more than the context
-    /// — a change of reasoning effort or thinking, of speed, or of a Routing
+    /// Whether the Session's Agent Selection differs from the one the Turn
+    /// that last wrote its Prompt Cache ran under, in its Provider, its Model
+    /// or any Model Option: a Prompt sent under another may read none of the
+    /// cache, since a Provider keys its cache by more than the context — a
+    /// change of reasoning effort or thinking, of speed, or of a Routing
     /// Tier, which may route the call to another Model, can leave it cold.
     /// The Selection is compared whole and as chosen, a routing one by its
-    /// own name, never with the Model a call actually ran on. `None` where no
-    /// cache is held, or the Turn that wrote it, or what it ran under, is not
-    /// known: a caller that spends on the answer takes that as changed.
-    pub fn selection_changed_since_cache_written(
-        &self,
-        selection: &AgentSelection,
-    ) -> Option<bool> {
+    /// own name, never with the Model a call actually ran on. `None` where the
+    /// Session has no Selection or no cache, or the Turn that wrote it, or
+    /// what it ran under, is not known: a caller that spends on the answer
+    /// takes that as changed, and one that warns of it as unchanged.
+    pub fn selection_changed_since_cache_written(&self) -> Option<bool> {
+        let selection = self.session.agent_selection.as_ref()?;
         let written_in = self.session.prompt_cache.as_ref()?.written_in?;
         let written_under = &self
             .turns
