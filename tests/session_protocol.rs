@@ -472,6 +472,7 @@ fn session_summary_round_trips_with_discovery_metadata() {
             pending_move: None,
             checkout: None,
             context_fill: None,
+            prompt_cache: None,
             id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),
             execution_directory: suru::protocol::ExecutionDirectory {
                 path: PathBuf::from("/work/suru"),
@@ -606,6 +607,7 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
                 occupied_tokens: 12_400,
                 capacity_tokens: Some(200_000),
             }),
+            prompt_cache: None,
             id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),
             execution_directory: suru::protocol::ExecutionDirectory {
                 path: PathBuf::from("/work/suru"),
@@ -1018,6 +1020,7 @@ fn session_at(id: SessionId, workspace: &std::path::Path) -> Session {
         pending_move: None,
         checkout: None,
         context_fill: None,
+        prompt_cache: None,
         id,
         execution_directory: suru::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
@@ -3010,6 +3013,7 @@ fn a_snapshot_and_its_updates_describe_the_attachments_its_session_binds() {
             pending_move: None,
             checkout: None,
             context_fill: None,
+            prompt_cache: None,
             id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),
             execution_directory: suru::protocol::ExecutionDirectory {
                 path: PathBuf::from("/work/suru"),

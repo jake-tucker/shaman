@@ -15,12 +15,13 @@ use suru::protocol::{
     SkillDescriptor, SkillId, SkillPromptDelivery,
 };
 use suru::provider::{
-    AttributedProviderEvent, ErrandAnswer, ErrandConsumption, ErrandFailed, ErrandFuture,
-    ManualCompaction, ProviderCompactionInput, ProviderDecisionDelivery, ProviderErrand,
-    ProviderError, ProviderEvent, ProviderEventAttribution, ProviderEventStream, ProviderFuture,
-    ProviderInput, ProviderInterruption, ProviderModelDiscovery, ProviderPrompt, ProviderRuntime,
-    ProviderSession, ProviderSessionConnection, ProviderSessionRequest, ProviderSteerInput,
-    ProviderSubagentId, ProviderTurnInput, ProviderWatchId, Report, SubagentReport,
+    AttributedProviderEvent, CacheLifetime, ErrandAnswer, ErrandConsumption, ErrandFailed,
+    ErrandFuture, ManualCompaction, ProviderCompactionInput, ProviderDecisionDelivery,
+    ProviderErrand, ProviderError, ProviderEvent, ProviderEventAttribution, ProviderEventStream,
+    ProviderFuture, ProviderInput, ProviderInterruption, ProviderModelDiscovery, ProviderPrompt,
+    ProviderRuntime, ProviderSession, ProviderSessionConnection, ProviderSessionRequest,
+    ProviderSteerInput, ProviderSubagentId, ProviderTurnInput, ProviderWatchId, Report,
+    SubagentReport,
 };
 use tokio::sync::{mpsc, oneshot, watch};
 
@@ -82,6 +83,10 @@ pub struct ControlledProviderRuntime {
     /// exercises the most capable path, as it does the Subagent stop; a test
     /// proves each refusal by declaring less.
     manual_compaction: Arc<Mutex<ManualCompaction>>,
+    /// How long this Provider declares it keeps a Session's Prompt Cache
+    /// while idle. None by default, as a Provider that declares nothing has;
+    /// a test declares one, at a millisecond scale where it counts down.
+    cache_lifetime: Arc<Mutex<CacheLifetime>>,
     /// Whether this Provider declares it says what fills a Session's context.
     /// On by default, like the Subagent stop; a test proves the refusal by
     /// withdrawing it.
@@ -341,6 +346,7 @@ impl ControlledProvider {
                 skill_catalog_invalidations,
                 subagent_stop_offered: Arc::new(AtomicBool::new(true)),
                 manual_compaction: Arc::new(Mutex::new(ManualCompaction::WithInstructions)),
+                cache_lifetime: Arc::default(),
                 context_breakdown_offered: Arc::new(AtomicBool::new(true)),
                 cache_rates: Arc::default(),
                 starts: starts_tx,
@@ -427,6 +433,16 @@ impl ControlledProviderRuntime {
             .manual_compaction
             .lock()
             .expect("controlled Provider manual Compaction lock is not poisoned") = level;
+    }
+
+    /// Declares how long this Provider keeps a Session's Prompt Cache while
+    /// idle from here on. A reported lifetime's moments are emitted as
+    /// [`ProviderEvent::PromptCacheLapseReported`] with a Turn's output.
+    pub fn declare_cache_lifetime(&self, lifetime: CacheLifetime) {
+        *self
+            .cache_lifetime
+            .lock()
+            .expect("controlled Provider Cache Lifetime lock is not poisoned") = lifetime;
     }
 
     pub fn offer_skills(&self, catalog: SkillCatalog) {
@@ -1223,6 +1239,13 @@ impl ProviderRuntime for ControlledProviderRuntime {
 
     fn offers_context_breakdown(&self) -> bool {
         self.context_breakdown_offered.load(Ordering::SeqCst)
+    }
+
+    fn cache_lifetime(&self) -> CacheLifetime {
+        *self
+            .cache_lifetime
+            .lock()
+            .expect("controlled Provider Cache Lifetime lock is not poisoned")
     }
 
     fn cache_rates<'a>(&'a self, model: &'a ModelId) -> CacheRatesFuture<'a> {

@@ -1,6 +1,7 @@
 mod approvals;
 mod compactions;
 mod delegations;
+mod prompt_cache;
 mod questionnaires;
 mod watch_outcomes;
 
@@ -11,6 +12,7 @@ use delegations::{
     PendingDelegation, SteerOutcome, open_resume, refuse_while_stopping, refuse_withdrawn,
     resume_refusal, run_delegated_turn, steer_with_delegation,
 };
+use prompt_cache::PromptCacheWrites;
 use questionnaires::{LiveQuestionnaires, QuestionnaireDeliveries};
 use watch_outcomes::{HeldWatchOutcomes, WatchOutcome};
 
@@ -47,7 +49,7 @@ use crate::protocol::{
     Activity, ActivityId, ActivityStatus, AgentIdentity, AgentSelection, ContextBreakdown,
     InterruptOutcome, Message, MessageId, MessageRole, MessageStatus, Prompt, PromptDelivery,
     PromptId, PromptOrder, PromptStatus, ProviderId, RouteDecision, SessionChange, SessionId,
-    SettingsSnapshot, SkillPromptDelivery, TurnId, TurnStatus,
+    SessionTimestamp, SettingsSnapshot, SkillPromptDelivery, TurnId, TurnStatus,
 };
 use crate::sessions::{
     ApprovalPostureUpdate, BrokeredSpawn, BrokeredSpawnCap, BrokeredSpawnError,
@@ -2849,6 +2851,9 @@ async fn run_provider_session(
     // A Provider process launched for this Session alone is stopped once
     // the Session has waited idle long enough; a shared one stays.
     let stops_when_idle = runtime.launches_a_process_per_session();
+    // What the Turns have written of the Prompt Cache, published once each
+    // settles.
+    let mut prompt_cache_writes = PromptCacheWrites::default();
     let connector = ProviderConnector {
         runtime: &runtime,
         source_control: &source_control,
@@ -2872,6 +2877,9 @@ async fn run_provider_session(
             break;
         }
         if active.is_none() {
+            // The Turn that settled wrote the Prompt Cache afresh, so the
+            // moment it lapses is published before anything begins another.
+            prompt_cache_writes.publish(&sessions, &updates, session_id, &runtime);
             // What the store is told the Provider is about to wake the Agent
             // with holds a Move, however it is asked. Nothing is on its way
             // over a connection that has gone.
@@ -3091,6 +3099,11 @@ async fn run_provider_session(
                             attribution: ProviderEventAttribution::OwningSession,
                             event,
                         } => match event {
+                            // A moment the cache lapses at is no output of
+                            // any Turn on its own.
+                            ProviderEvent::PromptCacheLapseReported { lapses_at } => {
+                                prompt_cache_writes.observe_reported_lapse(lapses_at);
+                            }
                             ProviderEvent::ContextFill { report } => {
                                 if let Some(turn_id) = report.turn_id.or_else(|| {
                                     sessions.snapshot(session_id).and_then(|snapshot| {
@@ -3221,6 +3234,8 @@ async fn run_provider_session(
                                 );
                                 let mut continuation =
                                     ActiveProviderTurn::new_continuation(turn_id);
+                                prompt_cache_writes
+                                    .observe_turn_output(&event, SessionTimestamp::now());
                                 let projection = project_provider_event(
                                     &sessions,
                                     &updates,
@@ -4648,6 +4663,7 @@ async fn run_provider_session(
                             .expect("Provider connection exists while its Turn is active")
                             .identity
                             .clone();
+                        prompt_cache_writes.observe_turn_output(&event, SessionTimestamp::now());
                         // Settle before delivering queued work. The next loop drains ready
                         // Provider events first, so a buffered native Continuation establishes
                         // ownership before a Prompt can take its output and terminal result.
@@ -7000,6 +7016,12 @@ fn project_provider_event(
             // The actor stores a revised Resume State for the owning Session
             // before anything projects, so none ever lands in a Turn.
             ProviderEvent::ResumeStateChanged { .. } => Ok(ProviderEventProjection::Continue),
+            // The actor follows the owning Session's Prompt Cache before
+            // anything projects; a native Subagent's lands nowhere, since no
+            // one converses with one.
+            ProviderEvent::PromptCacheLapseReported { .. } => {
+                Ok(ProviderEventProjection::Continue)
+            }
             // The actor records Watches before anything projects too, because
             // a Watch is no output of the Turn it outlives, and wakes the
             // Subagents they woke, because that work is no output of it

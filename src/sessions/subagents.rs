@@ -501,6 +501,7 @@ impl SessionStoreState {
                 pending_move: None,
                 checkout: parent_session.checkout.clone(),
                 context_fill: None,
+                prompt_cache: None,
                 id: session_id,
                 execution_directory: parent_session.execution_directory.clone(),
                 workspace: parent_session.workspace.clone(),
@@ -568,6 +569,7 @@ impl SessionStoreState {
             session_id,
             SessionRecord {
                 context_fill_order: None,
+                priced_model: None,
                 snapshot,
                 summary,
                 updates,

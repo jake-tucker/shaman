@@ -19,6 +19,7 @@ mod model_shares;
 mod monitoring;
 mod moves;
 mod multi_provider;
+mod prompt_cache;
 mod prompts;
 mod provider_enablement;
 mod renames;

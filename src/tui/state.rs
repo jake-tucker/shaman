@@ -5081,6 +5081,7 @@ impl TuiState {
             session: crate::protocol::Session {
                 pending_move: None,
                 context_fill: None,
+                prompt_cache: None,
                 id: provisional.session_id,
                 workspace: self.workspace.clone(),
                 execution_directory: crate::protocol::ExecutionDirectory {

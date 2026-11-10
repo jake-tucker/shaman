@@ -948,6 +948,7 @@ fn failed_session_snapshot(session_id: SessionId, workspace: &std::path::Path) -
             pending_move: None,
             checkout: None,
             context_fill: None,
+            prompt_cache: None,
             id: session_id,
             execution_directory: suru::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),

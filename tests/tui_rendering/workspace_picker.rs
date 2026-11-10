@@ -2819,6 +2819,7 @@ fn rooted(title: &str, workspace: &Path, updated_at: u64) -> SessionListItem {
             pending_move: None,
             checkout: None,
             context_fill: None,
+            prompt_cache: None,
             id: SessionId::new(),
             execution_directory: suru::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),

@@ -527,6 +527,7 @@ impl SessionStore {
                 pending_move: None,
                 checkout: location.checkout,
                 context_fill: None,
+                prompt_cache: None,
                 id: session_id,
                 execution_directory: crate::protocol::ExecutionDirectory {
                     path: execution_path.clone(),
@@ -597,6 +598,7 @@ impl SessionStore {
             session_id,
             SessionRecord {
                 context_fill_order: None,
+                priced_model: None,
                 snapshot: snapshot.clone(),
                 summary,
                 updates,

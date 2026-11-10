@@ -139,6 +139,32 @@ impl ManualCompaction {
     }
 }
 
+/// How long a Provider keeps a Session's Prompt Cache while the Session sits
+/// idle, which tells Suru when the cache lapses and the Session goes cold. A
+/// Provider declares nothing unless its cache lapses on idle, so one added
+/// later is never warned about a lapse it does not have.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum CacheLifetime {
+    /// The cache does not lapse on idle, so its Sessions are never cold.
+    #[default]
+    None,
+    /// The Provider reports the moment the cache lapses, as
+    /// [`ProviderEvent::PromptCacheLapseReported`] with the output of the
+    /// request that wrote it, and Suru takes that moment as given.
+    Reported,
+    /// Suru assumes the cache lapses this long after the last Provider output
+    /// of the Session's latest Turn. A moment the Provider reports all the
+    /// same still outranks the assumption.
+    Assumed(std::time::Duration),
+}
+
+impl CacheLifetime {
+    /// Whether a Session on this Provider can go cold at all.
+    pub const fn lapses(self) -> bool {
+        !matches!(self, Self::None)
+    }
+}
+
 /// Why a Provider's declared [`ManualCompaction`] refuses a request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ManualCompactionRefusal {
@@ -1447,6 +1473,14 @@ pub enum ProviderEvent {
     CompactionFailed {
         error: Option<String>,
     },
+    /// The moment the Prompt Cache of the conversation the event is
+    /// attributed to lapses, as a Provider declaring
+    /// [`CacheLifetime::Reported`] states it with a request that wrote or
+    /// refreshed the cache. Only the owning Session's moment is kept, and it
+    /// is no output of any Turn on its own: it begins no Continuation.
+    PromptCacheLapseReported {
+        lapses_at: crate::protocol::SessionTimestamp,
+    },
     /// The Provider revised what it needs to carry the owning Session's
     /// conversation across a restart, replacing the Resume State its startup
     /// reported. Only the Provider reads the payload back, at the next start;
@@ -1968,6 +2002,15 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// reads this one declaration.
     fn manual_compaction(&self) -> ManualCompaction {
         ManualCompaction::Unsupported
+    }
+
+    /// How long this Provider keeps a Session's Prompt Cache while it sits
+    /// idle. Defaulted to [`CacheLifetime::None`], so a Provider whose cache
+    /// does not lapse on idle declares nothing and its Sessions are never
+    /// cold; every lapse moment and Lapse Penalty is read off this one
+    /// declaration.
+    fn cache_lifetime(&self) -> CacheLifetime {
+        CacheLifetime::None
     }
 
     /// Whether this Provider says, when asked, what occupies a Session's

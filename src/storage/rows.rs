@@ -327,6 +327,7 @@ pub(super) struct SessionRow {
     context_fill: Option<String>,
     brokered: bool,
     begun_by: Option<String>,
+    prompt_cache: Option<String>,
 }
 
 #[derive(Insertable, Queryable, Selectable)]
@@ -734,6 +735,12 @@ impl SessionRow {
                 .as_ref()
                 .map(|author| encode(session_id, "beginning author", author))
                 .transpose()?,
+            prompt_cache: summary
+                .session
+                .prompt_cache
+                .as_ref()
+                .map(|cache| encode(session_id, "Prompt Cache", cache))
+                .transpose()?,
         })
     }
 
@@ -786,6 +793,11 @@ impl SessionRow {
                     .context_fill
                     .as_deref()
                     .map(|fill| decode(&session_id, "Context Fill", fill))
+                    .transpose()?,
+                prompt_cache: self
+                    .prompt_cache
+                    .as_deref()
+                    .map(|cache| decode(&session_id, "Prompt Cache", cache))
                     .transpose()?,
                 id,
                 execution_directory: metadata.execution_directory,

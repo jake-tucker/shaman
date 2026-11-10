@@ -632,6 +632,7 @@ fn a_remote_session_row_carries_its_origin_into_its_attach() {
                     pending_move: None,
                     checkout: None,
                     context_fill: None,
+                    prompt_cache: None,
                     id: session_id,
                     execution_directory: suru::protocol::ExecutionDirectory { path: ".".into() },
                     workspace: Workspace::directory(".".into()),

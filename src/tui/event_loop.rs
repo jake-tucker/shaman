@@ -6667,6 +6667,7 @@ mod tests {
                         pending_move: None,
                         checkout: None,
                         context_fill: None,
+                        prompt_cache: None,
                         id: SessionId::new(),
                         execution_directory: crate::protocol::ExecutionDirectory {
                             path: workspace.clone(),
@@ -7681,6 +7682,7 @@ mod ready_event_tests {
                 pending_move: None,
                 checkout: None,
                 context_fill: None,
+                prompt_cache: None,
                 id: SessionId::new(),
                 execution_directory: crate::protocol::ExecutionDirectory {
                     path: workspace.to_owned(),

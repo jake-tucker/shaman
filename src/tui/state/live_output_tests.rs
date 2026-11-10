@@ -78,6 +78,7 @@ fn session_running(commands: &[(&str, ActivityStatus)]) -> (SessionSnapshot, Vec
             pending_move: None,
             checkout: None,
             context_fill: None,
+            prompt_cache: None,
             id: SessionId::new(),
             execution_directory: crate::protocol::ExecutionDirectory {
                 path: workspace.clone(),

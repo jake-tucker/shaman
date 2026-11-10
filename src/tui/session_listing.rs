@@ -1457,6 +1457,7 @@ mod tests {
                 pending_move: None,
                 checkout: None,
                 context_fill: None,
+                prompt_cache: None,
                 id: SessionId::new(),
                 execution_directory: crate::protocol::ExecutionDirectory {
                     path: root().join("workspace"),

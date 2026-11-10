@@ -128,6 +128,7 @@ fn child_with_working_subagent(
             pending_move: None,
             checkout: None,
             context_fill: None,
+            prompt_cache: None,
             id: child_id,
             execution_directory: suru::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),

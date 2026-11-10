@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{Mutex, OnceCell};
 
-use crate::protocol::{Cost, CostBasis, DividedUsage, ModelId, ModelShare, ProviderId, Usage};
+use crate::protocol::{
+    Cost, CostBasis, DividedUsage, LapsePenalty, ModelId, ModelShare, ProviderId, Usage,
+};
 use crate::runtime::protect_current_user_file;
 
 const DEFAULT_SOURCE_ENDPOINT: &str = "https://models.dev/api.json";
@@ -163,6 +165,20 @@ impl CacheRates {
         let read = beyond_input(cache_read_tokens, self.cache_read)?;
         let written = beyond_input(cache_write_tokens, self.cache_write)?;
         Some(-(read + written) / USD_PER_MILLION_TOKENS)
+    }
+}
+
+impl CacheRates {
+    /// The Lapse Penalty on a context of `context_tokens`: what writing it to
+    /// the cache afresh costs beyond reading it from a warm one, at the
+    /// cache-write rate, or the fresh-input rate where the Provider charges
+    /// nothing extra for writes. Absent where the rates list no cache-read
+    /// price, since how much a warm read saves is then unknown. Callable for
+    /// any Model whose rates are known, not only the one a Session ran.
+    pub fn lapse_penalty(self, context_tokens: u64) -> Option<LapsePenalty> {
+        let written = self.cache_write.unwrap_or(self.input);
+        let read = self.cache_read?;
+        LapsePenalty::from_usd(context_tokens as f64 * (written - read) / USD_PER_MILLION_TOKENS)
     }
 }
 
@@ -1049,6 +1065,28 @@ mod tests {
             ..reads_only
         };
         assert_eq!(priced.saving_usd(1_000_000, 2_000_000), Some(1.5 - 1.0));
+    }
+
+    #[test]
+    fn a_lapse_penalty_is_the_write_over_the_read_and_falls_back_to_fresh_input() {
+        let usd = |rates: CacheRates, tokens| rates.lapse_penalty(tokens).map(LapsePenalty::as_usd);
+        let writes_charged = CacheRates {
+            input: 3.0,
+            cache_read: Some(0.3),
+            cache_write: Some(3.75),
+        };
+        assert_eq!(usd(writes_charged, 400_000), Some(1.38));
+        assert_eq!(usd(writes_charged, 0), Some(0.0));
+        let writes_free = CacheRates {
+            cache_write: None,
+            ..writes_charged
+        };
+        assert_eq!(usd(writes_free, 1_000_000), Some(2.7));
+        let reads_unpriced = CacheRates {
+            cache_read: None,
+            ..writes_charged
+        };
+        assert_eq!(usd(reads_unpriced, 1_000_000), None);
     }
 
     #[tokio::test]

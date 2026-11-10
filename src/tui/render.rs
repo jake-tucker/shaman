@@ -9037,6 +9037,7 @@ mod tests {
                 pending_move: None,
                 checkout: None,
                 context_fill,
+                prompt_cache: None,
                 id: SessionId::new(),
                 execution_directory: crate::protocol::ExecutionDirectory {
                     path: workspace.to_owned(),
@@ -9415,6 +9416,7 @@ mod tests {
                         pending_move: None,
                         checkout: None,
                         context_fill: None,
+                        prompt_cache: None,
                         id: session_id,
                         execution_directory: crate::protocol::ExecutionDirectory {
                             path: PathBuf::from("/workspace"),
@@ -9503,6 +9505,7 @@ mod tests {
                         pending_move: None,
                         checkout: None,
                         context_fill: None,
+                        prompt_cache: None,
                         id: session_id,
                         execution_directory: crate::protocol::ExecutionDirectory {
                             path: PathBuf::from("/workspace"),

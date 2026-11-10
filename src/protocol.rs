@@ -3819,6 +3819,71 @@ pub struct ContextFill {
     pub capacity_tokens: Option<u64>,
 }
 
+/// A Session's Prompt Cache as its latest Turn left it: the moment it lapses,
+/// leaving the Session cold, and the Lapse Penalty its next Prompt pays once
+/// it has. A reader judges whether the moment has passed against its own
+/// clock, as it reads every other Session timestamp.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptCache {
+    pub lapses_at: SessionTimestamp,
+    /// Absent where the Context Fill or its Model's token prices are unknown,
+    /// never zero for want of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lapse_penalty: Option<LapsePenalty>,
+}
+
+impl PromptCache {
+    /// Whether the cache has lapsed by `now`, leaving the Session cold.
+    pub fn has_lapsed(&self, now: SessionTimestamp) -> bool {
+        now >= self.lapses_at
+    }
+}
+
+/// Suru's forecast, in USD, of what a cold Session's next Prompt costs beyond
+/// what it would have cost warm. It is a type of its own rather than a
+/// [`Cost`] so that it can never be recorded as one, nor reach Usage
+/// Metrics. Held in billionths of one USD, and never negative.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct LapsePenalty(u64);
+
+impl LapsePenalty {
+    const NANO_USD_PER_USD: f64 = 1_000_000_000.0;
+
+    /// A forecast of `usd`, held at zero where the figure would run negative,
+    /// and absent where it is not a finite, representable figure.
+    pub fn from_usd(usd: f64) -> Option<Self> {
+        let nano_usd = (usd.max(0.0) * Self::NANO_USD_PER_USD).round();
+        (nano_usd.is_finite() && nano_usd < u64::MAX as f64).then_some(Self(nano_usd as u64))
+    }
+
+    pub fn as_usd(self) -> f64 {
+        self.0 as f64 / Self::NANO_USD_PER_USD
+    }
+}
+
+impl Serialize for LapsePenalty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_f64(self.as_usd())
+    }
+}
+
+impl<'de> Deserialize<'de> for LapsePenalty {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let usd = f64::deserialize(deserializer)?;
+        if usd < 0.0 {
+            return Err(D::Error::custom("a Lapse Penalty is never negative"));
+        }
+        Self::from_usd(usd).ok_or_else(|| D::Error::custom("a Lapse Penalty is a USD figure"))
+    }
+}
+
 /// What occupies a Session's context, as its Provider attributes it when
 /// asked: the Context Fill it measures, split by where the tokens came from.
 /// It is read on request and never stored, so it describes the context only
@@ -3881,6 +3946,12 @@ pub struct Session {
     /// The latest reported occupancy of this Session alone.
     #[serde(default)]
     pub context_fill: Option<ContextFill>,
+    /// When this Session's own Prompt Cache lapses, and what the lapse will
+    /// add to its next Prompt. Absent where its Provider has no Cache
+    /// Lifetime, or no Turn of it has written the cache yet. It describes
+    /// this Session's context alone: a Subagent's is its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_cache: Option<PromptCache>,
     pub id: SessionId,
     pub workspace: Workspace,
     pub execution_directory: ExecutionDirectory,
@@ -3974,6 +4045,7 @@ impl Session {
         Self {
             pending_move: None,
             context_fill: None,
+            prompt_cache: None,
             id: SessionId::new(),
             execution_directory: ExecutionDirectory {
                 path: workspace.path.clone(),
@@ -5828,6 +5900,11 @@ pub enum SessionChange {
     },
     ContextFillChanged {
         context_fill: Option<ContextFill>,
+    },
+    /// The Session's Prompt Cache was written afresh, or its Lapse Penalty
+    /// forecast again; see [`Session::prompt_cache`].
+    PromptCacheChanged {
+        prompt_cache: Option<PromptCache>,
     },
     AgentSelectionChanged {
         selection: AgentSelection,

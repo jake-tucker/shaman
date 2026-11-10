@@ -190,6 +190,7 @@ fn summary(context: &ResolvedWorkspace, title: &str) -> SessionListItem {
             execution_directory: context.execution_directory.clone().unwrap(),
             checkout: context.checkout.clone(),
             context_fill: None,
+            prompt_cache: None,
             agent_selection: None,
             agent_selection_availability: ModelAvailability::Available,
             approval_posture: None,

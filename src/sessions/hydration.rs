@@ -468,6 +468,7 @@ pub(super) fn restored_record(
     let (updates, _) = tokio::sync::broadcast::channel(SESSION_UPDATE_CAPACITY);
     let record = SessionRecord {
         context_fill_order: None,
+        priced_model: None,
         snapshot: persisted.snapshot,
         summary: persisted.summary,
         resume_states: persisted.resume_states,
@@ -508,6 +509,7 @@ impl SessionRecord {
     fn keep_runtime_of(&mut self, held: SessionRecord) {
         let SessionRecord {
             context_fill_order,
+            priced_model,
             snapshot: _,
             summary: _,
             updates,
@@ -531,6 +533,7 @@ impl SessionRecord {
             sidekick_work,
         } = held;
         self.context_fill_order = context_fill_order;
+        self.priced_model = priced_model;
         self.updates = updates;
         self.next_prompt_order = self.next_prompt_order.max(next_prompt_order);
         self.steer_targets = steer_targets;

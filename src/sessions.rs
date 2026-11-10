@@ -46,6 +46,7 @@ mod posture;
 #[cfg(test)]
 mod posture_tests;
 mod projection;
+mod prompt_cache;
 mod prompts;
 mod remote_reports;
 pub(crate) use remote_reports::{Pairing, RemoteContribution, RemoteOwing, RemoteRaise};
@@ -230,6 +231,9 @@ struct SessionStoreState {
 
 struct SessionRecord {
     context_fill_order: Option<(TurnId, u64)>,
+    /// What the Session's Lapse Penalty was last priced at; see
+    /// [`prompt_cache::PricedModel`]. Never stored: the penalty it priced is.
+    priced_model: Option<prompt_cache::PricedModel>,
     snapshot: SessionSnapshot,
     summary: SessionSummary,
     updates: broadcast::Sender<SessionUpdate>,

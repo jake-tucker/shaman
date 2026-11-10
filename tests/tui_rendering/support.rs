@@ -577,6 +577,7 @@ pub fn failed_session_snapshot(
             pending_move: None,
             checkout: None,
             context_fill: None,
+            prompt_cache: None,
             id: session_id,
             execution_directory: suru::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
@@ -642,6 +643,7 @@ pub fn selected_session_snapshot(
             pending_move: None,
             checkout: None,
             context_fill: None,
+            prompt_cache: None,
             id: session_id,
             execution_directory: suru::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
@@ -688,6 +690,7 @@ pub fn navigable_session_snapshot(
             pending_move: None,
             checkout: None,
             context_fill: None,
+            prompt_cache: None,
             id: session_id,
             execution_directory: suru::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
@@ -991,6 +994,7 @@ pub fn listed_session(
             pending_move: None,
             checkout: None,
             context_fill: None,
+            prompt_cache: None,
             id: session_id,
             execution_directory: ExecutionDirectory {
                 path: workspace.to_owned(),

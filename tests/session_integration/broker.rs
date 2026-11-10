@@ -55,6 +55,7 @@ mod late_output;
 mod limits;
 mod moves;
 mod posture;
+mod prompt_cache;
 mod reports;
 mod send_wait;
 mod sidekick;

@@ -137,6 +137,9 @@ impl ValidatedChanges {
                 SessionChange::ContextFillChanged { context_fill } => {
                     next.session.context_fill = *context_fill;
                 }
+                SessionChange::PromptCacheChanged { prompt_cache } => {
+                    next.session.prompt_cache = *prompt_cache;
+                }
                 SessionChange::TurnAdded { turn } => {
                     let previous_model = next
                         .turns
@@ -755,6 +758,7 @@ impl<'a> Validation<'a> {
             | SessionChange::ApprovalPostureChanged { .. }
             | SessionChange::AttachmentsDescribed { .. }
             | SessionChange::ContextFillChanged { .. }
+            | SessionChange::PromptCacheChanged { .. }
             | SessionChange::SubagentInterventionsChanged { .. }
             | SessionChange::SubagentUsageChanged { .. }
             | SessionChange::TotalCostChanged { .. }
@@ -1976,6 +1980,7 @@ mod tests {
                 pending_move: None,
                 checkout: None,
                 context_fill: None,
+                prompt_cache: None,
                 id: session_id,
                 execution_directory: crate::protocol::ExecutionDirectory {
                     path: PathBuf::from("/workspace"),

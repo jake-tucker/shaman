@@ -481,6 +481,7 @@ fn moved_row(change: &SessionChange) -> Option<Table> {
         | SessionChange::Moved { .. }
         | SessionChange::TitleChanged { .. }
         | SessionChange::ContextFillChanged { .. }
+        | SessionChange::PromptCacheChanged { .. }
         | SessionChange::AgentSelectionChanged { .. }
         | SessionChange::AgentSelectionAvailabilityChanged { .. }
         | SessionChange::ApprovalPostureChanged { .. }
