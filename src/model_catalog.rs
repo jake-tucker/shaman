@@ -374,11 +374,12 @@ impl ModelCatalogService {
         Ok(normalized)
     }
 
-    /// `selection` named as a choice of it is: with no Routing Tier where the
-    /// one it names is the tier its Model routes on anyway. A Provider saying
-    /// what a Turn ran under may name that tier where the user choosing it
-    /// names none, and the two are one choice. Unchanged where the catalog
-    /// does not list its Model.
+    /// `selection` in the form the user's own choice of it takes: with no
+    /// Routing Tier where the one it names is the tier its Model routes on
+    /// anyway. A Provider saying what a Turn ran under may name that tier
+    /// where the user choosing it names none, and the two are one choice.
+    /// Unchanged where the catalog does not list its Model. Reads only the
+    /// cached Models, never waiting on a discovery.
     pub(crate) fn without_default_routing_tier(&self, selection: AgentSelection) -> AgentSelection {
         let Some(tier) = selection
             .options

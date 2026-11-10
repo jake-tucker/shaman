@@ -2145,8 +2145,15 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// Whether a Selection on `model` may name a Routing Tier at all, whether or
     /// not the catalog offers one now: a Setting may have taken them away, or
     /// the Provider marked the choice disabled, and either is the Provider's to
-    /// answer as a Turn claims it. Runtimes offering no Routing Tier need not
-    /// implement it.
+    /// answer as a Turn claims it.
+    ///
+    /// It is read too as whether `model` routes each call to a Model of the
+    /// Provider's choosing and so has no prices of its own: a call on it
+    /// that names no Model is no evidence of what wrote the Prompt Cache, and
+    /// its Lapse Penalty is forecast at the prices of the Model that did. A
+    /// Provider with a routing Model that offers no tier answers true for it
+    /// all the same, or its Sessions forecast no penalty. Runtimes with no
+    /// routing Model need not implement it.
     fn takes_routing_tier(&self, model: &ModelId) -> bool {
         let _ = model;
         false

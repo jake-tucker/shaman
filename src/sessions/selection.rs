@@ -27,8 +27,14 @@ pub(crate) enum AgentSelectionMutationError {
     Unrecorded(String),
 }
 
-/// How a Selection is named as a choice of it is: one naming its Model's
-/// default Routing Tier names none, as the user choosing that tier does.
+/// Rewrites a Selection a Provider reports into the form the user's own
+/// choice of it takes: one naming its Model's default Routing Tier names
+/// none, as the user choosing that tier does.
+///
+/// It is called with the Session store's lock held, so it must not block,
+/// nor do synchronous I/O, nor call into the store; it may read what it
+/// holds in memory behind locks of its own, as the Model Catalog's cached
+/// Models are.
 pub(crate) type SelectionNames = Arc<dyn Fn(AgentSelection) -> AgentSelection + Send + Sync>;
 
 pub(crate) struct AgentSelectionMutation {
@@ -37,10 +43,11 @@ pub(crate) struct AgentSelectionMutation {
 }
 
 impl SessionStore {
-    /// Names each Selection a Provider says a Turn ran under through `names`
-    /// from here on, so it is the same choice as the user making it would be:
+    /// Rewrites each Selection a Provider says a Turn ran under through
+    /// `names` from here on, into the form the user's own choice of it takes:
     /// the Selection a Turn ran under and the one the Session stands under
-    /// are compared whole, as the Prompt Cache's judgement compares them.
+    /// are compared whole, as the Prompt Cache's judgement compares them, so
+    /// one choice reached two ways must read the same.
     pub(crate) fn name_effective_selections_by(&self, names: SelectionNames) {
         self.state
             .lock()
