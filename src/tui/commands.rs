@@ -3997,6 +3997,34 @@ pub(super) fn slash_text_invocation(text: &str) -> Option<(SemanticCommandId, Op
     })
 }
 
+/// The name a submitted composer draft spells as a slash command when no
+/// command answers to it: a draft opening with `/` and a word of letters,
+/// digits, `-` or `_` — `/zzzz`, `/zzzz and some text` — that is neither the
+/// name nor an alias of any slash command. Such a draft is refused rather
+/// than sent on as a Prompt, so a mistyped command never reaches the Agent.
+/// A draft whose first word carries anything else — a path such as
+/// `/tmp/build.log is empty`, or `//` — is not a command and is the
+/// composer's ordinary business.
+pub(super) fn unknown_slash_command(text: &str) -> Option<&str> {
+    let draft = text.strip_prefix('/')?;
+    let name = draft
+        .split(char::is_whitespace)
+        .next()
+        .filter(|name| !name.is_empty())?;
+    if !name
+        .chars()
+        .all(|character| character.is_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return None;
+    }
+    let known = SEMANTIC_COMMANDS.iter().any(|command| {
+        command
+            .slash
+            .is_some_and(|slash| slash.name == name || slash.aliases.contains(&name))
+    });
+    (!known).then_some(name)
+}
+
 pub(super) fn command_matches(query: &str) -> Vec<SemanticCommandId> {
     let mut matches = SEMANTIC_COMMANDS
         .iter()

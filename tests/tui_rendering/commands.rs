@@ -458,7 +458,7 @@ fn dismissed_alias_is_submitted_literally_before_turn_interruption() {
 }
 
 #[test]
-fn pasted_multiline_and_unmatched_slash_text_remain_literal_prompts() {
+fn pasted_and_multiline_slash_text_remain_literal_prompts() {
     let mut pasted = Application::default();
     pasted
         .handle_terminal_event(InputEvent::Paste("/new".to_owned()))
@@ -501,23 +501,61 @@ fn pasted_multiline_and_unmatched_slash_text_remain_literal_prompts() {
         panic!("multiline slash text should create a Session Prompt");
     };
     assert_eq!(multiline_request.prompt.text, "/new\nliteral continuation");
+}
 
-    let mut unmatched = Application::default();
-    unmatched
+#[test]
+fn a_slash_command_no_command_answers_to_is_refused_and_kept_to_be_corrected() {
+    for draft in [
+        "/zzzz",
+        "/zzzz with some text",
+        "/zzzz\non lines of its own",
+    ] {
+        let mut application = Application::default();
+        application
+            .handle_event(ApplicationEvent::Command(CommandId::InsertText(
+                draft.to_owned(),
+            )))
+            .expect("type an unknown slash command");
+        assert_eq!(
+            application
+                .handle_terminal_event(InputEvent::Key(KeyEvent::new(
+                    KeyCode::Enter,
+                    KeyModifiers::NONE,
+                )))
+                .expect("submit an unknown slash command"),
+            ApplicationTransition::Continue,
+            "{draft:?} is refused rather than sent as a Prompt"
+        );
+        let rows = rendered_application_rows(&application).join("\n");
+        assert!(
+            rows.contains("Unknown command /zzzz"),
+            "{draft:?} is refused with the name it spelled: {rows}"
+        );
+        assert!(
+            rows.contains("/zzzz"),
+            "{draft:?} stays in the composer: {rows}"
+        );
+    }
+}
+
+#[test]
+fn a_draft_opening_with_a_path_is_a_prompt_rather_than_a_command() {
+    let mut application = Application::default();
+    application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
-            "/zzzz".to_owned(),
+            "/tmp/build.log is empty".to_owned(),
         )))
-        .expect("type unmatched slash text");
-    let ApplicationTransition::CreateSession(unmatched_request) = unmatched
+        .expect("type a draft opening with a path");
+    let ApplicationTransition::CreateSession(request) = application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("submit unmatched slash text")
+        .expect("submit a draft opening with a path")
     else {
-        panic!("unmatched slash text should create a Session Prompt");
+        panic!("a draft opening with a path should create a Session Prompt");
     };
-    assert_eq!(unmatched_request.prompt.text, "/zzzz");
+    assert_eq!(request.prompt.text, "/tmp/build.log is empty");
 }
 
 #[test]

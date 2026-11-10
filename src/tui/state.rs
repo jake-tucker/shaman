@@ -10686,6 +10686,15 @@ impl Application {
             }
             return transition;
         }
+        // A draft opening with a slash command no command answers to is a
+        // mistyped command, not a Prompt: it is refused with the name it
+        // spelled, and the draft stays to be corrected.
+        if let Some(name) =
+            super::commands::unknown_slash_command(self.state.composers.text(key.clone()))
+        {
+            self.state.submission_error = Some(format!("Unknown command /{name}"));
+            return ApplicationTransition::Continue;
+        }
         // A Subagent's Session refuses Prompts, and its view offers no way to
         // write one; this guard keeps that true whatever surface asks.
         if self.state.open_subagent_parent().is_some() {
