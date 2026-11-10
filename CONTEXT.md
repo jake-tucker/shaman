@@ -532,7 +532,7 @@ The transient mark a list the reader drives from the keys keeps on the one entry
 _Avoid_: Highlight, cursor, selection (for the focused entry)
 
 **Clipboard**:
-Where content taken from Suru is offered for pasting elsewhere. A Text Selection of formatted Markdown across several blocks carries both its formatting and a text alternative, either the words the reader sees or their Markdown as a Setting chooses. One within a single block carries just its words, with formatting beside them only where those words mix styles or hold a link. Other copies carry plain text. A formatted copy prefers the machine's Clipboard and falls back to the terminal's when needed; plain-text copies reach both, and either kind also fills the machine's primary selection where one exists.
+Where content taken from Suru is offered for pasting elsewhere. A Text Selection of formatted Markdown across several blocks carries both its formatting and a text alternative, either the words the reader sees or their Markdown as a Setting chooses. One within a single block carries just its words, with formatting beside them only where those words mix styles or hold a link. Other copies carry plain text. A formatted copy prefers the machine's Clipboard and falls back to the terminal's when needed; plain-text copies reach both, the machine's first, and either kind also fills the machine's primary selection where one exists.
 _Avoid_: Host clipboard, system clipboard, OSC 52 (for the destination itself)
 
 **Notice**:

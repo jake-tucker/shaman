@@ -770,7 +770,7 @@ async fn run_loop(
         // the run -- a Provider shutdown and the exit command -- leave by the
         // same path as the input stream closing.
         let step = tokio::select! {
-            text = delivery.fallback() => {
+            text = delivery.terminal_copy() => {
                 copy_to_terminal(&mut TerminalOutput(terminal.backend_mut()), &text);
                 ControlFlow::Continue(())
             }
@@ -955,9 +955,7 @@ impl RunLoop {
         delivery: &mut ClipboardDelivery,
     ) -> Result<ControlFlow<Exit>> {
         match input {
-            TerminalInput::Event(event) => {
-                self.handle_input_event(event, &mut TerminalOutput(output), clipboard, delivery)
-            }
+            TerminalInput::Event(event) => self.handle_input_event(event, clipboard, delivery),
             TerminalInput::Colors(update) => {
                 let mut facts = self.application.terminal_facts;
                 facts.merge_probe(update);
@@ -1168,7 +1166,6 @@ impl RunLoop {
     fn handle_input_event(
         &mut self,
         event: InputEvent,
-        output: &mut impl TerminalSink,
         clipboard: &mut impl NativeClipboardSink,
         delivery: &mut ClipboardDelivery,
     ) -> Result<ControlFlow<Exit>> {
@@ -1179,7 +1176,7 @@ impl RunLoop {
         self.needs_redraw |= input.changed;
         let transition = input.transition;
         if let ApplicationTransition::CopyToClipboard(text) = transition {
-            delivery.copy(output, clipboard, &text);
+            delivery.copy(clipboard, &text);
             return Ok(ControlFlow::Continue(()));
         }
         Ok(self.dispatch_transition(transition))
@@ -5268,16 +5265,27 @@ impl crossterm::Command for CopyToClipboard<'_> {
     }
 }
 
-/// Only the current copy may request terminal fallback. Replacing this receiver
-/// cancels older callbacks without retaining an unbounded queue of completions.
-struct ClipboardFallback {
+/// A copy waiting on its native write before the terminal is asked. Only the
+/// current copy may reach the terminal: replacing this receiver cancels older
+/// callbacks without retaining an unbounded queue of completions.
+struct TerminalCopy {
     result: tokio::sync::oneshot::Receiver<bool>,
     text: String,
     deadline: tokio::time::Instant,
+    formatted: bool,
+}
+
+impl TerminalCopy {
+    /// A plain-text copy reaches both routes. A formatted one asks the terminal
+    /// only where native delivery failed: the terminal's text would replace
+    /// the formatting just delivered.
+    fn wanted(&self, delivered: bool) -> bool {
+        !self.formatted || !delivered
+    }
 }
 
 struct ClipboardDelivery {
-    pending: Option<ClipboardFallback>,
+    pending: Option<TerminalCopy>,
     timeout: Duration,
 }
 
@@ -5297,42 +5305,40 @@ impl ClipboardDelivery {
         self
     }
 
-    fn copy(
-        &mut self,
-        output: &mut impl TerminalSink,
-        native: &mut impl NativeClipboardSink,
-        content: &ClipboardContent,
-    ) {
+    /// Starts the native write and leaves the terminal for `terminal_copy` or
+    /// `finish`, once that write has settled: the terminal's Clipboard can be
+    /// the machine's own, and asking for it while the native write is under
+    /// way takes it from under that write.
+    fn copy(&mut self, native: &mut impl NativeClipboardSink, content: &ClipboardContent) {
         self.pending = None;
         let (completed, result) = tokio::sync::oneshot::channel();
         let deadline = tokio::time::Instant::now() + self.timeout;
         native.copy(content, move |delivered| {
             let _ = completed.send(delivered);
         });
-        if content.html.is_some() {
-            self.pending = Some(ClipboardFallback {
-                result,
-                text: content.text.clone(),
-                deadline,
-            });
-        } else {
-            copy_to_terminal(output, &content.text);
-        }
+        self.pending = Some(TerminalCopy {
+            result,
+            text: content.text.clone(),
+            deadline,
+            formatted: content.html.is_some(),
+        });
     }
 
     /// Called after the worker's bounded shutdown: do not lose a copy merely
     /// because exit was the next input event, and never wait a second deadline.
     fn finish(&mut self, output: &mut impl TerminalSink) {
-        if let Some(mut copy) = self.pending.take()
-            && !matches!(copy.result.try_recv(), Ok(true))
-        {
-            copy_to_terminal(output, &copy.text);
+        if let Some(mut copy) = self.pending.take() {
+            let delivered = matches!(copy.result.try_recv(), Ok(true));
+            if copy.wanted(delivered) {
+                copy_to_terminal(output, &copy.text);
+            }
         }
     }
 
+    /// The text of a waiting copy, once the terminal is to be asked for it.
     /// Cancellation safe: select can poll this alongside input, then replace the
     /// pending copy before polling it again. No detached task writes to stdout.
-    async fn fallback(&mut self) -> String {
+    async fn terminal_copy(&mut self) -> String {
         loop {
             let Some(copy) = &mut self.pending else {
                 return pending().await;
@@ -5341,12 +5347,12 @@ impl ClipboardDelivery {
                 biased;
                 result = &mut copy.result => result.unwrap_or(false),
                 () = tokio::time::sleep_until(copy.deadline) => {
-                    tracing::debug!("native Clipboard delivery exceeded its fallback timeout");
+                    tracing::debug!("native Clipboard delivery exceeded its timeout");
                     false
                 }
             };
             let copy = self.pending.take().unwrap();
-            if !delivered {
+            if copy.wanted(delivered) {
                 return copy.text;
             }
         }
@@ -5365,7 +5371,9 @@ fn copy_to_clipboard(
     native: &mut impl NativeClipboardSink,
     text: &str,
 ) {
-    ClipboardDelivery::default().copy(output, native, &text.into());
+    let mut delivery = ClipboardDelivery::default();
+    delivery.copy(native, &text.into());
+    delivery.finish(output);
 }
 
 struct TerminalOutput<W: std::io::Write>(W);
@@ -6245,19 +6253,20 @@ mod tests {
         })
         .with_exit_timeout(Duration::from_millis(100));
         let mut terminal = AnsiTranscript(String::new());
-        copy_to_clipboard(&mut terminal, &mut native, "first");
+        let mut delivery = super::ClipboardDelivery::default();
+        delivery.copy(&mut native, &"first".into());
         writing.recv_timeout(Duration::from_secs(1)).unwrap();
-        copy_to_clipboard(&mut terminal, &mut native, "second");
-        copy_to_clipboard(&mut terminal, &mut native, "latest");
-        assert_eq!(
-            terminal.0,
-            "\x1b]52;c;Zmlyc3Q=\x07\x1b]52;c;c2Vjb25k\x07\x1b]52;c;bGF0ZXN0\x07"
-        );
+        delivery.copy(&mut native, &"second".into());
+        delivery.copy(&mut native, &"latest".into());
+        assert!(terminal.0.is_empty());
         assert!(copies.try_recv().is_err());
 
         release.send(()).unwrap();
         assert!(native.shutdown());
         assert_eq!(copies.try_iter().collect::<Vec<_>>(), ["first", "latest"]);
+        // The terminal is asked for the latest alone, as the native Clipboard was.
+        delivery.finish(&mut terminal);
+        assert_eq!(terminal.0, "\x1b]52;c;bGF0ZXN0\x07");
     }
 
     #[tokio::test]
@@ -6267,14 +6276,14 @@ mod tests {
             html: Some("<p><strong>chosen</strong></p>\n".into()),
         };
         let mut offered = Vec::new();
-        let mut terminal = AnsiTranscript(String::new());
+        let terminal = AnsiTranscript(String::new());
         let mut delivery = super::ClipboardDelivery::default();
         let mut native = NativeClipboard::new(|target, content: &crate::tui::ClipboardContent| {
             offered.push((target, content.clone()));
             Ok(())
         });
-        delivery.copy(&mut terminal, &mut native, &content);
-        assert!(futures_util::FutureExt::now_or_never(delivery.fallback()).is_none());
+        delivery.copy(&mut native, &content);
+        assert!(futures_util::FutureExt::now_or_never(delivery.terminal_copy()).is_none());
         assert!(terminal.0.is_empty());
         assert_eq!(
             offered[0],
@@ -6303,9 +6312,9 @@ mod tests {
             let mut delivery = super::ClipboardDelivery::default()
                 .with_timeout(std::time::Duration::from_millis(5));
             let mut terminal = AnsiTranscript(String::new());
-            delivery.copy(&mut terminal, &mut native, &content);
+            delivery.copy(&mut native, &content);
             assert!(terminal.0.is_empty());
-            let text = delivery.fallback().await;
+            let text = delivery.terminal_copy().await;
             super::copy_to_terminal(&mut terminal, &text);
             assert_eq!(terminal.0, "\x1b]52;c;KipjaG9zZW4qKg==\x07");
             let log = record_log(|| super::copy_to_terminal(&mut FailedTerminal(kind), &text));
@@ -6358,25 +6367,113 @@ mod tests {
             };
             let mut delivery = super::ClipboardDelivery::default()
                 .with_timeout(std::time::Duration::from_millis(5));
-            let mut terminal = AnsiTranscript(String::new());
-            delivery.copy(&mut terminal, &mut native, &first);
+            let terminal = AnsiTranscript(String::new());
+            delivery.copy(&mut native, &first);
             writing
                 .recv_timeout(std::time::Duration::from_secs(1))
                 .unwrap();
-            delivery.copy(&mut terminal, &mut native, &replaced);
-            delivery.copy(&mut terminal, &mut native, &latest);
+            delivery.copy(&mut native, &replaced);
+            delivery.copy(&mut native, &latest);
             release.send(()).unwrap();
             assert!(native.shutdown());
             assert_eq!(copies.try_iter().collect::<Vec<_>>(), [first, latest]);
-            assert!(futures_util::FutureExt::now_or_never(delivery.fallback()).is_none());
+            // Neither copy the latest replaced reaches the terminal, and a
+            // plain-text latest does only now that its native write settled.
             assert_eq!(
-                terminal.0,
-                if latest_is_rich {
-                    ""
-                } else {
-                    "\x1b]52;c;bGF0ZXN0\x07"
-                }
+                futures_util::FutureExt::now_or_never(delivery.terminal_copy()).as_deref(),
+                (!latest_is_rich).then_some("latest")
             );
+            assert!(terminal.0.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn plain_copy_reaches_the_terminal_only_once_the_native_write_has_settled() {
+        use std::sync::{Arc, Mutex, mpsc};
+        // The terminal's Clipboard can be the machine's own. Asked while the
+        // native write is under way, it takes the Clipboard from under it.
+        for delivered in [true, false] {
+            let (entered, writing) = mpsc::channel();
+            let (release, resume) = mpsc::channel();
+            let resume = Arc::new(Mutex::new(resume));
+            let mut native = super::clipboard_thread::ClipboardThread::new(move || {
+                let entered = entered.clone();
+                let resume = resume.clone();
+                NativeClipboard::new(move |target, _: &ClipboardContent| {
+                    if target != super::NativeClipboardTarget::Clipboard {
+                        return Ok(());
+                    }
+                    entered.send(()).unwrap();
+                    let _ = resume.lock().unwrap().recv();
+                    if delivered {
+                        Ok(())
+                    } else {
+                        Err(arboard::Error::ClipboardNotSupported)
+                    }
+                })
+            })
+            .with_exit_timeout(std::time::Duration::from_millis(100));
+            let mut delivery =
+                super::ClipboardDelivery::default().with_timeout(std::time::Duration::from_secs(5));
+            let terminal = AnsiTranscript(String::new());
+            delivery.copy(&mut native, &"chosen".into());
+            writing
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .unwrap();
+            assert!(futures_util::FutureExt::now_or_never(delivery.terminal_copy()).is_none());
+            assert!(terminal.0.is_empty());
+            release.send(()).unwrap();
+            let text =
+                tokio::time::timeout(std::time::Duration::from_secs(1), delivery.terminal_copy())
+                    .await
+                    .unwrap();
+            assert_eq!(text, "chosen");
+            assert!(futures_util::FutureExt::now_or_never(delivery.terminal_copy()).is_none());
+            assert!(native.shutdown());
+        }
+    }
+
+    #[tokio::test]
+    async fn plain_copy_reaches_the_terminal_despite_a_stalled_native_write_or_an_exit() {
+        use std::sync::{Arc, Mutex, mpsc};
+        for exiting in [true, false] {
+            let (entered, writing) = mpsc::channel();
+            let (release, resume) = mpsc::channel::<()>();
+            let resume = Arc::new(Mutex::new(resume));
+            let mut native = super::clipboard_thread::ClipboardThread::new(move || {
+                let entered = entered.clone();
+                let resume = resume.clone();
+                NativeClipboard::new(move |target, _: &ClipboardContent| {
+                    if target == super::NativeClipboardTarget::Clipboard {
+                        entered.send(()).unwrap();
+                        let _ = resume.lock().unwrap().recv();
+                    }
+                    Ok(())
+                })
+            })
+            .with_exit_timeout(std::time::Duration::from_millis(5));
+            let mut delivery = super::ClipboardDelivery::default()
+                .with_timeout(std::time::Duration::from_millis(5));
+            let mut terminal = AnsiTranscript(String::new());
+            delivery.copy(&mut native, &"chosen".into());
+            writing
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .unwrap();
+            assert!(terminal.0.is_empty());
+            if exiting {
+                assert!(!native.shutdown());
+                delivery.finish(&mut terminal);
+            } else {
+                let text = tokio::time::timeout(
+                    std::time::Duration::from_secs(1),
+                    delivery.terminal_copy(),
+                )
+                .await
+                .unwrap();
+                super::copy_to_terminal(&mut terminal, &text);
+            }
+            assert_eq!(terminal.0, "\x1b]52;c;Y2hvc2Vu\x07");
+            drop(release);
         }
     }
 
@@ -6416,13 +6513,14 @@ mod tests {
                 text: "**chosen**".into(),
                 html: Some("<strong>chosen</strong>".into()),
             };
-            delivery.copy(&mut terminal, &mut native, &content);
+            delivery.copy(&mut native, &content);
             stalled
                 .recv_timeout(std::time::Duration::from_secs(1))
                 .unwrap();
-            let text = tokio::time::timeout(std::time::Duration::from_secs(1), delivery.fallback())
-                .await
-                .unwrap();
+            let text =
+                tokio::time::timeout(std::time::Duration::from_secs(1), delivery.terminal_copy())
+                    .await
+                    .unwrap();
             super::copy_to_terminal(&mut terminal, &text);
             assert_eq!(terminal.0, "\x1b]52;c;KipjaG9zZW4qKg==\x07");
             let began = std::time::Instant::now();
@@ -6432,7 +6530,7 @@ mod tests {
             finished
                 .recv_timeout(std::time::Duration::from_secs(1))
                 .unwrap();
-            assert!(futures_util::FutureExt::now_or_never(delivery.fallback()).is_none());
+            assert!(futures_util::FutureExt::now_or_never(delivery.terminal_copy()).is_none());
         }
     }
 
@@ -6461,7 +6559,6 @@ mod tests {
             super::ClipboardDelivery::default().with_timeout(std::time::Duration::ZERO);
         let mut terminal = AnsiTranscript(String::new());
         delivery.copy(
-            &mut terminal,
             &mut native,
             &ClipboardContent {
                 text: "chosen".into(),
@@ -6471,10 +6568,10 @@ mod tests {
         stalled
             .recv_timeout(std::time::Duration::from_secs(1))
             .unwrap();
-        assert!(futures_util::FutureExt::now_or_never(delivery.fallback()).is_none());
+        assert!(futures_util::FutureExt::now_or_never(delivery.terminal_copy()).is_none());
         release.send(()).unwrap();
         assert!(native.shutdown());
-        assert!(futures_util::FutureExt::now_or_never(delivery.fallback()).is_none());
+        assert!(futures_util::FutureExt::now_or_never(delivery.terminal_copy()).is_none());
         assert!(terminal.0.is_empty());
     }
 
@@ -6494,7 +6591,6 @@ mod tests {
             let mut delivery = super::ClipboardDelivery::default();
             let mut terminal = AnsiTranscript(String::new());
             delivery.copy(
-                &mut terminal,
                 &mut native,
                 &ClipboardContent {
                     text: "chosen".into(),
@@ -6667,15 +6763,15 @@ mod tests {
                 panic!("expected a copy")
             };
             let mut offered = Vec::new();
-            let mut ansi = AnsiTranscript(String::new());
+            let ansi = AnsiTranscript(String::new());
             {
                 let mut native = NativeClipboard::new(|target, content: &ClipboardContent| {
                     offered.push((target, content.clone()));
                     Ok(())
                 });
                 let mut delivery = super::ClipboardDelivery::default();
-                delivery.copy(&mut ansi, &mut native, &text);
-                assert!(futures_util::FutureExt::now_or_never(delivery.fallback()).is_none());
+                delivery.copy(&mut native, &text);
+                assert!(futures_util::FutureExt::now_or_never(delivery.terminal_copy()).is_none());
             }
             assert_eq!(
                 offered[0],
