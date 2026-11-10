@@ -62,6 +62,7 @@ fn session_kept_for(
     );
     snapshot.session.prompt_cache = Some(PromptCache {
         lapses_at,
+        written_in: None,
         written_by: ModelId::new("gpt-fixture"),
         lifetime_ms,
         write_price: suru::protocol::CacheWritePrice::Default,
@@ -308,6 +309,7 @@ fn the_line_clears_once_the_next_turn_has_written_the_cache_afresh() {
                 changes: vec![SessionChange::PromptCacheChanged {
                     prompt_cache: Some(PromptCache {
                         lapses_at: SessionTimestamp(NOW.0 + 300_000),
+                        written_in: None,
                         written_by: ModelId::new("gpt-fixture"),
                         lifetime_ms: None,
                         write_price: suru::protocol::CacheWritePrice::Default,
@@ -628,6 +630,7 @@ fn a_turn_that_moves_the_lapse_starts_the_countdown_afresh() {
                 changes: vec![SessionChange::PromptCacheChanged {
                     prompt_cache: Some(PromptCache {
                         lapses_at: moved,
+                        written_in: None,
                         written_by: ModelId::new("gpt-fixture"),
                         lifetime_ms: Some(FIVE_MINUTES),
                         write_price: suru::protocol::CacheWritePrice::Default,

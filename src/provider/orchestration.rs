@@ -147,6 +147,12 @@ pub(crate) const PROVIDER_IDLE_SHUTDOWN: Duration = Duration::from_secs(10 * 60)
 /// prompted again is seldom compacted under its user.
 pub(crate) const SCHEDULED_COMPACTION_LEAD: Duration = Duration::from_secs(2 * 60);
 
+/// The least of a Prompt Cache's life that must be left for its scheduled
+/// Compaction to begin: enough for the request to reach the Provider and its
+/// summarising call to read the context warm. A wake later than that — the
+/// real clock's sleep does not run through a suspend — finds it too late.
+pub(crate) const SCHEDULED_COMPACTION_MARGIN: Duration = Duration::from_secs(20);
+
 /// How long a pending Move waits for the Continuation a Subagent settling, or a
 /// Watch waking the Agent, past its Turn leaves owed, before giving it up. No
 /// Provider promises one, and the Session reads as idle meanwhile, with nothing
@@ -186,6 +192,9 @@ pub(crate) struct ProviderOrchestrator {
     /// How long before a Prompt Cache lapses a scheduled Compaction falls
     /// due; see [`SCHEDULED_COMPACTION_LEAD`].
     scheduled_compaction_lead: Duration,
+    /// The least of the cache's life that must be left for one to begin; see
+    /// [`SCHEDULED_COMPACTION_MARGIN`].
+    scheduled_compaction_margin: Duration,
     /// The Server's clock, which the moment a Prompt Cache lapses is counted
     /// on.
     clock: crate::clock::ServerClock,
@@ -549,6 +558,8 @@ struct ProviderSessionContext {
     /// How long before the owning Session's Prompt Cache lapses its scheduled
     /// Compaction falls due.
     scheduled_compaction_lead: Duration,
+    /// The least of the cache's life that must be left for one to begin.
+    scheduled_compaction_margin: Duration,
     /// The Server's clock, which the moment a Prompt Cache lapses is counted
     /// on.
     clock: crate::clock::ServerClock,
@@ -1618,7 +1629,7 @@ enum ActorInput {
     Idle,
     /// The scheduled Compaction owed the owning Session's idle stretch has
     /// fallen due (ADR 0073). The actor's own wake, which no one sent: it
-    /// restarts no idle wait.
+    /// restarts the idle wait only where it begins a Turn.
     CompactionDue(IdleStretch),
 }
 
@@ -1678,6 +1689,7 @@ impl ProviderOrchestrator {
             stop_timeout,
             idle_shutdown,
             scheduled_compaction_lead: SCHEDULED_COMPACTION_LEAD,
+            scheduled_compaction_margin: SCHEDULED_COMPACTION_MARGIN,
             clock,
             checkout_guards: Default::default(),
             connected_incarnations: Default::default(),
@@ -1737,9 +1749,12 @@ impl ProviderOrchestrator {
 
     /// The same orchestrator, its actors' scheduled Compactions falling due
     /// `lead` before each Prompt Cache lapses rather than
-    /// [`SCHEDULED_COMPACTION_LEAD`] before. Set before any actor starts.
-    pub(crate) fn with_scheduled_compaction_lead(mut self, lead: Duration) -> Self {
+    /// [`SCHEDULED_COMPACTION_LEAD`] before, and beginning only while
+    /// `margin` of the cache's life is left rather than
+    /// [`SCHEDULED_COMPACTION_MARGIN`]. Set before any actor starts.
+    pub(crate) fn with_scheduled_compaction(mut self, lead: Duration, margin: Duration) -> Self {
         self.scheduled_compaction_lead = lead;
+        self.scheduled_compaction_margin = margin;
         self
     }
 
@@ -2040,6 +2055,7 @@ impl ProviderOrchestrator {
                 stop_timeout: self.stop_timeout,
                 idle_shutdown: self.idle_shutdown,
                 scheduled_compaction_lead: self.scheduled_compaction_lead,
+                scheduled_compaction_margin: self.scheduled_compaction_margin,
                 clock: self.clock.clone(),
                 runtime,
                 sessions,
@@ -2857,6 +2873,7 @@ async fn run_provider_session(
         stop_timeout,
         idle_shutdown,
         scheduled_compaction_lead,
+        scheduled_compaction_margin,
         clock,
         runtime,
         sessions,
@@ -2881,7 +2898,7 @@ async fn run_provider_session(
         sessions: sessions.clone(),
         checkout_guards: checkout_guards.clone(),
         connected_incarnations: connected_incarnations.clone(),
-        released,
+        released: released.clone(),
     };
     let mut provider: Option<ConnectedProviderSession> = None;
     let mut active: Option<ActiveProviderTurn> = None;
@@ -2923,8 +2940,8 @@ async fn run_provider_session(
             .filter(|turn| turn.status.is_terminal())
             .map(|turn| turn.id)
     });
-    // When the idle wait began, which every input restarts but the actor's
-    // own wake for a scheduled Compaction: a wake that compacts nothing
+    // When the idle wait began, which every input restarts save the actor's
+    // own wake for a scheduled Compaction that begins nothing: such a wake
     // keeps no Provider process alive.
     let mut idle_wait_from = tokio::time::Instant::now();
     let mut idle_wait_kept = false;
@@ -3019,6 +3036,14 @@ async fn run_provider_session(
                 .scheduled_compaction_stretch(session_id, scheduled_compaction_lead)
                 .filter(|stretch| Some(stretch.after) != judged_stretch);
             let compaction_due_at = compaction_due.map_or(SessionTimestamp(0), |due| due.due_at);
+            // What the actor itself owes the Session, which would begin a
+            // Turn of its own or needs the Provider it has: no idle process
+            // is stopped, nor scheduled Compaction begun, while it does.
+            let actor_owes_work = pending_prompt.is_some()
+                || !pending_delegations.is_empty()
+                || reports_owed
+                || subagents.owes_continuation()
+                || !subagents.watch_outcomes.is_empty();
             let input = if let Some(connected) = provider.as_mut() {
                 tokio::select! {
                     biased;
@@ -3063,8 +3088,9 @@ async fn run_provider_session(
                         subagents.continuation_awaited_since = None;
                         ActorInput::Idle
                     }
-                    // Restarted with every input, so it elapses only once
-                    // nothing has reached the actor for that long.
+                    // Restarted with every input but a scheduled Compaction's
+                    // wake that begins nothing, so it elapses only once
+                    // nothing else has reached the actor for that long.
                     () = tokio::time::sleep_until(idle_wait_from + idle_shutdown), if stops_when_idle => {
                         ActorInput::Idle
                     }
@@ -3094,21 +3120,15 @@ async fn run_provider_session(
             let command = match input {
                 ActorInput::Command(command) => command,
                 ActorInput::CompactionDue(stretch) => {
-                    // What the actor itself still owes the Session would
-                    // begin a Turn of its own, or needs the one it has.
-                    let owes_nothing = pending_prompt.is_none()
-                        && pending_delegations.is_empty()
-                        && !reports_owed
-                        && !move_holds_turns
-                        && !move_continuation_owed
-                        && !subagents.owes_continuation()
-                        && subagents.watch_outcomes.is_empty();
+                    let owes_nothing =
+                        !actor_owes_work && !move_holds_turns && !move_continuation_owed;
                     let rule = {
                         let in_force = settings.borrow();
                         ScheduledCompactionRule {
                             settings: in_force.settings.compaction.scheduled,
                             auto_settle: in_force.settings.sidebar.auto_settle,
                             lead: scheduled_compaction_lead,
+                            margin: scheduled_compaction_margin,
                             provider_compacts: runtime.cache_lifetime() != CacheLifetime::None
                                 && runtime.manual_compaction() != ManualCompaction::Unsupported
                                 && in_force.settings.provider_enabled(&provider_id),
@@ -3121,13 +3141,14 @@ async fn run_provider_session(
                                 stretch.after,
                                 &rule,
                                 clock.now(),
+                                &released,
                             )
                         }) else {
                             break;
                         };
                         begun
                     } else {
-                        Err(ScheduledCompactionSkip::Busy)
+                        Err(ScheduledCompactionSkip::HoldsWork)
                     };
                     // A wake that begins nothing leaves the idle wait as it
                     // was; one that begins a Turn is that Turn's input.
@@ -3424,11 +3445,7 @@ async fn run_provider_session(
                 // State, as after a restart. Anything still owed keeps it for
                 // another wait.
                 ActorInput::Idle => {
-                    if pending_prompt.is_none()
-                        && pending_delegations.is_empty()
-                        && !reports_owed
-                        && !subagents.owes_continuation()
-                        && subagents.watch_outcomes.is_empty()
+                    if !actor_owes_work
                         && sessions.provider_may_stop_idle(session_id)
                         && let Some(idle) = provider.take()
                     {
@@ -9164,6 +9181,131 @@ running 1 test",
              first Turn settled, {:?} after the Compaction's",
             settled.elapsed(),
             compacted.elapsed()
+        );
+
+        fixture.stop.send_replace(true);
+        within("the orchestrator stops", fixture.providers.shutdown()).await;
+    }
+
+    /// An actor released for its tree going unused opens no scheduled
+    /// Compaction's Turn it would never run: release sets its flag under the
+    /// store's lock, which the judgement reads under the same lock, so a wake
+    /// taken just before the release finds it.
+    #[tokio::test(start_paused = true)]
+    async fn a_released_actor_opens_no_scheduled_compactions_turn() {
+        let (clock, _hand) = crate::clock::ServerClock::manual();
+        let mut settings = SettingsSnapshot::default();
+        settings.settings.compaction.scheduled.enabled = true;
+        let mut fixture = hand_fixture_with(
+            false,
+            Duration::from_secs(60),
+            CacheLifetime::Assumed(Duration::from_secs(10 * 60)),
+            Some(crate::pricing::PromptRates::flat(
+                crate::pricing::CacheRates {
+                    input: 3.0,
+                    cache_read: Some(0.3),
+                    cache_write: Some(3.75),
+                },
+            )),
+            clock.clone(),
+            settings.clone(),
+        )
+        .await;
+        let created = create_session(&fixture.sessions, fixture.workspace.path(), "First");
+        let session_id = created.session.id;
+        fixture
+            .providers
+            .schedule_prompt(session_id, created.prompts[0].id)
+            .expect("schedule the first Prompt");
+        let events = answer(
+            within("the Provider starts", fixture.started.recv())
+                .await
+                .expect("the Provider start"),
+            None,
+        );
+        let sessions = &fixture.sessions;
+        waited("the Turn runs", || {
+            sessions
+                .snapshot(session_id)
+                .filter(|snapshot| {
+                    snapshot
+                        .turns
+                        .last()
+                        .is_some_and(|turn| turn.status == TurnStatus::Active)
+                })
+                .map(drop)
+        })
+        .await;
+        for event in [
+            ProviderEvent::ContextFill {
+                report: crate::provider::ContextFillReport {
+                    turn_id: None,
+                    sequence: 1,
+                    fill: crate::protocol::ContextFill {
+                        occupied_tokens: 400_000,
+                        capacity_tokens: Some(2_000_000),
+                    },
+                },
+            },
+            ProviderEvent::AgentMessageStarted,
+            ProviderEvent::AgentMessageDelta {
+                content: "Done.".to_owned(),
+            },
+            ProviderEvent::AgentMessageCompleted,
+            ProviderEvent::TurnCompleted,
+        ] {
+            events
+                .send(Ok(event.into()))
+                .expect("the actor reads its events");
+        }
+        let (first_turn, lapses_at) = waited("the penalty is forecast", || {
+            sessions
+                .snapshot(session_id)
+                .filter(|snapshot| snapshot.session.working_since.is_none())
+                .and_then(|snapshot| {
+                    let cache = snapshot.session.prompt_cache?;
+                    cache.lapse_penalty?;
+                    Some((snapshot.turns[0].id, cache.lapses_at))
+                })
+        })
+        .await;
+        let rule = ScheduledCompactionRule {
+            settings: settings.settings.compaction.scheduled,
+            auto_settle: settings.settings.sidebar.auto_settle,
+            lead: SCHEDULED_COMPACTION_LEAD,
+            margin: SCHEDULED_COMPACTION_MARGIN,
+            provider_compacts: true,
+        };
+        let due = crate::protocol::SessionTimestamp(
+            lapses_at.0 - u64::try_from(SCHEDULED_COMPACTION_LEAD.as_millis()).unwrap(),
+        );
+
+        assert_eq!(
+            sessions.begin_scheduled_compaction(
+                session_id,
+                first_turn,
+                &rule,
+                due,
+                &AtomicBool::new(true)
+            ),
+            Err(ScheduledCompactionSkip::Released)
+        );
+        assert_eq!(
+            sessions.snapshot(session_id).unwrap().turns.len(),
+            1,
+            "no Turn is opened"
+        );
+        assert!(
+            sessions
+                .begin_scheduled_compaction(
+                    session_id,
+                    first_turn,
+                    &rule,
+                    due,
+                    &AtomicBool::new(false)
+                )
+                .is_ok(),
+            "an actor still held would begin it"
         );
 
         fixture.stop.send_replace(true);

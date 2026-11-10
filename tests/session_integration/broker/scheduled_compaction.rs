@@ -298,3 +298,51 @@ async fn a_subsession_is_compacted_as_a_top_level_session_is() {
         .await
         .expect("shut down server");
 }
+
+/// A Session whose Provider the user turned off is never compacted on its
+/// behalf: Suru asks nothing of a Provider that is off.
+#[tokio::test]
+async fn a_session_whose_provider_was_turned_off_is_left_alone() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut scheduling = scheduling(state_dir.path(), "scheduled-compaction-provider-off").await;
+    let workspace = scheduling.hosted.workspace.path().to_owned();
+    let (session, _handoff, mut provider) = start_session(
+        &scheduling.descriptor,
+        &mut scheduling.hosted.claude,
+        &workspace,
+        default_selection(&claude_models()),
+    )
+    .await;
+    provider.emit_and_wait_until_observed(filled(400_000)).await;
+    answered(&provider).await;
+    provider
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    let due_at = scheduling.due_at(session).await;
+    mutate_setting(
+        &scheduling.descriptor,
+        SettingMutation::ProviderClaudeEnabled { value: Some(false) },
+    )
+    .await;
+    scheduling.advance_to(due_at);
+    scheduling
+        .after_the_actor_has_judged(session, &mut provider)
+        .await;
+    assert!(
+        provider.try_next_compaction().is_none(),
+        "a Provider that is off is asked nothing"
+    );
+    assert_eq!(
+        read_session(&scheduling.descriptor, session)
+            .await
+            .turns
+            .len(),
+        1
+    );
+    scheduling
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}

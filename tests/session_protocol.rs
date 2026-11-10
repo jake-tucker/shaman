@@ -158,6 +158,7 @@ fn a_prompt_cache_names_the_write_price_its_call_paid() {
     ] {
         let cache = PromptCache {
             lapses_at: SessionTimestamp(1_767_225_900_000),
+            written_in: None,
             written_by: ModelId::new("gpt-5"),
             lifetime_ms: None,
             write_price: price,
@@ -683,6 +684,7 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
             }),
             prompt_cache: Some(suru::protocol::PromptCache {
                 lapses_at: SessionTimestamp(1_767_225_900_250),
+                written_in: None,
                 written_by: ModelId::new("gpt-5"),
                 lifetime_ms: Some(3_600_000),
                 write_price: suru::protocol::CacheWritePrice::Default,
@@ -2508,6 +2510,7 @@ fn a_prompt_cache_change_carries_the_whole_cache_or_its_absence() {
             SessionChange::PromptCacheChanged {
                 prompt_cache: Some(suru::protocol::PromptCache {
                     lapses_at: SessionTimestamp(1_767_225_900_000),
+                    written_in: None,
                     written_by: ModelId::new("gpt-5"),
                     lifetime_ms: None,
                     write_price: suru::protocol::CacheWritePrice::Default,
@@ -3832,6 +3835,12 @@ fn a_compaction_request_and_the_turn_it_begins_travel_on_the_wire() {
         assert!(
             PROTOCOL_VERSION >= 114,
             "a Turn naming who asked for its Compaction changes the wire"
+        );
+    }
+    const {
+        assert!(
+            PROTOCOL_VERSION >= 115,
+            "a Prompt Cache naming the Turn that wrote it changes the wire"
         );
     }
     let mut scheduled = turn.clone();

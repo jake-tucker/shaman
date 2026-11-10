@@ -13,7 +13,7 @@ use uuid::Uuid;
 mod workspace_paths;
 pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths};
 
-pub const PROTOCOL_VERSION: u32 = 114;
+pub const PROTOCOL_VERSION: u32 = 115;
 mod attachment;
 mod divided_usage;
 mod pair_back;
@@ -3978,6 +3978,11 @@ pub struct ContextFill {
 #[serde(deny_unknown_fields)]
 pub struct PromptCache {
     pub lapses_at: SessionTimestamp,
+    /// The Turn whose output last wrote the cache and set this moment, where
+    /// a Turn of the Session's did: one that wrote nothing leaves the cache,
+    /// and this, as they stood.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub written_in: Option<TurnId>,
     /// The Model whose call last wrote the cache: the Actual Model, where the
     /// Provider named it, and otherwise the Model the Turn selected.
     pub written_by: ModelId,
@@ -5946,6 +5951,28 @@ pub struct SessionSnapshot {
 }
 
 impl SessionSnapshot {
+    /// Whether `selection` has left the Session's Prompt Cache since it was
+    /// written: it names another Provider or another Model than the Turn that
+    /// last wrote the cache ran under, so a Prompt sent under it reads no
+    /// cache at all. The Selection is compared as chosen, a routing one by
+    /// its own name, never with the Model a call actually ran on; Model
+    /// Options are not compared, since they leave the context as it was.
+    /// `None` where no cache is held or the Turn that wrote it is not known.
+    pub fn selection_changed_since_cache_written(
+        &self,
+        selection: &AgentSelection,
+    ) -> Option<bool> {
+        let written_in = self.session.prompt_cache.as_ref()?.written_in?;
+        let written_under = &self
+            .turns
+            .iter()
+            .find(|turn| turn.id == written_in)?
+            .agent
+            .as_ref()?
+            .selection;
+        Some(written_under.provider != selection.provider || written_under.model != selection.model)
+    }
+
     /// The Transcript as it is read, each entry beside its position in
     /// [`Self::transcript`]: in order, but for a Move that waited, which stands
     /// where it settled.

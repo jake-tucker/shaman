@@ -296,7 +296,12 @@ impl StagedWrite {
             ),
         };
         if let Some(written) = written {
-            return Settled::Wrote(written);
+            // Whatever the declaration, the Turn that wrote the cache is the
+            // one whose stretch the moment begins.
+            return Settled::Wrote(PromptCache {
+                written_in: Some(self.turn_id),
+                ..written
+            });
         }
         let Some(current) = current else {
             return Settled::Left(None);
@@ -325,6 +330,7 @@ fn cache_written(
 ) -> Option<PromptCache> {
     Some(PromptCache {
         lapses_at: SessionTimestamp(at.0.saturating_add(millis(written.lifetime))),
+        written_in: None,
         written_by,
         lifetime_ms: Some(millis(written.lifetime)),
         write_price: written.price,
@@ -476,8 +482,20 @@ impl SessionStore {
         let Some(record) = state.sessions.get_mut(&session_id) else {
             return Ok(());
         };
+        // No Turn of the Session's wrote it, so the Turn that last did is
+        // still the one it was.
+        let written_in = record
+            .snapshot
+            .session
+            .prompt_cache
+            .as_ref()
+            .and_then(|cache| cache.written_in);
         let Some(prompt_cache) = written_cache(lapse, lifetime, || {
             selected(&record.snapshot).map(|(_, model)| model.clone())
+        })
+        .map(|cache| PromptCache {
+            written_in,
+            ..cache
         }) else {
             return Ok(());
         };
@@ -904,7 +922,7 @@ impl SessionRecord {
 }
 
 /// The Prompt Cache a reported `lapse` wrote, on the Model it names or else
-/// `turn_model`'s.
+/// `turn_model`'s. Which Turn wrote it is its caller's to say.
 fn written_cache(
     lapse: ReportedLapse,
     declared: CacheLifetime,
@@ -912,6 +930,7 @@ fn written_cache(
 ) -> Option<PromptCache> {
     Some(PromptCache {
         lapses_at: lapse.lapses_at,
+        written_in: None,
         written_by: lapse.model.or_else(turn_model)?,
         lifetime_ms: lifetime_ms(lapse.lifetime, declared),
         write_price: lapse.write_price,

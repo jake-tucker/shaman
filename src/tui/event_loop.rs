@@ -7786,6 +7786,7 @@ mod ready_event_tests {
         let mut snapshot = streamed_snapshot(workspace);
         snapshot.session.prompt_cache = Some(crate::protocol::PromptCache {
             lapses_at: SessionTimestamp(wall.load(Ordering::SeqCst) + ahead_ms),
+            written_in: None,
             written_by: crate::protocol::ModelId::new("gpt-fixture"),
             lifetime_ms: Some(300_000),
             write_price: crate::protocol::CacheWritePrice::Default,
@@ -8097,6 +8098,7 @@ mod ready_event_tests {
             SessionChange::PromptCacheChanged {
                 prompt_cache: Some(crate::protocol::PromptCache {
                     lapses_at: SessionTimestamp(wall.load(Ordering::SeqCst) + 300_000),
+                    written_in: None,
                     written_by: crate::protocol::ModelId::new("gpt-fixture"),
                     lifetime_ms: Some(300_000),
                     write_price: crate::protocol::CacheWritePrice::Default,
@@ -8130,6 +8132,7 @@ mod ready_event_tests {
         let mut other = streamed_snapshot(workspace.path());
         other.session.prompt_cache = Some(crate::protocol::PromptCache {
             lapses_at: SessionTimestamp(wall.load(Ordering::SeqCst) + 90_000),
+            written_in: None,
             written_by: crate::protocol::ModelId::new("gpt-fixture"),
             lifetime_ms: Some(300_000),
             write_price: crate::protocol::CacheWritePrice::Default,

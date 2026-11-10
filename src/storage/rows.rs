@@ -1190,6 +1190,8 @@ fn transcript_identity(item: TranscriptItem) -> TranscriptIdentity {
 #[serde(deny_unknown_fields)]
 struct StoredPromptCache {
     lapses_at: SessionTimestamp,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    written_in: Option<crate::protocol::TurnId>,
     written_by: crate::protocol::ModelId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     lifetime_ms: Option<u64>,
@@ -1206,6 +1208,7 @@ impl From<&PromptCache> for StoredPromptCache {
     fn from(cache: &PromptCache) -> Self {
         Self {
             lapses_at: cache.lapses_at,
+            written_in: cache.written_in,
             written_by: cache.written_by.clone(),
             lifetime_ms: cache.lifetime_ms,
             write_price: cache.write_price,
@@ -1218,6 +1221,7 @@ impl From<StoredPromptCache> for PromptCache {
     fn from(stored: StoredPromptCache) -> Self {
         Self {
             lapses_at: stored.lapses_at,
+            written_in: stored.written_in,
             written_by: stored.written_by,
             lifetime_ms: stored.lifetime_ms,
             write_price: stored.write_price,

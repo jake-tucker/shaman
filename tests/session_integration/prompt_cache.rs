@@ -87,9 +87,19 @@ async fn sessions_model(fixture: &WorkingTurn) -> ModelId {
         .model
 }
 
+/// `cache` as these tests compare it, apart from which Turn wrote it, which
+/// [`the_revision_that_settles_a_turn_carries_the_lapse_it_reported`] pins.
+fn unwritten(cache: PromptCache) -> PromptCache {
+    PromptCache {
+        written_in: None,
+        ..cache
+    }
+}
+
 fn cache(lapses_at: SessionTimestamp, written_by: &ModelId, usd: Option<f64>) -> PromptCache {
     PromptCache {
         lapses_at,
+        written_in: None,
         written_by: written_by.clone(),
         lifetime_ms: None,
         write_price: suru::protocol::CacheWritePrice::Default,
@@ -280,14 +290,23 @@ async fn the_revision_that_settles_a_turn_carries_the_lapse_it_reported() {
         matches!(change, SessionChange::TurnStatusChanged { status, .. } if status.is_terminal())
     })
     .await;
+    let first_turn = read_session(fixture.server.descriptor(), fixture.session_id)
+        .await
+        .turns[0]
+        .id;
     assert_eq!(
-        lapse_of(&settling).map(|cache| (cache.lapses_at, cache.written_by.clone())),
-        Some((lapses_at, model.clone())),
+        lapse_of(&settling).map(|cache| (
+            cache.lapses_at,
+            cache.written_by.clone(),
+            cache.written_in
+        )),
+        Some((lapses_at, model.clone(), Some(first_turn))),
         "the moment changes in the revision that settles the Turn: {settling:?}"
     );
 
     read_until(&fixture, "the penalty is forecast", |snapshot| {
-        snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38)))
+        snapshot.session.prompt_cache.clone().map(unwritten)
+            == Some(cache(lapses_at, &model, Some(1.38)))
     })
     .await;
     fixture
@@ -314,7 +333,8 @@ async fn the_moment_survives_a_restart_and_its_penalty_is_forecast_again_never_s
     let fixture = cold_priced(state.path(), channel, lapses_at).await;
     let model = sessions_model(&fixture).await;
     let settled = read_until(&fixture, "the penalty is forecast", |snapshot| {
-        snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38)))
+        snapshot.session.prompt_cache.clone().map(unwritten)
+            == Some(cache(lapses_at, &model, Some(1.38)))
     })
     .await;
     assert_eq!(
@@ -334,11 +354,17 @@ async fn the_moment_survives_a_restart_and_its_penalty_is_forecast_again_never_s
         server::spawn_with_provider(ServerConfig::new(state.path(), channel).unwrap(), unpriced)
             .await
             .unwrap();
+    let restored = read_session(restarted.descriptor(), id)
+        .await
+        .session
+        .prompt_cache;
     assert_eq!(
-        read_session(restarted.descriptor(), id)
-            .await
-            .session
-            .prompt_cache,
+        restored.as_ref().and_then(|cache| cache.written_in),
+        Some(settled.turns[0].id),
+        "so is the Turn that wrote it, beside the price its write paid"
+    );
+    assert_eq!(
+        restored.map(unwritten),
         Some(cache(lapses_at, &model, None)),
         "the moment and the Model that wrote it are stored; the penalty is not"
     );
@@ -357,7 +383,10 @@ async fn the_moment_survives_a_restart_and_its_penalty_is_forecast_again_never_s
         restarted.descriptor(),
         id,
         "the penalty is forecast again once its prices are found",
-        |snapshot| snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38))),
+        |snapshot| {
+            snapshot.session.prompt_cache.clone().map(unwritten)
+                == Some(cache(lapses_at, &model, Some(1.38)))
+        },
     )
     .await;
 
@@ -512,7 +541,7 @@ async fn the_penalty_is_absent_where_rates_are_unknown_and_follows_the_context_f
     })
     .await;
     assert_eq!(
-        unpriced.session.prompt_cache,
+        unpriced.session.prompt_cache.clone().map(unwritten),
         Some(cache(first, &model, None)),
         "a Model with no known prices has no penalty, not a zero one"
     );
@@ -528,7 +557,10 @@ async fn the_penalty_is_absent_where_rates_are_unknown_and_follows_the_context_f
     read_until(
         &fixture,
         "the next Turn prices the penalty at the Context Fill standing",
-        |snapshot| snapshot.session.prompt_cache == Some(cache(second, &model, Some(0.345))),
+        |snapshot| {
+            snapshot.session.prompt_cache.clone().map(unwritten)
+                == Some(cache(second, &model, Some(0.345)))
+        },
     )
     .await;
 
@@ -539,7 +571,10 @@ async fn the_penalty_is_absent_where_rates_are_unknown_and_follows_the_context_f
     read_until(
         &fixture,
         "a Context Fill measured after the Turn settled moves the penalty",
-        |snapshot| snapshot.session.prompt_cache == Some(cache(second, &model, Some(3.45))),
+        |snapshot| {
+            snapshot.session.prompt_cache.clone().map(unwritten)
+                == Some(cache(second, &model, Some(3.45)))
+        },
     )
     .await;
     fixture.server.shutdown().await.unwrap();
@@ -554,7 +589,10 @@ async fn selecting_another_model_prices_the_penalty_at_it_or_where_it_has_none_a
     read_until(
         &fixture,
         "the penalty is priced at the writer",
-        |snapshot| snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38))),
+        |snapshot| {
+            snapshot.session.prompt_cache.clone().map(unwritten)
+                == Some(cache(lapses_at, &model, Some(1.38)))
+        },
     )
     .await;
 
@@ -570,7 +608,8 @@ async fn selecting_another_model_prices_the_penalty_at_it_or_where_it_has_none_a
         "the penalty is priced at the new Model",
         |snapshot| {
             // 400,000 tokens at $1.25 written less $0.10 read, a million.
-            snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(0.46)))
+            snapshot.session.prompt_cache.clone().map(unwritten)
+                == Some(cache(lapses_at, &model, Some(0.46)))
         },
     )
     .await;
@@ -581,7 +620,10 @@ async fn selecting_another_model_prices_the_penalty_at_it_or_where_it_has_none_a
     read_until(
         &fixture,
         "a routing choice is priced at the writer",
-        |snapshot| snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38))),
+        |snapshot| {
+            snapshot.session.prompt_cache.clone().map(unwritten)
+                == Some(cache(lapses_at, &model, Some(1.38)))
+        },
     )
     .await;
     fixture.server.shutdown().await.unwrap();
@@ -807,7 +849,8 @@ async fn prices_a_provider_comes_to_know_after_a_restart_are_forecast_without_a_
     let fixture = cold_priced(state.path(), channel, lapses_at).await;
     let model = sessions_model(&fixture).await;
     read_until(&fixture, "the penalty is forecast", |snapshot| {
-        snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38)))
+        snapshot.session.prompt_cache.clone().map(unwritten)
+            == Some(cache(lapses_at, &model, Some(1.38)))
     })
     .await;
     let id = fixture.session_id;
@@ -828,7 +871,8 @@ async fn prices_a_provider_comes_to_know_after_a_restart_are_forecast_without_a_
         read_session(restarted.descriptor(), id)
             .await
             .session
-            .prompt_cache,
+            .prompt_cache
+            .map(unwritten),
         Some(cache(lapses_at, &model, None))
     );
     // Its catalog comes, and its prices with it.
@@ -839,7 +883,10 @@ async fn prices_a_provider_comes_to_know_after_a_restart_are_forecast_without_a_
         restarted.descriptor(),
         id,
         "the penalty is forecast once the Provider knows its prices",
-        |snapshot| snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38))),
+        |snapshot| {
+            snapshot.session.prompt_cache.clone().map(unwritten)
+                == Some(cache(lapses_at, &model, Some(1.38)))
+        },
     )
     .await;
     restarted.shutdown().await.unwrap();
@@ -853,7 +900,8 @@ async fn a_selection_whose_prices_are_to_hand_lands_its_penalty_in_the_same_revi
     let fixture = cold_priced(state.path(), channel, lapses_at).await;
     let model = sessions_model(&fixture).await;
     read_until(&fixture, "the penalty is forecast", |snapshot| {
-        snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38)))
+        snapshot.session.prompt_cache.clone().map(unwritten)
+            == Some(cache(lapses_at, &model, Some(1.38)))
     })
     .await;
     let cheaper = ModelId::new("gpt-cheaper");
@@ -960,7 +1008,8 @@ async fn a_session_not_read_in_is_left_alone_at_start_and_forecast_when_read_in(
     let fixture = cold_priced(state.path(), channel, lapses_at).await;
     let model = sessions_model(&fixture).await;
     let stored = read_until(&fixture, "the penalty is forecast", |snapshot| {
-        snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38)))
+        snapshot.session.prompt_cache.clone().map(unwritten)
+            == Some(cache(lapses_at, &model, Some(1.38)))
     })
     .await;
     let id = fixture.session_id;
@@ -994,7 +1043,7 @@ async fn a_session_not_read_in_is_left_alone_at_start_and_forecast_when_read_in(
         panic!("the Session is listed, readable");
     };
     assert_eq!(
-        summary.session.prompt_cache,
+        summary.session.prompt_cache.clone().map(unwritten),
         Some(cache(lapses_at, &model, None)),
         "the listing holds the moment stored, and nothing forecast for a history not read in"
     );
@@ -1004,7 +1053,7 @@ async fn a_session_not_read_in_is_left_alone_at_start_and_forecast_when_read_in(
         "nothing was committed to the Session before its history was read in"
     );
     assert_eq!(
-        restored.session.prompt_cache,
+        restored.session.prompt_cache.clone().map(unwritten),
         Some(cache(lapses_at, &model, Some(1.38))),
         "its penalty is forecast as its history is read in"
     );
@@ -1107,7 +1156,7 @@ async fn the_penalty_is_priced_at_the_tier_its_context_falls_in_and_its_caches_w
         &fixture,
         "a long context's hour-long cache is priced at the long tier's hour price",
         |snapshot| {
-            snapshot.session.prompt_cache
+            snapshot.session.prompt_cache.clone().map(unwritten)
                 == Some(PromptCache {
                     lifetime_ms: Some(60 * 60 * 1000),
                     write_price: suru::protocol::CacheWritePrice::Hour,

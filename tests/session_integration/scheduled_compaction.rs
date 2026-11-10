@@ -8,8 +8,11 @@
 use std::time::Duration;
 
 use crate::session_integration::{
-    provider_support::{CompactionRequest as CompactionAsked, ControlledProviderSession},
-    support::{WorkingTurn, read_session, read_session_until, working_turn_configured},
+    provider_support::CompactionRequest as CompactionAsked,
+    support::{
+        WorkingTurn, controlled_selection, read_session, read_session_until,
+        working_turn_configured,
+    },
 };
 use crate::support::PROGRESS_DEADLINE;
 use suru::{
@@ -35,6 +38,10 @@ const LIFETIME: Duration = Duration::from_secs(10 * 60);
 /// The lead injected in place of the production two minutes, so the moment a
 /// Compaction falls due is told apart from any the production lead would set.
 const LEAD: Duration = Duration::from_secs(30);
+
+/// The least of the cache's life that must be left, injected in place of the
+/// production twenty seconds.
+const MARGIN: Duration = Duration::from_secs(5);
 
 /// Writing a million tokens to the cache costs $3.75 and reading them back
 /// $0.30, so 400,000 tokens of context forecast a $1.38 Lapse Penalty.
@@ -97,7 +104,7 @@ async fn idle(state: &std::path::Path, channel: &str, settings: &str, priced: bo
         settings,
         priced,
         CacheLifetime::Assumed(LIFETIME),
-        |_| {},
+        |_, _| {},
     )
     .await
 }
@@ -110,7 +117,7 @@ async fn idle_on(
     settings: &str,
     priced: bool,
     lifetime: CacheLifetime,
-    during: impl FnOnce(&ControlledProviderSession),
+    during: impl FnOnce(&WorkingTurn, SessionTimestamp),
 ) -> Idle {
     let config = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(config.path().join("suru.jsonc"), settings).expect("write Config Document");
@@ -120,7 +127,8 @@ async fn idle_on(
         channel,
         ServerTimings::default()
             .with_clock(clock.clone())
-            .with_scheduled_compaction_lead(LEAD),
+            .with_scheduled_compaction_lead(LEAD)
+            .with_scheduled_compaction_margin(MARGIN),
         Some(config.path()),
     )
     .await;
@@ -138,7 +146,7 @@ async fn idle_on(
         .provider_session
         .emit_and_wait_until_observed(filled(1, 400_000))
         .await;
-    during(&fixture.provider_session);
+    during(&fixture, clock.now());
     for event in answered() {
         fixture
             .provider_session
@@ -668,13 +676,15 @@ async fn a_session_working_or_monitoring_when_it_falls_due_is_skipped_not_deferr
         ON,
         true,
         CacheLifetime::Assumed(LIFETIME),
-        |provider| {
-            provider.emit(ProviderEvent::SubagentStarted {
-                subagent_id: ProviderSubagentId::new("reader"),
-                name: "Reader".into(),
-                description: "Read the parser".into(),
-                delegation: None,
-            });
+        |fixture, _| {
+            fixture
+                .provider_session
+                .emit(ProviderEvent::SubagentStarted {
+                    subagent_id: ProviderSubagentId::new("reader"),
+                    name: "Reader".into(),
+                    description: "Read the parser".into(),
+                    delegation: None,
+                });
         },
     )
     .await;
@@ -712,8 +722,8 @@ async fn a_session_working_or_monitoring_when_it_falls_due_is_skipped_not_deferr
         ON,
         true,
         CacheLifetime::Assumed(LIFETIME),
-        |provider| {
-            provider.emit(ProviderEvent::WatchStarted {
+        |fixture, _| {
+            fixture.provider_session.emit(ProviderEvent::WatchStarted {
                 watch_id: ProviderWatchId::new("build"),
                 description: "the build".into(),
             });
@@ -761,7 +771,7 @@ async fn a_provider_with_no_cache_lifetime_or_no_manual_compaction_is_skipped() 
         ON,
         true,
         CacheLifetime::None,
-        |_| {},
+        |_, _| {},
     )
     .await;
     assert_eq!(lasting.snapshot().await.session.prompt_cache, None);
@@ -961,5 +971,421 @@ async fn a_prompt_sent_while_it_runs_is_held_to_begin_the_next_turn() {
         .await;
     assert_eq!(snapshot.turns[1].status, TurnStatus::Completed);
     assert!(snapshot.turns[2].prompt_id.is_some());
+    idle.shutdown().await;
+}
+
+impl Idle {
+    /// Selects `model` for the Session, as the composer does.
+    async fn select(&self, model: &str) {
+        let descriptor = self.fixture.server.descriptor();
+        self.fixture
+            .client
+            .post(format!(
+                "{}/v1/sessions/{}/agent-selection",
+                descriptor.base_url, self.fixture.session_id
+            ))
+            .bearer_auth(&descriptor.token)
+            .json(&suru::protocol::UpdateAgentSelectionRequest {
+                operation_id: suru::protocol::AgentSelectionOperationId::new(),
+                selection: controlled_selection(model, "high", "fast"),
+            })
+            .send()
+            .await
+            .expect("select a Model")
+            .error_for_status()
+            .expect("the Selection is taken");
+    }
+
+    async fn model(&self) -> suru::protocol::ModelId {
+        self.snapshot()
+            .await
+            .session
+            .agent_selection
+            .expect("the Session has an Agent Selection")
+            .model
+    }
+
+    /// Sends a Prompt whose Turn its Provider fails before running anything,
+    /// so the Turn writes nothing, and waits for it to settle.
+    async fn prompt_failing_before_any_call(&mut self) {
+        self.send_prompt(PromptDelivery::Queue).await;
+        timeout(PROGRESS_DEADLINE, self.fixture.provider_session.next_turn())
+            .await
+            .expect("the Prompt's Turn reaches the Provider")
+            .fail("the Provider could not be reached");
+        let turns = self.snapshot().await.turns.len().max(2);
+        self.until("the Prompt's Turn settles failed", |snapshot| {
+            snapshot.turns.len() == turns
+                && snapshot.turns[turns - 1].status == TurnStatus::Failed
+                && snapshot.session.working_since.is_none()
+        })
+        .await;
+    }
+
+    async fn interrupt_acknowledged(&mut self) {
+        let (response, ()) = tokio::join!(
+            crate::session_integration::support::interrupt(
+                &self.fixture.client,
+                self.fixture.server.descriptor(),
+                self.fixture.session_id,
+            ),
+            async {
+                timeout(
+                    PROGRESS_DEADLINE,
+                    self.fixture.provider_session.next_interrupt(),
+                )
+                .await
+                .expect("the interrupt reaches the Provider")
+                .succeed();
+            }
+        );
+        assert!(response.status().is_success(), "{}", response.status());
+        self.emit([ProviderEvent::TurnInterrupted]).await;
+    }
+}
+
+/// A Session whose Agent Selection names another Model than the Turn that
+/// wrote its cache would be compacted on a Model holding no cache of it, at
+/// fresh prices: it is skipped. Choosing the writer's Model back before the
+/// moment comes leaves it owed again.
+#[tokio::test]
+async fn a_selection_changed_since_the_cache_was_written_is_skipped() {
+    let state = tempfile::tempdir().unwrap();
+    let mut changed = idle(state.path(), "scheduled-compaction-reselected", ON, true).await;
+    changed
+        .fixture
+        .runtime
+        .price_cache(suru::protocol::ModelId::new("gpt-other"), RATES);
+    changed.select("gpt-other").await;
+    changed
+        .until("the penalty is forecast at the new Model", |snapshot| {
+            snapshot
+                .session
+                .agent_selection
+                .as_ref()
+                .map(|s| s.model.as_str())
+                == Some("gpt-other")
+                && snapshot
+                    .session
+                    .prompt_cache
+                    .as_ref()
+                    .is_some_and(|cache| cache.lapse_penalty.is_some())
+        })
+        .await;
+    let due_at = changed.due_at().await;
+    changed.advance_to(due_at);
+    changed
+        .assert_nothing_scheduled(1, "the Selection left the cache")
+        .await;
+    changed.shutdown().await;
+
+    let state = tempfile::tempdir().unwrap();
+    let mut back = idle(
+        state.path(),
+        "scheduled-compaction-reselected-back",
+        ON,
+        true,
+    )
+    .await;
+    let writer = back.model().await;
+    back.fixture
+        .runtime
+        .price_cache(suru::protocol::ModelId::new("gpt-other"), RATES);
+    back.select("gpt-other").await;
+    back.select(writer.as_str()).await;
+    back.until("the writer's Model is selected again", |snapshot| {
+        snapshot.session.agent_selection.as_ref().map(|s| &s.model) == Some(&writer)
+    })
+    .await;
+    let due_at = back.due_at().await;
+    back.advance_to(due_at);
+    back.scheduled().await.succeed();
+    back.shutdown().await;
+}
+
+/// A routing selection is judged as itself: its calls ran on a Model the
+/// Provider chose, which wrote the cache, but the Selection is the one the
+/// Turn ran under, so nothing changed.
+#[tokio::test]
+async fn a_routing_selection_whose_calls_ran_on_another_model_has_not_changed() {
+    let state = tempfile::tempdir().unwrap();
+    let mut routed = idle_on(
+        state.path(),
+        "scheduled-compaction-routed",
+        ON,
+        false,
+        CacheLifetime::Reported,
+        |fixture, now| {
+            let actual = suru::protocol::ModelId::new("routed-actual");
+            fixture.runtime.price_cache(actual.clone(), RATES);
+            fixture
+                .provider_session
+                .emit(ProviderEvent::PromptCacheLapseReported {
+                    lapses_at: SessionTimestamp(now.0 + 10 * 60 * 1000),
+                    model: Some(actual),
+                    lifetime: None,
+                    write_price: suru::protocol::CacheWritePrice::Default,
+                    prompt_limit_tokens: None,
+                });
+        },
+    )
+    .await;
+    let model = routed.model().await;
+    routed.fixture.runtime.declare_routing(model.clone(), true);
+    let snapshot = routed
+        .until(
+            "the penalty is forecast at the Model that wrote it",
+            |snapshot| {
+                snapshot
+                    .session
+                    .prompt_cache
+                    .as_ref()
+                    .is_some_and(|cache| cache.lapse_penalty.is_some())
+            },
+        )
+        .await;
+    assert_ne!(
+        snapshot.session.prompt_cache.unwrap().written_by,
+        model,
+        "another Model than the Selection wrote the cache"
+    );
+    let due_at = routed.due_at().await;
+    routed.advance_to(due_at);
+    routed.scheduled().await.succeed();
+    routed.shutdown().await;
+}
+
+/// A Prompt whose Turn fails before any call writes nothing: the cache and
+/// its moment stand as they were, and the stretch that Turn began is not the
+/// cache's, so the Session the user was just at is not compacted under them.
+#[tokio::test]
+async fn a_turn_that_wrote_nothing_begins_no_stretch_owed_a_compaction() {
+    let state = tempfile::tempdir().unwrap();
+    let mut failed = idle(state.path(), "scheduled-compaction-wrote-nothing", ON, true).await;
+    let due_at = failed.due_at().await;
+    failed.advance_to(SessionTimestamp(due_at.0 - 60_000));
+    failed.prompt_failing_before_any_call().await;
+    assert_eq!(failed.due_at().await, due_at, "the moment stands as it was");
+    failed.advance_to(due_at);
+    failed
+        .assert_nothing_scheduled(2, "the failed Turn wrote nothing")
+        .await;
+    failed.shutdown().await;
+
+    // A stretch skipped already gives none either to a Turn that writes
+    // nothing within its lead.
+    let state = tempfile::tempdir().unwrap();
+    let mut skipped = idle(
+        state.path(),
+        "scheduled-compaction-wrote-nothing-late",
+        "{}",
+        true,
+    )
+    .await;
+    let due_at = skipped.due_at().await;
+    skipped.advance_to(SessionTimestamp(due_at.0 + 1_000));
+    skipped
+        .assert_nothing_scheduled(1, "the Setting is off")
+        .await;
+    skipped
+        .mutate(SettingMutation::CompactionScheduledEnabled { value: Some(true) })
+        .await;
+    skipped.prompt_failing_before_any_call().await;
+    skipped
+        .assert_nothing_scheduled(2, "the failed Turn wrote nothing")
+        .await;
+    skipped.shutdown().await;
+}
+
+/// On a Provider that reports its lapse, a Prompt interrupted before its
+/// first call reported nothing, and begins no stretch owed a Compaction.
+#[tokio::test]
+async fn a_turn_interrupted_before_any_call_begins_no_stretch_owed_a_compaction() {
+    let state = tempfile::tempdir().unwrap();
+    let mut idle = idle_on(
+        state.path(),
+        "scheduled-compaction-interrupted-prompt",
+        ON,
+        true,
+        CacheLifetime::Reported,
+        |fixture, now| {
+            fixture
+                .provider_session
+                .emit(ProviderEvent::PromptCacheLapseReported {
+                    lapses_at: SessionTimestamp(now.0 + 10 * 60 * 1000),
+                    model: None,
+                    lifetime: None,
+                    write_price: suru::protocol::CacheWritePrice::Default,
+                    prompt_limit_tokens: None,
+                });
+        },
+    )
+    .await;
+    let due_at = idle.due_at().await;
+    idle.advance_to(SessionTimestamp(due_at.0 - 60_000));
+    idle.send_prompt(PromptDelivery::Queue).await;
+    timeout(PROGRESS_DEADLINE, idle.fixture.provider_session.next_turn())
+        .await
+        .expect("the Prompt's Turn reaches the Provider")
+        .succeed();
+    idle.interrupt_acknowledged().await;
+    idle.until("the Prompt's Turn settles", |snapshot| {
+        snapshot.turns.len() == 2 && snapshot.session.working_since.is_none()
+    })
+    .await;
+    idle.advance_to(due_at);
+    idle.assert_nothing_scheduled(2, "the interrupted Turn wrote nothing")
+        .await;
+    idle.shutdown().await;
+}
+
+/// A stretch the user's own `/compact` began has had its Compaction, though
+/// the compacted context still forecasts more than the minimum.
+#[tokio::test]
+async fn a_stretch_a_manual_compaction_began_is_owed_nothing() {
+    let state = tempfile::tempdir().unwrap();
+    let mut idle = idle(state.path(), "scheduled-compaction-after-manual", ON, true).await;
+    let response = crate::session_integration::support::compact(
+        &idle.fixture.client,
+        idle.fixture.server.descriptor(),
+        idle.fixture.session_id,
+        None,
+    )
+    .await;
+    assert!(response.status().is_success(), "{}", response.status());
+    timeout(
+        PROGRESS_DEADLINE,
+        idle.fixture.provider_session.next_compaction(),
+    )
+    .await
+    .expect("the request reaches the Provider")
+    .succeed();
+    idle.emit([
+        ProviderEvent::CompactionStarted,
+        completed(400_000, 300_000),
+        filled(2, 300_000),
+        ProviderEvent::TurnCompleted,
+    ])
+    .await;
+    idle.until("the manual Compaction's Turn settles", |snapshot| {
+        snapshot.turns.len() == 2
+            && snapshot.session.working_since.is_none()
+            && snapshot
+                .session
+                .prompt_cache
+                .as_ref()
+                .is_some_and(|cache| cache.lapse_penalty.is_some_and(|p| p.as_usd() > 0.5))
+    })
+    .await;
+    let due_at = idle.due_at().await;
+    idle.advance_to(due_at);
+    idle.assert_nothing_scheduled(2, "the manual Compaction was the stretch's")
+        .await;
+    idle.shutdown().await;
+}
+
+/// A cache that lives no longer than the lead would fall due the moment each
+/// Turn settled: such a Session is never compacted this way.
+#[tokio::test]
+async fn a_cache_living_no_longer_than_the_lead_is_never_scheduled() {
+    let state = tempfile::tempdir().unwrap();
+    let mut idle = idle_on(
+        state.path(),
+        "scheduled-compaction-short-lived",
+        ON,
+        true,
+        CacheLifetime::Assumed(LEAD),
+        |_, _| {},
+    )
+    .await;
+    // From its second Turn on, the Session's prices are held as each Turn
+    // settles, and its penalty forecast in the revision that settles it.
+    idle.prompt_and_settle().await;
+    idle.assert_nothing_scheduled(2, "the lifetime is no longer than the lead")
+        .await;
+    let lapses_at = idle.due_at().await.0 + u64::try_from(LEAD.as_millis()).unwrap();
+    idle.advance_to(SessionTimestamp(
+        lapses_at - u64::try_from(MARGIN.as_millis()).unwrap(),
+    ));
+    idle.assert_nothing_scheduled(2, "nor while it still lives")
+        .await;
+    idle.shutdown().await;
+}
+
+/// A wake that comes with less than the margin of the cache's life left —
+/// after a suspend, say — would reach the Provider with the cache going: it
+/// is skipped. With the margin left exactly, it begins.
+#[tokio::test]
+async fn a_wake_with_less_than_the_margin_left_is_skipped() {
+    let margin = u64::try_from(MARGIN.as_millis()).unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let mut late = idle(state.path(), "scheduled-compaction-too-late", ON, true).await;
+    let lapses_at = late.due_at().await.0 + u64::try_from(LEAD.as_millis()).unwrap();
+    late.advance_to(SessionTimestamp(lapses_at - margin + 1));
+    late.assert_nothing_scheduled(1, "less than the margin is left")
+        .await;
+    late.shutdown().await;
+
+    let state = tempfile::tempdir().unwrap();
+    let mut in_time = idle(state.path(), "scheduled-compaction-just-in-time", ON, true).await;
+    let lapses_at = in_time.due_at().await.0 + u64::try_from(LEAD.as_millis()).unwrap();
+    in_time.advance_to(SessionTimestamp(lapses_at - margin));
+    in_time.scheduled().await.succeed();
+    in_time.shutdown().await;
+}
+
+/// An interrupted scheduled Compaction was the stretch's attempt.
+#[tokio::test]
+async fn an_interrupted_scheduled_compaction_is_not_tried_again() {
+    let state = tempfile::tempdir().unwrap();
+    let mut idle = idle(state.path(), "scheduled-compaction-interrupted", ON, true).await;
+    let due_at = idle.due_at().await;
+    idle.advance_to(due_at);
+    idle.scheduled().await.succeed();
+    idle.emit([ProviderEvent::CompactionStarted]).await;
+    idle.interrupt_acknowledged().await;
+    let settled = idle
+        .until("the interrupted Compaction's Turn settles", |snapshot| {
+            snapshot.turns[1].status.is_terminal() && snapshot.session.working_since.is_none()
+        })
+        .await;
+    assert_eq!(settled.turns[1].status, TurnStatus::Interrupted);
+    let next_due = idle.due_at().await;
+    idle.advance_to(next_due.max(due_at));
+    idle.assert_nothing_scheduled(2, "an interrupted one is not retried")
+        .await;
+    idle.shutdown().await;
+}
+
+/// A Session settled on its own, by the auto-settle Setting, is Settled as
+/// one the user set aside is.
+#[tokio::test]
+async fn a_session_settled_on_its_own_is_skipped_while_the_setting_keeps_to_active_ones() {
+    let state = tempfile::tempdir().unwrap();
+    let mut idle = idle_on(
+        state.path(),
+        "scheduled-compaction-auto-settled",
+        r#"{ "compaction": { "scheduled": { "enabled": true } }, "sidebar": { "autoSettle": 1 } }"#,
+        true,
+        // A Provider reporting a lapse days ahead without saying how long
+        // it keeps the cache: the only way a priced cache outlives a day.
+        CacheLifetime::Reported,
+        |fixture, now| {
+            fixture
+                .provider_session
+                .emit(ProviderEvent::PromptCacheLapseReported {
+                    lapses_at: SessionTimestamp(now.0 + 3 * 24 * 60 * 60 * 1000),
+                    model: None,
+                    lifetime: None,
+                    write_price: suru::protocol::CacheWritePrice::Default,
+                    prompt_limit_tokens: None,
+                });
+        },
+    )
+    .await;
+    let due_at = idle.due_at().await;
+    idle.advance_to(due_at);
+    idle.assert_nothing_scheduled(1, "the Session settled on its own after a day alone")
+        .await;
     idle.shutdown().await;
 }

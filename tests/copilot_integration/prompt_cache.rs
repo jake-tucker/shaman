@@ -59,6 +59,7 @@ async fn the_latest_reported_lapse_of_the_sessions_conversation_becomes_its_laps
         settled.session.prompt_cache,
         Some(PromptCache {
             lapses_at: SessionTimestamp(u64::try_from(lapses_at).unwrap()),
+            written_in: Some(settled.turns[0].id),
             written_by: ModelId::new("claude-fixture"),
             lifetime_ms: Some(3_600_000),
             write_price: suru::protocol::CacheWritePrice::Hour,

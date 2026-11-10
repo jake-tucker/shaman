@@ -206,22 +206,30 @@ impl SessionStore {
     /// stays as it is, and the conversation resumes from its stored Resume
     /// State at the next Turn, as it does after a restart.
     pub(crate) fn provider_may_stop_idle(&self, owner: SessionId) -> bool {
-        let state = self
+        !self
             .state
             .lock()
-            .expect("Session store lock is not poisoned");
-        let riding = state.actor_subtree(owner);
-        !state.owes_reports_to_sidekicks_of(&riding)
-            && !riding.iter().any(|session_id| {
-                state
-                    .sessions
-                    .get(session_id)
-                    .is_none_or(|record| state.holds_work(*session_id, record))
-            })
+            .expect("Session store lock is not poisoned")
+            .holds_work_riding(owner)
     }
 }
 
 impl SessionStoreState {
+    /// Whether work runs or is owed on anything riding the Provider actor
+    /// `owner` owns — `owner` itself, or a native Subagent riding it — or in a
+    /// brokered Subagent working below, whose row stands active: anything the
+    /// Provider would act on or answer, or that needs it running to be told.
+    /// What a reader follows is no work.
+    pub(super) fn holds_work_riding(&self, owner: SessionId) -> bool {
+        let riding = self.actor_subtree(owner);
+        self.owes_reports_to_sidekicks_of(&riding)
+            || riding.iter().any(|session_id| {
+                self.sessions
+                    .get(session_id)
+                    .is_none_or(|record| self.holds_work(*session_id, record))
+            })
+    }
+
     /// Every held tree nothing holds whose Sessions have all gone unused
     /// for `idle` at `now`, each its top-level Session first. Where `mark`
     /// says so, every Session of a tree something holds is marked used now.
@@ -306,7 +314,7 @@ impl SessionStoreState {
 
     /// Whether Reports are owed to a Sidekick among `members`, to be told to
     /// it by Sessions here or elsewhere, or by a Remote.
-    pub(super) fn owes_reports_to_sidekicks_of(&self, members: &[SessionId]) -> bool {
+    fn owes_reports_to_sidekicks_of(&self, members: &[SessionId]) -> bool {
         let members = members.iter().copied().collect::<HashSet<_>>();
         self.sessions.values().any(|record| {
             record
@@ -321,7 +329,7 @@ impl SessionStoreState {
     /// Whether work runs in `session_id`, whose record is `record`, or is
     /// owed there: anything its Provider may yet act on or answer, or that
     /// still waits on it, whoever reads the Session meanwhile.
-    pub(super) fn holds_work(&self, session_id: SessionId, record: &super::SessionRecord) -> bool {
+    fn holds_work(&self, session_id: SessionId, record: &super::SessionRecord) -> bool {
         let snapshot = &record.snapshot;
         let session = &snapshot.session;
         // Work runs in it, or is owed there.
