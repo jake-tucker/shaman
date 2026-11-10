@@ -4145,6 +4145,22 @@ async fn read_insights(State(state): State<AppState>, request: Request) -> Respo
     }
 }
 
+/// The most bytes a session command's body may hold.
+const SESSION_COMMAND_LIMIT: usize = 64 * 1024;
+
+/// Why a session command larger than [`SESSION_COMMAND_LIMIT`] is refused:
+/// the limit, and the command's own size where its sender declared one.
+fn oversized_command(command_name: &str, declared: Option<u64>) -> String {
+    let limit = SESSION_COMMAND_LIMIT / 1024;
+    match declared {
+        Some(bytes) => format!(
+            "{command_name} command is {} KiB; the most a command may be is {limit} KiB",
+            bytes.div_ceil(1024)
+        ),
+        None => format!("{command_name} command is larger than the {limit} KiB a command may be"),
+    }
+}
+
 // A rejection is the Response the handler returns as-is, which is the axum
 // idiom; boxing it would only add an allocation to every refusal.
 #[allow(clippy::result_large_err)]
@@ -4156,13 +4172,21 @@ async fn decode_session_command<T: DeserializeOwned>(
     if !is_authenticated(request.headers(), &state.descriptor.token) {
         return Err(StatusCode::UNAUTHORIZED.into_response());
     }
-    let body = to_bytes(request.into_body(), 64 * 1024)
+    // Read before the body is taken: a refusal says how large the command
+    // was where its sender declared it, so a reader who pasted more than a
+    // Prompt may carry learns by how much.
+    let declared = request
+        .headers()
+        .get(header::CONTENT_LENGTH)
+        .and_then(|length| length.to_str().ok())
+        .and_then(|length| length.parse::<u64>().ok());
+    let body = to_bytes(request.into_body(), SESSION_COMMAND_LIMIT)
         .await
         .map_err(|_| {
             session_error_response(
                 StatusCode::BAD_REQUEST,
                 SessionErrorCode::InvalidCommand,
-                format!("{command_name} command body is too large"),
+                oversized_command(command_name, declared),
             )
         })?;
     serde_json::from_slice(&body).map_err(|_| {

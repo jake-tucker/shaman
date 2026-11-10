@@ -1577,7 +1577,8 @@ async fn remote_proxy_uploads_fetches_and_binds_attachments_on_the_serving_serve
         refusal,
         SessionError {
             code: SessionErrorCode::InvalidCommand,
-            message: "Prompt admission command body is too large".to_owned(),
+            message: "Prompt admission command is 97 KiB; the most a command may be is 64 KiB"
+                .to_owned(),
             unreachable: None,
         }
     );
