@@ -1944,6 +1944,10 @@ async fn start(
             })),
         },
     );
+    let naming = model_catalog.clone();
+    sessions.name_effective_selections_by(Arc::new(move |selection| {
+        naming.without_default_routing_tier(selection)
+    }));
     let skill_catalog = SkillCatalogService::new(runtimes.clone(), settings.subscribe());
     // The Workspace Roots a Clone may go in are told apart from Suru's own
     // data directory, which is none, alike for a Clone and for what a

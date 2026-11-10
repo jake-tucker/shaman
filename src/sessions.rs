@@ -242,6 +242,10 @@ struct SessionStoreState {
     /// The Cache Lifetime each Provider declares, where the Server hosting
     /// the store said.
     cache_lifetimes: Option<prompt_cache::DeclaredCacheLifetimes>,
+    /// How a Selection a Provider says a Turn ran under is named as a choice
+    /// of it is, where the Server hosting the store said (see
+    /// [`SessionStore::name_effective_selections_by`]).
+    effective_selection_names: Option<selection::SelectionNames>,
 }
 
 struct SessionRecord {
@@ -526,6 +530,7 @@ impl SessionStore {
             report_notices: None,
             lapse_rate_source: None,
             cache_lifetimes,
+            effective_selection_names: None,
             continuations_awaited: Default::default(),
             agent_moves: Default::default(),
         };

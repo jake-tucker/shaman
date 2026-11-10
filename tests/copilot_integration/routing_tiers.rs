@@ -28,8 +28,8 @@ use crate::copilot_integration::{
     support::{
         AUTO_TIERS, COPILOT_MODELS, ScriptedCopilot, agent_messages, assigned_session_arms,
         connect_arm, copilot_catalog, create_session_arm, delete_session_arm, detach_session_arm,
-        models_arm, permission_decision_arm, resume_session_arm, send_arm, settled_session,
-        signed_in_arm, skills_reload_arm, tiered_model_arms,
+        models_arm, permission_decision_arm, resume_session_arm, send_arm, session_where,
+        settled_session, signed_in_arm, skills_reload_arm, tiered_model_arms,
     },
 };
 
@@ -638,8 +638,9 @@ async fn a_change_copilot_refuses_as_the_turn_claims_it_corrects_the_selection_w
 
     assert_eq!(first.turns[0].status, TurnStatus::Completed);
     assert_eq!(errors(&first), Vec::<&str>::new());
-    assert_eq!(selected(&first), Some(&on_auto(Some("balance"))));
-    assert_eq!(ran_under(&first, 0), Some(&on_auto(Some("balance"))));
+    // `balance` is this catalog's default tier, which a Selection names by naming none.
+    assert_eq!(selected(&first), Some(&on_auto(None)));
+    assert_eq!(ran_under(&first, 0), Some(&on_auto(None)));
     let [status] = statuses(&first)[..] else {
         panic!("one Status row: {:?}", statuses(&first));
     };
@@ -658,6 +659,90 @@ async fn a_change_copilot_refuses_as_the_turn_claims_it_corrects_the_selection_w
         ],
         "asking again after a refusal reaches Copilot"
     );
+
+    drop(client);
+    server.shutdown().await.expect("stop server");
+}
+
+/// A refusal that lands on the default tier names it as a user choosing it would: by naming none.
+/// Choosing another tier and then the default again leaves the Session's Selection as the one the
+/// Turn that wrote the Prompt Cache ran under, so nothing says the cache was left.
+#[tokio::test]
+async fn a_refusal_landing_on_the_default_tier_is_the_same_choice_as_picking_it() {
+    let refused_onto_the_default = r#"    *'"method":"session.send"'*)
+      sid=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
+      reply '{"jsonrpc":"2.0","id":'"$id"',"result":{"messageId":"fixture-message"}}'
+      raw_event '{"id":"e0","timestamp":"2026-01-01T00:00:00Z","ephemeral":true,"type":"session.auto_tier_switch_failed","data":{"requestedAutoTier":"hydrafusion","reason":"request_failed","effectiveAutoTier":"balance"}}'
+      event fixture-user-message user.message '{"content":"","messageId":"fixture-message","delivery":"idle"}'
+      event u1 assistant.usage '{"model":"claude-fixture","inputTokens":1000,"outputTokens":200,"cost":1,"cacheExpiresAt":"2099-01-01T00:00:00.000Z","cacheTtlSeconds":300,"maxPromptTokens":128000}'
+      event e1 assistant.message '{"messageId":"m1","content":"Done"}'
+      event e2 session.idle '{}'
+      ;;
+"#;
+    let copilot = ScriptedCopilot::new(&format!(
+        "{refused_onto_the_default}{}",
+        tiered_arms(SETTLES)
+    ));
+    let home = Home::new("routing-tier-refused-onto-default");
+    let (server, client) = home.host(&copilot).await;
+    pin(&client, Some(true)).await;
+    let first = begun_on(&client, &home, on_auto(Some("hydrafusion"))).await;
+    let session_id = first.session.id;
+    assert!(
+        first
+            .session
+            .prompt_cache
+            .as_ref()
+            .is_some_and(|cache| cache.written_in == Some(first.turns[0].id)),
+        "the refused Turn wrote the cache: {:?}",
+        first.session.prompt_cache
+    );
+    assert_eq!(
+        selected(&first)
+            .and_then(|selection| first.selection_changed_since_cache_written(selection)),
+        Some(false)
+    );
+
+    let mut feed = client
+        .subscribe_session(session_id)
+        .await
+        .expect("subscribe to Session SSE");
+    for (tier, expected) in [("efficiency", Some(true)), ("balance", Some(false))] {
+        client
+            .update_agent_selection(
+                session_id,
+                UpdateAgentSelectionRequest {
+                    operation_id: AgentSelectionOperationId::new(),
+                    selection: on_auto(Some(tier)),
+                },
+            )
+            .await
+            .expect("choose a Routing Tier");
+        let chosen = session_where(
+            &client,
+            &mut feed,
+            session_id,
+            &format!("Routing Tier `{tier}` is selected"),
+            |snapshot| {
+                selected(snapshot).is_some_and(|selection| {
+                    selection
+                        .options
+                        .iter()
+                        .all(|option| !option.is_routing_tier())
+                        == (tier == "balance")
+                })
+            },
+        )
+        .await;
+        assert_eq!(
+            selected(&chosen)
+                .and_then(|selection| chosen.selection_changed_since_cache_written(selection)),
+            expected,
+            "after choosing `{tier}`, the Session selects {:?} and the writer ran under {:?}",
+            selected(&chosen),
+            ran_under(&chosen, 0),
+        );
+    }
 
     drop(client);
     server.shutdown().await.expect("stop server");

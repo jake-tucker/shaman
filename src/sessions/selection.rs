@@ -1,6 +1,8 @@
 //! Agent Selection: the authoritative choice, the Provider's effective one, and
 //! the rejection that puts a Session back in the user's hands.
 
+use std::sync::Arc;
+
 use anyhow::anyhow;
 
 use crate::protocol::{
@@ -25,12 +27,27 @@ pub(crate) enum AgentSelectionMutationError {
     Unrecorded(String),
 }
 
+/// How a Selection is named as a choice of it is: one naming its Model's
+/// default Routing Tier names none, as the user choosing that tier does.
+pub(crate) type SelectionNames = Arc<dyn Fn(AgentSelection) -> AgentSelection + Send + Sync>;
+
 pub(crate) struct AgentSelectionMutation {
     pub(crate) selection: AgentSelection,
     pub(crate) retry_prompt_id: Option<PromptId>,
 }
 
 impl SessionStore {
+    /// Names each Selection a Provider says a Turn ran under through `names`
+    /// from here on, so it is the same choice as the user making it would be:
+    /// the Selection a Turn ran under and the one the Session stands under
+    /// are compared whole, as the Prompt Cache's judgement compares them.
+    pub(crate) fn name_effective_selections_by(&self, names: SelectionNames) {
+        self.state
+            .lock()
+            .expect("Session store lock is not poisoned")
+            .effective_selection_names = Some(names);
+    }
+
     pub(crate) fn reconcile_effective_agent_selection(
         &self,
         session_id: SessionId,
@@ -43,6 +60,10 @@ impl SessionStore {
             .state
             .lock()
             .expect("Session store lock is not poisoned");
+        let selection = match &state.effective_selection_names {
+            Some(names) => names(selection),
+            None => selection,
+        };
         let record = state
             .sessions
             .get(&session_id)

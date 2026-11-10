@@ -368,18 +368,34 @@ impl ModelCatalogService {
         let mut normalized = model
             .materialize_agent_selection(Some(&selection.clone().without_routing_tier()))
             .map_err(|error| error.to_string())?;
-        // The tier the Provider routes on anyway is no choice, and a Selection
-        // naming it names none, so nothing later has to tell it was taken away.
-        let default = |tier: &ModelOptionSelection| {
-            model
-                .options
-                .iter()
-                .any(|option| option.id == tier.id && option.default_selection() == *tier)
-        };
         normalized
             .options
-            .extend(tier.filter(|tier| !default(tier)));
+            .extend(tier.filter(|tier| !routes_anyway(&model, tier)));
         Ok(normalized)
+    }
+
+    /// `selection` named as a choice of it is: with no Routing Tier where the
+    /// one it names is the tier its Model routes on anyway. A Provider saying
+    /// what a Turn ran under may name that tier where the user choosing it
+    /// names none, and the two are one choice. Unchanged where the catalog
+    /// does not list its Model.
+    pub(crate) fn without_default_routing_tier(&self, selection: AgentSelection) -> AgentSelection {
+        let Some(tier) = selection
+            .options
+            .iter()
+            .find(|option| option.is_routing_tier())
+        else {
+            return selection;
+        };
+        let default = self
+            .cached_models(&selection.provider)
+            .and_then(|models| models.into_iter().find(|model| model.id == selection.model))
+            .is_some_and(|model| routes_anyway(&model, tier));
+        if default {
+            selection.without_routing_tier()
+        } else {
+            selection
+        }
     }
 
     fn takes_routing_tier(&self, selection: &AgentSelection) -> bool {
@@ -829,6 +845,16 @@ fn catalog_status(state: &CatalogState) -> ProviderCatalogStatus {
             message: "Model catalog has not been loaded".to_owned(),
         },
     }
+}
+
+/// Whether `tier` is the Routing Tier `model` routes on anyway: no choice,
+/// so a Selection naming it names none, and nothing later has to tell it was
+/// taken away.
+fn routes_anyway(model: &ModelDescriptor, tier: &ModelOptionSelection) -> bool {
+    model
+        .options
+        .iter()
+        .any(|option| option.id == tier.id && option.default_selection() == *tier)
 }
 
 #[cfg(test)]
