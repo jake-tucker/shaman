@@ -413,12 +413,12 @@ pub(super) struct OutputTokensDetails {
 
 /// A `system` message: the CLI's own bookkeeping alongside the conversation. Only the task
 /// lifecycle, compaction, and the Model the loop's `init` says it launched on are decoded. The
-/// background work the agent spawns is what an interrupt
-/// has to stop before it stops the loop, a task running an agent is a Subagent, whose start,
-/// description changes, and settle the projection presents, and a background task whose settling
-/// wakes the loop is a Watch, which keeps its Session Monitoring until it settles. A conversation's
-/// compaction is reported on `status` while it runs and when it fails, and by the
-/// `compact_boundary` it leaves once it completes.
+/// background work the agent spawns is what an interrupt has to stop before it stops the loop, a
+/// task running an agent is a Subagent, whose start, description changes, and settle the
+/// projection presents, and a background task whose settling wakes the loop is a Watch, which
+/// keeps its Session Monitoring until it settles. A conversation's compaction is reported on
+/// `status` while it runs and when it fails, and by the `compact_boundary` it leaves once it
+/// completes.
 #[derive(Deserialize)]
 pub(super) struct SystemMessage {
     pub(super) subtype: String,

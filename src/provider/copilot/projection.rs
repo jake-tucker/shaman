@@ -4826,6 +4826,37 @@ mod tests {
     }
 
     #[test]
+    fn a_call_keeping_its_cache_past_an_hour_or_less_names_the_write_price_its_lifetime_pays() {
+        for (ttl, price) in [
+            (Some(7200), crate::protocol::CacheWritePrice::Unlisted),
+            (Some(300), crate::protocol::CacheWritePrice::Default),
+            (None, crate::protocol::CacheWritePrice::Default),
+        ] {
+            let mut correlation = in_turn();
+            let mut data = json!({
+                "apiCallId": "c1", "model": "claude-fixture", "inputTokens": 10,
+                "cacheExpiresAt": "2026-01-01T00:05:00.250Z",
+            });
+            if let Some(ttl) = ttl {
+                data["cacheTtlSeconds"] = json!(ttl);
+            }
+            let projected = project_attributed(&mut correlation, event("assistant.usage", data));
+            let written = lapses(&projected)
+                .into_iter()
+                .map(|(_, event)| match event {
+                    ProviderEvent::PromptCacheLapseReported { write_price, .. } => *write_price,
+                    _ => unreachable!(),
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                written,
+                [price],
+                "a cache kept {ttl:?} seconds: a price is listed only up to an hour"
+            );
+        }
+    }
+
+    #[test]
     fn a_call_states_no_lapse_without_a_readable_moment_after_the_epoch() {
         for expires in [None, Some("soon"), Some("1969-12-31T23:59:59Z")] {
             let mut correlation = in_turn();

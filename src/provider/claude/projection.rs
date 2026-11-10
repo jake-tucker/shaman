@@ -1922,23 +1922,21 @@ impl ClaudeProjection {
                 // what it wrote to the Session's Prompt Cache. Anthropic counts the cache's
                 // lifetime from the request's start, so it is stated here, the earliest the wire
                 // shows the request, rather than once the answer is out.
-                let written = match self
+                let refreshed = |written| ProviderEvent::PromptCacheRefreshed {
+                    written,
+                    model: MessageModels::fallen_back_to(
+                        model,
+                        self.launched_on.as_deref(),
+                        self.turn.running_selection().as_ref(),
+                    ),
+                };
+                match self
                     .cache_lifetimes
                     .request_cache(opened.and_then(|opened| opened.usage.as_ref()))
                 {
-                    RequestCache::Unread => None,
-                    RequestCache::WroteNothing => Some(None),
-                    RequestCache::Wrote(written) => Some(Some(written)),
-                };
-                if let Some(written) = written {
-                    projected.push(ProviderEvent::PromptCacheRefreshed {
-                        written,
-                        model: MessageModels::fallen_back_to(
-                            model,
-                            self.launched_on.as_deref(),
-                            self.turn.running_selection().as_ref(),
-                        ),
-                    });
+                    RequestCache::Unread => {}
+                    RequestCache::WroteNothing => projected.push(refreshed(None)),
+                    RequestCache::Wrote(written) => projected.push(refreshed(Some(written))),
                 }
             }
             "content_block_start" => {

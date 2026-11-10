@@ -22,19 +22,25 @@ use crate::{
     provider::{CacheLifetime, CacheWritten},
 };
 
-/// What a cache write kept an hour costs, as a multiple of the Model's fresh input rate:
-/// Anthropic's published prompt-caching pricing writes one-hour entries at 2× base input (and
-/// five-minute ones at 1.25×, which the rate table lists itself).
+/// What a cache write kept an hour costs, as a multiple of the Model's fresh input rate, by
+/// Anthropic's published prompt-caching pricing as read on 2026-11-11: one-hour writes at 2× base
+/// input, five-minute ones at 1.25×, and reads at about 0.1×.
 const HOUR_WRITE_PER_INPUT: f64 = 2.0;
 
-/// The prices Claude's Prompt Cache is forecast at for a Model the rate table prices at `rates`:
-/// exactly those, with an hour-long write priced by Anthropic's published rule at twice the fresh
-/// input rate, since models.dev lists only the five-minute write. Nothing else is derived.
-pub(super) fn with_hour_writes(rates: CacheRates) -> PromptRates {
+/// The prices Claude's Prompt Cache is forecast at for a Model the rate table prices at `rates`,
+/// listing `listed_hour_write` as its hour-long write rate where it lists one: exactly those, with
+/// an hour-long write the table does not price priced by Anthropic's published rule at twice the
+/// fresh input rate — but only for a Model the table gives a five-minute write rate, since one it
+/// gives none says nothing of what its writes cost. models.dev lists no hour-long rate today, so
+/// the rule prices every hour-long write; one it comes to list wins. Nothing else is derived.
+pub(super) fn with_hour_writes(rates: CacheRates, listed_hour_write: Option<f64>) -> PromptRates {
+    let derived = rates
+        .cache_write
+        .map(|_| rates.input * HOUR_WRITE_PER_INPUT);
     PromptRates::tiered(vec![PromptRateTier {
         max_prompt_tokens: None,
         rates,
-        hour_cache_write: Some(rates.input * HOUR_WRITE_PER_INPUT),
+        hour_cache_write: listed_hour_write.or(derived),
     }])
     .expect("one tier is a schedule")
 }
@@ -227,7 +233,7 @@ mod tests {
     };
 
     fn penalty_on_400k(price: CacheWritePrice) -> Option<LapsePenalty> {
-        with_hour_writes(TABLE).lapse_penalty(
+        with_hour_writes(TABLE, None).lapse_penalty(
             400_000,
             CacheWrite {
                 price,
@@ -252,7 +258,44 @@ mod tests {
             LapsePenalty::from_usd(400_000.0 * (6.25 - 0.5) / 1_000_000.0),
             "a five-minute write keeps the table's own price"
         );
-        assert_eq!(with_hour_writes(TABLE).standard(), TABLE);
+        assert_eq!(with_hour_writes(TABLE, None).standard(), TABLE);
+    }
+
+    #[test]
+    fn a_model_listing_no_five_minute_write_is_given_no_hour_long_one() {
+        let unwritten = CacheRates {
+            cache_write: None,
+            ..TABLE
+        };
+        let penalty = |price| {
+            with_hour_writes(unwritten, None).lapse_penalty(
+                400_000,
+                CacheWrite {
+                    price,
+                    prompt_limit_tokens: None,
+                },
+            )
+        };
+        assert_eq!(penalty(CacheWritePrice::Hour), None);
+        assert_eq!(
+            penalty(CacheWritePrice::Default),
+            LapsePenalty::from_usd(400_000.0 * (5.0 - 0.5) / 1_000_000.0),
+            "a five-minute write the table does not price is at the fresh input rate, as ever"
+        );
+    }
+
+    #[test]
+    fn an_hour_long_rate_the_table_lists_is_the_one_priced() {
+        assert_eq!(
+            with_hour_writes(TABLE, Some(8.0)).lapse_penalty(
+                400_000,
+                CacheWrite {
+                    price: CacheWritePrice::Hour,
+                    prompt_limit_tokens: None,
+                },
+            ),
+            LapsePenalty::from_usd(400_000.0 * (8.0 - 0.5) / 1_000_000.0)
+        );
     }
 
     #[test]
