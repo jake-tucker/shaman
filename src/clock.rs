@@ -14,6 +14,10 @@ use tokio::sync::watch;
 
 use crate::protocol::SessionTimestamp;
 
+/// The longest a wait on the real clock sleeps before it reads the time
+/// again; see [`ServerClock::sleep_until`].
+const LONGEST_SLEEP: Duration = Duration::from_secs(60);
+
 /// Where a Server reads the time now: the real clock by default, or one a
 /// test moves by hand.
 #[derive(Clone)]
@@ -67,12 +71,16 @@ impl ServerClock {
                     }
                 }
             }
+            // Slept in slices of at most a minute, with the time read again
+            // after each: a sleep is counted on a clock that stops while the
+            // machine is suspended, so a single hour-long sleep begun before a
+            // suspend would end that much past the moment.
             None => loop {
                 let now = self.now();
                 if now >= at {
                     return;
                 }
-                tokio::time::sleep(Duration::from_millis(at.0 - now.0)).await;
+                tokio::time::sleep(Duration::from_millis(at.0 - now.0).min(LONGEST_SLEEP)).await;
             },
         }
     }
@@ -156,5 +164,33 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(5), waiting)
             .await
             .expect("the wait ends once the hand reaches the moment");
+    }
+
+    /// A wait on a clock that reads the time rather than being moved by hand
+    /// reads it again at least once a minute, so one begun before the
+    /// machine was suspended — which the sleep's own clock does not count —
+    /// ends within a minute of the time it reads reaching the moment, not an
+    /// hour past it. Tokio's time is paused, so the minutes pass at once.
+    #[tokio::test(start_paused = true)]
+    async fn a_wait_on_the_read_clock_notices_time_that_passed_while_suspended() {
+        let reading = Arc::new(AtomicU64::new(SessionTimestamp::now().0));
+        let clock = ServerClock::reading({
+            let reading = reading.clone();
+            move || SessionTimestamp(reading.load(Ordering::SeqCst))
+        });
+        let at = SessionTimestamp(clock.now().0 + 60 * 60 * 1000);
+        let waiting = tokio::spawn({
+            let clock = clock.clone();
+            async move { clock.sleep_until(at).await }
+        });
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        assert!(!waiting.is_finished(), "the moment is an hour away");
+
+        // The machine wakes from a suspend that lasted the hour.
+        reading.fetch_add(60 * 60 * 1000, Ordering::SeqCst);
+        tokio::time::timeout(Duration::from_secs(61), waiting)
+            .await
+            .expect("the wait ends within a minute of the time it reads reaching the moment")
+            .expect("the wait does not panic");
     }
 }
