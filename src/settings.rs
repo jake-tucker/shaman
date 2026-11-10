@@ -67,6 +67,7 @@ const APPEARANCE_LANDING_PAGE: &str = "appearance.landingPage";
 const APPEARANCE_SHOW_ICONS: &str = "appearance.showIcons";
 const TEXT_SELECTION_COPY: &str = "textSelection.copy";
 const TEXT_SELECTION_PLAIN_TEXT: &str = "textSelection.plainText";
+const COMPOSER_COLLAPSE_PASTES: &str = "composer.collapsePastes";
 const TRANSCRIPT_DEFAULT_FOLD_POSTURE: &str = "transcript.defaultFoldPosture";
 const TRANSCRIPT_GROUPS: &str = "transcript.groups";
 const TRANSCRIPT_REASONING_VISIBILITY: &str = "transcript.reasoningVisibility";
@@ -965,6 +966,9 @@ fn in_force(mutation: &SettingMutation, settings: &EffectiveSettings) -> Setting
         SettingMutation::TextSelectionPlainText { .. } => SettingMutation::TextSelectionPlainText {
             value: Some(settings.text_selection.plain_text),
         },
+        SettingMutation::ComposerCollapsePastes { .. } => SettingMutation::ComposerCollapsePastes {
+            value: Some(settings.composer.collapse_pastes),
+        },
         SettingMutation::TranscriptDefaultFoldPosture { .. } => {
             SettingMutation::TranscriptDefaultFoldPosture {
                 value: Some(settings.transcript.default_fold_posture),
@@ -1747,6 +1751,31 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         apply: |settings, value| {
             apply_value(value, |plain_text| {
                 settings.text_selection.plain_text = plain_text
+            })
+        },
+    },
+    SettingDescriptor {
+        key: COMPOSER_COLLAPSE_PASTES,
+        label: "Collapse large pastes",
+        description: "Whether a large paste stands in the composer as a label such as [Paste 1: 12 lines] until the Prompt is sent",
+        group: SettingGroup::General,
+        scope: SettingScope::Client,
+        sidekick: SidekickAccess::ReadAndChange,
+        outside_edit: OutsideEdit::AtNextStart,
+        values: SettingValues::Fixed(&[
+            SettingChoice {
+                value: "true",
+                build_mutation: || SettingMutation::ComposerCollapsePastes { value: Some(true) },
+            },
+            SettingChoice {
+                value: "false",
+                build_mutation: || SettingMutation::ComposerCollapsePastes { value: Some(false) },
+            },
+        ]),
+        reset: SettingMutation::ComposerCollapsePastes { value: None },
+        apply: |settings, value| {
+            apply_value(value, |collapse_pastes| {
+                settings.composer.collapse_pastes = collapse_pastes;
             })
         },
     },
@@ -2656,6 +2685,9 @@ fn pin_for(mutation: &SettingMutation) -> (&'static str, Option<Value>) {
         SettingMutation::TextSelectionPlainText { value } => {
             (TEXT_SELECTION_PLAIN_TEXT, pinned(value))
         }
+        SettingMutation::ComposerCollapsePastes { value } => {
+            (COMPOSER_COLLAPSE_PASTES, pinned(value))
+        }
         SettingMutation::AppearanceTheme { value } => (APPEARANCE_THEME, pinned(value)),
         SettingMutation::AppearanceMode { value } => (APPEARANCE_MODE, pinned(value)),
         SettingMutation::AppearanceLandingPage { value } => {
@@ -3409,6 +3441,7 @@ mod tests {
                 // `false`, unquoted, because that is what the reader must type.
                 "one of \"release\" or \"manual\"".to_owned(),
                 "one of \"visible\" or \"markdown\"".to_owned(),
+                "one of true or false".to_owned(),
                 "one of \"off\" or a whole number of days, at least 1".to_owned(),
                 "one of \"return\" or \"stay\"".to_owned(),
                 // A list names what each of its entries must be.

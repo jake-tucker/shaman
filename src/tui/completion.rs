@@ -295,8 +295,13 @@ impl ComposerCompletion {
         cursor: usize,
         catalog: Option<&SkillCatalog>,
         bound_skills: &HashSet<SkillId>,
+        against_label: impl Fn(usize) -> bool,
     ) {
-        if let Some((query, replacement)) = skill_trigger(text, cursor) {
+        // A `$` written hard against a label offers nothing: the label is the
+        // reader's Attachment or paste, not the start of a Skill's name.
+        if let Some((query, replacement)) =
+            skill_trigger(text, cursor).filter(|(_, replacement)| !against_label(replacement.start))
+        {
             if self.dismissed == Some((CompletionKind::Skills, replacement.start)) {
                 self.hide();
                 return;

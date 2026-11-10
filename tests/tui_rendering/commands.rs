@@ -647,7 +647,7 @@ fn move_and_its_alias_dispatch_one_semantic_move_action() {
 }
 
 /// An idle Session on `provider`, open in `application`, for `/compact` to be asked of.
-fn enter_idle_session_on(
+pub(crate) fn enter_idle_session_on(
     application: &mut Application,
     workspace: &std::path::Path,
     provider: &str,

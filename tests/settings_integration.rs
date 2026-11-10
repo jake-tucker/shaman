@@ -762,6 +762,53 @@ async fn an_invalid_tool_call_visibility_is_ignored_alone_and_names_both_accepte
     server.shutdown().await.expect("shut down server");
 }
 
+/// A large paste is collapsed unless the user says otherwise, and turning that
+/// off is a pin like any other: it lands in the Config Document, reads back,
+/// and a reset lets the built-in default resume.
+#[tokio::test]
+async fn collapsing_pastes_defaults_on_pins_off_through_the_config_document_and_resets() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let config_dir = tempfile::tempdir().expect("create isolated config directory");
+    let server = server::spawn(
+        ServerConfig::new(state_dir.path(), "settings-collapse-pastes")
+            .expect("configure server")
+            .with_config_dir(config_dir.path()),
+    )
+    .await
+    .expect("spawn server");
+    let (editor, opening) = attach(state_dir.path(), "settings-collapse-pastes").await;
+    assert!(
+        opening.settings.composer.collapse_pastes,
+        "a large paste is collapsed unless the user says otherwise"
+    );
+    assert!(opening.pinned_keys().is_empty());
+
+    let pinned = editor
+        .mutate_setting(SettingMutation::ComposerCollapsePastes { value: Some(false) })
+        .await
+        .expect("turn collapsing off");
+    assert!(!pinned.settings.composer.collapse_pastes);
+    assert_eq!(pinned.pinned_keys(), ["composer.collapsePastes"]);
+    let document = config_document(config_dir.path());
+    assert!(
+        document.contains("\"collapsePastes\": false"),
+        "the pin lands in the Config Document: {document}"
+    );
+
+    let reset = editor
+        .mutate_setting(SettingMutation::ComposerCollapsePastes { value: None })
+        .await
+        .expect("reset collapsing");
+    assert!(
+        reset.settings.composer.collapse_pastes,
+        "unpinning it lets the built-in default resume"
+    );
+    assert!(reset.pinned_keys().is_empty());
+
+    drop(editor);
+    server.shutdown().await.expect("shut down server");
+}
+
 /// Image previews are drawn wherever the terminal can draw them unless the
 /// user says otherwise, and turning them off is a pin like any other: it lands
 /// in the Config Document beside what the document already held, reads back,

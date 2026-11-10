@@ -12,6 +12,7 @@ mod commands;
 mod completion;
 mod completion_details;
 mod composer;
+mod composer_menu;
 mod connect_overlay;
 mod context_overlay;
 mod destination;

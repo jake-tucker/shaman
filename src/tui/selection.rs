@@ -175,6 +175,7 @@ pub(super) enum SelectionSurface {
     SidebarMenu,
     Icons,
     WorkspacePickerMenu,
+    ComposerMenu,
     WorkspaceDescriptionEditor,
     RenameDialog,
     /// The Usage Metrics view, which covers the whole frame.

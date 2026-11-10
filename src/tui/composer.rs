@@ -11,7 +11,10 @@ use ratatui::layout::{Position, Rect};
 
 use super::{
     attachment_preview::{AttachmentPreviews, AttachmentRows},
-    text_binding::{BoundAttachment, SkillIssue, TextBinding, TextBindings, UnitEdge, image_label},
+    text_binding::{
+        BoundAttachment, SkillIssue, TextBinding, TextBindings, UnitEdge, collapses, image_label,
+        paste_label,
+    },
     text_layout::{CursorTarget, RowDirection, TextLayout},
 };
 
@@ -77,6 +80,9 @@ struct ComposerState {
     /// The highest `N` any `[Image N]` label in this draft has used, so a
     /// label deleted is never reused before the draft is submitted or cleared.
     highest_image_number: u32,
+    /// The highest `N` any `[Paste N: …]` label in this draft has used, kept
+    /// as the image labels' is.
+    highest_paste_number: u32,
     generation: DraftGeneration,
     /// The Execution Directory of the Session this draft belongs to, as last
     /// consulted: a draft is kept across Sessions being opened and left, so a
@@ -88,6 +94,12 @@ struct ComposerState {
     /// there. Read by identity rather than held with the Prompt, because a
     /// withdrawn Prompt comes back rebuilt from the Session's own snapshot.
     sent_from: HashMap<PromptId, PathBuf>,
+    /// Each draft this Client sent with a Collapsed Paste in it, as it stood
+    /// when it went, so the Prompt it became comes back folded as it was
+    /// written rather than as the full text it was sent as. A Prompt can
+    /// come back more than once — refused, and then found admitted after all
+    /// — so one is kept until its Session delivers the Prompt.
+    sent_folded: HashMap<PromptId, HistoryEntry>,
 }
 
 /// Which content a draft holds: renewed whenever the draft is replaced or
@@ -196,16 +208,57 @@ impl ComposerMemory {
         true
     }
 
+    /// Removes the selected text and answers it, a Collapsed Paste in it as
+    /// the words it stands for rather than its label.
     pub(super) fn cut_selection(&mut self, key: ComposerKey) -> Option<String> {
-        let range = self.selection_range(key.clone())?;
-        let text = self.text(key.clone())[range].to_owned();
+        let text = self.composers.get(&key)?.selected_text()?;
         self.composer_mut(key).insert("");
         Some(text)
     }
 
+    /// The selected text as it is copied, a Collapsed Paste in it as the
+    /// words it stands for rather than its label.
     pub(super) fn copy_selection(&self, key: ComposerKey) -> Option<String> {
-        let range = self.selection_range(key.clone())?;
-        Some(super::selection::copy_text(self.text(key).get(range)?))
+        let text = self.composers.get(&key)?.selected_text()?;
+        Some(super::selection::copy_text(&text))
+    }
+
+    /// The draft as its Prompt would carry it, every Collapsed Paste put
+    /// back where its label stands.
+    pub(super) fn expanded_text(&self, key: ComposerKey) -> String {
+        self.composers
+            .get(&key)
+            .map_or_else(String::new, |composer| {
+                composer
+                    .bindings
+                    .expanded(&composer.text, 0..composer.text.len())
+            })
+    }
+
+    /// The Collapsed Paste the pointer at `position` is on, where the draft
+    /// under `key` is the one drawn there.
+    pub(super) fn paste_under(&self, key: ComposerKey, position: Position) -> Option<Range<usize>> {
+        let target = self.hit(key.clone(), position)?;
+        let composer = self.composers.get(&key)?;
+        composer
+            .bindings
+            .unit_after(target.offset)
+            .filter(|unit| composer.bindings.pasted_text(unit).is_some())
+    }
+
+    /// Whether the draft's cursor stands on a Collapsed Paste, or just after
+    /// one.
+    pub(super) fn cursor_is_beside_paste(&self, key: ComposerKey) -> bool {
+        self.composers
+            .get(&key)
+            .is_some_and(|composer| composer.paste_beside_cursor().is_some())
+    }
+
+    /// Puts the words of the Collapsed Paste the cursor stands beside back in
+    /// place of its label, as ordinary text, answering whether one stood
+    /// there.
+    pub(super) fn expand_paste(&mut self, key: ComposerKey) -> bool {
+        self.composer_mut(key).expand_paste()
     }
 
     pub(super) fn hit(&self, key: ComposerKey, position: Position) -> Option<CursorTarget> {
@@ -357,6 +410,18 @@ impl ComposerMemory {
 
     pub(super) fn insert(&mut self, key: ComposerKey, text: &str) {
         self.composer_mut(key).insert(text);
+    }
+
+    /// Pastes `text` where the draft's cursor stands. Where `collapse`
+    /// is asked and the text is large, it goes in as a Collapsed
+    /// Paste: the next `[Paste N: …]` label and a space, bound to the text.
+    pub(super) fn paste(&mut self, key: ComposerKey, text: &str, collapse: bool) {
+        let composer = self.composer_mut(key);
+        if collapse && collapses(text) {
+            composer.insert_paste(text);
+        } else {
+            composer.insert(text);
+        }
     }
 
     pub(super) fn replace(&mut self, key: ComposerKey, range: Range<usize>, text: &str) -> bool {
@@ -539,6 +604,31 @@ impl ComposerMemory {
         self.composer_mut(key).clear();
     }
 
+    /// Lets go of what the draft under `key` keeps of each Prompt `delivered`
+    /// picks: one its Session has delivered never comes back to be written
+    /// again.
+    pub(super) fn forget_delivered(
+        &mut self,
+        key: &ComposerKey,
+        delivered: impl Fn(&PromptId) -> bool,
+    ) {
+        if let Some(composer) = self.composers.get_mut(key) {
+            composer.sent_folded.retain(|id, _| !delivered(id));
+        }
+    }
+
+    /// Whether a label — an Attachment's, or a Collapsed Paste's — ends at
+    /// `offset` of the draft under `key`, so that what is written there
+    /// stands hard against it.
+    pub(super) fn label_ends_at(&self, key: ComposerKey, offset: usize) -> bool {
+        self.composers.get(&key).is_some_and(|composer| {
+            composer
+                .bindings
+                .unit_before(offset)
+                .is_some_and(|unit| unit.end == offset)
+        })
+    }
+
     pub(super) fn discard_session(&mut self, session: SessionReference) {
         self.composers.remove(&ComposerKey::Session(session));
     }
@@ -622,6 +712,7 @@ impl ComposerMemory {
                 text: landing.text,
                 bindings: landing.bindings,
             });
+            recovered.sent_folded.extend(landing.sent_folded);
         }
         recovered.leave_session();
         self.composers.insert(ComposerKey::Landing, recovered);
@@ -689,31 +780,50 @@ impl ComposerState {
         }
     }
 
-    /// What `prompt` binds as it comes back: carried where this Client sent it
-    /// from a directory the Session has since left. Bound anywhere else — here,
-    /// or by another Client — it is judged as any binding is.
-    fn returned_bindings(&self, prompt: &InitialPrompt) -> TextBindings {
-        let mut bindings = TextBindings::from_prompt(prompt);
+    /// `prompt` as the draft it comes back as, with what it binds: carried
+    /// where this Client sent it from a directory the Session has since left.
+    /// Bound anywhere else — here, or by another Client — it is judged as any
+    /// binding is.
+    ///
+    /// A Prompt this Client sent with Collapsed Pastes in it comes back as
+    /// the draft it was, labels and all, for as long as it still reads as
+    /// that draft did; any other comes back as the text it carries.
+    fn returned(&self, prompt: &InitialPrompt) -> HistoryEntry {
+        let folded = self.sent_folded.get(&prompt.id).and_then(|sent| {
+            let bindings = sent.bindings.folded_over(&sent.text, prompt)?;
+            Some(HistoryEntry {
+                text: sent.text.clone(),
+                bindings,
+            })
+        });
+        let mut returned = folded.unwrap_or_else(|| HistoryEntry {
+            text: prompt.text.clone(),
+            bindings: TextBindings::from_prompt(prompt),
+        });
         if self
             .sent_from
             .get(&prompt.id)
             .is_some_and(|sent_from| self.session_directory.as_ref() != Some(sent_from))
         {
-            bindings.carry_skills();
+            returned.bindings.carry_skills();
         }
-        bindings
+        returned
     }
 
     fn push_returned_prompt(&mut self, prompt: &InitialPrompt) {
-        self.push_history(HistoryEntry {
-            text: prompt.text.clone(),
-            bindings: self.returned_bindings(prompt),
-        });
+        self.push_history(self.returned(prompt));
     }
 
     fn resolve_skills(&mut self, catalog: Option<&crate::protocol::SkillCatalog>) {
         self.bindings.retain_recognized(&self.text);
         self.skill_issues = self.bindings.resolve_skills(&self.text, catalog);
+    }
+
+    /// The selected text as it leaves the draft, with every Collapsed Paste
+    /// in it put back.
+    fn selected_text(&self) -> Option<String> {
+        let range = self.selected_range()?;
+        Some(self.bindings.expanded(&self.text, range))
     }
 
     /// The selected text, taking whole any unit either end reaches into.
@@ -773,6 +883,35 @@ impl ComposerState {
             let span = start..start + label.len();
             self.bindings.bind_attachment(span, attachment_id, label);
         }
+    }
+
+    fn insert_paste(&mut self, pasted: &str) {
+        let number = self
+            .highest_paste_number
+            .max(self.bindings.highest_paste_number())
+            + 1;
+        self.highest_paste_number = number;
+        let label = paste_label(number, pasted);
+        let range = self.selected_range().unwrap_or(self.cursor..self.cursor);
+        let start = range.start;
+        if self.replace(range, &format!("{label} ")) {
+            let span = start..start + label.len();
+            self.bindings.bind_paste(span, label, pasted.to_owned());
+        }
+    }
+
+    fn paste_beside_cursor(&self) -> Option<Range<usize>> {
+        self.bindings.paste_beside(&self.text, self.cursor)
+    }
+
+    fn expand_paste(&mut self) -> bool {
+        let Some(span) = self.paste_beside_cursor() else {
+            return false;
+        };
+        let Some(pasted) = self.bindings.pasted_text(&span).map(str::to_owned) else {
+            return false;
+        };
+        self.replace(span, &pasted)
     }
 
     fn delete_backward(&mut self) {
@@ -920,6 +1059,9 @@ impl ComposerState {
         self.highest_image_number = self
             .highest_image_number
             .max(self.bindings.highest_image_number());
+        self.highest_paste_number = self
+            .highest_paste_number
+            .max(self.bindings.highest_paste_number());
         self.cursor = self.text.len();
         self.prefer_previous_row = false;
         self.preferred_display_column = None;
@@ -960,6 +1102,7 @@ impl ComposerState {
         self.bindings.clear();
         self.skill_issues.clear();
         self.highest_image_number = 0;
+        self.highest_paste_number = 0;
     }
 
     fn begin_submission(&mut self) -> InitialPrompt {
@@ -967,13 +1110,23 @@ impl ComposerState {
         let text = std::mem::take(&mut self.text);
         let bindings = std::mem::take(&mut self.bindings);
         self.highest_image_number = 0;
+        self.highest_paste_number = 0;
         let id = self
             .retry
             .as_ref()
-            .filter(|retry| retry.text == text && bindings.are_carried_by(retry))
+            .filter(|retry| bindings.lowers_to(&text, retry))
             .map_or_else(PromptId::new, |retry| retry.id);
         if let Some(directory) = &self.session_directory {
             self.sent_from.insert(id, directory.clone());
+        }
+        if bindings.has_pastes() {
+            self.sent_folded.insert(
+                id,
+                HistoryEntry {
+                    text: text.clone(),
+                    bindings: bindings.clone(),
+                },
+            );
         }
         self.skill_issues.clear();
         self.selection_anchor = None;
@@ -1001,11 +1154,13 @@ impl ComposerState {
                 bindings: self.bindings.clone(),
             });
         }
+        let returned = self.returned(prompt);
         self.generation = DraftGeneration::fresh();
-        self.text.clone_from(&prompt.text);
+        self.text = returned.text;
         self.selection_anchor = None;
-        self.bindings = self.returned_bindings(prompt);
+        self.bindings = returned.bindings;
         self.highest_image_number = self.bindings.highest_image_number();
+        self.highest_paste_number = self.bindings.highest_paste_number();
         self.skill_issues.clear();
         self.cursor = self.text.len();
         self.history_position = None;
@@ -1029,13 +1184,14 @@ impl ComposerState {
         let restored_was_current = self
             .retry
             .as_ref()
-            .is_some_and(|retry| retry.id == prompt.id && self.text == retry.text);
+            .is_some_and(|retry| retry.id == prompt.id && self.reads_as(retry));
         if restored_was_current {
             self.generation = DraftGeneration::fresh();
             self.text.clear();
             self.selection_anchor = None;
             self.bindings.clear();
             self.highest_image_number = 0;
+            self.highest_paste_number = 0;
             self.skill_issues.clear();
             self.cursor = 0;
             self.history_position = None;
@@ -1049,6 +1205,11 @@ impl ComposerState {
             self.retry = None;
         }
         restored_was_current
+    }
+
+    /// Whether the draft would be sent as the words `prompt` carries.
+    fn reads_as(&self, prompt: &InitialPrompt) -> bool {
+        self.bindings.expanded(&self.text, 0..self.text.len()) == prompt.text
     }
 
     fn line_start(&self) -> usize {
@@ -1072,7 +1233,7 @@ impl ComposerState {
         if self
             .retry
             .as_ref()
-            .is_some_and(|retry| retry.text != self.text || !self.bindings.are_carried_by(retry))
+            .is_some_and(|retry| !self.bindings.lowers_to(&self.text, retry))
         {
             self.retry = None;
         }

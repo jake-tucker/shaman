@@ -798,8 +798,11 @@ fn show_sidebar(app: &mut Application) {
 }
 
 fn write_long_draft(app: &mut Application) {
-    app.handle_terminal_event(InputEvent::Paste("A draft\nof several\nlines".to_owned()))
-        .unwrap();
+    // Typed rather than pasted, which would stand in the draft as one label.
+    app.handle_event(ApplicationEvent::Command(CommandId::InsertText(
+        "A draft\nof several\nlines".to_owned(),
+    )))
+    .unwrap();
 }
 
 /// A Landing laid out as `framing` arranges it, with `prepare` done to it

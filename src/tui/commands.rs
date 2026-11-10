@@ -57,6 +57,16 @@ pub enum SemanticCommandId {
     /// Pastes what the host clipboard holds into the composer: an image as an
     /// Attachment, text as a bracketed paste of it would, and nothing else.
     ComposerClipboardPaste,
+    /// Puts the words of the Collapsed Paste the composer's cursor stands
+    /// beside back in place of its label, as ordinary text.
+    ComposerPasteExpand,
+    ComposerMenuPrevious,
+    ComposerMenuNext,
+    /// Invokes the composer menu's selected item, the way Enter acts on the
+    /// Sidebar's own row menu.
+    ComposerMenuSelect,
+    /// Dismisses the composer's menu, leaving the draft alone.
+    ComposerMenuClose,
     /// A click on the screen cell its subject names, with `modifiers` held,
     /// which the surface resolving it may read it differently by.
     PointerClick {
@@ -801,6 +811,11 @@ impl SemanticCommandId {
             Self::ComposerPlaceCursor => "composer.cursor.place",
             Self::ComposerFocus => "composer.focus",
             Self::ComposerClipboardPaste => "composer.clipboard.paste",
+            Self::ComposerPasteExpand => "composer.paste.expand",
+            Self::ComposerMenuPrevious => "composer.menu.previous",
+            Self::ComposerMenuNext => "composer.menu.next",
+            Self::ComposerMenuSelect => "composer.menu.select",
+            Self::ComposerMenuClose => "composer.menu.close",
             Self::ApplicationExit => "application.exit",
             Self::ThemeList => "theme.list",
             Self::ModelList => "model.list",
@@ -3462,6 +3477,51 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
             modifiers: KeyModifiers::CONTROL,
             label: "Ctrl+V",
         }),
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::ComposerPasteExpand,
+        title: "Expand Paste",
+        reach: SemanticReach::Client,
+        description: "Put a collapsed paste's text back in the composer in place of its label",
+        slash: None,
+        keybinding: Some(SemanticKeybinding {
+            prefix: Some(LEADER_PREFIX),
+            code: KeyCode::Char('e'),
+            modifiers: KeyModifiers::NONE,
+            label: "Ctrl+X E",
+        }),
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::ComposerMenuPrevious,
+        title: "Previous Composer Menu Item",
+        reach: SemanticReach::Client,
+        description: "Move to the composer menu's previous item",
+        slash: None,
+        keybinding: None,
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::ComposerMenuNext,
+        title: "Next Composer Menu Item",
+        reach: SemanticReach::Client,
+        description: "Move to the composer menu's next item",
+        slash: None,
+        keybinding: None,
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::ComposerMenuSelect,
+        title: "Invoke Composer Menu Item",
+        reach: SemanticReach::Client,
+        description: "Act on the composer menu's selected item",
+        slash: None,
+        keybinding: None,
+    },
+    SemanticCommandDescriptor {
+        id: SemanticCommandId::ComposerMenuClose,
+        title: "Close Composer Menu",
+        reach: SemanticReach::Client,
+        description: "Dismiss the composer's menu, leaving the draft alone",
+        slash: None,
+        keybinding: None,
     },
     SemanticCommandDescriptor {
         id: SemanticCommandId::SidebarLeave,

@@ -1731,9 +1731,7 @@ fn shift_vertical_navigation_selects_painted_rows_without_history() {
 fn vertical_navigation_uses_valid_wide_character_boundaries() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    application
-        .handle_terminal_event(InputEvent::Paste("a\n界x\nb".into()))
-        .unwrap();
+    application.handle_event(write_draft("a\n界x\nb")).unwrap();
     let buffer = rendered_application_buffer(&application, 28, 30);
     // Ratatui reserves a continuation cell after the two-column character,
     // so locate the character itself rather than requiring `x` to be adjacent
@@ -1849,7 +1847,13 @@ fn prompt_block_height(rows: &[String]) -> usize {
     bottom - top + 1
 }
 
-fn application_with_skills(
+/// Writes `text` into the composer as typing it would, lines and all: a
+/// paste of that many lines would stand in the draft as a Collapsed Paste.
+fn write_draft(text: &str) -> ApplicationEvent {
+    ApplicationEvent::Command(CommandId::InsertText(text.to_owned()))
+}
+
+pub(crate) fn application_with_skills(
     skills: Vec<SkillDescriptor>,
     max_distinct_invocations: Option<u32>,
 ) -> (WorkspaceDir, Application) {
@@ -1937,9 +1941,7 @@ fn composer_clicks_resolve_unicode_and_blank_cells_to_insertion_boundaries() {
     ] {
         let workspace = workspace_dir();
         let mut application = connected_application(workspace.path());
-        application
-            .handle_terminal_event(InputEvent::Paste(text.to_owned()))
-            .unwrap();
+        application.handle_event(write_draft(text)).unwrap();
         let buffer = rendered_application_buffer(&application, 80, 30);
         let block = prompt_block(&buffer_rows(&buffer));
         click_composer(
@@ -2022,8 +2024,8 @@ fn composer_clicks_follow_word_wrapping_and_internal_scrolling_after_resize() {
 
     let mut scrolled = Application::default();
     scrolled
-        .handle_terminal_event(InputEvent::Paste(
-            (1..=20)
+        .handle_event(write_draft(
+            &(1..=20)
                 .map(|line| format!("line{line:02}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
@@ -2306,8 +2308,8 @@ fn composer_line_edges_resolve_through_application_and_stay_on_the_written_line(
     let mut application = connected_application(workspace.path());
     let draft = "first\na🙂β middle wraps across rows\nlast";
     application
-        .handle_terminal_event(InputEvent::Paste(draft.to_owned()))
-        .expect("paste a multiline draft");
+        .handle_event(write_draft(draft))
+        .expect("write a multiline draft");
     for _ in 0..8 {
         application
             .handle_terminal_event(InputEvent::Key(KeyEvent::new(
@@ -2969,7 +2971,7 @@ fn keyboard_selection_extends_by_painted_rows_and_to_draft_edges_without_history
     assert_eq!(row, "old history");
     composer_selection_key(&mut application, KeyCode::Down, KeyModifiers::NONE);
     application
-        .handle_terminal_event(InputEvent::Paste("alpha\nbravo\ncharlie".into()))
+        .handle_event(write_draft("alpha\nbravo\ncharlie"))
         .unwrap();
     composer_selection_key(&mut application, KeyCode::Home, KeyModifiers::NONE);
     composer_selection_key(&mut application, KeyCode::Right, KeyModifiers::NONE);
@@ -3023,7 +3025,7 @@ fn keyboard_selection_line_edges_and_plain_motion_collapse_or_clear_from_focus()
         let workspace = workspace_dir();
         let mut application = connected_application(workspace.path());
         application
-            .handle_terminal_event(InputEvent::Paste("alpha\nbravo\ncharm".into()))
+            .handle_event(write_draft("alpha\nbravo\ncharm"))
             .unwrap();
         composer_selection_key(&mut application, KeyCode::Up, KeyModifiers::NONE);
         composer_selection_key(&mut application, KeyCode::Home, KeyModifiers::NONE);
@@ -3043,7 +3045,7 @@ fn keyboard_selection_line_edges_and_plain_motion_collapse_or_clear_from_focus()
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
     application
-        .handle_terminal_event(InputEvent::Paste("alpha\nbravo\ncharm".into()))
+        .handle_event(write_draft("alpha\nbravo\ncharm"))
         .unwrap();
     composer_selection_key(&mut application, KeyCode::Up, KeyModifiers::NONE);
     composer_selection_key(&mut application, KeyCode::Home, KeyModifiers::SHIFT);

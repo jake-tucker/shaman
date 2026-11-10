@@ -51,6 +51,7 @@ use super::{
     commands::{SemanticCommandId, SemanticInvocation, SemanticSubject},
     completion::{CompletionConfirmation, CompletionMode, ComposerCompletion},
     composer::{ComposerKey, ComposerMemory, SelectionMotion},
+    composer_menu::{ComposerMenu, ComposerMenuItem},
     connect_overlay::{ConnectOverlay, ConnectRequest, LoginStep},
     context_overlay::{ContextBreakdownRefusal, ContextOverlay},
     destination::{Destination, DestinationPurpose},
@@ -60,10 +61,11 @@ use super::{
     icon_picker::{IconPicker, IconPickerTarget},
     keymap::{
         MetricsKeys, command_for_approval_posture_picker_event, command_for_aside_event,
-        command_for_completion_event, command_for_connect_overlay_event,
-        command_for_context_overlay_event, command_for_directory_browser_event,
-        command_for_icon_picker_event, command_for_interrupt_confirmation_event,
-        command_for_leader_event, command_for_list_editor_event, command_for_metrics_view_event,
+        command_for_completion_event, command_for_composer_menu_event,
+        command_for_connect_overlay_event, command_for_context_overlay_event,
+        command_for_directory_browser_event, command_for_icon_picker_event,
+        command_for_interrupt_confirmation_event, command_for_leader_event,
+        command_for_list_editor_event, command_for_metrics_view_event,
         command_for_model_options_event, command_for_model_picker_event,
         command_for_monitoring_subagent_view_event, command_for_numeric_editor_event,
         command_for_queued_prompt_event, command_for_relay_overlay_event,
@@ -892,6 +894,7 @@ pub struct TuiState {
     withdrawing: Vec<HeldPrompt>,
     pub(super) command_mode: CommandMode,
     pub(super) composer_completion: ComposerCompletion,
+    pub(super) composer_menu: ComposerMenu,
     skill_catalog: Option<(SkillCatalogRequest, SkillCatalog)>,
     pending_model_options: bool,
     pub(super) model_options: ModelOptions,
@@ -1259,6 +1262,7 @@ impl TuiState {
             withdrawing: Vec::new(),
             command_mode: CommandMode::Composer,
             composer_completion: ComposerCompletion::default(),
+            composer_menu: ComposerMenu::default(),
             skill_catalog: None,
             pending_model_options: false,
             model_options: ModelOptions::default(),
@@ -1844,9 +1848,10 @@ impl TuiState {
         let bound_skills = self.composers.valid_skill_ids(key.clone());
         self.composer_completion.sync(
             self.composers.text(key.clone()),
-            self.composers.cursor(key),
+            self.composers.cursor(key.clone()),
             catalog.as_ref(),
             &bound_skills,
+            |offset| self.composers.label_ends_at(key.clone(), offset),
         );
     }
 
@@ -1937,13 +1942,21 @@ impl TuiState {
         self.sync_composer_completion();
     }
 
+    /// Pastes `text` into the composer with the keys, as a Collapsed Paste
+    /// where it is large and the reader has those on.
     fn paste_into_composer(&mut self, text: &str) {
-        self.edit_composer_without_completion(|composers, key| composers.insert(key, text));
+        let collapse = self.settings.composer.collapse_pastes;
+        self.edit_composer_without_completion(|composers, key| {
+            composers.paste(key, text, collapse);
+        });
     }
 
     /// Pastes `text` into `draft` as a bracketed paste into it would.
     fn paste_into_draft(&mut self, draft: ComposerKey, text: &str) {
-        self.edit_draft_without_completion(draft, |composers, key| composers.insert(key, text));
+        let collapse = self.settings.composer.collapse_pastes;
+        self.edit_draft_without_completion(draft, |composers, key| {
+            composers.paste(key, text, collapse);
+        });
     }
 
     /// Edits `draft` as the composer with the keys is edited, or, where the
@@ -3456,6 +3469,7 @@ impl TuiState {
         self.reconcile_failed_submissions();
         self.reconcile_pending_steers();
         self.reconcile_withdrawn_prompts();
+        self.forget_delivered_drafts();
         self.reconcile_command_mode();
         self.reconcile_subagent_picker();
         Ok(true)
@@ -4604,6 +4618,8 @@ impl TuiState {
             Some(SelectionSurface::SidebarMenu)
         } else if self.subagent_picker.is_open() {
             Some(SelectionSurface::Subagents)
+        } else if self.composer_menu.is_open() {
+            Some(SelectionSurface::ComposerMenu)
         } else if self.composer_completion.is_visible() {
             Some(SelectionSurface::Completions)
         } else {
@@ -5207,6 +5223,25 @@ impl TuiState {
 
     /// Returns a withdrawn Prompt's text to the composer of the Session it was
     /// written in, cursor at its end, as a refused admission does.
+    /// Lets the open Session's composer go of the folded draft it keeps for
+    /// each Prompt the Session has delivered. Asked after the Prompts the
+    /// Session gave back have been returned, which read those drafts.
+    fn forget_delivered_drafts(&mut self) {
+        let (Some(snapshot), Some(session)) = (
+            self.session.as_ref().map(SessionProjection::snapshot),
+            self.session_reference.clone(),
+        ) else {
+            return;
+        };
+        self.composers
+            .forget_delivered(&ComposerKey::Session(session), |id| {
+                snapshot
+                    .prompts
+                    .iter()
+                    .any(|prompt| prompt.id == *id && prompt.status == PromptStatus::Delivered)
+            });
+    }
+
     fn reconcile_withdrawn_prompts(&mut self) {
         let Some(snapshot) = self.session.as_ref().map(SessionProjection::snapshot) else {
             return;
@@ -8365,12 +8400,13 @@ impl Application {
             }
             CommandId::ClickAt { position } => self.handle_click(position),
             CommandId::OpenContextMenuAt { position } => {
+                self.state.composer_menu.close();
                 if self.state.workspace_picker.is_open() {
                     let show_icons = self.state.settings().appearance.show_icons;
                     self.state
                         .workspace_picker
                         .open_menu_at(position, show_icons);
-                } else {
+                } else if !self.open_composer_menu_at(position) {
                     self.state.sidebar.open_menu_at(position);
                 }
                 Ok(ApplicationTransition::Continue)
@@ -8867,6 +8903,16 @@ impl Application {
         if self.state.workspace_picker.menu_is_open() {
             if self.state.workspace_picker.menu_hit(position) {
                 return self.activate_workspace_picker_menu();
+            }
+            return Ok(ApplicationTransition::Continue);
+        }
+        // The composer's own menu stands over the draft while it is up: a
+        // press on one of its items acts on that item, the same command
+        // Enter invokes, and one outside its box never reaches here, since
+        // `PointerClick` already turned it into the Escape that closes it.
+        if self.state.composer_menu.is_open() {
+            if self.state.composer_menu.hit(position) {
+                return self.activate_composer_menu();
             }
             return Ok(ApplicationTransition::Continue);
         }
@@ -9999,6 +10045,87 @@ impl Application {
         Ok(ApplicationTransition::Continue)
     }
 
+    /// Opens the composer's menu on the Collapsed Paste drawn at `position`,
+    /// with the cursor put just after it so the menu's command acts on the
+    /// paste the reader pointed at. Answers whether one is drawn there: a
+    /// right press anywhere else in the draft opens nothing here.
+    fn open_composer_menu_at(&mut self, position: Position) -> bool {
+        if self.state.overlay_owns_input() || self.state.open_subagent_parent().is_some() {
+            return false;
+        }
+        let Some(paste) = self
+            .state
+            .composers
+            .paste_under(self.state.composer_key(), position)
+        else {
+            return false;
+        };
+        self.state.text_selection.set(None);
+        self.state
+            .navigate_composer(|composers, key| composers.select(key, paste.end, paste.end));
+        self.state
+            .composer_menu
+            .open_at(position, vec![ComposerMenuItem::ExpandPaste]);
+        true
+    }
+
+    /// Handles the composer menu's own commands, routed here only while it
+    /// is open: the arrows walk its items, and Enter and a click on an item
+    /// both invoke the command that item names.
+    fn handle_composer_menu_command(
+        &mut self,
+        command: SemanticCommandId,
+    ) -> Result<ApplicationTransition> {
+        if !self.state.composer_menu.is_open() {
+            return Ok(ApplicationTransition::Continue);
+        }
+        match command {
+            SemanticCommandId::ComposerMenuPrevious => self.state.composer_menu.select_previous(),
+            SemanticCommandId::ComposerMenuNext => self.state.composer_menu.select_next(),
+            SemanticCommandId::ComposerMenuClose => self.state.composer_menu.close(),
+            SemanticCommandId::ComposerMenuSelect => return self.activate_composer_menu(),
+            _ => {}
+        }
+        Ok(ApplicationTransition::Continue)
+    }
+
+    /// Acts on the composer menu's selected item and closes it, whether
+    /// asked for by Enter or by a press inside the menu's own box.
+    fn activate_composer_menu(&mut self) -> Result<ApplicationTransition> {
+        let command = self.state.composer_menu.selected_command();
+        self.state.composer_menu.close();
+        command.map_or(Ok(ApplicationTransition::Continue), |command| {
+            self.invoke_semantic(command)
+        })
+    }
+
+    /// Puts the words of the Collapsed Paste the composer's cursor stands
+    /// beside back in place of its label. With no paste there, or while the
+    /// composer does not have the keys, it does nothing.
+    fn expand_paste(&mut self) -> ApplicationTransition {
+        // Asked through the Leader, the command spends it whether or not a
+        // paste stands at the cursor.
+        if matches!(self.state.command_mode, CommandMode::Leader) {
+            self.state.command_mode = CommandMode::Composer;
+        }
+        if self.state.overlay_owns_input()
+            || self.state.reconnect_overlay_visible()
+            || self.state.open_subagent_parent().is_some()
+            || !self
+                .state
+                .composers
+                .cursor_is_beside_paste(self.state.composer_key())
+        {
+            return ApplicationTransition::Continue;
+        }
+        self.state.text_selection.set(None);
+        self.state
+            .edit_composer_without_completion(|composers, key| {
+                composers.expand_paste(key);
+            });
+        ApplicationTransition::Continue
+    }
+
     /// Handles the Workspace Picker row menu's own commands, routed here only
     /// while it is open: the arrows walk its items, and Enter and a click on
     /// an item both ask for the very same invocation the menu already knows
@@ -10537,10 +10664,18 @@ impl Application {
         // with instructions or without — is that command, never a Prompt for
         // the Agent, wherever it is written. Its draft is spent once the
         // command sets off, and kept to be corrected where it is refused.
+        //
+        // The draft is read as it is written, so nothing inside a Collapsed
+        // Paste can make a command of it; a command the reader did write
+        // takes its text with every paste put back.
         let key = self.state.composer_key();
-        if let Some((command, text)) =
+        if let Some((command, _)) =
             super::commands::slash_text_invocation(self.state.composers.text(key.clone()))
         {
+            let text = super::commands::slash_text_invocation(
+                &self.state.composers.expanded_text(key.clone()),
+            )
+            .and_then(|(_, text)| text);
             let invocation = text.map_or_else(|| command.into(), |text| command.on_text(text));
             let transition = self
                 .invoke_semantic(invocation)
@@ -12107,6 +12242,11 @@ impl Application {
                 Ok(ApplicationTransition::Continue)
             }
             SemanticCommandId::ComposerClipboardPaste => Ok(self.paste_from_clipboard()),
+            SemanticCommandId::ComposerPasteExpand => Ok(self.expand_paste()),
+            command @ (SemanticCommandId::ComposerMenuPrevious
+            | SemanticCommandId::ComposerMenuNext
+            | SemanticCommandId::ComposerMenuSelect
+            | SemanticCommandId::ComposerMenuClose) => self.handle_composer_menu_command(command),
             SemanticCommandId::ApplicationExit => Ok(ApplicationTransition::Exit),
             SemanticCommandId::ConnectOpen => {
                 self.state.connect_overlay.open();
@@ -14454,6 +14594,7 @@ impl Application {
                 SelectionSurface::Sessions => return command_for_session_picker_event(event),
                 SelectionSurface::SidebarMenu => return command_for_sidebar_menu_event(event),
                 SelectionSurface::Subagents => return command_for_subagent_picker_event(event),
+                SelectionSurface::ComposerMenu => return command_for_composer_menu_event(event),
                 _ => {}
             },
             // The Sidebar comes after every overlay and before the composer's

@@ -11,6 +11,7 @@ mod approvals;
 mod aside;
 mod aside_neighbours;
 mod attachment_previews;
+mod collapsed_paste;
 mod commands;
 mod composer;
 mod composer_lifecycle;

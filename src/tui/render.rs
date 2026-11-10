@@ -35,6 +35,7 @@ use super::{
     completion::CompletionRow,
     completion_details::CompletionDetails,
     composer::{ComposerBindings, ComposerKey, ComposerMemory},
+    composer_menu::ComposerMenuGeometry,
     connect_overlay::{ConnectDetails, ConnectOverlay, LoginStep},
     context_overlay::{ContextOverlayView, ContextRow},
     directory_browser::{DirectoryBrowserRow, DirectoryBrowserRowKind},
@@ -402,6 +403,8 @@ pub(super) fn render_with_slots(
     // opened on.
     if !state.reconnect_overlay_visible() {
         render_sidebar_menu(frame, state, theme);
+        // The composer's own menu, in front of the draft it was opened on.
+        render_composer_menu(frame, state, theme);
     }
     // Every overlay is centered on the main view rather than the whole frame:
     // the Sidebar sits beside them and is neither opened over nor obscured.
@@ -512,6 +515,7 @@ pub(super) fn render_with_slots(
         && !state.connect_overlay.is_open()
         && !state.relay_overlay.is_open()
         && !state.sidebar.menu_is_open()
+        && !state.composer_menu.is_open()
         && !state.subagent_picker.is_open()
         && !state.icon_picker.is_open()
         && !state.rename_dialog.is_open()
@@ -3165,41 +3169,112 @@ fn render_workspace_picker_menu(frame: &mut Frame<'_>, state: &TuiState, theme: 
     let Some(menu) = state.workspace_picker.menu() else {
         return;
     };
-    let widest = menu
+    let items = menu
         .items
         .iter()
-        .map(|item| item.label.width())
+        .map(|item| (item.label, menu_item_style(theme, item.selected, false)))
+        .collect::<Vec<_>>();
+    if let Some(drawn) = render_context_menu(
+        frame,
+        state,
+        theme,
+        menu.anchor,
+        &items,
+        SelectionSurface::WorkspacePickerMenu,
+    ) {
+        state
+            .workspace_picker
+            .record_menu_geometry(WorkspacePickerMenuGeometry {
+                columns: drawn.columns,
+                top: drawn.top,
+                count: drawn.count,
+            });
+    }
+}
+
+/// The composer's own context menu, in the style of the Sidebar's and the
+/// Workspace Picker's row menus.
+fn render_composer_menu(frame: &mut Frame<'_>, state: &TuiState, theme: &Theme) {
+    let Some(menu) = state.composer_menu.view() else {
+        return;
+    };
+    let items = menu
+        .items
+        .iter()
+        .map(|item| (item.label, menu_item_style(theme, item.selected, false)))
+        .collect::<Vec<_>>();
+    if let Some(drawn) = render_context_menu(
+        frame,
+        state,
+        theme,
+        menu.anchor,
+        &items,
+        SelectionSurface::ComposerMenu,
+    ) {
+        state.composer_menu.record_geometry(ComposerMenuGeometry {
+            columns: drawn.columns,
+            top: drawn.top,
+            count: drawn.count,
+        });
+    }
+}
+
+/// Where a context menu's items were drawn: the columns its box holds, the
+/// screen row of its first item, and how many items stand beneath it.
+struct DrawnMenu {
+    columns: std::ops::Range<u16>,
+    top: u16,
+    count: u16,
+}
+
+/// The style one context menu item is drawn in.
+fn menu_item_style(theme: &Theme, selected: bool, destructive: bool) -> Style {
+    if selected {
+        theme.selection.focused
+    } else if destructive {
+        theme.feedback.error
+    } else {
+        theme.text.primary
+    }
+}
+
+/// Draws a context menu: a small box of `items`, each in its own style,
+/// anchored at the cell the reader pointed at and pulled back inside the frame
+/// where the box would otherwise run off it. Answers where the items stand,
+/// or `None` where the frame has no room for the box.
+fn render_context_menu(
+    frame: &mut Frame<'_>,
+    state: &TuiState,
+    theme: &Theme,
+    anchor: Position,
+    items: &[(&str, Style)],
+    surface: SelectionSurface,
+) -> Option<DrawnMenu> {
+    let widest = items
+        .iter()
+        .map(|(label, _)| label.width())
         .max()
         .unwrap_or_default();
+    // The label, a column of padding either side of it, and the box's own two
+    // borders; likewise two borders around the items down the box.
     let width = u16::try_from(widest.saturating_add(4)).unwrap_or(u16::MAX);
-    let height = u16::try_from(menu.items.len().saturating_add(2)).unwrap_or(u16::MAX);
+    let height = u16::try_from(items.len().saturating_add(2)).unwrap_or(u16::MAX);
     let frame_area = frame.area();
     if frame_area.width < width || frame_area.height < height {
-        return;
+        return None;
     }
     let area = Rect {
-        x: menu.anchor.x.min(frame_area.right().saturating_sub(width)),
-        y: menu
-            .anchor
-            .y
-            .min(frame_area.bottom().saturating_sub(height)),
+        x: anchor.x.min(frame_area.right().saturating_sub(width)),
+        y: anchor.y.min(frame_area.bottom().saturating_sub(height)),
         width,
         height,
     };
-    let lines = menu
-        .items
+    let lines = items
         .iter()
-        .map(|item| {
+        .map(|(label, style)| {
             Line::styled(
-                pad_to_width(
-                    &format!(" {}", item.label),
-                    usize::from(width.saturating_sub(2)),
-                ),
-                if item.selected {
-                    theme.selection.focused
-                } else {
-                    theme.text.primary
-                },
+                pad_to_width(&format!(" {label}"), usize::from(width.saturating_sub(2))),
+                *style,
             )
         })
         .collect::<Vec<_>>();
@@ -3213,20 +3288,12 @@ fn render_workspace_picker_menu(frame: &mut Frame<'_>, state: &TuiState, theme: 
         ),
         area,
     );
-    state
-        .workspace_picker
-        .record_menu_geometry(WorkspacePickerMenuGeometry {
-            columns: area.x + 1..area.right().saturating_sub(1),
-            top: area.y + 1,
-            count: height.saturating_sub(2),
-        });
-    record_overlay_selection(
-        frame,
-        state,
-        area,
-        SelectionSurface::WorkspacePickerMenu,
-        true,
-    );
+    record_overlay_selection(frame, state, area, surface, true);
+    Some(DrawnMenu {
+        columns: area.x + 1..area.right().saturating_sub(1),
+        top: area.y + 1,
+        count: height.saturating_sub(2),
+    })
 }
 
 /// The Description editor, standing over the Workspace Picker: the Workspace
@@ -5700,64 +5767,30 @@ fn render_sidebar_menu(frame: &mut Frame<'_>, state: &TuiState, theme: &Theme) {
             }
         }
     }
-    let widest = menu
-        .items
-        .iter()
-        .map(|item| item.label.width())
-        .max()
-        .unwrap_or_default();
-    // The label, a column of padding either side of it, and the box's own two
-    // borders; likewise two borders around the items down the box.
-    let width = u16::try_from(widest.saturating_add(4)).unwrap_or(u16::MAX);
-    let height = u16::try_from(menu.items.len().saturating_add(2)).unwrap_or(u16::MAX);
-    let frame_area = frame.area();
-    if frame_area.width < width || frame_area.height < height {
-        return;
-    }
-    let area = Rect {
-        x: menu.anchor.x.min(frame_area.right().saturating_sub(width)),
-        y: menu
-            .anchor
-            .y
-            .min(frame_area.bottom().saturating_sub(height)),
-        width,
-        height,
-    };
-    let lines = menu
+    let items = menu
         .items
         .iter()
         .map(|item| {
-            Line::styled(
-                pad_to_width(
-                    &format!(" {}", item.label),
-                    usize::from(width.saturating_sub(2)),
-                ),
-                if item.selected {
-                    theme.selection.focused
-                } else if item.destructive {
-                    theme.feedback.error
-                } else {
-                    theme.text.primary
-                },
+            (
+                item.label,
+                menu_item_style(theme, item.selected, item.destructive),
             )
         })
         .collect::<Vec<_>>();
-    clear_over(frame, state, area);
-    frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(theme.border.default)
-                .style(theme.surface.overlay),
-        ),
-        area,
-    );
-    state.sidebar.record_menu_geometry(SidebarMenuGeometry {
-        columns: area.x + 1..area.right().saturating_sub(1),
-        top: area.y + 1,
-        count: height.saturating_sub(2),
-    });
-    record_overlay_selection(frame, state, area, SelectionSurface::SidebarMenu, true);
+    if let Some(drawn) = render_context_menu(
+        frame,
+        state,
+        theme,
+        menu.anchor,
+        &items,
+        SelectionSurface::SidebarMenu,
+    ) {
+        state.sidebar.record_menu_geometry(SidebarMenuGeometry {
+            columns: drawn.columns,
+            top: drawn.top,
+            count: drawn.count,
+        });
+    }
 }
 
 /// The Sidebar's whole body: the search box, then what the server last

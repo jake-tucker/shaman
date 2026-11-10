@@ -2633,12 +2633,30 @@ pub struct TextSelectionSettings {
     pub plain_text: TextSelectionPlainText,
 }
 
+/// How the composer takes what the reader puts into it.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComposerSettings {
+    /// Whether a large paste stands in the draft as a Collapsed Paste. On by
+    /// default; off, every paste goes in as the text it is.
+    pub collapse_pastes: bool,
+}
+
+impl Default for ComposerSettings {
+    fn default() -> Self {
+        Self {
+            collapse_pastes: true,
+        }
+    }
+}
+
 /// The effective value of every defined Setting: what a Config Document
 /// pinned where it did, the built-in default everywhere else.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct EffectiveSettings {
     pub text_selection: TextSelectionSettings,
+    pub composer: ComposerSettings,
     pub appearance: AppearanceSettings,
     pub transcript: TranscriptSettings,
     pub session: SessionSettings,
@@ -2822,6 +2840,9 @@ pub enum SettingMutation {
     },
     TextSelectionPlainText {
         value: Option<TextSelectionPlainText>,
+    },
+    ComposerCollapsePastes {
+        value: Option<bool>,
     },
     AppearanceTheme {
         value: Option<String>,

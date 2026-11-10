@@ -1148,6 +1148,33 @@ pub(super) fn command_for_workspace_picker_menu_event(event: InputEvent) -> Opti
     Some(CommandId::InvokeSemantic(semantic))
 }
 
+/// The composer's own menu holds the keys while it is up, as the Workspace
+/// Picker's row menu does: the arrows walk its items, Enter acts on the one
+/// the reader is on, and Esc dismisses it, leaving the draft alone. The
+/// pointer answers as it does everywhere else.
+pub(super) fn command_for_composer_menu_event(event: InputEvent) -> Option<CommandId> {
+    let key = match event {
+        InputEvent::Key(key) => key,
+        event @ InputEvent::Mouse(_) => return command_for_terminal_event(event),
+        _ => return None,
+    };
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    let semantic = match (key.code, key.modifiers) {
+        (KeyCode::Up, KeyModifiers::NONE) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+            SemanticCommandId::ComposerMenuPrevious
+        }
+        (KeyCode::Down, KeyModifiers::NONE) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+            SemanticCommandId::ComposerMenuNext
+        }
+        (KeyCode::Enter, KeyModifiers::NONE) => SemanticCommandId::ComposerMenuSelect,
+        (KeyCode::Esc, KeyModifiers::NONE) => SemanticCommandId::ComposerMenuClose,
+        _ => return None,
+    };
+    Some(CommandId::InvokeSemantic(semantic))
+}
+
 /// The Sidebar has the keyboard and not the mouse. Up and Down move through
 /// the rows, Enter opens the Session the reader is on, Esc backs out of the
 /// Sidebar a step at a time, and the toggle closes it from inside as readily

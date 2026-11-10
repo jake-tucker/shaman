@@ -1,8 +1,9 @@
 //! Typed things bound to spans of a Prompt's text.
 //!
 //! A [`TextBinding`] pins one kind of thing to the byte span of the text that
-//! stands for it: a Skill Invocation, written as `$skill-name`, or an
-//! Attachment, written as its label such as `[Image 1]`. The span bookkeeping
+//! stands for it: a Skill Invocation, written as `$skill-name`, an
+//! Attachment, written as its label such as `[Image 1]`, or a Collapsed
+//! Paste, written as its label such as `[Paste 1: 12 lines]`. The span bookkeeping
 //! every kind shares lives in [`TextBindings`]: bindings stay in text order, a
 //! span moves with an edit made wholly before it, an edit reaching into a span
 //! drops its binding, and a Prompt's bindings are raised from, and lowered
@@ -12,6 +13,7 @@
 //! deletion takes whole.
 
 mod attachment;
+mod paste;
 mod skill;
 
 use std::ops::Range;
@@ -24,6 +26,7 @@ use crate::{
 };
 
 pub(super) use attachment::{BoundAttachment, attachment_name, image_label};
+pub(super) use paste::{collapses, paste_label};
 pub(super) use skill::{SkillIssue, skill_invocation_can_start};
 
 /// One typed thing bound to the span of text that stands for it.
@@ -40,6 +43,9 @@ pub(super) enum BindingKind {
     Skill(skill::BoundSkill),
     /// An uploaded Attachment, standing in the text as its label.
     Attachment(attachment::BoundAttachment),
+    /// A Collapsed Paste, standing in a draft as its label until the draft
+    /// is lowered into a Prompt.
+    Paste(paste::BoundPaste),
 }
 
 impl BindingKind {
@@ -49,13 +55,14 @@ impl BindingKind {
         match self {
             Self::Skill(skill) => skill.is_written_as(text),
             Self::Attachment(attachment) => attachment.is_written_as(text),
+            Self::Paste(paste) => paste.is_written_as(text),
         }
     }
 
     /// The style bound text is drawn in over the plain text around it.
     pub(super) fn style(&self, theme: &Theme) -> Style {
         match self {
-            Self::Skill(_) | Self::Attachment(_) => theme.accent.primary,
+            Self::Skill(_) | Self::Attachment(_) | Self::Paste(_) => theme.accent.primary,
         }
     }
 
@@ -65,7 +72,7 @@ impl BindingKind {
     fn is_unit(&self) -> bool {
         match self {
             Self::Skill(_) => false,
-            Self::Attachment(_) => true,
+            Self::Attachment(_) | Self::Paste(_) => true,
         }
     }
 }
@@ -80,21 +87,21 @@ impl TextBinding {
     fn skill(&self) -> Option<(&Range<usize>, &skill::BoundSkill)> {
         match &self.kind {
             BindingKind::Skill(skill) => Some((&self.span, skill)),
-            BindingKind::Attachment(_) => None,
+            BindingKind::Attachment(_) | BindingKind::Paste(_) => None,
         }
     }
 
     fn skill_mut(&mut self) -> Option<(&Range<usize>, &mut skill::BoundSkill)> {
         match &mut self.kind {
             BindingKind::Skill(skill) => Some((&self.span, skill)),
-            BindingKind::Attachment(_) => None,
+            BindingKind::Attachment(_) | BindingKind::Paste(_) => None,
         }
     }
 
     fn attachment(&self) -> Option<(&Range<usize>, &attachment::BoundAttachment)> {
         match &self.kind {
             BindingKind::Attachment(attachment) => Some((&self.span, attachment)),
-            BindingKind::Skill(_) => None,
+            BindingKind::Skill(_) | BindingKind::Paste(_) => None,
         }
     }
 }
@@ -127,19 +134,21 @@ impl TextBindings {
         Self(bindings)
     }
 
-    /// A Prompt of `text` carrying these bindings beside it, each kind in the
+    /// The Prompt a draft of `text` bound as these are is sent as: its
+    /// Collapsed Pastes put back into the text, and every other kind in the
     /// list the protocol carries it in.
     pub(super) fn into_prompt(self, id: PromptId, text: String) -> InitialPrompt {
+        let (text, carried) = self.lowered(text);
         InitialPrompt {
             id,
             text,
-            skill_invocations: self.skill_invocations(),
-            attachments: self.attachment_bindings(),
+            skill_invocations: carried.skill_invocations(),
+            attachments: carried.attachment_bindings(),
         }
     }
 
     /// Whether these are exactly the bindings `prompt` carries beside its text.
-    pub(super) fn are_carried_by(&self, prompt: &InitialPrompt) -> bool {
+    fn are_carried_by(&self, prompt: &InitialPrompt) -> bool {
         self.skill_invocations() == prompt.skill_invocations
             && self.attachment_bindings() == prompt.attachments
     }
