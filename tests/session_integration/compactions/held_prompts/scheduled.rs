@@ -24,8 +24,7 @@ use axum::http::StatusCode;
 use suru::{
     protocol::{
         ActivityStatus, AdmitPromptRequest, CompactionRequest, InitialPrompt, Prompt,
-        PromptDelivery, PromptId, PromptStatus, SessionError, SessionErrorCode, SessionSnapshot,
-        TurnStatus,
+        PromptDelivery, PromptId, PromptStatus, SessionSnapshot, TurnStatus,
     },
     provider::ProviderEvent,
 };
