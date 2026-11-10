@@ -139,6 +139,51 @@ fn a_lapse_penalty_is_a_usd_figure_never_negative_and_an_unknown_one_is_absent()
     );
 }
 
+/// A Prompt Cache says which write price the call that wrote it paid,
+/// leaving the default one out, and a price this protocol does not name is
+/// no Prompt Cache it reads.
+#[test]
+fn a_prompt_cache_names_the_write_price_its_call_paid() {
+    use suru::protocol::{CacheWritePrice, PromptCache};
+    const {
+        assert!(
+            PROTOCOL_VERSION >= 113,
+            "a Prompt Cache's write price changes the wire"
+        );
+    }
+    for (price, named) in [
+        (CacheWritePrice::Hour, Some("hour")),
+        (CacheWritePrice::Unlisted, Some("unlisted")),
+        (CacheWritePrice::Default, None),
+    ] {
+        let cache = PromptCache {
+            lapses_at: SessionTimestamp(1_767_225_900_000),
+            written_by: ModelId::new("gpt-5"),
+            lifetime_ms: None,
+            write_price: price,
+            prompt_limit_tokens: None,
+            lapse_penalty: None,
+        };
+        let mut wire = json!({ "lapses_at": 1_767_225_900_000_u64, "written_by": "gpt-5" });
+        if let Some(named) = named {
+            wire["write_price"] = json!(named);
+        }
+        assert_eq!(serde_json::to_value(&cache).expect("encode it"), wire);
+        assert_eq!(
+            serde_json::from_value::<PromptCache>(wire).expect("decode it"),
+            cache
+        );
+    }
+    assert!(
+        serde_json::from_value::<PromptCache>(json!({
+            "lapses_at": 1_767_225_900_000_u64,
+            "written_by": "gpt-5",
+            "write_price": "half_hour",
+        }))
+        .is_err()
+    );
+}
+
 #[test]
 fn a_reported_zero_cost_is_known_while_an_unattributed_cost_is_rejected() {
     let zero = Cost::from_usd(0.0).expect("a Provider may report a free Turn");
