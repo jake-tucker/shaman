@@ -421,6 +421,7 @@ fn note(from: &Path, to: &Path) -> Report {
         to: ExecutionDirectory {
             path: to.to_owned(),
         },
+        continues: false,
     }
     .into()
 }

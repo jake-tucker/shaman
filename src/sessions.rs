@@ -52,6 +52,7 @@ pub(crate) use remote_reports::{Pairing, RemoteContribution, RemoteOwing, Remote
 mod remote_sessions;
 pub(crate) use remote_sessions::{ConfirmedBeginning, TreeBounds};
 mod reports;
+pub(crate) use reports::ReportContinuation;
 mod restoration;
 #[cfg(test)]
 mod restoration_tests;
@@ -213,13 +214,17 @@ struct SessionStoreState {
     /// [`SessionStoreState::worked_order`]), so a change that moves them
     /// counts as a move of the listing and one that leaves them does not.
     worked_order: Vec<WorkspaceId>,
+    /// The Sessions whose Provider actor says the Provider is about to wake
+    /// their Agent with a result a Move stopping its process would lose.
+    continuations_awaited: std::collections::HashSet<SessionId>,
+    /// What a Move a Session's own Agent asked for still owes that Agent, by
+    /// the Session; see [`session_moves::AgentMove`]. Never stored: a Server
+    /// starting settles the Moves a stop left pending and wakes no one.
+    agent_moves: HashMap<SessionId, session_moves::AgentMove>,
     /// Where the store says a Report is waiting for a Session, once
     /// Provider orchestration has asked to hear of it: the Session the Report
     /// is for, whose Agent the orchestrator then delivers it to (see
     /// [`SessionStore::announce_held_reports_to`]).
-    /// The Sessions whose Provider actor says the Provider is about to wake
-    /// their Agent with a result a Move stopping its process would lose.
-    continuations_awaited: std::collections::HashSet<SessionId>,
     report_notices: Option<mpsc::UnboundedSender<SessionId>>,
 }
 
@@ -474,6 +479,7 @@ impl SessionStore {
             worked_order: Vec::new(),
             report_notices: None,
             continuations_awaited: Default::default(),
+            agent_moves: Default::default(),
         };
         state.worked_order = state.worked_order();
         // A history still waiting in storage has nothing a save could be
@@ -865,6 +871,7 @@ impl SessionStore {
                 saves = taken.saves;
             }
             state.sessions.remove(doomed_id);
+            state.agent_moves.remove(doomed_id);
             state.posture_generations.remove(doomed_id);
             state.unreadable_sessions.remove(doomed_id);
             if let Some(deferred) = &mut state.deferred {

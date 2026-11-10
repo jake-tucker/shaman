@@ -18,8 +18,11 @@
 //!
 //! An Agent is Working whenever it calls a Tool, so a Move of its own Session is
 //! by nature pending. Its answer is therefore the Agent's instruction as much as
-//! its report: what it now has to finish, where it is to stop working, and for a
-//! new Worktree, that the commit it was made from has already been read.
+//! its report: that ending its Turn is what lets the Move apply, that Suru then
+//! begins its next Turn in the destination for it to carry on in, and for a new
+//! Worktree, that the commit it was made from has already been read. The
+//! description says as much before any call, since an Agent weighing a Move
+//! mid-task reads only that.
 
 use std::path::{Path, PathBuf};
 
@@ -43,10 +46,10 @@ uncommitted changes. The directory must resolve into a Worktree of the \
 Repository you work in or, outside source control, beneath your Workspace's \
 directory; further is the user's to do. Another Agent's Session is refused, and \
 a native Subagent's, which works inside its parent's process; a native \
-Subagent's own call may act for its parent's Session. A Session at work, your \
-own included, Moves once its Turn and any native Subagents settle, so finish and \
-stop working in the old directory. Calling again replaces where it is bound; \
-naming where it works cancels that. Answers with JSON of the shape \
+Subagent's own call may act for its parent's Session. A Session at work Moves \
+once its Turn and any native Subagents settle. After Moving your own, end your \
+Turn: Suru begins your next in the new directory itself, so you carry on there. \
+Calling again replaces where it is bound; naming where it works cancels that. Answers with JSON of the shape \
 {\"session_id\": \"...\", \"outcome\": \"...\", \"directory\": \"...\", \
 \"message\": \"...\"}: \"outcome\" is \"moved\", \"pending\", \"already_there\" or \
 \"pending_cancelled\", and \"message\" says what that means for you.";
@@ -331,34 +334,41 @@ impl<'a> Speaker<'a> {
         let (to, from) = (self.place(to), self.place(from));
         let made =
             format!("Suru made a new Worktree at {to} from the commit HEAD stands at now, and");
+        // An Agent's own Session is woken where the Move lands, so it is told
+        // to end its Turn for that; any other works on where it is.
+        const OWN_TURN: &str = "this Turn and any native Subagents you have running";
+        const OWN_NEXT: &str = "Suru then begins your next Turn there itself, for you to carry \
+                                on without waiting for the user";
+        const OTHER_TURN: &str = "its Turn and any native Subagents it has running";
+        const OTHER_NEXT: &str = "its next Turn works there";
         let (bound, turn, next, until) = match (self, new_worktree) {
             (Self::Own(_), false) => (
                 format!("Your Session's Move to {to}"),
-                "this Turn and any native Subagents you have running",
-                "your",
-                format!("Finish what you are doing and stop working in {from}."),
+                OWN_TURN,
+                OWN_NEXT,
+                format!("End this Turn now rather than working on in {from}."),
             ),
             (Self::Own(_), true) => (
                 format!("{made} your Session's Move there"),
-                "this Turn and any native Subagents you have running",
-                "your",
+                OWN_TURN,
+                OWN_NEXT,
                 format!(
-                    "Finish what you are doing and stop working in {from}. Commits you make after \
+                    "End this Turn now rather than working on in {from}. Commits you make after \
                      this call, and changes you leave uncommitted, stay on the old branch and \
-                     never reach the new Worktree: commit first and call move_session again if \
-                     it needs them."
+                     never reach the new Worktree: if it needs them, commit and call \
+                     move_session again before you end this Turn."
                 ),
             ),
             (Self::Other { session_id, .. }, false) => (
                 format!("Session {session_id}'s Move to {to}"),
-                "its Turn and any native Subagents it has running",
-                "its",
+                OTHER_TURN,
+                OTHER_NEXT,
                 format!("It keeps working in {from} until then."),
             ),
             (Self::Other { session_id, .. }, true) => (
                 format!("{made} Session {session_id}'s Move there"),
-                "its Turn and any native Subagents it has running",
-                "its",
+                OTHER_TURN,
+                OTHER_NEXT,
                 format!(
                     "It keeps working in {from} until then. Commits made there after this call, \
                      and changes left uncommitted, stay on the old branch and never reach the \
@@ -366,10 +376,7 @@ impl<'a> Speaker<'a> {
                 ),
             ),
         };
-        format!(
-            "{bound} is pending: it applies once {turn} settle, and {next} next Turn works there. \
-             {until}"
-        )
+        format!("{bound} is pending: it applies once {turn} settle, and {next}. {until}")
     }
 }
 
@@ -722,7 +729,13 @@ mod tests {
             assert!(DESCRIPTION.contains(refused), "{refused}");
         }
         let words = DESCRIPTION.split_whitespace().count();
-        assert!(words <= 215, "the description runs to {words} words");
+        assert!(words <= 225, "the description runs to {words} words");
+        for woken in [
+            "After Moving your own, end your Turn",
+            "Suru begins your next in the new directory itself",
+        ] {
+            assert!(DESCRIPTION.contains(woken), "{woken}");
+        }
         assert!(
             !DESCRIPTION.contains("Remote"),
             "an Agent other than a Sidekick is told of no Remote"
@@ -746,8 +759,9 @@ mod tests {
     }
 
     /// What a pending Move tells an Agent of a Move of its own Session teaches
-    /// it to finish and stop, and of a new Worktree, that what it commits next
-    /// is left behind; of a Subagent's, nothing is asked of it.
+    /// it to end its Turn, since Suru wakes it where the Move lands, and of a
+    /// new Worktree, that what it commits next is left behind; of a Subagent's,
+    /// nothing is asked of it.
     #[test]
     fn a_pending_moves_answer_says_what_the_session_is_waiting_for_and_what_to_do() {
         let (to, from) = (Path::new("to"), Path::new("from"));
@@ -760,17 +774,19 @@ mod tests {
         assert_eq!(
             own.pending(to, from, false),
             "Your Session's Move to to is pending: it applies once this Turn and any native \
-             Subagents you have running settle, and your next Turn works there. Finish what you \
-             are doing and stop working in from."
+             Subagents you have running settle, and Suru then begins your next Turn there \
+             itself, for you to carry on without waiting for the user. End this Turn now rather \
+             than working on in from."
         );
         assert_eq!(
             own.pending(to, from, true),
             "Suru made a new Worktree at to from the commit HEAD stands at now, and your \
              Session's Move there is pending: it applies once this Turn and any native Subagents \
-             you have running settle, and your next Turn works there. Finish what you are doing \
-             and stop working in from. Commits you make after this call, and changes you leave \
-             uncommitted, stay on the old branch and never reach the new Worktree: commit first \
-             and call move_session again if it needs them."
+             you have running settle, and Suru then begins your next Turn there itself, for you \
+             to carry on without waiting for the user. End this Turn now rather than working on \
+             in from. Commits you make after this call, and changes you leave uncommitted, stay \
+             on the old branch and never reach the new Worktree: if it needs them, commit and \
+             call move_session again before you end this Turn."
         );
         assert_eq!(
             other.pending(to, from, false),

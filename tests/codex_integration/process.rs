@@ -712,6 +712,7 @@ async fn a_moved_sessions_next_turn_resumes_its_thread_in_the_new_directory() {
         to: suru::protocol::ExecutionDirectory {
             path: destination_path.clone(),
         },
+        continues: false,
     };
     let started = codex
         .requests()

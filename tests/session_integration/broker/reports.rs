@@ -587,6 +587,7 @@ async fn a_moved_parent_is_told_of_its_move_ahead_of_the_report_waiting_for_its_
             MoveNote {
                 from: origin,
                 to: destination,
+                continues: false,
             }
             .into(),
             expected
@@ -689,6 +690,7 @@ async fn a_pending_move_applies_past_a_working_subagent_whose_report_then_waits_
             MoveNote {
                 from: origin,
                 to: destination,
+                continues: false,
             }
             .into(),
             expected

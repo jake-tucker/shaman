@@ -409,6 +409,15 @@ impl SessionOperations {
                 .move_to(session_id, resolved, left)
                 .map_err(|error| stored_refusal(session_id, error))?
         };
+        // An Agent whose own Session's Move waits is told to end its Turn for
+        // it, and is owed a Continuation in the destination once it applies.
+        if let MoveAsker::Agent(agent) = asker
+            && agent == session_id
+            && let MoveOutcome::Pending { session } = &outcome
+            && let Some(pending) = &session.session.pending_move
+        {
+            self.sessions.agent_asked_pending_move(session_id, pending);
+        }
         // A Move to where the Session stood with nothing pending changed
         // nothing, so nothing is stopped and no act recorded.
         if let MoveAsker::Reaching { author } = asker

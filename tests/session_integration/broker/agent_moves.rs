@@ -166,12 +166,15 @@ impl MovingAgent {
     /// a Move and started afresh with a token of its own.
     async fn at_work_again(&mut self) {
         admit_prompt(&self.descriptor, self.caller, "Carry on").await;
+        self.woken().await;
+    }
+
+    /// The caller at work again in the Turn Suru began for it once a Move it
+    /// asked for applied, its Provider started afresh with a token of its own.
+    async fn woken(&mut self) {
         let start = next_start(&mut self.hosted.claude).await;
         let handoff = start.broker().cloned().expect("the Broker is handed");
-        self.provider = start.succeed(AgentIdentity {
-            agent: AgentId::new("claude-agent"),
-            selection: default_selection(&claude_models()),
-        });
+        self.provider = start.succeed(claude_agent());
         timeout(PROGRESS_DEADLINE, self.provider.next_turn())
             .await
             .expect("the next Turn reaches the Provider")
@@ -195,6 +198,84 @@ impl MovingAgent {
             },
         )
         .await
+    }
+
+    /// Settles the caller's Turn, and waits until its Session stands in
+    /// `destination`, where a Move of its own asking wakes it again.
+    async fn settle_into(&self, destination: &Path) -> SessionSnapshot {
+        self.provider
+            .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+            .await;
+        read_until(
+            &self.descriptor,
+            self.caller,
+            "the caller Moves",
+            |snapshot| snapshot.session.execution_directory.path == destination,
+        )
+        .await
+    }
+
+    /// Asks the caller's own Move to `directory`, which waits on its Turn.
+    async fn asks_to_move_to(&mut self, directory: &Path) {
+        let answer = acted(
+            &mut self.client,
+            "move_session",
+            json!({ "directory": directory }),
+        )
+        .await;
+        assert_eq!(answer["outcome"], json!("pending"), "{answer}");
+    }
+
+    /// The Provider start the caller's next Turn comes over, the one before it
+    /// stopped, and the Turn it then begins.
+    async fn next_turn_started(&mut self) -> (PathBuf, crate::support::provider::TurnStart) {
+        timeout(PROGRESS_DEADLINE, self.provider.next_shutdown())
+            .await
+            .expect("the process in the directory it left stops");
+        let start = next_start(&mut self.hosted.claude).await;
+        let started_in = start.execution_directory().to_owned();
+        self.provider = start.succeed(claude_agent());
+        let turn = timeout(PROGRESS_DEADLINE, self.provider.next_turn())
+            .await
+            .expect("the next Turn reaches the Provider");
+        (started_in, turn)
+    }
+
+    /// Checks nothing woke the caller once its Move to `destination` applied:
+    /// no Provider was started for it, and the Turn a Prompt then begins is
+    /// the first to carry the Move's note, which says nothing of carrying on.
+    async fn assert_waits_for_a_prompt_in(&mut self, destination: &Path) {
+        timeout(PROGRESS_DEADLINE, self.provider.next_shutdown())
+            .await
+            .expect("the process in the directory it left stops");
+        assert!(
+            self.hosted.claude.try_next_start().is_none(),
+            "no Provider is started to wake it"
+        );
+        // A Provider starting for a wake would hold the Worktree a Prompt's
+        // admission reads, so these are bounded rather than left to hang.
+        let idle = timeout(PROGRESS_DEADLINE, self.read())
+            .await
+            .expect("the Session is read");
+        assert!(idle.working_since().is_none(), "it waits: {:?}", idle.turns);
+        timeout(
+            PROGRESS_DEADLINE,
+            admit_prompt(&self.descriptor, self.caller, "Carry on"),
+        )
+        .await
+        .expect("a Prompt is admitted, nothing starting ahead of it");
+        let start = next_start(&mut self.hosted.claude).await;
+        assert_eq!(start.execution_directory(), destination);
+        self.provider = start.succeed(claude_agent());
+        let turn = timeout(PROGRESS_DEADLINE, self.provider.next_turn())
+            .await
+            .expect("the Prompt's Turn reaches the Provider");
+        assert_eq!(turn.prompt(), "Carry on");
+        assert_eq!(
+            turn.reports(),
+            [note(&self.main, destination, false)],
+            "the note waited for it"
+        );
     }
 
     /// Checks the caller is refused `arguments` with `says`, and that the
@@ -247,10 +328,14 @@ fn beyond_the_caller(session: SessionId) -> String {
     )
 }
 
-/// Moves `session_id` to `path` as a Client's `/move` does, bounded by nothing
-/// of an Agent's, where it holds nothing back.
-async fn the_user_moves(descriptor: &RuntimeDescriptor, session_id: SessionId, path: &Path) {
-    let moved: MoveOutcome = crate::support::loopback_client()
+/// Asks `session_id`'s Move to `path` as a Client's `/move` does, bounded by
+/// nothing of an Agent's, answering what came of it.
+async fn the_user_asks_to_move(
+    descriptor: &RuntimeDescriptor,
+    session_id: SessionId,
+    path: &Path,
+) -> MoveOutcome {
+    crate::support::loopback_client()
         .post(format!(
             "{}/v1/sessions/{session_id}/move",
             descriptor.base_url
@@ -268,8 +353,38 @@ async fn the_user_moves(descriptor: &RuntimeDescriptor, session_id: SessionId, p
         .expect("the Move is taken")
         .json()
         .await
-        .expect("decode the Move's answer");
+        .expect("decode the Move's answer")
+}
+
+/// Moves `session_id` to `path` as a Client's `/move` does, where nothing holds
+/// it back.
+async fn the_user_moves(descriptor: &RuntimeDescriptor, session_id: SessionId, path: &Path) {
+    let moved = the_user_asks_to_move(descriptor, session_id, path).await;
     assert!(matches!(moved, MoveOutcome::Moved { .. }), "{moved:?}");
+}
+
+/// The note of a Move from `from` to `to`: the whole input of the Continuation
+/// Suru woke the Agent into where it `continues`, and otherwise at the head of a
+/// Turn something else began.
+fn note(from: &Path, to: &Path, continues: bool) -> Report {
+    MoveNote {
+        from: ExecutionDirectory {
+            path: from.to_owned(),
+        },
+        to: ExecutionDirectory {
+            path: to.to_owned(),
+        },
+        continues,
+    }
+    .into()
+}
+
+/// The Agent the Claude double answers a start as.
+fn claude_agent() -> AgentIdentity {
+    AgentIdentity {
+        agent: AgentId::new("claude-agent"),
+        selection: default_selection(&claude_models()),
+    }
 }
 
 const A_NATIVE_SUBAGENTS: &str = "The Session is a native Subagent's, which works inside its \
@@ -278,10 +393,11 @@ const A_NATIVE_SUBAGENTS: &str = "The Session is a native Subagent's, which work
 /// An Agent moves itself into a new Worktree mid-Turn, as the feature exists
 /// for: the Worktree is made as it asks, from the commit its own stands at, its
 /// answer teaches it what that means, it keeps its Turn, and only as that Turn
-/// settles does the Move apply. Its next Turn resumes the conversation in the
-/// new Worktree, told of the Move ahead of its input.
+/// settles does the Move apply. Suru then wakes it, unprompted, into a
+/// Continuation that resumes the conversation in the new Worktree, whose whole
+/// input is the note of the Move saying it may carry on.
 #[tokio::test]
-async fn an_agent_moving_itself_into_a_new_worktree_finishes_its_turn_and_resumes_there_told_so() {
+async fn an_agent_moving_itself_into_a_new_worktree_ends_its_turn_and_is_woken_there_told_so() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-new-worktree").await;
     let main = agent.main.clone();
@@ -307,10 +423,11 @@ async fn an_agent_moving_itself_into_a_new_worktree_finishes_its_turn_and_resume
         json!(format!(
             "Suru made a new Worktree at {worktree} from the commit HEAD stands at now, and your \
              Session's Move there is pending: it applies once this Turn and any native Subagents \
-             you have running settle, and your next Turn works there. Finish what you are doing \
-             and stop working in {main}. Commits you make after this call, and changes you leave \
-             uncommitted, stay on the old branch and never reach the new Worktree: commit first \
-             and call move_session again if it needs them.",
+             you have running settle, and Suru then begins your next Turn there itself, for you \
+             to carry on without waiting for the user. End this Turn now rather than working on \
+             in {main}. Commits you make after this call, and changes you leave uncommitted, stay \
+             on the old branch and never reach the new Worktree: if it needs them, commit and \
+             call move_session again before you end this Turn.",
             worktree = worktree.display(),
             main = main.display(),
         ))
@@ -333,8 +450,7 @@ async fn an_agent_moving_itself_into_a_new_worktree_finishes_its_turn_and_resume
 
     commit(&main, "made after the call");
     assert_ne!(head(&main), asked_at);
-    let moved = agent.settle().await;
-    assert_eq!(moved.session.execution_directory.path, worktree);
+    let moved = agent.settle_into(&worktree).await;
     assert_eq!(
         moved.session.checkout.expect("a Worktree of it").root,
         worktree,
@@ -345,7 +461,7 @@ async fn an_agent_moving_itself_into_a_new_worktree_finishes_its_turn_and_resume
         .await
         .expect("the process in the directory it left stops");
 
-    admit_prompt(&agent.descriptor, agent.caller, "Carry on").await;
+    // Nothing is admitted: Suru begins the Agent's next Turn itself.
     let start = next_start(&mut agent.hosted.claude).await;
     assert_eq!(
         start.execution_directory(),
@@ -357,20 +473,255 @@ async fn an_agent_moving_itself_into_a_new_worktree_finishes_its_turn_and_resume
         Some(&ProviderResumeState::new(json!({ "conversation": "kept" }))),
         "and continues the conversation"
     );
-    let mut resumed = start.succeed(AgentIdentity {
-        agent: AgentId::new("claude-agent"),
-        selection: default_selection(&claude_models()),
-    });
+    let mut resumed = start.succeed(claude_agent());
     let turn = timeout(PROGRESS_DEADLINE, resumed.next_turn())
         .await
         .expect("the next Turn reaches the Provider");
-    let note: Report = MoveNote {
-        from: ExecutionDirectory { path: main },
-        to: ExecutionDirectory { path: worktree },
-    }
-    .into();
-    assert_eq!(turn.reports(), [note], "the note heads its input");
+    assert_eq!(
+        turn.reports(),
+        [note(&main, &worktree, true)],
+        "the note is its whole input"
+    );
+    assert!(!turn.has_prompt(), "which no Prompt began");
+    turn.succeed();
+    let woken = agent.read().await;
+    let continuation = woken.turns.last().expect("the Continuation");
+    assert!(
+        continuation.prompt_id.is_none() && woken.working_since().is_some(),
+        "the Agent works again in a Turn no Prompt began: {continuation:?}"
+    );
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A user who interrupts the Turn an Agent asked its own Move in is not
+/// answered with that Agent at work again: the Move applies as the Turn
+/// settles, as any interrupted Turn's does, and the Agent waits for a Prompt.
+#[tokio::test]
+async fn an_agent_interrupted_after_asking_its_move_is_not_woken_where_it_lands() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-interrupted").await;
+    let destination = agent.main.join("within");
+    std::fs::create_dir(&destination).expect("create a directory");
+    agent.asks_to_move_to(&destination).await;
+
+    let (response, ()) = tokio::join!(
+        super::stops::interrupt(&agent.descriptor, agent.caller),
+        super::stops::acknowledge_interrupt(&mut agent.provider, "the caller's"),
+    );
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    agent.provider.emit(ProviderEvent::TurnInterrupted);
+    read_until(
+        &agent.descriptor,
+        agent.caller,
+        "the interrupted Turn lets the Move apply",
+        |snapshot| snapshot.session.execution_directory.path == destination,
+    )
+    .await;
+
+    agent.assert_waits_for_a_prompt_in(&destination).await;
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A Turn that fails after the Agent asked its Move in it lets the Move apply,
+/// but is not one the Agent ended for it: nothing wakes the Agent where it lands.
+#[tokio::test]
+async fn an_agent_whose_turn_fails_after_asking_its_move_is_not_woken_where_it_lands() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-failed-turn").await;
+    let destination = agent.main.join("within");
+    std::fs::create_dir(&destination).expect("create a directory");
+    agent.asks_to_move_to(&destination).await;
+
+    agent.provider.emit(ProviderEvent::TurnFailed {
+        message: "the Model gave out".to_owned(),
+    });
+    read_until(
+        &agent.descriptor,
+        agent.caller,
+        "the failed Turn lets the Move apply",
+        |snapshot| snapshot.session.execution_directory.path == destination,
+    )
+    .await;
+
+    agent.assert_waits_for_a_prompt_in(&destination).await;
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A Move back to where it works, asked by the user while the Agent's own
+/// waits, cancels it: the Session stays, and nothing wakes the Agent.
+#[tokio::test]
+async fn a_move_the_user_cancels_wakes_no_one() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-cancelled").await;
+    let (main, asked) = (agent.main.clone(), agent.main.join("asked"));
+    std::fs::create_dir(&asked).expect("create a directory");
+    agent.asks_to_move_to(&asked).await;
+    let cancelled = the_user_asks_to_move(&agent.descriptor, agent.caller, &main).await;
+    assert!(
+        matches!(cancelled, MoveOutcome::PendingCancelled { .. }),
+        "{cancelled:?}"
+    );
+
+    let settled = agent.settle().await;
+    assert_eq!(settled.session.execution_directory.path, main);
+    assert!(
+        agent.hosted.claude.try_next_start().is_none() && !agent.provider.was_shut_down(),
+        "it stays where it works, in the process it ran in"
+    );
+    admit_prompt(&agent.descriptor, agent.caller, "Carry on").await;
+    let turn = timeout(PROGRESS_DEADLINE, agent.provider.next_turn())
+        .await
+        .expect("the Prompt's Turn reaches the Provider");
     assert_eq!(turn.prompt(), "Carry on");
+    assert!(turn.reports().is_empty(), "with no Move to tell of");
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A Prompt that waited behind the Agent's Move begins its next Turn where the
+/// Move lands, carrying the note, so the Agent is at work there without being
+/// woken, and no Continuation follows once that Turn settles.
+#[tokio::test]
+async fn a_prompt_waiting_behind_an_agents_own_move_begins_its_next_turn_in_place_of_a_wake() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-queued-prompt").await;
+    let (main, destination) = (agent.main.clone(), agent.main.join("within"));
+    std::fs::create_dir(&destination).expect("create a directory");
+    agent.asks_to_move_to(&destination).await;
+    admit_prompt(&agent.descriptor, agent.caller, "And then this").await;
+
+    agent.settle_into(&destination).await;
+    let (started_in, turn) = agent.next_turn_started().await;
+    assert_eq!(started_in, destination);
+    assert_eq!(turn.prompt(), "And then this");
+    assert_eq!(turn.reports(), [note(&main, &destination, false)]);
+    turn.succeed();
+
+    let settled = agent.settle().await;
+    assert_eq!(
+        settled
+            .turns
+            .iter()
+            .filter(|turn| turn.prompt_id.is_none())
+            .count(),
+        0,
+        "no Turn began unprompted: {:?}",
+        settled.turns
+    );
+    assert!(
+        agent.provider.try_next_turn().is_none() && agent.hosted.claude.try_next_start().is_none(),
+        "and none is on its way"
+    );
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A Move the user puts in place of the one the Agent asked for is the user's:
+/// the Agent ended its Turn for another, and is not woken where this one lands.
+#[tokio::test]
+async fn a_move_the_user_puts_in_place_of_the_agents_own_wakes_no_one() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-replaced").await;
+    let (asked, chosen) = (agent.main.join("asked"), agent.sibling.clone());
+    std::fs::create_dir(&asked).expect("create a directory");
+    agent.asks_to_move_to(&asked).await;
+    let replaced = the_user_asks_to_move(&agent.descriptor, agent.caller, &chosen).await;
+    assert!(
+        matches!(replaced, MoveOutcome::Pending { .. }),
+        "{replaced:?}"
+    );
+
+    agent.settle_into(&chosen).await;
+
+    agent.assert_waits_for_a_prompt_in(&chosen).await;
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A Session Moved again while its Provider starts for the wake, when no Turn
+/// stands open to hold a Move, is woken where it stands by then: no Turn begins
+/// in the directory it has left, and the one note tells of the whole way.
+#[tokio::test]
+async fn an_agent_moved_again_as_it_is_woken_is_woken_where_it_stands_by_then() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-again").await;
+    let (main, asked, further) = (
+        agent.main.clone(),
+        agent.main.join("asked"),
+        agent.sibling.clone(),
+    );
+    std::fs::create_dir(&asked).expect("create a directory");
+    agent.asks_to_move_to(&asked).await;
+    agent.settle_into(&asked).await;
+    let starting = next_start(&mut agent.hosted.claude).await;
+    assert_eq!(starting.execution_directory(), asked);
+
+    the_user_moves(&agent.descriptor, agent.caller, &further).await;
+    let mut left_behind = starting.succeed(claude_agent());
+    timeout(PROGRESS_DEADLINE, left_behind.next_shutdown())
+        .await
+        .expect("the process started where it no longer works stops");
+    assert!(
+        left_behind.try_next_turn().is_none(),
+        "having begun no Turn there"
+    );
+
+    let (started_in, turn) = agent.next_turn_started().await;
+    assert_eq!(started_in, further);
+    assert_eq!(turn.reports(), [note(&main, &further, true)]);
+    assert!(!turn.has_prompt());
+    agent
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A Provider that will not start for the wake leaves the Agent where a Move
+/// always left it: the Continuation is given up rather than tried again, and
+/// the note waits for the Turn a Prompt begins.
+#[tokio::test]
+async fn a_provider_that_will_not_start_for_the_wake_leaves_the_note_for_the_next_turn() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut agent = MovingAgent::begin(state_dir.path(), "agent-move-no-start").await;
+    let destination = agent.main.join("within");
+    std::fs::create_dir(&destination).expect("create a directory");
+    agent.asks_to_move_to(&destination).await;
+    agent.settle_into(&destination).await;
+
+    next_start(&mut agent.hosted.claude)
+        .await
+        .fail("the CLI would not start");
+
+    agent.assert_waits_for_a_prompt_in(&destination).await;
     agent
         .hosted
         .server
@@ -577,6 +928,8 @@ async fn an_agent_already_moved_is_bounded_by_where_it_stands_now() {
             beyond_the_repository(&sibling, &main),
         )
         .await;
+    agent.settle_into(&in_main).await;
+    agent.woken().await;
     agent.settle().await;
 
     // The user may take it further, and its next Turn judges from there.
@@ -843,8 +1196,9 @@ async fn an_agent_moves_its_own_brokered_subagent_within_the_callers_own_boundar
         answer["message"],
         json!(format!(
             "Your Session's Move to {within} is pending: it applies once this Turn and any native \
-             Subagents you have running settle, and your next Turn works there. Finish what you \
-             are doing and stop working in {sibling}.",
+             Subagents you have running settle, and Suru then begins your next Turn there \
+             itself, for you to carry on without waiting for the user. End this Turn now rather \
+             than working on in {sibling}.",
             within = within.display(),
             sibling = sibling.display(),
         ))
@@ -903,10 +1257,7 @@ async fn an_agent_is_refused_another_agents_session_and_its_subagents() {
         .spawn_subagent(researcher("claude", "haiku", json!({})))
         .await;
     let start = next_start(&mut agent.hosted.claude).await;
-    let _others_child_provider = start.succeed(AgentIdentity {
-        agent: AgentId::new("claude-agent"),
-        selection: default_selection(&claude_models()),
-    });
+    let _others_child_provider = start.succeed(claude_agent());
 
     let others_native = spawn_native(
         &agent.descriptor,
@@ -1083,10 +1434,7 @@ async fn a_native_subagents_own_call_on_codex_is_known_and_reaches_only_beneath_
         .spawn_subagent(researcher("claude", "haiku", json!({})))
         .await;
     let start = next_start(&mut hosted.claude).await;
-    let _delegated_provider = start.succeed(AgentIdentity {
-        agent: AgentId::new("claude-agent"),
-        selection: default_selection(&claude_models()),
-    });
+    let _delegated_provider = start.succeed(claude_agent());
     let answer = acted(
         &mut client,
         "move_session",
@@ -1145,10 +1493,7 @@ async fn a_brokered_subagent_at_any_depth_beneath_the_caller_is_within_its_reach
         .spawn_subagent(researcher("claude", "haiku", json!({})))
         .await;
     let start = next_start(&mut agent.hosted.claude).await;
-    let _grandchild_provider = start.succeed(AgentIdentity {
-        agent: AgentId::new("claude-agent"),
-        selection: default_selection(&claude_models()),
-    });
+    let _grandchild_provider = start.succeed(claude_agent());
 
     for client in [&mut agent.client, &mut child_client] {
         let answer = acted(
@@ -1393,10 +1738,7 @@ async fn a_sidekick_never_moves_and_its_subagent_moves_only_beneath_its_workspac
         .await;
     let start = next_start(&mut hosted.claude).await;
     let child_handoff = start.broker().cloned().expect("the Broker is handed");
-    let _child_provider = start.succeed(AgentIdentity {
-        agent: AgentId::new("claude-agent"),
-        selection: default_selection(&claude_models()),
-    });
+    let _child_provider = start.succeed(claude_agent());
     let mut child_client = McpClient::handed(&child_handoff);
     child_client.initialize().await;
     assert_eq!(listed_tools(&mut child_client).await, ORDINARY_TOOLS);

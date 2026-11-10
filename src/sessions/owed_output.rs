@@ -77,12 +77,14 @@ impl SessionStoreState {
     /// owed brokered Subagents: from here on a stretch owes any only by
     /// working, or settling later, without that interrupt having stopped it.
     /// The moment is minted from the store's own clock, so every settle it is
-    /// measured against is ordered with it.
+    /// measured against is ordered with it. A Move the Agent asked for wakes
+    /// it no longer either.
     pub(super) fn record_work_interrupted(&mut self, owner: SessionId) {
         let interrupted_at = self.next_timestamp();
         if let Some(record) = self.sessions.get_mut(&owner) {
             record.work_interrupted_at = Some(interrupted_at);
         }
+        self.forget_agent_move(owner);
     }
 }
 

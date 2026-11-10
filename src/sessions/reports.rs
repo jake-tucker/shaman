@@ -8,16 +8,20 @@
 //! orchestration hands it to that Agent's Provider: at once — steering a Turn
 //! at work, or waking an idle Agent into a Continuation — or at the head of
 //! the Session's next Turn when no Provider process is running to take it.
-//! Suru never relaunches a Provider to deliver one. A Report its Provider
-//! takes has its Agent working again, so a Session the user had set aside is
-//! brought back once one is delivered — never while one only waits.
+//! Suru never relaunches a Provider to deliver one, but for the note below. A
+//! Report its Provider takes has its Agent working again, so a Session the
+//! user had set aside is brought back once one is delivered — never while one
+//! only waits.
 //!
 //! The note of a Move is a Report too, delivered as these are, but none of
 //! this store's holding: it is owed by what is stored with the Session, so a
 //! restart before the next Turn still owes it, and built as it is taken; it
 //! heads only the input that begins a Turn, never a steer, ahead of any Report
-//! beside it; and it wakes nothing, since the Move ended whatever Provider
-//! connection could have taken it.
+//! beside it. It wakes nothing but the Agent that asked for the Move of its own
+//! Session and ended its Turn for it (ADR 0059): that Agent is owed a
+//! Continuation whose input the note is, and since the Move ended whatever
+//! Provider connection could have taken it, this is the one Report Suru starts
+//! a Provider to deliver.
 //!
 //! Nothing here reaches a Transcript: a Report stands in none, and a Move
 //! is recorded by its own Activity.
@@ -59,10 +63,16 @@ impl SessionStore {
     /// own input: the note of a Move its Agent is owed, first, so the Agent
     /// learns where it works before it acts on anything, then every Report
     /// waiting for it, oldest first.
+    ///
+    /// A Turn carrying the note is where the Agent learns of a Move it asked
+    /// for, so the Continuation it was owed for that is owed no longer.
     pub(crate) fn take_turn_head(&self, session_id: SessionId) -> Vec<Report> {
-        self.state
+        let mut state = self
+            .state
             .lock()
-            .expect("Session store lock is not poisoned")
+            .expect("Session store lock is not poisoned");
+        state.take_move_continuation(session_id);
+        state
             .sessions
             .get_mut(&session_id)
             .map(SessionRecord::take_turn_head)
@@ -115,14 +125,21 @@ impl SessionStore {
     /// idle Agent into — run by `agent`, begun by neither a Prompt nor a
     /// Delegation — and takes those Reports as the whole of its input, headed
     /// by any Move's note the Agent is owed, in the one lock, so no Report
-    /// can slip between the Turn and its input. `None` when no Report waits,
-    /// or when a Turn is already open in the Session: a Delegation's, opened
-    /// ahead of its delivery, whose input takes them.
+    /// can slip between the Turn and its input. The note alone begins one
+    /// where the Agent is owed a Continuation for a Move it asked for, and
+    /// says so. Nothing begins when neither waits, or when a Turn is already
+    /// open in the Session: a Delegation's, opened ahead of its delivery,
+    /// whose input takes them. Nor where the Session no longer works in
+    /// `working_in`, the directory of the Provider connection about to take
+    /// the Turn: an idle Session Moves at once, and this is read under the
+    /// lock a Move applies under, so no Turn begins where the Session has left
+    /// and a Move asked from here on waits for this one.
     pub(crate) fn begin_report_continuation(
         &self,
         session_id: SessionId,
         agent: AgentIdentity,
-    ) -> anyhow::Result<Option<(TurnId, Vec<Report>)>> {
+        working_in: &std::path::Path,
+    ) -> anyhow::Result<ReportContinuation> {
         let mut state = self
             .state
             .lock()
@@ -131,8 +148,19 @@ impl SessionStore {
             .sessions
             .get(&session_id)
             .ok_or_else(|| anyhow!("Session does not exist on this server instance"))?;
-        if record.held_reports.is_empty() || active_turn_id(&record.snapshot)?.is_some() {
-            return Ok(None);
+        let nothing_waits = record.held_reports.is_empty();
+        let note_owed = record.moved_from.is_some();
+        if active_turn_id(&record.snapshot)?.is_some() {
+            return Ok(ReportContinuation::NotBegun);
+        }
+        if record.snapshot.session.execution_directory.path != working_in {
+            return Ok(ReportContinuation::WorksElsewhere);
+        }
+        // The note is what a Move's Continuation carries, so with none owed
+        // there is nothing to begin one with.
+        let continues = state.take_move_continuation(session_id) && note_owed;
+        if nothing_waits && !continues {
+            return Ok(ReportContinuation::NotBegun);
         }
         let turn = Turn::unprompted(Some(agent));
         let turn_id = turn.id;
@@ -141,13 +169,29 @@ impl SessionStore {
             session_id,
             vec![SessionChange::TurnAdded { turn }],
         )?;
-        let reports = state
+        let mut reports = state
             .sessions
             .get_mut(&session_id)
             .map(SessionRecord::take_turn_head)
             .unwrap_or_default();
-        Ok(Some((turn_id, reports)))
+        if continues && let Some(Report::Move(note)) = reports.first_mut() {
+            note.continues = true;
+        }
+        Ok(ReportContinuation::Began(turn_id, reports))
     }
+}
+
+/// What came of beginning the Continuation that Reports wake an idle Agent
+/// into.
+pub(crate) enum ReportContinuation {
+    /// It is open, and these Reports are the whole of its input.
+    Began(TurnId, Vec<Report>),
+    /// None began: nothing waits to begin one with, or a Turn already open
+    /// takes what does.
+    NotBegun,
+    /// The Session works elsewhere than the Provider connection that would
+    /// take it was opened, having Moved since. Whatever waits still waits.
+    WorksElsewhere,
 }
 
 // Saying the note is owed no longer reaches storage only where the Session's
@@ -167,6 +211,7 @@ impl SessionRecord {
             Report::from(MoveNote {
                 from,
                 to: self.snapshot.session.execution_directory.clone(),
+                continues: false,
             })
         });
         note.into_iter()

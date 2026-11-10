@@ -204,6 +204,7 @@ async fn a_moved_sessions_next_turn_resumes_the_conversation_in_its_new_director
     let note = suru::provider::MoveNote {
         from: origin,
         to: suru::protocol::ExecutionDirectory { path: destination },
+        continues: false,
     };
     assert_eq!(
         user_texts_sent(&claude).last().map(String::as_str),

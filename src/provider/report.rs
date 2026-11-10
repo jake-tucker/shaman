@@ -74,6 +74,12 @@ impl fmt::Display for Report {
 pub struct MoveNote {
     pub from: ExecutionDirectory,
     pub to: ExecutionDirectory,
+    /// Whether the note is the whole input of a Continuation Suru began for
+    /// it: the Move was asked for from the Session itself, by its Agent, which
+    /// ended its Turn for it to apply, or by a native Subagent whose call its
+    /// Provider gives no name to. So the Agent is told to carry on, in words
+    /// true of either, rather than left to wonder what woke it.
+    pub continues: bool,
 }
 
 /// The one text the note is delivered as, whichever harness carries it.
@@ -87,7 +93,14 @@ impl fmt::Display for MoveNote {
              {to}. Work in {to} from now on, not in {from}. Subagents spawned before the Move still \
              work where they were, so for work here spawn new ones, or Move those with \
              move_session, rather than continuing them there."
-        )
+        )?;
+        if self.continues {
+            formatter.write_str(
+                " This Move was asked for with move_session from within this Session, and Suru \
+                 began this Turn itself so that the work in hand carries on here.",
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -258,6 +271,7 @@ mod tests {
             to: ExecutionDirectory {
                 path: root.join("after"),
             },
+            continues: false,
         };
         let text = note.to_string();
 
@@ -279,9 +293,22 @@ mod tests {
             "the note says nothing more: {text}"
         );
         assert_eq!(
-            Report::from(note).to_string(),
+            Report::from(note.clone()).to_string(),
             text,
             "a Report carries the note in its own words"
+        );
+        let woken = MoveNote {
+            continues: true,
+            ..note
+        }
+        .to_string();
+        assert_eq!(
+            woken.strip_prefix(text.as_str()),
+            Some(
+                " This Move was asked for with move_session from within this Session, and Suru \
+                 began this Turn itself so that the work in hand carries on here."
+            ),
+            "one that woke the Agent tells it to carry on, after all the rest"
         );
     }
 

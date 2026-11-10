@@ -50,6 +50,16 @@
 //! lets a Move go by replacing or cancelling it, or failing it, is told where it
 //! was bound, and a Worktree it was bound for is Reclaimable again from then on.
 //!
+//! A Move a Session's own Agent asked for, through the Broker, is one that
+//! Agent ends its Turn for, so once it applies the Agent is owed a
+//! Continuation in the destination to carry on in, begun by nothing but the
+//! Move's note (see [`AgentMove`]). It is owed only where the Turn the Agent
+//! asked in completed and nothing interrupted the Session since: a user who
+//! stopped the work, or a Turn that failed, is not answered with the Agent at
+//! work again. Whatever Turn first carries the note to the Provider, a Prompt's
+//! that waited among them, carries it in the Continuation's place, which is
+//! owed no longer.
+//!
 //! Prompts left waiting, bound to the Skills of the directory left, are bound
 //! anew under the same lock as the Move applies, so nothing reads the Session
 //! Moved with a Prompt bound behind it. A Prompt that was read in the directory
@@ -61,7 +71,7 @@ use crate::protocol::{
     Activity, ActivityId, ActivityStatus, CheckoutAssociation, CheckoutKind, CheckoutRevision,
     CheckoutSummary, ExecutionDirectory, MoveLocation, MoveOutcome, PendingMove, Prompt, PromptId,
     PromptStatus, Repository, ResolvedWorkspace, Session, SessionChange, SessionId, SessionStatus,
-    SessionSummary, SkillInvocation, Workspace,
+    SessionSummary, SkillInvocation, TurnId, TurnStatus, Workspace,
 };
 use crate::storage::{AddedActivity, LocationLanding, SettledActivity, WorkspaceProvenance};
 
@@ -231,6 +241,26 @@ struct MoveStood {
     /// Whether a superseded entry passed something to the destination's
     /// Workspace, which every Session grouped there must then be dressed in.
     inherited: bool,
+}
+
+/// What a Move a Session's own Agent asked for still owes that Agent, which
+/// ended its Turn for the Move to apply.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AgentMove {
+    /// The Move stands pending, recorded by `activity`, and wakes the Agent
+    /// once it applies, where `turn`, the Turn it asked in, completed. A Move
+    /// replacing it, or cancelling it, is someone else's asking and wakes no
+    /// one. A native Subagent's call taken for its parent's may come with no
+    /// Turn of the parent's open, and then the Session's latest Turn stands
+    /// for it.
+    Asked {
+        activity: ActivityId,
+        turn: Option<TurnId>,
+    },
+    /// The Move applied, and the Agent is owed a Continuation where it stands
+    /// now, until one begins, any other Turn carries the Move's note, or what
+    /// would begin it gives up.
+    Continues,
 }
 
 /// What came of settling a pending Move nothing holds any longer.
@@ -440,6 +470,61 @@ impl SessionStore {
         (!state.holds_a_pending_move(session_id)).then_some(pending)
     }
 
+    /// Says that `pending`, the Move its asking just left pending for
+    /// `session_id`, is one the Session's own Agent asked for, and so one that
+    /// Agent ends its Turn for: once it applies, the Agent is owed a
+    /// Continuation where it lands. Nothing is said of a Move that has given
+    /// way to another, or settled, since it was asked.
+    pub(crate) fn agent_asked_pending_move(&self, session_id: SessionId, pending: &PendingMove) {
+        let mut state = self
+            .state
+            .lock()
+            .expect("Session store lock is not poisoned");
+        let stands = state
+            .sessions
+            .get(&session_id)
+            .is_some_and(|record| record.snapshot.session.pending_move.as_ref() == Some(pending));
+        if stands {
+            let turn = state.sessions.get(&session_id).and_then(|record| {
+                record
+                    .snapshot
+                    .turns
+                    .iter()
+                    .rev()
+                    .find(|turn| !turn.status.is_terminal())
+                    .map(|turn| turn.id)
+            });
+            state.agent_moves.insert(
+                session_id,
+                AgentMove::Asked {
+                    activity: pending.activity_id,
+                    turn,
+                },
+            );
+        }
+    }
+
+    /// Whether `session_id`'s Agent is owed a Continuation on account of a
+    /// Move it asked for, which has applied.
+    pub(crate) fn owes_move_continuation(&self, session_id: SessionId) -> bool {
+        self.state
+            .lock()
+            .expect("Session store lock is not poisoned")
+            .agent_moves
+            .get(&session_id)
+            == Some(&AgentMove::Continues)
+    }
+
+    /// Owes `session_id`'s Agent no Continuation for its Move any longer,
+    /// since none could begin: the note of the Move, where it is still owed,
+    /// waits for the head of the Session's next Turn as any does.
+    pub(crate) fn forgo_move_continuation(&self, session_id: SessionId) {
+        self.state
+            .lock()
+            .expect("Session store lock is not poisoned")
+            .take_move_continuation(session_id);
+    }
+
     /// Says whether the Provider is about to wake `session_id`'s Agent with a
     /// result its process stopping would lose, as its Provider actor reads it.
     pub(crate) fn set_continuation_awaited(&self, session_id: SessionId, awaited: bool) {
@@ -647,7 +732,9 @@ impl SessionStore {
         }
         landing.added = Some(AddedActivity::next_of(&record.snapshot, &activity)?);
         changes.push(SessionChange::ActivityAdded { activity });
-        self.land_location(state, session_id, next, changes, landing)
+        let summary = self.land_location(state, session_id, next, changes, landing)?;
+        state.forget_asked_move(session_id);
+        Ok(summary)
     }
 
     /// Settles the Move pending for `session_id` as `status`, in the words of
@@ -674,7 +761,10 @@ impl SessionStore {
         next.pending_move = None;
         let mut landing = LocationLanding::keeping(record.moved_from.clone());
         landing.settled = Some(settling.row);
-        self.land_location(state, session_id, next, vec![settling.change], landing)
+        let summary =
+            self.land_location(state, session_id, next, vec![settling.change], landing)?;
+        state.forget_asked_move(session_id);
+        Ok(summary)
     }
 
     /// Stands the Session in its new location, as [`Self::move_to`] and a
@@ -730,6 +820,7 @@ impl SessionStore {
                 checkout,
             )?
             .expect("a Session held elsewhere than its destination changes location");
+        state.move_stood(session_id, settles);
         self.enter_workspace(
             state,
             &workspace.id,
@@ -769,6 +860,57 @@ impl SessionStore {
 }
 
 impl SessionStoreState {
+    /// Follows a Move of `session_id` that has just applied, settling the
+    /// Activity `settles` where it had stood pending: one its own Agent asked
+    /// for owes that Agent a Continuation, where the Turn it asked in
+    /// completed, which is the Turn it ended for the Move. A Continuation
+    /// already owed for an earlier Move stays owed, where the Session stands
+    /// now.
+    fn move_stood(&mut self, session_id: SessionId, settles: Option<ActivityId>) {
+        let Some(AgentMove::Asked { activity, turn }) = self.agent_moves.get(&session_id).copied()
+        else {
+            return;
+        };
+        let ended_its_turn = self.sessions.get(&session_id).is_some_and(|record| {
+            let turns = &record.snapshot.turns;
+            let asked_in = match turn {
+                Some(asked_in) => turns.iter().find(|turn| turn.id == asked_in),
+                None => turns.last(),
+            };
+            asked_in.is_some_and(|turn| turn.status == TurnStatus::Completed)
+        });
+        if settles == Some(activity) && ended_its_turn {
+            self.agent_moves.insert(session_id, AgentMove::Continues);
+        } else {
+            self.agent_moves.remove(&session_id);
+        }
+    }
+
+    /// Forgets that the Move pending for `session_id` was its own Agent's
+    /// asking, as that Move is replaced, cancelled or failed.
+    fn forget_asked_move(&mut self, session_id: SessionId) {
+        if let Some(AgentMove::Asked { .. }) = self.agent_moves.get(&session_id) {
+            self.agent_moves.remove(&session_id);
+        }
+    }
+
+    /// Takes the Continuation `session_id`'s Agent is owed for its Move, where
+    /// it is owed one, answering whether it was.
+    pub(super) fn take_move_continuation(&mut self, session_id: SessionId) -> bool {
+        if self.agent_moves.get(&session_id) == Some(&AgentMove::Continues) {
+            self.agent_moves.remove(&session_id);
+            return true;
+        }
+        false
+    }
+
+    /// Owes `session_id`'s Agent nothing for a Move it asked for, pending or
+    /// applied, since an interrupt has reached the Session's work: whoever
+    /// stopped it is not answered with the Agent at work again.
+    pub(super) fn forget_agent_move(&mut self, session_id: SessionId) {
+        self.agent_moves.remove(&session_id);
+    }
+
     /// Whether the Session's own Provider process has anything left to do for
     /// it beyond a Turn of its own: a native Subagent at work beneath it, a
     /// running Agent inside that process, or a Continuation owed. A native
@@ -1047,6 +1189,7 @@ mod tests {
             [Report::from(MoveNote {
                 from: directory(origin.path()),
                 to: directory(destination.path()),
+                continues: false,
             })],
             "and its Agent is still owed the note"
         );
@@ -1270,6 +1413,7 @@ mod tests {
             [Report::from(MoveNote {
                 from: directory(origin.path()),
                 to: directory(destination.path()),
+                continues: false,
             })],
             "and the note is owed from here"
         );

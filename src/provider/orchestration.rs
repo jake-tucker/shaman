@@ -52,10 +52,10 @@ use crate::protocol::{
 use crate::sessions::{
     ApprovalPostureUpdate, BrokeredSpawn, BrokeredSpawnCap, BrokeredSpawnError,
     CompactSessionError, DelegatingAgent, DeliveredDelegation, DeliveredTurn, DeliveredTurnStatus,
-    InterruptSessionError, InterruptTarget, OpenInterventions, ProviderTurnOutcome, SessionStore,
-    StoredSubagent, TrailingCommandOutput, command_output_changes, earliest_pending_prompt,
-    message_content_changes, opening_subagent_row, reasoning_content_changes,
-    tool_call_output_changes,
+    InterruptSessionError, InterruptTarget, OpenInterventions, ProviderTurnOutcome,
+    ReportContinuation, SessionStore, StoredSubagent, TrailingCommandOutput,
+    command_output_changes, earliest_pending_prompt, message_content_changes, opening_subagent_row,
+    reasoning_content_changes, tool_call_output_changes,
 };
 use crate::skill_catalog::{SkillCatalogError, SkillCatalogService};
 use crate::storage::StoredSubagentIdentity;
@@ -445,6 +445,12 @@ enum ProviderCommand {
     DeliverReports {
         target: SessionId,
     },
+    /// Wake the Agent of the Session this actor owns into the Continuation
+    /// it is owed for a Move it asked for, which has applied (ADR 0059). The
+    /// actor asks this of itself, behind whatever else would begin a Turn,
+    /// and never while one is at work. Unlike a Report's delivery it starts a
+    /// Provider, the Move having stopped the one that ran.
+    ContinueAfterMove,
     /// Stop the Session's work, whatever it is: the active Turn — the
     /// Provider stops its background work first, in the established ordering
     /// — or, with no Turn running, every Watch still live and every Subagent
@@ -1657,7 +1663,7 @@ impl ProviderOrchestrator {
     /// actor holding its conversation: its own, or — for a native Subagent —
     /// the one its nearest ancestor owns. With no actor running there is no
     /// Provider process to take them, and they wait for the head of the
-    /// Session's next Turn: Suru never starts a Provider to deliver one.
+    /// Session's next Turn: Suru starts no Provider to deliver one.
     fn deliver_held_reports(&self, recipient: SessionId) {
         if let Some(actor) = self.owner_commands(recipient) {
             let _ = actor.send(ProviderCommand::DeliverReports { target: recipient });
@@ -2907,6 +2913,12 @@ async fn run_provider_session(
             // opened ahead of its command, it keeps whatever would begin another
             // Turn waiting, for that to begin where the Move takes the Session.
             let move_holds_turns = !move_not_landed && sessions.has_pending_move(session_id);
+            // A Move this Session's own Agent asked for, and ended its Turn
+            // for, has applied: the Agent is woken where it landed, behind
+            // anything else that would begin a Turn there, which carries the
+            // Move's note in its place.
+            let move_continuation_owed =
+                !move_holds_turns && sessions.owes_move_continuation(session_id);
             let continuation_given_up_at = subagents
                 .continuation_awaited_since
                 .zip(move_settlements.get())
@@ -2946,6 +2958,9 @@ async fn run_provider_session(
                             target: session_id,
                         }))
                     }
+                    _ = std::future::ready(()), if move_continuation_owed => {
+                        ActorInput::Command(Some(ProviderCommand::ContinueAfterMove))
+                    }
                     command = commands.recv() => ActorInput::Command(command),
                     // The Continuation owed has not come, so a Move stops
                     // waiting for it. Whatever else is owed still reads as owed.
@@ -2969,6 +2984,8 @@ async fn run_provider_session(
             } else if !move_holds_turns && let Some(pending) = pending_delegations.pop_front() {
                 taken_from_a_queue = true;
                 ActorInput::Command(Some(ProviderCommand::DeliverDelegation(pending)))
+            } else if move_continuation_owed {
+                ActorInput::Command(Some(ProviderCommand::ContinueAfterMove))
             } else {
                 tokio::select! {
                     biased;
@@ -3434,11 +3451,11 @@ async fn run_provider_session(
                     }
                     continue;
                 }
-                ProviderCommand::DeliverReports { .. } => {
-                    match wake_for_reports(&connector, &mut provider, &mut subagents, &mut shutdown)
+                ProviderCommand::DeliverReports { .. } | ProviderCommand::ContinueAfterMove => {
+                    match wake_idle_agent(&connector, &mut provider, &mut subagents, &mut shutdown)
                         .await
                     {
-                        ReportWake::Began(turn_id) => {
+                        AgentWake::Began(turn_id) => {
                             active = Some(ActiveProviderTurn::new_report_continuation(turn_id));
                             subagents.continuation_answered();
                             // A Watch that woke the Agent heads the Turn it
@@ -3451,8 +3468,12 @@ async fn run_provider_session(
                                 turn_id,
                             );
                         }
-                        ReportWake::Waiting => {}
-                        ReportWake::Stopping => break 'actor,
+                        // A Continuation owed for a Move that could not
+                        // begin is given up rather than tried again: the
+                        // Move's note waits for the next Turn.
+                        AgentWake::Waiting => sessions.forgo_move_continuation(session_id),
+                        AgentWake::MovedMeanwhile => {}
+                        AgentWake::Stopping => break 'actor,
                     }
                     continue;
                 }
@@ -4075,6 +4096,9 @@ async fn run_provider_session(
             ActorInput::Command(Some(ProviderCommand::FollowMove { stopped })) => {
                 moves_to_follow.extend(stopped);
             }
+            // The actor asks this of itself only while no Turn is at work,
+            // and whatever is owed is read again once this one settles.
+            ActorInput::Command(Some(ProviderCommand::ContinueAfterMove)) => {}
 
             // A Delegation sent after the spawn reaches the Turn at work here
             // as a steer when a Delegation began it (ADR 0032); one its
@@ -5213,7 +5237,7 @@ async fn begin_delegated_turn(
 
 /// How handing the Reports waiting for an idle Agent to its Provider
 /// went.
-enum ReportWake {
+enum AgentWake {
     /// The Provider took them as the input of a Continuation, which is the
     /// actor's active Turn from here.
     Began(TurnId),
@@ -5222,6 +5246,11 @@ enum ReportWake {
     /// open in the Session will carry them, or the Provider failed to take
     /// them — whose Continuation then stands settled as failed.
     Waiting,
+    /// The Session Moved before the Continuation could begin, so none began
+    /// in the directory it left: the connection opened there has been let go
+    /// of, whatever waited still waits, and a Continuation owed for a Move is
+    /// owed still, to be begun afresh where the Session works now.
+    MovedMeanwhile,
     /// Suru is stopping, and the actor stops with it.
     Stopping,
 }
@@ -5231,18 +5260,21 @@ enum ReportWake {
 /// begun by neither a Prompt nor a Delegation, run by the Session's Agent under
 /// its current Agent Selection and Approval Posture, which the Provider settles
 /// at its own boundary like any Turn. Once the Provider takes them, a Session
-/// the user had set aside is brought back. Only a Provider connection already open
-/// takes them — Suru never starts a Provider to deliver a Report — and only
-/// while the user has left that Provider on; otherwise they wait for the
-/// Session's next Turn. The Session's Worktree is leased as any Turn's start
-/// leases it, and a connection opened over a copy since recreated is let go
-/// rather than woken there.
-async fn wake_for_reports(
+/// the user had set aside is brought back. A Provider connection already open
+/// takes them, and only while the user has left that Provider on; otherwise
+/// they wait for the Session's next Turn, since Suru starts no Provider to
+/// deliver a Report but one: the note of a Move the Session's own Agent asked
+/// for and ended its Turn for (ADR 0059). That Move stopped the Provider, so
+/// one is started where the Session now works for the Agent to carry on in,
+/// the note the whole of its input where no Report waits beside it. The
+/// Session's Worktree is leased as any Turn's start leases it, and a connection
+/// opened over a copy since recreated is let go rather than woken there.
+async fn wake_idle_agent(
     connector: &ProviderConnector<'_>,
     provider: &mut Option<ConnectedProviderSession>,
     subagents: &mut SubagentRoutes,
     shutdown: &mut ProviderShutdown,
-) -> ReportWake {
+) -> AgentWake {
     let ProviderConnector {
         sessions,
         updates,
@@ -5252,25 +5284,56 @@ async fn wake_for_reports(
         ..
     } = connector;
     let session_id = *session_id;
-    if provider.is_none() || !settings.borrow().settings.provider_enabled(provider_id) {
-        return ReportWake::Waiting;
+    // The Move ended the connection its note would have been taken over, so
+    // the Continuation owed for it is begun over one opened for it.
+    let opens_a_connection = sessions.owes_move_continuation(session_id);
+    if (provider.is_none() && !opens_a_connection)
+        || !settings.borrow().settings.provider_enabled(provider_id)
+    {
+        return AgentWake::Waiting;
     }
     let Some(snapshot) = sessions.snapshot(session_id) else {
-        return ReportWake::Waiting;
+        return AgentWake::Waiting;
     };
     let lease = match connector
         .lease_worktree(&snapshot.session, None, provider, subagents, shutdown)
         .await
     {
         Ok(lease) => lease,
-        Err(ConnectionFailure::Stopping) => return ReportWake::Stopping,
+        Err(ConnectionFailure::Stopping) => return AgentWake::Stopping,
         Err(ConnectionFailure::Failed(message)) => {
             tracing::warn!(%session_id, "Reports wait for the next Turn: {message}");
-            return ReportWake::Waiting;
+            return AgentWake::Waiting;
         }
     };
+    if provider.is_none() && opens_a_connection {
+        match connector
+            .open(&snapshot, lease.incarnation, subagents, shutdown)
+            .await
+        {
+            Ok(connected) => *provider = Some(connected),
+            Err(ConnectionFailure::Stopping) => return AgentWake::Stopping,
+            Err(ConnectionFailure::Failed(message)) => {
+                tracing::warn!(
+                    %session_id,
+                    "a Move's note waits for the next Turn, no Provider starting to take it: \
+                     {message}"
+                );
+                return AgentWake::Waiting;
+            }
+        }
+        // No Turn stood open while the Provider started, so nothing held a
+        // Move asked meanwhile: no Turn begins in a directory the Session has
+        // left.
+        connector
+            .let_go_of_connection_left_behind(provider, subagents)
+            .await;
+        if provider.is_none() {
+            return AgentWake::MovedMeanwhile;
+        }
+    }
     let Some(connected) = provider.as_ref() else {
-        return ReportWake::Waiting;
+        return AgentWake::Waiting;
     };
     let agent = AgentIdentity {
         agent: connected.identity.agent.clone(),
@@ -5280,17 +5343,27 @@ async fn wake_for_reports(
             .clone()
             .unwrap_or_else(|| connected.identity.selection.clone()),
     };
-    let Some(begun) =
-        updates.apply(|| sessions.begin_report_continuation(session_id, agent.clone()))
-    else {
-        return ReportWake::Stopping;
+    let Some(begun) = updates.apply(|| {
+        sessions.begin_report_continuation(
+            session_id,
+            agent.clone(),
+            &connected.execution_directory,
+        )
+    }) else {
+        return AgentWake::Stopping;
     };
     let (turn_id, reports) = match begun {
-        Ok(Some(begun)) => begun,
-        Ok(None) => return ReportWake::Waiting,
+        Ok(ReportContinuation::Began(turn_id, reports)) => (turn_id, reports),
+        Ok(ReportContinuation::NotBegun) => return AgentWake::Waiting,
+        Ok(ReportContinuation::WorksElsewhere) => {
+            connector
+                .let_go_of_connection_left_behind(provider, subagents)
+                .await;
+            return AgentWake::MovedMeanwhile;
+        }
         Err(error) => {
             tracing::warn!(%session_id, "a Continuation for Reports could not begin: {error:#}");
-            return ReportWake::Waiting;
+            return AgentWake::Waiting;
         }
     };
     let posture = effective_approval_posture(&snapshot, &settings.borrow(), provider_id);
@@ -5304,7 +5377,7 @@ async fn wake_for_reports(
         biased;
         _ = shutdown.wait() => {
             sessions.hold_reports_again(session_id, reports);
-            return ReportWake::Stopping;
+            return AgentWake::Stopping;
         }
         started = provider_session.start_turn(ProviderTurnInput {
             turn_id,
@@ -5329,8 +5402,8 @@ async fn wake_for_reports(
             lose_provider_connection(provider, subagents, sessions, updates, session_id);
         }
         return match settled {
-            Some(_) => ReportWake::Waiting,
-            None => ReportWake::Stopping,
+            Some(_) => AgentWake::Waiting,
+            None => AgentWake::Stopping,
         };
     }
     if let Some(update) = posture_update {
@@ -5340,7 +5413,7 @@ async fn wake_for_reports(
         );
     }
     let _ = updates.apply(|| sessions.reports_delivered(session_id));
-    ReportWake::Began(turn_id)
+    AgentWake::Began(turn_id)
 }
 
 /// Hands the Subagent Reports waiting for `target` — a native Subagent riding

@@ -12,7 +12,7 @@ When a brokered Subagent's Turn settles, Suru delivers a Subagent Report — its
 ## Consequences
 
 - A Report stands nowhere in any Transcript; the settled Subagent row is the record, and the child's own Transcript holds its words. The row is added by the Broker at spawn, in the caller's active Turn, and each Provider's projection absorbs the Broker's tool calls rather than showing them.
-- A Report whose Agent has no Provider process waits for the head of that Session's next Turn; Suru never relaunches a Provider to deliver one. A Report delivered to a Session the user had settled makes it active again.
+- A Report whose Agent has no Provider process waits for the head of that Session's next Turn; Suru never relaunches a Provider to deliver one, but for the note of a Move an Agent asked for of its own Session, which wakes it where the Move lands (ADR 0059). A Report delivered to a Session the user had settled makes it active again.
 - A brokered child the user stops on its own is reported as stopped; an interrupt of the parent stops its children and reports nothing. A brokered child keeps working when its parent's Provider process ends.
 - A Report to a settled native Subagent wakes a Continuation of that Subagent's own Session, as a Watch would.
 - A Report reaches the Provider as input beside a Prompt, never as a Message: the Turn input a start or steer carries holds the Reports at its head and then the Prompt or Delegation, or the Reports alone for the Continuation one wakes. The Report is rendered once, in Suru's words, so every harness sends the same text: the Subagent's name and session_id, how its stretch settled and after how long, and at most 4000 characters of its final Message, naming `read_subagent` for the rest.

@@ -500,6 +500,7 @@ async fn a_moved_sessions_next_turn_resumes_its_copilot_session_in_the_new_direc
         to: suru::protocol::ExecutionDirectory {
             path: destination_path.clone(),
         },
+        continues: false,
     };
     let sent = requests
         .iter()
