@@ -333,6 +333,10 @@ fn cache_written(
     })
 }
 
+/// The Cache Lifetime each Provider declares, as the Server's runtimes say
+/// now.
+pub(crate) type DeclaredCacheLifetimes = Arc<dyn Fn(&ProviderId) -> CacheLifetime + Send + Sync>;
+
 /// Whose prices a Session's Lapse Penalty is forecast at: those of the Model
 /// its Agent Selection names, or, where that Model has none of its own — a
 /// Model choosing a route rather than running — those of the Model whose
@@ -578,6 +582,42 @@ impl SessionStore {
 }
 
 impl SessionStoreState {
+    /// Opens what a Turn `changes` settle wrote of the Prompt Cache, where
+    /// nothing staged it, from what its Provider declares now: a Turn a stop
+    /// left open had its output staged by a process this history outlived,
+    /// and is settled by the declaration rather than by none.
+    pub(super) fn stage_unstaged_settlements(
+        &mut self,
+        session_id: SessionId,
+        changes: &[SessionChange],
+    ) {
+        let Some(declared) = self.cache_lifetimes.clone() else {
+            return;
+        };
+        let Some(record) = self
+            .sessions
+            .get_mut(&session_id)
+            .filter(|record| record.prompt_cache_write.is_none())
+        else {
+            return;
+        };
+        for turn_id in settled_turns(changes) {
+            let provider = record
+                .snapshot
+                .turns
+                .iter()
+                .find(|turn| turn.id == turn_id)
+                .and_then(|turn| turn.agent.as_ref())
+                .map(|agent| &agent.selection.provider)
+                .or_else(|| selected(&record.snapshot).map(|(provider, _)| provider));
+            let lifetime = provider.map_or(CacheLifetime::None, |provider| declared(provider));
+            if lifetime != CacheLifetime::None {
+                record.prompt_cache_write = Some(StagedWrite::opened(turn_id, lifetime, false));
+                return;
+            }
+        }
+    }
+
     /// Forecasts, in place, the Lapse Penalty of each of `sessions` whose
     /// history was just read back from storage, which holds none, from prices
     /// held or to hand for it, and asks for them where there are none. No

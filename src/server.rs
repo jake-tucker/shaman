@@ -1790,11 +1790,20 @@ async fn start(
     let clone_staging = crate::source_control::CloneStaging::new(Arc::new(repository.clone()));
     let (storage_writer, storage) = StorageWriter::spawn(repository);
     let preparations = crate::source_control::PreparationStore::new(config.data_dir());
-    let sessions = SessionStore::new(
+    let declaring = runtimes.clone();
+    let sessions = SessionStore::new_declaring(
         persisted_sessions,
         storage.clone(),
         preparations.resumable_sessions(),
         workspaces,
+        Some(Arc::new(move |provider: &ProviderId| {
+            declaring
+                .iter()
+                .find(|runtime| runtime.provider_id() == *provider)
+                .map_or(crate::provider::CacheLifetime::None, |runtime| {
+                    runtime.cache_lifetime()
+                })
+        })),
     )
     .with_settings(settings.subscribe())
     .with_sidekicks(sidekick_workspace.clone(), sidekick_acts);

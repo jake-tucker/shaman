@@ -235,6 +235,9 @@ struct SessionStoreState {
     /// Provider orchestration has said it answers them (see
     /// [`SessionStore::forecast_lapse_penalties_through`]).
     lapse_rate_source: Option<Arc<dyn prompt_cache::LapseRateSource>>,
+    /// The Cache Lifetime each Provider declares, where the Server hosting
+    /// the store said.
+    cache_lifetimes: Option<prompt_cache::DeclaredCacheLifetimes>,
 }
 
 struct SessionRecord {
@@ -415,11 +418,25 @@ impl SessionStore {
     /// preserves grouping learned without opening that history over whatever a
     /// freshly decoded row says, which is what carries this correction
     /// forward.
+    #[cfg(test)]
     pub(crate) fn new(
         restored: RestoredSessions,
         storage: StorageSink,
         resumable_preparations: Vec<SessionId>,
         workspaces: HashMap<WorkspaceId, StoredWorkspace>,
+    ) -> Self {
+        Self::new_declaring(restored, storage, resumable_preparations, workspaces, None)
+    }
+
+    /// [`Self::new`], reading each Provider's declared Cache Lifetime from
+    /// `cache_lifetimes`, which a Turn whose output nothing staged — one a
+    /// stop left open, settled here — is settled by.
+    pub(crate) fn new_declaring(
+        restored: RestoredSessions,
+        storage: StorageSink,
+        resumable_preparations: Vec<SessionId>,
+        workspaces: HashMap<WorkspaceId, StoredWorkspace>,
+        cache_lifetimes: Option<prompt_cache::DeclaredCacheLifetimes>,
     ) -> Self {
         let started = std::time::Instant::now();
         let RestoredSessions {
@@ -494,6 +511,7 @@ impl SessionStore {
             worked_order: Vec::new(),
             report_notices: None,
             lapse_rate_source: None,
+            cache_lifetimes,
             continuations_awaited: Default::default(),
             agent_moves: Default::default(),
         };

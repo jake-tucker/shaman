@@ -1580,3 +1580,97 @@ async fn under_an_assumed_lifetime_a_turn_that_failed_before_any_output_leaves_t
     assert_eq!(settled_cache(&fixture, 1).await, standing);
     fixture.server.shutdown().await.unwrap();
 }
+
+/// Usage of `model` alone, as a Turn whose native Subagent ran on it states it.
+fn usage_on(model: &str) -> ProviderEvent {
+    let usage = suru::protocol::Usage {
+        fresh_input_tokens: Some(1_000),
+        ..suru::protocol::Usage::default()
+    };
+    ProviderEvent::Usage {
+        usage: usage.clone(),
+        cost: None,
+        model_shares: vec![suru::protocol::ModelShare {
+            model: ModelId::new(model),
+            usage,
+            cost: None,
+            cost_is_partial: false,
+        }],
+    }
+}
+
+/// A Turn a stop left open holds nothing of what its output staged, so its
+/// settling at the next start reads the Provider's declaration: one that
+/// states its requests stated none in that Turn, whatever other Model its
+/// Usage names.
+#[tokio::test]
+async fn a_turn_a_stop_left_open_is_settled_by_the_providers_declaration() {
+    let state = tempfile::tempdir().unwrap();
+    let channel = "prompt-cache-inferred-stopped";
+    let (mut fixture, clock, _hand) = inferring(state.path(), channel).await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(refreshed(Some(LONG_TIER)))
+        .await;
+    settle(&fixture.provider_session).await;
+    let standing = settled_cache(&fixture, 0).await;
+    assert!(standing.is_some());
+
+    prompt_again(&mut fixture).await;
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(usage_on("subagent-model"))
+        .await;
+    let id = fixture.session_id;
+    let open_turn = read_session(fixture.server.descriptor(), id).await.turns[1].id;
+    drop(fixture.provider_session);
+    fixture.server.shutdown().await.unwrap();
+
+    // Put the history back the way a process that never settled its work
+    // would have left it: the Turn still open.
+    {
+        use diesel::{Connection, RunQueryDsl, SqliteConnection};
+        let config = ServerConfig::new(state.path(), channel).unwrap();
+        let mut database =
+            SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap())
+                .unwrap();
+        diesel::sql_query(format!(
+            "UPDATE turns SET payload = json_set(payload, '$.status', 'active', '$.settled_at', json('null')) WHERE id = '{open_turn}'"
+        ))
+        .execute(&mut database)
+        .unwrap();
+    }
+
+    let (runtime, _provider) = ControlledProvider::new();
+    runtime.declare_cache_lifetime(CacheLifetime::Inferred {
+        unobserved: ASSUMED,
+    });
+    let restarted = server::spawn_with_provider_and_timings(
+        ServerConfig::new(state.path(), channel).unwrap(),
+        runtime,
+        ServerTimings::default().with_clock(clock),
+    )
+    .await
+    .unwrap();
+    let restored = read_session_until(
+        &crate::support::loopback_client(),
+        restarted.descriptor(),
+        id,
+        "the stopped Turn reads as settled",
+        |snapshot| snapshot.turns.len() == 2 && snapshot.turns[1].status.is_terminal(),
+    )
+    .await;
+    assert!(
+        restored.activities.iter().any(|activity| matches!(
+            activity,
+            suru::protocol::Activity::Error { text, .. }
+                if text == "The server stopped before this Turn finished."
+        )),
+        "the restart, not the live Provider, settled the Turn"
+    );
+    assert_eq!(
+        lapse_and_lifetime(restored.session.prompt_cache),
+        lapse_and_lifetime(standing)
+    );
+    restarted.shutdown().await.unwrap();
+}
