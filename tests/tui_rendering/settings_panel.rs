@@ -5681,6 +5681,111 @@ fn copilots_fusion_tiers_stand_on_the_experimental_tab_and_start_off() {
     assert_eq!(shown(&application, "Copilot Fusion tiers"), "false");
 }
 
+/// Scheduled Compaction is Experimental, so its three Settings stand on that
+/// tab: off, at fifty cents, and for active Sessions until the reader says
+/// otherwise. The minimum reads in dollars and is typed in whole cents, since
+/// the editor takes digits alone, seeded with the one in force; a sum past
+/// what it holds pins nothing.
+#[test]
+fn scheduled_compaction_stands_on_the_experimental_tab_and_takes_its_minimum_in_dollars() {
+    let workspace = workspace_dir();
+    let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
+    open_experimental_tab(&mut application);
+
+    for (label, key, default) in [
+        (
+            "Scheduled Compaction",
+            "compaction.scheduled.enabled",
+            "false",
+        ),
+        (
+            "Scheduled Compaction minimum",
+            "compaction.scheduled.minimumPenalty",
+            "$0.50",
+        ),
+        (
+            "Scheduled Compaction reaches",
+            "compaction.scheduled.sessions",
+            "active",
+        ),
+    ] {
+        focus_setting(&mut application, key);
+        assert_eq!(shown(&application, label), default, "{key}");
+        let descriptor = suru::settings::SCHEMA
+            .iter()
+            .find(|descriptor| descriptor.key == key)
+            .unwrap_or_else(|| panic!("the schema declares {key}"));
+        assert_eq!(descriptor.scope, SettingScope::Server, "{key}");
+    }
+
+    focus_setting(&mut application, "compaction.scheduled.enabled");
+    assert_eq!(
+        press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
+        MutatesSetting(SettingMutation::CompactionScheduledEnabled { value: Some(true) }),
+        "Space turns it on"
+    );
+    focus_setting(&mut application, "compaction.scheduled.sessions");
+    assert_eq!(
+        press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
+        MutatesSetting(SettingMutation::CompactionScheduledSessions {
+            value: Some(suru::protocol::ScheduledCompactionSessions::All),
+        }),
+        "and widens it to every Session"
+    );
+
+    focus_setting(&mut application, "compaction.scheduled.minimumPenalty");
+    press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
+    let rendered = rendered_application_rows(&application).join("\n");
+    assert!(
+        rendered.contains("Cents") && rendered.contains("› 50"),
+        "Enter opens the editor on the minimum in force, in cents: {rendered}"
+    );
+    for _ in 0..2 {
+        press(&mut application, KeyCode::Backspace, KeyModifiers::NONE);
+    }
+    type_terminal_text(&mut application, "100000001");
+    assert_eq!(
+        press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
+        ApplicationTransition::Continue,
+        "a sum past what the threshold holds pins nothing"
+    );
+    assert!(
+        rendered_application_rows(&application)
+            .join("\n")
+            .contains("maximum: 100000000 cents"),
+        "and the editor stays open saying so"
+    );
+    for _ in 0..9 {
+        press(&mut application, KeyCode::Backspace, KeyModifiers::NONE);
+    }
+    type_terminal_text(&mut application, "125");
+    assert_eq!(
+        press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
+        MutatesSetting(SettingMutation::CompactionScheduledMinimumPenalty {
+            value: suru::protocol::PenaltyThreshold::from_cents(125),
+        }),
+        "Enter pins the cents the reader typed"
+    );
+    deliver_snapshot(
+        &mut application,
+        EffectiveSettings {
+            compaction: suru::protocol::CompactionSettings {
+                scheduled: suru::protocol::ScheduledCompactionSettings {
+                    minimum_penalty: suru::protocol::PenaltyThreshold::from_cents(125).unwrap(),
+                    ..Default::default()
+                },
+            },
+            ..EffectiveSettings::default()
+        },
+        &["compaction.scheduled.minimumPenalty"],
+    );
+    assert_eq!(
+        shown(&application, "Scheduled Compaction minimum"),
+        "$1.25 ●",
+        "the row reads the dollars the refreshed snapshot pinned"
+    );
+}
+
 /// However much the pane has to lead with — a refused edit, a Provider's
 /// condition and its fix, a pin Suru ignored, each wrapped over rows of its
 /// own — the Setting the keys are on is never pushed out of it.

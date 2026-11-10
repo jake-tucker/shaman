@@ -19,12 +19,13 @@ use crate::session_integration::support::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use axum::http::StatusCode;
+use diesel::Connection;
 use suru::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, AgentId, AgentIdentity, Approval, ApprovalId,
-        ApprovalSubject, CompactionTrigger, ContextFill, InitialPrompt, MessageRole,
-        PromptDelivery, PromptId, RuntimeDescriptor, SessionError, SessionErrorCode, SessionId,
-        SessionListItem, SessionSnapshot, TranscriptItem, TurnStatus, Usage,
+        ApprovalSubject, CompactionRequest, CompactionTrigger, ContextFill, InitialPrompt,
+        MessageRole, PromptDelivery, PromptId, RuntimeDescriptor, SessionError, SessionErrorCode,
+        SessionId, SessionListItem, SessionSnapshot, TranscriptItem, TurnStatus, Usage,
     },
     provider::{
         ContextFillReport, ManualCompaction, ProviderEvent, ProviderEventAttribution,
@@ -1031,7 +1032,9 @@ async fn a_compaction_request_begins_a_turn_of_its_own_that_settles_as_its_manua
     let requested = request_compaction(&mut fixture).await;
     let turn = &requested.turns[1];
     assert!(
-        turn.compaction_requested && turn.prompt_id.is_none() && !turn.is_continuation(),
+        turn.compaction_requested == Some(CompactionRequest::Manual)
+            && turn.prompt_id.is_none()
+            && !turn.is_continuation(),
         "the request begins a Turn of its own, no Continuation: {turn:?}"
     );
     assert_eq!(turn.status, TurnStatus::Active);
@@ -1570,7 +1573,8 @@ async fn a_requested_compactions_turn_is_stored_apart_from_a_continuation_and_su
         "every Turn reads back as it was"
     );
     assert!(
-        restored.turns[1].compaction_requested && !restored.turns[1].is_continuation(),
+        restored.turns[1].compaction_requested == Some(CompactionRequest::Manual)
+            && !restored.turns[1].is_continuation(),
         "the Turn a request began is no Continuation once stored"
     );
     assert_eq!(
@@ -1579,6 +1583,35 @@ async fn a_requested_compactions_turn_is_stored_apart_from_a_continuation_and_su
         "its manual Compaction reads back as recorded"
     );
     restarted.shutdown().await.expect("shut down server");
+
+    // A Turn stored before a Turn named who asked for its Compaction said
+    // only that one was asked for, and loads once named the user's.
+    let config = ServerConfig::new(state_dir.path(), channel).expect("configure server");
+    let database_path = config.data_dir().join("suru.db");
+    let mut database = diesel::SqliteConnection::establish(
+        database_path
+            .to_str()
+            .expect("fixture database path is valid UTF-8"),
+    )
+    .expect("open the stored Turns");
+    diesel::connection::SimpleConnection::batch_execute(
+        &mut database,
+        "UPDATE turns SET payload = json_set(payload, '$.compaction_requested', json('true'))
+         WHERE json_extract(payload, '$.compaction_requested') = 'manual';
+         DELETE FROM __diesel_schema_migrations WHERE version = '20261111000000';",
+    )
+    .expect("age the stored Turn back to when it said only that a Compaction was asked for");
+    drop(database);
+    let (runtime, _provider) = crate::support::provider::ControlledProvider::new();
+    let aged = server::spawn_with_provider(config, runtime)
+        .await
+        .expect("spawn server over the aged database");
+    let migrated = read_session(aged.descriptor(), session_id).await;
+    assert_eq!(
+        migrated.turns, before.turns,
+        "a Turn stored as begun for a requested Compaction loads as the user's"
+    );
+    aged.shutdown().await.expect("shut down server");
 }
 
 /// Each requested Compaction's `instructions`, in Transcript order.

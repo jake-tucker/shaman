@@ -35,9 +35,10 @@ use crate::copilot_integration::support::{
 };
 use suru::managed_client::SessionSubscription;
 use suru::protocol::{
-    Activity, ActivityStatus, AdmitPromptRequest, CompactSessionRequest, CompactionTrigger,
-    ContextFill, Decision, InitialPrompt, MessageRole, PromptDelivery, PromptId, PromptStatus,
-    SessionError, SessionErrorCode, SessionSnapshot, SessionStatus, TurnStatus, Usage,
+    Activity, ActivityStatus, AdmitPromptRequest, CompactSessionRequest, CompactionRequest,
+    CompactionTrigger, ContextFill, Decision, InitialPrompt, MessageRole, PromptDelivery, PromptId,
+    PromptStatus, SessionError, SessionErrorCode, SessionSnapshot, SessionStatus, TurnStatus,
+    Usage,
 };
 use suru::provider::CopilotRuntime;
 use tokio::time::Duration;
@@ -2381,7 +2382,7 @@ async fn a_requested_compaction_is_copilots_manual_compact_in_a_turn_settled_aro
     assert_eq!(compacting.turns.len(), 2, "{:?}", compacting.turns);
     let turn = &compacting.turns[1];
     assert!(
-        turn.compaction_requested && !turn.is_continuation(),
+        turn.compaction_requested == Some(CompactionRequest::Manual) && !turn.is_continuation(),
         "the request begins a Turn of its own: {turn:?}"
     );
     assert_eq!(turn.status, TurnStatus::Active);

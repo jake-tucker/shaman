@@ -1240,7 +1240,7 @@ mod tests {
         Turn {
             id: crate::protocol::TurnId::new(),
             prompt_id: None,
-            compaction_requested: false,
+            compaction_requested: None,
             agent: None,
             status,
             started_at: started_at.map(SessionTimestamp),

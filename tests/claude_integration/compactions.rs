@@ -689,7 +689,10 @@ async fn a_requested_compaction_is_claudes_compact_command_in_a_turn_that_settle
         "Claude is asked through its own command"
     );
     let turn = &settled.turns[1];
-    assert!(turn.compaction_requested);
+    assert_eq!(
+        turn.compaction_requested,
+        Some(suru::protocol::CompactionRequest::Manual)
+    );
     assert_eq!(turn.status, TurnStatus::Completed);
     assert_eq!(
         compactions(&settled),
@@ -1159,7 +1162,10 @@ async fn interrupting_a_requested_compaction_stops_claudes_compact_and_settles_b
             "{described}: Suru stops the `/compact` with Claude's own interrupt"
         );
         let turn = &settled.turns[1];
-        assert!(turn.compaction_requested);
+        assert_eq!(
+            turn.compaction_requested,
+            Some(suru::protocol::CompactionRequest::Manual)
+        );
         assert_eq!(
             turn.status,
             TurnStatus::Interrupted,

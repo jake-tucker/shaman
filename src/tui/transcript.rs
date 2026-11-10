@@ -5670,8 +5670,10 @@ fn push_compaction_activity(
                 text.push_str(" · ");
                 text.push_str(&change.into_iter().flatten().collect::<Vec<_>>().join(" "));
             }
-            if compaction.trigger == CompactionTrigger::Automatic {
-                text.push_str(" (automatic)");
+            match compaction.trigger {
+                CompactionTrigger::Automatic => text.push_str(" (automatic)"),
+                CompactionTrigger::Scheduled => text.push_str(" (scheduled)"),
+                CompactionTrigger::Manual => {}
             }
             text
         }
@@ -7913,7 +7915,7 @@ mod tests {
             snapshot.turns.push(Turn {
                 id: turn_id,
                 prompt_id: Some(PromptId::new()),
-                compaction_requested: false,
+                compaction_requested: None,
                 agent: None,
                 status,
                 started_at: None,

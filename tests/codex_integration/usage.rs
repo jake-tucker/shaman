@@ -1404,7 +1404,10 @@ async fn a_requested_compaction_is_recorded_and_priced_under_the_model_codex_com
     let compacted = settled_turn(client, opened.session_id, 1).await;
 
     let turn = &compacted.turns[1];
-    assert!(turn.compaction_requested);
+    assert_eq!(
+        turn.compaction_requested,
+        Some(suru::protocol::CompactionRequest::Manual)
+    );
     assert_eq!(turn.status, TurnStatus::Completed);
     assert_eq!(
         turn.agent

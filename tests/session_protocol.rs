@@ -5,12 +5,12 @@ use suru::protocol::{
     Activity, ActivityId, ActivityStatus, AdmitPromptRequest, AgentId, AgentIdentity,
     AgentSelection, AgentSelectionOperationId, Answer, ApprovalSubject, AttachmentBinding,
     AttachmentDescriptor, AttachmentId, AttachmentKind, Author, CompactSessionRequest,
-    CompactionTrigger, Cost, CostBasis, CostTotal, CreateSessionRequest, Delegator, FileChange,
-    InitialPrompt, Message, MessageId, MessageRole, MessageStatus, ModelAdvisory,
-    ModelAdvisorySeverity, ModelAttribution, ModelAvailability, ModelDescriptor, ModelDetails,
-    ModelId, ModelOptionChoice, ModelOptionChoiceId, ModelOptionDescriptor, ModelOptionId,
-    ModelOptionKind, ModelOptionRole, ModelOptionSelection, ModelOptionValue, ModelPrice,
-    ModelPriceCategory, ModelPriceTier, ModelPrices, PROTOCOL_VERSION, PreparationId,
+    CompactionRequest, CompactionTrigger, Cost, CostBasis, CostTotal, CreateSessionRequest,
+    Delegator, FileChange, InitialPrompt, Message, MessageId, MessageRole, MessageStatus,
+    ModelAdvisory, ModelAdvisorySeverity, ModelAttribution, ModelAvailability, ModelDescriptor,
+    ModelDetails, ModelId, ModelOptionChoice, ModelOptionChoiceId, ModelOptionDescriptor,
+    ModelOptionId, ModelOptionKind, ModelOptionRole, ModelOptionSelection, ModelOptionValue,
+    ModelPrice, ModelPriceCategory, ModelPriceTier, ModelPrices, PROTOCOL_VERSION, PreparationId,
     PreparationPrompt, PrepareCheckoutRequest, Prompt, PromptDelivery, PromptId, PromptOrder,
     PromptStatus, PromptWithdrawal, ProviderId, Question, QuestionAnswer, Questionnaire,
     QuestionnaireId, QuestionnaireOutcome, Session, SessionChange, SessionError, SessionErrorCode,
@@ -730,7 +730,7 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
             prompt_id: Some(PromptId::from_uuid(fixture_id(
                 "0198b27e-2a7e-7562-b80d-54aa50c360f9",
             ))),
-            compaction_requested: false,
+            compaction_requested: None,
             agent: Some(AgentIdentity {
                 agent: AgentId::new("coding"),
                 selection: AgentSelection {
@@ -849,7 +849,6 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
         "turns": [{
             "id": "0198b27e-2dc4-76ba-9895-f43db821fe3d",
             "prompt_id": "0198b27e-2a7e-7562-b80d-54aa50c360f9",
-            "compaction_requested": false,
             "agent": {
                 "agent": "coding",
                 "selection": {
@@ -3808,7 +3807,7 @@ fn a_compaction_request_and_the_turn_it_begins_travel_on_the_wire() {
     let turn = json!({
         "id": "0198b27e-2dc4-76ba-9895-f43db821fe3d",
         "prompt_id": null,
-        "compaction_requested": true,
+        "compaction_requested": "manual",
         "agent": null,
         "status": "active",
         "started_at": null,
@@ -3818,11 +3817,39 @@ fn a_compaction_request_and_the_turn_it_begins_travel_on_the_wire() {
         "cost_basis": null
     });
     let requested = serde_json::from_value::<Turn>(turn.clone()).expect("decode a requested Turn");
-    assert!(requested.compaction_requested && !requested.is_continuation());
+    assert!(
+        requested.compaction_requested == Some(CompactionRequest::Manual)
+            && !requested.is_continuation()
+    );
     assert!(!requested.accepts_steer(), "it accepts no steer");
     assert_eq!(
         serde_json::to_value(&requested).expect("encode a requested Turn")["compaction_requested"],
-        json!(true)
+        json!("manual")
+    );
+    // One Suru began ahead of a Prompt Cache lapse says so on the wire, and
+    // is no Continuation either.
+    const {
+        assert!(
+            PROTOCOL_VERSION >= 114,
+            "a Turn naming who asked for its Compaction changes the wire"
+        );
+    }
+    let mut scheduled = turn.clone();
+    scheduled["compaction_requested"] = json!("scheduled");
+    let scheduled = serde_json::from_value::<Turn>(scheduled).expect("decode a scheduled Turn");
+    assert!(
+        scheduled.compaction_requested == Some(CompactionRequest::Scheduled)
+            && !scheduled.is_continuation()
+            && !scheduled.accepts_steer()
+    );
+    assert_eq!(
+        serde_json::to_value(&scheduled).expect("encode a scheduled Turn")["compaction_requested"],
+        json!("scheduled")
+    );
+    assert_eq!(
+        serde_json::to_value(CompactionTrigger::Scheduled).expect("encode a trigger"),
+        json!("scheduled"),
+        "and so does the Compaction it holds"
     );
     let mut unmarked = turn.clone();
     unmarked

@@ -1313,6 +1313,7 @@ fn activity_label(activity: &Activity) -> Spans {
         } => match trigger {
             CompactionTrigger::Manual => format!("compaction [{}]", stood(*status)),
             CompactionTrigger::Automatic => format!("compaction [{}, automatic]", stood(*status)),
+            CompactionTrigger::Scheduled => format!("compaction [{}, scheduled]", stood(*status)),
         },
         Activity::Reasoning { .. } => "reasoning".to_owned(),
         Activity::Route { .. } => "route".to_owned(),
@@ -2517,7 +2518,7 @@ mod tests {
     fn a_compaction_reads_as_its_change_in_size_and_whole_as_its_summary() {
         let mut fixture = Fixture::new();
         let turn = fixture.continuation(TurnStatus::Completed);
-        fixture.0.turns[0].compaction_requested = true;
+        fixture.0.turns[0].compaction_requested = Some(crate::protocol::CompactionRequest::Manual);
         fixture.activity(Activity::Compaction {
             id: ActivityId::new(),
             turn_id: turn,

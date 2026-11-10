@@ -13,7 +13,7 @@ use uuid::Uuid;
 mod workspace_paths;
 pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths};
 
-pub const PROTOCOL_VERSION: u32 = 113;
+pub const PROTOCOL_VERSION: u32 = 114;
 mod attachment;
 mod divided_usage;
 mod pair_back;
@@ -2095,6 +2095,122 @@ impl ListenerState {
     }
 }
 
+/// How Suru compacts a Session's context of its own accord.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompactionSettings {
+    pub scheduled: ScheduledCompactionSettings,
+}
+
+/// Whether Suru begins a scheduled Compaction of an idle Session ahead of
+/// its Prompt Cache lapsing (ADR 0073), and where. Off unless the user turns
+/// it on, since it spends on the user's behalf without being asked in the
+/// moment. Each value is read when a scheduled Compaction falls due, never
+/// when it was armed.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduledCompactionSettings {
+    pub enabled: bool,
+    /// The least Lapse Penalty worth compacting a Session for: one forecast
+    /// below it, or not forecast at all, is left to go cold as it is.
+    pub minimum_penalty: PenaltyThreshold,
+    /// Which Sessions it reaches: those not Settled, or every one.
+    pub sessions: ScheduledCompactionSessions,
+}
+
+impl Default for ScheduledCompactionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            minimum_penalty: PenaltyThreshold::DEFAULT,
+            sessions: ScheduledCompactionSessions::default(),
+        }
+    }
+}
+
+/// Which Sessions a scheduled Compaction reaches.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScheduledCompactionSessions {
+    /// Only those that are not Settled, by the user's say-so or on their own.
+    #[default]
+    Active,
+    /// Settled ones too.
+    All,
+}
+
+/// A dollar figure a Lapse Penalty is held against, to the cent. A Config
+/// Document spells it as a number of USD, as `0.5`.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct PenaltyThreshold {
+    cents: u64,
+}
+
+impl PenaltyThreshold {
+    /// Fifty cents: what a cold Prompt over a large context on a frontier
+    /// Model costs beyond a warm one, and well past the warning's floor.
+    pub const DEFAULT: Self = Self { cents: 50 };
+    /// The most it holds: well past any penalty one Prompt could carry, and
+    /// short of where a USD figure would stop being exact as a JSON number.
+    pub const MAXIMUM_CENTS: u64 = 100_000_000;
+
+    /// `cents`, where it is no more than [`Self::MAXIMUM_CENTS`].
+    pub const fn from_cents(cents: u64) -> Option<Self> {
+        if cents <= Self::MAXIMUM_CENTS {
+            Some(Self { cents })
+        } else {
+            None
+        }
+    }
+
+    pub const fn cents(self) -> u64 {
+        self.cents
+    }
+
+    /// `usd`, where it is a finite amount of at least nothing given to the
+    /// cent.
+    pub fn from_usd(usd: f64) -> Option<Self> {
+        if !usd.is_finite() || usd < 0.0 {
+            return None;
+        }
+        let cents = usd * 100.0;
+        let whole = cents.round();
+        if (cents - whole).abs() > 1e-6 || whole > Self::MAXIMUM_CENTS as f64 {
+            return None;
+        }
+        Self::from_cents(whole as u64)
+    }
+
+    pub fn as_usd(self) -> f64 {
+        self.cents as f64 / 100.0
+    }
+
+    /// Whether `penalty` reaches this threshold.
+    pub fn is_met_by(self, penalty: LapsePenalty) -> bool {
+        penalty.nano_usd() >= self.cents.saturating_mul(NANO_USD_PER_CENT)
+    }
+}
+
+/// Billionths of one USD in a cent, as a Cost and a Lapse Penalty hold it.
+const NANO_USD_PER_CENT: u64 = 10_000_000;
+
+impl Serialize for PenaltyThreshold {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_f64(self.as_usd())
+    }
+}
+
+impl<'de> Deserialize<'de> for PenaltyThreshold {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let usd = f64::deserialize(deserializer)?;
+        Self::from_usd(usd).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "{usd} is not a dollar amount of at least 0, to the cent"
+            ))
+        })
+    }
+}
+
 /// Whether Provider Sessions are offered the Broker: Suru's own Tools, served
 /// on the Server's loopback listener, through which an Agent reaches any
 /// Provider Suru hosts. Off means no Provider start is handed the endpoint and
@@ -2672,6 +2788,7 @@ pub struct EffectiveSettings {
     pub provider: ProviderSettings,
     pub serving: ServingSettings,
     pub broker: BrokerSettings,
+    pub compaction: CompactionSettings,
 }
 
 /// The Provider-native controls that govern which tool uses require an
@@ -2964,6 +3081,15 @@ pub enum SettingMutation {
     BrokerMaxConcurrentSubagents {
         value: Option<u32>,
     },
+    CompactionScheduledEnabled {
+        value: Option<bool>,
+    },
+    CompactionScheduledMinimumPenalty {
+        value: Option<PenaltyThreshold>,
+    },
+    CompactionScheduledSessions {
+        value: Option<ScheduledCompactionSessions>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -3194,10 +3320,10 @@ pub enum WatchOutcomeStatus {
     Stopped,
 }
 
-/// Whether a Compaction was the Provider's choice or the user's request. Suru
-/// alone knows which Turns it began for a request, so this is read from the
-/// Turn that holds the Compaction rather than from anything the Provider says
-/// (ADR 0041).
+/// Whether a Compaction was the Provider's choice, the user's request, or
+/// Suru's own ahead of a Prompt Cache lapse. Suru alone knows which Turns it
+/// began for a request, so this is read from the Turn that holds the
+/// Compaction rather than from anything the Provider says (ADR 0041, 0073).
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompactionTrigger {
@@ -3205,6 +3331,28 @@ pub enum CompactionTrigger {
     Automatic,
     /// The user asked for it, and it began a Turn of its own.
     Manual,
+    /// Suru began it of its own accord ahead of the Session's Prompt Cache
+    /// lapsing, in a Turn of its own as a manual one is.
+    Scheduled,
+}
+
+/// Who asked the Provider for the Compaction a Turn was begun for: the user,
+/// or Suru ahead of a Prompt Cache lapse (ADR 0041, 0073).
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompactionRequest {
+    Manual,
+    Scheduled,
+}
+
+impl CompactionRequest {
+    /// The kind of the Compaction a Turn begun for this request holds.
+    pub const fn trigger(self) -> CompactionTrigger {
+        match self {
+            Self::Manual => CompactionTrigger::Manual,
+            Self::Scheduled => CompactionTrigger::Scheduled,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -5429,12 +5577,14 @@ pub struct Turn {
     /// began — a Continuation, a Subagent Session's Turn opened by its spawn,
     /// or one a Compaction request began.
     pub prompt_id: Option<PromptId>,
-    /// Whether the user's request for a Compaction began this Turn (ADR
-    /// 0041): one with no user Message, whose only content is that
-    /// Compaction, which Settles as the Compaction does and accepts no steer.
-    /// Only Suru knows which Turns it began this way, so whether a Compaction
-    /// was manual is read from here.
-    pub compaction_requested: bool,
+    /// The request for a Compaction that began this Turn, where one did:
+    /// the user's, or Suru's own ahead of a Prompt Cache lapse (ADR 0041,
+    /// 0073). Such a Turn has no user Message, its only content is that
+    /// Compaction, and it Settles as the Compaction does and accepts no
+    /// steer. Only Suru knows which Turns it began this way, so whether a
+    /// Compaction was manual or scheduled is read from here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction_requested: Option<CompactionRequest>,
     pub agent: Option<AgentIdentity>,
     pub status: TurnStatus,
     /// When the commit that delivered this Turn's opening Prompt landed, and
@@ -5504,7 +5654,7 @@ struct TurnWire {
     id: TurnId,
     prompt_id: Option<PromptId>,
     #[serde(default)]
-    compaction_requested: bool,
+    compaction_requested: Option<CompactionRequest>,
     agent: Option<AgentIdentity>,
     status: TurnStatus,
     started_at: Option<SessionTimestamp>,
@@ -5557,7 +5707,13 @@ impl Turn {
     /// Whether this Turn names at most one thing that began it: a Prompt or
     /// a Compaction request, never both.
     pub const fn has_valid_opening(&self) -> bool {
-        !(self.compaction_requested && self.prompt_id.is_some())
+        !(self.compaction_requested.is_some() && self.prompt_id.is_some())
+    }
+
+    /// Whether a request for a Compaction, the user's or Suru's, began this
+    /// Turn.
+    pub const fn begun_for_compaction(&self) -> bool {
+        self.compaction_requested.is_some()
     }
 
     /// Whether this Turn is a Continuation: the one kind of Turn that begins
@@ -5567,7 +5723,7 @@ impl Turn {
     /// carries no Prompt, but those Sessions take no Prompts at all, so the
     /// question never arises there.
     pub const fn is_continuation(&self) -> bool {
-        self.prompt_id.is_none() && !self.compaction_requested
+        self.prompt_id.is_none() && self.compaction_requested.is_none()
     }
 
     /// Whether a steer Prompt may join this Turn, which only a Turn a Prompt
@@ -5586,7 +5742,7 @@ impl Turn {
         Self {
             id: TurnId::new(),
             prompt_id: None,
-            compaction_requested: false,
+            compaction_requested: None,
             agent,
             status: TurnStatus::Active,
             started_at: None,
@@ -5600,12 +5756,12 @@ impl Turn {
         }
     }
 
-    /// The Turn a Compaction request begins (ADR 0041), run by `agent` where
-    /// it is known: working, on nothing but the Compaction its Provider is
-    /// about to report.
-    pub fn requested_compaction(agent: Option<AgentIdentity>) -> Self {
+    /// The Turn `request` begins (ADR 0041, 0073), run by `agent` where it is
+    /// known: working, on nothing but the Compaction its Provider is about to
+    /// report.
+    pub fn requested_compaction(agent: Option<AgentIdentity>, request: CompactionRequest) -> Self {
         Self {
-            compaction_requested: true,
+            compaction_requested: Some(request),
             ..Self::unprompted(agent)
         }
     }

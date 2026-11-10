@@ -735,7 +735,7 @@ async fn streamed_agent_markdown_updates_one_unboxed_row_through_the_real_sessio
                     turn: Turn {
                         id: turn_id,
                         prompt_id: Some(prompt_id),
-                        compaction_requested: false,
+                        compaction_requested: None,
                         agent: None,
                         status: TurnStatus::Active,
                         started_at: None,
@@ -1679,7 +1679,7 @@ fn message_anchor_survives_prompt_reconciliation_and_composer_dock_layout_change
                         turn: Turn {
                             id: delivered_turn_id,
                             prompt_id: Some(request.prompt.id),
-                            compaction_requested: false,
+                            compaction_requested: None,
                             agent: None,
                             status: TurnStatus::Active,
                             started_at: None,
@@ -4901,6 +4901,26 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             "    ✓ Compacted context · 182K → 31K",
             PANDA.muted,
         ),
+        // One Suru began of its own accord says so, since nobody asked.
+        (
+            ActivityStatus::Completed,
+            CompactionTrigger::Scheduled,
+            Some(182_000),
+            Some(31_000),
+            None,
+            "    ✓ Compacted context · 182K → 31K (scheduled)",
+            PANDA.muted,
+        ),
+        // A failed one stands as any failed Compaction does.
+        (
+            ActivityStatus::Failed,
+            CompactionTrigger::Scheduled,
+            Some(182_000),
+            None,
+            Some("Conversation too long"),
+            "    × Compaction failed: Conversation too long",
+            PANDA.error,
+        ),
         (
             ActivityStatus::Failed,
             automatic,
@@ -5328,7 +5348,7 @@ fn requested_compaction_session(
         },
         started_at: Some(SessionTimestamp(1_755_000_000_000)),
         settled_at: Some(SessionTimestamp(1_755_000_012_000)),
-        ..Turn::requested_compaction(None)
+        ..Turn::requested_compaction(None, suru::protocol::CompactionRequest::Manual)
     };
     let compaction = ActivityId::new();
     let completed = status == ActivityStatus::Completed;
@@ -9410,7 +9430,7 @@ fn append_settled_turn(
     snapshot.turns.push(Turn {
         id: turn_id,
         prompt_id: Some(PromptId::new()),
-        compaction_requested: false,
+        compaction_requested: None,
         agent: None,
         status: TurnStatus::Completed,
         started_at: None,
@@ -9669,7 +9689,7 @@ fn the_turn_a_compaction_request_began_shows_its_one_row_under_its_turn_fold() {
             status: turn_status,
             started_at: Some(SessionTimestamp(1_755_000_000_000)),
             settled_at: Some(SessionTimestamp(1_755_000_012_000)),
-            ..Turn::requested_compaction(None)
+            ..Turn::requested_compaction(None, suru::protocol::CompactionRequest::Manual)
         };
         let compaction = ActivityId::new();
         snapshot.activities.push(Activity::Compaction {
@@ -9881,7 +9901,7 @@ fn newer_turn_begins(
                 turn: Turn {
                     id: turn_id,
                     prompt_id: Some(prompt_id),
-                    compaction_requested: false,
+                    compaction_requested: None,
                     agent: None,
                     status: TurnStatus::Active,
                     started_at: None,

@@ -504,15 +504,17 @@ pub struct CompactionInsights {
     pub automatic: CompactionCounts,
     /// Those the user asked for.
     pub manual: CompactionCounts,
+    /// Those Suru began of its own accord ahead of a Prompt Cache lapse.
+    pub scheduled: CompactionCounts,
     /// The share of the context Compactions freed, on average; absent where
     /// none can say.
     pub freed: Option<FreedShare>,
 }
 
 impl CompactionInsights {
-    /// Every Compaction counted, of either trigger and any status.
+    /// Every Compaction counted, of any trigger and any status.
     pub fn total(&self) -> u64 {
-        self.automatic.total() + self.manual.total()
+        self.automatic.total() + self.manual.total() + self.scheduled.total()
     }
 }
 

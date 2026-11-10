@@ -23,9 +23,9 @@ use crate::codex_integration::support::{
 };
 use serde_json::{Value, json};
 use suru::protocol::{
-    Activity, ActivityStatus, AdmitPromptRequest, CompactSessionRequest, CompactionTrigger,
-    InitialPrompt, MessageRole, PromptDelivery, PromptId, SessionError, SessionErrorCode,
-    SessionSnapshot, TurnStatus,
+    Activity, ActivityStatus, AdmitPromptRequest, CompactSessionRequest, CompactionRequest,
+    CompactionTrigger, InitialPrompt, MessageRole, PromptDelivery, PromptId, SessionError,
+    SessionErrorCode, SessionSnapshot, TurnStatus,
 };
 use suru::provider::CodexRuntime;
 use tokio::time::Duration;
@@ -788,7 +788,7 @@ async fn a_requested_compaction_codex_announces(announced_first: bool) {
     );
     let turn = &compacting.turns[1];
     assert!(
-        turn.compaction_requested && !turn.is_continuation(),
+        turn.compaction_requested == Some(CompactionRequest::Manual) && !turn.is_continuation(),
         "the request's own Turn holds the compaction, not a Continuation: {turn:?}"
     );
     assert_eq!(turn.status, TurnStatus::Active);

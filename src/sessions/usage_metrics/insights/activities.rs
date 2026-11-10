@@ -98,6 +98,7 @@ impl ActivityTally {
         let counts = match trigger {
             CompactionTrigger::Automatic => &mut self.compactions.automatic,
             CompactionTrigger::Manual => &mut self.compactions.manual,
+            CompactionTrigger::Scheduled => &mut self.compactions.scheduled,
         };
         let count = match status {
             ActivityStatus::Active => &mut counts.active,

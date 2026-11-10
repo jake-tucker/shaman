@@ -1462,7 +1462,7 @@ mod tests {
                     turn: Turn {
                         id: TurnId::new(),
                         prompt_id: None,
-                        compaction_requested: false,
+                        compaction_requested: None,
                         agent: None,
                         status: TurnStatus::Active,
                         started_at: None,

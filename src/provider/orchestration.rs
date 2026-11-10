@@ -45,10 +45,10 @@ use crate::ansi::{NormalizedText, ProviderTextNormalizer, normalize_provider_tex
 use crate::attachments::AttachmentStore;
 use crate::broker::{BrokerAccess, BrokerGrant};
 use crate::protocol::{
-    Activity, ActivityId, ActivityStatus, AgentIdentity, AgentSelection, ContextBreakdown,
-    InterruptOutcome, Message, MessageId, MessageRole, MessageStatus, Prompt, PromptDelivery,
-    PromptId, PromptOrder, PromptStatus, ProviderId, RouteDecision, SessionChange, SessionId,
-    SettingsSnapshot, SkillPromptDelivery, TurnId, TurnStatus,
+    Activity, ActivityId, ActivityStatus, AgentIdentity, AgentSelection, CompactionRequest,
+    ContextBreakdown, InterruptOutcome, Message, MessageId, MessageRole, MessageStatus, Prompt,
+    PromptDelivery, PromptId, PromptOrder, PromptStatus, ProviderId, RouteDecision, SessionChange,
+    SessionId, SettingsSnapshot, SkillPromptDelivery, TurnId, TurnStatus,
 };
 use crate::sessions::{
     ApprovalPostureUpdate, BrokeredSpawn, BrokeredSpawnCap, BrokeredSpawnError,
@@ -650,15 +650,19 @@ impl ActiveProviderTurn {
         }
     }
 
-    /// The Turn a Compaction request began (ADR 0041). No Prompt began it,
-    /// so a rejected Agent Selection fails it rather than handing anything
-    /// back, and it holds the one manual Compaction its Provider was asked
-    /// for — carrying the `instructions` it was asked with — which it
+    /// The Turn `request` began (ADR 0041, 0073). No Prompt began it, so a
+    /// rejected Agent Selection fails it rather than handing anything back,
+    /// and it holds the one manual or scheduled Compaction its Provider was
+    /// asked for — carrying the `instructions` it was asked with — which it
     /// Settles as.
-    fn new_requested_compaction(turn_id: TurnId, instructions: Option<String>) -> Self {
+    fn new_requested_compaction(
+        turn_id: TurnId,
+        request: CompactionRequest,
+        instructions: Option<String>,
+    ) -> Self {
         Self {
             prompt_begun: false,
-            compaction: LiveCompaction::requested(instructions),
+            compaction: LiveCompaction::requested(request, instructions),
             ..Self::new(turn_id)
         }
     }
@@ -5073,8 +5077,10 @@ async fn begin_requested_compaction(
     let Some(snapshot) = sessions.snapshot(session_id) else {
         return RequestedCompaction::NotBegun;
     };
-    let Some(turn) = snapshot.turns.iter().find(|turn| {
-        turn.id == turn_id && turn.compaction_requested && turn.status == TurnStatus::Active
+    let Some((turn, request)) = snapshot.turns.iter().find_map(|turn| {
+        turn.compaction_requested
+            .filter(|_| turn.id == turn_id && turn.status == TurnStatus::Active)
+            .map(|request| (turn, request))
     }) else {
         return RequestedCompaction::NotBegun;
     };
@@ -5134,6 +5140,7 @@ async fn begin_requested_compaction(
             }
             RequestedCompaction::Began(Box::new(ActiveProviderTurn::new_requested_compaction(
                 turn_id,
+                request,
                 instructions,
             )))
         }

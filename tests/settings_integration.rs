@@ -10,10 +10,10 @@ use suru::{
     protocol::{
         AgentSelection, AppearanceMode, AsideVisibility, AutoReclaim, AutoSettle,
         ClaudePermissionMode, CodexApprovalPolicy, CodexSandboxMode, CommandAutoExpand,
-        CopilotPermissions, DerivationErrand, FoldPosture, GroupPosture, ModelId, ProviderId,
-        ReasoningSummaryDetail, ReasoningVisibility, SessionContentWidth, SettingMutation,
-        SettingsDiagnosticSeverity, SettingsSnapshot, SidebarScope, SidebarVisibility,
-        ToolCallVisibility,
+        CopilotPermissions, DerivationErrand, FoldPosture, GroupPosture, ModelId, PenaltyThreshold,
+        ProviderId, ReasoningSummaryDetail, ReasoningVisibility, ScheduledCompactionSessions,
+        SessionContentWidth, SettingMutation, SettingsDiagnosticSeverity, SettingsSnapshot,
+        SidebarScope, SidebarVisibility, ToolCallVisibility,
     },
     server::{self, ServerConfig},
 };
@@ -2580,6 +2580,129 @@ async fn copilot_fusion_tiers_stay_off_until_pinned_through_the_config_document_
     assert_eq!(reset.pinned_keys(), [] as [String; 0]);
     drop(client);
     server.shutdown().await.unwrap();
+}
+
+/// Scheduled Compaction is off, held to fifty cents, and kept to Sessions
+/// that are not Settled until the user says otherwise; each of its three
+/// Settings pins through the Config Document, the minimum as a number of
+/// dollars, and each resets to its default.
+#[tokio::test]
+async fn scheduled_compaction_stays_off_at_fifty_cents_for_active_sessions_until_pinned_and_reset()
+{
+    let state_dir = tempfile::tempdir().unwrap();
+    let config_dir = tempfile::tempdir().unwrap();
+    let channel = "settings-scheduled-compaction";
+    let server = server::spawn(
+        ServerConfig::new(state_dir.path(), channel)
+            .unwrap()
+            .with_config_dir(config_dir.path()),
+    )
+    .await
+    .unwrap();
+    let (client, initial) = attach(state_dir.path(), channel).await;
+    let scheduled = initial.settings.compaction.scheduled;
+    assert!(!scheduled.enabled, "it spends nothing unless turned on");
+    assert_eq!(
+        scheduled.minimum_penalty,
+        PenaltyThreshold::from_cents(50).unwrap()
+    );
+    assert_eq!(scheduled.sessions, ScheduledCompactionSessions::Active);
+
+    client
+        .mutate_setting(SettingMutation::CompactionScheduledEnabled { value: Some(true) })
+        .await
+        .unwrap();
+    client
+        .mutate_setting(SettingMutation::CompactionScheduledMinimumPenalty {
+            value: PenaltyThreshold::from_cents(125),
+        })
+        .await
+        .unwrap();
+    let pinned = client
+        .mutate_setting(SettingMutation::CompactionScheduledSessions {
+            value: Some(ScheduledCompactionSessions::All),
+        })
+        .await
+        .unwrap();
+    let scheduled = pinned.settings.compaction.scheduled;
+    assert!(scheduled.enabled);
+    assert_eq!(scheduled.minimum_penalty.cents(), 125);
+    assert_eq!(scheduled.sessions, ScheduledCompactionSessions::All);
+    assert_eq!(
+        pinned.pinned_keys(),
+        [
+            "compaction.scheduled.enabled",
+            "compaction.scheduled.minimumPenalty",
+            "compaction.scheduled.sessions"
+        ]
+    );
+    let document = config_document(config_dir.path());
+    for spelled in [
+        "\"enabled\": true",
+        "\"minimumPenalty\": 1.25",
+        "\"sessions\": \"all\"",
+    ] {
+        assert!(document.contains(spelled), "{spelled} in {document}");
+    }
+
+    for reset in [
+        SettingMutation::CompactionScheduledEnabled { value: None },
+        SettingMutation::CompactionScheduledMinimumPenalty { value: None },
+        SettingMutation::CompactionScheduledSessions { value: None },
+    ] {
+        client.mutate_setting(reset).await.unwrap();
+    }
+    let reset = attach(state_dir.path(), channel).await.1;
+    assert_eq!(
+        reset.settings.compaction.scheduled,
+        initial.settings.compaction.scheduled
+    );
+    assert_eq!(reset.pinned_keys(), [] as [String; 0]);
+    drop(client);
+    server.shutdown().await.unwrap();
+}
+
+/// A minimum that is not an amount of dollars to the cent is ignored alone,
+/// saying what it takes, and the fifty-cent default stands.
+#[tokio::test]
+async fn a_scheduled_compaction_minimum_finer_than_a_cent_or_below_nothing_is_ignored() {
+    for pinned in ["0.505", "-1", "\"0.50\""] {
+        let state_dir = tempfile::tempdir().unwrap();
+        let config_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            config_dir.path().join("suru.jsonc"),
+            format!(
+                r#"{{ "compaction": {{ "scheduled": {{ "enabled": true, "minimumPenalty": {pinned} }} }} }}"#
+            ),
+        )
+        .unwrap();
+        let channel = "settings-scheduled-compaction-minimum";
+        let server = server::spawn(
+            ServerConfig::new(state_dir.path(), channel)
+                .unwrap()
+                .with_config_dir(config_dir.path()),
+        )
+        .await
+        .unwrap();
+        let (_, snapshot) = attach(state_dir.path(), channel).await;
+        assert_eq!(
+            snapshot.settings.compaction.scheduled.minimum_penalty,
+            PenaltyThreshold::DEFAULT,
+            "{pinned}"
+        );
+        assert!(snapshot.settings.compaction.scheduled.enabled);
+        let [diagnostic] = snapshot.diagnostics.as_slice() else {
+            panic!("{pinned} is diagnosed: {:?}", snapshot.diagnostics);
+        };
+        assert_eq!(
+            (diagnostic.key.as_deref(), diagnostic.message.as_str()),
+            (
+                Some("compaction.scheduled.minimumPenalty"),
+                "ignored because its value is not a dollar amount of at least 0, to the cent"
+            )
+        );
+        server.shutdown().await.unwrap();
+    }
 }
 
 #[tokio::test]

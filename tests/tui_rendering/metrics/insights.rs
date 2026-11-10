@@ -176,6 +176,7 @@ fn worked_compactions() -> CompactionInsights {
             failed: 0,
             interrupted: 0,
         },
+        scheduled: CompactionCounts::default(),
         freed: Some(FreedShare {
             compactions: 26,
             average_millionths: 612_000,

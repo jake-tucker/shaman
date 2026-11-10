@@ -38,7 +38,7 @@ pub(super) fn metered(
     Turn {
         id: TurnId::new(),
         prompt_id: None,
-        compaction_requested: false,
+        compaction_requested: None,
         agent: agent.map(|(provider, model)| AgentIdentity {
             agent: AgentId::new("main"),
             selection: AgentSelection {

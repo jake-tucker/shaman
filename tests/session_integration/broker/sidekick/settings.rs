@@ -194,7 +194,10 @@ async fn list_settings_lists_every_setting_but_servings_by_key_and_value_in_forc
             "broker.enabled",
             "broker.maxDepth",
             "broker.maxConcurrentSubagents",
-            "provider.copilot.fusionTiers"
+            "provider.copilot.fusionTiers",
+            "compaction.scheduled.enabled",
+            "compaction.scheduled.minimumPenalty",
+            "compaction.scheduled.sessions"
         ],
         "and the Serving Settings in the same group are left out of it"
     );

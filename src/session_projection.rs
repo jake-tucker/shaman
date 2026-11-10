@@ -17,10 +17,10 @@ use anyhow::{Result, bail};
 
 use crate::protocol::{
     Activity, ActivityId, ActivityStatus, AgentIdentity, ApprovalOutcome, AttachmentDescriptor,
-    CompactionTrigger, CostDetails, CostRecord, Message, MessageRole, MessageStatus,
-    ModelAttribution, Prompt, PromptDelivery, PromptStatus, QuestionnaireOutcome, SessionChange,
-    SessionRevision, SessionSnapshot, SessionUpdate, TranscriptItem, Turn, TurnId, TurnStatus,
-    WorkingModel,
+    CompactionRequest, CompactionTrigger, CostDetails, CostRecord, Message, MessageRole,
+    MessageStatus, ModelAttribution, Prompt, PromptDelivery, PromptStatus, QuestionnaireOutcome,
+    SessionChange, SessionRevision, SessionSnapshot, SessionUpdate, TranscriptItem, Turn, TurnId,
+    TurnStatus, WorkingModel,
 };
 
 /// Applies `update` to `snapshot` in place, or refuses it and leaves the
@@ -1548,21 +1548,24 @@ impl<'a> Validation<'a> {
                 None => bail!("Session update referenced an unknown Turn"),
             },
         };
-        // Whether a Compaction was manual is read from the Turn that
-        // holds it (ADR 0041), so the two never disagree.
+        // Whether a Compaction was manual or scheduled is read from the Turn
+        // that holds it (ADR 0041, 0073), so the two never disagree.
         if let (Activity::Compaction { trigger, .. }, Some(turn)) = (activity, turn)
-            && (*trigger == CompactionTrigger::Manual) != turn.compaction_requested
+            && *trigger
+                != turn
+                    .compaction_requested
+                    .map_or(CompactionTrigger::Automatic, CompactionRequest::trigger)
         {
             bail!("Session update added a Compaction its Turn says the other kind of");
         }
         // Only the user's request asks anything of a summary.
         if let Activity::Compaction {
-            trigger: CompactionTrigger::Automatic,
+            trigger: trigger @ (CompactionTrigger::Automatic | CompactionTrigger::Scheduled),
             instructions: Some(_),
             ..
         } = activity
         {
-            bail!("Session update added an automatic Compaction carrying instructions");
+            bail!("Session update added a {trigger:?} Compaction carrying instructions");
         }
         if self
             .activities
@@ -2020,7 +2023,7 @@ mod tests {
         Turn {
             id: turn_id,
             prompt_id: None,
-            compaction_requested: false,
+            compaction_requested: None,
             agent: None,
             status: TurnStatus::Active,
             started_at: Some(SessionTimestamp(1_755_000_000_000)),
@@ -2401,7 +2404,7 @@ mod tests {
                     turn: Turn {
                         id: turn_id,
                         prompt_id: Some(prompt_id),
-                        compaction_requested: false,
+                        compaction_requested: None,
                         agent: None,
                         status: TurnStatus::Active,
                         started_at: Some(SessionTimestamp(1_755_000_000_000)),
@@ -2943,7 +2946,7 @@ mod tests {
         let session_id = SessionId::new();
         let continuation = active_continuation(TurnId::new());
         let requested = Turn {
-            compaction_requested: true,
+            compaction_requested: Some(crate::protocol::CompactionRequest::Manual),
             ..active_continuation(TurnId::new())
         };
         let compaction = |turn: &Turn, trigger| Activity::Compaction {

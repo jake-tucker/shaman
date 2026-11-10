@@ -820,7 +820,7 @@ impl SessionRecord {
             current,
             SettlingTurn {
                 model,
-                compacted_as_asked: turn.compaction_requested
+                compacted_as_asked: turn.begun_for_compaction()
                     && turn.status == TurnStatus::Completed,
                 ran_on: || ran_on(snapshot, turn, unnamed_runs_on.as_ref()),
             },

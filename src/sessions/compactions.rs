@@ -16,8 +16,8 @@
 
 use crate::{
     protocol::{
-        AgentIdentity, AgentSelection, PromptId, PromptWithdrawal, SessionChange, SessionId,
-        SessionSnapshot, Turn, TurnId, TurnStatus,
+        AgentIdentity, AgentSelection, CompactionRequest, PromptId, PromptWithdrawal,
+        SessionChange, SessionId, SessionSnapshot, Turn, TurnId, TurnStatus,
     },
     provider::ManualCompactionRefusal,
 };
@@ -91,7 +91,10 @@ impl SessionStore {
         if is_working(&record.snapshot) {
             return Err(CompactSessionError::WorkingSession);
         }
-        let turn = Turn::requested_compaction(requested_agent(&record.snapshot));
+        let turn = Turn::requested_compaction(
+            requested_agent(&record.snapshot),
+            CompactionRequest::Manual,
+        );
         let turn_id = turn.id;
         let reactivation = record.reactivate(session_id);
         state
@@ -132,7 +135,7 @@ impl SessionStore {
             .snapshot
             .turns
             .iter()
-            .find(|turn| turn.id == turn_id && turn.compaction_requested)
+            .find(|turn| turn.id == turn_id && turn.begun_for_compaction())
             .and_then(|turn| turn.agent.clone())
             .filter(|agent| agent.selection != selection)
         else {
@@ -179,7 +182,7 @@ impl SessionStore {
                 .snapshot
                 .turns
                 .iter()
-                .any(|turn| turn.id == *turn_id && turn.compaction_requested)
+                .any(|turn| turn.id == *turn_id && turn.begun_for_compaction())
         }) else {
             return Ok(None);
         };
@@ -229,7 +232,7 @@ pub(super) fn holding_turn(snapshot: &SessionSnapshot) -> Option<TurnId> {
     snapshot
         .turns
         .iter()
-        .find(|turn| turn.compaction_requested && turn.status == TurnStatus::Active)
+        .find(|turn| turn.begun_for_compaction() && turn.status == TurnStatus::Active)
         .map(|turn| turn.id)
 }
 

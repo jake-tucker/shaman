@@ -986,7 +986,10 @@ mod tests {
                 "broker.enabled",
                 "broker.maxDepth",
                 "broker.maxConcurrentSubagents",
-                "provider.copilot.fusionTiers"
+                "provider.copilot.fusionTiers",
+                "compaction.scheduled.enabled",
+                "compaction.scheduled.minimumPenalty",
+                "compaction.scheduled.sessions"
             ],
             "the Serving Settings beside them are left out"
         );

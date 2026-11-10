@@ -1479,10 +1479,11 @@ fn skill_invocations(invocations: Vec<StoredSkillInvocation>) -> Vec<SkillInvoca
 
 #[derive(Deserialize, Serialize)]
 struct StoredTurnPayload {
-    /// Whether a Compaction request began the Turn, which a Continuation's
-    /// absent Prompt alone would not say. Absent when no request began it.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    compaction_requested: bool,
+    /// The Compaction request that began the Turn, the user's or Suru's,
+    /// which a Continuation's absent Prompt alone would not say. Absent when
+    /// no request began it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    compaction_requested: Option<crate::protocol::CompactionRequest>,
     agent: Option<StoredAgentIdentity>,
     status: TurnStatus,
     started_at: Option<SessionTimestamp>,

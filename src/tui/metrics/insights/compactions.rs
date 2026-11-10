@@ -39,7 +39,9 @@ pub(super) fn render(
         1 => "1 Compaction".to_owned(),
         total => format!("{} Compactions", grouped_count(total)),
     };
-    let failed = grouped_count(compactions.automatic.failed + compactions.manual.failed);
+    let failed = grouped_count(
+        compactions.automatic.failed + compactions.manual.failed + compactions.scheduled.failed,
+    );
     let manual = grouped_count(compactions.manual.total());
     let form = |counted: &str, failed: String| {
         vec![

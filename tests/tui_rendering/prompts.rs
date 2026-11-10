@@ -790,7 +790,7 @@ fn compacting_unseen(application: &mut Application) -> CompactingSession {
     let workspace = workspace_dir();
     let (_, mut snapshot) = enter_session(application, workspace.path());
     let started_at = SessionTimestamp::now();
-    let mut turn = Turn::requested_compaction(None);
+    let mut turn = Turn::requested_compaction(None, suru::protocol::CompactionRequest::Manual);
     turn.started_at = Some(started_at);
     let turn_id = turn.id;
     let compaction_id = ActivityId::new();

@@ -47,10 +47,10 @@ use crate::protocol::{
     AfterWorktreeCreation, AgentSelection, AppearanceMode, AsideVisibility, AutoReclaim,
     AutoSettle, ClaudePermissionMode, CodexApprovalPolicy, CodexSandboxMode, CommandAutoExpand,
     CopilotPermissions, DerivationErrand, EffectiveSettings, FoldPosture, GroupPosture,
-    LandingPage, ProviderId, ReasoningSummaryDetail, ReasoningVisibility, SessionContentWidth,
-    SettingMutation, SettingScope, SettingsDiagnostic, SettingsDiagnosticSeverity,
-    SettingsSnapshot, SidebarScope, SidebarVisibility, TextSelectionCopy, TextSelectionPlainText,
-    ToolCallVisibility,
+    LandingPage, PenaltyThreshold, ProviderId, ReasoningSummaryDetail, ReasoningVisibility,
+    ScheduledCompactionSessions, SessionContentWidth, SettingMutation, SettingScope,
+    SettingsDiagnostic, SettingsDiagnosticSeverity, SettingsSnapshot, SidebarScope,
+    SidebarVisibility, TextSelectionCopy, TextSelectionPlainText, ToolCallVisibility,
 };
 use crate::relays::holdable_address;
 
@@ -106,6 +106,9 @@ const SERVING_RELAYS: &str = "serving.relays";
 const BROKER_ENABLED: &str = "broker.enabled";
 const BROKER_MAX_DEPTH: &str = "broker.maxDepth";
 const BROKER_MAX_CONCURRENT_SUBAGENTS: &str = "broker.maxConcurrentSubagents";
+const COMPACTION_SCHEDULED_ENABLED: &str = "compaction.scheduled.enabled";
+const COMPACTION_SCHEDULED_MINIMUM_PENALTY: &str = "compaction.scheduled.minimumPenalty";
+const COMPACTION_SCHEDULED_SESSIONS: &str = "compaction.scheduled.sessions";
 
 /// What a Config Document that does not exist yet is edited as.
 const EMPTY_DOCUMENT: &str = "{}\n";
@@ -208,6 +211,12 @@ pub enum OutsideEdit {
 const APPROVAL_POSTURE_ACCESS: SidekickAccess = SidekickAccess::ReadOnly {
     why: "it is part of an Approval Posture, which bounds what Agents may do without asking \
           the user",
+};
+
+/// What each Setting governing scheduled Compaction declares: with it, Suru
+/// spends on the user's behalf without being asked in the moment (ADR 0073).
+const SCHEDULED_COMPACTION_ACCESS: SidekickAccess = SidekickAccess::ReadOnly {
+    why: "it lets Suru spend on the user's behalf without asking, which is the user's to allow",
 };
 
 /// The namespaces reserved for the Settings governing Serving and Pairing:
@@ -778,6 +787,31 @@ const BROKER_MAX_CONCURRENT_SUBAGENTS_NUMERIC: NumericSettingChoice = NumericSet
     },
 );
 
+/// The least Lapse Penalty worth a scheduled Compaction, which the panel's
+/// numeric editor takes in whole cents, since it is typed in digits alone,
+/// and which reads everywhere else as the dollars it is.
+fn validate_penalty_threshold(value: &str) -> Result<u64, &'static str> {
+    match value.parse::<u64>() {
+        Ok(cents) if PenaltyThreshold::from_cents(cents).is_some() => Ok(cents),
+        Err(error) if *error.kind() != IntErrorKind::PosOverflow => Err("a whole number of cents"),
+        _ => Err("maximum: 100000000 cents"),
+    }
+}
+
+const COMPACTION_SCHEDULED_MINIMUM_PENALTY_NUMERIC: NumericSettingChoice =
+    NumericSettingChoice::new(
+        "Cents",
+        |settings| settings.compaction.scheduled.minimum_penalty.cents(),
+        validate_penalty_threshold,
+        |cents| format!("${}.{:02}", cents / 100, cents % 100),
+        |cents| SettingMutation::CompactionScheduledMinimumPenalty {
+            value: Some(
+                PenaltyThreshold::from_cents(cents)
+                    .expect("an accepted number of cents lies within a threshold's bound"),
+            ),
+        },
+    );
+
 impl SettingValues {
     /// The values the schema names, which is everything a Fixed Setting accepts
     /// and only part of what an Open one does. This is the list a client cycles
@@ -1100,6 +1134,21 @@ fn in_force(mutation: &SettingMutation, settings: &EffectiveSettings) -> Setting
         SettingMutation::BrokerMaxConcurrentSubagents { .. } => {
             SettingMutation::BrokerMaxConcurrentSubagents {
                 value: Some(settings.broker.max_concurrent_subagents),
+            }
+        }
+        SettingMutation::CompactionScheduledEnabled { .. } => {
+            SettingMutation::CompactionScheduledEnabled {
+                value: Some(settings.compaction.scheduled.enabled),
+            }
+        }
+        SettingMutation::CompactionScheduledMinimumPenalty { .. } => {
+            SettingMutation::CompactionScheduledMinimumPenalty {
+                value: Some(settings.compaction.scheduled.minimum_penalty),
+            }
+        }
+        SettingMutation::CompactionScheduledSessions { .. } => {
+            SettingMutation::CompactionScheduledSessions {
+                value: Some(settings.compaction.scheduled.sessions),
             }
         }
     }
@@ -2386,6 +2435,90 @@ pub const SCHEMA: &[SettingDescriptor] = &[
             })
         },
     },
+    SettingDescriptor {
+        key: COMPACTION_SCHEDULED_ENABLED,
+        label: "Scheduled Compaction",
+        description: "Whether Suru compacts an idle Session of its own accord two minutes before its Prompt Cache lapses, so it goes cold small, where the Lapse Penalty reaches the minimum below",
+        group: SettingGroup::Experimental,
+        scope: SettingScope::Server,
+        sidekick: SCHEDULED_COMPACTION_ACCESS,
+        outside_edit: OutsideEdit::AtNextStart,
+        values: SettingValues::Fixed(&[
+            SettingChoice {
+                value: "false",
+                build_mutation: || SettingMutation::CompactionScheduledEnabled {
+                    value: Some(false),
+                },
+            },
+            SettingChoice {
+                value: "true",
+                build_mutation: || SettingMutation::CompactionScheduledEnabled {
+                    value: Some(true),
+                },
+            },
+        ]),
+        reset: SettingMutation::CompactionScheduledEnabled { value: None },
+        apply: |settings, value| {
+            apply_value(value, |enabled| {
+                settings.compaction.scheduled.enabled = enabled;
+            })
+        },
+    },
+    SettingDescriptor {
+        key: COMPACTION_SCHEDULED_MINIMUM_PENALTY,
+        label: "Scheduled Compaction minimum",
+        description: "The least Lapse Penalty, in dollars, worth a scheduled Compaction: a Session forecast below it, or not forecast at all, goes cold as it is",
+        group: SettingGroup::Experimental,
+        scope: SettingScope::Server,
+        sidekick: SCHEDULED_COMPACTION_ACCESS,
+        outside_edit: OutsideEdit::AtNextStart,
+        values: SettingValues::Open {
+            named: &[],
+            accepts: "a dollar amount of at least 0, to the cent",
+            spell: |settings| {
+                COMPACTION_SCHEDULED_MINIMUM_PENALTY_NUMERIC
+                    .spell(settings.compaction.scheduled.minimum_penalty.cents())
+            },
+            chosen_at: Some(SettingChoiceSurface::Numeric(
+                COMPACTION_SCHEDULED_MINIMUM_PENALTY_NUMERIC,
+            )),
+        },
+        reset: SettingMutation::CompactionScheduledMinimumPenalty { value: None },
+        apply: |settings, value| {
+            apply_value(value, |minimum_penalty| {
+                settings.compaction.scheduled.minimum_penalty = minimum_penalty;
+            })
+        },
+    },
+    SettingDescriptor {
+        key: COMPACTION_SCHEDULED_SESSIONS,
+        label: "Scheduled Compaction reaches",
+        description: "Whether a scheduled Compaction reaches only Sessions that are not Settled, or Settled ones too",
+        group: SettingGroup::Experimental,
+        scope: SettingScope::Server,
+        sidekick: SCHEDULED_COMPACTION_ACCESS,
+        outside_edit: OutsideEdit::AtNextStart,
+        values: SettingValues::Fixed(&[
+            SettingChoice {
+                value: "active",
+                build_mutation: || SettingMutation::CompactionScheduledSessions {
+                    value: Some(ScheduledCompactionSessions::Active),
+                },
+            },
+            SettingChoice {
+                value: "all",
+                build_mutation: || SettingMutation::CompactionScheduledSessions {
+                    value: Some(ScheduledCompactionSessions::All),
+                },
+            },
+        ]),
+        reset: SettingMutation::CompactionScheduledSessions { value: None },
+        apply: |settings, value| {
+            apply_value(value, |sessions| {
+                settings.compaction.scheduled.sessions = sessions;
+            })
+        },
+    },
 ];
 
 /// The Setting through which the user turns one Provider on or off, which is
@@ -2764,6 +2897,15 @@ fn pin_for(mutation: &SettingMutation) -> (&'static str, Option<Value>) {
         SettingMutation::BrokerMaxDepth { value } => (BROKER_MAX_DEPTH, pinned(value)),
         SettingMutation::BrokerMaxConcurrentSubagents { value } => {
             (BROKER_MAX_CONCURRENT_SUBAGENTS, pinned(value))
+        }
+        SettingMutation::CompactionScheduledEnabled { value } => {
+            (COMPACTION_SCHEDULED_ENABLED, pinned(value))
+        }
+        SettingMutation::CompactionScheduledMinimumPenalty { value } => {
+            (COMPACTION_SCHEDULED_MINIMUM_PENALTY, pinned(value))
+        }
+        SettingMutation::CompactionScheduledSessions { value } => {
+            (COMPACTION_SCHEDULED_SESSIONS, pinned(value))
         }
     }
 }
@@ -3465,6 +3607,10 @@ mod tests {
                 "an integer from 1 to 4294967295".to_owned(),
                 "an integer from 1 to 4294967295".to_owned(),
                 "one of false or true".to_owned(),
+                "one of false or true".to_owned(),
+                // An amount of money is described, since no word lists it.
+                "a dollar amount of at least 0, to the cent".to_owned(),
+                "one of \"active\" or \"all\"".to_owned(),
             ]
         );
     }
@@ -4211,11 +4357,14 @@ mod tests {
                 "provider.copilot.permissions",
                 "provider.claude.permissionMode",
                 "provider.copilot.fusionTiers",
+                "compaction.scheduled.enabled",
+                "compaction.scheduled.minimumPenalty",
+                "compaction.scheduled.sessions",
             ]
         );
         assert_eq!(
             declaring(|access| access == SidekickAccess::ReadAndChange).len(),
-            SCHEMA.len() - 12
+            SCHEMA.len() - 15
         );
         for descriptor in SCHEMA {
             if let SidekickAccess::ReadOnly { why } = descriptor.sidekick {

@@ -542,7 +542,7 @@ async fn active_turn_admission_preserves_order_and_safe_steer_delivery() {
                     turn: Turn {
                         id: active_turn_id,
                         prompt_id: Some(active_prompt_id),
-                        compaction_requested: false,
+                        compaction_requested: None,
                         agent: None,
                         status: TurnStatus::Active,
                         started_at: None,
@@ -607,7 +607,7 @@ async fn active_turn_admission_preserves_order_and_safe_steer_delivery() {
                         turn: Turn {
                             id: TurnId::new(),
                             prompt_id: Some(rejected_prompt_id),
-                            compaction_requested: false,
+                            compaction_requested: None,
                             agent: None,
                             status: TurnStatus::Active,
                             started_at: None,

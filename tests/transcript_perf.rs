@@ -98,7 +98,7 @@ fn session_snapshot(workspace: &std::path::Path, sections: usize) -> SessionSnap
         snapshot.turns.push(Turn {
             id: turn_id,
             prompt_id: Some(prompt_id),
-            compaction_requested: false,
+            compaction_requested: None,
             agent: None,
             status: TurnStatus::Completed,
             started_at: None,

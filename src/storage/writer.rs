@@ -1272,7 +1272,7 @@ mod tests {
         Turn {
             id: TurnId::new(),
             prompt_id,
-            compaction_requested: false,
+            compaction_requested: None,
             agent: None,
             status,
             started_at: Some(SessionTimestamp(10)),

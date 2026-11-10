@@ -37,7 +37,8 @@
 use crate::{
     ansi::{ProviderTextNormalizer, normalize_provider_text},
     protocol::{
-        Activity, ActivityId, ActivityStatus, CompactionTrigger, SessionChange, SessionId, TurnId,
+        Activity, ActivityId, ActivityStatus, CompactionRequest, CompactionTrigger, SessionChange,
+        SessionId, TurnId,
     },
     sessions::{ProviderTurnOutcome, SessionStore, TrailingCommandOutput},
 };
@@ -141,9 +142,10 @@ fn stored_summary(summary: Option<String>) -> (Option<String>, bool) {
 /// The Compaction one Turn holds while its Provider summarises.
 #[derive(Debug, Default)]
 pub(super) struct LiveCompaction {
-    /// Whether a Compaction request began the Turn, which makes the
-    /// Compaction it holds manual and the only one it holds.
-    requested: bool,
+    /// The Compaction request that began the Turn, where one did, which
+    /// makes the Compaction it holds manual or scheduled, and the only one it
+    /// holds.
+    requested: Option<CompactionRequest>,
     /// What the request asked the summary to keep, which the Compaction it
     /// was begun for carries.
     instructions: Option<String>,
@@ -155,9 +157,9 @@ pub(super) struct LiveCompaction {
 impl LiveCompaction {
     /// The Compaction of a Turn a Compaction request began, which the
     /// Provider is about to report, asked to keep what `instructions` say.
-    pub(super) fn requested(instructions: Option<String>) -> Self {
+    pub(super) fn requested(request: CompactionRequest, instructions: Option<String>) -> Self {
         Self {
-            requested: true,
+            requested: Some(request),
             instructions,
             ..Self::default()
         }
@@ -165,22 +167,21 @@ impl LiveCompaction {
 
     /// Whether a Compaction request began the Turn this belongs to.
     pub(super) const fn is_requested(&self) -> bool {
-        self.requested
+        self.requested.is_some()
     }
 
     /// Whether the Turn already holds every Compaction it may: the one a
     /// request began it for, once that has Settled however it ended.
     const fn requested_compaction_settled(&self) -> bool {
-        self.requested && self.settled.is_some()
+        self.requested.is_some() && self.settled.is_some()
     }
 
     /// Which kind of Compaction the Turn holds, read from the Turn rather than
-    /// from anything the Provider says (ADR 0041).
+    /// from anything the Provider says (ADR 0041, 0073).
     const fn trigger(&self) -> CompactionTrigger {
-        if self.requested {
-            CompactionTrigger::Manual
-        } else {
-            CompactionTrigger::Automatic
+        match self.requested {
+            Some(request) => request.trigger(),
+            None => CompactionTrigger::Automatic,
         }
     }
 
@@ -249,7 +250,7 @@ impl LiveCompaction {
             },
         };
         sessions.publish_agent_output(session_id, change)?;
-        if self.requested {
+        if self.requested.is_some() {
             self.settled = Some(status);
         }
         Ok(())
