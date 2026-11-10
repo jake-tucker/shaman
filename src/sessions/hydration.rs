@@ -472,6 +472,7 @@ pub(super) fn restored_record(
     let record = SessionRecord {
         context_fill_order: None,
         prompt_cache_write: None,
+        unstaged_declarations: Vec::new(),
         lapse_rates: None,
         snapshot: persisted.snapshot,
         summary: persisted.summary,
@@ -514,6 +515,8 @@ impl SessionRecord {
         let SessionRecord {
             context_fill_order,
             prompt_cache_write,
+            // Read for one commit alone, and cleared by it.
+            unstaged_declarations: _,
             lapse_rates,
             snapshot: _,
             summary: _,

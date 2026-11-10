@@ -582,11 +582,11 @@ impl SessionStore {
 }
 
 impl SessionStoreState {
-    /// Opens what a Turn `changes` settle wrote of the Prompt Cache, where
-    /// nothing staged it, from what its Provider declares now: a Turn a stop
-    /// left open had its output staged by a process this history outlived,
-    /// and is settled by the declaration rather than by none.
-    pub(super) fn stage_unstaged_settlements(
+    /// Reads what each Provider declares for every Turn `changes` settle
+    /// that nothing staged, so each settles by its declaration rather than
+    /// by none: a Turn a stop left open had its output staged by a process
+    /// this history outlived.
+    pub(super) fn read_unstaged_declarations(
         &mut self,
         session_id: SessionId,
         changes: &[SessionChange],
@@ -594,28 +594,29 @@ impl SessionStoreState {
         let Some(declared) = self.cache_lifetimes.clone() else {
             return;
         };
-        let Some(record) = self
-            .sessions
-            .get_mut(&session_id)
-            .filter(|record| record.prompt_cache_write.is_none())
-        else {
+        let Some(record) = self.sessions.get_mut(&session_id) else {
             return;
         };
-        for turn_id in settled_turns(changes) {
-            let provider = record
-                .snapshot
-                .turns
-                .iter()
-                .find(|turn| turn.id == turn_id)
-                .and_then(|turn| turn.agent.as_ref())
-                .map(|agent| &agent.selection.provider)
-                .or_else(|| selected(&record.snapshot).map(|(provider, _)| provider));
-            let lifetime = provider.map_or(CacheLifetime::None, |provider| declared(provider));
-            if lifetime != CacheLifetime::None {
-                record.prompt_cache_write = Some(StagedWrite::opened(turn_id, lifetime, false));
-                return;
-            }
-        }
+        let staged = record
+            .prompt_cache_write
+            .as_ref()
+            .map(|staged| staged.turn_id);
+        record.unstaged_declarations = settled_turns(changes)
+            .into_iter()
+            .filter(|turn_id| staged != Some(*turn_id))
+            .map(|turn_id| {
+                let provider = record
+                    .snapshot
+                    .turns
+                    .iter()
+                    .find(|turn| turn.id == turn_id)
+                    .and_then(|turn| turn.agent.as_ref())
+                    .map(|agent| &agent.selection.provider)
+                    .or_else(|| selected(&record.snapshot).map(|(provider, _)| provider));
+                let lifetime = provider.map_or(CacheLifetime::None, |provider| declared(provider));
+                (turn_id, lifetime)
+            })
+            .collect();
     }
 
     /// Forecasts, in place, the Lapse Penalty of each of `sessions` whose
@@ -780,6 +781,7 @@ impl SessionRecord {
         for turn_id in settled_turns(changes) {
             next = self.settled_prompt_cache(turn_id, next);
         }
+        self.unstaged_declarations.clear();
         if let Some(cache) = next.as_mut() {
             cache.lapse_penalty = self.forecast_lapse_penalty(cache);
         }
@@ -796,7 +798,14 @@ impl SessionRecord {
         let staged = self
             .prompt_cache_write
             .take_if(|staged| staged.turn_id == turn_id)
-            .unwrap_or_else(|| StagedWrite::opened(turn_id, CacheLifetime::None, false));
+            .unwrap_or_else(|| {
+                let declared = self
+                    .unstaged_declarations
+                    .iter()
+                    .find(|(unstaged, _)| *unstaged == turn_id)
+                    .map_or(CacheLifetime::None, |(_, declared)| *declared);
+                StagedWrite::opened(turn_id, declared, false)
+            });
         let turn = self.snapshot.turns.iter().find(|turn| turn.id == turn_id)?;
         let model = turn
             .agent

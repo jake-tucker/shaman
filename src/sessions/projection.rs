@@ -111,7 +111,7 @@ impl SessionStoreState {
         // A Selection whose prices are to hand lands its Lapse Penalty with it.
         self.take_lapse_rates_for_selection(session_id, &changes);
         // A Turn settling with nothing staged settles by its declaration.
-        self.stage_unstaged_settlements(session_id, &changes);
+        self.read_unstaged_declarations(session_id, &changes);
         let repaired = super::brokered::repaired_settlements(&changes);
         stamp_turn_timing(&mut changes, updated_at);
         stamp_cost_measurements(&mut changes, updated_at);

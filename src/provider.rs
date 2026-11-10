@@ -192,11 +192,12 @@ pub enum CacheLifetime {
 
 /// What one request wrote to a Prompt Cache: how long the Provider keeps it,
 /// which says when it lapses, and which write price the request paid, which
-/// says what writing it afresh costs. The two are stated apart, since a test
-/// counts a lifetime at a millisecond scale whatever price it stands for.
+/// says what writing it afresh costs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CacheWritten {
     pub lifetime: std::time::Duration,
+    /// [`crate::protocol::CacheWritePrice::Default`] unless the Provider says
+    /// the write paid another price.
     pub price: crate::protocol::CacheWritePrice,
 }
 
@@ -1524,7 +1525,8 @@ pub enum ProviderEvent {
         /// said.
         lifetime: Option<std::time::Duration>,
         /// Which write price that call paid, which the penalty for writing it
-        /// afresh is forecast at.
+        /// afresh is forecast at: [`crate::protocol::CacheWritePrice::Default`]
+        /// unless the Provider says it paid another.
         write_price: crate::protocol::CacheWritePrice,
         /// The largest prompt, in tokens, that call could send, where the
         /// Provider said: a Provider pricing by tier priced the call by it.

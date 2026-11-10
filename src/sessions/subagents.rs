@@ -570,6 +570,7 @@ impl SessionStoreState {
             SessionRecord {
                 context_fill_order: None,
                 prompt_cache_write: None,
+                unstaged_declarations: Vec::new(),
                 lapse_rates: None,
                 snapshot,
                 summary,

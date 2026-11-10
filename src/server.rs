@@ -1791,7 +1791,7 @@ async fn start(
     let (storage_writer, storage) = StorageWriter::spawn(repository);
     let preparations = crate::source_control::PreparationStore::new(config.data_dir());
     let declaring = runtimes.clone();
-    let sessions = SessionStore::new_declaring(
+    let sessions = SessionStore::new_with_cache_lifetimes(
         persisted_sessions,
         storage.clone(),
         preparations.resumable_sessions(),

@@ -3855,16 +3855,22 @@ pub struct PromptCache {
 }
 
 /// Which of its cache-write prices a Provider charges a call that writes the
-/// Prompt Cache: the price for its default lifetime, its price for a cache
-/// kept an hour, or one no price is listed for. It is what the Provider says
-/// of the write, never read off how long the cache is kept, which only says
-/// when it lapses.
+/// Prompt Cache. It is what the Provider says of the write, never read off
+/// how long the cache is kept, which only says when it lapses. A Provider
+/// reports [`Self::Default`] unless it says the write paid another price,
+/// and [`Self::Unlisted`] only where it names a price Suru has no rate for.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CacheWritePrice {
+    /// The price for the Provider's default lifetime, which is also what a
+    /// write the Provider says nothing more of paid.
     #[default]
     Default,
+    /// The Provider's price for a cache kept an hour.
     Hour,
+    /// A price the Provider names for the write that no rate is listed for,
+    /// so the write is known and its cost is not; never a write of unknown
+    /// price, which is [`Self::Default`].
     Unlisted,
 }
 

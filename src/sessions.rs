@@ -245,6 +245,9 @@ struct SessionRecord {
     /// What the Turn at work has written of the Session's Prompt Cache, held
     /// until it settles. Never stored: no Turn outlives its process.
     prompt_cache_write: Option<prompt_cache::StagedWrite>,
+    /// What each Provider declares for the Turns the revision being committed
+    /// settles with nothing staged, read just before it lands.
+    unstaged_declarations: Vec<(TurnId, crate::provider::CacheLifetime)>,
     /// The prices the Session's Lapse Penalty is forecast at. Never stored,
     /// nor is the penalty.
     lapse_rates: Option<prompt_cache::LapseRates>,
@@ -403,6 +406,18 @@ fn dress_workspace(
 }
 
 impl SessionStore {
+    /// [`Self::new_with_cache_lifetimes`] with no Provider declaring a Cache
+    /// Lifetime, for a test that hosts none.
+    #[cfg(test)]
+    pub(crate) fn new(
+        restored: RestoredSessions,
+        storage: StorageSink,
+        resumable_preparations: Vec<SessionId>,
+        workspaces: HashMap<WorkspaceId, StoredWorkspace>,
+    ) -> Self {
+        Self::new_with_cache_lifetimes(restored, storage, resumable_preparations, workspaces, None)
+    }
+
     /// `resumable_preparations` names the Sessions a stored Worktree
     /// preparation can still bring to their first Turn; their Prompts are the
     /// one kind restoration leaves standing (ADR 0024).
@@ -418,20 +433,12 @@ impl SessionStore {
     /// preserves grouping learned without opening that history over whatever a
     /// freshly decoded row says, which is what carries this correction
     /// forward.
-    #[cfg(test)]
-    pub(crate) fn new(
-        restored: RestoredSessions,
-        storage: StorageSink,
-        resumable_preparations: Vec<SessionId>,
-        workspaces: HashMap<WorkspaceId, StoredWorkspace>,
-    ) -> Self {
-        Self::new_declaring(restored, storage, resumable_preparations, workspaces, None)
-    }
-
-    /// [`Self::new`], reading each Provider's declared Cache Lifetime from
-    /// `cache_lifetimes`, which a Turn whose output nothing staged — one a
-    /// stop left open, settled here — is settled by.
-    pub(crate) fn new_declaring(
+    ///
+    /// `cache_lifetimes` says which Cache Lifetime each Provider declares,
+    /// which a Turn whose output nothing staged settles by: one a stop left
+    /// open, settled here or as its history is read in. With none, such a Turn
+    /// settles as a Provider declaring no lifetime's would.
+    pub(crate) fn new_with_cache_lifetimes(
         restored: RestoredSessions,
         storage: StorageSink,
         resumable_preparations: Vec<SessionId>,
