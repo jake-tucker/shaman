@@ -18,10 +18,10 @@ use tokio::sync::watch;
 
 use crate::pricing::{CacheWrite, PromptRates};
 use crate::protocol::{
-    LapsePenalty, MessageRole, ModelId, PromptCache, ProviderId, SessionChange, SessionId,
-    SessionSnapshot, SessionTimestamp, Turn, TurnId, TurnStatus,
+    CacheWritePrice, LapsePenalty, MessageRole, ModelId, PromptCache, ProviderId, SessionChange,
+    SessionId, SessionSnapshot, SessionTimestamp, Turn, TurnId, TurnStatus,
 };
-use crate::provider::CacheLifetime;
+use crate::provider::{CacheLifetime, CacheWritten};
 
 use super::{SessionRecord, SessionStore, SessionStoreState};
 
@@ -45,7 +45,7 @@ pub(crate) enum CacheOutput {
 /// the one its Turn selected.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CacheRefresh {
-    pub(crate) written_lifetime: Option<std::time::Duration>,
+    pub(crate) written: Option<CacheWritten>,
     pub(crate) model: Option<ModelId>,
 }
 
@@ -57,6 +57,7 @@ pub(crate) struct ReportedLapse {
     pub(crate) lapses_at: SessionTimestamp,
     pub(crate) model: Option<ModelId>,
     pub(crate) lifetime: Option<std::time::Duration>,
+    pub(crate) write_price: CacheWritePrice,
     pub(crate) prompt_limit_tokens: Option<u64>,
 }
 
@@ -74,8 +75,8 @@ pub(super) struct StagedWrite {
     /// The Turn's latest request that used the cache since any Compaction it
     /// completed, and when it arrived.
     refreshed: Option<(SessionTimestamp, Option<ModelId>)>,
-    /// The lifetime the Turn's latest request that wrote anything wrote at.
-    observed: Option<std::time::Duration>,
+    /// What the Turn's latest request that wrote anything wrote.
+    observed: Option<CacheWritten>,
     /// Whether the Turn completed a Compaction no request has used the cache
     /// since.
     compacted: bool,
@@ -101,7 +102,7 @@ impl StagedWrite {
             CacheOutput::Lapse(lapse) => self.reported = Some(lapse),
             CacheOutput::Refreshed(refresh) => {
                 self.refreshed = Some((at, refresh.model));
-                self.observed = refresh.written_lifetime.or(self.observed);
+                self.observed = refresh.written.or(self.observed);
                 self.compacted = false;
             }
             CacheOutput::Compacted => {
@@ -562,10 +563,12 @@ impl SessionRecord {
             .as_ref()
             .map(|agent| agent.selection.model.clone())
             .or_else(|| selected(&self.snapshot).map(|(_, model)| model.clone()));
-        let last_observed = current
-            .as_ref()
-            .and_then(|cache| cache.lifetime_ms)
-            .map(std::time::Duration::from_millis);
+        let last_observed = current.as_ref().and_then(|cache| {
+            Some(CacheWritten {
+                lifetime: std::time::Duration::from_millis(cache.lifetime_ms?),
+                price: cache.write_price,
+            })
+        });
         let written = staged.and_then(|staged| match staged.reported {
             Some(lapse) => written_cache(lapse, staged.lifetime, || turn_model.clone()),
             None => match (staged.lifetime, staged.last_output_at, staged.refreshed) {
@@ -573,15 +576,20 @@ impl SessionRecord {
                     lapses_at: SessionTimestamp(at.0.saturating_add(millis(lifetime))),
                     written_by: turn_model.clone()?,
                     lifetime_ms: Some(millis(lifetime)),
+                    write_price: CacheWritePrice::Default,
                     prompt_limit_tokens: None,
                     lapse_penalty: None,
                 }),
                 (CacheLifetime::Inferred { assumed }, _, Some((at, model))) => {
-                    let lifetime = staged.observed.or(last_observed).unwrap_or(assumed);
+                    let written = staged.observed.or(last_observed).unwrap_or(CacheWritten {
+                        lifetime: assumed,
+                        price: CacheWritePrice::Default,
+                    });
                     Some(PromptCache {
-                        lapses_at: SessionTimestamp(at.0.saturating_add(millis(lifetime))),
+                        lapses_at: SessionTimestamp(at.0.saturating_add(millis(written.lifetime))),
                         written_by: model.or_else(|| turn_model.clone())?,
-                        lifetime_ms: Some(millis(lifetime)),
+                        lifetime_ms: Some(millis(written.lifetime)),
+                        write_price: written.price,
                         prompt_limit_tokens: None,
                         lapse_penalty: None,
                     })
@@ -666,7 +674,7 @@ impl SessionRecord {
         prices.lapse_penalty(
             fill?.occupied_tokens,
             CacheWrite {
-                lifetime: cache.lifetime_ms.map(std::time::Duration::from_millis),
+                price: cache.write_price,
                 prompt_limit_tokens: cache.prompt_limit_tokens,
             },
         )
@@ -684,6 +692,7 @@ fn written_cache(
         lapses_at: lapse.lapses_at,
         written_by: lapse.model.or_else(turn_model)?,
         lifetime_ms: lifetime_ms(lapse.lifetime, declared),
+        write_price: lapse.write_price,
         prompt_limit_tokens: lapse.prompt_limit_tokens,
         lapse_penalty: None,
     })

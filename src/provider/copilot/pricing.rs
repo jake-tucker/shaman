@@ -293,7 +293,10 @@ mod tests {
                 .lapse_penalty(
                     tokens,
                     CacheWrite {
-                        lifetime: lifetime.map(std::time::Duration::from_secs),
+                        price: match lifetime {
+                            Some(3600) => crate::protocol::CacheWritePrice::Hour,
+                            _ => crate::protocol::CacheWritePrice::Default,
+                        },
                         prompt_limit_tokens: Some(limit),
                     },
                 )

@@ -23,7 +23,7 @@ use suru::{
         SessionTimestamp, TurnStatus, UpdateAgentSelectionRequest,
     },
     provider::{
-        CacheLifetime, ContextFillReport, ProviderEvent, ProviderEventAttribution,
+        CacheLifetime, CacheWritten, ContextFillReport, ProviderEvent, ProviderEventAttribution,
         ProviderSubagentId,
     },
     server::{self, ServerClock, ServerConfig, ServerTimings},
@@ -63,6 +63,7 @@ fn reported(lapses_at: SessionTimestamp) -> ProviderEvent {
         lapses_at,
         model: None,
         lifetime: None,
+        write_price: suru::protocol::CacheWritePrice::Default,
         prompt_limit_tokens: None,
     }
 }
@@ -91,6 +92,7 @@ fn cache(lapses_at: SessionTimestamp, written_by: &ModelId, usd: Option<f64>) ->
         lapses_at,
         written_by: written_by.clone(),
         lifetime_ms: None,
+        write_price: suru::protocol::CacheWritePrice::Default,
         prompt_limit_tokens: None,
         lapse_penalty: usd.and_then(LapsePenalty::from_usd),
     }
@@ -1096,6 +1098,7 @@ async fn the_penalty_is_priced_at_the_tier_its_context_falls_in_and_its_caches_w
             lapses_at,
             model: Some(model.clone()),
             lifetime: Some(Duration::from_secs(60 * 60)),
+            write_price: suru::protocol::CacheWritePrice::Hour,
             prompt_limit_tokens: None,
         })
         .await;
@@ -1107,6 +1110,7 @@ async fn the_penalty_is_priced_at_the_tier_its_context_falls_in_and_its_caches_w
             snapshot.session.prompt_cache
                 == Some(PromptCache {
                     lifetime_ms: Some(60 * 60 * 1000),
+                    write_price: suru::protocol::CacheWritePrice::Hour,
                     prompt_limit_tokens: None,
                     // 400,000 tokens at $6.00 written less $0.30 read.
                     ..cache(lapses_at, &model, Some(2.28))
@@ -1203,6 +1207,12 @@ const ASSUMED: Duration = Duration::from_millis(300);
 /// test's scale.
 const LONG_TIER: Duration = Duration::from_millis(3_600);
 
+/// A write kept for [`LONG_TIER`] at the Provider's hour-long write price.
+const HOUR_PRICED: CacheWritten = CacheWritten {
+    lifetime: LONG_TIER,
+    price: suru::protocol::CacheWritePrice::Hour,
+};
+
 fn ms(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap()
 }
@@ -1211,7 +1221,10 @@ fn ms(duration: Duration) -> u64 {
 /// or wrote nothing.
 fn refreshed(written: Option<Duration>) -> ProviderEvent {
     ProviderEvent::PromptCacheRefreshed {
-        written_lifetime: written,
+        written: written.map(|lifetime| CacheWritten {
+            lifetime,
+            price: suru::protocol::CacheWritePrice::Default,
+        }),
         model: None,
     }
 }
@@ -1316,7 +1329,10 @@ async fn a_request_that_wrote_nothing_keeps_the_lifetime_last_observed_and_resta
     let (mut fixture, clock, hand) = inferring(state.path(), channel).await;
     fixture
         .provider_session
-        .emit_and_wait_until_observed(refreshed(Some(LONG_TIER)))
+        .emit_and_wait_until_observed(ProviderEvent::PromptCacheRefreshed {
+            written: Some(HOUR_PRICED),
+            model: None,
+        })
         .await;
     settle(&fixture.provider_session).await;
     settled_cache(&fixture, 0).await;
@@ -1370,6 +1386,15 @@ async fn a_request_that_wrote_nothing_keeps_the_lifetime_last_observed_and_resta
         |snapshot| snapshot.turns.len() == 3 && snapshot.turns[2].status.is_terminal(),
     )
     .await;
+    assert_eq!(
+        restored
+            .session
+            .prompt_cache
+            .as_ref()
+            .map(|cache| cache.write_price),
+        Some(suru::protocol::CacheWritePrice::Hour),
+        "the price that write paid is carried with its lifetime, and stored"
+    );
     assert_eq!(
         lapse_and_lifetime(restored.session.prompt_cache),
         Some((

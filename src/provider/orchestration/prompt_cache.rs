@@ -31,20 +31,21 @@ fn cache_output(event: &ProviderEvent) -> Option<CacheOutput> {
             lapses_at,
             model,
             lifetime,
+            write_price,
             prompt_limit_tokens,
         } => Some(CacheOutput::Lapse(ReportedLapse {
             lapses_at: *lapses_at,
             model: model.clone(),
             lifetime: *lifetime,
+            write_price: *write_price,
             prompt_limit_tokens: *prompt_limit_tokens,
         })),
-        ProviderEvent::PromptCacheRefreshed {
-            written_lifetime,
-            model,
-        } => Some(CacheOutput::Refreshed(CacheRefresh {
-            written_lifetime: *written_lifetime,
-            model: model.clone(),
-        })),
+        ProviderEvent::PromptCacheRefreshed { written, model } => {
+            Some(CacheOutput::Refreshed(CacheRefresh {
+                written: *written,
+                model: model.clone(),
+            }))
+        }
         ProviderEvent::CompactionCompleted { .. } => Some(CacheOutput::Compacted),
         ProviderEvent::ContextFill { .. }
         | ProviderEvent::ResumeStateChanged { .. }

@@ -99,7 +99,7 @@ use super::{
     claude_error, compaction,
     message_models::MessageModels,
     model_usage::{reported_model_usage, total_usage},
-    prompt_cache::ClaudeCacheLifetimes,
+    prompt_cache::{ClaudeCacheLifetimes, RequestCache},
     session::ClaudeResumeState,
     thinking::{ThinkingEvent, ThinkingSplitter},
     transport::ConversationItem,
@@ -1921,12 +1921,17 @@ impl ClaudeProjection {
                 // what it wrote to the Session's Prompt Cache. Anthropic counts the cache's
                 // lifetime from the request's start, so it is stated here, the earliest the wire
                 // shows the request, rather than once the answer is out.
-                if let Some(written_lifetime) = self
+                let written = match self
                     .cache_lifetimes
-                    .written(opened.and_then(|opened| opened.usage.as_ref()))
+                    .request_cache(opened.and_then(|opened| opened.usage.as_ref()))
                 {
+                    RequestCache::Unread => None,
+                    RequestCache::WroteNothing => Some(None),
+                    RequestCache::Wrote(written) => Some(Some(written)),
+                };
+                if let Some(written) = written {
                     projected.push(ProviderEvent::PromptCacheRefreshed {
-                        written_lifetime,
+                        written,
                         model: MessageModels::fallen_back_to(
                             model,
                             self.launched_on.as_deref(),
@@ -3064,9 +3069,10 @@ mod tests {
         ClaudeCacheLifetimes, ClaudeProjection, ClaudeResumeState, Cost, TurnInFlight,
         send_message_description,
     };
+    use crate::protocol::CacheWritePrice;
     use crate::provider::{
-        AttributedProviderEvent, ProviderActivityId, ProviderEvent, ProviderEventAttribution,
-        ProviderSubagentId, ProviderWatchId, ProviderWatchOutcome,
+        AttributedProviderEvent, CacheWritten, ProviderActivityId, ProviderEvent,
+        ProviderEventAttribution, ProviderSubagentId, ProviderWatchId, ProviderWatchOutcome,
     };
 
     /// A projection whose CLI works in `/work`, restoring `resume`.
@@ -5414,6 +5420,13 @@ mod tests {
             .collect()
     }
 
+    fn five_minutes() -> CacheWritten {
+        CacheWritten {
+            lifetime: ClaudeCacheLifetimes::default().five_minute_lifetime,
+            price: CacheWritePrice::Default,
+        }
+    }
+
     /// The loop's `init`, saying it runs on `model`.
     fn launched_on(model: &str) -> Value {
         json!({"type": "system", "subtype": "init", "model": model, "parent_tool_use_id": null})
@@ -5449,11 +5462,14 @@ mod tests {
             cache_refreshes(&events),
             [
                 &owning(ProviderEvent::PromptCacheRefreshed {
-                    written_lifetime: Some(lifetimes.one_hour_tier),
+                    written: Some(CacheWritten {
+                        lifetime: lifetimes.one_hour_lifetime,
+                        price: CacheWritePrice::Hour,
+                    }),
                     model: None,
                 }),
                 &owning(ProviderEvent::PromptCacheRefreshed {
-                    written_lifetime: None,
+                    written: None,
                     model: Some(crate::protocol::ModelId::new("claude-fixture-3")),
                 }),
             ],
@@ -5480,7 +5496,7 @@ mod tests {
             assert_eq!(
                 cache_refreshes(&events),
                 [&owning(ProviderEvent::PromptCacheRefreshed {
-                    written_lifetime: Some(ClaudeCacheLifetimes::default().five_minute_tier),
+                    written: Some(five_minutes()),
                     model: None,
                 })],
                 "an `init` whose Model is {blank:?} leaves the request on the Selection"
@@ -5502,7 +5518,7 @@ mod tests {
         assert_eq!(
             cache_refreshes(&events),
             [&owning(ProviderEvent::PromptCacheRefreshed {
-                written_lifetime: Some(ClaudeCacheLifetimes::default().five_minute_tier),
+                written: Some(five_minutes()),
                 model: None,
             })]
         );

@@ -3834,10 +3834,14 @@ pub struct PromptCache {
     /// Provider named it, and otherwise the Model the Turn selected.
     pub written_by: ModelId,
     /// How long the Provider keeps the cache that call wrote, in
-    /// milliseconds, where it said or Suru assumes it: a cache kept an hour
-    /// is written at a price of its own.
+    /// milliseconds, where it said or Suru infers or assumes it. It says only
+    /// when the cache lapses: [`Self::write_price`] says what writing it cost.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lifetime_ms: Option<u64>,
+    /// Which of the Provider's write prices the call that wrote the cache
+    /// paid, which writing it afresh pays again.
+    #[serde(default, skip_serializing_if = "CacheWritePrice::is_default")]
+    pub write_price: CacheWritePrice,
     /// The largest prompt, in tokens, the call that wrote the cache could
     /// send, where the Provider said: a Provider pricing by tier priced that
     /// call at the tier the limit falls in, whatever the context held.
@@ -3848,6 +3852,26 @@ pub struct PromptCache {
     /// them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lapse_penalty: Option<LapsePenalty>,
+}
+
+/// Which of its cache-write prices a Provider charges a call that writes the
+/// Prompt Cache: the price for its default lifetime, its price for a cache
+/// kept an hour, or one no price is listed for. It is what the Provider says
+/// of the write, never read off how long the cache is kept, which only says
+/// when it lapses.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CacheWritePrice {
+    #[default]
+    Default,
+    Hour,
+    Unlisted,
+}
+
+impl CacheWritePrice {
+    pub(crate) fn is_default(&self) -> bool {
+        *self == Self::Default
+    }
 }
 
 impl PromptCache {

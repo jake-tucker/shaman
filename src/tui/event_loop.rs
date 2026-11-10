@@ -7788,6 +7788,7 @@ mod ready_event_tests {
             lapses_at: SessionTimestamp(wall.load(Ordering::SeqCst) + ahead_ms),
             written_by: crate::protocol::ModelId::new("gpt-fixture"),
             lifetime_ms: Some(300_000),
+            write_price: crate::protocol::CacheWritePrice::Default,
             prompt_limit_tokens: None,
             lapse_penalty: None,
         });
@@ -8098,6 +8099,7 @@ mod ready_event_tests {
                     lapses_at: SessionTimestamp(wall.load(Ordering::SeqCst) + 300_000),
                     written_by: crate::protocol::ModelId::new("gpt-fixture"),
                     lifetime_ms: Some(300_000),
+                    write_price: crate::protocol::CacheWritePrice::Default,
                     prompt_limit_tokens: None,
                     lapse_penalty: None,
                 }),
@@ -8130,6 +8132,7 @@ mod ready_event_tests {
             lapses_at: SessionTimestamp(wall.load(Ordering::SeqCst) + 90_000),
             written_by: crate::protocol::ModelId::new("gpt-fixture"),
             lifetime_ms: Some(300_000),
+            write_price: crate::protocol::CacheWritePrice::Default,
             prompt_limit_tokens: None,
             lapse_penalty: None,
         });

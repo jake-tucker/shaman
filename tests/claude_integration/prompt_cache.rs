@@ -23,8 +23,8 @@ use suru::{
 
 /// The lifetimes the fixture's CLI writes at, at a test's scale, each told apart from the others.
 const LIFETIMES: ClaudeCacheLifetimes = ClaudeCacheLifetimes {
-    five_minute_tier: Duration::from_millis(300),
-    one_hour_tier: Duration::from_millis(3_600),
+    five_minute_lifetime: Duration::from_millis(300),
+    one_hour_lifetime: Duration::from_millis(3_600),
     unobserved: Duration::from_millis(150),
 };
 
@@ -122,8 +122,8 @@ async fn a_claude_cache_lapses_at_the_shortest_lifetime_its_latest_request_wrote
     assert_eq!(
         lapse(&hour),
         Some((
-            SessionTimestamp(clock.now().0 + ms(LIFETIMES.one_hour_tier)),
-            Some(ms(LIFETIMES.one_hour_tier)),
+            SessionTimestamp(clock.now().0 + ms(LIFETIMES.one_hour_lifetime)),
+            Some(ms(LIFETIMES.one_hour_lifetime)),
             &default
         ))
     );
@@ -133,8 +133,8 @@ async fn a_claude_cache_lapses_at_the_shortest_lifetime_its_latest_request_wrote
     assert_eq!(
         lapse(&both),
         Some((
-            SessionTimestamp(clock.now().0 + ms(LIFETIMES.five_minute_tier)),
-            Some(ms(LIFETIMES.five_minute_tier)),
+            SessionTimestamp(clock.now().0 + ms(LIFETIMES.five_minute_lifetime)),
+            Some(ms(LIFETIMES.five_minute_lifetime)),
             &default
         )),
         "the part written at the shorter lifetime lapses first"
@@ -181,9 +181,9 @@ async fn priced_penalty(session: &DurableSession) -> Option<LapsePenalty> {
 }
 
 /// A cache written for an hour costs twice the fresh input rate to write again, as Anthropic
-/// publishes it, which the rate table does not list. The hour-long tier is an hour here, since an
-/// hour is the lifetime that write price is for; nothing waits on it, the Server's clock being
-/// moved by hand.
+/// publishes it, which the rate table does not list. Which price a write paid is read off the
+/// usage field its tokens were in, so the hour-long lifetime is priced as one at a millisecond
+/// scale.
 #[tokio::test]
 async fn a_claude_cache_written_for_an_hour_is_priced_at_twice_the_input_rate() {
     let claude = fixture();
@@ -191,10 +191,7 @@ async fn a_claude_cache_written_for_an_hour_is_priced_at_twice_the_input_rate() 
     let (session, _clock, hand) = session(
         "claude-cache-hour-price",
         ClaudeRuntime::new(claude.executable()).with_pricing_source(pricing),
-        ClaudeCacheLifetimes {
-            one_hour_tier: Duration::from_secs(60 * 60),
-            ..LIFETIMES
-        },
+        LIFETIMES,
         ServerTimings::default(),
     )
     .await;
@@ -238,8 +235,8 @@ async fn a_request_served_from_the_cache_keeps_the_lifetime_last_observed_across
     assert_eq!(
         lapse(&carried),
         Some((
-            SessionTimestamp(clock.now().0 + ms(LIFETIMES.one_hour_tier)),
-            Some(ms(LIFETIMES.one_hour_tier)),
+            SessionTimestamp(clock.now().0 + ms(LIFETIMES.one_hour_lifetime)),
+            Some(ms(LIFETIMES.one_hour_lifetime)),
             &ModelId::new("default")
         )),
         "a request that wrote nothing restarts the clock at the hour last observed"

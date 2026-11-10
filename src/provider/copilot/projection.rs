@@ -2574,15 +2574,29 @@ fn metered(
 /// `maxPromptTokens`, which Copilot prices the call's tier by. None for a
 /// call that touched no cache.
 fn reported_lapse(event: &SessionEvent, usage: &AssistantUsageData) -> Option<ProviderEvent> {
+    let lifetime = reported_cache_ttl(event)
+        .and_then(|seconds| u64::try_from(seconds).ok())
+        .filter(|seconds| *seconds > 0)
+        .map(std::time::Duration::from_secs);
     Some(ProviderEvent::PromptCacheLapseReported {
         lapses_at: usage.cache_expires_at.as_deref().and_then(lapse_moment)?,
         model: ModelId::named(&usage.model),
-        lifetime: reported_cache_ttl(event)
-            .and_then(|seconds| u64::try_from(seconds).ok())
-            .filter(|seconds| *seconds > 0)
-            .map(std::time::Duration::from_secs),
+        lifetime,
+        write_price: write_price(lifetime),
         prompt_limit_tokens: usage.max_prompt_tokens.and_then(token_count),
     })
+}
+
+/// Which of its write prices Copilot's catalog charges a call keeping its cache for `lifetime`:
+/// the hour-long one for an hour, none it lists for longer, and the default for less or where
+/// the call said nothing.
+fn write_price(lifetime: Option<std::time::Duration>) -> crate::protocol::CacheWritePrice {
+    const HOUR: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+    match lifetime {
+        Some(HOUR) => crate::protocol::CacheWritePrice::Hour,
+        Some(lifetime) if lifetime > HOUR => crate::protocol::CacheWritePrice::Unlisted,
+        _ => crate::protocol::CacheWritePrice::Default,
+    }
 }
 
 /// The moment a call's `cacheExpiresAt` names, an RFC 3339 timestamp, as
@@ -4804,6 +4818,7 @@ mod tests {
                     lapses_at: crate::protocol::SessionTimestamp(1_767_225_900_250),
                     model: Some(ModelId::new("claude-fixture")),
                     lifetime: Some(std::time::Duration::from_secs(3600)),
+                    write_price: crate::protocol::CacheWritePrice::Hour,
                     prompt_limit_tokens: Some(872_000),
                 }
             )]
@@ -9851,6 +9866,7 @@ mod tests {
                 lapses_at: crate::protocol::SessionTimestamp(1_767_225_900_000),
                 model: Some(ModelId::new("claude-fixture")),
                 lifetime: None,
+                write_price: crate::protocol::CacheWritePrice::Default,
                 prompt_limit_tokens: None,
             }],
             "the call's Usage is the Compaction's to report, once"

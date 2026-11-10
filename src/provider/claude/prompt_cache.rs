@@ -18,7 +18,8 @@ use serde_json::Value;
 use super::wire::reported_token_count;
 use crate::{
     pricing::{CacheRates, PromptRateTier, PromptRates},
-    provider::CacheLifetime,
+    protocol::CacheWritePrice,
+    provider::{CacheLifetime, CacheWritten},
 };
 
 /// What a cache write kept an hour costs, as a multiple of the Model's fresh input rate:
@@ -40,13 +41,15 @@ pub(super) fn with_hour_writes(rates: CacheRates) -> PromptRates {
 
 /// The lifetimes Claude keeps a cache write for, and the one Suru assumes for a Session none of
 /// whose requests has yet written anything. Injectable through
-/// [`super::ClaudeRuntime::with_cache_lifetimes`] so tests count lapses at a millisecond scale.
+/// [`super::ClaudeRuntime::with_cache_lifetimes`] so tests count lapses at a millisecond scale;
+/// which write price each lifetime stands for is read off the usage field the write is in, never
+/// off these durations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ClaudeCacheLifetimes {
     /// How long a write at the API's default, five-minute lifetime is kept.
-    pub five_minute_tier: Duration,
+    pub five_minute_lifetime: Duration,
     /// How long a write at the API's hour-long lifetime is kept.
-    pub one_hour_tier: Duration,
+    pub one_hour_lifetime: Duration,
     /// What Suru assumes where no request has written to the cache, erring toward warning early.
     pub unobserved: Duration,
 }
@@ -54,11 +57,24 @@ pub struct ClaudeCacheLifetimes {
 impl Default for ClaudeCacheLifetimes {
     fn default() -> Self {
         Self {
-            five_minute_tier: Duration::from_secs(5 * 60),
-            one_hour_tier: Duration::from_secs(60 * 60),
+            five_minute_lifetime: Duration::from_secs(5 * 60),
+            one_hour_lifetime: Duration::from_secs(60 * 60),
             unobserved: Duration::from_secs(5 * 60),
         }
     }
+}
+
+/// What a request's `message_start` usage says it did with the Prompt Cache.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum RequestCache {
+    /// The usage is absent, or in a shape Suru cannot read: no evidence the request reached the
+    /// cache at all.
+    Unread,
+    /// The usage says the request wrote nothing — it was served from the cache, or held too
+    /// little to cache — so it says nothing of the lifetime.
+    WroteNothing,
+    /// The usage says the request wrote this, at the shortest lifetime it wrote any tokens at.
+    Wrote(CacheWritten),
 }
 
 impl ClaudeCacheLifetimes {
@@ -69,20 +85,33 @@ impl ClaudeCacheLifetimes {
         }
     }
 
-    /// The lifetime a request whose `message_start` opened with `usage` wrote at, where it wrote
-    /// anything; the outer `None` where the usage says nothing of the cache at all, which is no
-    /// evidence the request touched it.
-    pub(super) fn written(self, usage: Option<&Value>) -> Option<Option<Duration>> {
-        let usage = RequestUsage::deserialize(usage?).ok()?;
+    /// What the request whose `message_start` opened with `usage` did with the Prompt Cache.
+    pub(super) fn request_cache(self, usage: Option<&Value>) -> RequestCache {
+        let Some(usage) = usage.and_then(|usage| RequestUsage::deserialize(usage).ok()) else {
+            return RequestCache::Unread;
+        };
         let wrote = |tokens: Option<f64>| reported_token_count(tokens).is_some_and(|n| n > 0);
-        Some(match usage.cache_creation {
-            Some(tiers) if wrote(tiers.ephemeral_5m_input_tokens) => Some(self.five_minute_tier),
-            Some(tiers) if wrote(tiers.ephemeral_1h_input_tokens) => Some(self.one_hour_tier),
+        let five_minutes = CacheWritten {
+            lifetime: self.five_minute_lifetime,
+            price: CacheWritePrice::Default,
+        };
+        let one_hour = CacheWritten {
+            lifetime: self.one_hour_lifetime,
+            price: CacheWritePrice::Hour,
+        };
+        match usage.cache_creation {
+            Some(lifetimes) if wrote(lifetimes.ephemeral_5m_input_tokens) => {
+                RequestCache::Wrote(five_minutes)
+            }
+            Some(lifetimes) if wrote(lifetimes.ephemeral_1h_input_tokens) => {
+                RequestCache::Wrote(one_hour)
+            }
             // An API breaking writes out by lifetime wrote at neither.
-            Some(_) => None,
+            Some(_) => RequestCache::WroteNothing,
             // One that does not offers the default lifetime alone.
-            None => wrote(usage.cache_creation_input_tokens).then_some(self.five_minute_tier),
-        })
+            None if wrote(usage.cache_creation_input_tokens) => RequestCache::Wrote(five_minutes),
+            None => RequestCache::WroteNothing,
+        }
     }
 }
 
@@ -96,6 +125,7 @@ struct RequestUsage {
     cache_creation: Option<CacheCreation>,
 }
 
+/// How a request's `cache_creation_input_tokens` break down by the lifetime each was written for.
 #[derive(Clone, Copy, Deserialize)]
 struct CacheCreation {
     #[serde(default)]
@@ -115,13 +145,23 @@ mod tests {
     };
 
     const LIFETIMES: ClaudeCacheLifetimes = ClaudeCacheLifetimes {
-        five_minute_tier: Duration::from_millis(5),
-        one_hour_tier: Duration::from_millis(60),
+        five_minute_lifetime: Duration::from_millis(5),
+        one_hour_lifetime: Duration::from_millis(60),
         unobserved: Duration::from_millis(7),
     };
 
-    fn written(usage: Value) -> Option<Option<Duration>> {
-        LIFETIMES.written(Some(&usage))
+    const FIVE_MINUTES: RequestCache = RequestCache::Wrote(CacheWritten {
+        lifetime: LIFETIMES.five_minute_lifetime,
+        price: CacheWritePrice::Default,
+    });
+
+    const ONE_HOUR: RequestCache = RequestCache::Wrote(CacheWritten {
+        lifetime: LIFETIMES.one_hour_lifetime,
+        price: CacheWritePrice::Hour,
+    });
+
+    fn written(usage: Value) -> RequestCache {
+        LIFETIMES.request_cache(Some(&usage))
     }
 
     #[test]
@@ -130,12 +170,16 @@ mod tests {
             "cache_creation_input_tokens": 300,
             "cache_creation": {"ephemeral_5m_input_tokens": 100, "ephemeral_1h_input_tokens": 200},
         });
-        assert_eq!(written(both), Some(Some(LIFETIMES.five_minute_tier)));
+        assert_eq!(written(both), FIVE_MINUTES);
         let hour = json!({
             "cache_creation_input_tokens": 200,
             "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 200},
         });
-        assert_eq!(written(hour), Some(Some(LIFETIMES.one_hour_tier)));
+        assert_eq!(
+            written(hour),
+            ONE_HOUR,
+            "an hour-long write at the hour-long price"
+        );
     }
 
     #[test]
@@ -146,25 +190,28 @@ mod tests {
             "cache_creation_input_tokens": 0,
             "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0},
         });
-        assert_eq!(written(read_only), Some(None));
-        assert_eq!(written(json!({"input_tokens": 3})), Some(None));
+        assert_eq!(written(read_only), RequestCache::WroteNothing);
+        assert_eq!(
+            written(json!({"input_tokens": 3})),
+            RequestCache::WroteNothing
+        );
     }
 
     #[test]
     fn a_write_broken_out_by_no_lifetime_is_at_the_default_one() {
         assert_eq!(
             written(json!({"cache_creation_input_tokens": 500})),
-            Some(Some(LIFETIMES.five_minute_tier))
+            FIVE_MINUTES
         );
     }
 
     #[test]
     fn usage_absent_or_unreadable_is_no_evidence_of_a_request() {
-        assert_eq!(LIFETIMES.written(None), None);
-        assert_eq!(written(json!("unreadable")), None);
+        assert_eq!(LIFETIMES.request_cache(None), RequestCache::Unread);
+        assert_eq!(written(json!("unreadable")), RequestCache::Unread);
         assert_eq!(
             written(json!({"cache_creation": {"ephemeral_5m_input_tokens": "lots"}})),
-            None
+            RequestCache::Unread
         );
     }
 
@@ -175,11 +222,11 @@ mod tests {
         cache_write: Some(6.25),
     };
 
-    fn penalty_on_400k(lifetime: Duration) -> Option<LapsePenalty> {
+    fn penalty_on_400k(price: CacheWritePrice) -> Option<LapsePenalty> {
         with_hour_writes(TABLE).lapse_penalty(
             400_000,
             CacheWrite {
-                lifetime: Some(lifetime),
+                price,
                 prompt_limit_tokens: None,
             },
         )
@@ -188,7 +235,7 @@ mod tests {
     #[test]
     fn an_hour_long_write_is_priced_at_twice_the_fresh_input_rate() {
         assert_eq!(
-            penalty_on_400k(Duration::from_secs(60 * 60)),
+            penalty_on_400k(CacheWritePrice::Hour),
             LapsePenalty::from_usd(400_000.0 * (2.0 * 5.0 - 0.5) / 1_000_000.0),
             "400,000 tokens written for an hour at $10 a million rather than read at $0.50"
         );
@@ -197,7 +244,7 @@ mod tests {
     #[test]
     fn the_table_prices_everything_else_exactly_as_it_says() {
         assert_eq!(
-            penalty_on_400k(Duration::from_secs(5 * 60)),
+            penalty_on_400k(CacheWritePrice::Default),
             LapsePenalty::from_usd(400_000.0 * (6.25 - 0.5) / 1_000_000.0),
             "a five-minute write keeps the table's own price"
         );

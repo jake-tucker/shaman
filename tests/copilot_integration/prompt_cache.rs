@@ -61,6 +61,7 @@ async fn the_latest_reported_lapse_of_the_sessions_conversation_becomes_its_laps
             lapses_at: SessionTimestamp(u64::try_from(lapses_at).unwrap()),
             written_by: ModelId::new("claude-fixture"),
             lifetime_ms: Some(3_600_000),
+            write_price: suru::protocol::CacheWritePrice::Hour,
             prompt_limit_tokens: Some(128_000),
             // 12,400 tokens at the catalog's 5 credits a thousand written to a
             // cache kept an hour, less 0.5 read, a credit being a cent.

@@ -64,6 +64,7 @@ fn session_kept_for(
         lapses_at,
         written_by: ModelId::new("gpt-fixture"),
         lifetime_ms,
+        write_price: suru::protocol::CacheWritePrice::Default,
         prompt_limit_tokens: None,
         lapse_penalty: lapse_penalty
             .map(|usd| LapsePenalty::from_usd(usd).expect("a representable penalty")),
@@ -309,6 +310,7 @@ fn the_line_clears_once_the_next_turn_has_written_the_cache_afresh() {
                         lapses_at: SessionTimestamp(NOW.0 + 300_000),
                         written_by: ModelId::new("gpt-fixture"),
                         lifetime_ms: None,
+                        write_price: suru::protocol::CacheWritePrice::Default,
                         prompt_limit_tokens: None,
                         lapse_penalty: LapsePenalty::from_usd(1.70),
                     }),
@@ -628,6 +630,7 @@ fn a_turn_that_moves_the_lapse_starts_the_countdown_afresh() {
                         lapses_at: moved,
                         written_by: ModelId::new("gpt-fixture"),
                         lifetime_ms: Some(FIVE_MINUTES),
+                        write_price: suru::protocol::CacheWritePrice::Default,
                         prompt_limit_tokens: None,
                         lapse_penalty: LapsePenalty::from_usd(1.70),
                     }),

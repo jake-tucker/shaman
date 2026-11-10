@@ -1193,6 +1193,11 @@ struct StoredPromptCache {
     written_by: crate::protocol::ModelId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     lifetime_ms: Option<u64>,
+    #[serde(
+        default,
+        skip_serializing_if = "crate::protocol::CacheWritePrice::is_default"
+    )]
+    write_price: crate::protocol::CacheWritePrice,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     prompt_limit_tokens: Option<u64>,
 }
@@ -1203,6 +1208,7 @@ impl From<&PromptCache> for StoredPromptCache {
             lapses_at: cache.lapses_at,
             written_by: cache.written_by.clone(),
             lifetime_ms: cache.lifetime_ms,
+            write_price: cache.write_price,
             prompt_limit_tokens: cache.prompt_limit_tokens,
         }
     }
@@ -1214,6 +1220,7 @@ impl From<StoredPromptCache> for PromptCache {
             lapses_at: stored.lapses_at,
             written_by: stored.written_by,
             lifetime_ms: stored.lifetime_ms,
+            write_price: stored.write_price,
             prompt_limit_tokens: stored.prompt_limit_tokens,
             lapse_penalty: None,
         }

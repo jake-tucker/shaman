@@ -170,6 +170,16 @@ pub enum CacheLifetime {
     Inferred { assumed: std::time::Duration },
 }
 
+/// What one request wrote to a Prompt Cache: how long the Provider keeps it,
+/// which says when it lapses, and which write price the request paid, which
+/// says what writing it afresh costs. The two are stated apart, since a test
+/// counts a lifetime at a millisecond scale whatever price it stands for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CacheWritten {
+    pub lifetime: std::time::Duration,
+    pub price: crate::protocol::CacheWritePrice,
+}
+
 /// Why a Provider's declared [`ManualCompaction`] refuses a request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ManualCompactionRefusal {
@@ -1491,8 +1501,11 @@ pub enum ProviderEvent {
         /// The Model whose call wrote the cache, where the Provider named it.
         model: Option<ModelId>,
         /// How long the Provider keeps the cache that call wrote, where it
-        /// said, which the write price it is forecast at depends on.
+        /// said.
         lifetime: Option<std::time::Duration>,
+        /// Which write price that call paid, which the penalty for writing it
+        /// afresh is forecast at.
+        write_price: crate::protocol::CacheWritePrice,
         /// The largest prompt, in tokens, that call could send, where the
         /// Provider said: a Provider pricing by tier priced the call by it.
         prompt_limit_tokens: Option<u64>,
@@ -1504,11 +1517,10 @@ pub enum ProviderEvent {
     /// request. Only the owning Session's are kept, and one is no output of
     /// any Turn on its own: it begins no Continuation.
     PromptCacheRefreshed {
-        /// How long the Provider keeps what the request wrote to the cache —
-        /// the shortest, where it wrote at several lifetimes — and none where
-        /// it wrote nothing, read from the cache alone, so the lifetime last
-        /// observed holds.
-        written_lifetime: Option<std::time::Duration>,
+        /// What the request wrote to the cache — at the shortest lifetime,
+        /// where it wrote at several — and none where it wrote nothing, read
+        /// from the cache alone, so the write last observed holds.
+        written: Option<CacheWritten>,
         /// The Model that ran the request, where it is not the one the Turn
         /// selected: the Provider fell back to another, or the selection
         /// routes its calls.
