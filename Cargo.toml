@@ -1,6 +1,6 @@
 [package]
 name = "suru"
-version = "0.3.9"
+version = "0.3.10"
 edition = "2024"
 # The integration tests are one binary, rather than one per file Cargo would discover; see `tests/integration.rs`.
 autotests = false
