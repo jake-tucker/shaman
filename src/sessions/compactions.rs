@@ -257,8 +257,8 @@ impl SessionRecord {
     /// settles (ADR 0073), unless an interrupt reached the Turn before its
     /// Compaction completed — whether or not it was in time to stop the
     /// Compaction, since someone who pressed interrupt should not watch Suru
-    /// begin a Turn with their Prompt — or the process that would deliver them
-    /// is gone with the Turn, leaving nothing to.
+    /// begin a Turn with a Prompt held behind it — or the process that would
+    /// deliver them is gone with the Turn, leaving nothing to.
     fn withdraws_held_prompts(
         &self,
         holding: &Turn,
