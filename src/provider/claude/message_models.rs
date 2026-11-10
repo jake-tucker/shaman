@@ -22,7 +22,7 @@
 //! A Subagent's conversation is not tracked here: what it ran on reaches its own row and Turn.
 
 use crate::{
-    protocol::{AgentSelection, ModelId},
+    protocol::{AgentSelection, ModelAttribution, ModelId},
     provider::{
         ProviderEvent, ProviderMessageId,
         actual_model::{self, ModelInForce, SelectedModel},
@@ -106,11 +106,19 @@ impl MessageModels {
         model: Option<&str>,
         selection: Option<&AgentSelection>,
     ) -> Option<ProviderEvent> {
-        let model = actual_model::attribution(selected(selection?), ran(model)?.as_str())?;
         Some(ProviderEvent::AgentMessageModelKnown {
             message: None,
-            model,
+            model: Self::off_selection(model, selection)?,
         })
+    }
+
+    /// The attribution of a call of the loop's to the Model `model` names, where it is one that
+    /// ran and not the Model `selection` names.
+    pub(super) fn off_selection(
+        model: Option<&str>,
+        selection: Option<&AgentSelection>,
+    ) -> Option<ModelAttribution> {
+        actual_model::attribution(selected(selection?), ran(model)?.as_str())
     }
 
     /// The loop's assistant messages are over — its `result` is out, or its process ended — so

@@ -392,7 +392,7 @@ async fn a_discovery_after_a_crashed_one_launches_a_fresh_process() {
 /// A models.dev catalog pricing the fixture's canonical Models under
 /// `anthropic`: the first at every input rate, the second with no
 /// cache-write rate, and the third not at all.
-async fn anthropic_rates() -> (Arc<suru::pricing::PricingSource>, tempfile::TempDir) {
+pub(super) async fn anthropic_rates() -> (Arc<suru::pricing::PricingSource>, tempfile::TempDir) {
     use axum::{Json, Router, routing::get};
     use serde_json::json;
 

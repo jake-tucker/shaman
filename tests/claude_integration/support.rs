@@ -794,22 +794,6 @@ pub async fn hosting(
     hosting_runtime(ClaudeRuntime::new(claude.executable()), name, state_dir).await
 }
 
-/// The same server run to `timings`, for a test injecting the Server's own.
-pub async fn hosting_with_timings(
-    claude: &ScriptedClaude,
-    name: &'static str,
-    state_dir: &std::path::Path,
-    timings: server::ServerTimings,
-) -> (RunningServer, ManagedClient) {
-    hosting_runtime_with_timings(
-        ClaudeRuntime::new(claude.executable()),
-        name,
-        state_dir,
-        timings,
-    )
-    .await
-}
-
 /// The same server over a runtime the caller has already tuned, for a test injecting timings.
 pub async fn hosting_runtime(
     runtime: ClaudeRuntime,
@@ -1169,13 +1153,29 @@ impl DurableSession {
         channel: &'static str,
         timings: server::ServerTimings,
     ) -> Self {
+        Self::start_on(
+            ClaudeRuntime::new(claude.executable()),
+            selection,
+            channel,
+            timings,
+        )
+        .await
+    }
+
+    /// [`Self::start_with`] over a runtime the caller has already tuned.
+    pub async fn start_on(
+        runtime: ClaudeRuntime,
+        selection: Option<AgentSelection>,
+        channel: &'static str,
+        timings: server::ServerTimings,
+    ) -> Self {
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let workspace = tempfile::tempdir().expect("create valid Workspace");
         let execution_directory = workspace.path().join("packages/nested agent directory");
         std::fs::create_dir_all(&execution_directory).unwrap();
         let execution_directory = suru::paths::canonical(execution_directory).unwrap();
         let (server, client) =
-            hosting_with_timings(claude, channel, state_dir.path(), timings).await;
+            hosting_runtime_with_timings(runtime, channel, state_dir.path(), timings).await;
         if selection.is_some() {
             // A Selection is normalized against the catalog, so discover it before naming one.
             client.list_models().await.expect("discover Claude Models");

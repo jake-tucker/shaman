@@ -35,6 +35,7 @@ mod errand;
 mod message_models;
 mod model_usage;
 mod projection;
+mod prompt_cache;
 mod questionnaire;
 mod runtime;
 mod session;
@@ -44,6 +45,7 @@ mod transport;
 mod turn_in_flight;
 mod wire;
 
+pub use prompt_cache::ClaudeCacheLifetimes;
 pub use runtime::ClaudeRuntime;
 
 use std::ffi::OsString;

@@ -99,6 +99,7 @@ use super::{
     claude_error, compaction,
     message_models::MessageModels,
     model_usage::{reported_model_usage, total_usage},
+    prompt_cache::ClaudeCacheLifetimes,
     session::ClaudeResumeState,
     thinking::{ThinkingEvent, ThinkingSplitter},
     transport::ConversationItem,
@@ -884,6 +885,10 @@ pub(super) struct ClaudeProjection {
     /// The directory the CLI launched in, which its shell returns to after every command — so the
     /// directory every command runs in unless it changes directory itself.
     execution_directory: PathBuf,
+    /// How long Claude keeps what each request writes to the Prompt Cache.
+    cache_lifetimes: ClaudeCacheLifetimes,
+    /// The Model the loop's `init` said it runs on: what the Selection resolved to.
+    launched_on: Option<String>,
 }
 
 impl ClaudeProjection {
@@ -905,11 +910,13 @@ impl ClaudeProjection {
 
     /// A projection for a Session whose conversation `resume` restores: every agent it records
     /// spawning is a settled Subagent a resume may name, riding under the conversation recorded
-    /// for it. Its CLI works in `execution_directory`.
+    /// for it. Its CLI works in `execution_directory`, and its requests write to a cache kept for
+    /// `cache_lifetimes`.
     pub(super) fn new(
         turn: Arc<TurnInFlight>,
         resume: ClaudeResumeState,
         execution_directory: PathBuf,
+        cache_lifetimes: ClaudeCacheLifetimes,
     ) -> Self {
         let agent_tasks = resume
             .agents
@@ -953,7 +960,19 @@ impl ClaudeProjection {
             awaited_summary: None,
             turn,
             execution_directory,
+            cache_lifetimes,
+            launched_on: None,
         }
+    }
+
+    /// The Model a request of the loop's that opened on `model` ran on, where the CLI fell back to
+    /// it from the one it launched on. Where what it launched on is unknown, an alias Selection
+    /// could not be told from a fallback, so the request is taken to run on the Selection.
+    fn fallen_back_to(&self, model: Option<&str>) -> Option<crate::protocol::ModelId> {
+        let launched_on = super::canonical_model(self.launched_on.as_deref()?.trim());
+        MessageModels::off_selection(model, self.turn.running_selection().as_ref())
+            .map(|attribution| attribution.actual)
+            .filter(|actual| actual.as_str() != launched_on)
     }
 
     /// The attribution one conversation's events land under: the owning Session for the loop's
@@ -1135,6 +1154,10 @@ impl ClaudeProjection {
             return Vec::new();
         };
         match message.subtype.as_str() {
+            "init" if message.parent_tool_use_id.is_none() => {
+                self.launched_on = message.model;
+                Vec::new()
+            }
             "status" | "compact_boundary" => self.project_compaction(message),
             _ => self.project_task_lifecycle(message),
         }
@@ -1896,12 +1919,20 @@ impl ClaudeProjection {
                 if let Some(selection) = self.turn.begin_continuation() {
                     projected.push(ProviderEvent::ContinuationStarted { selection });
                 }
-                self.message_models.assistant_message_started(
-                    event
-                        .message
-                        .as_ref()
-                        .and_then(|opened| opened.model.as_deref()),
-                );
+                let opened = event.message.as_ref();
+                let model = opened.and_then(|opened| opened.model.as_deref());
+                self.message_models.assistant_message_started(model);
+                // Each of the loop's own requests opens one assistant message, whose usage says
+                // what it wrote to the Session's Prompt Cache.
+                if let Some(written_lifetime) = self
+                    .cache_lifetimes
+                    .written(opened.and_then(|opened| opened.usage.as_ref()))
+                {
+                    projected.push(ProviderEvent::PromptCacheRefreshed {
+                        written_lifetime,
+                        model: self.fallen_back_to(model),
+                    });
+                }
             }
             "content_block_start" => {
                 if let Some(block) = event.content_block {
@@ -3029,7 +3060,8 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        ClaudeProjection, ClaudeResumeState, Cost, TurnInFlight, send_message_description,
+        ClaudeCacheLifetimes, ClaudeProjection, ClaudeResumeState, Cost, TurnInFlight,
+        send_message_description,
     };
     use crate::provider::{
         AttributedProviderEvent, ProviderActivityId, ProviderEvent, ProviderEventAttribution,
@@ -3038,7 +3070,12 @@ mod tests {
 
     /// A projection whose CLI works in `/work`, restoring `resume`.
     fn projection_resuming(resume: ClaudeResumeState) -> ClaudeProjection {
-        ClaudeProjection::new(TurnInFlight::new(), resume, PathBuf::from("/work"))
+        ClaudeProjection::new(
+            TurnInFlight::new(),
+            resume,
+            PathBuf::from("/work"),
+            ClaudeCacheLifetimes::default(),
+        )
     }
 
     /// The loop's own conversation running SendMessage `tool` to the agent `task`, and the CLI
@@ -5354,5 +5391,115 @@ mod tests {
             [owning(compacted(None))]
         );
         assert_eq!(projection.release_awaited_summary(), []);
+    }
+
+    /// A `message_start` of the conversation `parent` names — the loop's own where `None` —
+    /// opening on `model` with `usage`.
+    fn message_start_with(parent: Option<&str>, model: &str, usage: Value) -> Value {
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "message_start",
+                "message": {"role": "assistant", "model": model, "usage": usage},
+            },
+            "parent_tool_use_id": parent,
+        })
+    }
+
+    fn cache_refreshes(events: &[AttributedProviderEvent]) -> Vec<&AttributedProviderEvent> {
+        events
+            .iter()
+            .filter(|event| matches!(event.event, ProviderEvent::PromptCacheRefreshed { .. }))
+            .collect()
+    }
+
+    /// The loop's `init`, saying it runs on `model`.
+    fn launched_on(model: &str) -> Value {
+        json!({"type": "system", "subtype": "init", "model": model, "parent_tool_use_id": null})
+    }
+
+    #[test]
+    fn each_request_of_the_loops_own_states_the_shortest_lifetime_it_wrote_its_cache_at() {
+        let (mut projection, _prompt) = prompted_projection();
+        let lifetimes = ClaudeCacheLifetimes::default();
+        let events = project(
+            &mut projection,
+            &[
+                launched_on("claude-fixture-1[1m]"),
+                message_start_with(
+                    None,
+                    "claude-fixture-1",
+                    json!({
+                        "cache_creation_input_tokens": 900,
+                        "cache_creation": {
+                            "ephemeral_5m_input_tokens": 0,
+                            "ephemeral_1h_input_tokens": 900,
+                        },
+                    }),
+                ),
+                message_start_with(
+                    None,
+                    "claude-fixture-3",
+                    json!({"cache_read_input_tokens": 900, "cache_creation_input_tokens": 0}),
+                ),
+            ],
+        );
+        assert_eq!(
+            cache_refreshes(&events),
+            [
+                &owning(ProviderEvent::PromptCacheRefreshed {
+                    written_lifetime: Some(lifetimes.one_hour_tier),
+                    model: None,
+                }),
+                &owning(ProviderEvent::PromptCacheRefreshed {
+                    written_lifetime: None,
+                    model: Some(crate::protocol::ModelId::new("claude-fixture-3")),
+                }),
+            ],
+            "a request on what the Selection `default` launched on names no Model, one the CLI \
+             fell back to names it, and one served from the cache wrote at no lifetime"
+        );
+    }
+
+    #[test]
+    fn with_no_launch_reported_a_request_on_any_model_is_taken_to_run_on_the_selection() {
+        let (mut projection, _prompt) = prompted_projection();
+        let events = project(
+            &mut projection,
+            &[message_start_with(
+                None,
+                "claude-fixture-1",
+                json!({"cache_creation_input_tokens": 900}),
+            )],
+        );
+        assert_eq!(
+            cache_refreshes(&events),
+            [&owning(ProviderEvent::PromptCacheRefreshed {
+                written_lifetime: Some(ClaudeCacheLifetimes::default().five_minute_tier),
+                model: None,
+            })]
+        );
+    }
+
+    #[test]
+    fn a_subagents_request_or_one_whose_usage_is_unread_states_nothing_of_the_sessions_cache() {
+        let (mut projection, _prompt) = prompted_projection();
+        let wrote = json!({"cache_creation_input_tokens": 900});
+        let events = project(
+            &mut projection,
+            &[
+                message_start_with(Some("task_1"), "claude-fixture-3", wrote.clone()),
+                json!({
+                    "type": "stream_event",
+                    "event": {"type": "message_start", "message": {"role": "assistant"}},
+                    "parent_tool_use_id": null,
+                }),
+                message_start_with(None, "claude-fixture-1", json!("unreadable")),
+            ],
+        );
+        assert_eq!(
+            cache_refreshes(&events),
+            Vec::<&AttributedProviderEvent>::new()
+        );
     }
 }

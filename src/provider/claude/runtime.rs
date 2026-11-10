@@ -19,6 +19,7 @@ use super::{
     catalog::model_descriptors,
     claude_error, claude_error_context,
     errand::run_claude_errand,
+    prompt_cache::ClaudeCacheLifetimes,
     session::{ClaudeTimings, start_claude_session},
     skills::ClaudeSkills,
     transport::{ClaudeConnection, ClaudeSettingSources, StreamJsonTransport},
@@ -63,6 +64,8 @@ pub struct ClaudeRuntime {
     /// The models.dev rate table a cache saving is estimated from. Claude reports its own Cost,
     /// so nothing else here reads it.
     pricing: Option<Arc<PricingSource>>,
+    /// How long Claude keeps what each request writes to the Prompt Cache.
+    cache_lifetimes: ClaudeCacheLifetimes,
 }
 
 impl ClaudeRuntime {
@@ -79,7 +82,16 @@ impl ClaudeRuntime {
             permission_mode: Arc::new(StdMutex::new(ClaudePermissionMode::default())),
             resolved_models: Arc::default(),
             pricing: None,
+            cache_lifetimes: ClaudeCacheLifetimes::default(),
         }
+    }
+
+    /// Sets how long Claude keeps what a request writes at each of its cache lifetimes, and the
+    /// lifetime Suru assumes for a Session that has written nothing yet; injectable so tests
+    /// count a Prompt Cache's lapse at a millisecond scale.
+    pub fn with_cache_lifetimes(mut self, lifetimes: ClaudeCacheLifetimes) -> Self {
+        self.cache_lifetimes = lifetimes;
+        self
     }
 
     /// Hands this runtime the models.dev rate lookup a cache saving is estimated from;
@@ -184,11 +196,10 @@ impl ProviderRuntime for ClaudeRuntime {
         ManualCompaction::WithInstructions
     }
 
-    // Claude's Prompt Cache does lapse on idle, but its lifetime is to be
-    // inferred from the tiers each request writes at; until it is, Claude
-    // declares none, and its Sessions are never warned of a lapse.
+    // Claude states no Cache Lifetime, but each request of the loop's says what it wrote to the
+    // cache at which lifetime, so the lifetime is inferred from them.
     fn cache_lifetime(&self) -> CacheLifetime {
-        CacheLifetime::None
+        self.cache_lifetimes.declared()
     }
 
     fn offers_context_breakdown(&self) -> bool {
@@ -280,6 +291,7 @@ impl ProviderRuntime for ClaudeRuntime {
             interrupt_request: self.interrupt_request_timeout,
             posture_request: self.posture_request_timeout,
             context_request: self.context_request_timeout,
+            cache_lifetimes: self.cache_lifetimes,
         };
         let skills = self.skills.clone();
         let permission_mode = *self

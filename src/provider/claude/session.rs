@@ -144,6 +144,8 @@ pub(super) struct ClaudeTimings {
     pub(super) interrupt_request: Duration,
     /// How long a live permission-mode update waits for the CLI to acknowledge it.
     pub(super) posture_request: Duration,
+    /// How long Claude keeps what each request writes to the Prompt Cache.
+    pub(super) cache_lifetimes: super::ClaudeCacheLifetimes,
 }
 
 pub(super) async fn start_claude_session(
@@ -194,7 +196,12 @@ pub(super) async fn start_claude_session(
     let (context, reports) = super::context::ContextQueries::new(timings.context_request);
     let events = provider_events(
         messages,
-        ClaudeProjection::new(turn.clone(), resume, request.execution_directory.clone()),
+        ClaudeProjection::new(
+            turn.clone(),
+            resume,
+            request.execution_directory.clone(),
+            timings.cache_lifetimes,
+        ),
         questionnaires.clone(),
         approvals.clone(),
         context.clone(),

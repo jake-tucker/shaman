@@ -217,11 +217,15 @@ pub(super) struct StreamEvent {
 }
 
 /// The assistant message a `message_start` opens, decoded only for the Model the API names as
-/// running it.
+/// running it and the usage its request opened with, which says what it wrote to the Prompt
+/// Cache. The usage stays undecoded here, so one in a shape Suru cannot read leaves the event
+/// read.
 #[derive(Deserialize)]
 pub(super) struct OpenedMessage {
     #[serde(default)]
     pub(super) model: Option<String>,
+    #[serde(default)]
+    pub(super) usage: Option<Value>,
 }
 
 /// The content block a `content_block_start` opens: the text or thinking it opens with, and for a
@@ -417,6 +421,9 @@ pub(super) struct OutputTokensDetails {
 #[derive(Deserialize)]
 pub(super) struct SystemMessage {
     pub(super) subtype: String,
+    /// The Model the CLI's loop runs on, on `init`: what the Selection's alias resolved to.
+    #[serde(default)]
+    pub(super) model: Option<String>,
     /// The message's own identity, which a `compact_boundary` that keeps the messages before it
     /// rather than after names as its preserved segment's anchor.
     #[serde(default)]

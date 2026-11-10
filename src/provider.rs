@@ -37,7 +37,7 @@ pub use tool_call_presentation::ToolCallInput;
 mod version;
 
 pub use crate::broker::{BrokerEndpoint, BrokerHandoff, BrokerToken};
-pub use claude::ClaudeRuntime;
+pub use claude::{ClaudeCacheLifetimes, ClaudeRuntime};
 pub use codex::CodexRuntime;
 pub use copilot::CopilotRuntime;
 pub(crate) use orchestration::{
@@ -2546,7 +2546,8 @@ mod tests {
     }
 
     /// Copilot reports when its Prompt Cache lapses; Codex's is taken not to
-    /// lapse on idle; Claude declares none until Suru infers its lifetime.
+    /// lapse on idle; Claude's is inferred from its requests, five minutes
+    /// assumed where none has written to the cache.
     #[test]
     fn each_built_in_runtime_declares_the_cache_lifetime_its_provider_has() {
         let declared = runtimes(None)
@@ -2563,7 +2564,12 @@ mod tests {
             [
                 ("codex".to_owned(), CacheLifetime::None),
                 ("copilot".to_owned(), CacheLifetime::Reported),
-                ("claude".to_owned(), CacheLifetime::None),
+                (
+                    "claude".to_owned(),
+                    CacheLifetime::Inferred {
+                        assumed: std::time::Duration::from_secs(5 * 60)
+                    }
+                ),
             ]
         );
     }

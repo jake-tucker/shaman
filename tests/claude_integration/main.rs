@@ -23,6 +23,7 @@ mod interruption;
 mod model_shares;
 mod models;
 mod monitoring;
+mod prompt_cache;
 mod respawn;
 mod resume;
 mod skills;
