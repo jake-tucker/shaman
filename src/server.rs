@@ -247,6 +247,10 @@ pub struct ServerTimings {
     /// Compaction to begin; a wake that comes later skips it. Fixed in
     /// production at twenty seconds.
     pub scheduled_compaction_margin: Duration,
+    /// How long before a scheduled Compaction falls due a Session no Provider
+    /// actor runs for is read back in for it (ADR 0073). Fixed in production
+    /// at a minute.
+    pub scheduled_compaction_wake_ahead: Duration,
     /// How long a pending Move waits for the Continuation a Subagent settling
     /// past its Turn leaves owed, before giving it up.
     pub move_continuation_grace: Duration,
@@ -441,6 +445,7 @@ impl Default for ServerTimings {
             provider_idle_shutdown: crate::provider::PROVIDER_IDLE_SHUTDOWN,
             scheduled_compaction_lead: crate::provider::SCHEDULED_COMPACTION_LEAD,
             scheduled_compaction_margin: crate::provider::SCHEDULED_COMPACTION_MARGIN,
+            scheduled_compaction_wake_ahead: crate::provider::SCHEDULED_COMPACTION_WAKE_AHEAD,
             move_continuation_grace: crate::provider::MOVE_CONTINUATION_GRACE,
             invite_ttl: Duration::from_secs(10 * 60),
             remote_withdrawal_timeout: Duration::from_secs(5),
@@ -653,6 +658,14 @@ impl ServerTimings {
     /// from the lead.
     pub fn with_scheduled_compaction_margin(mut self, margin: Duration) -> Self {
         self.scheduled_compaction_margin = margin;
+        self
+    }
+
+    /// Sets how long before a scheduled Compaction falls due a Session no
+    /// Provider actor runs for is read back in for it; injectable so tests
+    /// choose it against the eviction they inject.
+    pub fn with_scheduled_compaction_wake_ahead(mut self, ahead: Duration) -> Self {
+        self.scheduled_compaction_wake_ahead = ahead;
         self
     }
 
@@ -1987,6 +2000,7 @@ async fn start(
     .with_scheduled_compaction(
         timings.scheduled_compaction_lead,
         timings.scheduled_compaction_margin,
+        timings.scheduled_compaction_wake_ahead,
     );
     // A Provider may know no prices until its harness has run, which is when
     // its catalog comes; a Lapse Penalty that found none is asked again then.

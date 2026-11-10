@@ -63,6 +63,7 @@ mod restoration;
 mod restoration_tests;
 mod saves;
 mod scheduled_compaction;
+pub(crate) use prompt_cache::millis;
 pub(crate) use scheduled_compaction::{
     IdleStretch, ScheduledCompactionRule, ScheduledCompactionSkip,
 };
