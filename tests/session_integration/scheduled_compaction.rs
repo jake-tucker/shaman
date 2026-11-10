@@ -885,9 +885,17 @@ async fn a_prompt_sent_before_it_falls_due_calls_it_off() {
 }
 
 /// A Prompt admitted at the very moment the Compaction falls due wins
-/// cleanly: either the Compaction never begins and the Prompt's Turn runs,
-/// or the Compaction's Turn holds the Prompt, unsteered, until it completes,
-/// as a manual one does.
+/// cleanly, whichever way the two interleave. The judgement and the Turn it
+/// opens are one act under the store's lock, and so is the Prompt's
+/// admission. Where the admission takes the lock first, the Session is
+/// Working when the actor judges, so the Compaction never begins and the
+/// Prompt's Turn runs. Where the judgement takes it first, the admission finds
+/// the Compaction's Turn at work and is held behind it, unsteered, to begin
+/// the next Turn once it completes, as behind a manual one. Which comes first
+/// is the scheduler's, so the test accepts either and checks each in full;
+/// [`a_prompt_sent_while_it_runs_is_held_to_begin_the_next_turn`] drives the
+/// second on purpose, and [`a_prompt_sent_before_it_falls_due_calls_it_off`]
+/// the first.
 #[tokio::test]
 async fn a_prompt_admitted_as_it_falls_due_never_shares_a_turn_with_it() {
     let state = tempfile::tempdir().unwrap();

@@ -787,9 +787,10 @@ const BROKER_MAX_CONCURRENT_SUBAGENTS_NUMERIC: NumericSettingChoice = NumericSet
     },
 );
 
-/// The least Lapse Penalty worth a scheduled Compaction, which the panel's
-/// numeric editor takes in whole cents, since it is typed in digits alone,
-/// and which reads everywhere else as the dollars it is.
+/// Takes the whole number of cents a reader typed into the panel's numeric
+/// editor for the least Lapse Penalty worth a scheduled Compaction — typed in
+/// cents since the editor takes digits alone — refusing one that is no whole
+/// number or lies past the most a threshold holds.
 fn validate_penalty_threshold(value: &str) -> Result<u64, &'static str> {
     match value.parse::<u64>() {
         Ok(cents) if PenaltyThreshold::from_cents(cents).is_some() => Ok(cents),
@@ -800,7 +801,7 @@ fn validate_penalty_threshold(value: &str) -> Result<u64, &'static str> {
 
 const COMPACTION_SCHEDULED_MINIMUM_PENALTY_NUMERIC: NumericSettingChoice =
     NumericSettingChoice::new(
-        "Cents",
+        "Minimum in cents",
         |settings| settings.compaction.scheduled.minimum_penalty.cents(),
         validate_penalty_threshold,
         |cents| format!("${}.{:02}", cents / 100, cents % 100),
@@ -2438,7 +2439,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: COMPACTION_SCHEDULED_ENABLED,
         label: "Scheduled Compaction",
-        description: "Whether Suru compacts an idle Session of its own accord two minutes before its Prompt Cache lapses, so it goes cold small, where the Lapse Penalty reaches the minimum below",
+        description: "Whether Suru compacts an idle Session of its own accord two minutes before its Prompt Cache lapses, so it goes cold small, where the Lapse Penalty reaches the Scheduled Compaction minimum",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SCHEDULED_COMPACTION_ACCESS,
@@ -2467,14 +2468,14 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: COMPACTION_SCHEDULED_MINIMUM_PENALTY,
         label: "Scheduled Compaction minimum",
-        description: "The least Lapse Penalty, in dollars, worth a scheduled Compaction: a Session forecast below it, or not forecast at all, goes cold as it is",
+        description: "The least Lapse Penalty, in dollars, worth a scheduled Compaction: a Session forecast below it, or not forecast at all, goes cold as it is, and 0 compacts every Session with any priced context",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SCHEDULED_COMPACTION_ACCESS,
         outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
             named: &[],
-            accepts: "a dollar amount of at least 0, to the cent",
+            accepts: PenaltyThreshold::ACCEPTS,
             spell: |settings| {
                 COMPACTION_SCHEDULED_MINIMUM_PENALTY_NUMERIC
                     .spell(settings.compaction.scheduled.minimum_penalty.cents())
@@ -3609,7 +3610,7 @@ mod tests {
                 "one of false or true".to_owned(),
                 "one of false or true".to_owned(),
                 // An amount of money is described, since no word lists it.
-                "a dollar amount of at least 0, to the cent".to_owned(),
+                "a dollar amount from 0 to 1000000, to the cent".to_owned(),
                 "one of \"active\" or \"all\"".to_owned(),
             ]
         );

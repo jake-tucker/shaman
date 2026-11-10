@@ -2130,7 +2130,7 @@ impl Default for ScheduledCompactionSettings {
 
 /// Which Sessions a scheduled Compaction reaches.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub enum ScheduledCompactionSessions {
     /// Only those that are not Settled, by the user's say-so or on their own.
     #[default]
@@ -2153,6 +2153,9 @@ impl PenaltyThreshold {
     /// The most it holds: well past any penalty one Prompt could carry, and
     /// short of where a USD figure would stop being exact as a JSON number.
     pub const MAXIMUM_CENTS: u64 = 100_000_000;
+    /// What a threshold accepts, both ends of its bound named, as a Config
+    /// Document spells it.
+    pub const ACCEPTS: &'static str = "a dollar amount from 0 to 1000000, to the cent";
 
     /// `cents`, where it is no more than [`Self::MAXIMUM_CENTS`].
     pub const fn from_cents(cents: u64) -> Option<Self> {
@@ -2203,11 +2206,8 @@ impl Serialize for PenaltyThreshold {
 impl<'de> Deserialize<'de> for PenaltyThreshold {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let usd = f64::deserialize(deserializer)?;
-        Self::from_usd(usd).ok_or_else(|| {
-            serde::de::Error::custom(format!(
-                "{usd} is not a dollar amount of at least 0, to the cent"
-            ))
-        })
+        Self::from_usd(usd)
+            .ok_or_else(|| serde::de::Error::custom(format!("{usd} is not {}", Self::ACCEPTS)))
     }
 }
 
@@ -5588,7 +5588,6 @@ pub struct Turn {
     /// Compaction, and it Settles as the Compaction does and accepts no
     /// steer. Only Suru knows which Turns it began this way, so whether a
     /// Compaction was manual or scheduled is read from here.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compaction_requested: Option<CompactionRequest>,
     pub agent: Option<AgentIdentity>,
     pub status: TurnStatus,

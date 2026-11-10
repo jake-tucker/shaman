@@ -3374,16 +3374,10 @@ async fn a_scheduled_compaction_is_copilots_manual_compact_asked_ahead_of_its_re
     )
     .await;
     let lapses_at = idle.session.prompt_cache.unwrap().lapses_at;
+    // The moment itself is pinned by the controlled Provider's suite, which
+    // can tell when the actor has judged it; here it is reached.
     let due_at = lapses_at.0 - 2 * 60 * 1000;
-    hand.advance(Duration::from_millis(due_at - 1 - clock.now().0));
-    assert!(
-        copilot.requests().iter().all(|request| {
-            request.get("method").and_then(serde_json::Value::as_str)
-                != Some("session.history.compact")
-        }),
-        "nothing is asked before it is due"
-    );
-    hand.advance(Duration::from_millis(1));
+    hand.advance(Duration::from_millis(due_at - clock.now().0));
 
     let compact = copilot.wait_for_request("session.history.compact").await;
     assert_eq!(compact["params"]["trigger"], "manual", "{compact}");

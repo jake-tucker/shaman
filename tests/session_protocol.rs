@@ -851,6 +851,7 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
         "turns": [{
             "id": "0198b27e-2dc4-76ba-9895-f43db821fe3d",
             "prompt_id": "0198b27e-2a7e-7562-b80d-54aa50c360f9",
+            "compaction_requested": null,
             "agent": {
                 "agent": "coding",
                 "selection": {

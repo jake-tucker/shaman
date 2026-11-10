@@ -2698,7 +2698,7 @@ async fn a_scheduled_compaction_minimum_finer_than_a_cent_or_below_nothing_is_ig
             (diagnostic.key.as_deref(), diagnostic.message.as_str()),
             (
                 Some("compaction.scheduled.minimumPenalty"),
-                "ignored because its value is not a dollar amount of at least 0, to the cent"
+                "ignored because its value is not a dollar amount from 0 to 1000000, to the cent"
             )
         );
         server.shutdown().await.unwrap();

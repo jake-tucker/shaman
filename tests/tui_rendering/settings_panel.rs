@@ -5737,7 +5737,7 @@ fn scheduled_compaction_stands_on_the_experimental_tab_and_takes_its_minimum_in_
     press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
     let rendered = rendered_application_rows(&application).join("\n");
     assert!(
-        rendered.contains("Cents") && rendered.contains("› 50"),
+        rendered.contains("Minimum in cents") && rendered.contains("› 50"),
         "Enter opens the editor on the minimum in force, in cents: {rendered}"
     );
     for _ in 0..2 {
