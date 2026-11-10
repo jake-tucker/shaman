@@ -6775,6 +6775,31 @@ impl Application {
             .map(|deadline| deadline.saturating_duration_since(self.state.presentation_clock.now()))
     }
 
+    /// How long until the open Session's Prompt Cache lapses on the Session
+    /// clock, while that is still ahead: when the line above its composer
+    /// comes to stand, which nothing its Server sends will draw. None for a
+    /// Subagent's view, which has no composer to warn above.
+    pub fn prompt_cache_lapse_wakeup(&self) -> Option<Duration> {
+        self.prompt_cache_lapse_due().map(|(_, wait)| wait)
+    }
+
+    /// The moment the open Session's Prompt Cache lapses, and how long until
+    /// then, as [`Self::prompt_cache_lapse_wakeup`] reads them.
+    pub(super) fn prompt_cache_lapse_due(
+        &self,
+    ) -> Option<(crate::protocol::SessionTimestamp, Duration)> {
+        let session = &self.state.session.as_ref()?.snapshot().session;
+        if session.parent.is_some() {
+            return None;
+        }
+        let lapses_at = session.prompt_cache?.lapses_at;
+        let ahead = lapses_at
+            .0
+            .checked_sub(self.state.session_now().0)
+            .filter(|ahead| *ahead > 0)?;
+        Some((lapses_at, Duration::from_millis(ahead)))
+    }
+
     pub(super) fn opening_loading_deadline(&self) -> Option<Instant> {
         match self.state.opening_loading {
             OpeningLoadingState::WaitingUntil(deadline) => Some(deadline),

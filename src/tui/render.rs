@@ -7412,6 +7412,13 @@ fn render_session_surface(
     let composer_top = slots.session_composer_top(&SessionComposerTopSlotContext {
         session_id,
         width: content_width,
+        // A Subagent's view has no composer to warn above, and the Session
+        // shown here is only ever this one: a Subagent's own cache never
+        // reaches its parent's composer.
+        prompt_cache: snapshot.session.prompt_cache.filter(|_| !subagent_view),
+        working: snapshot.working_since().is_some(),
+        now: state.session_now(),
+        warning: theme.feedback.warning,
     });
     let working_indicator = match &tail {
         SessionTail::Quiet | SessionTail::Refused(_) => RenderedSlot::empty(),

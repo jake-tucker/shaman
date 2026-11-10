@@ -32,6 +32,7 @@ mod monitoring;
 mod moves;
 mod onboarding;
 mod pairing_back;
+mod prompt_cache;
 mod prompts;
 mod provisional_session;
 mod reading_presses;

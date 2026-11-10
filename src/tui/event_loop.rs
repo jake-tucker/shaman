@@ -643,6 +643,13 @@ struct RunLoop {
     /// The Aside's one-shot wakeup at the end of a tree's quiet period, so a
     /// tree still arriving is redrawn saying Loading.
     tree_loading_delay: Option<(Instant, Pin<Box<tokio::time::Sleep>>)>,
+    /// The one-shot wakeup at the moment the open Session's Prompt Cache
+    /// lapses, paired with that moment, so the line saying so is drawn then
+    /// rather than at whatever event comes next.
+    prompt_cache_lapse: Option<(
+        crate::protocol::SessionTimestamp,
+        Pin<Box<tokio::time::Sleep>>,
+    )>,
     /// Armed only while something on screen animates, so an idle TUI schedules
     /// zero wakeups (ADR 0009). Re-armed on every fire.
     spinner_tick: Option<Pin<Box<tokio::time::Sleep>>>,
@@ -724,6 +731,7 @@ async fn run_loop(
         reconnect_grace: Vec::new(),
         opening_loading_delay: None,
         tree_loading_delay: None,
+        prompt_cache_lapse: None,
         spinner_tick: None,
         needs_redraw: true,
         pointer_motion: PointerMotion::default(),
@@ -765,6 +773,7 @@ async fn run_loop(
         // Working Indicator that may have scrolled out of the viewport.
         run.sync_opening_loading_delay();
         run.sync_tree_loading_delay();
+        run.sync_prompt_cache_lapse();
         run.sync_spinner_tick();
         // Every arm reports through ControlFlow so the two events that can end
         // the run -- a Provider shutdown and the exit command -- leave by the
@@ -785,6 +794,13 @@ async fn run_loop(
                 // The frame reads Loading off the presentation clock, so the
                 // wakeup only has to draw it.
                 run.tree_loading_delay = None;
+                run.needs_redraw = true;
+                ControlFlow::Continue(())
+            }
+            () = wait_for_prompt_cache_lapse(&mut run.prompt_cache_lapse) => {
+                // The frame judges the lapse off the Session clock, so the
+                // wakeup only has to draw it.
+                run.prompt_cache_lapse = None;
                 run.needs_redraw = true;
                 ControlFlow::Continue(())
             }
@@ -2135,6 +2151,19 @@ impl RunLoop {
                 Box::pin(tokio::time::sleep_until(deadline.into())),
             )
         });
+    }
+
+    /// Keeps exactly one wakeup at the moment the open Session's Prompt Cache
+    /// lapses, while that is still ahead, and none once it has passed, the
+    /// Session has gone, or its next Turn has moved the moment on.
+    fn sync_prompt_cache_lapse(&mut self) {
+        let wanted = self.application.prompt_cache_lapse_due();
+        let armed = self.prompt_cache_lapse.as_ref().map(|(moment, _)| *moment);
+        if armed == wanted.map(|(moment, _)| moment) {
+            return;
+        }
+        self.prompt_cache_lapse =
+            wanted.map(|(moment, wait)| (moment, Box::pin(tokio::time::sleep(wait))));
     }
 
     fn reveal_opening_loading(&mut self) -> ControlFlow<Exit> {
@@ -4954,6 +4983,18 @@ async fn wait_for_opening_loading_delay(
     }
 }
 
+async fn wait_for_prompt_cache_lapse(
+    lapse: &mut Option<(
+        crate::protocol::SessionTimestamp,
+        Pin<Box<tokio::time::Sleep>>,
+    )>,
+) {
+    match lapse {
+        Some((_, wakeup)) => wakeup.as_mut().await,
+        None => pending().await,
+    }
+}
+
 async fn wait_for_spinner_tick(tick: &mut Option<Pin<Box<tokio::time::Sleep>>>) {
     match tick {
         Some(tick) => tick.as_mut().await,
@@ -7664,6 +7705,7 @@ mod ready_event_tests {
             reconnect_grace: Vec::new(),
             opening_loading_delay: None,
             tree_loading_delay: None,
+            prompt_cache_lapse: None,
             spinner_tick: None,
             needs_redraw: false,
             pointer_motion: super::PointerMotion::default(),
