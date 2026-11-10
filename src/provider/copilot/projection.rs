@@ -4762,6 +4762,93 @@ mod tests {
         ProviderEventAttribution::Subagent(ProviderSubagentId::new(id))
     }
 
+    /// The Prompt Cache lapses each projected event reports, wherever it lands.
+    fn lapses(
+        projected: &[AttributedProviderEvent],
+    ) -> Vec<(&ProviderEventAttribution, &ProviderEvent)> {
+        projected
+            .iter()
+            .filter(|attributed| {
+                matches!(
+                    attributed.event,
+                    ProviderEvent::PromptCacheLapseReported { .. }
+                )
+            })
+            .map(|attributed| (&attributed.attribution, &attributed.event))
+            .collect()
+    }
+
+    #[test]
+    fn a_conversation_call_states_when_the_cache_it_wrote_lapses_and_for_how_long_it_is_kept() {
+        let mut correlation = in_turn();
+        let projected = project_attributed(
+            &mut correlation,
+            event(
+                "assistant.usage",
+                json!({
+                    "apiCallId": "c1", "model": "claude-fixture", "inputTokens": 10,
+                    "cacheExpiresAt": "2026-01-01T00:05:00.250Z", "cacheTtlSeconds": 3600,
+                }),
+            ),
+        );
+        assert_eq!(
+            lapses(&projected),
+            [(
+                &ProviderEventAttribution::OwningSession,
+                &ProviderEvent::PromptCacheLapseReported {
+                    lapses_at: crate::protocol::SessionTimestamp(1_767_225_900_250),
+                    model: Some(ModelId::new("claude-fixture")),
+                    lifetime: Some(std::time::Duration::from_secs(3600)),
+                }
+            )]
+        );
+    }
+
+    #[test]
+    fn a_call_states_no_lapse_without_a_readable_moment_after_the_epoch() {
+        for expires in [None, Some("soon"), Some("1969-12-31T23:59:59Z")] {
+            let mut correlation = in_turn();
+            let mut data =
+                json!({ "apiCallId": "c1", "model": "claude-fixture", "inputTokens": 1 });
+            if let Some(expires) = expires {
+                data["cacheExpiresAt"] = json!(expires);
+            }
+            let projected = project_attributed(&mut correlation, event("assistant.usage", data));
+            assert!(
+                lapses(&projected).is_empty(),
+                "{expires:?} reports no lapse: {projected:?}"
+            );
+            assert!(
+                projected
+                    .iter()
+                    .any(|attributed| matches!(attributed.event, ProviderEvent::Usage { .. })),
+                "the call's Usage stands whatever it says of the cache"
+            );
+        }
+    }
+
+    #[test]
+    fn neither_a_subagents_call_nor_one_outside_the_conversation_states_its_lapse() {
+        let data = |interaction: &str| {
+            json!({
+                "apiCallId": "c1", "model": "claude-fixture", "inputTokens": 1,
+                "interactionType": interaction, "cacheExpiresAt": "2026-01-01T00:05:00Z",
+            })
+        };
+        let mut correlation = with_subagent();
+        let child = project_attributed(
+            &mut correlation,
+            agent_event("agent-1", "assistant.usage", data("conversation-subagent")),
+        );
+        assert!(lapses(&child).is_empty(), "{child:?}");
+        let mut correlation = in_turn();
+        let aside = project_attributed(
+            &mut correlation,
+            event("assistant.usage", data("conversation-compaction")),
+        );
+        assert!(lapses(&aside).is_empty(), "{aside:?}");
+    }
+
     #[test]
     fn an_auto_parent_never_supplies_a_subagents_model_or_auto_selection() {
         let mut correlation = with_subagent();
@@ -9734,6 +9821,33 @@ mod tests {
             .into_iter()
             .map(|attributed| attributed.event)
             .collect()
+    }
+
+    #[test]
+    fn a_requested_compactions_call_states_its_lapse_and_adds_no_usage() {
+        let (mut correlation, _turn) = compacting_on_request();
+        let projected = project_attributed(
+            &mut correlation,
+            event(
+                "assistant.usage",
+                json!({
+                    "apiCallId": "summary", "model": "claude-fixture", "inputTokens": 9_000,
+                    "cacheExpiresAt": "2026-01-01T00:05:00Z",
+                }),
+            ),
+        );
+        assert_eq!(
+            projected
+                .iter()
+                .map(|attributed| &attributed.event)
+                .collect::<Vec<_>>(),
+            [&ProviderEvent::PromptCacheLapseReported {
+                lapses_at: crate::protocol::SessionTimestamp(1_767_225_900_000),
+                model: Some(ModelId::new("claude-fixture")),
+                lifetime: None,
+            }],
+            "the call's Usage is the Compaction's to report, once"
+        );
     }
 
     fn manual_started() -> serde_json::Value {

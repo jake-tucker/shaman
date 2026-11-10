@@ -3906,6 +3906,25 @@ impl<'de> Deserialize<'de> for LapsePenalty {
     }
 }
 
+#[cfg(test)]
+mod lapse_penalty_tests {
+    use super::LapsePenalty;
+
+    #[test]
+    fn a_figure_that_is_no_number_is_no_penalty_rather_than_none_at_all() {
+        assert_eq!(LapsePenalty::from_usd(f64::NAN), None);
+        assert_eq!(LapsePenalty::from_usd(f64::INFINITY), None);
+        assert_eq!(
+            LapsePenalty::from_usd(-0.5),
+            Some(LapsePenalty::from_nano_usd(0))
+        );
+        assert_eq!(
+            LapsePenalty::from_usd(1.25).map(LapsePenalty::nano_usd),
+            Some(1_250_000_000)
+        );
+    }
+}
+
 /// What occupies a Session's context, as its Provider attributes it when
 /// asked: the Context Fill it measures, split by where the tokens came from.
 /// It is read on request and never stored, so it describes the context only

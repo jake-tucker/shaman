@@ -252,3 +252,54 @@ fn component(tokens: u64, price: Option<f64>) -> Option<f64> {
         price.map(|price| tokens as f64 * price)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use github_copilot_sdk::rpc::Model;
+    use serde_json::json;
+
+    use super::CopilotPricing;
+    use crate::protocol::LapsePenalty;
+
+    /// A Model priced per million tokens, whose prompts past 272,000 tokens
+    /// are priced at a long-context tier, both listing the hour-long write
+    /// price apart.
+    fn luna() -> Model {
+        serde_json::from_value(json!({
+            "id": "luna-fixture", "name": "Luna Fixture", "capabilities": {},
+            "billing": { "tokenPrices": {
+                "batchSize": 1_000_000, "inputPrice": 10.0, "outputPrice": 50.0,
+                "cachePrice": 1.0, "cacheWritePrice": 12.5, "cacheWrite1hPrice": 20.0,
+                "maxPromptTokens": 272_000,
+                "longContext": {
+                    "inputPrice": 20.0, "outputPrice": 75.0, "cacheReadPrice": 2.0,
+                    "cacheWritePrice": 25.0, "cacheWrite1hPrice": 40.0,
+                    "maxPromptTokens": 872_000,
+                },
+            }},
+        }))
+        .expect("decode the fixture Model")
+    }
+
+    #[test]
+    fn a_lapse_penalty_is_priced_at_the_tier_and_write_price_a_cost_would_be() {
+        let pricing = CopilotPricing::default();
+        pricing.replace(&[luna()]);
+        let rates = pricing
+            .prompt_rates("luna-fixture")
+            .expect("the Model is priced");
+        let nano = |tokens, lifetime| {
+            rates
+                .lapse_penalty(tokens, lifetime)
+                .map(LapsePenalty::nano_usd)
+        };
+        let hour = Some(std::time::Duration::from_secs(3600));
+        // A credit is a cent: 100,000 tokens at 12.5 credits a million written
+        // less 1.0 read, then at 20.0 for a cache kept an hour.
+        assert_eq!(nano(100_000, None), Some(11_500_000));
+        assert_eq!(nano(100_000, hour), Some(19_000_000));
+        // Past 272,000 tokens, the long-context tier's 25.0 and 40.0 less 2.0.
+        assert_eq!(nano(500_000, None), Some(115_000_000));
+        assert_eq!(nano(500_000, hour), Some(190_000_000));
+    }
+}
