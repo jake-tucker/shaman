@@ -19,7 +19,7 @@ A Continuation, a Subagent Report reaching an idle Agent, or a Watch waking it i
 
 A scheduled Compaction may find its Session's Provider process already stopped, since ADR 0058 stops an idle Claude or Codex process after ten minutes and a Cache Lifetime can be an hour. It starts the process again rather than holding it alive until then: ADR 0058 exists to free those processes, and the Prompt Cache lives with the Provider, not the process.
 
-A Prompt sent to steer while a scheduled Compaction runs is held, as ADR 0041 holds one behind a manual Compaction, but it is delivered to begin the next Turn however the Compaction settles. ADR 0041 withdraws it when a manual Compaction fails because its writer expected a compacted context; nobody expected this one. An interrupt still stops the Compaction and returns the Prompt.
+A Prompt sent to steer while a scheduled Compaction runs is held, as ADR 0041 holds one behind a manual Compaction, but it is delivered to begin the next Turn however the Compaction settles. ADR 0041 withdraws it when a manual Compaction fails because its writer expected a compacted context; nobody expected this one. An interrupt that reaches the Compaction before it completes still stops it and returns the Prompt, however the Turn then settles, and so does Suru stopping mid-Compaction, which leaves nothing to deliver it.
 
 A Session's lapse moment is stored, so a restarted Server still knows which Sessions are cold and which scheduled Compactions are still ahead of it; one whose moment passed while the Server was down is skipped.
 
