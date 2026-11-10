@@ -657,3 +657,19 @@ impl SessionStore {
         Ok(turn_id)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ScheduledCompactionSkip as Skip;
+
+    /// A skip leaves the stretch for later only where it is not due yet or
+    /// its actor was released; every other judges it.
+    #[test]
+    fn only_a_stretch_not_due_or_whose_actor_was_released_is_left_for_later() {
+        assert!(!Skip::NotDue.judges());
+        assert!(!Skip::Released.judges());
+        for judged in [Skip::NotHeld, Skip::NotArmed, Skip::Unwakeable, Skip::Off] {
+            assert!(judged.judges(), "{judged:?} judges the stretch");
+        }
+    }
+}

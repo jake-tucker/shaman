@@ -1,12 +1,7 @@
-//! What a scheduled Compaction is judged by, and holding its wake where no
-//! Provider actor runs (ADR 0073).
-//!
-//! [`ScheduledCompactionRules`] builds the [`ScheduledCompactionRule`] a
-//! Session's scheduled Compaction is judged by from its Provider alone: the
-//! Settings in force, whether that Provider is hosted, keeps a Cache
-//! Lifetime, compacts on request and is turned on, and the timings. The
-//! actor and the wake holder below both build it here, so neither judges by
-//! a rule of its own.
+//! Holding the wake of a scheduled Compaction where no Provider actor runs
+//! (ADR 0073). It judges by the rule
+//! [`ScheduledCompactionRules`](super::ScheduledCompactionRules) builds, as
+//! the actor does.
 //!
 //! A Session's actor holds the wake of its own scheduled Compaction while it
 //! runs, beside its idle-shutdown wait. But no actor runs for a Session whose
@@ -16,7 +11,8 @@
 //! read from the store. What it does with one is bounded so that it judges
 //! nothing of its own and holds nothing alive:
 //!
-//! - Ahead of the moment, by [`ScheduledCompactionTimings::wake_ahead`], it
+//! - Ahead of the moment, by
+//!   [`wake_ahead`](super::ScheduledCompactionTimings::wake_ahead), it
 //!   reads the Session's tree back in and starts its actor, where no actor
 //!   runs and [`ScheduledCompactionRule::admits`] — the clauses needing no
 //!   history: the Setting, the Provider, a Settled Session — would let it
@@ -31,70 +27,22 @@
 //!   eviction shorter than the time ahead — is not read in at every sweep. A
 //!   stretch still unjudged after both, with no actor to judge it, is given
 //!   up as [`Unwakeable`](crate::sessions::ScheduledCompactionSkip::Unwakeable),
-//!   as is one whose tree
-//!   cannot be read back or whose Session names no Provider.
+//!   as is one whose tree cannot be read back or whose Session names no
+//!   Provider.
 
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::Duration,
 };
 
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 
-use crate::protocol::{ProviderId, SessionId, SessionTimestamp, SettingsSnapshot, TurnId};
-use crate::provider::{CacheLifetime, ManualCompaction, ProviderRuntime};
-use crate::sessions::ScheduledCompactionRule;
+use crate::protocol::{SessionId, SessionTimestamp, TurnId};
 
 use super::ProviderOrchestrator;
 
-/// When a scheduled Compaction falls due, how much of the cache's life it
-/// needs left, and how long ahead of its moment a Session no actor runs for
-/// is read in for it.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ScheduledCompactionTimings {
-    pub(crate) lead: Duration,
-    pub(crate) margin: Duration,
-    pub(crate) wake_ahead: Duration,
-}
-
-/// Builds the rule a Session's scheduled Compaction is judged by from its
-/// Provider alone, as the Settings stand when asked.
-#[derive(Clone)]
-pub(crate) struct ScheduledCompactionRules {
-    runtimes: Arc<Vec<Arc<dyn ProviderRuntime>>>,
-    settings: watch::Receiver<SettingsSnapshot>,
-    timings: ScheduledCompactionTimings,
-}
-
-impl ScheduledCompactionRules {
-    /// The rule a Session on `provider` is judged by now. A Provider this
-    /// Server does not host cannot be asked.
-    pub(crate) fn for_provider(&self, provider: &ProviderId) -> ScheduledCompactionRule {
-        let in_force = self.settings.borrow();
-        let provider_compacts = self
-            .runtimes
-            .iter()
-            .find(|runtime| runtime.provider_id() == *provider)
-            .is_some_and(|runtime| {
-                runtime.cache_lifetime() != CacheLifetime::None
-                    && runtime.manual_compaction() != ManualCompaction::Unsupported
-            })
-            && in_force.settings.provider_enabled(provider);
-        ScheduledCompactionRule {
-            settings: in_force.settings.compaction.scheduled,
-            auto_settle: in_force.settings.sidebar.auto_settle,
-            lead: self.timings.lead,
-            margin: self.timings.margin,
-            provider_compacts,
-        }
-    }
-
-    /// How long before the lapse a scheduled Compaction falls due.
-    pub(crate) fn lead(&self) -> Duration {
-        self.timings.lead
-    }
-}
+/// The most a tree is read in for one stretch: ahead of its moment, and at it.
+const MAX_READ_INS: u8 = 2;
 
 /// What a stretch's wake has read in for it so far.
 #[derive(Clone, Copy, Debug, Default)]
@@ -105,9 +53,6 @@ struct ReadIns {
     reading: bool,
 }
 
-/// The most a tree is read in for one stretch: ahead of its moment, and at it.
-const READ_INS: u8 = 2;
-
 /// What finished reading a tree in for a stretch.
 struct ReadIn {
     session_id: SessionId,
@@ -115,15 +60,6 @@ struct ReadIn {
 }
 
 impl ProviderOrchestrator {
-    /// The rules this orchestrator's scheduled Compactions are judged by.
-    pub(crate) fn scheduled_compaction_rules(&self) -> ScheduledCompactionRules {
-        ScheduledCompactionRules {
-            runtimes: self.runtimes.clone(),
-            settings: self.settings.clone(),
-            timings: self.scheduled_compaction,
-        }
-    }
-
     /// Holds the wake of every scheduled Compaction no actor holds, until the
     /// Server stops: arms, at once, the stretch each stored Session stands
     /// in, so a moment still ahead of a restarted Server is woken for and one
@@ -214,7 +150,7 @@ async fn hold_wakes(orchestrator: ProviderOrchestrator, find_prices: Arc<dyn Fn(
             {
                 continue;
             }
-            if reads.count < READ_INS {
+            if reads.count < MAX_READ_INS {
                 read_in(&orchestrator, &mut read_ins, key, &find_prices, &read_tx);
             } else {
                 sessions.abandon_scheduled_compaction(session_id, stretch.after);
@@ -305,20 +241,5 @@ async fn wake(
     };
     if !woken {
         sessions.abandon_scheduled_compaction(session_id, after);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    /// A skip leaves the stretch for later only where it is not due yet or
-    /// its actor was released; every other judges it.
-    #[test]
-    fn only_a_stretch_not_due_or_whose_actor_was_released_is_left_for_later() {
-        use crate::sessions::ScheduledCompactionSkip as Skip;
-        assert!(!Skip::NotDue.judges());
-        assert!(!Skip::Released.judges());
-        for judged in [Skip::NotHeld, Skip::NotArmed, Skip::Unwakeable, Skip::Off] {
-            assert!(judged.judges(), "{judged:?} judges the stretch");
-        }
     }
 }

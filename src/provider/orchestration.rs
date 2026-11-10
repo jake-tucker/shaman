@@ -1,10 +1,11 @@
 mod approvals;
 mod compaction_wakes;
-pub(crate) use compaction_wakes::{ScheduledCompactionRules, ScheduledCompactionTimings};
 mod compactions;
 mod delegations;
 mod prompt_cache;
 mod questionnaires;
+mod scheduled_compaction_rules;
+pub(crate) use scheduled_compaction_rules::{ScheduledCompactionRules, ScheduledCompactionTimings};
 mod watch_outcomes;
 
 use approvals::{DecisionDeliveries, LiveApprovals};
