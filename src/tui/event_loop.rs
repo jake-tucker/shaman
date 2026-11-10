@@ -646,10 +646,10 @@ struct RunLoop {
     /// The wakeup at the next moment the line above the open Session's
     /// composer changes of its own accord, paired with that moment: once when
     /// a countdown comes to stand, once a second while it counts, and once
-    /// when what it counts to arrives; nothing before then but the one
-    /// wakeup, and nothing after. The ticking is bounded by the countdown's
-    /// own length, and only a countdown the last frame laid out is woken for
-    /// (ADR 0009). Each sync sets the deadline afresh from the wall clock,
+    /// when what it counts to arrives; one wakeup before the countdown stands
+    /// and none after it ends. The once-a-second wakeups are bounded by the
+    /// countdown's own length, and nothing wakes for a countdown no frame
+    /// lays out (ADR 0009). Each sync sets the deadline afresh from the wall clock,
     /// since the sleep is monotonic and does not follow a suspend, so any
     /// event after a resume puts the wakeup right.
     composer_top_change: Option<(
@@ -2163,12 +2163,20 @@ impl RunLoop {
     /// as across a suspend, which a monotonic sleep does not follow. It runs
     /// before the frame is drawn, so whatever event woke the loop, even one
     /// that draws nothing itself, is followed by the line as it now stands.
+    ///
+    /// It asks for one too where the moment armed is no longer the one wanted
+    /// — the wall clock stepped back out of the final stretch, or a Turn moved
+    /// the lapse — since the line on screen may no longer be true.
     fn redraw_passed_composer_top_change(&mut self) {
-        let now = self.application.state.session_now();
-        if self
-            .composer_top_change
-            .as_ref()
-            .is_some_and(|(moment, _)| *moment <= now)
+        let Some(armed) = self.composer_top_change.as_ref().map(|(moment, _)| *moment) else {
+            return;
+        };
+        if self.application.has_passed_on_session_clock(armed)
+            || self
+                .application
+                .composer_top_due()
+                .map(|(moment, _)| moment)
+                != Some(armed)
         {
             self.needs_redraw = true;
         }
@@ -2187,7 +2195,10 @@ impl RunLoop {
             self.composer_top_change = None;
             return;
         };
-        let deadline = tokio::time::Instant::now() + wait;
+        // A wait past what the monotonic clock holds sleeps as long as
+        // tokio's own `sleep` saturates to, rather than overflowing.
+        let now = tokio::time::Instant::now();
+        let deadline = now.checked_add(wait).unwrap_or_else(|| now + FAR_FUTURE);
         match &mut self.composer_top_change {
             Some((armed, wakeup)) => {
                 *armed = moment;
@@ -2201,9 +2212,10 @@ impl RunLoop {
     }
 
     /// Draws the line above the composer as it stands now on the wall clock,
-    /// once the moment it was to change has passed; a wakeup that came before
-    /// it, the wall clock having been set back, draws nothing, and the next
-    /// sync waits again for what is left.
+    /// once the moment it was to change has passed or is no longer the one
+    /// wanted; a wakeup that came before it, the wall clock lagging the
+    /// monotonic one, draws nothing, and the next sync waits again for what
+    /// is left.
     fn wake_for_composer_top_change(&mut self) -> ControlFlow<Exit> {
         self.redraw_passed_composer_top_change();
         self.composer_top_change = None;
@@ -5026,6 +5038,10 @@ async fn wait_for_opening_loading_delay(
         None => pending().await,
     }
 }
+
+/// How far off a wakeup whose wait the monotonic clock cannot hold is set:
+/// about thirty years, as tokio's own `sleep` saturates.
+const FAR_FUTURE: Duration = Duration::from_secs(86_400 * 365 * 30);
 
 async fn wait_for_composer_top_change(
     change: &mut Option<(
@@ -7991,7 +8007,7 @@ mod ready_event_tests {
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
         assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
 
-        // The wall clock is set back half a second while the wakeup sleeps.
+        // The wall clock gains only half of the second the wakeup sleeps.
         wall.fetch_add(500, Ordering::SeqCst);
         super::wait_for_composer_top_change(&mut run.composer_top_change).await;
         let _ = run.wake_for_composer_top_change();
@@ -8000,6 +8016,41 @@ mod ready_event_tests {
         assert!(!run.needs_redraw);
         run.sync_composer_top_change();
         assert_eq!(armed_wait(&run), Some(Duration::from_millis(500)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_wall_clock_stepped_back_out_of_the_final_stretch_takes_the_countdown_down() {
+        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
+        let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
+        assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
+
+        // The wall clock is set back a minute while the wakeup sleeps its
+        // second, which leaves the lapse ninety seconds off once it comes.
+        wall.fetch_sub(60_000, Ordering::SeqCst);
+        wall.fetch_add(1_000, Ordering::SeqCst);
+        super::wait_for_composer_top_change(&mut run.composer_top_change).await;
+        let _ = run.wake_for_composer_top_change();
+        assert!(
+            run.needs_redraw,
+            "the countdown on screen is no longer true"
+        );
+        assert_eq!(pass(&mut run), None);
+        assert_eq!(
+            armed_wait(&run),
+            Some(Duration::from_secs(29)),
+            "the next wakeup is the final stretch's start, by the wall clock"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_lapse_as_far_off_as_a_timestamp_reaches_arms_its_wakeup_without_overflow() {
+        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
+        let ahead = u64::MAX - wall.load(Ordering::SeqCst);
+        let mut run = lapsing_run_loop(workspace.path(), wall.clone(), ahead);
+        assert_eq!(pass(&mut run), None);
+        assert!(run.composer_top_change.is_some());
     }
 
     #[tokio::test(start_paused = true)]

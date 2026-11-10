@@ -6793,6 +6793,14 @@ impl Application {
         self.composer_top_due().map(|(_, wait)| wait)
     }
 
+    /// Whether `moment` has come on the Session clock.
+    pub(super) fn has_passed_on_session_clock(
+        &self,
+        moment: crate::protocol::SessionTimestamp,
+    ) -> bool {
+        moment <= self.state.session_now()
+    }
+
     /// The moment the line above the open Session's composer next changes,
     /// and how long until then, as [`Self::composer_top_wakeup`] reads them.
     pub(super) fn composer_top_due(&self) -> Option<(crate::protocol::SessionTimestamp, Duration)> {
