@@ -302,8 +302,11 @@ struct SessionRecord {
     /// stands down whatever output its Provider still owed the brokered
     /// Subagents its Agents delegated to, as it stands down what the actor
     /// owed native ones (see
-    /// [`SessionStoreState::owes_continuation_to_brokered_subagents`]). Never
-    /// stored: no Provider connection survives a stop to owe anything.
+    /// [`SessionStoreState::owes_continuation_to_brokered_subagents`]). It
+    /// also says whether an interrupt reached a scheduled Compaction's Turn
+    /// before it completed, which withdraws the Prompts held behind it
+    /// however the Turn then settles. Never stored: no Provider connection
+    /// survives a stop to owe anything, nor any Turn to hold a Prompt.
     work_interrupted_at: Option<SessionTimestamp>,
     /// The Turn of this brokered Subagent's Session that an interrupt of a
     /// Session above it last found working, so that, settled as stopped, it

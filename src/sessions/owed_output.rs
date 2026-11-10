@@ -78,7 +78,8 @@ impl SessionStoreState {
     /// working, or settling later, without that interrupt having stopped it.
     /// The moment is minted from the store's own clock, so every settle it is
     /// measured against is ordered with it. A Move the Agent asked for wakes
-    /// it no longer either.
+    /// it no longer either, and a scheduled Compaction's Turn it reached
+    /// withdraws the Prompts held behind it unless its Compaction completes.
     pub(super) fn record_work_interrupted(&mut self, owner: SessionId) {
         let interrupted_at = self.next_timestamp();
         if let Some(record) = self.sessions.get_mut(&owner) {

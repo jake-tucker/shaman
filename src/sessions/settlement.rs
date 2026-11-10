@@ -115,7 +115,8 @@ pub(crate) enum ProviderTurnOutcome {
 pub(crate) type TrailingCommandOutput = HashMap<ActivityId, NormalizedText>;
 
 /// What a settlement says of the Approvals and Questionnaires the Turn still
-/// had open.
+/// had open, and of the Prompts held behind it: whether the process that
+/// could answer the one and deliver the other is still there.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OpenInterventions {
     /// The Turn ended while the Provider was still there to be answered: the
@@ -124,7 +125,8 @@ pub(crate) enum OpenInterventions {
     /// The process that could have answered is gone — Suru stopped, or is
     /// starting again — so a request still waiting becomes Unavailable and a
     /// decision in delivery becomes DeliveryUncertain, which no restart can
-    /// tell from delivered.
+    /// tell from delivered. Nor is anything left to deliver a Prompt held
+    /// behind the Turn, which is withdrawn with it.
     Abandoned,
 }
 
@@ -373,7 +375,9 @@ impl SessionStore {
     /// An interrupt that reaches the work of the Provider actor the Session
     /// owns — its Turn, or the Subagents outliving one — is recorded as it is
     /// read, so the output that actor's Provider still owed brokered
-    /// Subagents is owed no longer.
+    /// Subagents is owed no longer, and a scheduled Compaction's Turn it
+    /// reached withdraws the Prompts held behind it unless its Compaction
+    /// completes, however the Provider answers the stop.
     pub(crate) fn interrupt_or_withdraw(
         &self,
         session_id: SessionId,
