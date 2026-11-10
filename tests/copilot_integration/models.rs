@@ -626,3 +626,80 @@ async fn copilot_states_cache_rates_from_its_last_running_catalog_and_launches_n
         "the last harness's prices still price once it has stopped"
     );
 }
+
+/// A Model priced at a long-context tier past 272,000 tokens, at twice its standard prices.
+const LONG_CONTEXT_MODELS: &str = concat!(
+    r#"[{"id":"long-fixture","name":"Long Fixture","capabilities":{},"#,
+    r#""supportedContextTiers":["default","long_context"],"#,
+    r#""billing":{"tokenPrices":{"batchSize":1000,"inputPrice":2.0,"outputPrice":8.0,"#,
+    r#""cacheReadPrice":0.5,"cacheWritePrice":2.5,"maxPromptTokens":272000,"#,
+    r#""longContext":{"inputPrice":4.0,"outputPrice":16.0,"cacheReadPrice":1.0,"#,
+    r#""cacheWritePrice":5.0,"maxPromptTokens":872000}}}}]"#,
+);
+
+/// A prompt sent under a context tier is priced at that tier alone, whatever the call that wrote
+/// the cache could send: the long tier's prices under the long context, the standard ones under
+/// the default.
+#[tokio::test]
+async fn copilot_prices_a_prompt_under_a_chosen_context_tier_at_that_tier() {
+    use suru::{pricing::CacheRates, provider::ProviderRuntime};
+
+    let copilot = ScriptedCopilot::with_models(LONG_CONTEXT_MODELS);
+    let runtime = CopilotRuntime::new(copilot.executable());
+    runtime
+        .list_models()
+        .await
+        .expect("discover Copilot Models");
+    let model = ModelId::new("long-fixture");
+    let tier = |choice: &str| ModelOptionSelection {
+        id: ModelOptionId::new("context_tier"),
+        value: ModelOptionValue::Select {
+            choice: ModelOptionChoiceId::new(choice),
+        },
+    };
+    let only_tier = |options: Vec<ModelOptionSelection>| {
+        let runtime = &runtime;
+        let model = &model;
+        async move {
+            let rates = runtime
+                .prompt_rates(model, &options)
+                .await
+                .expect("the Model is priced");
+            // Priced past the largest tier's prompts, so a rate table holding both tiers answers
+            // its long one.
+            rates.lapse_penalty(
+                1_000_000,
+                suru::pricing::CacheWrite {
+                    price: suru::protocol::CacheWritePrice::Default,
+                    prompt_limit_tokens: Some(900_000),
+                },
+            )
+        }
+    };
+    // Two, then four, credits a thousand tokens at a cent a credit: $20 and $40 a million.
+    assert_eq!(
+        runtime
+            .prompt_rates(&model, &[tier("long_context")])
+            .await
+            .map(|rates| rates.standard()),
+        Some(CacheRates {
+            input: 40.0,
+            cache_read: Some(10.0),
+            cache_write: Some(50.0),
+        }),
+        "the long context is priced at the long tier alone"
+    );
+    assert_eq!(
+        only_tier(vec![tier("default")]).await,
+        suru::protocol::LapsePenalty::from_usd(20.0),
+        "the default tier is priced at the standard tier, whatever the call could send: \
+         $25 written less $5 read"
+    );
+    assert_eq!(
+        only_tier(Vec::new()).await,
+        suru::protocol::LapsePenalty::from_usd(40.0),
+        "with no tier chosen, the call's limit picks the tier: $50 written less $10 read"
+    );
+    runtime.shutdown().await.expect("shut Copilot down");
+    copilot.wait_for_exit().await;
+}
