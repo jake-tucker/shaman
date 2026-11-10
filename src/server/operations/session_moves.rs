@@ -104,7 +104,7 @@ use crate::protocol::{
 };
 use crate::provider::{MoveSettlement, skill_delivery_failure_message};
 use crate::sessions::{MoveAftermath, MoveSessionError, PendingMoveSettled, WaitingPromptBound};
-use crate::source_control::{NOT_IN_A_REPOSITORY, PreparationStore};
+use crate::source_control::{NOT_IN_A_REPOSITORY, PreparationStore, naming};
 
 /// Why a Move was refused. Each leaves the Session where it was.
 #[derive(Debug)]
@@ -450,6 +450,10 @@ impl SessionOperations {
     /// it was made under still held. What it starts from is read again by the
     /// plan, so a plan found in another Repository than the one asked of is
     /// refused with nothing made.
+    ///
+    /// The Worktree is named by an Errand reading the Session's Prompts so
+    /// far, waited on ahead of those locks so no other preparation waits with
+    /// it, and from the Session's Title where that Errand names nothing.
     async fn make_worktree(
         &self,
         session_id: SessionId,
@@ -475,13 +479,24 @@ impl SessionOperations {
             tracing::info!(%session_id, "a Move's new Worktree was not made: {error}");
             MoveRefusal::Destination(format!("No new Worktree could be made: {error}"))
         };
+        let derived = match self.sessions.snapshot(session_id) {
+            Some(snapshot) => {
+                self.derivation
+                    .worktree_name_for_session(&snapshot, &source)
+                    .await
+            }
+            None => None,
+        };
+        let name = derived.unwrap_or_else(|| {
+            naming::name_fragment(&self.sessions.title(session_id).unwrap_or_default())
+        });
         let serial = self.preparations.serial.lock().await;
         let (mut preparation, mutation) = self
             .source_control
             .plan_worktree(
                 PreparationId::default(),
                 &source,
-                &self.sessions.title(session_id).unwrap_or_default(),
+                &name,
                 &self.preparations.intended_destinations(),
             )
             .await
@@ -838,20 +853,14 @@ impl SessionOperations {
         })
     }
 
-    /// Tells the Session's Provider actor it Moved, runs the orphan check for
-    /// a Worktree it left once the process stopped there has gone, and sets
-    /// about naming anew the branch of a Worktree made for this Move. The
+    /// Tells the Session's Provider actor it Moved, and runs the orphan check
+    /// for a Worktree it left once the process stopped there has gone. The
     /// actor settling a pending Move has already let go of that process by the
     /// time it reads this.
     fn follow_move(&self, session_id: SessionId, aftermath: MoveAftermath) {
         let provider_stopped = self.providers.session_moved(session_id);
         if let Some(repository) = aftermath.vacated {
             self.orphan_checks.spawn(repository, provider_stopped);
-        }
-        if let Some(created) = aftermath.created_branch
-            && let Some(snapshot) = self.sessions.snapshot(session_id)
-        {
-            self.derivation.derive_moved_branch(&snapshot, created);
         }
     }
 }
@@ -880,8 +889,8 @@ async fn new_worktree_source(
 }
 
 /// Retires what a crash left of each Move that had already landed: an intent
-/// naming a Worktree its Session stands in, or is bound for, would hold up that
-/// Worktree's branch rename and its name. Read as a Server starts, before any
+/// naming a Worktree its Session stands in, or is bound for, would go on
+/// reserving that Worktree's name. Read as a Server starts, before any
 /// pending Move settles or any Reclaim looks; an intent whose Move did not land
 /// is left for Reclaim, which finds an orphan.
 pub(crate) fn retire_landed_move_intents(

@@ -75,26 +75,6 @@ pub enum PreparationCheckpoint {
 pub(crate) const NOT_IN_A_REPOSITORY: &str =
     "A new Worktree can only be made in a Repository, and this directory is not in one";
 
-/// The branch a fresh Managed Worktree preparation created, named for the
-/// Worktree it belongs to: what a Title derivation may propose a better name
-/// for. Only a Session admitted from that preparation carries one.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CreatedBranch {
-    pub repository: Repository,
-    pub checkout: crate::protocol::CheckoutAssociation,
-    /// The branch's full name as Suru created it, prefix included.
-    pub branch: String,
-}
-
-/// What renaming a [`CreatedBranch`] came to.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum BranchRename {
-    /// The proposal already names the branch, so nothing changed.
-    Unchanged,
-    /// The branch goes by this full name now.
-    Renamed { branch: String },
-}
-
 /// Why a Clone of a Repository URL made no Workspace. Nothing the Clone
 /// began is left at its destination, unless removing it failed.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -241,17 +221,6 @@ pub trait SourceControl: Send + Sync {
     /// deterministic Server tests use it to admit work in that race window.
     async fn reclaim_candidate_observed(&self, _target: &crate::protocol::CheckoutRemovalTarget) {}
 
-    /// Observation point once a branch rename has settled: declined, found
-    /// unchanged, or renamed and recorded. Adapters ordinarily do nothing;
-    /// deterministic Server tests use it to learn how a rename went, which is
-    /// otherwise visible only in the Log wherever nothing changed.
-    async fn branch_rename_settled(
-        &self,
-        _created: &CreatedBranch,
-        _outcome: &Result<BranchRename, String>,
-    ) {
-    }
-
     async fn checkpoint(
         &self,
         _at: PreparationCheckpoint,
@@ -365,31 +334,12 @@ pub trait SourceControl: Send + Sync {
     /// backstop to [`SourceControl::settle_clones`] for a Server that died
     /// or was cut off before its Clones settled.
     async fn sweep_abandoned_clones(&self, staging: &CloneStaging);
-    /// Rename the branch a fresh preparation created for a Managed Worktree
-    /// to the first of [`naming::numbered`] `proposal` — a fragment already
-    /// shaped by [`naming::proposed_fragment`] — that no other branch holds,
-    /// leaving the Worktree's location where it is. Proceeds only while the
-    /// Worktree's HEAD is still the created branch and that branch has no
-    /// upstream configured, and changes nothing where the proposal already
-    /// names it. The caller holds the preparation serial and the Repository's
-    /// mutation guard.
-    ///
-    /// Only systems whose Repositories report the `rename_branch` capability
-    /// offer this; a system without branches keeps the default, which refuses.
-    async fn rename_branch(
-        &self,
-        _created: &CreatedBranch,
-        _proposal: &str,
-    ) -> Result<BranchRename, String> {
-        Err("Branch renaming is unsupported".to_owned())
-    }
     /// Plan a Managed Worktree named from `name`, a fragment already shaped by
-    /// [`naming::name_fragment`]. It takes the first of [`naming::numbered`]
+    /// [`naming::name_fragment`] or [`naming::proposed_fragment`]. It takes the first of [`naming::numbered`]
     /// whose location and branch are free and whose destination is not
     /// `reserved` by another stored preparation; nothing already holding a
-    /// name is displaced to make room. A branch is free by the same test
-    /// [`SourceControl::rename_branch`] applies, so a name differing only in
-    /// case, or clashing with another as a directory, counts as held.
+    /// name is displaced to make room. A name differing from a branch only in
+    /// case, or clashing with one as a directory, counts as held.
     async fn plan_checkout(
         &self,
         _id: crate::protocol::PreparationId,
@@ -718,12 +668,14 @@ impl SourceControlService {
     ) -> Result<(), String> {
         self.adapter.checkpoint(at, plan).await
     }
-    /// Plan the Worktree a preparation request asks for, named from its first
+    /// Plan the Worktree a preparation request asks for, named `derived`
+    /// where an Errand derived a name for it, and otherwise from its first
     /// Prompt without the markers of that Prompt's bound Skill Invocations or
     /// the labels of its Attachments.
     pub(crate) async fn plan_checkout(
         &self,
         request: &crate::protocol::PrepareCheckoutRequest,
+        derived: Option<&str>,
         reserved: &[PathBuf],
     ) -> Result<
         (
@@ -737,15 +689,19 @@ impl SourceControlService {
             &request.prompt.skill_invocations,
             &request.prompt.attachments,
         )?;
+        let name = match derived {
+            Some(derived) => derived.to_owned(),
+            None => naming::name_fragment(&naming_text),
+        };
         let (mut plan, guard) = self
-            .plan_worktree(request.id, &request.source.path, &naming_text, reserved)
+            .plan_worktree(request.id, &request.source.path, &name, reserved)
             .await?;
         if let Some(intended) = request.intended_session {
             plan.intended_session = intended;
         }
         Ok((plan, guard))
     }
-    /// Plan a new Managed Worktree named from `naming_text`, shaped as every
+    /// Plan a new Managed Worktree named `name`, a fragment shaped as every
     /// Managed Worktree's name is, and started from the commit `source` stands
     /// at, which the plan captures with the branch naming it under the
     /// Repository's mutation guard, answered with the plan. The plan intends a
@@ -755,7 +711,7 @@ impl SourceControlService {
         &self,
         id: crate::protocol::PreparationId,
         source_directory: &Path,
-        naming_text: &str,
+        name: &str,
         reserved: &[PathBuf],
     ) -> Result<
         (
@@ -764,7 +720,6 @@ impl SourceControlService {
         ),
         String,
     > {
-        let name = naming::name_fragment(naming_text);
         let source = self.resolve(source_directory, None).await;
         let repository = source
             .workspace
@@ -780,7 +735,7 @@ impl SourceControlService {
         }
         let plan = self
             .adapter
-            .plan_checkout(id, &current, &name, reserved)
+            .plan_checkout(id, &current, name, reserved)
             .await?;
         Ok((plan, guard))
     }
@@ -789,74 +744,6 @@ impl SourceControlService {
         plan: &crate::protocol::PreparedCheckout,
     ) -> Result<ResolvedWorkspace, String> {
         self.adapter.prepare_checkout(plan).await
-    }
-    /// Rename a fresh Managed Worktree's branch to what its Title derivation
-    /// proposed, on this owning Server, where its Repository advertises the
-    /// capability, and hand the Worktree's fresh reading to `record` the
-    /// moment it is renamed.
-    ///
-    /// Takes the preparation serial and then the Repository's mutation guard,
-    /// the order preparation, admission, and removal take them in, so the
-    /// rename never races any of them and waits out an admitted Turn's
-    /// execution lease rather than skipping. It first waits for the guard to
-    /// come free without holding the serial, so a Turn still starting in this
-    /// Repository never holds up every other preparation behind the rename.
-    ///
-    /// Inside those locks it declines while any retained preparation intent
-    /// for the Worktree still names the branch — one whose deletion after
-    /// admission failed, say — so no intent is left naming a branch that no
-    /// longer exists. A rename then reads the Worktree and records it before
-    /// either lock is let go, so no removal or recovery can come between the
-    /// new name and the recovery facts that carry it; being guarded, that
-    /// recording also stands over any observation of the old name still in
-    /// flight.
-    pub(crate) async fn rename_branch(
-        &self,
-        preparations: &PreparationStore,
-        created: &CreatedBranch,
-        proposal: &str,
-        record: impl FnOnce(crate::protocol::CheckoutSummary) -> Result<(), String>,
-    ) -> Result<BranchRename, String> {
-        let outcome = self
-            .guarded_rename(preparations, created, proposal, record)
-            .await;
-        self.adapter.branch_rename_settled(created, &outcome).await;
-        outcome
-    }
-    async fn guarded_rename(
-        &self,
-        preparations: &PreparationStore,
-        created: &CreatedBranch,
-        proposal: &str,
-        record: impl FnOnce(crate::protocol::CheckoutSummary) -> Result<(), String>,
-    ) -> Result<BranchRename, String> {
-        if let crate::protocol::SourceControlCapability::Unsupported { reason } =
-            &created.repository.capabilities.rename_branch
-        {
-            return Err(reason.clone());
-        }
-        drop(self.mutation_guard(&created.repository.id).await);
-        let _serial = preparations.serial.lock().await;
-        let _mutation = self.mutation_guard(&created.repository.id).await;
-        if preparations
-            .for_destination(&created.checkout.root)?
-            .iter()
-            .any(|intent| intent.plan.branch() == Some(created.branch.as_str()))
-        {
-            return Err("A retained preparation intent still names the branch".to_owned());
-        }
-        let renamed = self.adapter.rename_branch(created, proposal).await?;
-        if let BranchRename::Renamed { branch } = &renamed
-            && let Err(error) = record(self.adapter.observe(&created.checkout).await)
-        {
-            // The branch is renamed whatever this says. Recovery facts that
-            // could not be written are caught up by the next observation.
-            tracing::warn!(
-                %branch,
-                "a renamed Managed Worktree's Checkout State could not be recorded: {error}"
-            );
-        }
-        Ok(renamed)
     }
     pub(crate) async fn observe(
         &self,

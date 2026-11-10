@@ -58,7 +58,6 @@ fn presented_repository(
             create_checkout: unread(),
             recover_checkout: unread(),
             remove_checkout: unread(),
-            rename_branch: unread(),
         },
     })
 }

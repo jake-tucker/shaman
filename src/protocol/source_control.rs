@@ -65,9 +65,6 @@ pub struct SourceControlCapabilities {
     pub create_checkout: SourceControlCapability,
     pub recover_checkout: SourceControlCapability,
     pub remove_checkout: SourceControlCapability,
-    /// Renaming the branch Suru created for a Managed Worktree to the one a
-    /// Title derivation proposed. Only systems with branches offer it.
-    pub rename_branch: SourceControlCapability,
 }
 
 impl SourceControlCapability {
@@ -85,7 +82,6 @@ impl SourceControlCapabilities {
             create_checkout: SourceControlCapability::unsupported(),
             recover_checkout: SourceControlCapability::unsupported(),
             remove_checkout: SourceControlCapability::unsupported(),
-            rename_branch: SourceControlCapability::unsupported(),
         }
     }
 }

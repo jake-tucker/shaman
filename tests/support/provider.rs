@@ -100,6 +100,13 @@ pub struct ControlledProviderRuntime {
     /// mode does: by starting a Provider-side session, delivering the one
     /// Prompt, draining for the reply, and discarding the session (ADR 0011).
     session_shaped_errands: Arc<Mutex<bool>>,
+    /// Whether this double holds the Errand naming a new Managed Worktree for
+    /// the test to answer, as it holds every other Errand. Making a Worktree
+    /// waits on that Errand, so a double that held it by default would stall
+    /// every test that makes one and never looks at its name: left alone, it
+    /// declines the Errand at once, and the Worktree is named as it is
+    /// wherever no name is derived.
+    worktree_names_held: Arc<AtomicBool>,
 }
 
 pub struct StartRequest {
@@ -340,6 +347,7 @@ impl ControlledProvider {
                 errands: errands_tx,
                 errand_starts: errand_starts_tx,
                 session_shaped_errands: Arc::new(Mutex::new(false)),
+                worktree_names_held: Arc::new(AtomicBool::new(false)),
             }),
             Self {
                 starts: starts_rx,
@@ -541,6 +549,20 @@ impl ControlledProviderRuntime {
             .lock()
             .expect("controlled Provider Errand mode lock is not poisoned") = true;
     }
+
+    /// Holds each Errand naming a new Managed Worktree for the test to
+    /// answer, where this double otherwise declines it at once.
+    pub fn hold_worktree_name_errands(&self) {
+        self.worktree_names_held.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Whether `errand` asks for a new Managed Worktree's name: the one Errand
+/// that asks for a branch and nothing else.
+fn names_a_worktree(errand: &ProviderErrand) -> bool {
+    errand.schema["properties"]
+        .as_object()
+        .is_some_and(|asked| asked.len() == 1 && asked.contains_key("branch"))
 }
 
 impl ErrandRequest {
@@ -1309,6 +1331,11 @@ impl ProviderRuntime for ControlledProviderRuntime {
     }
 
     fn run_errand(&self, errand: ProviderErrand) -> ErrandFuture<'_> {
+        if names_a_worktree(&errand) && !self.worktree_names_held.load(Ordering::SeqCst) {
+            return Box::pin(async {
+                Err(ProviderError::new("this test derives no Worktree name").into())
+            });
+        }
         if *self
             .session_shaped_errands
             .lock()

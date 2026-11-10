@@ -3519,8 +3519,7 @@ pub enum Activity {
         /// Move carries one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
-        /// Whether Suru made the Managed Worktree `to` names for this Move,
-        /// whose branch an Errand names anew once the Move applies.
+        /// Whether Suru made the Managed Worktree `to` names for this Move.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         new_worktree: bool,
         /// The Worktree `to` lies in, where it lies in one. While the Move

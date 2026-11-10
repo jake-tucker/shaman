@@ -1,7 +1,7 @@
-//! A Move into a new Managed Worktree (ADR 0059): made as it is asked, named from
-//! the Session's Title, started from the commit the Session's Worktree stands at,
-//! and renamed once by an Errand of its own, through the owning Server's protocol
-//! and real Git.
+//! A Move into a new Managed Worktree (ADR 0059): made as it is asked, named by
+//! an Errand the Move waits on or else from the Session's Title, and started
+//! from the commit the Session's Worktree stands at, through the owning Server's
+//! protocol and real Git.
 use super::*;
 use suru::source_control::{PreparationCheckpoint, PreparationObserver};
 
@@ -129,11 +129,40 @@ impl Fixture {
         self.main.join(MANAGED_WORKTREE_DIRECTORY).join(name)
     }
 
-    fn no_errand_asked(&mut self) {
-        assert!(
-            self.provider.try_next_errand().is_none(),
-            "no Errand reached the Provider"
-        );
+    /// Moves the Session into a new Managed Worktree of `directory`'s
+    /// Repository while `answer` settles the Errand naming it, which the Move
+    /// waits on, answering the Session as the Move left it.
+    async fn move_named(
+        &mut self,
+        session_id: SessionId,
+        directory: &Path,
+        answer: impl FnOnce(ErrandReply),
+    ) -> SessionSummary {
+        let request = into_new_worktree(directory);
+        let (outcome, ()) = tokio::join!(self.client.move_session(session_id, &request), async {
+            answer(next_errand(&mut self.provider).await)
+        },);
+        moved_summary(outcome.expect("the Move stands"))
+    }
+
+    /// Waits for the Session to work in `directory`.
+    async fn standing_in(&self, session_id: SessionId, directory: &Path) {
+        timeout(PROGRESS_DEADLINE, async {
+            while self
+                .client
+                .read_session(session_id)
+                .await
+                .unwrap()
+                .session
+                .execution_directory
+                .path
+                != directory
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the Session Moves");
     }
 }
 
@@ -146,10 +175,10 @@ fn assert_on_branch(root: &Path, branch: &str) {
 
 /// The whole of it from a linked Worktree: anchored at the main root, started
 /// from the Session's commit rather than the main Worktree's, with what was not
-/// committed left behind, and renamed by an Errand that reads the Prompts so far
+/// committed left behind, and named by an Errand that reads the Prompts so far
 /// and leaves the Title standing.
 #[tokio::test]
-async fn a_move_makes_a_worktree_named_from_the_title_and_started_where_the_session_stands() {
+async fn a_move_makes_a_worktree_named_by_its_errand_and_started_where_the_session_stands() {
     let mut fixture = Fixture::start("move-new-worktree").await;
     let linked = fixture.root.join("linked");
     git(
@@ -172,23 +201,32 @@ async fn a_move_makes_a_worktree_named_from_the_title_and_started_where_the_sess
         .await;
     fixture.settled(session_id).await;
 
-    let moved = moved_summary(
-        fixture
-            .move_into_new_worktree(session_id, &linked)
-            .await
-            .expect("the Move stands"),
-    );
+    fixture.runtime.hold_worktree_name_errands();
+    let moved = fixture
+        .move_named(session_id, &linked, |errand| {
+            assert_eq!(errand.schema["required"], json!(["branch"]));
+            assert!(errand.schema["properties"].get("title").is_none());
+            assert_eq!(errand.schema["additionalProperties"], json!(false));
+            assert!(
+                errand.prompt.contains("fix the reasoning flicker")
+                    && errand.prompt.contains("Now cover the tables too"),
+                "the Errand reads the Session's Prompts so far: {}",
+                errand.prompt
+            );
+            errand.succeed(json!({ "branch": "feature/Parser tables" }));
+        })
+        .await;
 
-    let worktree = fixture.managed("tune-parser");
+    let worktree = fixture.managed("parser-tables");
     assert_eq!(moved.session.execution_directory.path, worktree);
     assert_eq!(
         moved.session.checkout.as_ref().map(|c| c.kind),
         Some(CheckoutKind::Linked)
     );
-    assert_on_branch(&worktree, "feature/tune-parser");
+    assert_on_branch(&worktree, "feature/parser-tables");
     assert_eq!(head_commit(&worktree), source_commit);
     assert_eq!(
-        suru_base(&fixture.main, "feature/tune-parser").as_deref(),
+        suru_base(&fixture.main, "feature/parser-tables").as_deref(),
         Some(source_commit.as_str()),
         "provenance is recorded as it is for a new Session"
     );
@@ -198,7 +236,7 @@ async fn a_move_makes_a_worktree_named_from_the_title_and_started_where_the_sess
             &[
                 "config",
                 "--local",
-                "branch.feature/tune-parser.suru-base-branch"
+                "branch.feature/parser-tables.suru-base-branch"
             ]
         )
         .as_deref(),
@@ -208,37 +246,8 @@ async fn a_move_makes_a_worktree_named_from_the_title_and_started_where_the_sess
     assert!(!worktree.join("uncommitted").exists());
     assert!(linked.join("uncommitted").is_file());
 
-    let errand = fixture.next_errand().await;
-    assert_eq!(errand.schema["required"], json!(["branch"]));
-    assert!(errand.schema["properties"].get("title").is_none());
-    assert_eq!(errand.schema["additionalProperties"], json!(false));
-    assert!(
-        errand.prompt.contains("fix the reasoning flicker")
-            && errand.prompt.contains("Now cover the tables too"),
-        "the Errand reads the Session's Prompts so far: {}",
-        errand.prompt
-    );
-    errand.succeed(json!({ "branch": "feature/Parser tables" }));
-    assert_eq!(
-        fixture.rename_attempted().await,
-        Ok(BranchRename::Renamed {
-            branch: "feature/parser-tables".to_owned()
-        })
-    );
-    assert_on_branch(&worktree, "feature/parser-tables");
     assert_eq!(fixture.title_of(session_id).await, "Tune the parser");
-    assert_eq!(
-        fixture
-            .client
-            .read_session(session_id)
-            .await
-            .unwrap()
-            .session
-            .execution_directory
-            .path,
-        worktree,
-        "the location keeps the first name"
-    );
+    fixture.no_errand_asked();
     fixture.server.shutdown().await.expect("shut down server");
 }
 
@@ -327,9 +336,10 @@ async fn a_name_already_taken_gains_a_number_and_displaces_nothing() {
 }
 
 /// A pending Move's Worktree is made as it is asked, from the commit standing
-/// then; its Errand waits for the Move to apply.
+/// then and under the name derived then, so nothing is left to name once the
+/// Move applies.
 #[tokio::test]
-async fn a_pending_move_makes_its_worktree_at_once_and_renames_its_branch_once_it_applies() {
+async fn a_pending_move_makes_its_worktree_at_once_under_its_derived_name() {
     let mut fixture = Fixture::start("move-new-worktree-pending").await;
     let main = fixture.main.clone();
     let (session_id, mut session) = fixture.idle_session(&main, "Tune the parser").await;
@@ -337,16 +347,20 @@ async fn a_pending_move_makes_its_worktree_at_once_and_renames_its_branch_once_i
         .working(session_id, &mut session, "Keep working")
         .await;
     let source_commit = head_commit(&main);
+    fixture.runtime.hold_worktree_name_errands();
 
-    let outcome = fixture
-        .move_into_new_worktree(session_id, &main)
-        .await
-        .expect("the Move is taken");
+    let request = into_new_worktree(&main);
+    let (outcome, ()) = tokio::join!(fixture.client.move_session(session_id, &request), async {
+        let errand = next_errand(&mut fixture.provider).await;
+        assert_eq!(errand.schema["required"], json!(["branch"]));
+        errand.succeed(json!({ "branch": "Parser tables" }));
+    });
+    let outcome = outcome.expect("the Move is taken");
 
     let MoveOutcome::Pending { session: pending } = outcome else {
         panic!("the Move waits for the Turn, not {outcome:?}");
     };
-    let worktree = fixture.managed("tune-parser");
+    let worktree = fixture.managed("parser-tables");
     assert_eq!(
         pending
             .session
@@ -356,36 +370,28 @@ async fn a_pending_move_makes_its_worktree_at_once_and_renames_its_branch_once_i
     );
     assert_eq!(pending.session.execution_directory.path, main);
     assert_eq!(head_commit(&worktree), source_commit);
+    assert_on_branch(&worktree, "feature/parser-tables");
     std::fs::write(main.join("advanced"), "advanced").unwrap();
     commit_all(&main, "advance main while it waits");
-    fixture.no_errand_asked();
 
     turn.succeed();
     session
         .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
         .await;
 
-    let errand = fixture.next_errand().await;
-    assert_eq!(errand.schema["required"], json!(["branch"]));
-    let snapshot = fixture.client.read_session(session_id).await.unwrap();
-    assert_eq!(snapshot.session.execution_directory.path, worktree);
+    fixture.standing_in(session_id, &worktree).await;
     assert_eq!(head_commit(&worktree), source_commit);
-    errand.succeed(json!({ "branch": "Parser tables" }));
-    assert_eq!(
-        fixture.rename_attempted().await,
-        Ok(BranchRename::Renamed {
-            branch: "feature/parser-tables".to_owned()
-        })
-    );
+    assert_on_branch(&worktree, "feature/parser-tables");
+    fixture.no_errand_asked();
     assert_eq!(fixture.title_of(session_id).await, "Tune the parser");
     fixture.server.shutdown().await.expect("shut down server");
 }
 
 /// What a pending Move made outlives a restart with it, as does the fact it made
-/// it: the Move applies as the Server starts, into the Worktree still standing,
-/// and its Errand runs there.
+/// it: the Move applies as the Server starts, into the Worktree still standing
+/// under the name it was made with.
 #[tokio::test]
-async fn a_restart_finds_a_pending_moves_worktree_standing_and_still_renames_its_branch() {
+async fn a_restart_finds_a_pending_moves_worktree_standing_and_moves_into_it() {
     let mut fixture = Fixture::start("move-new-worktree-restart").await;
     let main = fixture.main.clone();
     let (session_id, mut session) = fixture.idle_session(&main, "Tune the parser").await;
@@ -412,7 +418,7 @@ async fn a_restart_finds_a_pending_moves_worktree_standing_and_still_renames_its
     drop(provider);
     assert!(worktree.is_dir());
 
-    let (server, client, mut provider, mut renames, _) = spawn(
+    let (server, client, runtime, mut provider) = spawn(
         &state,
         channel,
         None,
@@ -420,36 +426,33 @@ async fn a_restart_finds_a_pending_moves_worktree_standing_and_still_renames_its
         GitSourceControl::default(),
     )
     .await;
+    runtime.hold_worktree_name_errands();
 
-    let errand = timeout(PROGRESS_DEADLINE, provider.next_errand())
-        .await
-        .expect("the Move's Errand reaches the Provider after the restart");
-    assert_eq!(errand.schema()["required"], json!(["branch"]));
-    assert_eq!(
-        client
+    timeout(PROGRESS_DEADLINE, async {
+        while client
             .read_session(session_id)
             .await
             .unwrap()
             .session
             .execution_directory
-            .path,
-        worktree
-    );
-    errand.succeed(json!({ "branch": "Parser tables" }));
-    assert_eq!(
-        timeout(PROGRESS_DEADLINE, renames.recv())
-            .await
-            .expect("the rename reaches source control")
-            .expect("the Server is still running"),
-        Ok(BranchRename::Renamed {
-            branch: "feature/parser-tables".to_owned()
-        })
+            .path
+            != worktree
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the Move applies after the restart");
+    assert_on_branch(&worktree, "feature/tune-parser");
+    assert!(
+        provider.try_next_errand().is_none(),
+        "a Worktree already made is named no second time"
     );
     server.shutdown().await.expect("shut down server");
 }
 
 #[tokio::test]
-async fn derivation_turned_off_leaves_the_moved_worktree_its_first_name() {
+async fn derivation_turned_off_names_the_moved_worktree_from_its_title() {
     let mut fixture = Fixture::start_with(
         "move-new-worktree-off",
         Some(DerivationErrand::Off),
@@ -473,70 +476,78 @@ async fn derivation_turned_off_leaves_the_moved_worktree_its_first_name() {
         fixture.managed("fix-reasoning-flicker-review")
     );
     fixture.no_errand_asked();
-    fixture.no_rename_attempted();
     fixture.server.shutdown().await.expect("shut down server");
 }
 
-/// A failed Errand and one naming nothing usable each leave the first name, and
-/// the rename the next Move's Errand asks for is the only one attempted.
+/// A failed Errand and one naming nothing usable each leave the Worktree the
+/// name the Session's Title gives it, numbered where that is taken.
 #[tokio::test]
-async fn an_errand_that_fails_or_names_nothing_leaves_the_first_name_standing() {
+async fn an_errand_that_fails_or_names_nothing_leaves_the_name_the_title_gives() {
     let mut fixture = Fixture::start("move-new-worktree-failed-errand").await;
     let main = fixture.main.clone();
     let (session_id, _session) = fixture.idle_session(&main, "Tune the parser").await;
+    fixture.runtime.hold_worktree_name_errands();
 
-    fixture
-        .move_into_new_worktree(session_id, &main)
-        .await
-        .expect("the Move stands");
-    fixture.next_errand().await.fail("the Provider refused");
-
-    fixture
-        .move_into_new_worktree(session_id, &main)
-        .await
-        .expect("the Move stands");
-    fixture
-        .next_errand()
-        .await
-        .succeed(json!({ "branch": "please do it" }));
-
-    fixture
-        .move_into_new_worktree(session_id, &main)
-        .await
-        .expect("the Move stands");
-    fixture
-        .next_errand()
-        .await
-        .succeed(json!({ "branch": "Parser tables" }));
-    assert_eq!(
-        fixture.rename_attempted().await,
-        Ok(BranchRename::Renamed {
-            branch: "feature/parser-tables".to_owned()
+    let moved = fixture
+        .move_named(session_id, &main, |errand| {
+            errand.fail("the Provider refused")
         })
+        .await;
+    assert_eq!(
+        moved.session.execution_directory.path,
+        fixture.managed("tune-parser")
     );
-    assert!(branches(&main).contains(&"feature/parser-tables".to_owned()));
+
+    let moved = fixture
+        .move_named(session_id, &main, |errand| {
+            errand.succeed(json!({ "branch": "please do it" }))
+        })
+        .await;
+    assert_eq!(
+        moved.session.execution_directory.path,
+        fixture.managed("tune-parser-2")
+    );
+
+    let moved = fixture
+        .move_named(session_id, &main, |errand| {
+            errand.succeed(json!({ "branch": "Parser tables" }))
+        })
+        .await;
+    assert_eq!(
+        moved.session.execution_directory.path,
+        fixture.managed("parser-tables")
+    );
+    assert_on_branch(&fixture.managed("parser-tables"), "feature/parser-tables");
     fixture.server.shutdown().await.expect("shut down server");
 }
 
-/// A branch no longer the one Suru made, for all the Move knows, keeps its name
-/// under the Worktree spec's rule.
+/// The wait on a Provider that never answers ends with the naming timeout, and
+/// the Move stands under the name the Session's Title gives.
 #[tokio::test]
-async fn a_moved_worktree_no_longer_on_its_created_branch_is_not_renamed() {
-    let mut fixture = Fixture::start("move-new-worktree-switched").await;
+async fn a_move_waits_on_its_name_only_as_long_as_the_naming_timeout() {
+    let mut fixture = Fixture::start_with(
+        "move-new-worktree-timeout",
+        None,
+        timings().with_worktree_naming_timeout(Duration::from_millis(20)),
+    )
+    .await;
     let main = fixture.main.clone();
     let (session_id, _session) = fixture.idle_session(&main, "Tune the parser").await;
-    fixture
-        .move_into_new_worktree(session_id, &main)
-        .await
-        .expect("the Move stands");
-    let errand = fixture.next_errand().await;
-    git(&fixture.managed("tune-parser"), &["switch", "-c", "mine"]);
+    fixture.runtime.hold_worktree_name_errands();
 
-    errand.succeed(json!({ "branch": "Parser tables" }));
+    let mut wedged = None;
+    let moved = timeout(
+        SOONER_THAN_THE_DEFAULT_WAIT,
+        fixture.move_named(session_id, &main, |errand| wedged = Some(errand)),
+    )
+    .await
+    .expect("the Move stands once the wait runs out");
 
-    assert!(fixture.rename_attempted().await.is_err());
-    assert_on_branch(&fixture.managed("tune-parser"), "mine");
-    assert!(branches(&main).contains(&"feature/tune-parser".to_owned()));
+    assert!(wedged.is_some(), "the Errand was asked and never answered");
+    assert_eq!(
+        moved.session.execution_directory.path,
+        fixture.managed("tune-parser")
+    );
     fixture.server.shutdown().await.expect("shut down server");
 }
 
@@ -856,8 +867,8 @@ impl PreparationObserver for KeepIntent {
 }
 
 /// A crash just after a Move lands, before its intent is deleted, finds the
-/// intent admitted and the Session bound for its Worktree. Left standing it would
-/// refuse the branch's rename for as long as the Session referenced the
+/// intent admitted and the Session bound for its Worktree. Left standing it
+/// would hold the Worktree's name for as long as the Session referenced the
 /// Worktree; the next start retires it first.
 #[tokio::test]
 async fn an_intent_a_crash_left_behind_a_landed_move_is_retired_as_the_server_starts() {
@@ -907,7 +918,7 @@ async fn an_intent_a_crash_left_behind_a_landed_move_is_retired_as_the_server_st
     let stored = intents.join(format!("{}.json", intent.id.0));
     std::fs::write(&stored, serde_json::to_vec(&intent).unwrap()).unwrap();
 
-    let (server, _client, mut provider, mut renames, _) = spawn(
+    let (server, _client, _runtime, _provider) = spawn(
         &state,
         channel,
         None,
@@ -917,19 +928,6 @@ async fn an_intent_a_crash_left_behind_a_landed_move_is_retired_as_the_server_st
     .await;
 
     assert!(!stored.exists(), "the start retired it");
-    let errand = timeout(PROGRESS_DEADLINE, provider.next_errand())
-        .await
-        .expect("the Move's Errand reaches the Provider after the restart");
-    errand.succeed(json!({ "branch": "Parser tables" }));
-    assert_eq!(
-        timeout(PROGRESS_DEADLINE, renames.recv())
-            .await
-            .expect("the rename reaches source control")
-            .expect("the Server is still running"),
-        Ok(BranchRename::Renamed {
-            branch: "feature/parser-tables".to_owned()
-        })
-    );
     server.shutdown().await.expect("shut down server");
 }
 

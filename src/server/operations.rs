@@ -793,21 +793,7 @@ impl SessionOperations {
         // cosmetic and the user's actual work does not wait on one. Only a
         // freshly created Session reaches here, which is what makes the
         // derivation once-per-Session — a retried creation answers with the
-        // Session it already made and asks for nothing. The same holds for
-        // the branch a fresh preparation just created, the one thing that
-        // lets derivation propose renaming it.
-        let created_branch = preparation.as_ref().and_then(|plan| {
-            let checkout = snapshot
-                .session
-                .checkout
-                .clone()
-                .filter(|checkout| checkout.root == plan.destination.path)?;
-            Some(crate::source_control::CreatedBranch {
-                repository: plan.repository.clone(),
-                checkout,
-                branch: plan.plan.branch()?.to_owned(),
-            })
-        });
+        // Session it already made and asks for nothing.
         self.derivation.derive(
             snapshot.session.id,
             snapshot.session.execution_directory.path.clone(),
@@ -818,7 +804,6 @@ impl SessionOperations {
                 .map(|selection| selection.provider.clone()),
             &snapshot.prompts[0],
             &snapshot.session.workspace,
-            created_branch,
         );
         Ok(StoreOutcome::Created(snapshot))
     }
@@ -848,6 +833,11 @@ impl SessionOperations {
     /// asked again resumes it. A preparation whose Session was already begun
     /// answers as that beginning left it.
     ///
+    /// A preparation not yet recorded is named by an Errand reading its
+    /// Prompt, waited on as part of making the Worktree and ahead of the
+    /// locks preparation takes, so no other preparation waits with it; where
+    /// that Errand names nothing, the Prompt's own words name the Worktree.
+    ///
     /// `author` names who asks on the user's behalf, where the user does not:
     /// a Sidekick is refused a Worktree for a Session in the Sidekick
     /// Workspace, as it is refused beginning one there.
@@ -873,6 +863,7 @@ impl SessionOperations {
         // A dropped preparation leaves no answer and no final record; the guard logs that so a
         // preparation that stalls silently can be traced to its caller going away early.
         let mut progress = PreparationProgress::begin(request.id);
+        let derived_name = self.derive_worktree_name(&request, &mut progress).await;
         // Stable ID allocation and persistence precede Git mutation. The repository
         // guard is also used by admission, and can cover recovery/removal operations.
         let _serial = self.preparations.serial.lock().await;
@@ -884,7 +875,11 @@ impl SessionOperations {
             }
             Ok(None) => match self
                 .source_control
-                .plan_checkout(&request, &self.preparations.intended_destinations())
+                .plan_checkout(
+                    &request,
+                    derived_name.as_deref(),
+                    &self.preparations.intended_destinations(),
+                )
                 .await
             {
                 Ok((plan, guard)) => {
@@ -988,6 +983,42 @@ impl SessionOperations {
             location,
             error,
         })
+    }
+
+    /// The name an Errand derives for the Worktree `request` asks for, where
+    /// the preparation is not yet recorded — a recorded one keeps the name it
+    /// was planned with — and its source lies in a Repository a Worktree can
+    /// be made of, so one that planning is about to refuse waits on no Errand. Read ahead of the
+    /// preparation serial: a preparation recorded meanwhile only leaves the
+    /// name unused.
+    async fn derive_worktree_name(
+        &self,
+        request: &PrepareCheckoutRequest,
+        progress: &mut PreparationProgress,
+    ) -> Option<String> {
+        if !matches!(self.preparations.load(request.id), Ok(None)) {
+            return None;
+        }
+        let source = self
+            .source_control
+            .resolve(&request.source.path, None)
+            .await;
+        let repository = source.workspace.repository.as_ref()?;
+        if !matches!(
+            repository.capabilities.create_checkout,
+            crate::protocol::SourceControlCapability::Available
+        ) {
+            return None;
+        }
+        progress.stage("deriving the Worktree's name");
+        self.derivation
+            .worktree_name_for_prompt(
+                format!("preparation {}", request.id.0),
+                request.provider.clone(),
+                &request.prompt,
+                &request.source.path,
+            )
+            .await
     }
 
     /// Admits a Prompt to a Session, answering the Prompt admitted, or the one

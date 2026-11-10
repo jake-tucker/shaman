@@ -1,7 +1,6 @@
-//! Which branch names are free, and renaming the branch Suru created for a
-//! Managed Worktree to one a Title derivation proposed.
+//! Which branch names are free for a Managed Worktree to take.
 use super::*;
-use crate::source_control::{BranchRename, CreatedBranch, naming};
+use crate::source_control::naming;
 
 impl GitSourceControl {
     /// Every local branch's short name, read in one listing so a whole run of
@@ -24,84 +23,6 @@ impl GitSourceControl {
             .filter_map(|reference| reference.strip_prefix("refs/heads/"))
             .map(str::to_owned)
             .collect())
-    }
-
-    /// Whether `branch` has an upstream configured: a `branch.<name>.remote`
-    /// or `branch.<name>.merge` entry, whether or not the remote-tracking ref
-    /// it names has been fetched.
-    async fn has_upstream(&self, directory: &Path, branch: &str) -> Result<bool, String> {
-        for key in ["remote", "merge"] {
-            let output = self
-                .command(
-                    directory,
-                    &["config", "--get", &format!("branch.{branch}.{key}")],
-                )
-                .await?;
-            match output.status.code() {
-                Some(0) => return Ok(true),
-                // Git's documented answer for a key that is not set.
-                Some(1) => {}
-                _ => {
-                    return Err(format!(
-                        "Git could not read the branch's upstream: {}",
-                        String::from_utf8_lossy(&output.stderr).trim()
-                    ));
-                }
-            }
-        }
-        Ok(false)
-    }
-
-    /// Rename a created branch whose Worktree is still on it. See
-    /// [`crate::source_control::SourceControl::rename_branch`].
-    pub(super) async fn rename_created_branch(
-        &self,
-        created: &CreatedBranch,
-        proposal: &str,
-    ) -> Result<BranchRename, String> {
-        let root = &created.checkout.root;
-        let metadata = &created.repository.metadata_directory;
-        if !self.is_root(root, metadata).await? {
-            return Err(
-                "The Worktree is missing or no longer belongs to its Repository".to_owned(),
-            );
-        }
-        let head = self
-            .text(root, &["symbolic-ref", "--quiet", "HEAD"])
-            .await?;
-        if head.as_deref() != Some(format!("refs/heads/{}", created.branch).as_str()) {
-            return Err("The Worktree is no longer on the branch Suru created for it".to_owned());
-        }
-        // A branch with an upstream has most likely been pushed, and renaming
-        // it here would part the local name from the one the remote knows.
-        if self.has_upstream(root, &created.branch).await? {
-            return Err("The branch has an upstream configured, so it keeps its name".to_owned());
-        }
-        // The branch being renamed is the one name that never stands in its
-        // own way.
-        let others = self
-            .branch_names(root)
-            .await?
-            .into_iter()
-            .filter(|name| name != &created.branch)
-            .collect::<Vec<_>>();
-        for name in naming::numbered(proposal) {
-            let branch = managed_branch(&others, &name);
-            if branch == created.branch {
-                return Ok(BranchRename::Unchanged);
-            }
-            if !branch_available(&others, &branch) {
-                continue;
-            }
-            // Git moves the branch's reflog and its `branch.<name>.*`
-            // configuration with it, Reclaim's recorded base included, and
-            // refuses rather than overwrites a branch that appeared since the
-            // listing.
-            self.mutate(root, &["branch", "-m", &created.branch, &branch])
-                .await?;
-            return Ok(BranchRename::Renamed { branch });
-        }
-        Err("Every numbered form of the proposed branch name is taken".to_owned())
     }
 }
 

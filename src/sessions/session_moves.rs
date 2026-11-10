@@ -63,7 +63,6 @@ use crate::protocol::{
     PromptStatus, Repository, ResolvedWorkspace, Session, SessionChange, SessionId, SessionStatus,
     SessionSummary, SkillInvocation, Workspace,
 };
-use crate::source_control::CreatedBranch;
 use crate::storage::{AddedActivity, LocationLanding, SettledActivity, WorkspaceProvenance};
 
 use super::{DeliveredTurnStatus, SessionRecord, SessionStore, SessionStoreState};
@@ -198,19 +197,6 @@ impl MoveDestinationRead {
             new_worktree: false,
         })
     }
-
-    /// The branch to name anew once the Session stands here, where Suru made
-    /// this Worktree for the Move and has found the branch it stands on.
-    fn created_branch(&self) -> Option<CreatedBranch> {
-        if !self.new_worktree {
-            return None;
-        }
-        Some(CreatedBranch {
-            repository: self.workspace.repository.as_deref()?.clone(),
-            checkout: self.checkout.clone()?,
-            branch: branch_in(&self.readings, self.checkout.as_ref())?,
-        })
-    }
 }
 
 /// What is left to do of a Move once the store's lock is let go, none of which
@@ -222,8 +208,6 @@ pub(crate) struct MoveAftermath {
     /// Where a pending Move this one gave way over was bound, which nothing is
     /// bound for on its account any longer.
     pub(crate) abandoned: Option<ExecutionDirectory>,
-    /// The branch of the new Managed Worktree the Session now stands in.
-    pub(crate) created_branch: Option<CreatedBranch>,
 }
 
 impl MoveAftermath {
@@ -239,12 +223,10 @@ impl MoveAftermath {
 
 /// A Session standing in its destination, with what is left to do and to say of
 /// that once the store's lock is let go: the summary it left standing, the
-/// Repository of a linked Worktree it left, the branch of a new Managed Worktree
-/// it entered, and the Workspace it now stands in.
+/// Repository of a linked Worktree it left, and the Workspace it now stands in.
 struct MoveStood {
     summary: SessionSummary,
     vacated: Option<Repository>,
-    created_branch: Option<CreatedBranch>,
     workspace: crate::protocol::WorkspaceId,
     /// Whether a superseded entry passed something to the destination's
     /// Workspace, which every Session grouped there must then be dressed in.
@@ -710,7 +692,6 @@ impl SessionStore {
         read: MoveDestinationRead,
         settles: Option<ActivityId>,
     ) -> anyhow::Result<MoveStood> {
-        let created_branch = read.created_branch();
         let MoveDestinationRead {
             execution_directory,
             mut workspace,
@@ -764,7 +745,6 @@ impl SessionStore {
         Ok(MoveStood {
             summary,
             vacated,
-            created_branch,
             workspace: workspace.id,
             inherited,
         })
@@ -782,7 +762,6 @@ impl SessionStore {
             stood.summary,
             MoveAftermath {
                 vacated: stood.vacated,
-                created_branch: stood.created_branch,
                 ..MoveAftermath::default()
             },
         )

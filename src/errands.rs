@@ -29,6 +29,12 @@ use crate::{
 /// rather than sleeping.
 pub(crate) const DEFAULT_ERRAND_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How long making a new Managed Worktree waits on the Errand naming it before
+/// the name its Prompt or Title gave it stands. Unlike every other Errand this
+/// one is waited on by the user, so it is held to what a person will sit
+/// through rather than to what a wedged Provider needs.
+pub(crate) const DEFAULT_WORKTREE_NAMING_TIMEOUT: Duration = Duration::from_secs(8);
+
 /// Why an Errand produced no answer. Every variant is a Log line and nothing
 /// more: whatever asked for an Errand always has something to fall back on.
 #[derive(Debug)]
@@ -64,14 +70,13 @@ impl std::fmt::Display for ErrandFailure {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ErrandPurpose {
-    /// A Session's Title, derived of Suru's own accord with its Icon and
-    /// branch name.
+    /// A Session's Title, derived of Suru's own accord with its Icon.
     SessionTitle,
     /// A Title proposed at the user's asking.
     TitleProposal,
-    /// The branch name of a new Managed Worktree a Session Moved into, derived
-    /// alone so the Title stands.
-    MovedBranch,
+    /// The name of a new Managed Worktree and its branch, derived while the
+    /// Worktree's making waits on it.
+    WorktreeName,
     /// A Workspace's Description, derived with its Icon.
     WorkspaceDescription,
 }
@@ -171,6 +176,15 @@ impl ErrandRunner {
     pub(crate) fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
+    }
+
+    /// This runner held to `limit` where that is sooner than its own timeout,
+    /// for an Errand something waits on.
+    pub(crate) fn within(&self, limit: Duration) -> Self {
+        Self {
+            timeout: self.timeout.min(limit),
+            ..self.clone()
+        }
     }
 
     /// Reads when each Errand began and ended from `clock`.

@@ -547,7 +547,11 @@ async fn managed_worktree_native_codex_starts_at_prepared_root() {
     let server = server::spawn_with_provider_and_timings(
         ServerConfig::new(state.path(), "prepared-codex").unwrap(),
         Arc::new(CodexRuntime::new(codex.executable())),
-        server::ServerTimings::default().with_checkout_skill_timeout(Duration::from_secs(2)),
+        // This scripted harness answers no Errand, and what the Worktree is
+        // called is not what this checks: wait on its name no longer than this.
+        server::ServerTimings::default()
+            .with_checkout_skill_timeout(Duration::from_secs(2))
+            .with_worktree_naming_timeout(Duration::from_millis(50)),
     )
     .await
     .unwrap();

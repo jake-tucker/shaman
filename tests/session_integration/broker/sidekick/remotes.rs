@@ -30,9 +30,7 @@ use suru::{
         ResolvedWorkspace, Way,
     },
     provider::{ProviderActivityId, ProviderCommandStatus},
-    source_control::{
-        BranchRename, CreatedBranch, GitSourceControl, PreparationCheckpoint, SourceControl,
-    },
+    source_control::{GitSourceControl, PreparationCheckpoint, SourceControl},
 };
 use tokio::sync::oneshot;
 
@@ -416,13 +414,6 @@ impl SourceControl for HeldGit {
         reserved: &[PathBuf],
     ) -> Result<PreparedCheckout, String> {
         self.git.plan_checkout(id, source, name, reserved).await
-    }
-    async fn rename_branch(
-        &self,
-        created: &CreatedBranch,
-        proposal: &str,
-    ) -> Result<BranchRename, String> {
-        self.git.rename_branch(created, proposal).await
     }
     async fn inspect_removal(
         &self,

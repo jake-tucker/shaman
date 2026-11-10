@@ -32,7 +32,7 @@ use uuid::Uuid;
 use crate::RuntimeConfig;
 use crate::broker::{self, BrokerAccess, BrokerTools};
 use crate::build_identity;
-use crate::errands::{DEFAULT_ERRAND_TIMEOUT, ErrandRunner};
+use crate::errands::{DEFAULT_ERRAND_TIMEOUT, DEFAULT_WORKTREE_NAMING_TIMEOUT, ErrandRunner};
 use crate::model_catalog::{CatalogMemory, ModelCatalogService};
 use crate::protocol::{
     AUTHOR_HEADER, Activity, AdmitPromptRequest, AgentSelection, Author, CloneWorkspaceRequest,
@@ -225,6 +225,9 @@ pub struct ServerTimings {
     pub shutdown_cutoff_margin: Duration,
     /// How long an Errand may take before Suru stops waiting on it.
     pub errand_timeout: Duration,
+    /// How long making a new Managed Worktree waits on the Errand naming it
+    /// before the name its Prompt or Title gave it stands.
+    pub worktree_naming_timeout: Duration,
     /// How long a Provider Session Suru stops is waited on to wind down, and
     /// then, as the Server stops, how long each Provider runtime is waited on
     /// to stop every process it launched. A runtime still waiting on one when
@@ -421,6 +424,7 @@ impl Default for ServerTimings {
             shutdown_overrun: SHUTDOWN_OVERRUN,
             shutdown_cutoff_margin: CUTOFF_MARGIN,
             errand_timeout: DEFAULT_ERRAND_TIMEOUT,
+            worktree_naming_timeout: DEFAULT_WORKTREE_NAMING_TIMEOUT,
             provider_stop_timeout: crate::provider::PROVIDER_STOP_TIMEOUT,
             provider_idle_shutdown: crate::provider::PROVIDER_IDLE_SHUTDOWN,
             move_continuation_grace: crate::provider::MOVE_CONTINUATION_GRACE,
@@ -767,6 +771,14 @@ impl ServerTimings {
     /// Provider that never answers without waiting out the default.
     pub fn with_errand_timeout(mut self, timeout: Duration) -> Self {
         self.errand_timeout = timeout;
+        self
+    }
+
+    /// Bounds how long making a new Managed Worktree waits on the Errand
+    /// naming it; injectable so tests exercise a Provider that never answers
+    /// without waiting out the default.
+    pub fn with_worktree_naming_timeout(mut self, timeout: Duration) -> Self {
+        self.worktree_naming_timeout = timeout;
         self
     }
 
@@ -1943,8 +1955,7 @@ async fn start(
         model_catalog.clone(),
         sessions.clone(),
         settings.subscribe(),
-        source_control.clone(),
-        preparations.clone(),
+        timings.worktree_naming_timeout,
     );
     // A Clone a Sidekick on a Peer asked for runs apart from its request,
     // until the stop begins, and the stop then waits for it to let go.
