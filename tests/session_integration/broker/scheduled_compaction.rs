@@ -2,7 +2,8 @@
 //! Subagent's Session is never compacted this way, since its context dies
 //! with its work; a Session whose brokered Subagent works beneath it is left
 //! alone when the moment comes; and a Subsession a Sidekick began is
-//! compacted as any top-level Session is.
+//! compacted as any top-level Session is, a Prompt its Sidekick sends while
+//! it runs held and delivered as the user's would be.
 
 use suru::{
     protocol::{CompactionRequest, SessionTimestamp},
@@ -12,6 +13,7 @@ use suru::{
 
 use super::{
     sidekick::start_sidekick,
+    sidekick_acts::acted,
     subsessions::{begun, begun_id, run_first_turn},
     *,
 };
@@ -291,6 +293,121 @@ async fn a_subsession_is_compacted_as_a_top_level_session_is() {
         Some(CompactionRequest::Scheduled)
     );
     asked.succeed();
+    scheduling
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// A Prompt the Sidekick sends a Subsession while a scheduled Compaction runs
+/// there is held as the user's would be, and begins the next Turn though the
+/// Compaction fails. The Sidekick is told of that Turn, as of any Turn its
+/// Prompt began, and of nothing of the Compaction's, which was Suru's own.
+#[tokio::test]
+async fn a_sidekicks_prompt_held_behind_a_subsessions_scheduled_compaction_is_delivered_and_reported()
+ {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut scheduling = scheduling(state_dir.path(), "scheduled-compaction-subsession-held").await;
+    let workspace = scheduling.hosted.workspace.path().to_owned();
+    let (_sidekick, mut sidekick, mut sidekick_provider) =
+        start_sidekick(&scheduling.descriptor, &mut scheduling.hosted.claude).await;
+    let subsession = begun_id(
+        &begun(
+            &mut sidekick,
+            json!({ "directory": workspace, "prompt": "Fix the flaky login test." }),
+        )
+        .await,
+    );
+    let (mut subsession_provider, _) = run_first_turn(
+        &mut scheduling.hosted.claude,
+        default_selection(&claude_models()),
+    )
+    .await;
+    subsession_provider
+        .emit_and_wait_until_observed(filled(400_000))
+        .await;
+    answered(&subsession_provider).await;
+    subsession_provider
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    timeout(PROGRESS_DEADLINE, sidekick_provider.next_steer())
+        .await
+        .expect("the Sidekick is told of the Turn its beginning set going")
+        .succeed();
+
+    let due_at = scheduling.due_at(subsession).await;
+    scheduling.advance_to(due_at);
+    timeout(PROGRESS_DEADLINE, subsession_provider.next_compaction())
+        .await
+        .expect("the Subsession's scheduled Compaction reaches its Provider")
+        .succeed();
+    subsession_provider
+        .emit_and_wait_until_observed(ProviderEvent::CompactionStarted)
+        .await;
+    acted(
+        &mut sidekick,
+        "send_prompt",
+        json!({ "session_id": subsession, "prompt": "Now the lexer." }),
+    )
+    .await;
+    let holding = read_session(&scheduling.descriptor, subsession).await;
+    assert_eq!(holding.turns.len(), 2, "no Turn begins over the Compaction");
+    assert!(
+        holding
+            .prompts
+            .iter()
+            .any(|prompt| prompt.text == "Now the lexer."
+                && prompt.status == suru::protocol::PromptStatus::Pending),
+        "the Sidekick's Prompt is held: {:?}",
+        holding.prompts
+    );
+
+    for event in [
+        ProviderEvent::CompactionFailed {
+            error: Some("Conversation too long".to_owned()),
+        },
+        ProviderEvent::TurnCompleted,
+    ] {
+        subsession_provider
+            .emit_and_wait_until_observed(event)
+            .await;
+    }
+    let turn = timeout(PROGRESS_DEADLINE, subsession_provider.next_turn())
+        .await
+        .expect("the held Prompt begins the next Turn though the Compaction failed");
+    assert_eq!(turn.prompt(), "Now the lexer.");
+    turn.succeed();
+    let delivered = read_session(&scheduling.descriptor, subsession).await;
+    assert_eq!(delivered.turns[1].status, TurnStatus::Failed);
+    assert_eq!(
+        delivered.turns[1].compaction_requested,
+        Some(CompactionRequest::Scheduled)
+    );
+    assert!(
+        sidekick_provider.try_next_steer().is_none(),
+        "the Sidekick is told nothing of the Compaction's Turn"
+    );
+
+    answered(&subsession_provider).await;
+    subsession_provider
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    let steer = timeout(PROGRESS_DEADLINE, sidekick_provider.next_steer())
+        .await
+        .expect("the Sidekick is told of the Turn its held Prompt began");
+    let [report] = steer.reports() else {
+        panic!("one Report: {:?}", steer.reports());
+    };
+    let report = crate::support::broker::untimed_sidekick_report(&report.to_string());
+    assert!(
+        report.contains(&format!("Its session_id is {subsession}"))
+            && report.contains("has settled its Turn, which completed")
+            && report.ends_with("Done."),
+        "the Report is of the Turn the held Prompt began: {report}"
+    );
+    steer.succeed();
     scheduling
         .hosted
         .server
