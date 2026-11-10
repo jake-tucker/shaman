@@ -99,18 +99,17 @@ impl ClaudeCacheLifetimes {
             lifetime: self.one_hour_lifetime,
             price: CacheWritePrice::Hour,
         };
-        match usage.cache_creation {
-            Some(lifetimes) if wrote(lifetimes.ephemeral_5m_input_tokens) => {
-                RequestCache::Wrote(five_minutes)
-            }
-            Some(lifetimes) if wrote(lifetimes.ephemeral_1h_input_tokens) => {
-                RequestCache::Wrote(one_hour)
-            }
-            // An API breaking writes out by lifetime wrote at neither.
-            Some(_) => RequestCache::WroteNothing,
-            // One that does not offers the default lifetime alone.
-            None if wrote(usage.cache_creation_input_tokens) => RequestCache::Wrote(five_minutes),
-            None => RequestCache::WroteNothing,
+        let lifetimes = usage.cache_creation.unwrap_or_default();
+        if wrote(lifetimes.ephemeral_5m_input_tokens) {
+            RequestCache::Wrote(five_minutes)
+        } else if wrote(lifetimes.ephemeral_1h_input_tokens) {
+            RequestCache::Wrote(one_hour)
+        } else if wrote(usage.cache_creation_input_tokens) {
+            // Tokens written that no lifetime claims were written at the default one, the only
+            // one an API breaking out no lifetimes offers.
+            RequestCache::Wrote(five_minutes)
+        } else {
+            RequestCache::WroteNothing
         }
     }
 }
@@ -126,7 +125,7 @@ struct RequestUsage {
 }
 
 /// How a request's `cache_creation_input_tokens` break down by the lifetime each was written for.
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Default, Deserialize)]
 struct CacheCreation {
     #[serde(default)]
     ephemeral_5m_input_tokens: Option<f64>,
@@ -202,6 +201,11 @@ mod tests {
         assert_eq!(
             written(json!({"cache_creation_input_tokens": 500})),
             FIVE_MINUTES
+        );
+        assert_eq!(
+            written(json!({"cache_creation_input_tokens": 500, "cache_creation": {}})),
+            FIVE_MINUTES,
+            "a breakdown naming no lifetime breaks nothing out"
         );
     }
 
