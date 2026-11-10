@@ -947,11 +947,19 @@ async fn a_model_option_that_moves_the_price_prices_the_penalty_at_it_in_the_sam
     })
     .await;
     let written_under = sessions_selection(&fixture).await;
-    // A long context tier, as Copilot prices one: dearer at every size.
+    // The controlled Provider's speed option stands in for a context tier:
+    // its `long` choice is priced as Copilot prices a long context, dearer
+    // at every size.
     let long = controlled_selection(model.as_str(), "high", "long");
+    let long_context_tier = long
+        .options
+        .iter()
+        .find(|option| option.id.as_str() == "speed-opaque")
+        .cloned()
+        .expect("the controlled Selection names a speed");
     fixture.runtime.price_prompts_under(
         model.clone(),
-        long.options[1].clone(),
+        long_context_tier,
         PromptRates::flat(CacheRates {
             input: 6.0,
             cache_read: Some(0.6),
