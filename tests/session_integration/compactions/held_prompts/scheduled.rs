@@ -545,6 +545,39 @@ async fn a_queued_prompt_waits_behind_a_scheduled_compaction_and_is_never_promot
     idle.shutdown().await;
 }
 
+/// The held Prompt goes ahead of the queue even where the actor never read
+/// its start: the actor waits on the Provider's answer to the request while
+/// the Prompt is held and another queued, and the Provider refuses it.
+#[tokio::test]
+async fn a_held_prompt_goes_ahead_of_a_queued_one_when_the_provider_refuses_the_request() {
+    let state = tempfile::tempdir().unwrap();
+    let mut idle = idle(state.path(), "scheduled-held-refused-queue", ON, true).await;
+    let (begun, asked) = scheduled(&mut idle).await;
+    let prompt = admit_steer(&idle.fixture, SENT).await;
+    assert_held(&idle, &begun, &prompt).await;
+    let queued = admit_queued(&idle.fixture, "Then the printer").await;
+    asked.fail("the CLI could not be started");
+    begins_the_next_turn(
+        &mut idle,
+        &begun,
+        &prompt,
+        "the Provider refuses the request with a Prompt queued behind the held one",
+    )
+    .await;
+    assert_eq!(
+        prompt_status(&idle.snapshot().await, queued.id),
+        PromptStatus::Pending,
+        "the queued Prompt waits behind the held one's Turn"
+    );
+    idle.emit([ProviderEvent::TurnCompleted]).await;
+    let after = timeout(PROGRESS_DEADLINE, idle.fixture.provider_session.next_turn())
+        .await
+        .expect("the queue moves on once that Turn settles");
+    assert_eq!(after.prompt(), "Then the printer");
+    after.succeed();
+    idle.shutdown().await;
+}
+
 #[tokio::test]
 async fn a_held_prompt_whose_start_was_read_still_begins_the_next_turn_after_a_failed_one() {
     let state = tempfile::tempdir().unwrap();

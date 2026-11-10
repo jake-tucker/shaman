@@ -22,7 +22,7 @@ use crate::storage::StorageSink;
 use super::{
     SESSION_UPDATE_CAPACITY, SessionRecord, SessionStore, SessionStoreState, StoreOutcome,
     compactions::{held_prompt_withdrawal, holding_turn},
-    projection::active_turn_id,
+    projection::{active_turn_id, owes_a_turn},
     sidekick_reports::SidekickWork,
 };
 
@@ -940,6 +940,20 @@ impl SessionStore {
                 .iter()
                 .any(|prompt| prompt.id == prompt_id && prompt.status == PromptStatus::Pending)
         })
+    }
+
+    /// Whether `session_id` still owes a Turn to a Prompt admitted to begin
+    /// one: held behind a Compaction's Turn, say, or admitted while nothing
+    /// ran.
+    pub(crate) fn owes_a_turn_start(&self, session_id: SessionId) -> bool {
+        let state = self
+            .state
+            .lock()
+            .expect("Session store lock is not poisoned");
+        state
+            .sessions
+            .get(&session_id)
+            .is_some_and(|record| owes_a_turn(&record.snapshot, &record.turn_start_admissions))
     }
 
     pub(crate) fn next_pending_steer(

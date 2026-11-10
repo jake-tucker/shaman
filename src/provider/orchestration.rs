@@ -3590,12 +3590,22 @@ async fn run_provider_session(
                             active = Some(*turn);
                             subagents.continuation_answered();
                         }
+                        // A Prompt held behind the request's Turn is owed the
+                        // next Turn ahead of the queue, as it is once the
+                        // actor has read its start. Here the actor read
+                        // nothing while it waited on the Provider, so that
+                        // start still waits among its commands: the queue
+                        // moves once the held Prompt's Turn settles. Only a
+                        // scheduled Compaction's request leaves one held,
+                        // since a manual one's is withdrawn with its Turn.
                         RequestedCompaction::NotBegun => {
-                            defer_next_queued_prompt(
-                                &mut deferred_prompt_id,
-                                &sessions,
-                                session_id,
-                            );
+                            if !sessions.owes_a_turn_start(session_id) {
+                                defer_next_queued_prompt(
+                                    &mut deferred_prompt_id,
+                                    &sessions,
+                                    session_id,
+                                );
+                            }
                         }
                         RequestedCompaction::Stopping => break 'actor,
                     }
