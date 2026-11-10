@@ -111,6 +111,35 @@ fn approval_subjects_have_strict_provider_neutral_wire_shapes() {
 }
 
 #[test]
+fn a_lapse_penalty_is_a_usd_figure_never_negative_and_an_unknown_one_is_absent() {
+    use suru::protocol::{LapsePenalty, PromptCache};
+    assert_eq!(
+        serde_json::from_value::<LapsePenalty>(json!(0.0)).expect("decode a zero penalty"),
+        LapsePenalty::from_nano_usd(0)
+    );
+    assert!(serde_json::from_value::<LapsePenalty>(json!(-0.01)).is_err());
+    let unknown = serde_json::from_value::<PromptCache>(json!({
+        "lapses_at": 1_767_225_900_000_u64,
+        "written_by": "gpt-5",
+    }))
+    .expect("decode a Prompt Cache whose penalty and lifetime are unknown");
+    assert_eq!((unknown.lapse_penalty, unknown.lifetime_ms), (None, None));
+    assert_eq!(
+        serde_json::to_value(&unknown).expect("encode it"),
+        json!({ "lapses_at": 1_767_225_900_000_u64, "written_by": "gpt-5" }),
+        "what is unknown is left out rather than written as zero"
+    );
+    assert!(
+        serde_json::from_value::<PromptCache>(json!({
+            "lapses_at": 1_767_225_900_000_u64,
+            "written_by": "gpt-5",
+            "lapse_penalty": -1.0,
+        }))
+        .is_err()
+    );
+}
+
+#[test]
 fn a_reported_zero_cost_is_known_while_an_unattributed_cost_is_rejected() {
     let zero = Cost::from_usd(0.0).expect("a Provider may report a free Turn");
     assert!(zero.is_zero());
@@ -607,7 +636,12 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
                 occupied_tokens: 12_400,
                 capacity_tokens: Some(200_000),
             }),
-            prompt_cache: None,
+            prompt_cache: Some(suru::protocol::PromptCache {
+                lapses_at: SessionTimestamp(1_767_225_900_250),
+                written_by: ModelId::new("gpt-5"),
+                lifetime_ms: Some(3_600_000),
+                lapse_penalty: suru::protocol::LapsePenalty::from_usd(1.65),
+            }),
             id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),
             execution_directory: suru::protocol::ExecutionDirectory {
                 path: PathBuf::from("/work/suru"),
@@ -748,7 +782,13 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
             "working_since": null,
             "monitoring_since": null,
             "parent": null,
-            "context_fill": { "occupied_tokens": 12_400, "capacity_tokens": 200_000 }
+            "context_fill": { "occupied_tokens": 12_400, "capacity_tokens": 200_000 },
+            "prompt_cache": {
+                "lapses_at": 1_767_225_900_250_u64,
+                "written_by": "gpt-5",
+                "lifetime_ms": 3_600_000,
+                "lapse_penalty": 1.65
+            }
         },
         "revision": 7,
         "prompts": [{
