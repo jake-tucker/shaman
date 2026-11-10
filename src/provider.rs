@@ -145,6 +145,23 @@ impl ManualCompaction {
 /// idle, which tells Suru when the cache lapses and the Session goes cold. It
 /// defaults to none, so a Provider added later is never warned about a lapse
 /// it does not have; every built-in Provider declares its own.
+///
+/// Which to declare follows from what the Provider says of its cache:
+///
+/// - It says nothing, and its cache does not lapse on idle: [`Self::None`].
+/// - It reports when the cache lapses: [`Self::Reported`], stating each
+///   moment as [`ProviderEvent::PromptCacheLapseReported`].
+/// - It says, for each request, what that request wrote to the cache:
+///   [`Self::Inferred`], stating each request as
+///   [`ProviderEvent::PromptCacheRefreshed`].
+/// - It says nothing, but its cache lapses a known time after use:
+///   [`Self::Assumed`].
+///
+/// A mismatch fails silently. A Provider declaring `Inferred` that states no
+/// `PromptCacheRefreshed` never has a moment, so its Sessions are never cold;
+/// one declaring `Assumed` has every `PromptCacheRefreshed` it states
+/// ignored, counting from its output instead; and one declaring `None` has
+/// every moment it reports ignored.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum CacheLifetime {
     /// The cache does not lapse on idle, so its Sessions are never cold.
@@ -155,18 +172,21 @@ pub enum CacheLifetime {
     /// request that wrote it, and Suru takes that moment as given.
     Reported,
     /// Suru assumes the cache lapses this long after the last Provider output
-    /// of the Session's latest Turn. A moment the Provider reports all the
-    /// same still outranks the assumption.
+    /// of the Session's latest Turn. It is for a Provider whose cache lapses
+    /// on idle but which says nothing of it, neither moment nor request; no
+    /// built-in Provider declares it today. A moment the Provider reports all
+    /// the same still outranks the assumption.
     Assumed(std::time::Duration),
     /// The Provider states, as [`ProviderEvent::PromptCacheRefreshed`], each
-    /// request the conversation sends and how long the cache it wrote is
-    /// kept, and Suru infers the lapse from them: the cache lapses the
-    /// lifetime the latest request wrote at after that request, or, where it
-    /// wrote nothing, the lifetime last observed for the Session, or
-    /// `assumed` where none ever was. Only those requests move the moment:
-    /// output with no request behind it — a Turn failing before any call, a
-    /// local command's reply — leaves it standing. A moment the Provider
-    /// reports all the same still outranks the inference.
+    /// request the conversation sends and what it wrote to the cache, and
+    /// Suru infers the lapse from them: the cache lapses the lifetime the
+    /// latest request wrote for after that request, or, where it wrote
+    /// nothing, the lifetime of the write last observed for the Session, or
+    /// `unobserved` where no moment stands to have observed one. Only those
+    /// requests move the moment: output with no request behind it — a Turn
+    /// failing before any call, a local command's reply — leaves it standing.
+    /// A moment the Provider reports all the same still outranks the
+    /// inference.
     Inferred { unobserved: std::time::Duration },
 }
 

@@ -231,7 +231,7 @@ impl ProviderRuntime for ClaudeRuntime {
     /// listed catalog is read as the Model it resolved to then — today's, which may not be the
     /// one an older Turn ran — and any other ID as itself, a 1M-context suffix set aside. The
     /// cache-write rate models.dev lists is the five-minute one; an hour-long write is priced at
-    /// twice the fresh input rate, Anthropic's published rule ([`super::prompt_cache`]), and no
+    /// twice the fresh input rate, Anthropic's published rule (see Claude's `prompt_cache`), and no
     /// long-context premium is priced. None until a catalog has been listed, since nothing is launched only to answer.
     fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
         let canonical = self
