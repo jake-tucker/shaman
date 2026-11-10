@@ -18,7 +18,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::{
     managed_client::SessionProjection,
     protocol::{
-        Author, CostTotal, LandingPage, ListenerState, MAX_TITLE_CHARS,
+        Author, CostTotal, LandingPage, LapsePenalty, ListenerState, MAX_TITLE_CHARS,
         MAX_WORKSPACE_DESCRIPTION_CHARS, ModelAvailability, RelayState, ServerIdentity,
         SessionContentWidth, SessionSnapshot, SessionStatus, SessionTimestamp, WatchSummary, Way,
     },
@@ -7897,38 +7897,59 @@ fn session_footer_metrics_text(snapshot: &SessionSnapshot, width: u16) -> Option
         .find(|text| UnicodeWidthStr::width(text.as_str()) <= usize::from(width))
 }
 
+/// What the line above a Session's composer opens with where the Agent
+/// Selection standing is not the one its Prompt Cache was written under. It
+/// names no change of the user's, since a Provider's fallback is none, and
+/// suggests no `/compact`, since compacting would itself read the context
+/// cold. Its wording awaits the product owner's word, so it is kept here
+/// alone.
+const SELECTION_UNCOVERED: &str = "Prompt cache does not cover this selection";
+
 /// What the line above a Session's composer says, part by part. In the
 /// final stretch before the Prompt Cache lapses, a dim countdown. Once it has
 /// lapsed, in the warning colour, that it lapsed, what the next Prompt costs
 /// beyond what it would have warm — or that it re-reads the whole context,
-/// where that cannot be priced — and how to shrink it. It is a line about the
-/// Session rather than a Notice: no interaction dismisses it, and it stands
-/// for as long as it is true, until the next Turn has written the cache
-/// afresh.
+/// where that cannot be priced — and how to shrink it. While it is warm under
+/// a Selection it was not written under, in the warning colour, that it does
+/// not cover it and what the next Prompt costs for that, shaped as the cold
+/// line is. It is a line about the Session rather than a Notice: no
+/// interaction dismisses it, and it stands for as long as it is true, until
+/// the next Turn has written the cache afresh.
 fn composer_top_parts(line: Option<ComposerTopLine>, theme: &Theme) -> Vec<SlotText> {
+    let warning = |parts: Vec<String>| {
+        parts
+            .into_iter()
+            .map(|part| SlotText::new(part, theme.feedback.warning))
+            .collect()
+    };
     match line {
         None => Vec::new(),
         Some(ComposerTopLine::LapsesIn { seconds }) => vec![SlotText::new(
             format!("Prompt cache lapses in {}", countdown(seconds)),
             theme.text.subdued,
         )],
-        Some(ComposerTopLine::Lapsed { penalty }) => {
-            let consequence = match penalty {
-                Some(penalty) => format!(
-                    "next prompt costs ~{} more",
-                    compact_dollars(penalty.nano_usd())
-                ),
-                None => "next prompt re-reads the whole context".to_owned(),
-            };
-            [
-                "Prompt cache lapsed".to_owned(),
-                consequence,
-                "/compact first to shrink it".to_owned(),
-            ]
-            .into_iter()
-            .map(|part| SlotText::new(part, theme.feedback.warning))
-            .collect()
-        }
+        Some(ComposerTopLine::Lapsed { penalty }) => warning(vec![
+            "Prompt cache lapsed".to_owned(),
+            cold_prompt_cost(penalty),
+            "/compact first to shrink it".to_owned(),
+        ]),
+        Some(ComposerTopLine::SelectionUncovered { penalty }) => warning(vec![
+            SELECTION_UNCOVERED.to_owned(),
+            cold_prompt_cost(penalty),
+        ]),
+    }
+}
+
+/// What the next Prompt pays for reading the context cold, as the line above
+/// the composer says it: `penalty` more than it would warm, or, where that
+/// cannot be priced, that it re-reads the whole context.
+fn cold_prompt_cost(penalty: Option<LapsePenalty>) -> String {
+    match penalty {
+        Some(penalty) => format!(
+            "next prompt costs ~{} more",
+            compact_dollars(penalty.nano_usd())
+        ),
+        None => "next prompt re-reads the whole context".to_owned(),
     }
 }
 
