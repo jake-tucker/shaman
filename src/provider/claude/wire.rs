@@ -421,9 +421,10 @@ pub(super) struct OutputTokensDetails {
 #[derive(Deserialize)]
 pub(super) struct SystemMessage {
     pub(super) subtype: String,
-    /// The Model the CLI's loop runs on, on `init`: what the Selection's alias resolved to.
+    /// The Model the CLI's loop runs on, on `init`: what the Selection's alias resolved to. Kept
+    /// undecoded, so another subtype's `model` in some other shape leaves the message read.
     #[serde(default)]
-    pub(super) model: Option<String>,
+    pub(super) model: Option<Value>,
     /// The message's own identity, which a `compact_boundary` that keeps the messages before it
     /// rather than after names as its preserved segment's anchor.
     #[serde(default)]

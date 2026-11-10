@@ -1155,7 +1155,11 @@ impl ClaudeProjection {
         };
         match message.subtype.as_str() {
             "init" if message.parent_tool_use_id.is_none() => {
-                self.launched_on = message.model;
+                self.launched_on = message
+                    .model
+                    .as_ref()
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
                 Vec::new()
             }
             "status" | "compact_boundary" => self.project_compaction(message),
