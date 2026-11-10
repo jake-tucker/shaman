@@ -18,9 +18,9 @@ use suru::{
     pricing::{CacheRates, PromptRateTier, PromptRates},
     protocol::{
         AdmitPromptRequest, AgentId, AgentIdentity, AgentSelection, AgentSelectionOperationId,
-        ContextFill, InitialPrompt, LapsePenalty, ModelId, PromptCache, PromptDelivery, PromptId,
-        SessionChange, SessionId, SessionSnapshot, SessionStatus, SessionTimestamp, TurnStatus,
-        UpdateAgentSelectionRequest,
+        ContextFill, InitialPrompt, LapsePenalty, MessageRole, ModelId, PromptCache,
+        PromptDelivery, PromptId, SessionChange, SessionId, SessionSnapshot, SessionStatus,
+        SessionTimestamp, TurnStatus, UpdateAgentSelectionRequest,
     },
     provider::{
         CacheLifetime, ContextFillReport, ProviderEvent, ProviderEventAttribution,
@@ -63,7 +63,7 @@ fn reported(lapses_at: SessionTimestamp) -> ProviderEvent {
         lapses_at,
         model: None,
         lifetime: None,
-        prompt_limit: None,
+        prompt_limit_tokens: None,
     }
 }
 
@@ -871,6 +871,141 @@ async fn a_selection_whose_prices_are_to_hand_lands_its_penalty_in_the_same_revi
     fixture.server.shutdown().await.unwrap();
 }
 
+/// Streams the start of an answer in the fixture's Turn at `index`, its
+/// call's usage — which names its Model — still to come, interrupts it, and
+/// reads the Session once it has settled.
+async fn interrupted_while_answering(fixture: &mut WorkingTurn, index: usize) -> SessionSnapshot {
+    for event in [
+        ProviderEvent::AgentMessageStarted,
+        ProviderEvent::AgentMessageDelta {
+            content: "Reading the parser".to_owned(),
+        },
+    ] {
+        fixture
+            .provider_session
+            .emit_and_wait_until_observed(event)
+            .await;
+    }
+    let (stopped, ()) = tokio::join!(
+        interrupt(
+            &fixture.client,
+            fixture.server.descriptor(),
+            fixture.session_id
+        ),
+        async {
+            timeout(PROGRESS_DEADLINE, fixture.provider_session.next_interrupt())
+                .await
+                .expect("the interrupt reaches the Provider")
+                .succeed();
+        }
+    );
+    assert!(stopped.status().is_success());
+    settle_as(fixture, ProviderEvent::TurnInterrupted, index).await;
+    read_session(fixture.server.descriptor(), fixture.session_id).await
+}
+
+#[tokio::test]
+async fn an_answer_streaming_on_a_routing_selection_when_interrupted_leaves_the_moment_standing() {
+    let state = tempfile::tempdir().unwrap();
+    let lapses_at = ahead(5);
+    let mut fixture = cold_priced(state.path(), "prompt-cache-unnamed-answer", lapses_at).await;
+    let model = sessions_model(&fixture).await;
+    let auto = ModelId::new("auto");
+    fixture.runtime.declare_routing(auto.clone(), true);
+    select(
+        &fixture,
+        controlled_selection(auto.as_str(), "high", "fast"),
+    )
+    .await;
+
+    prompt_again(&mut fixture).await;
+    let routed = interrupted_while_answering(&mut fixture, 1).await;
+    assert!(
+        routed
+            .messages
+            .iter()
+            .any(|message| message.turn_id == routed.turns[1].id
+                && message.role == MessageRole::Agent
+                && message.model.is_none()),
+        "the Turn holds an answer no Model is named for"
+    );
+    assert_eq!(
+        moment(&routed),
+        Some((lapses_at, model.clone())),
+        "a call on a Model nobody named, on a Selection that routes, is evidence of nothing"
+    );
+
+    // The same answer on a Selection that runs its calls itself ran on it.
+    fixture.runtime.declare_routing(auto, false);
+    prompt_again(&mut fixture).await;
+    let own = interrupted_while_answering(&mut fixture, 2).await;
+    assert_eq!(
+        moment(&own),
+        None,
+        "the Turn ran on a Model other than the writer"
+    );
+    fixture.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_session_not_read_in_is_left_alone_at_start_and_forecast_when_read_in() {
+    let state = tempfile::tempdir().unwrap();
+    let channel = "prompt-cache-deferred";
+    let lapses_at = ahead(5);
+    let fixture = cold_priced(state.path(), channel, lapses_at).await;
+    let model = sessions_model(&fixture).await;
+    let stored = read_until(&fixture, "the penalty is forecast", |snapshot| {
+        snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38)))
+    })
+    .await;
+    let id = fixture.session_id;
+    drop(fixture.provider_session);
+    fixture.server.shutdown().await.unwrap();
+
+    let (runtime, _provider) = ControlledProvider::new();
+    runtime.declare_cache_lifetime(CacheLifetime::Reported);
+    runtime.price_cache(model.clone(), RATES);
+    let restarted =
+        server::spawn_with_provider(ServerConfig::new(state.path(), channel).unwrap(), runtime)
+            .await
+            .unwrap();
+    // A catalog change asks again for whatever found no prices; a Session
+    // not read in is no part of it.
+    crate::session_integration::support::refresh_catalog(restarted.descriptor()).await;
+    let listed = crate::support::loopback_client()
+        .get(format!("{}/v1/sessions", restarted.descriptor().base_url))
+        .bearer_auth(&restarted.descriptor().token)
+        .send()
+        .await
+        .expect("list Sessions")
+        .error_for_status()
+        .expect("the listing succeeds")
+        .json::<Vec<suru::protocol::SessionListItem>>()
+        .await
+        .expect("decode the listing");
+    let Some(suru::protocol::SessionListItem::Readable(summary)) =
+        listed.into_iter().find(|item| item.id() == id)
+    else {
+        panic!("the Session is listed, readable");
+    };
+    assert_eq!(
+        summary.session.prompt_cache,
+        Some(cache(lapses_at, &model, None)),
+        "the listing holds the moment stored, and nothing forecast for a history not read in"
+    );
+    let restored = read_session(restarted.descriptor(), id).await;
+    assert_eq!(
+        restored.revision, stored.revision,
+        "nothing was committed to the Session before its history was read in"
+    );
+    assert_eq!(
+        restored.session.prompt_cache,
+        Some(cache(lapses_at, &model, Some(1.38))),
+        "its penalty is forecast as its history is read in"
+    );
+    restarted.shutdown().await.unwrap();
+}
+
 #[tokio::test]
 async fn a_completed_compaction_that_reports_nothing_leaves_no_moment_standing() {
     let state = tempfile::tempdir().unwrap();
@@ -958,7 +1093,7 @@ async fn the_penalty_is_priced_at_the_tier_its_context_falls_in_and_its_caches_w
             lapses_at,
             model: Some(model.clone()),
             lifetime: Some(Duration::from_secs(60 * 60)),
-            prompt_limit: None,
+            prompt_limit_tokens: None,
         })
         .await;
     settle(&fixture.provider_session).await;

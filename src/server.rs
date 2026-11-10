@@ -1951,7 +1951,7 @@ async fn start(
     tokio::spawn(
         sessions
             .clone()
-            .ask_again_as_catalogs_change(model_catalog.subscribe()),
+            .ask_again_as_catalogs_change(model_catalog.subscribe(), provider_shutdown_rx.clone()),
     );
     // A tree gone unused is evicted with its Provider actors stopped, so the
     // sweep begins once there is an orchestrator to stop them.

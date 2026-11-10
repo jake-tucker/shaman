@@ -1485,7 +1485,7 @@ pub enum ProviderEvent {
         lifetime: Option<std::time::Duration>,
         /// The largest prompt, in tokens, that call could send, where the
         /// Provider said: a Provider pricing by tier priced the call by it.
-        prompt_limit: Option<u64>,
+        prompt_limit_tokens: Option<u64>,
     },
     /// The Provider revised what it needs to carry the owning Session's
     /// conversation across a restart, replacing the Resume State its startup

@@ -42,7 +42,7 @@ pub(crate) struct ReportedLapse {
     pub(crate) lapses_at: SessionTimestamp,
     pub(crate) model: Option<ModelId>,
     pub(crate) lifetime: Option<std::time::Duration>,
-    pub(crate) prompt_limit: Option<u64>,
+    pub(crate) prompt_limit_tokens: Option<u64>,
 }
 
 /// What the Turn at work has written of the Prompt Cache so far, held until
@@ -51,6 +51,9 @@ pub(crate) struct ReportedLapse {
 pub(super) struct StagedWrite {
     turn_id: TurnId,
     lifetime: CacheLifetime,
+    /// Whether the Turn's Agent Selection names a Model that routes each
+    /// call to one of the Provider's choosing rather than running it itself.
+    selection_routes: bool,
     last_output_at: Option<SessionTimestamp>,
     reported: Option<ReportedLapse>,
 }
@@ -78,9 +81,14 @@ pub(crate) struct LapseRateRequest {
 /// runtime knows them, and one may have to wait on a rate table's fetch.
 pub(crate) trait LapseRateSource: Send + Sync {
     /// The prices for `rates_for` where they are to hand without waiting —
-    /// what they are, or that there are none — and nothing where finding them
-    /// would wait.
-    fn prices_now(&self, rates_for: &RatesFor) -> Option<Option<PromptRates>>;
+    /// what they are, or that there are none — and [`RatesAnswer::Awaited`]
+    /// where finding them would wait.
+    ///
+    /// It is asked with the Session store's lock held, so it must not block,
+    /// nor do synchronous I/O, nor call into the store: it polls
+    /// [`crate::provider::ProviderRuntime::prompt_rates`] once, and gives up
+    /// on whatever that would wait for.
+    fn prices_now(&self, rates_for: &RatesFor) -> RatesAnswer;
 
     /// Asks for the prices `request` wants, to be answered once found.
     fn ask(&self, request: LapseRateRequest);
@@ -88,8 +96,8 @@ pub(crate) trait LapseRateSource: Send + Sync {
 
 /// What the last answer for the prices a Session wants found.
 #[derive(Clone, Debug)]
-enum RatesAnswer {
-    /// None has come yet.
+pub(crate) enum RatesAnswer {
+    /// None has come yet, or none is to hand without waiting.
     Awaited,
     /// The prices it found.
     Priced(PromptRates),
@@ -114,6 +122,49 @@ impl SessionStore {
     /// `turn_id` from a Provider whose Prompt Cache lasts `lifetime`, as
     /// writing that cache afresh. Nothing is published until the Turn
     /// settles, in the revision that settles it.
+    /// The Model the owning Session's Turn `turn_id` selected, or the
+    /// Session's own Agent Selection where the Turn names none yet.
+    pub(crate) fn turn_model(&self, session_id: SessionId, turn_id: TurnId) -> Option<ModelId> {
+        let state = self
+            .state
+            .lock()
+            .expect("Session store lock is not poisoned");
+        let snapshot = &state.sessions.get(&session_id)?.snapshot;
+        snapshot
+            .turns
+            .iter()
+            .find(|turn| turn.id == turn_id)
+            .and_then(|turn| turn.agent.as_ref())
+            .map(|agent| agent.selection.model.clone())
+            .or_else(|| selected(snapshot).map(|(_, model)| model.clone()))
+    }
+
+    /// Opens what the owning Session's Turn `turn_id` writes of the Prompt
+    /// Cache, from a Provider whose cache lasts `lifetime`, on an Agent
+    /// Selection that routes each call where `selection_routes` says so.
+    /// Told once a Turn, as its first output arrives.
+    pub(crate) fn note_prompt_cache_turn(
+        &self,
+        session_id: SessionId,
+        turn_id: TurnId,
+        lifetime: CacheLifetime,
+        selection_routes: bool,
+    ) {
+        let mut state = self
+            .state
+            .lock()
+            .expect("Session store lock is not poisoned");
+        if let Some(record) = state.sessions.get_mut(&session_id) {
+            record.prompt_cache_write = Some(StagedWrite {
+                turn_id,
+                lifetime,
+                selection_routes,
+                last_output_at: None,
+                reported: None,
+            });
+        }
+    }
+
     pub(crate) fn note_prompt_cache_output(
         &self,
         session_id: SessionId,
@@ -134,6 +185,7 @@ impl SessionStore {
             slot => slot.insert(StagedWrite {
                 turn_id,
                 lifetime,
+                selection_routes: false,
                 last_output_at: None,
                 reported: None,
             }),
@@ -226,8 +278,20 @@ impl SessionStore {
     /// Asks again, each time a Provider's Model Catalog changes, for the
     /// prices of every Session whose last answer found none: a Provider may
     /// know none until its harness has run, which is when its catalog comes.
-    pub(crate) async fn ask_again_as_catalogs_change(self, mut changes: watch::Receiver<u64>) {
-        while changes.changed().await.is_ok() {
+    /// Stops with the Server, on `shutdown`.
+    pub(crate) async fn ask_again_as_catalogs_change(
+        self,
+        mut changes: watch::Receiver<u64>,
+        mut shutdown: watch::Receiver<bool>,
+    ) {
+        loop {
+            tokio::select! {
+                biased;
+                _ = crate::provider::wait_for_shutdown(&mut shutdown) => return,
+                changed = changes.changed() => if changed.is_err() {
+                    return;
+                },
+            }
             let mut state = self
                 .state
                 .lock()
@@ -333,10 +397,11 @@ impl SessionStoreState {
         {
             return;
         }
-        if let Some(found) = source.prices_now(wanted) {
+        let answer = source.prices_now(wanted);
+        if !matches!(answer, RatesAnswer::Awaited) {
             record.lapse_rates = Some(LapseRates {
                 wanted: wanted.clone(),
-                answer: RatesAnswer::from(found),
+                answer,
                 owed: false,
             });
         }
@@ -436,6 +501,9 @@ impl SessionRecord {
         let staged = self
             .prompt_cache_write
             .take_if(|staged| staged.turn_id == turn_id);
+        let selection_routes = staged
+            .as_ref()
+            .is_some_and(|staged| staged.selection_routes);
         let turn = self.snapshot.turns.iter().find(|turn| turn.id == turn_id)?;
         let turn_model = turn
             .agent
@@ -462,7 +530,10 @@ impl SessionRecord {
         }
         let current = current?;
         let compacted = turn.compaction_requested && turn.status == TurnStatus::Completed;
-        let ran_elsewhere = ran_on(&self.snapshot, turn, turn_model.as_ref())
+        // A call on a Model nobody named is evidence of the Model selected
+        // only where that Model runs its calls itself.
+        let unnamed_runs_on = turn_model.as_ref().filter(|_| !selection_routes);
+        let ran_elsewhere = ran_on(&self.snapshot, turn, unnamed_runs_on)
             .is_some_and(|models| !models.contains(&current.written_by));
         (!compacted && !ran_elsewhere).then_some(current)
     }
@@ -545,7 +616,7 @@ fn written_cache(
         lapses_at: lapse.lapses_at,
         written_by: lapse.model.or_else(turn_model)?,
         lifetime_ms: lifetime_ms(lapse.lifetime, declared),
-        prompt_limit_tokens: lapse.prompt_limit,
+        prompt_limit_tokens: lapse.prompt_limit_tokens,
         lapse_penalty: None,
     })
 }
@@ -566,8 +637,9 @@ fn settled_turns(changes: &[SessionChange]) -> Vec<TurnId> {
 
 /// The Models `turn` is known to have run on, by its Model Shares, the
 /// Actual Models its Agent Messages name, and — for Usage or a Message no
-/// Model is named for — the Model it selected; none where it made no call
-/// at all, which changes nothing of the cache.
+/// Model is named for — `selected`, where the Model it selected runs its
+/// calls itself; none where nothing names a Model it ran on, which changes
+/// nothing of the cache.
 fn ran_on(
     snapshot: &SessionSnapshot,
     turn: &Turn,

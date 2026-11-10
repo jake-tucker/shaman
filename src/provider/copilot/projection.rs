@@ -2581,7 +2581,7 @@ fn reported_lapse(event: &SessionEvent, usage: &AssistantUsageData) -> Option<Pr
             .and_then(|seconds| u64::try_from(seconds).ok())
             .filter(|seconds| *seconds > 0)
             .map(std::time::Duration::from_secs),
-        prompt_limit: usage.max_prompt_tokens.and_then(token_count),
+        prompt_limit_tokens: usage.max_prompt_tokens.and_then(token_count),
     })
 }
 
@@ -4804,7 +4804,7 @@ mod tests {
                     lapses_at: crate::protocol::SessionTimestamp(1_767_225_900_250),
                     model: Some(ModelId::new("claude-fixture")),
                     lifetime: Some(std::time::Duration::from_secs(3600)),
-                    prompt_limit: Some(872_000),
+                    prompt_limit_tokens: Some(872_000),
                 }
             )]
         );
@@ -9851,7 +9851,7 @@ mod tests {
                 lapses_at: crate::protocol::SessionTimestamp(1_767_225_900_000),
                 model: Some(ModelId::new("claude-fixture")),
                 lifetime: None,
-                prompt_limit: None,
+                prompt_limit_tokens: None,
             }],
             "the call's Usage is the Compaction's to report, once"
         );

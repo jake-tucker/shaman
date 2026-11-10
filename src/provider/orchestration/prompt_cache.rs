@@ -15,7 +15,8 @@ use futures_util::FutureExt;
 
 use crate::pricing::PromptRates;
 use crate::sessions::{
-    CacheOutput, LapseRateRequest, LapseRateSource, RatesFor, ReportedLapse, SessionStore,
+    CacheOutput, LapseRateRequest, LapseRateSource, RatesAnswer, RatesFor, ReportedLapse,
+    SessionStore,
 };
 
 use super::{ProviderEvent, ProviderRuntime, ProviderUpdateGate};
@@ -28,37 +29,61 @@ fn cache_output(event: &ProviderEvent) -> Option<CacheOutput> {
             lapses_at,
             model,
             lifetime,
-            prompt_limit,
+            prompt_limit_tokens,
         } => Some(CacheOutput::Lapse(ReportedLapse {
             lapses_at: *lapses_at,
             model: model.clone(),
             lifetime: *lifetime,
-            prompt_limit: *prompt_limit,
+            prompt_limit_tokens: *prompt_limit_tokens,
         })),
         ProviderEvent::ContextFill { .. } | ProviderEvent::ResumeStateChanged { .. } => None,
         _ => Some(CacheOutput::Written),
     }
 }
 
-/// Tells the store that `event`, output of the owning Session's Turn
-/// `turn_id`, arrived now on `clock`, where its Provider's cache lapses at
-/// all.
-pub(super) fn note_turn_output(
-    sessions: &SessionStore,
-    runtime: &Arc<dyn ProviderRuntime>,
-    clock: &ServerClock,
-    session_id: SessionId,
-    turn_id: TurnId,
-    event: &ProviderEvent,
-) {
-    let lifetime = runtime.cache_lifetime();
-    let output = match (lifetime, cache_output(event)) {
-        (CacheLifetime::None, _) | (_, None) => return,
-        // Only an assumed lifetime counts from the output itself.
-        (CacheLifetime::Reported, Some(CacheOutput::Written)) => return,
-        (_, Some(output)) => output,
-    };
-    sessions.note_prompt_cache_output(session_id, turn_id, lifetime, clock.now(), output);
+/// Which Turn of the owning Session the store has been told of, so it is
+/// told once a Turn and the lock is taken for nothing else but what a Turn's
+/// Cache Lifetime reads.
+#[derive(Default)]
+pub(super) struct PromptCacheNotes {
+    told: Option<TurnId>,
+}
+
+impl PromptCacheNotes {
+    /// Tells the store that `event`, output of the owning Session's Turn
+    /// `turn_id`, arrived now on `clock`, where its Provider's cache lapses at
+    /// all: once a Turn, whether the Model the Turn selected routes its calls
+    /// — a Model that takes a Routing Tier does, as Copilot's `auto` — and
+    /// then each output its Cache Lifetime reads. The runtime is asked apart
+    /// from the store's lock.
+    pub(super) fn note_turn_output(
+        &mut self,
+        sessions: &SessionStore,
+        runtime: &Arc<dyn ProviderRuntime>,
+        clock: &ServerClock,
+        session_id: SessionId,
+        turn_id: TurnId,
+        event: &ProviderEvent,
+    ) {
+        let lifetime = runtime.cache_lifetime();
+        if lifetime == CacheLifetime::None {
+            return;
+        }
+        if self.told != Some(turn_id) {
+            self.told = Some(turn_id);
+            let routes = sessions
+                .turn_model(session_id, turn_id)
+                .is_some_and(|model| runtime.takes_routing_tier(&model));
+            sessions.note_prompt_cache_turn(session_id, turn_id, lifetime, routes);
+        }
+        let output = match (lifetime, cache_output(event)) {
+            (CacheLifetime::None, _) | (_, None) => return,
+            // Only an assumed lifetime counts from the output itself.
+            (CacheLifetime::Reported, Some(CacheOutput::Written)) => return,
+            (_, Some(output)) => output,
+        };
+        sessions.note_prompt_cache_output(session_id, turn_id, lifetime, clock.now(), output);
+    }
 }
 
 /// Takes a moment the cache lapses at that the Provider reported outside any
@@ -103,16 +128,24 @@ fn runtime_for<'a>(
         .find(|runtime| runtime.provider_id() == rates_for.provider)
 }
 
+/// The prices `runtime` states for `rates_for`: the selected Model's, or,
+/// where it has none of its own, the Model's that wrote the cache.
+async fn find_prices(runtime: &dyn ProviderRuntime, rates_for: &RatesFor) -> Option<PromptRates> {
+    let selected = runtime.prompt_rates(&rates_for.selected).await;
+    if selected.is_some() || rates_for.written_by == rates_for.selected {
+        return selected;
+    }
+    runtime.prompt_rates(&rates_for.written_by).await
+}
+
 impl LapseRateSource for RuntimeLapseRates {
-    fn prices_now(&self, rates_for: &RatesFor) -> Option<Option<PromptRates>> {
+    fn prices_now(&self, rates_for: &RatesFor) -> RatesAnswer {
         let Some(runtime) = self.runtime(rates_for) else {
-            return Some(None);
+            return RatesAnswer::Unpriced;
         };
-        let selected = runtime.prompt_rates(&rates_for.selected).now_or_never()?;
-        if selected.is_some() || rates_for.written_by == rates_for.selected {
-            return Some(selected);
-        }
-        runtime.prompt_rates(&rates_for.written_by).now_or_never()
+        find_prices(runtime.as_ref(), rates_for)
+            .now_or_never()
+            .map_or(RatesAnswer::Awaited, RatesAnswer::from)
     }
 
     fn ask(&self, request: LapseRateRequest) {
@@ -151,10 +184,7 @@ pub(super) async fn answer_lapse_rate_requests(
                     .apply(|| sessions.price_prompt_cache(request.session_id, rates_for, None));
                 return;
             };
-            let mut found = runtime.prompt_rates(&rates_for.selected).await;
-            if found.is_none() && rates_for.written_by != rates_for.selected {
-                found = runtime.prompt_rates(&rates_for.written_by).await;
-            }
+            let found = find_prices(runtime.as_ref(), rates_for).await;
             let _ =
                 updates.apply(|| sessions.price_prompt_cache(request.session_id, rates_for, found));
         });

@@ -2875,6 +2875,8 @@ async fn run_provider_session(
     // A Provider process launched for this Session alone is stopped once
     // the Session has waited idle long enough; a shared one stays.
     let stops_when_idle = runtime.launches_a_process_per_session();
+    // Which Turn the store has been told of, for its Prompt Cache.
+    let mut prompt_cache_notes = prompt_cache::PromptCacheNotes::default();
     let connector = ProviderConnector {
         runtime: &runtime,
         source_control: &source_control,
@@ -3254,7 +3256,7 @@ async fn run_provider_session(
                                 );
                                 let mut continuation =
                                     ActiveProviderTurn::new_continuation(turn_id);
-                                prompt_cache::note_turn_output(
+                                prompt_cache_notes.note_turn_output(
                                     &sessions, &runtime, &clock, session_id, turn_id, &event,
                                 );
                                 let projection = project_provider_event(
@@ -4684,7 +4686,7 @@ async fn run_provider_session(
                             .expect("Provider connection exists while its Turn is active")
                             .identity
                             .clone();
-                        prompt_cache::note_turn_output(
+                        prompt_cache_notes.note_turn_output(
                             &sessions,
                             &runtime,
                             &clock,

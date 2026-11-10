@@ -269,12 +269,12 @@ mod tests {
             .prompt_rates("luna-fixture")
             .expect("the Model is priced");
         // What a call able to send `limit` tokens, keeping its cache for
-        // `ttl`, costs to write `tokens` to the cache, less what it costs to
-        // read them back: the penalty as a Cost would state it.
-        let by_cost = |tokens: u64, limit: i64, ttl: Option<i64>| {
+        // `lifetime` seconds, costs to write `tokens` to the cache, less what
+        // it costs to read them back: the penalty as a Cost would state it.
+        let by_cost = |tokens: u64, limit: i64, lifetime: Option<i64>| {
             let cost = |usage: Usage| {
                 pricing
-                    .cost("luna-fixture", Some(limit), ttl, &usage)
+                    .cost("luna-fixture", Some(limit), lifetime, &usage)
                     .expect("the call is priced")
                     .nano_usd()
             };
@@ -288,12 +288,12 @@ mod tests {
                 ..Usage::default()
             })
         };
-        let forecast = |tokens: u64, limit: u64, ttl: Option<u64>| {
+        let forecast = |tokens: u64, limit: u64, lifetime: Option<u64>| {
             rates
                 .lapse_penalty(
                     tokens,
                     CacheWrite {
-                        lifetime: ttl.map(std::time::Duration::from_secs),
+                        lifetime: lifetime.map(std::time::Duration::from_secs),
                         prompt_limit_tokens: Some(limit),
                     },
                 )

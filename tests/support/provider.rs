@@ -94,6 +94,9 @@ pub struct ControlledProviderRuntime {
     /// The rates this Provider prices each Model at today, as a pricing
     /// source would state them; none until a test prices one.
     cache_rates: Arc<Mutex<HashMap<ModelId, CacheRates>>>,
+    /// The Models this Provider routes each call of to one of its choosing,
+    /// as Copilot routes `auto`: those a Selection may name a Routing Tier on.
+    routing_models: Arc<Mutex<Vec<ModelId>>>,
     /// What this Provider prices a prompt on each Model at by its size, where
     /// a test states more than its flat cache rates.
     prompt_rates: Arc<Mutex<HashMap<ModelId, PromptRates>>>,
@@ -353,6 +356,7 @@ impl ControlledProvider {
                 context_breakdown_offered: Arc::new(AtomicBool::new(true)),
                 cache_rates: Arc::default(),
                 prompt_rates: Arc::default(),
+                routing_models: Arc::default(),
                 starts: starts_tx,
                 errands: errands_tx,
                 errand_starts: errand_starts_tx,
@@ -427,6 +431,19 @@ impl ControlledProviderRuntime {
             .lock()
             .expect("controlled Provider cache rates lock is not poisoned")
             .insert(model, rates);
+    }
+
+    /// Has this Provider route each call on `model` from here on, or run it
+    /// as itself again where `routes` is false.
+    pub fn declare_routing(&self, model: ModelId, routes: bool) {
+        let mut routing = self
+            .routing_models
+            .lock()
+            .expect("controlled Provider routing lock is not poisoned");
+        routing.retain(|routed| *routed != model);
+        if routes {
+            routing.push(model);
+        }
     }
 
     /// Prices a prompt on `model` at `rates` from here on, standing in for a
@@ -1253,6 +1270,13 @@ impl ProviderRuntime for ControlledProviderRuntime {
 
     fn offers_context_breakdown(&self) -> bool {
         self.context_breakdown_offered.load(Ordering::SeqCst)
+    }
+
+    fn takes_routing_tier(&self, model: &ModelId) -> bool {
+        self.routing_models
+            .lock()
+            .expect("controlled Provider routing lock is not poisoned")
+            .contains(model)
     }
 
     fn cache_lifetime(&self) -> CacheLifetime {

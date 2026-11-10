@@ -48,7 +48,7 @@ mod posture_tests;
 mod projection;
 mod prompt_cache;
 pub(crate) use prompt_cache::{
-    CacheOutput, LapseRateRequest, LapseRateSource, RatesFor, ReportedLapse,
+    CacheOutput, LapseRateRequest, LapseRateSource, RatesAnswer, RatesFor, ReportedLapse,
 };
 mod prompts;
 mod remote_reports;
