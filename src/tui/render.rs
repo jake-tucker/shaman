@@ -36,7 +36,7 @@ use super::{
     completion_details::CompletionDetails,
     composer::{ComposerBindings, ComposerKey, ComposerMemory},
     composer_menu::ComposerMenuGeometry,
-    composer_top::{ComposerTop, ComposerTopLine, countdown},
+    composer_top::{ComposerTop, ComposerTopLine},
     connect_overlay::{ConnectDetails, ConnectOverlay, LoginStep},
     context_overlay::{ContextOverlayView, ContextRow},
     directory_browser::{DirectoryBrowserRow, DirectoryBrowserRowKind},
@@ -8579,6 +8579,12 @@ fn retry_countdown(retry_in: std::time::Duration) -> String {
     format!("{seconds}s")
 }
 
+/// `seconds` as a countdown above the composer reads it, `M:SS`, the minutes
+/// unbounded.
+fn countdown(seconds: u64) -> String {
+    format!("{}:{:02}", seconds / 60, seconds % 60)
+}
+
 /// The one line a Remote that has stopped answering is drawn on: directly
 /// above the composer, on the Session View and the Landing alike. It names the
 /// Remote — never "Suru", because the rest of the Client is working — the
@@ -9110,6 +9116,15 @@ mod tests {
             own_cost: None,
             attachments: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_countdown_above_the_composer_reads_minutes_and_two_figures_of_seconds() {
+        assert_eq!(super::countdown(1), "0:01");
+        assert_eq!(super::countdown(45), "0:45");
+        assert_eq!(super::countdown(60), "1:00");
+        assert_eq!(super::countdown(61), "1:01");
+        assert_eq!(super::countdown(720), "12:00");
     }
 
     #[test]

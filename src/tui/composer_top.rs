@@ -106,22 +106,3 @@ fn final_stretch_ms(cache: &PromptCache) -> u64 {
         (lifetime / 5).min(FINAL_STRETCH_MS)
     })
 }
-
-/// `seconds` as a countdown reads it, `M:SS`, the minutes unbounded.
-pub(super) fn countdown(seconds: u64) -> String {
-    format!("{}:{:02}", seconds / 60, seconds % 60)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::countdown;
-
-    #[test]
-    fn a_countdown_reads_minutes_and_two_figures_of_seconds() {
-        assert_eq!(countdown(1), "0:01");
-        assert_eq!(countdown(45), "0:45");
-        assert_eq!(countdown(60), "1:00");
-        assert_eq!(countdown(61), "1:01");
-        assert_eq!(countdown(720), "12:00");
-    }
-}
