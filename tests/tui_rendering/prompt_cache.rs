@@ -703,3 +703,73 @@ fn a_countdown_no_frame_has_room_for_wants_no_wakeup() {
         "a terminal too small to draw the Session wakes nothing for its line"
     );
 }
+
+/// Whether a Selection has left the Prompt Cache is judged against the whole
+/// Selection the Turn that wrote it ran under: its Provider, its Model and
+/// every Model Option, compared as chosen. Where the writing Turn, or what it
+/// ran under, is not known, nothing can be said.
+#[test]
+fn a_selection_has_left_the_cache_where_anything_it_names_differs_from_its_writers() {
+    let selection = |model: &str, effort: &str| suru::protocol::AgentSelection {
+        provider: suru::protocol::ProviderId::new("claude"),
+        model: ModelId::new(model),
+        options: vec![suru::protocol::ModelOptionSelection {
+            id: suru::protocol::ModelOptionId::new("reasoning_effort"),
+            value: suru::protocol::ModelOptionValue::Select {
+                choice: suru::protocol::ModelOptionChoiceId::new(effort),
+            },
+        }],
+    };
+    let workspace = workspace_dir();
+    let mut snapshot = failed_session_snapshot(
+        SessionId::new(),
+        PromptId::new(),
+        "Keep going on the parser",
+        workspace.path(),
+    );
+    let turn_id = snapshot.turns[0].id;
+    snapshot.turns[0].agent = Some(suru::protocol::AgentIdentity {
+        agent: suru::protocol::AgentId::new("coding"),
+        selection: selection("default", "medium"),
+    });
+    snapshot.session.prompt_cache = Some(PromptCache {
+        lapses_at: SessionTimestamp(1_767_225_900_000),
+        written_in: Some(turn_id),
+        written_by: ModelId::new("default"),
+        lifetime_ms: None,
+        write_price: suru::protocol::CacheWritePrice::Default,
+        prompt_limit_tokens: None,
+        lapse_penalty: None,
+    });
+
+    let changed = |snapshot: &SessionSnapshot, model: &str, effort: &str| {
+        snapshot.selection_changed_since_cache_written(&selection(model, effort))
+    };
+    assert_eq!(changed(&snapshot, "default", "medium"), Some(false));
+    assert_eq!(
+        changed(&snapshot, "default", "high"),
+        Some(true),
+        "a Model Option the writer did not run under leaves the cache"
+    );
+    assert_eq!(changed(&snapshot, "opus", "medium"), Some(true));
+
+    let mut unbound = snapshot.clone();
+    unbound.turns[0].agent = None;
+    assert_eq!(
+        changed(&unbound, "default", "medium"),
+        None,
+        "nothing is known of a writer that ran under no Agent"
+    );
+    let mut unwritten = snapshot.clone();
+    unwritten
+        .session
+        .prompt_cache
+        .as_mut()
+        .expect("the fixture holds a cache")
+        .written_in = None;
+    assert_eq!(
+        changed(&unwritten, "default", "medium"),
+        None,
+        "nor of a cache no Turn is known to have written"
+    );
+}

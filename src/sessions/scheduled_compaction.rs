@@ -78,8 +78,9 @@ pub(crate) enum ScheduledCompactionSkip {
     ProviderCannot,
     /// It is a Subagent's Session, whose context dies with its work.
     Subagent,
-    /// The Session's Agent Selection names another Provider or Model than
-    /// the Turn that wrote the cache, which the Compaction would read cold.
+    /// The Session's Agent Selection differs, in anything it names, from the
+    /// one the Turn that wrote the cache ran under, or either is not known:
+    /// the Compaction could read the context cold.
     SelectionChanged,
     /// The cache has already lapsed: the Session is cold.
     Cold,
@@ -179,7 +180,9 @@ fn judge(
         .agent_selection
         .as_ref()
         .and_then(|selection| snapshot.selection_changed_since_cache_written(selection))
-        .unwrap_or(false)
+        // Unknown is taken as changed: skipping costs nothing, and compacting
+        // a cold context costs the whole penalty.
+        .unwrap_or(true)
     {
         return Err(Skip::SelectionChanged);
     }

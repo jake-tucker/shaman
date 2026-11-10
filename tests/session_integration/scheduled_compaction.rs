@@ -985,6 +985,12 @@ async fn a_prompt_sent_while_it_runs_is_held_to_begin_the_next_turn() {
 impl Idle {
     /// Selects `model` for the Session, as the composer does.
     async fn select(&self, model: &str) {
+        self.select_at(model, "high").await;
+    }
+
+    /// Selects `model` at reasoning effort `effort` for the Session, as the
+    /// composer does.
+    async fn select_at(&self, model: &str, effort: &str) {
         let descriptor = self.fixture.server.descriptor();
         self.fixture
             .client
@@ -995,7 +1001,7 @@ impl Idle {
             .bearer_auth(&descriptor.token)
             .json(&suru::protocol::UpdateAgentSelectionRequest {
                 operation_id: suru::protocol::AgentSelectionOperationId::new(),
-                selection: controlled_selection(model, "high", "fast"),
+                selection: controlled_selection(model, effort, "fast"),
             })
             .send()
             .await
@@ -1103,6 +1109,55 @@ async fn a_selection_changed_since_the_cache_was_written_is_skipped() {
     back.select(writer.as_str()).await;
     back.until("the writer's Model is selected again", |snapshot| {
         snapshot.session.agent_selection.as_ref().map(|s| &s.model) == Some(&writer)
+    })
+    .await;
+    let due_at = back.due_at().await;
+    back.advance_to(due_at);
+    back.scheduled().await.succeed();
+    back.shutdown().await;
+}
+
+/// Raising the reasoning effort leaves the cache as surely as changing the
+/// Model: a Provider keys its cache by such Options too, so the Compaction's
+/// Turn, which runs under the Selection in force, would read the context
+/// cold. Setting it back before the moment comes leaves the Session owed.
+#[tokio::test]
+async fn a_model_option_changed_since_the_cache_was_written_is_skipped() {
+    let state = tempfile::tempdir().unwrap();
+    let mut raised = idle(state.path(), "scheduled-compaction-effort", ON, true).await;
+    let model = raised.model().await;
+    raised.select_at(model.as_str(), "low").await;
+    raised
+        .until("the effort is lowered", |snapshot| {
+            snapshot
+                .session
+                .agent_selection
+                .as_ref()
+                .is_some_and(|selection| {
+                    selection != &controlled_selection(model.as_str(), "high", "fast")
+                })
+                && snapshot
+                    .session
+                    .prompt_cache
+                    .as_ref()
+                    .is_some_and(|cache| cache.lapse_penalty.is_some())
+        })
+        .await;
+    let due_at = raised.due_at().await;
+    raised.advance_to(due_at);
+    raised
+        .assert_nothing_scheduled(1, "the effort the cache was written at changed")
+        .await;
+    raised.shutdown().await;
+
+    let state = tempfile::tempdir().unwrap();
+    let mut back = idle(state.path(), "scheduled-compaction-effort-back", ON, true).await;
+    let model = back.model().await;
+    back.select_at(model.as_str(), "low").await;
+    back.select_at(model.as_str(), "high").await;
+    back.until("the writer's effort is selected again", |snapshot| {
+        snapshot.session.agent_selection.as_ref()
+            == Some(&controlled_selection(model.as_str(), "high", "fast"))
     })
     .await;
     let due_at = back.due_at().await;

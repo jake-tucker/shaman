@@ -5950,13 +5950,16 @@ pub struct SessionSnapshot {
 }
 
 impl SessionSnapshot {
-    /// Whether `selection` has left the Session's Prompt Cache since it was
-    /// written: it names another Provider or another Model than the Turn that
-    /// last wrote the cache ran under, so a Prompt sent under it reads no
-    /// cache at all. The Selection is compared as chosen, a routing one by
-    /// its own name, never with the Model a call actually ran on; Model
-    /// Options are not compared, since they leave the context as it was.
-    /// `None` where no cache is held or the Turn that wrote it is not known.
+    /// Whether `selection` differs from the Agent Selection the Turn that
+    /// last wrote the Session's Prompt Cache ran under, in its Provider, its
+    /// Model or any Model Option: a Prompt sent under another may read none
+    /// of the cache, since a Provider keys its cache by more than the context
+    /// — a change of reasoning effort or thinking, of speed, or of a Routing
+    /// Tier, which may route the call to another Model, can leave it cold.
+    /// The Selection is compared whole and as chosen, a routing one by its
+    /// own name, never with the Model a call actually ran on. `None` where no
+    /// cache is held, or the Turn that wrote it, or what it ran under, is not
+    /// known: a caller that spends on the answer takes that as changed.
     pub fn selection_changed_since_cache_written(
         &self,
         selection: &AgentSelection,
@@ -5969,7 +5972,7 @@ impl SessionSnapshot {
             .agent
             .as_ref()?
             .selection;
-        Some(written_under.provider != selection.provider || written_under.model != selection.model)
+        Some(written_under != selection)
     }
 
     /// The Transcript as it is read, each entry beside its position in

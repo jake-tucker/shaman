@@ -2511,7 +2511,9 @@ fn a_prompt_cache_change_carries_the_whole_cache_or_its_absence() {
             SessionChange::PromptCacheChanged {
                 prompt_cache: Some(suru::protocol::PromptCache {
                     lapses_at: SessionTimestamp(1_767_225_900_000),
-                    written_in: None,
+                    written_in: Some(TurnId::from_uuid(fixture_id(
+                        "0198b27e-2dc4-76ba-9895-f43db821fe3d",
+                    ))),
                     written_by: ModelId::new("gpt-5"),
                     lifetime_ms: None,
                     write_price: suru::protocol::CacheWritePrice::Default,
@@ -2530,6 +2532,7 @@ fn a_prompt_cache_change_carries_the_whole_cache_or_its_absence() {
                 "type": "prompt_cache_changed",
                 "prompt_cache": {
                     "lapses_at": 1_767_225_900_000_u64,
+                    "written_in": "0198b27e-2dc4-76ba-9895-f43db821fe3d",
                     "written_by": "gpt-5",
                     "prompt_limit_tokens": 272_000,
                     "lapse_penalty": 0.46
@@ -2546,6 +2549,12 @@ fn a_prompt_cache_change_carries_the_whole_cache_or_its_absence() {
         serde_json::from_value::<SessionUpdate>(expected).expect("decode the change"),
         update
     );
+    const {
+        assert!(
+            PROTOCOL_VERSION >= 115,
+            "a Prompt Cache naming the Turn that wrote it changes the wire"
+        );
+    }
 }
 
 #[test]
@@ -3832,18 +3841,6 @@ fn a_compaction_request_and_the_turn_it_begins_travel_on_the_wire() {
     );
     // One Suru began ahead of a Prompt Cache lapse says so on the wire, and
     // is no Continuation either.
-    const {
-        assert!(
-            PROTOCOL_VERSION >= 114,
-            "a Turn naming who asked for its Compaction changes the wire"
-        );
-    }
-    const {
-        assert!(
-            PROTOCOL_VERSION >= 115,
-            "a Prompt Cache naming the Turn that wrote it changes the wire"
-        );
-    }
     let mut scheduled = turn.clone();
     scheduled["compaction_requested"] = json!("scheduled");
     let scheduled = serde_json::from_value::<Turn>(scheduled).expect("decode a scheduled Turn");
@@ -3900,6 +3897,12 @@ fn a_compaction_request_and_the_turn_it_begins_travel_on_the_wire() {
         ),
     ] {
         assert_eq!(code.wire_name(), name, "{code:?} travels as {name}");
+    }
+    const {
+        assert!(
+            PROTOCOL_VERSION >= 114,
+            "a Turn naming who asked for its Compaction changes the wire"
+        );
     }
 }
 
