@@ -81,7 +81,7 @@ impl ClaudeCacheLifetimes {
     /// The Cache Lifetime a Claude runtime declares with these lifetimes.
     pub(super) fn declared(self) -> CacheLifetime {
         CacheLifetime::Inferred {
-            assumed: self.unobserved,
+            unobserved: self.unobserved,
         }
     }
 
@@ -260,13 +260,13 @@ mod tests {
         assert_eq!(
             LIFETIMES.declared(),
             CacheLifetime::Inferred {
-                assumed: LIFETIMES.unobserved
+                unobserved: LIFETIMES.unobserved
             }
         );
         assert_eq!(
             ClaudeCacheLifetimes::default().declared(),
             CacheLifetime::Inferred {
-                assumed: Duration::from_secs(300)
+                unobserved: Duration::from_secs(300)
             }
         );
     }

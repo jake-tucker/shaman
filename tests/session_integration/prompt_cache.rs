@@ -1258,7 +1258,9 @@ async fn inferring(
     .await;
     fixture
         .runtime
-        .declare_cache_lifetime(CacheLifetime::Inferred { assumed: ASSUMED });
+        .declare_cache_lifetime(CacheLifetime::Inferred {
+            unobserved: ASSUMED,
+        });
     (fixture, clock, hand)
 }
 
@@ -1363,7 +1365,9 @@ async fn a_request_that_wrote_nothing_keeps_the_lifetime_last_observed_and_resta
     drop(fixture.provider_session);
     fixture.server.shutdown().await.unwrap();
     let (runtime, mut provider) = ControlledProvider::new();
-    runtime.declare_cache_lifetime(CacheLifetime::Inferred { assumed: ASSUMED });
+    runtime.declare_cache_lifetime(CacheLifetime::Inferred {
+        unobserved: ASSUMED,
+    });
     let restarted = server::spawn_with_provider_and_timings(
         ServerConfig::new(state.path(), channel).unwrap(),
         runtime,

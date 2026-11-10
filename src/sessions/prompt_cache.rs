@@ -62,57 +62,275 @@ pub(crate) struct ReportedLapse {
 }
 
 /// What the Turn at work has written of the Prompt Cache so far, held until
-/// it settles.
+/// it settles: what its Provider reported, and what the Provider's declared
+/// Cache Lifetime counts from the rest of its output.
 #[derive(Clone, Debug)]
 pub(super) struct StagedWrite {
     turn_id: TurnId,
-    lifetime: CacheLifetime,
+    declared: CacheLifetime,
     /// Whether the Turn's Agent Selection names a Model that routes each
     /// call to one of the Provider's choosing rather than running it itself.
     selection_routes: bool,
-    last_output_at: Option<SessionTimestamp>,
+    /// A moment the Provider reported, which outranks whatever the
+    /// declaration counts.
     reported: Option<ReportedLapse>,
-    /// The Turn's latest request that used the cache since any Compaction it
-    /// completed, and when it arrived.
-    refreshed: Option<(SessionTimestamp, Option<ModelId>)>,
-    /// What the Turn's latest request that wrote anything wrote.
-    observed: Option<CacheWritten>,
-    /// Whether the Turn completed a Compaction no request has used the cache
-    /// since.
-    compacted: bool,
+    counted: Counted,
+}
+
+/// What a Turn's output is counted toward under each Cache Lifetime a
+/// Provider may declare: the one place that says what each declaration does
+/// with the Model's output, a request, and a Compaction. A reported moment
+/// outranks every one of them ([`StagedWrite::take`]).
+#[derive(Clone, Debug)]
+enum Counted {
+    /// The Provider reports its moments, or declares no lifetime: the rest of
+    /// its output counts toward nothing.
+    Nothing,
+    /// An assumed lifetime counts from the Turn's last output, a completed
+    /// Compaction among it; the requests a Provider states are not read.
+    LastOutput {
+        lifetime: std::time::Duration,
+        at: Option<SessionTimestamp>,
+    },
+    /// An inferred lifetime counts from the Turn's last request that used
+    /// the cache, at what the latest request that wrote anything wrote, or
+    /// else `unobserved`; output with no request behind it is not read, and a
+    /// completed Compaction leaves the requests before it describing a
+    /// context the next Prompt no longer sends.
+    LastRequest {
+        unobserved: std::time::Duration,
+        observed: Option<CacheWritten>,
+        since: Requested,
+    },
+}
+
+/// Where a Turn's requests stand under an inferred lifetime.
+#[derive(Clone, Debug)]
+enum Requested {
+    /// The Turn has stated no request.
+    Nothing,
+    /// Its latest request used the cache at `at`, run on `model` where that
+    /// is not the one the Turn selected.
+    At {
+        at: SessionTimestamp,
+        model: Option<ModelId>,
+    },
+    /// It completed a Compaction that no request has used the cache since.
+    Compacted,
+}
+
+impl CacheOutput {
+    /// Whether a Provider declaring `declared` reads anything into this
+    /// output, as [`Counted`] takes it: the filter Provider orchestration
+    /// applies before taking the store's lock.
+    pub(crate) fn is_read_under(&self, declared: CacheLifetime) -> bool {
+        match (declared, self) {
+            (CacheLifetime::None, _) => false,
+            (_, Self::Lapse(_)) => true,
+            (CacheLifetime::Reported, _) => false,
+            (CacheLifetime::Assumed(_), Self::Written | Self::Compacted) => true,
+            (CacheLifetime::Assumed(_), Self::Refreshed(_)) => false,
+            (CacheLifetime::Inferred { .. }, Self::Refreshed(_) | Self::Compacted) => true,
+            (CacheLifetime::Inferred { .. }, Self::Written) => false,
+        }
+    }
+}
+
+impl Counted {
+    fn under(declared: CacheLifetime) -> Self {
+        match declared {
+            CacheLifetime::None | CacheLifetime::Reported => Self::Nothing,
+            CacheLifetime::Assumed(lifetime) => Self::LastOutput { lifetime, at: None },
+            CacheLifetime::Inferred { unobserved } => Self::LastRequest {
+                unobserved,
+                observed: None,
+                since: Requested::Nothing,
+            },
+        }
+    }
+
+    /// Counts `output`, which arrived `at`, as the declaration reads it.
+    fn take(&mut self, output: CacheOutput, at: SessionTimestamp) {
+        match (self, output) {
+            (Self::LastOutput { at: last, .. }, CacheOutput::Written | CacheOutput::Compacted) => {
+                *last = Some(at);
+            }
+            (
+                Self::LastRequest {
+                    observed, since, ..
+                },
+                CacheOutput::Refreshed(refresh),
+            ) => {
+                *observed = refresh.written.or(*observed);
+                *since = Requested::At {
+                    at,
+                    model: refresh.model,
+                };
+            }
+            (Self::LastRequest { since, .. }, CacheOutput::Compacted) => {
+                *since = Requested::Compacted;
+            }
+            _ => {}
+        }
+    }
+
+    /// The cache the counted output wrote, where it wrote one: lapsing its
+    /// lifetime after the output it counts from, on `turn_model` where no
+    /// request named another. An inferred lifetime falls back on the write
+    /// `last_observed` for the Session, and then on the assumption.
+    fn written(
+        &self,
+        last_observed: Option<CacheWritten>,
+        turn_model: Option<&ModelId>,
+    ) -> Option<PromptCache> {
+        match self {
+            Self::LastOutput {
+                lifetime,
+                at: Some(at),
+            } => cache_written(
+                *at,
+                CacheWritten {
+                    lifetime: *lifetime,
+                    price: CacheWritePrice::Default,
+                },
+                turn_model.cloned()?,
+            ),
+            Self::LastRequest {
+                unobserved,
+                observed,
+                since: Requested::At { at, model },
+            } => cache_written(
+                *at,
+                observed.or(last_observed).unwrap_or(CacheWritten {
+                    lifetime: *unobserved,
+                    price: CacheWritePrice::Default,
+                }),
+                model.clone().or_else(|| turn_model.cloned())?,
+            ),
+            _ => None,
+        }
+    }
+
+    /// Whether the counted output says the Turn left the context the moment
+    /// describes behind: a Compaction no request followed.
+    fn compacted(&self) -> bool {
+        matches!(
+            self,
+            Self::LastRequest {
+                since: Requested::Compacted,
+                ..
+            }
+        )
+    }
+
+    /// Whether the Provider states each request of the conversation, so a
+    /// Turn that stated none ran none, whatever Models its Usage names.
+    fn states_requests(&self) -> bool {
+        matches!(self, Self::LastRequest { .. })
+    }
+}
+
+/// What a Turn's settling leaves of the Prompt Cache.
+enum Settled {
+    /// The Turn wrote the cache afresh.
+    Wrote(PromptCache),
+    /// It wrote nothing, leaving the cache as this.
+    Left(Option<PromptCache>),
+}
+
+/// What [`StagedWrite::settle`] reads of the Turn it settles beyond its
+/// output: the Model it selected, whether it completed the Compaction it was
+/// begun for, and the Models it is known to have run on, figured only where
+/// they are read.
+struct SettlingTurn<RanOn> {
+    model: Option<ModelId>,
+    compacted_as_asked: bool,
+    ran_on: RanOn,
 }
 
 impl StagedWrite {
-    fn opened(turn_id: TurnId, lifetime: CacheLifetime, selection_routes: bool) -> Self {
+    /// What the Turn `turn_id` writes of the Prompt Cache, from a Provider
+    /// declaring `declared`, before any of its output has arrived.
+    fn opened(turn_id: TurnId, declared: CacheLifetime, selection_routes: bool) -> Self {
         Self {
             turn_id,
-            lifetime,
+            declared,
             selection_routes,
-            last_output_at: None,
             reported: None,
-            refreshed: None,
-            observed: None,
-            compacted: false,
+            counted: Counted::under(declared),
         }
     }
 
-    fn take(&mut self, output: CacheOutput, at: SessionTimestamp) {
+    /// Takes `output`, which arrived `at` from a Provider now declaring
+    /// `declared`: a declaration that changed mid-Turn counts afresh.
+    fn take(&mut self, declared: CacheLifetime, output: CacheOutput, at: SessionTimestamp) {
+        if declared != self.declared {
+            self.declared = declared;
+            self.counted = Counted::under(declared);
+        }
         match output {
-            CacheOutput::Written => self.last_output_at = Some(at),
             CacheOutput::Lapse(lapse) => self.reported = Some(lapse),
-            CacheOutput::Refreshed(refresh) => {
-                self.refreshed = Some((at, refresh.model));
-                self.observed = refresh.written.or(self.observed);
-                self.compacted = false;
-            }
-            CacheOutput::Compacted => {
-                // What an assumed lifetime counts from is any output.
-                self.last_output_at = Some(at);
-                self.refreshed = None;
-                self.compacted = true;
-            }
+            output => self.counted.take(output, at),
         }
     }
+
+    /// The Prompt Cache once the Turn has settled over `current`: the moment
+    /// its Provider reported, else the one its declaration counts. A Turn
+    /// that wrote nothing leaves `current` standing — one that sent nothing,
+    /// failing or stopped before any call, changes nothing — save that one
+    /// which ran on another Model, or completed a Compaction, leaves none:
+    /// the context the moment described is not the one the next Prompt
+    /// sends. Where the Provider states each request, one that ran on another
+    /// Model would have said so, so the other Models a Turn's Usage names —
+    /// its native Subagents' — say nothing of the Session's own cache.
+    fn settle(
+        self,
+        current: Option<PromptCache>,
+        turn: SettlingTurn<impl FnOnce() -> Option<Vec<ModelId>>>,
+    ) -> Settled {
+        let written = match self.reported {
+            Some(lapse) => written_cache(lapse, self.declared, || turn.model.clone()),
+            None => self.counted.written(
+                current.as_ref().and_then(observed_write),
+                turn.model.as_ref(),
+            ),
+        };
+        if let Some(written) = written {
+            return Settled::Wrote(written);
+        }
+        let Some(current) = current else {
+            return Settled::Left(None);
+        };
+        let compacted = self.counted.compacted() || turn.compacted_as_asked;
+        let ran_elsewhere = !self.counted.states_requests()
+            && (turn.ran_on)().is_some_and(|models| !models.contains(&current.written_by));
+        Settled::Left((!compacted && !ran_elsewhere).then_some(current))
+    }
+}
+
+/// What the call that wrote `cache` wrote, where its lifetime is known.
+fn observed_write(cache: &PromptCache) -> Option<CacheWritten> {
+    Some(CacheWritten {
+        lifetime: std::time::Duration::from_millis(cache.lifetime_ms?),
+        price: cache.write_price,
+    })
+}
+
+/// The cache `written_by` wrote at `at`, lapsing as long after as `written`
+/// is kept.
+fn cache_written(
+    at: SessionTimestamp,
+    written: CacheWritten,
+    written_by: ModelId,
+) -> Option<PromptCache> {
+    Some(PromptCache {
+        lapses_at: SessionTimestamp(at.0.saturating_add(millis(written.lifetime))),
+        written_by,
+        lifetime_ms: Some(millis(written.lifetime)),
+        write_price: written.price,
+        prompt_limit_tokens: None,
+        lapse_penalty: None,
+    })
 }
 
 /// Whose prices a Session's Lapse Penalty is forecast at: those of the Model
@@ -236,8 +454,7 @@ impl SessionStore {
             Some(staged) if staged.turn_id == turn_id => staged,
             slot => slot.insert(StagedWrite::opened(turn_id, lifetime, false)),
         };
-        staged.lifetime = lifetime;
-        staged.take(output, at);
+        staged.take(lifetime, output, at);
     }
 
     /// Takes a moment the Provider reported outside any Turn, which it gives
@@ -529,19 +746,8 @@ impl SessionRecord {
         (next != self.snapshot.session.prompt_cache).then_some(next)
     }
 
-    /// The Prompt Cache once Turn `turn_id` has settled over `current`: the
-    /// moment its Provider reported; or its assumed lifetime counted from its
-    /// last output; or, where the lifetime is inferred, counted from its last
-    /// request that used the cache, at the lifetime that request wrote at,
-    /// else the one last observed — this Turn's or `current`'s — else the
-    /// assumption; on the Model whose call wrote it. A Turn that wrote
-    /// nothing leaves the moment standing — one that sent nothing, failing or
-    /// stopped before any call, changes nothing — save that one which ran on
-    /// another Model, or a Compaction it completed, leaves none: the context
-    /// the moment described is not the one the next Prompt sends. Where the
-    /// Provider states each request, one that ran on another Model would have
-    /// said so, so the other Models a Turn's Usage names — its native
-    /// Subagents' — say nothing of the Session's own cache.
+    /// The Prompt Cache once Turn `turn_id` has settled over `current`, as
+    /// what it staged settles it ([`StagedWrite::settle`]).
     fn settled_prompt_cache(
         &mut self,
         turn_id: TurnId,
@@ -549,69 +755,36 @@ impl SessionRecord {
     ) -> Option<PromptCache> {
         let staged = self
             .prompt_cache_write
-            .take_if(|staged| staged.turn_id == turn_id);
-        let selection_routes = staged
-            .as_ref()
-            .is_some_and(|staged| staged.selection_routes);
-        let states_requests = staged
-            .as_ref()
-            .is_some_and(|staged| matches!(staged.lifetime, CacheLifetime::Inferred { .. }));
-        let compacted_since = staged.as_ref().is_some_and(|staged| staged.compacted);
+            .take_if(|staged| staged.turn_id == turn_id)
+            .unwrap_or_else(|| StagedWrite::opened(turn_id, CacheLifetime::None, false));
         let turn = self.snapshot.turns.iter().find(|turn| turn.id == turn_id)?;
-        let turn_model = turn
+        let model = turn
             .agent
             .as_ref()
             .map(|agent| agent.selection.model.clone())
             .or_else(|| selected(&self.snapshot).map(|(_, model)| model.clone()));
-        let last_observed = current.as_ref().and_then(|cache| {
-            Some(CacheWritten {
-                lifetime: std::time::Duration::from_millis(cache.lifetime_ms?),
-                price: cache.write_price,
-            })
-        });
-        let written = staged.and_then(|staged| match staged.reported {
-            Some(lapse) => written_cache(lapse, staged.lifetime, || turn_model.clone()),
-            None => match (staged.lifetime, staged.last_output_at, staged.refreshed) {
-                (CacheLifetime::Assumed(lifetime), Some(at), _) => Some(PromptCache {
-                    lapses_at: SessionTimestamp(at.0.saturating_add(millis(lifetime))),
-                    written_by: turn_model.clone()?,
-                    lifetime_ms: Some(millis(lifetime)),
-                    write_price: CacheWritePrice::Default,
-                    prompt_limit_tokens: None,
-                    lapse_penalty: None,
-                }),
-                (CacheLifetime::Inferred { assumed }, _, Some((at, model))) => {
-                    let written = staged.observed.or(last_observed).unwrap_or(CacheWritten {
-                        lifetime: assumed,
-                        price: CacheWritePrice::Default,
-                    });
-                    Some(PromptCache {
-                        lapses_at: SessionTimestamp(at.0.saturating_add(millis(written.lifetime))),
-                        written_by: model.or_else(|| turn_model.clone())?,
-                        lifetime_ms: Some(millis(written.lifetime)),
-                        write_price: written.price,
-                        prompt_limit_tokens: None,
-                        lapse_penalty: None,
-                    })
-                }
-                _ => None,
-            },
-        });
-        if written.is_some() {
-            // A catalog's prices may have moved since they were last found.
-            self.refresh_lapse_rates();
-            return written;
-        }
-        let current = current?;
-        let compacted =
-            compacted_since || (turn.compaction_requested && turn.status == TurnStatus::Completed);
         // A call on a Model nobody named is evidence of the Model selected
         // only where that Model runs its calls itself.
-        let unnamed_runs_on = turn_model.as_ref().filter(|_| !selection_routes);
-        let ran_elsewhere = !states_requests
-            && ran_on(&self.snapshot, turn, unnamed_runs_on)
-                .is_some_and(|models| !models.contains(&current.written_by));
-        (!compacted && !ran_elsewhere).then_some(current)
+        let unnamed_runs_on = model.clone().filter(|_| !staged.selection_routes);
+        let snapshot = &self.snapshot;
+        let settled = staged.settle(
+            current,
+            SettlingTurn {
+                model,
+                compacted_as_asked: turn.compaction_requested
+                    && turn.status == TurnStatus::Completed,
+                ran_on: || ran_on(snapshot, turn, unnamed_runs_on.as_ref()),
+            },
+        );
+        match settled {
+            Settled::Wrote(written) => {
+                // A catalog's prices may have moved since they were last
+                // found.
+                self.refresh_lapse_rates();
+                Some(written)
+            }
+            Settled::Left(left) => left,
+        }
     }
 
     /// Has the prices held for the Lapse Penalty looked up again, keeping

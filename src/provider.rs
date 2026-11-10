@@ -167,7 +167,7 @@ pub enum CacheLifetime {
     /// output with no request behind it — a Turn failing before any call, a
     /// local command's reply — leaves it standing. A moment the Provider
     /// reports all the same still outranks the inference.
-    Inferred { assumed: std::time::Duration },
+    Inferred { unobserved: std::time::Duration },
 }
 
 /// What one request wrote to a Prompt Cache: how long the Provider keeps it,
@@ -2579,7 +2579,7 @@ mod tests {
                 (
                     "claude".to_owned(),
                     CacheLifetime::Inferred {
-                        assumed: std::time::Duration::from_secs(5 * 60)
+                        unobserved: std::time::Duration::from_secs(5 * 60)
                     }
                 ),
             ]
