@@ -47,7 +47,9 @@ mod posture;
 mod posture_tests;
 mod projection;
 mod prompt_cache;
-pub(crate) use prompt_cache::{CacheOutput, LapseRateRequest, ReportedLapse};
+pub(crate) use prompt_cache::{
+    CacheOutput, LapseRateRequest, LapseRateSource, RatesFor, ReportedLapse,
+};
 mod prompts;
 mod remote_reports;
 pub(crate) use remote_reports::{Pairing, RemoteContribution, RemoteOwing, RemoteRaise};
@@ -228,10 +230,10 @@ struct SessionStoreState {
     /// is for, whose Agent the orchestrator then delivers it to (see
     /// [`SessionStore::announce_held_reports_to`]).
     report_notices: Option<mpsc::UnboundedSender<SessionId>>,
-    /// Where the store asks for the prices a Lapse Penalty is forecast at,
-    /// once Provider orchestration has said it answers them (see
+    /// Where the store finds the prices a Lapse Penalty is forecast at, once
+    /// Provider orchestration has said it answers them (see
     /// [`SessionStore::forecast_lapse_penalties_through`]).
-    lapse_rate_requests: Option<mpsc::UnboundedSender<prompt_cache::LapseRateRequest>>,
+    lapse_rate_source: Option<Arc<dyn prompt_cache::LapseRateSource>>,
 }
 
 struct SessionRecord {
@@ -490,7 +492,7 @@ impl SessionStore {
             registry_changes: Default::default(),
             worked_order: Vec::new(),
             report_notices: None,
-            lapse_rate_requests: None,
+            lapse_rate_source: None,
             continuations_awaited: Default::default(),
             agent_moves: Default::default(),
         };

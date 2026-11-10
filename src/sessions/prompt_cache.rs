@@ -8,14 +8,18 @@
 //! in whichever revision moves what it is figured from — the moment, the
 //! Context Fill, or the Agent Selection — at the prices last found for the
 //! Models it is priced at. Where none are held for those Models, the store
-//! asks for them, and the penalty stays absent until they arrive.
+//! takes them from a [`LapseRateSource`] at once where it has them to hand,
+//! and otherwise asks it for them, the penalty staying absent until they
+//! arrive. A Session whose history is not read in is left alone until it is.
 
-use tokio::sync::mpsc;
+use std::sync::Arc;
 
-use crate::pricing::PromptRates;
+use tokio::sync::watch;
+
+use crate::pricing::{CacheWrite, PromptRates};
 use crate::protocol::{
-    LapsePenalty, ModelId, PromptCache, ProviderId, SessionChange, SessionId, SessionSnapshot,
-    SessionTimestamp, Turn, TurnId, TurnStatus,
+    LapsePenalty, MessageRole, ModelId, PromptCache, ProviderId, SessionChange, SessionId,
+    SessionSnapshot, SessionTimestamp, Turn, TurnId, TurnStatus,
 };
 use crate::provider::CacheLifetime;
 
@@ -31,12 +35,14 @@ pub(crate) enum CacheOutput {
 }
 
 /// A moment the Provider reported the cache lapses at, with the Model whose
-/// call wrote the cache and how long it is kept, where it said.
+/// call wrote the cache, how long it is kept, and the largest prompt that
+/// call could send, where it said.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ReportedLapse {
     pub(crate) lapses_at: SessionTimestamp,
     pub(crate) model: Option<ModelId>,
     pub(crate) lifetime: Option<std::time::Duration>,
+    pub(crate) prompt_limit: Option<u64>,
 }
 
 /// What the Turn at work has written of the Prompt Cache so far, held until
@@ -60,11 +66,36 @@ pub(crate) struct RatesFor {
     pub(crate) written_by: ModelId,
 }
 
-/// Asked of whoever answers the prices a Lapse Penalty is forecast at.
+/// Asked of a [`LapseRateSource`] for the prices a Lapse Penalty is
+/// forecast at, which it answers through [`SessionStore::price_prompt_cache`].
 #[derive(Clone, Debug)]
 pub(crate) struct LapseRateRequest {
     pub(crate) session_id: SessionId,
     pub(crate) rates_for: RatesFor,
+}
+
+/// Where the prices a Lapse Penalty is forecast at are found: only a Provider
+/// runtime knows them, and one may have to wait on a rate table's fetch.
+pub(crate) trait LapseRateSource: Send + Sync {
+    /// The prices for `rates_for` where they are to hand without waiting —
+    /// what they are, or that there are none — and nothing where finding them
+    /// would wait.
+    fn prices_now(&self, rates_for: &RatesFor) -> Option<Option<PromptRates>>;
+
+    /// Asks for the prices `request` wants, to be answered once found.
+    fn ask(&self, request: LapseRateRequest);
+}
+
+/// What the last answer for the prices a Session wants found.
+#[derive(Clone, Debug)]
+enum RatesAnswer {
+    /// None has come yet.
+    Awaited,
+    /// The prices it found.
+    Priced(PromptRates),
+    /// It found none: the Provider knew no prices for either Model, or there
+    /// is no runtime for the Provider to ask.
+    Unpriced,
 }
 
 /// The prices a Session's Lapse Penalty is forecast at, as last found for
@@ -73,9 +104,7 @@ pub(crate) struct LapseRateRequest {
 #[derive(Clone, Debug)]
 pub(super) struct LapseRates {
     wanted: RatesFor,
-    /// What the last answer for `wanted` found: none until one has come, and
-    /// none inside where it found no prices at all.
-    found: Option<Option<PromptRates>>,
+    answer: RatesAnswer,
     /// Whether `wanted` is still to be asked for.
     owed: bool,
 }
@@ -131,11 +160,9 @@ impl SessionStore {
         let Some(record) = state.sessions.get_mut(&session_id) else {
             return Ok(());
         };
-        let Some(written_by) = lapse
-            .model
-            .clone()
-            .or_else(|| selected(&record.snapshot).map(|(_, model)| model.clone()))
-        else {
+        let Some(prompt_cache) = written_cache(lapse, lifetime, || {
+            selected(&record.snapshot).map(|(_, model)| model.clone())
+        }) else {
             return Ok(());
         };
         record.refresh_lapse_rates();
@@ -143,12 +170,7 @@ impl SessionStore {
             &self.storage,
             session_id,
             vec![SessionChange::PromptCacheChanged {
-                prompt_cache: Some(PromptCache {
-                    lapses_at: lapse.lapses_at,
-                    written_by,
-                    lifetime_ms: lifetime_ms(lapse.lifetime, lifetime),
-                    lapse_penalty: None,
-                }),
+                prompt_cache: Some(prompt_cache),
             }],
         )?;
         state.ask_for_lapse_rates(session_id);
@@ -156,9 +178,9 @@ impl SessionStore {
     }
 
     /// Takes `found` as the prices the Lapse Penalty is forecast at for
-    /// `rates_for`, and forecasts it again, where the Session still wants
-    /// prices for exactly those Models: an answer for a Selection the
-    /// Session has since left describes nothing of it.
+    /// `rates_for`, and forecasts it again, where the Session's history is
+    /// read in and it still wants prices for exactly those Models: an answer
+    /// for a Selection the Session has since left describes nothing of it.
     pub(crate) fn price_prompt_cache(
         &self,
         session_id: SessionId,
@@ -169,17 +191,15 @@ impl SessionStore {
             .state
             .lock()
             .expect("Session store lock is not poisoned");
+        if state.is_deferred(session_id) {
+            return Ok(());
+        }
         let Some(record) = state.sessions.get_mut(&session_id) else {
             return Ok(());
         };
-        let Some(rates) = record
-            .lapse_rates
-            .as_mut()
-            .filter(|rates| rates.wanted == *rates_for)
-        else {
+        if !record.take_lapse_rates(rates_for, found) {
             return Ok(());
-        };
-        rates.found = Some(found);
+        }
         if let Some(prompt_cache) = record.reforecast_prompt_cache() {
             record.commit_derived(
                 &self.storage,
@@ -190,47 +210,142 @@ impl SessionStore {
         Ok(())
     }
 
-    /// Sends every request for the prices a Lapse Penalty is forecast at to
-    /// `requests` from here on, and asks at once for each Session read in
-    /// already: those a restart read back, whose penalty was never stored.
-    pub(crate) fn forecast_lapse_penalties_through(
-        &self,
-        requests: mpsc::UnboundedSender<LapseRateRequest>,
-    ) {
+    /// Finds every price a Lapse Penalty is forecast at through `source`
+    /// from here on, and forecasts at once the penalty of each Session read
+    /// in already: those a restart read back, whose penalty was never stored.
+    pub(crate) fn forecast_lapse_penalties_through(&self, source: Arc<dyn LapseRateSource>) {
         let mut state = self
             .state
             .lock()
             .expect("Session store lock is not poisoned");
-        state.lapse_rate_requests = Some(requests);
+        state.lapse_rate_source = Some(source);
         let restored = state.sessions.keys().copied().collect::<Vec<_>>();
         state.forecast_restored_lapse_penalties(&restored);
+    }
+
+    /// Asks again, each time a Provider's Model Catalog changes, for the
+    /// prices of every Session whose last answer found none: a Provider may
+    /// know none until its harness has run, which is when its catalog comes.
+    pub(crate) async fn ask_again_as_catalogs_change(self, mut changes: watch::Receiver<u64>) {
+        while changes.changed().await.is_ok() {
+            let mut state = self
+                .state
+                .lock()
+                .expect("Session store lock is not poisoned");
+            let unpriced = state
+                .sessions
+                .iter_mut()
+                .filter(|(_, record)| record.snapshot.session.prompt_cache.is_some())
+                .filter_map(|(id, record)| {
+                    let rates = record.lapse_rates.as_mut()?;
+                    matches!(rates.answer, RatesAnswer::Unpriced).then(|| {
+                        rates.owed = true;
+                        *id
+                    })
+                })
+                .collect::<Vec<_>>();
+            for session_id in unpriced {
+                if !state.is_deferred(session_id) {
+                    state.ask_for_lapse_rates(session_id);
+                }
+            }
+        }
     }
 }
 
 impl SessionStoreState {
-    /// Forecasts, in place, the Lapse Penalty of each of `sessions` just read
-    /// back from storage, which holds none, from prices this process still
-    /// holds for it, and asks for them where it holds none. No client has
-    /// read these histories since, so nothing is owed a revision.
+    /// Forecasts, in place, the Lapse Penalty of each of `sessions` whose
+    /// history was just read back from storage, which holds none, from prices
+    /// held or to hand for it, and asks for them where there are none. No
+    /// client has read these histories since, so nothing is owed a revision.
+    /// One whose history is still to be read is forecast when it is.
     pub(super) fn forecast_restored_lapse_penalties(&mut self, sessions: &[SessionId]) {
         for session_id in sessions {
-            let Some(record) = self.sessions.get_mut(session_id) else {
+            if self.is_deferred(*session_id) {
+                continue;
+            }
+            let Some(wanted) = self
+                .sessions
+                .get(session_id)
+                .and_then(SessionRecord::wanted_lapse_rates)
+            else {
                 continue;
             };
-            let Some(mut cache) = record.snapshot.session.prompt_cache.clone() else {
-                continue;
-            };
-            cache.lapse_penalty = record.forecast_lapse_penalty(&cache);
-            record.snapshot.session.prompt_cache = Some(cache.clone());
-            record.summary.session.prompt_cache = Some(cache);
+            self.take_lapse_rates_to_hand(*session_id, &wanted);
+            let record = self
+                .sessions
+                .get_mut(session_id)
+                .expect("the Session was just read");
+            if let Some(Some(cache)) = record.reforecast_prompt_cache() {
+                record.snapshot.session.prompt_cache = Some(cache.clone());
+                record.summary.session.prompt_cache = Some(cache);
+            }
             self.ask_for_lapse_rates(*session_id);
+        }
+    }
+
+    /// Takes the prices a revision about to land on `session_id` will want,
+    /// where `changes` select another Model and those prices are to hand, so
+    /// the penalty at the new Model lands in that revision rather than after
+    /// it.
+    pub(super) fn take_lapse_rates_for_selection(
+        &mut self,
+        session_id: SessionId,
+        changes: &[SessionChange],
+    ) {
+        let Some(selection) = changes.iter().rev().find_map(|change| match change {
+            SessionChange::AgentSelectionChanged { selection } => Some(selection),
+            _ => None,
+        }) else {
+            return;
+        };
+        let Some(written_by) = self.sessions.get(&session_id).and_then(|record| {
+            record
+                .snapshot
+                .session
+                .prompt_cache
+                .as_ref()
+                .map(|cache| cache.written_by.clone())
+        }) else {
+            return;
+        };
+        let wanted = RatesFor {
+            provider: selection.provider.clone(),
+            selected: selection.model.clone(),
+            written_by,
+        };
+        self.take_lapse_rates_to_hand(session_id, &wanted);
+    }
+
+    /// Holds the prices for `wanted` the source has to hand, where the
+    /// Session holds none for it yet.
+    fn take_lapse_rates_to_hand(&mut self, session_id: SessionId, wanted: &RatesFor) {
+        let Some(source) = self.lapse_rate_source.clone() else {
+            return;
+        };
+        let Some(record) = self.sessions.get_mut(&session_id) else {
+            return;
+        };
+        if record
+            .lapse_rates
+            .as_ref()
+            .is_some_and(|rates| rates.wanted == *wanted)
+        {
+            return;
+        }
+        if let Some(found) = source.prices_now(wanted) {
+            record.lapse_rates = Some(LapseRates {
+                wanted: wanted.clone(),
+                answer: RatesAnswer::from(found),
+                owed: false,
+            });
         }
     }
 
     /// Asks for the prices `session_id`'s Lapse Penalty is to be forecast at,
     /// where it wants some it has not asked for yet.
     pub(super) fn ask_for_lapse_rates(&mut self, session_id: SessionId) {
-        let Some(requests) = &self.lapse_rate_requests else {
+        let Some(source) = self.lapse_rate_source.clone() else {
             return;
         };
         let Some(rates) = self
@@ -242,13 +357,16 @@ impl SessionStoreState {
             return;
         };
         rates.owed = false;
-        let request = LapseRateRequest {
+        source.ask(LapseRateRequest {
             session_id,
             rates_for: rates.wanted.clone(),
-        };
-        if requests.send(request).is_err() {
-            self.lapse_rate_requests = None;
-        }
+        });
+    }
+}
+
+impl From<Option<PromptRates>> for RatesAnswer {
+    fn from(found: Option<PromptRates>) -> Self {
+        found.map_or(Self::Unpriced, Self::Priced)
     }
 }
 
@@ -275,6 +393,14 @@ impl SessionRecord {
         if !moves_it {
             return None;
         }
+        // Whatever moved, an answer that found no prices is asked again.
+        if let Some(rates) = self
+            .lapse_rates
+            .as_mut()
+            .filter(|rates| matches!(rates.answer, RatesAnswer::Unpriced))
+        {
+            rates.owed = true;
+        }
         self.prompt_cache_after(changes)
     }
 
@@ -298,9 +424,10 @@ impl SessionRecord {
     /// The Prompt Cache once Turn `turn_id` has settled over `current`: the
     /// moment its Provider reported, or its assumed lifetime counted from
     /// its last output, on the Model whose call wrote it. A Turn that wrote
-    /// nothing leaves the moment standing, save that one on another Model,
-    /// or a Compaction it completed, leaves none: the context the moment
-    /// described is not the one the next Prompt sends.
+    /// nothing leaves the moment standing — one that sent nothing, failing or
+    /// stopped before any call, changes nothing — save that one which ran on
+    /// another Model, or a Compaction it completed, leaves none: the context
+    /// the moment described is not the one the next Prompt sends.
     fn settled_prompt_cache(
         &mut self,
         turn_id: TurnId,
@@ -316,17 +443,13 @@ impl SessionRecord {
             .map(|agent| agent.selection.model.clone())
             .or_else(|| selected(&self.snapshot).map(|(_, model)| model.clone()));
         let written = staged.and_then(|staged| match staged.reported {
-            Some(lapse) => Some(PromptCache {
-                lapses_at: lapse.lapses_at,
-                written_by: lapse.model.or_else(|| turn_model.clone())?,
-                lifetime_ms: lifetime_ms(lapse.lifetime, staged.lifetime),
-                lapse_penalty: None,
-            }),
+            Some(lapse) => written_cache(lapse, staged.lifetime, || turn_model.clone()),
             None => match (staged.lifetime, staged.last_output_at) {
                 (CacheLifetime::Assumed(lifetime), Some(at)) => Some(PromptCache {
                     lapses_at: SessionTimestamp(at.0.saturating_add(millis(lifetime))),
                     written_by: turn_model.clone()?,
                     lifetime_ms: Some(millis(lifetime)),
+                    prompt_limit_tokens: None,
                     lapse_penalty: None,
                 }),
                 _ => None,
@@ -339,7 +462,9 @@ impl SessionRecord {
         }
         let current = current?;
         let compacted = turn.compaction_requested && turn.status == TurnStatus::Completed;
-        (!compacted && ran_on(turn, turn_model.as_ref(), &current.written_by)).then_some(current)
+        let ran_elsewhere = ran_on(&self.snapshot, turn, turn_model.as_ref())
+            .is_some_and(|models| !models.contains(&current.written_by));
+        (!compacted && !ran_elsewhere).then_some(current)
     }
 
     /// Has the prices held for the Lapse Penalty looked up again, keeping
@@ -350,10 +475,36 @@ impl SessionRecord {
         }
     }
 
+    /// Whose prices the Session's Lapse Penalty is to be forecast at, where
+    /// it has a Prompt Cache and an Agent Selection.
+    fn wanted_lapse_rates(&self) -> Option<RatesFor> {
+        let cache = self.snapshot.session.prompt_cache.as_ref()?;
+        let (provider, model) = selected(&self.snapshot)?;
+        Some(RatesFor {
+            provider: provider.clone(),
+            selected: model.clone(),
+            written_by: cache.written_by.clone(),
+        })
+    }
+
+    /// Holds `found` as the answer for `rates_for`, where those are still
+    /// the prices the Session wants; answers whether it was held.
+    fn take_lapse_rates(&mut self, rates_for: &RatesFor, found: Option<PromptRates>) -> bool {
+        let Some(rates) = self
+            .lapse_rates
+            .as_mut()
+            .filter(|rates| rates.wanted == *rates_for)
+        else {
+            return false;
+        };
+        rates.answer = RatesAnswer::from(found);
+        true
+    }
+
     /// The Lapse Penalty on `cache`, figured from the Session's Context Fill
     /// at the prices held for the Models it is priced at, and absent where
-    /// either is unknown. Where the prices held are for other Models, or for
-    /// none, the Session comes to want them, and the penalty waits.
+    /// either is unknown. Where the prices held are for other Models, the
+    /// Session comes to want them asked for, and the penalty waits.
     pub(super) fn forecast_lapse_penalty(&mut self, cache: &PromptCache) -> Option<LapsePenalty> {
         let (provider, model) = selected(&self.snapshot)?;
         let wanted = RatesFor {
@@ -366,15 +517,37 @@ impl SessionRecord {
             Some(rates) if rates.wanted == wanted => rates,
             slot => slot.insert(LapseRates {
                 wanted,
-                found: None,
+                answer: RatesAnswer::Awaited,
                 owed: true,
             }),
         };
-        rates.found.as_ref()?.as_ref()?.lapse_penalty(
+        let RatesAnswer::Priced(prices) = &rates.answer else {
+            return None;
+        };
+        prices.lapse_penalty(
             fill?.occupied_tokens,
-            cache.lifetime_ms.map(std::time::Duration::from_millis),
+            CacheWrite {
+                lifetime: cache.lifetime_ms.map(std::time::Duration::from_millis),
+                prompt_limit_tokens: cache.prompt_limit_tokens,
+            },
         )
     }
+}
+
+/// The Prompt Cache a reported `lapse` wrote, on the Model it names or else
+/// `turn_model`'s.
+fn written_cache(
+    lapse: ReportedLapse,
+    declared: CacheLifetime,
+    turn_model: impl FnOnce() -> Option<ModelId>,
+) -> Option<PromptCache> {
+    Some(PromptCache {
+        lapses_at: lapse.lapses_at,
+        written_by: lapse.model.or_else(turn_model)?,
+        lifetime_ms: lifetime_ms(lapse.lifetime, declared),
+        prompt_limit_tokens: lapse.prompt_limit,
+        lapse_penalty: None,
+    })
 }
 
 /// The Turns `changes` settle, in the order they do.
@@ -391,10 +564,35 @@ fn settled_turns(changes: &[SessionChange]) -> Vec<TurnId> {
         .collect()
 }
 
-/// Whether `turn` ran on `model`: the Model it selected, or one of its Actual
-/// Models.
-fn ran_on(turn: &Turn, selected: Option<&ModelId>, model: &ModelId) -> bool {
-    selected == Some(model) || turn.model_shares.iter().any(|share| share.model == *model)
+/// The Models `turn` is known to have run on, by its Model Shares, the
+/// Actual Models its Agent Messages name, and — for Usage or a Message no
+/// Model is named for — the Model it selected; none where it made no call
+/// at all, which changes nothing of the cache.
+fn ran_on(
+    snapshot: &SessionSnapshot,
+    turn: &Turn,
+    selected: Option<&ModelId>,
+) -> Option<Vec<ModelId>> {
+    let mut models = turn
+        .model_shares
+        .iter()
+        .map(|share| share.model.clone())
+        .collect::<Vec<_>>();
+    let mut unnamed = turn.usage.is_some() && models.is_empty();
+    for message in snapshot
+        .messages
+        .iter()
+        .filter(|message| message.turn_id == turn.id && message.role == MessageRole::Agent)
+    {
+        match &message.model {
+            Some(model) => models.push(model.actual.clone()),
+            None => unnamed = true,
+        }
+    }
+    if unnamed && let Some(selected) = selected {
+        models.push(selected.clone());
+    }
+    (!models.is_empty()).then_some(models)
 }
 
 fn selected(snapshot: &SessionSnapshot) -> Option<(&ProviderId, &ModelId)> {

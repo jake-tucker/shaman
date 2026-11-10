@@ -149,7 +149,7 @@ use tokio::{
 use super::super::command_presentation::PresentedCommand;
 use super::{
     COPILOT_FAILURE_FALLBACK, COPILOT_HARNESS_NAME,
-    catalog::AUTO_MODEL_ID,
+    catalog::{AUTO_MODEL_ID, token_count},
     copilot_error,
     event_drain::EventDrainCheckpoint,
     model_evidence::WorkingModels,
@@ -2570,7 +2570,9 @@ fn metered(
 
 /// What a call's `assistant.usage` says of the Prompt Cache it wrote or
 /// refreshed: when it lapses, on the Model the call names, kept for as long
-/// as its `cacheTtlSeconds` says. None for a call that touched no cache.
+/// as its `cacheTtlSeconds` says, by a call able to send as much as its
+/// `maxPromptTokens`, which Copilot prices the call's tier by. None for a
+/// call that touched no cache.
 fn reported_lapse(event: &SessionEvent, usage: &AssistantUsageData) -> Option<ProviderEvent> {
     Some(ProviderEvent::PromptCacheLapseReported {
         lapses_at: usage.cache_expires_at.as_deref().and_then(lapse_moment)?,
@@ -2579,6 +2581,7 @@ fn reported_lapse(event: &SessionEvent, usage: &AssistantUsageData) -> Option<Pr
             .and_then(|seconds| u64::try_from(seconds).ok())
             .filter(|seconds| *seconds > 0)
             .map(std::time::Duration::from_secs),
+        prompt_limit: usage.max_prompt_tokens.and_then(token_count),
     })
 }
 
@@ -4779,7 +4782,8 @@ mod tests {
     }
 
     #[test]
-    fn a_conversation_call_states_when_the_cache_it_wrote_lapses_and_for_how_long_it_is_kept() {
+    fn a_conversation_call_states_when_the_cache_it_wrote_lapses_how_long_it_is_kept_and_its_limit()
+    {
         let mut correlation = in_turn();
         let projected = project_attributed(
             &mut correlation,
@@ -4788,6 +4792,7 @@ mod tests {
                 json!({
                     "apiCallId": "c1", "model": "claude-fixture", "inputTokens": 10,
                     "cacheExpiresAt": "2026-01-01T00:05:00.250Z", "cacheTtlSeconds": 3600,
+                    "maxPromptTokens": 872_000,
                 }),
             ),
         );
@@ -4799,6 +4804,7 @@ mod tests {
                     lapses_at: crate::protocol::SessionTimestamp(1_767_225_900_250),
                     model: Some(ModelId::new("claude-fixture")),
                     lifetime: Some(std::time::Duration::from_secs(3600)),
+                    prompt_limit: Some(872_000),
                 }
             )]
         );
@@ -9845,6 +9851,7 @@ mod tests {
                 lapses_at: crate::protocol::SessionTimestamp(1_767_225_900_000),
                 model: Some(ModelId::new("claude-fixture")),
                 lifetime: None,
+                prompt_limit: None,
             }],
             "the call's Usage is the Compaction's to report, once"
         );

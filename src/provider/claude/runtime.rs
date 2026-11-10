@@ -25,7 +25,7 @@ use super::{
     wire::{ControlRequest, NativeModel, NativeModelList},
 };
 use crate::{
-    pricing::{CacheRatesFuture, ModelsDevModel, PricingSource},
+    pricing::{ModelsDevModel, PricingSource, PromptRates, PromptRatesFuture},
     protocol::{
         AgentSelection, ClaudePermissionMode, EffectiveSettings, ModelId, ProviderId, SkillCatalog,
     },
@@ -221,7 +221,7 @@ impl ProviderRuntime for ClaudeRuntime {
     /// one an older Turn ran — and any other ID as itself, a 1M-context suffix set aside. The
     /// cache-write rate models.dev lists is the five-minute one, and no long-context premium is
     /// priced. None until a catalog has been listed, since nothing is launched only to answer.
-    fn cache_rates<'a>(&'a self, model: &'a ModelId) -> CacheRatesFuture<'a> {
+    fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
         let canonical = self
             .resolved_models
             .lock()
@@ -240,6 +240,7 @@ impl ProviderRuntime for ClaudeRuntime {
                     ModelId::new(canonical?),
                 ))
                 .await
+                .map(PromptRates::flat)
         })
     }
 

@@ -572,7 +572,13 @@ async fn copilot_states_cache_rates_from_its_last_running_catalog_and_launches_n
     let runtime = CopilotRuntime::new(copilot.executable());
     let model = ModelId::new("claude-fixture");
 
-    assert_eq!(runtime.cache_rates(&model).await, None);
+    assert_eq!(
+        runtime
+            .prompt_rates(&model)
+            .await
+            .map(|rates| rates.standard()),
+        None
+    );
     assert_eq!(
         copilot.launches(),
         0,
@@ -587,7 +593,10 @@ async fn copilot_states_cache_rates_from_its_last_running_catalog_and_launches_n
     // Two, a half, and two and a half AI credits a thousand tokens, at a
     // cent a credit: $20, $5, and $25 a million.
     assert_eq!(
-        runtime.cache_rates(&model).await,
+        runtime
+            .prompt_rates(&model)
+            .await
+            .map(|rates| rates.standard()),
         Some(CacheRates {
             input: 20.0,
             cache_read: Some(5.0),
@@ -596,8 +605,9 @@ async fn copilot_states_cache_rates_from_its_last_running_catalog_and_launches_n
     );
     assert_eq!(
         runtime
-            .cache_rates(&ModelId::new("incomplete-cache-fixture"))
-            .await,
+            .prompt_rates(&ModelId::new("incomplete-cache-fixture"))
+            .await
+            .map(|rates| rates.standard()),
         Some(CacheRates {
             input: 20.0,
             cache_read: None,
@@ -608,7 +618,10 @@ async fn copilot_states_cache_rates_from_its_last_running_catalog_and_launches_n
     runtime.shutdown().await.expect("shut Copilot down");
     copilot.wait_for_exit().await;
     assert_eq!(
-        runtime.cache_rates(&model).await.map(|rates| rates.input),
+        runtime
+            .prompt_rates(&model)
+            .await
+            .map(|rates| rates.standard().input),
         Some(20.0),
         "the last harness's prices still price once it has stopped"
     );

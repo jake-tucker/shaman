@@ -1946,6 +1946,13 @@ async fn start(
         broker_access.clone(),
         attachment_store.clone(),
     );
+    // A Provider may know no prices until its harness has run, which is when
+    // its catalog comes; a Lapse Penalty that found none is asked again then.
+    tokio::spawn(
+        sessions
+            .clone()
+            .ask_again_as_catalogs_change(model_catalog.subscribe()),
+    );
     // A tree gone unused is evicted with its Provider actors stopped, so the
     // sweep begins once there is an orchestrator to stop them.
     sessions.evict_idle_sessions(

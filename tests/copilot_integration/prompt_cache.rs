@@ -14,7 +14,7 @@ const REPORTED_LAPSE: &str = r#"      context_event() {
       context_event c1 '{"currentTokens":12400,"tokenLimit":128000,"messagesLength":3}'
       event u1 assistant.usage '{"model":"claude-fixture","inputTokens":1000,"outputTokens":200,"cost":1,"cacheExpiresAt":"2026-01-01T00:05:00Z"}'
       event u2 assistant.usage '{"model":"claude-fixture","inputTokens":1000,"outputTokens":200,"cost":1}'
-      event u3 assistant.usage '{"model":"claude-fixture","inputTokens":1000,"outputTokens":200,"cost":1,"cacheExpiresAt":"2026-01-01T00:10:00.250Z","cacheTtlSeconds":3600}'
+      event u3 assistant.usage '{"model":"claude-fixture","inputTokens":1000,"outputTokens":200,"cost":1,"cacheExpiresAt":"2026-01-01T00:10:00.250Z","cacheTtlSeconds":3600,"maxPromptTokens":128000}'
       event answer assistant.message '{"messageId":"m1","content":"Cached"}'
       event idle session.idle '{}'
 "#;
@@ -61,6 +61,7 @@ async fn the_latest_reported_lapse_of_the_sessions_conversation_becomes_its_laps
             lapses_at: SessionTimestamp(u64::try_from(lapses_at).unwrap()),
             written_by: ModelId::new("claude-fixture"),
             lifetime_ms: Some(3_600_000),
+            prompt_limit_tokens: Some(128_000),
             // 12,400 tokens at the catalog's 5 credits a thousand written to a
             // cache kept an hour, less 0.5 read, a credit being a cent.
             lapse_penalty: LapsePenalty::from_usd(0.558),

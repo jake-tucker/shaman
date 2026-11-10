@@ -29,6 +29,7 @@ async fn a_brokered_subagents_lapse_is_its_own_and_never_its_callers() {
             lapses_at: callers,
             model: None,
             lifetime: None,
+            prompt_limit: None,
         })
         .await;
     child_provider
@@ -36,6 +37,7 @@ async fn a_brokered_subagents_lapse_is_its_own_and_never_its_callers() {
             lapses_at: childs,
             model: None,
             lifetime: None,
+            prompt_limit: None,
         })
         .await;
     child_provider

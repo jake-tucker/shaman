@@ -1676,7 +1676,10 @@ impl ProviderOrchestrator {
         ));
         orchestrator
             .sessions
-            .forecast_lapse_penalties_through(lapse_rate_requests);
+            .forecast_lapse_penalties_through(Arc::new(prompt_cache::RuntimeLapseRates {
+                runtimes: orchestrator.runtimes.clone(),
+                requests: lapse_rate_requests,
+            }));
         orchestrator
     }
 

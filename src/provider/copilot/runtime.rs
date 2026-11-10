@@ -19,7 +19,7 @@ use super::{
     transport::CopilotConnector,
 };
 use crate::{
-    pricing::{CacheRatesFuture, PromptRatesFuture},
+    pricing::PromptRatesFuture,
     protocol::{
         AgentSelection, CopilotSettings, EffectiveSettings, ModelDescriptor, ModelId,
         ModelOptionChoiceId, ModelOptionId, ModelOptionSelection, ModelOptionValue, ProviderId,
@@ -327,18 +327,10 @@ impl ProviderRuntime for CopilotRuntime {
         Box::pin(async move { self.harness.shutdown().await })
     }
 
-    /// The prices the running harness's catalog lists, which its Costs are
-    /// worked out from, or the last harness's seen running; none until one
-    /// has run, since none is launched only to answer.
-    fn cache_rates<'a>(&'a self, model: &'a ModelId) -> CacheRatesFuture<'a> {
-        let rates = self
-            .pricing()
-            .and_then(|pricing| pricing.cache_rates(model.as_str()));
-        Box::pin(async move { rates })
-    }
-
-    /// The prices the same catalog lists for each tier of prompt size, with
-    /// each tier's hour-long write price, as a Copilot Cost is worked out at.
+    /// The prices the running harness's catalog lists for each tier of prompt
+    /// size, with each tier's hour-long write price, as its Costs are worked
+    /// out at — or the last harness's seen running; none until one has run,
+    /// since none is launched only to answer.
     fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
         let rates = self
             .pricing()

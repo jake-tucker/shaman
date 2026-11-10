@@ -1449,18 +1449,28 @@ async fn codex_states_its_models_cache_rates_from_the_rate_table_it_estimates_co
     let codex = CodexRuntime::new("codex").with_pricing_source(pricing);
 
     assert_eq!(
-        codex.cache_rates(&ModelId::new("priced-fixture")).await,
+        codex
+            .prompt_rates(&ModelId::new("priced-fixture"))
+            .await
+            .map(|rates| rates.standard()),
         Some(CacheRates {
             input: 2.0,
             cache_read: Some(0.5),
             cache_write: Some(0.25),
         })
     );
-    assert_eq!(codex.cache_rates(&ModelId::new("unpriced")).await, None);
+    assert_eq!(
+        codex
+            .prompt_rates(&ModelId::new("unpriced"))
+            .await
+            .map(|rates| rates.standard()),
+        None
+    );
     assert_eq!(
         CodexRuntime::new("codex")
-            .cache_rates(&ModelId::new("priced-fixture"))
-            .await,
+            .prompt_rates(&ModelId::new("priced-fixture"))
+            .await
+            .map(|rates| rates.standard()),
         None,
         "a runtime handed no rate table prices nothing"
     );

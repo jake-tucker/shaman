@@ -172,9 +172,9 @@ impl CacheRates {
     /// afresh costs beyond reading it from a warm one, at the cache-write
     /// rate, or the fresh-input rate where the Provider charges nothing extra
     /// for writes. Absent where the rates list no cache-read price, since how
-    /// much a warm read saves is then unknown. Callable for any Model whose
-    /// rates are known, not only the one a Session ran.
-    pub fn lapse_penalty(self, context_tokens: u64) -> Option<LapsePenalty> {
+    /// much a warm read saves is then unknown. [`PromptRates::lapse_penalty`]
+    /// is the one way a penalty is forecast from outside.
+    fn lapse_penalty(self, context_tokens: u64) -> Option<LapsePenalty> {
         self.penalty_writing_at(context_tokens, self.cache_write.unwrap_or(self.input))
     }
 
@@ -190,11 +190,22 @@ const HOUR_CACHE: Duration = Duration::from_secs(60 * 60);
 
 /// What a Model prices a prompt's input at by how large the prompt is: a tier
 /// for each band of prompt sizes, smallest first, where its Provider prices a
-/// long context apart. A Lapse Penalty is forecast for one context, so it is
-/// priced at the tier that context falls in.
+/// long context apart. It is the one declaration of a Provider's prices a
+/// Lapse Penalty is forecast from and a cache saving estimated at, the latter
+/// at its standard tier.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PromptRates {
     tiers: Vec<PromptRateTier>,
+}
+
+/// What is known of the cache a Lapse Penalty is forecast for, beside the
+/// context it holds: how long the Provider keeps it, and the largest prompt
+/// the call that wrote it could send, which a Provider pricing by tier
+/// prices the call at.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CacheWrite {
+    pub lifetime: Option<Duration>,
+    pub prompt_limit_tokens: Option<u64>,
 }
 
 /// One band of [`PromptRates`].
@@ -228,26 +239,32 @@ impl PromptRates {
         (!tiers.is_empty()).then_some(Self { tiers })
     }
 
-    /// The Lapse Penalty on a context of `context_tokens` whose cache is kept
-    /// for `cache_lifetime`, priced at the tier the context falls in — the
-    /// largest where it outgrows every tier — and at the write price for a
-    /// cache kept that long: an hour's where it is kept an hour, the default
+    /// The rates of the standard tier — the smallest prompts' — at which a
+    /// cache saving is estimated, since a saving is stated for no particular
+    /// prompt size.
+    pub fn standard(&self) -> CacheRates {
+        self.tiers[0].rates
+    }
+
+    /// The Lapse Penalty on a context of `context_tokens` written as `write`
+    /// says. It is priced at a tier as the call that wrote the cache was: the
+    /// tier whose largest prompt the call's limit falls within, or, where its
+    /// limit is unknown, the context — the largest tier where either outgrows
+    /// every tier. And it is priced at the write price for a cache kept as
+    /// long as this one: an hour's where it is kept an hour, the default
     /// where it is kept less or its lifetime is unknown, and none for a
     /// lifetime no price is listed for.
-    pub fn lapse_penalty(
-        &self,
-        context_tokens: u64,
-        cache_lifetime: Option<Duration>,
-    ) -> Option<LapsePenalty> {
+    pub fn lapse_penalty(&self, context_tokens: u64, write: CacheWrite) -> Option<LapsePenalty> {
+        let sized = write.prompt_limit_tokens.unwrap_or(context_tokens);
         let tier = self
             .tiers
             .iter()
             .find(|tier| {
                 tier.max_prompt_tokens
-                    .is_none_or(|largest| context_tokens <= largest)
+                    .is_none_or(|largest| sized <= largest)
             })
             .or(self.tiers.last())?;
-        match cache_lifetime {
+        match write.lifetime {
             Some(lifetime) if lifetime > HOUR_CACHE => None,
             Some(HOUR_CACHE) => tier
                 .rates
@@ -1193,9 +1210,15 @@ mod tests {
             },
         ])
         .expect("two tiers");
-        let usd = |tokens, lifetime| {
+        let usd = |tokens, lifetime: Option<Duration>| {
             rates
-                .lapse_penalty(tokens, lifetime)
+                .lapse_penalty(
+                    tokens,
+                    CacheWrite {
+                        lifetime,
+                        prompt_limit_tokens: None,
+                    },
+                )
                 .map(LapsePenalty::nano_usd)
         };
         let five_minutes = Some(Duration::from_secs(300));
@@ -1204,15 +1227,37 @@ mod tests {
         assert_eq!(usd(100_000, None), Some(230_000_000));
         // An hour's cache is written at its own price.
         assert_eq!(usd(100_000, Some(HOUR_CACHE)), Some(380_000_000));
-        // A context past the standard tier is priced at the long one.
+        // With no limit known, a context past the standard tier is priced at
+        // the long one.
         assert_eq!(usd(500_000, five_minutes), Some(2_300_000_000));
         // Past every tier, the largest; and no price lists a cache kept so
         // long, nor an hour's at the long tier.
         assert_eq!(usd(2_000_000, None), Some(9_200_000_000));
         assert_eq!(usd(100_000, Some(HOUR_CACHE * 2)), None);
         assert_eq!(usd(500_000, Some(HOUR_CACHE)), None);
+        // A call able to send a long context is priced at the long tier
+        // however little it holds, and one limited to the standard tier at it.
+        let limited = |limit| {
+            rates
+                .lapse_penalty(
+                    100_000,
+                    CacheWrite {
+                        lifetime: None,
+                        prompt_limit_tokens: Some(limit),
+                    },
+                )
+                .map(LapsePenalty::nano_usd)
+        };
+        assert_eq!(limited(1_000_000), Some(460_000_000));
+        assert_eq!(limited(200_000), Some(230_000_000));
         assert_eq!(
-            PromptRates::flat(standard).lapse_penalty(100_000, Some(HOUR_CACHE)),
+            PromptRates::flat(standard).lapse_penalty(
+                100_000,
+                CacheWrite {
+                    lifetime: Some(HOUR_CACHE),
+                    prompt_limit_tokens: None,
+                }
+            ),
             None,
             "a flat schedule lists no hour's write price"
         );

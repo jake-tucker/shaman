@@ -3838,6 +3838,11 @@ pub struct PromptCache {
     /// is written at a price of its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lifetime_ms: Option<u64>,
+    /// The largest prompt, in tokens, the call that wrote the cache could
+    /// send, where the Provider said: a Provider pricing by tier priced that
+    /// call at the tier the limit falls in, whatever the context held.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_limit_tokens: Option<u64>,
     /// Suru's forecast, never stored: absent where the Context Fill or the
     /// token prices it is figured from are unknown, never zero for want of
     /// them.
@@ -3911,7 +3916,7 @@ mod lapse_penalty_tests {
     use super::LapsePenalty;
 
     #[test]
-    fn a_figure_that_is_no_number_is_no_penalty_rather_than_none_at_all() {
+    fn a_figure_that_is_no_number_is_no_penalty_rather_than_a_zero_one() {
         assert_eq!(LapsePenalty::from_usd(f64::NAN), None);
         assert_eq!(LapsePenalty::from_usd(f64::INFINITY), None);
         assert_eq!(
@@ -5137,7 +5142,7 @@ fn blended_tokens(
 pub struct Cost(u64);
 
 impl Cost {
-    pub(crate) const NANO_USD_PER_USD: f64 = 1_000_000_000.0;
+    const NANO_USD_PER_USD: f64 = 1_000_000_000.0;
 
     /// Admits a Provider's native USD figure, rejecting unknown, non-finite,
     /// negative, and unrepresentable values at the Provider boundary. A

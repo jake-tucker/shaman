@@ -52,18 +52,6 @@ impl CopilotPricing {
             .loaded
     }
 
-    /// The rates Copilot's catalog prices `model` at: see
-    /// [`PriceSchedule::cache_rates`]. Absent where it lists no price for
-    /// fresh input, or no catalog has loaded yet.
-    pub(super) fn cache_rates(&self, model: &str) -> Option<CacheRates> {
-        self.table
-            .lock()
-            .expect("Copilot pricing lock is not poisoned")
-            .models
-            .get(model)?
-            .cache_rates()
-    }
-
     /// The rates Copilot's catalog prices a prompt on `model` at: see
     /// [`PriceSchedule::prompt_rates`]. Absent where it lists no price for
     /// fresh input, or no catalog has loaded yet.
@@ -116,15 +104,6 @@ impl PriceSchedule {
             standard_max_prompt_tokens: standard.max_prompt_tokens,
             long_context_max_prompt_tokens: long_context.and_then(|tier| tier.max_prompt_tokens),
         })
-    }
-
-    /// The standard tier's input rates in USD per million tokens, as a cache
-    /// saving is estimated at: a saving is stated for no particular prompt
-    /// size, so the long-context tier is passed over, and the cache-write
-    /// price is the default five-minute one, the hour-long write price set
-    /// aside. Absent where the tier lists no fresh-input price.
-    fn cache_rates(&self) -> Option<CacheRates> {
-        self.tier_rates(&self.standard)
     }
 
     /// Every tier's input rates in USD per million tokens, as a Lapse
@@ -259,7 +238,8 @@ mod tests {
     use serde_json::json;
 
     use super::CopilotPricing;
-    use crate::protocol::LapsePenalty;
+    use crate::pricing::CacheWrite;
+    use crate::protocol::{LapsePenalty, Usage};
 
     /// A Model priced per million tokens, whose prompts past 272,000 tokens
     /// are priced at a long-context tier, both listing the hour-long write
@@ -288,18 +268,58 @@ mod tests {
         let rates = pricing
             .prompt_rates("luna-fixture")
             .expect("the Model is priced");
-        let nano = |tokens, lifetime| {
+        // What a call able to send `limit` tokens, keeping its cache for
+        // `ttl`, costs to write `tokens` to the cache, less what it costs to
+        // read them back: the penalty as a Cost would state it.
+        let by_cost = |tokens: u64, limit: i64, ttl: Option<i64>| {
+            let cost = |usage: Usage| {
+                pricing
+                    .cost("luna-fixture", Some(limit), ttl, &usage)
+                    .expect("the call is priced")
+                    .nano_usd()
+            };
+            cost(Usage {
+                fresh_input_tokens: Some(0),
+                cache_write_tokens: Some(tokens),
+                ..Usage::default()
+            }) - cost(Usage {
+                fresh_input_tokens: Some(0),
+                cache_read_tokens: Some(tokens),
+                ..Usage::default()
+            })
+        };
+        let forecast = |tokens: u64, limit: u64, ttl: Option<u64>| {
             rates
-                .lapse_penalty(tokens, lifetime)
+                .lapse_penalty(
+                    tokens,
+                    CacheWrite {
+                        lifetime: ttl.map(std::time::Duration::from_secs),
+                        prompt_limit_tokens: Some(limit),
+                    },
+                )
                 .map(LapsePenalty::nano_usd)
         };
-        let hour = Some(std::time::Duration::from_secs(3600));
-        // A credit is a cent: 100,000 tokens at 12.5 credits a million written
-        // less 1.0 read, then at 20.0 for a cache kept an hour.
-        assert_eq!(nano(100_000, None), Some(11_500_000));
-        assert_eq!(nano(100_000, hour), Some(19_000_000));
-        // Past 272,000 tokens, the long-context tier's 25.0 and 40.0 less 2.0.
-        assert_eq!(nano(500_000, None), Some(115_000_000));
-        assert_eq!(nano(500_000, hour), Some(190_000_000));
+        // A call limited to the standard tier is priced at it.
+        assert_eq!(
+            forecast(100_000, 272_000, None),
+            Some(by_cost(100_000, 272_000, None))
+        );
+        assert_eq!(forecast(100_000, 272_000, None), Some(11_500_000));
+        // A call able to send the long context is priced at the long tier,
+        // however little the context holds: 25.0 written less 2.0 read.
+        assert_eq!(
+            forecast(100_000, 872_000, None),
+            Some(by_cost(100_000, 872_000, None))
+        );
+        assert_eq!(forecast(100_000, 872_000, None), Some(23_000_000));
+        // And at each tier's own hour-long write price.
+        assert_eq!(
+            forecast(100_000, 272_000, Some(3600)),
+            Some(by_cost(100_000, 272_000, Some(3600)))
+        );
+        assert_eq!(
+            forecast(100_000, 872_000, Some(3600)),
+            Some(by_cost(100_000, 872_000, Some(3600)))
+        );
     }
 }

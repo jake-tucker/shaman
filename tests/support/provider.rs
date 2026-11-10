@@ -8,7 +8,7 @@ use std::{
 
 use futures_util::{StreamExt, stream};
 use serde_json::Value;
-use suru::pricing::{CacheRates, CacheRatesFuture, PromptRates, PromptRatesFuture};
+use suru::pricing::{CacheRates, PromptRates, PromptRatesFuture};
 use suru::protocol::{
     AgentIdentity, AgentSelection, ContextBreakdown, ModelDescriptor, ModelId, ProviderId,
     ProviderUnavailability, SkillCatalog, SkillCatalogCapabilities, SkillCatalogStatus,
@@ -1262,29 +1262,24 @@ impl ProviderRuntime for ControlledProviderRuntime {
             .expect("controlled Provider Cache Lifetime lock is not poisoned")
     }
 
-    fn cache_rates<'a>(&'a self, model: &'a ModelId) -> CacheRatesFuture<'a> {
-        let rates = self
-            .cache_rates
-            .lock()
-            .expect("controlled Provider cache rates lock is not poisoned")
-            .get(model)
-            .copied();
-        Box::pin(async move { rates })
-    }
-
+    /// The prices a test stated for `model` by prompt size, or else its flat
+    /// cache rates at every size.
     fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
         let stated = self
             .prompt_rates
             .lock()
             .expect("controlled Provider prompt rates lock is not poisoned")
             .get(model)
-            .cloned();
-        Box::pin(async move {
-            match stated {
-                Some(rates) => Some(rates),
-                None => self.cache_rates(model).await.map(PromptRates::flat),
-            }
-        })
+            .cloned()
+            .or_else(|| {
+                self.cache_rates
+                    .lock()
+                    .expect("controlled Provider cache rates lock is not poisoned")
+                    .get(model)
+                    .copied()
+                    .map(PromptRates::flat)
+            });
+        Box::pin(async move { stated })
     }
 
     fn list_models(&self) -> ProviderFuture<'_, ProviderModelDiscovery> {

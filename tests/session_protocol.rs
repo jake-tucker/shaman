@@ -640,6 +640,7 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
                 lapses_at: SessionTimestamp(1_767_225_900_250),
                 written_by: ModelId::new("gpt-5"),
                 lifetime_ms: Some(3_600_000),
+                prompt_limit_tokens: None,
                 lapse_penalty: suru::protocol::LapsePenalty::from_usd(1.65),
             }),
             id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),

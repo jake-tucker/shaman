@@ -9,7 +9,7 @@ use crate::session_integration::{
     provider_support::{ControlledProvider, ControlledProviderSession},
     server_support::PROGRESS_DEADLINE,
     support::{
-        WorkingTurn, compact, controlled_selection, read_session, read_session_until,
+        WorkingTurn, compact, controlled_selection, interrupt, read_session, read_session_until,
         receive_managed_client_initial_state, working_turn, working_turn_with_timings,
     },
 };
@@ -63,6 +63,7 @@ fn reported(lapses_at: SessionTimestamp) -> ProviderEvent {
         lapses_at,
         model: None,
         lifetime: None,
+        prompt_limit: None,
     }
 }
 
@@ -90,6 +91,7 @@ fn cache(lapses_at: SessionTimestamp, written_by: &ModelId, usd: Option<f64>) ->
         lapses_at,
         written_by: written_by.clone(),
         lifetime_ms: None,
+        prompt_limit_tokens: None,
         lapse_penalty: usd.and_then(LapsePenalty::from_usd),
     }
 }
@@ -581,7 +583,7 @@ async fn selecting_another_model_prices_the_penalty_at_it_or_where_it_has_none_a
 }
 
 #[tokio::test]
-async fn a_turn_on_another_model_that_reports_nothing_leaves_no_moment_standing() {
+async fn a_turn_that_called_another_model_and_reports_nothing_leaves_no_moment_standing() {
     let state = tempfile::tempdir().unwrap();
     let mut fixture = cold_priced(state.path(), "prompt-cache-other-model", ahead(5)).await;
     read_until(&fixture, "the lapse is published", |snapshot| {
@@ -605,6 +607,18 @@ async fn a_turn_on_another_model_that_reports_nothing_leaves_no_moment_standing(
         Some(&other.model),
         "the Turn runs on the Model selected"
     );
+    // A call on it, which reports nothing of the cache it wrote.
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(ProviderEvent::Usage {
+            usage: suru::protocol::Usage {
+                fresh_input_tokens: Some(400_000),
+                ..suru::protocol::Usage::default()
+            },
+            cost: None,
+            model_shares: Vec::new(),
+        })
+        .await;
     settle(&fixture.provider_session).await;
     let settled = read_until(&fixture, "the Turn settles", |snapshot| {
         snapshot.turns[1].status == TurnStatus::Completed
@@ -635,6 +649,224 @@ async fn a_turn_that_reports_nothing_on_the_same_model_leaves_the_moment_standin
             .prompt_cache
             .map(|cache| (cache.lapses_at, cache.written_by)),
         Some((lapses_at, model))
+    );
+    fixture.server.shutdown().await.unwrap();
+}
+
+/// The moment and the Model that wrote it, as `snapshot` holds them.
+fn moment(snapshot: &SessionSnapshot) -> Option<(SessionTimestamp, ModelId)> {
+    snapshot
+        .session
+        .prompt_cache
+        .as_ref()
+        .map(|cache| (cache.lapses_at, cache.written_by.clone()))
+}
+
+/// Settles the fixture's Turn at `index` with `terminal`, and waits until it
+/// reads as settled.
+async fn settle_as(fixture: &WorkingTurn, terminal: ProviderEvent, index: usize) {
+    fixture
+        .provider_session
+        .emit_and_wait_until_observed(terminal)
+        .await;
+    read_until(fixture, "the Turn settles", |snapshot| {
+        snapshot.turns.len() > index && snapshot.turns[index].status.is_terminal()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_turn_on_a_routing_selection_that_called_nothing_leaves_the_moment_standing() {
+    let state = tempfile::tempdir().unwrap();
+    let lapses_at = ahead(5);
+    let mut fixture = cold_priced(state.path(), "prompt-cache-sent-nothing", lapses_at).await;
+    let model = sessions_model(&fixture).await;
+    select(&fixture, controlled_selection("auto", "high", "fast")).await;
+
+    // Interrupted before its first call returned.
+    prompt_again(&mut fixture).await;
+    let (stopped, ()) = tokio::join!(
+        interrupt(
+            &fixture.client,
+            fixture.server.descriptor(),
+            fixture.session_id
+        ),
+        async {
+            timeout(PROGRESS_DEADLINE, fixture.provider_session.next_interrupt())
+                .await
+                .expect("the interrupt reaches the Provider")
+                .succeed();
+        }
+    );
+    assert!(stopped.status().is_success());
+    settle_as(&fixture, ProviderEvent::TurnInterrupted, 1).await;
+    assert_eq!(
+        moment(&read_session(fixture.server.descriptor(), fixture.session_id).await),
+        Some((lapses_at, model.clone())),
+        "an interrupted Turn that called nothing changes nothing"
+    );
+
+    // Failed on a quota before any call.
+    prompt_again(&mut fixture).await;
+    settle_as(
+        &fixture,
+        ProviderEvent::TurnFailed {
+            message: "quota exceeded".to_owned(),
+        },
+        2,
+    )
+    .await;
+    assert_eq!(
+        moment(&read_session(fixture.server.descriptor(), fixture.session_id).await),
+        Some((lapses_at, model)),
+        "a failed Turn that called nothing changes nothing"
+    );
+    fixture.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_turn_left_open_by_a_stop_or_failed_before_it_began_leaves_the_moment_standing() {
+    let state = tempfile::tempdir().unwrap();
+    let channel = "prompt-cache-never-began";
+    let lapses_at = ahead(5);
+    let mut fixture = cold_priced(state.path(), channel, lapses_at).await;
+    let model = sessions_model(&fixture).await;
+    select(&fixture, controlled_selection("auto", "high", "fast")).await;
+    prompt_again(&mut fixture).await;
+    let id = fixture.session_id;
+    drop(fixture.provider_session);
+    fixture.server.shutdown().await.unwrap();
+
+    // The restart settles the Turn the stop left open.
+    let (runtime, mut provider) = ControlledProvider::new();
+    runtime.declare_cache_lifetime(CacheLifetime::Reported);
+    let restarted =
+        server::spawn_with_provider(ServerConfig::new(state.path(), channel).unwrap(), runtime)
+            .await
+            .unwrap();
+    let client = crate::support::loopback_client();
+    let restored = read_session_until(
+        &client,
+        restarted.descriptor(),
+        id,
+        "the stopped Turn reads as settled",
+        |snapshot| snapshot.turns.len() == 2 && snapshot.turns[1].status.is_terminal(),
+    )
+    .await;
+    assert_eq!(
+        moment(&restored),
+        Some((lapses_at, model.clone())),
+        "a Turn a stop left open, which called nothing, changes nothing"
+    );
+
+    // A Turn whose Provider fails to start is added already failed.
+    let descriptor = restarted.descriptor();
+    client
+        .post(format!("{}/v1/sessions/{id}/prompts", descriptor.base_url))
+        .bearer_auth(&descriptor.token)
+        .json(&AdmitPromptRequest {
+            prompt: InitialPrompt {
+                id: PromptId::new(),
+                text: "Carry on".into(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+            delivery: PromptDelivery::Queue,
+        })
+        .send()
+        .await
+        .expect("send Prompt")
+        .error_for_status()
+        .expect("Prompt is admitted");
+    timeout(PROGRESS_DEADLINE, provider.next_start())
+        .await
+        .expect("the Provider is asked to start")
+        .fail("the network is down");
+    let failed = read_session_until(
+        &client,
+        descriptor,
+        id,
+        "the Turn fails before it began",
+        |snapshot| snapshot.turns.len() == 3 && snapshot.turns[2].status == TurnStatus::Failed,
+    )
+    .await;
+    assert_eq!(moment(&failed), Some((lapses_at, model)));
+    restarted.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn prices_a_provider_comes_to_know_after_a_restart_are_forecast_without_a_turn() {
+    let state = tempfile::tempdir().unwrap();
+    let channel = "prompt-cache-priced-later";
+    let lapses_at = ahead(5);
+    let fixture = cold_priced(state.path(), channel, lapses_at).await;
+    let model = sessions_model(&fixture).await;
+    read_until(&fixture, "the penalty is forecast", |snapshot| {
+        snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38)))
+    })
+    .await;
+    let id = fixture.session_id;
+    drop(fixture.provider_session);
+    fixture.server.shutdown().await.unwrap();
+
+    // Restarted on a Provider that knows no prices yet, as Copilot knows
+    // none until its harness has run.
+    let (runtime, _provider) = ControlledProvider::new();
+    runtime.declare_cache_lifetime(CacheLifetime::Reported);
+    let restarted = server::spawn_with_provider(
+        ServerConfig::new(state.path(), channel).unwrap(),
+        runtime.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        read_session(restarted.descriptor(), id)
+            .await
+            .session
+            .prompt_cache,
+        Some(cache(lapses_at, &model, None))
+    );
+    // Its catalog comes, and its prices with it.
+    runtime.price_cache(model.clone(), RATES);
+    crate::session_integration::support::refresh_catalog(restarted.descriptor()).await;
+    read_session_until(
+        &crate::support::loopback_client(),
+        restarted.descriptor(),
+        id,
+        "the penalty is forecast once the Provider knows its prices",
+        |snapshot| snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38))),
+    )
+    .await;
+    restarted.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_selection_whose_prices_are_to_hand_lands_its_penalty_in_the_same_revision() {
+    let state = tempfile::tempdir().unwrap();
+    let channel = "prompt-cache-reselect-revision";
+    let lapses_at = ahead(5);
+    let fixture = cold_priced(state.path(), channel, lapses_at).await;
+    let model = sessions_model(&fixture).await;
+    read_until(&fixture, "the penalty is forecast", |snapshot| {
+        snapshot.session.prompt_cache == Some(cache(lapses_at, &model, Some(1.38)))
+    })
+    .await;
+    let cheaper = ModelId::new("gpt-cheaper");
+    fixture.runtime.price_cache(cheaper.clone(), CHEAPER);
+    let (_client, mut feed) = following(state.path(), channel, fixture.session_id).await;
+    select(
+        &fixture,
+        controlled_selection(cheaper.as_str(), "high", "fast"),
+    )
+    .await;
+    let selected = update_holding(&mut feed, |change| {
+        matches!(change, SessionChange::AgentSelectionChanged { .. })
+    })
+    .await;
+    assert_eq!(
+        lapse_of(&selected).and_then(|cache| cache.lapse_penalty),
+        penalty(0.46),
+        "the new Model's figure lands with the Selection, never absent between: {selected:?}"
     );
     fixture.server.shutdown().await.unwrap();
 }
@@ -726,6 +958,7 @@ async fn the_penalty_is_priced_at_the_tier_its_context_falls_in_and_its_caches_w
             lapses_at,
             model: Some(model.clone()),
             lifetime: Some(Duration::from_secs(60 * 60)),
+            prompt_limit: None,
         })
         .await;
     settle(&fixture.provider_session).await;
@@ -736,6 +969,7 @@ async fn the_penalty_is_priced_at_the_tier_its_context_falls_in_and_its_caches_w
             snapshot.session.prompt_cache
                 == Some(PromptCache {
                     lifetime_ms: Some(60 * 60 * 1000),
+                    prompt_limit_tokens: None,
                     // 400,000 tokens at $6.00 written less $0.30 read.
                     ..cache(lapses_at, &model, Some(2.28))
                 })

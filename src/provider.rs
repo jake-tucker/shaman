@@ -14,8 +14,7 @@ use serde_json::Value;
 use tokio::sync::watch;
 
 use crate::pricing::{
-    CacheRateLookup, CacheRates, CacheRatesFuture, EstimatedCost, PricingSource, PromptRates,
-    PromptRatesFuture,
+    CacheRateLookup, CacheRates, CacheRatesFuture, EstimatedCost, PricingSource, PromptRatesFuture,
 };
 use crate::protocol::{
     AgentIdentity, AgentSelection, ApprovalPosture, Cost, CostBasis, CostCoverage,
@@ -225,7 +224,10 @@ impl CacheRateLookup for HostedCacheRates {
             .iter()
             .find(|runtime| runtime.provider_id() == *provider)
         {
-            Some(runtime) => runtime.cache_rates(model),
+            Some(runtime) => {
+                let rates = runtime.prompt_rates(model);
+                Box::pin(async move { rates.await.map(|rates| rates.standard()) })
+            }
             None => Box::pin(async { None::<CacheRates> }),
         }
     }
@@ -1481,6 +1483,9 @@ pub enum ProviderEvent {
         /// How long the Provider keeps the cache that call wrote, where it
         /// said, which the write price it is forecast at depends on.
         lifetime: Option<std::time::Duration>,
+        /// The largest prompt, in tokens, that call could send, where the
+        /// Provider said: a Provider pricing by tier priced the call by it.
+        prompt_limit: Option<u64>,
     },
     /// The Provider revised what it needs to carry the owning Session's
     /// conversation across a restart, replacing the Resume State its startup
@@ -1949,27 +1954,17 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// how it runs Errands rather than silently running none.
     fn run_errand(&self, errand: ProviderErrand) -> ErrandFuture<'_>;
 
-    /// The rates this Provider prices `model` at today, from which Insights
-    /// estimates what caching saved, and — through [`Self::prompt_rates`],
-    /// unless the runtime prices prompts by size itself — a Lapse Penalty is
-    /// forecast; absent where it knows no rate table that prices the Model's
+    /// What this Provider prices a prompt's input on `model` at today, by
+    /// how large the prompt is and how long its cache is kept: the one
+    /// declaration of its prices, from which a Session's Lapse Penalty is
+    /// forecast and Insights estimates what caching saved, at the standard
+    /// tier. Absent where it knows no rate table that prices the Model's
     /// fresh input, cache reads, and cache writes alike. Never launches
     /// anything only to answer, so a Provider whose rates live in a harness
     /// not running now answers none.
-    fn cache_rates<'a>(&'a self, model: &'a ModelId) -> CacheRatesFuture<'a> {
+    fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
         let _ = model;
         Box::pin(async { None })
-    }
-
-    /// What this Provider prices a prompt's input on `model` at, by how large
-    /// the prompt is and how long its cache is kept, from which a Session's
-    /// Lapse Penalty is forecast for the context it holds. Defaulted to
-    /// [`Self::cache_rates`] at every size, its writes at the default
-    /// lifetime's price; a runtime whose prices step up for a long context,
-    /// or list a cache kept an hour apart, states them here. Never launches
-    /// anything only to answer.
-    fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
-        Box::pin(async move { self.cache_rates(model).await.map(PromptRates::flat) })
     }
 
     /// The Errand Selection this Provider declares: the Model its own Errands

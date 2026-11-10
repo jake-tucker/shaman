@@ -7745,6 +7745,7 @@ mod ready_event_tests {
             lapses_at: SessionTimestamp(wall.load(Ordering::SeqCst) + 25_000),
             written_by: crate::protocol::ModelId::new("gpt-fixture"),
             lifetime_ms: None,
+            prompt_limit_tokens: None,
             lapse_penalty: None,
         });
         let mut application = Application::new(workspace, Default::default())

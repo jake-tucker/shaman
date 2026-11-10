@@ -38,7 +38,7 @@ use super::{
     },
 };
 use crate::{
-    pricing::{CacheRatesFuture, ModelsDevModel, PricingSource},
+    pricing::{ModelsDevModel, PricingSource, PromptRates, PromptRatesFuture},
     protocol::{
         AgentId, AgentIdentity, AgentSelection, EffectiveSettings, ModelId, ModelOptionChoiceId,
         ModelOptionId, ModelOptionSelection, ModelOptionValue, ProviderId, ReasoningSummaryDetail,
@@ -296,8 +296,9 @@ impl ProviderRuntime for CodexRuntime {
     }
 
     /// The models.dev rates this runtime's Costs are estimated from, so a
-    /// saving is worked out at the rates a Cost would be today.
-    fn cache_rates<'a>(&'a self, model: &'a ModelId) -> CacheRatesFuture<'a> {
+    /// saving is worked out at the rates a Cost would be today. models.dev
+    /// prices every prompt size alike.
+    fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
         Box::pin(async move {
             self.pricing
                 .as_ref()?
@@ -306,6 +307,7 @@ impl ProviderRuntime for CodexRuntime {
                     model.clone(),
                 ))
                 .await
+                .map(PromptRates::flat)
         })
     }
 

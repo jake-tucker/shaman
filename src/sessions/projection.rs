@@ -108,6 +108,8 @@ impl SessionStoreState {
                     | SessionChange::SessionWaitingOnSubagentsChanged { .. }
             )
         });
+        // A Selection whose prices are to hand lands its Lapse Penalty with it.
+        self.take_lapse_rates_for_selection(session_id, &changes);
         let repaired = super::brokered::repaired_settlements(&changes);
         stamp_turn_timing(&mut changes, updated_at);
         stamp_cost_measurements(&mut changes, updated_at);
@@ -983,10 +985,10 @@ impl SessionRecord {
         revision.landed.extend(landed);
     }
 
-    /// Derives the Session's status and its wait on Subagents from the open
-    /// revision, moves the snapshot to that revision, and carries what the
-    /// catalog reads of it to the summary, answering with the update that
-    /// says so.
+    /// Derives the Session's status, its wait on Subagents, and its Prompt
+    /// Cache from the open revision, moves the snapshot to that revision, and
+    /// carries what the catalog reads of it to the summary, answering with
+    /// the update that says so.
     fn close_revision(&mut self, mut revision: OpenRevision) -> SessionUpdate {
         let status = session_status(
             revision.turn_running,

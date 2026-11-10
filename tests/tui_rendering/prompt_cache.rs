@@ -52,6 +52,7 @@ fn session(
         lapses_at,
         written_by: ModelId::new("gpt-fixture"),
         lifetime_ms: None,
+        prompt_limit_tokens: None,
         lapse_penalty: lapse_penalty
             .map(|usd| LapsePenalty::from_usd(usd).expect("a representable penalty")),
     });
@@ -278,6 +279,7 @@ fn the_line_clears_once_the_next_turn_has_written_the_cache_afresh() {
                         lapses_at: SessionTimestamp(NOW.0 + 300_000),
                         written_by: ModelId::new("gpt-fixture"),
                         lifetime_ms: None,
+                        prompt_limit_tokens: None,
                         lapse_penalty: LapsePenalty::from_usd(1.70),
                     }),
                 }],
