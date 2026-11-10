@@ -15,7 +15,10 @@ use tokio::sync::watch;
 use crate::protocol::SessionTimestamp;
 
 /// The longest a wait on the real clock sleeps before it reads the time
-/// again; see [`ServerClock::sleep_until`].
+/// again. A sleep is counted on a clock that stops while the machine is
+/// suspended, so a single hour-long sleep begun before a suspend would end
+/// that much past the moment; slept in slices, a wait ends within one slice
+/// of the time read reaching it.
 const LONGEST_SLEEP: Duration = Duration::from_secs(60);
 
 /// Where a Server reads the time now: the real clock by default, or one a
@@ -53,7 +56,8 @@ impl ServerClock {
     }
 
     /// Resolves once this clock reads `at` or later: as real time reaches it,
-    /// or, on a clock a hand moves, as the hand moves it there.
+    /// read again at least every [`LONGEST_SLEEP`] so time a suspend passed
+    /// is noticed, or, on a clock a hand moves, as the hand moves it there.
     pub async fn sleep_until(&self, at: SessionTimestamp) {
         match &self.advanced {
             Some(advanced) => {
@@ -71,10 +75,6 @@ impl ServerClock {
                     }
                 }
             }
-            // Slept in slices of at most a minute, with the time read again
-            // after each: a sleep is counted on a clock that stops while the
-            // machine is suspended, so a single hour-long sleep begun before a
-            // suspend would end that much past the moment.
             None => loop {
                 let now = self.now();
                 if now >= at {
@@ -188,7 +188,7 @@ mod tests {
 
         // The machine wakes from a suspend that lasted the hour.
         reading.fetch_add(60 * 60 * 1000, Ordering::SeqCst);
-        tokio::time::timeout(Duration::from_secs(61), waiting)
+        tokio::time::timeout(LONGEST_SLEEP + Duration::from_secs(1), waiting)
             .await
             .expect("the wait ends within a minute of the time it reads reaching the moment")
             .expect("the wait does not panic");

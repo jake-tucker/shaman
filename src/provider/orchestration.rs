@@ -3170,16 +3170,10 @@ async fn run_provider_session(
                         }),
                         // Its moment moved on: it is armed again for then.
                         Err(ScheduledCompactionSkip::NotDue) => continue,
-                        // The store has judged the stretch, and arms it no
-                        // more; or the actor was released, and stops.
-                        Err(skip) => {
-                            tracing::debug!(
-                                %session_id,
-                                ?skip,
-                                "Skipped the scheduled Compaction of this idle stretch"
-                            );
-                            continue;
-                        }
+                        // The store has judged the stretch, and said why, and
+                        // arms it no more; or the actor was released, and
+                        // stops.
+                        Err(_) => continue,
                     }
                 }
                 ActorInput::Event(Some(Ok(attributed))) => {
