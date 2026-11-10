@@ -202,6 +202,68 @@ async fn a_new_worktree_of_a_remotes_repository_is_made_there() {
     pair.shutdown().await;
 }
 
+/// Making a new Worktree takes a Remote longer than any other act — it waits on
+/// the Errand naming the Worktree before it makes it — so the Remote is given
+/// the Worktree timeout to answer, where any other act is given the reach
+/// timeout.
+#[tokio::test]
+async fn a_new_worktree_at_a_remote_is_waited_on_past_the_reach_timeout() {
+    const REACH: Duration = Duration::from_millis(300);
+    let mut pair = paired(
+        "sidekick-remote-move-worktree-slow",
+        ServerTimings::default().with_remote_reach_timeout(REACH),
+    )
+    .await;
+    let own = pair.own.descriptor().clone();
+    let remote = pair.remote.descriptor();
+    let there = tempfile::tempdir().expect("create a home on the Remote");
+    let origin = there.path().join("origin");
+    std::fs::create_dir(&origin).expect("create a directory on the Remote");
+    let repository = there.path().join("repository");
+    committed(&repository);
+    let (origin, repository) = (canonical(&origin), canonical(&repository));
+    let (_sidekick_id, mut sidekick, _provider) = start_sidekick(&own, &mut pair.claude).await;
+    let (target, _target_provider) = started_session(
+        &remote,
+        &mut pair.remote.provider,
+        &origin,
+        "Write the parser",
+    )
+    .await;
+    let (reached, release) = pair.remote.git.hold_discovery_of(&repository);
+
+    let (answer, ()) = tokio::join!(
+        acted(
+            &mut sidekick,
+            "move_session",
+            json!({
+                "session_id": target,
+                "origin": REMOTE,
+                "directory": repository,
+                "new_worktree": true,
+            }),
+        ),
+        async {
+            timeout(PROGRESS_DEADLINE, reached)
+                .await
+                .expect("the Remote reads the Repository")
+                .expect("and says so");
+            // Held past what any other act is given to answer in.
+            tokio::time::sleep(REACH * 2).await;
+            release.send(()).expect("the discovery still waits");
+        },
+    );
+
+    assert_eq!(answer["origin"], json!(REMOTE), "{answer}");
+    let worktree = std::path::PathBuf::from(answer["directory"].as_str().expect("names it"));
+    assert_eq!(
+        worktree.parent(),
+        Some(repository.join(".worktrees").as_path()),
+        "{answer}"
+    );
+    pair.shutdown().await;
+}
+
 /// A Remote's refusals come back in its own words, and with nothing recorded of
 /// them here. Its Sidekick's Session never Moves, a Subagent beneath that Sidekick
 /// stays, the Sidekick asking being another, on a Peer; and no Session Moves into

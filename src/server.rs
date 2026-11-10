@@ -251,6 +251,11 @@ pub struct ServerTimings {
     /// How long a Sidekick's read of a Remote waits for that Remote to answer
     /// before naming it as not answering.
     pub remote_reach_timeout: Duration,
+    /// How long a Remote is given to answer a Sidekick's act that makes a new
+    /// Managed Worktree there — preparing one for a Session, or Moving a
+    /// Session into one — in place of the reach timeout: long enough for the
+    /// Remote to wait out the Errand naming the Worktree and then make it.
+    pub remote_worktree_timeout: Duration,
     /// The most bytes a Sidekick's read of a Remote takes of one answer before
     /// refusing what the Remote said rather than reading on.
     pub remote_reach_budget: usize,
@@ -431,6 +436,7 @@ impl Default for ServerTimings {
             invite_ttl: Duration::from_secs(10 * 60),
             remote_withdrawal_timeout: Duration::from_secs(5),
             remote_reach_timeout: Duration::from_secs(10),
+            remote_worktree_timeout: Duration::from_secs(20),
             remote_reach_budget: 64 * 1024 * 1024,
             remote_retry_interval: Duration::from_secs(5),
             remote_silence_limit: Duration::from_secs(30),
@@ -487,6 +493,14 @@ impl ServerTimings {
     /// answering without waiting out the default.
     pub fn with_remote_reach_timeout(mut self, timeout: Duration) -> Self {
         self.remote_reach_timeout = timeout;
+        self
+    }
+
+    /// Bounds how long a Remote is given to answer an act that makes a new
+    /// Managed Worktree there; injectable so tests see one that says nothing
+    /// named as not answering without waiting out the default.
+    pub fn with_remote_worktree_timeout(mut self, timeout: Duration) -> Self {
+        self.remote_worktree_timeout = timeout;
         self
     }
 
@@ -1986,6 +2000,7 @@ async fn start(
             serving.clone(),
             timings.remote_reach_timeout,
             timings.remote_reach_budget,
+            timings.remote_worktree_timeout,
         ),
         settings_adoption,
         root_discovery.clone(),

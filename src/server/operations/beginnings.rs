@@ -88,6 +88,7 @@ impl SessionOperations {
         if let (Some(prepare), false) = (&beginning.prepare, beginning.creating) {
             let answered = self
                 .remotes
+                .making_a_worktree()
                 .act(
                     remote,
                     Method::POST,

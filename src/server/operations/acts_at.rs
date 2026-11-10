@@ -338,7 +338,11 @@ impl SessionOperations {
                     .await
             },
             async |name, act, destination| {
-                self.remotes
+                let remotes = match destination {
+                    MoveDestination::NewWorktree { .. } => self.remotes.making_a_worktree(),
+                    MoveDestination::Directory { .. } => self.remotes.clone(),
+                };
+                remotes
                     .act(
                         name,
                         Method::POST,

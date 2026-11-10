@@ -83,15 +83,32 @@ pub(crate) struct RemoteReach {
     serving: ServingController,
     timeout: Duration,
     budget: usize,
+    /// How long a Remote is given to answer an act that makes a new Managed
+    /// Worktree there.
+    worktree_timeout: Duration,
 }
 
 impl RemoteReach {
-    pub(crate) fn new(serving: ServingController, timeout: Duration, budget: usize) -> Self {
+    pub(crate) fn new(
+        serving: ServingController,
+        timeout: Duration,
+        budget: usize,
+        worktree_timeout: Duration,
+    ) -> Self {
         Self {
             serving,
             timeout,
             budget,
+            worktree_timeout,
         }
+    }
+
+    /// This reach, giving each Remote as long to answer as making a new
+    /// Managed Worktree may take there: the Remote waits on the Errand naming
+    /// the Worktree before it makes it, which alone may take most of what any
+    /// other act is given.
+    pub(super) fn making_a_worktree(&self) -> Self {
+        self.answering_within(self.worktree_timeout)
     }
 
     /// This reach, giving each Remote `timeout` to answer instead: for an
