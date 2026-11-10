@@ -975,7 +975,7 @@ fn counts(active: u64, completed: u64, failed: u64, interrupted: u64) -> Compact
 #[tokio::test]
 async fn compactions_are_tallied_by_trigger_and_status_from_stored_activities() {
     use ActivityStatus::{Active, Completed, Failed, Interrupted};
-    use CompactionTrigger::{Automatic, Manual};
+    use CompactionTrigger::{Automatic, Manual, Scheduled};
     let directory = tempfile::tempdir().unwrap();
     let mut session = persisted(directory.path(), None);
     session.snapshot.turns = vec![took(START, 1), took(START - 1, 1)];
@@ -988,6 +988,8 @@ async fn compactions_are_tallied_by_trigger_and_status_from_stored_activities() 
         compaction(held, Manual, Completed, None, Some(10_000)),
         compaction(held, Manual, Interrupted, None, None),
         compaction(held, Manual, Failed, None, None),
+        compaction(held, Scheduled, Completed, Some(60_000), Some(9_000)),
+        compaction(held, Scheduled, Failed, None, None),
         // A Turn the interval does not hold.
         compaction(before, Manual, Completed, Some(10), Some(1)),
         command(held, Completed),
@@ -1002,9 +1004,15 @@ async fn compactions_are_tallied_by_trigger_and_status_from_stored_activities() 
         (
             compactions.automatic,
             compactions.manual,
+            compactions.scheduled,
             compactions.total()
         ),
-        (counts(1, 2, 1, 0), counts(0, 1, 1, 1), 7)
+        (
+            counts(1, 2, 1, 0),
+            counts(0, 1, 1, 1),
+            counts(0, 1, 1, 0),
+            9
+        )
     );
     writer.shutdown().await.unwrap();
 }

@@ -1,7 +1,8 @@
 //! The Compactions panel: how many the range's Turns held, how many of
-//! those the user asked for, how many failed, and the share of the context
-//! they freed on average, where any could say — more briefly where its
-//! column is narrow.
+//! those the user asked for, how many Suru began of its own accord ahead of
+//! a Prompt Cache lapse where it began any, how many failed, and the share of
+//! the context they freed on average, where any could say — more briefly
+//! where its column is narrow.
 
 use ratatui::{buffer::Buffer, layout::Rect};
 
@@ -43,24 +44,36 @@ pub(super) fn render(
         compactions.automatic.failed + compactions.manual.failed + compactions.scheduled.failed,
     );
     let manual = grouped_count(compactions.manual.total());
-    let form = |counted: &str, failed: String| {
+    // What Suru spent unasked is named wherever it spent any, so it is never
+    // read as the Provider's own; where the column is narrowest the words
+    // give way before any count does.
+    let scheduled = compactions.scheduled.total();
+    let asked = |manual_word: &str, scheduled_word: &str| match scheduled {
+        0 => format!("{manual} {manual_word}"),
+        scheduled => format!(
+            "{manual} {manual_word} · {} {scheduled_word}",
+            grouped_count(scheduled)
+        ),
+    };
+    let form = |counted: &str, asked: &str, failed: String| {
         vec![
-            (format!("{counted} · {manual} manual · "), primary),
+            (format!("{counted} · {asked} · "), primary),
             ("✗ ".to_owned(), theme.feedback.error),
             (failed, primary),
         ]
     };
     let total = grouped_count(total);
-    render_fitting_spans(
-        buffer,
-        area,
-        area.y,
-        [
-            form(&counted, format!("{failed} failed")),
-            form(&total, format!("{failed} failed")),
-            form(&total, failed),
-        ],
-    );
+    let named = asked("manual", "scheduled");
+    let mut forms = vec![
+        form(&counted, &named, format!("{failed} failed")),
+        form(&total, &named, format!("{failed} failed")),
+        form(&total, &named, failed.clone()),
+    ];
+    if scheduled > 0 {
+        forms.push(form(&total, &asked("manual", "sched."), failed.clone()));
+        forms.push(form(&total, &asked("man.", "sch."), failed));
+    }
+    render_fitting_spans(buffer, area, area.y, forms);
     let (freed, style) = match compactions.freed {
         Some(freed) => (fitting(room, freed_on_average(freed)), primary),
         None => (

@@ -2578,6 +2578,41 @@ mod tests {
         );
     }
 
+    /// A Compaction Suru began of its own accord says so, as an automatic
+    /// one does, since nobody reading it asked for it.
+    #[test]
+    fn a_scheduled_compaction_reads_as_one() {
+        let mut fixture = Fixture::new();
+        let turn = fixture.continuation(TurnStatus::Completed);
+        fixture.0.turns[0].compaction_requested =
+            Some(crate::protocol::CompactionRequest::Scheduled);
+        fixture.activity(Activity::Compaction {
+            id: ActivityId::new(),
+            turn_id: turn,
+            status: ActivityStatus::Completed,
+            trigger: CompactionTrigger::Scheduled,
+            instructions: None,
+            before_tokens: Some(120_000),
+            after_tokens: Some(9_000),
+            error: None,
+            summary: None,
+            summary_truncated: false,
+        });
+
+        let reading = fixture.window(Window {
+            detail: Detail::Activities,
+            turns: 1,
+            ..Window::default()
+        });
+        assert!(
+            reading.transcript.contains(
+                "1.1 compaction [completed, scheduled]: context from 120000 to 9000 tokens"
+            ),
+            "{}",
+            reading.transcript
+        );
+    }
+
     #[test]
     fn what_suru_cut_short_when_it_stored_an_entry_is_said() {
         let mut fixture = Fixture::new();

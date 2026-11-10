@@ -1311,6 +1311,32 @@ fn the_compactions_panel_states_how_many_how_many_were_manual_and_failed_and_wha
     );
 }
 
+/// Compactions Suru began of its own accord ahead of a lapse are named, so
+/// what it spent unasked never reads as the Provider's own choice.
+#[test]
+fn the_compactions_panel_names_those_suru_scheduled_where_there_were_any() {
+    let mut report = worked();
+    report.compactions.scheduled = CompactionCounts {
+        completed: 2,
+        failed: 1,
+        ..CompactionCounts::default()
+    };
+    let application = on_insights(Ok(report));
+
+    assert_eq!(
+        panel_lines(&application, " Compactions "),
+        vec!["30 · 6 man. · 3 sch. · ✗ 2", "frees 61% on average"],
+        "every count stands where the column is narrow"
+    );
+    assert_eq!(
+        panel_lines_at(&application, " Compactions ", STACKED_WIDTH),
+        [
+            "30 Compactions · 6 manual · 3 scheduled · ✗ 2 failed",
+            "frees 61% of context on average",
+        ]
+    );
+}
+
 #[test]
 fn compactions_that_could_not_say_what_they_freed_leave_it_unstated() {
     let mut report = worked();
