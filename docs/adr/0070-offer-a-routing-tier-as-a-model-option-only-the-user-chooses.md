@@ -30,7 +30,8 @@ Whether a tier can be had is left to Copilot on a Model that can take one. `norm
 
 - A Session on the default follows Copilot's default if Copilot changes it. Only a tier that differed from the default when chosen stays put.
 - An account whose default tier is disabled is offered no tier, even with others enabled. A Selection already naming one is still carried to Copilot, and reads as plain Auto, as it does while a discovery has failed. No such account has been seen.
-- A Selection naming the default where no catalog can say so, as a script might with the Setting off, is carried like any tier and tells its Status row. So does one Copilot's refusal corrected onto a tier it reported, whatever the default.
+- A Selection naming the default where no catalog can say so, as a script might with the Setting off, is carried like any tier and tells its Status row.
+- Where Copilot refuses a tier and reports the default as what runs instead, or reports the default as what a Turn ran on, the Selection names none, as the user taking the default would. The Selection a Turn ran under and the one its Session stands under are then the same choice however it was reached, so going back to the default after a refusal leaves the Prompt Cache counted as written under the Selection standing. The refusal's Status row is told all the same.
 - Each refresh opens and deletes a Session. It costs no credits, about 150ms the first time plus the listing, and leaves nothing in Copilot's picker or its store.
 - A Selection naming a tier with the Setting off tells one Status row per Session, so a Landing that remembers one tells each new Session in turn.
 - A tier Copilot moves on its own, with no refusal, goes unnoticed until the Session next opens. None was seen.
