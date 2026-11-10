@@ -1452,3 +1452,48 @@ async fn a_session_settled_on_its_own_is_skipped_while_the_setting_keeps_to_acti
         .await;
     idle.shutdown().await;
 }
+
+/// A Provider that reports a lapse without saying how long it keeps the
+/// cache is judged by the moment itself: one already within the lead when
+/// the Turn that set it settles would fall due as each Turn settled, and is
+/// never scheduled.
+#[tokio::test]
+async fn a_reported_lapse_already_within_the_lead_is_never_scheduled() {
+    let reported = |now: SessionTimestamp| ProviderEvent::PromptCacheLapseReported {
+        lapses_at: SessionTimestamp(now.0 + 20_000),
+        model: None,
+        lifetime: None,
+        write_price: suru::protocol::CacheWritePrice::Default,
+        prompt_limit_tokens: None,
+    };
+    let state = tempfile::tempdir().unwrap();
+    let mut idle = idle_on(
+        state.path(),
+        "scheduled-compaction-reported-within-lead",
+        ON,
+        true,
+        CacheLifetime::Reported,
+        |fixture, now| fixture.provider_session.emit(reported(now)),
+    )
+    .await;
+    // From its second Turn on, the Session's prices are held as each Turn
+    // settles, and its penalty forecast in the revision that settles it.
+    idle.send_prompt(PromptDelivery::Queue).await;
+    timeout(PROGRESS_DEADLINE, idle.fixture.provider_session.next_turn())
+        .await
+        .expect("the Prompt's Turn reaches the Provider")
+        .succeed();
+    idle.emit([reported(idle.clock.now()), ProviderEvent::TurnCompleted])
+        .await;
+    idle.until("the second Turn settles with its lapse", |snapshot| {
+        snapshot.turns.len() == 2
+            && snapshot.session.working_since.is_none()
+            && snapshot.session.prompt_cache.as_ref().is_some_and(|cache| {
+                cache.written_in == Some(snapshot.turns[1].id) && cache.lapse_penalty.is_some()
+            })
+    })
+    .await;
+    idle.assert_nothing_scheduled(2, "the lapse was within the lead as it was set")
+        .await;
+    idle.shutdown().await;
+}

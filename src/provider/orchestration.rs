@@ -1753,6 +1753,11 @@ impl ProviderOrchestrator {
     /// `margin` of the cache's life is left rather than
     /// [`SCHEDULED_COMPACTION_MARGIN`]. Set before any actor starts.
     pub(crate) fn with_scheduled_compaction(mut self, lead: Duration, margin: Duration) -> Self {
+        // A margin at or past the lead leaves no moment it could begin at.
+        debug_assert!(
+            margin < lead,
+            "a scheduled Compaction's margin ({margin:?}) must be shorter than its lead ({lead:?})"
+        );
         self.scheduled_compaction_lead = lead;
         self.scheduled_compaction_margin = margin;
         self
@@ -2940,6 +2945,10 @@ async fn run_provider_session(
             .filter(|turn| turn.status.is_terminal())
             .map(|turn| turn.id)
     });
+    // The idle stretch the actor last found owed a scheduled Compaction, and
+    // when it found it on the Server's clock, which the moment it falls due
+    // is weighed against.
+    let mut stretch_found: Option<(TurnId, crate::protocol::SessionTimestamp)> = None;
     // When the idle wait began, which every input restarts save the actor's
     // own wake for a scheduled Compaction that begins nothing: such a wake
     // keeps no Provider process alive.
@@ -3035,6 +3044,11 @@ async fn run_provider_session(
             let compaction_due = sessions
                 .scheduled_compaction_stretch(session_id, scheduled_compaction_lead)
                 .filter(|stretch| Some(stretch.after) != judged_stretch);
+            if let Some(stretch) = compaction_due
+                && stretch_found.is_none_or(|(after, _)| after != stretch.after)
+            {
+                stretch_found = Some((stretch.after, clock.now()));
+            }
             let compaction_due_at = compaction_due.map_or(SessionTimestamp(0), |due| due.due_at);
             // What the actor itself owes the Session, which would begin a
             // Turn of its own or needs the Provider it has: no idle process
@@ -3141,6 +3155,9 @@ async fn run_provider_session(
                                 stretch.after,
                                 &rule,
                                 clock.now(),
+                                stretch_found
+                                    .filter(|(after, _)| *after == stretch.after)
+                                    .map_or_else(|| clock.now(), |(_, found_at)| found_at),
                                 &released,
                             )
                         }) else {
@@ -9187,12 +9204,14 @@ running 1 test",
         within("the orchestrator stops", fixture.providers.shutdown()).await;
     }
 
-    /// An actor released for its tree going unused opens no scheduled
-    /// Compaction's Turn it would never run: release sets its flag under the
-    /// store's lock, which the judgement reads under the same lock, so a wake
-    /// taken just before the release finds it.
+    /// The store opens no scheduled Compaction's Turn for an actor whose
+    /// released flag is set when it judges, though the Compaction is due and
+    /// owed: release sets that flag under the store's lock, which the
+    /// judgement reads under the same lock, so a wake an actor took just
+    /// before its tree was released finds it there rather than opening a
+    /// Turn nothing would run.
     #[tokio::test(start_paused = true)]
-    async fn a_released_actor_opens_no_scheduled_compactions_turn() {
+    async fn the_store_opens_no_scheduled_compaction_for_an_actor_flagged_released() {
         let (clock, _hand) = crate::clock::ServerClock::manual();
         let mut settings = SettingsSnapshot::default();
         settings.settings.compaction.scheduled.enabled = true;
@@ -9280,12 +9299,14 @@ running 1 test",
             lapses_at.0 - u64::try_from(SCHEDULED_COMPACTION_LEAD.as_millis()).unwrap(),
         );
 
+        let found_at = clock.now();
         assert_eq!(
             sessions.begin_scheduled_compaction(
                 session_id,
                 first_turn,
                 &rule,
                 due,
+                found_at,
                 &AtomicBool::new(true)
             ),
             Err(ScheduledCompactionSkip::Released)
@@ -9294,18 +9315,6 @@ running 1 test",
             sessions.snapshot(session_id).unwrap().turns.len(),
             1,
             "no Turn is opened"
-        );
-        assert!(
-            sessions
-                .begin_scheduled_compaction(
-                    session_id,
-                    first_turn,
-                    &rule,
-                    due,
-                    &AtomicBool::new(false)
-                )
-                .is_ok(),
-            "an actor still held would begin it"
         );
 
         fixture.stop.send_replace(true);

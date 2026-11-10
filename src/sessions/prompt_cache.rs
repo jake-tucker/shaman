@@ -1004,6 +1004,6 @@ fn lifetime_ms(reported: Option<std::time::Duration>, declared: CacheLifetime) -
         .map(millis)
 }
 
-fn millis(duration: std::time::Duration) -> u64 {
+pub(super) fn millis(duration: std::time::Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }

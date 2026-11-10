@@ -26,7 +26,10 @@ use crate::protocol::{
     SessionChange, SessionId, SessionListItem, SessionSnapshot, SessionTimestamp, Turn, TurnId,
 };
 
-use super::{SessionRecord, SessionStore, SessionStoreState, compactions::requested_agent};
+use super::{
+    SessionRecord, SessionStore, SessionStoreState, compactions::requested_agent,
+    prompt_cache::millis,
+};
 
 /// What the judgement of a scheduled Compaction reads beside the Session
 /// itself, each as it stands when the Compaction falls due.
@@ -106,10 +109,6 @@ pub(crate) struct IdleStretch {
     pub(crate) due_at: SessionTimestamp,
 }
 
-fn millis(duration: Duration) -> u64 {
-    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
-}
-
 /// The idle stretch `snapshot` stands in and its Prompt Cache, where the
 /// stretch is owed a scheduled Compaction: its latest Turn has settled, wrote
 /// the cache, and was begun for no Compaction, and the cache lives longer
@@ -136,14 +135,13 @@ fn owed_stretch(
     if cache.written_in != Some(latest.id) {
         return Err(Skip::WroteNothing);
     }
-    let due_at = SessionTimestamp(cache.lapses_at.0.saturating_sub(millis(lead)));
-    let lifetime_within_lead = cache
+    if cache
         .lifetime_ms
         .is_some_and(|lifetime| lifetime <= millis(lead))
-        || latest.settled_at.is_some_and(|settled| due_at <= settled);
-    if lifetime_within_lead {
+    {
         return Err(Skip::LifetimeWithinLead);
     }
+    let due_at = SessionTimestamp(cache.lapses_at.0.saturating_sub(millis(lead)));
     Ok((
         IdleStretch {
             after: latest.id,
@@ -239,7 +237,10 @@ impl SessionStore {
     /// Compaction's Turn holding it as a manual one would (ADR 0041).
     /// `released` is the flag the actor asking is released by, which its
     /// tree going unused sets under this same lock: an actor released first
-    /// opens no Turn it would never run.
+    /// opens no Turn it would never run. `found_at` is when the actor first
+    /// found the stretch, on the Server's clock as `now` is: a stretch that
+    /// was due already then — a cache whose life, unstated, is no longer than
+    /// the lead — would fall due as each Turn settled, and is skipped.
     ///
     /// Unlike a manual Compaction it takes nothing off the shelf: nobody
     /// reached for the Session, so a Settled one it reaches stays Settled.
@@ -249,6 +250,7 @@ impl SessionStore {
         after: TurnId,
         rule: &ScheduledCompactionRule,
         now: SessionTimestamp,
+        found_at: SessionTimestamp,
         released: &AtomicBool,
     ) -> Result<TurnId, ScheduledCompactionSkip> {
         let mut state = self
@@ -273,6 +275,9 @@ impl SessionStore {
         }
         if now < stretch.due_at {
             return Err(ScheduledCompactionSkip::NotDue);
+        }
+        if stretch.due_at <= found_at {
+            return Err(ScheduledCompactionSkip::LifetimeWithinLead);
         }
         judge(&state, session_id, record, cache, rule, now)?;
         let turn = Turn::requested_compaction(
