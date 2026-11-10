@@ -1995,6 +1995,15 @@ async fn start(
             .clone()
             .ask_again_as_catalogs_change(model_catalog.subscribe(), provider_shutdown_rx.clone()),
     );
+    // A scheduled Compaction no actor holds the wake of — its tree evicted,
+    // or the Server restarted since it was armed — is woken for by the
+    // Server, which first has each enabled Provider list its Models, as a
+    // client connecting would: a Provider may know no prices until it has,
+    // and a Lapse Penalty nobody can price is skipped.
+    providers.hold_scheduled_compaction_wakes({
+        let model_catalog = model_catalog.clone();
+        Arc::new(move || model_catalog.warm())
+    });
     // A tree gone unused is evicted with its Provider actors stopped, so the
     // sweep begins once there is an orchestrator to stop them.
     sessions.evict_idle_sessions(

@@ -10,11 +10,11 @@ use std::time::Duration;
 use crate::session_integration::{
     provider_support::CompactionRequest as CompactionAsked,
     support::{
-        WorkingTurn, controlled_selection, read_session, read_session_until,
-        working_turn_configured,
+        WorkingTurn, controlled_selection, read_session, read_session_until, working_turn_on,
     },
 };
 use crate::support::PROGRESS_DEADLINE;
+use crate::support::provider::{ControlledProvider, ControlledProviderRuntime};
 use suru::{
     pricing::CacheRates,
     protocol::{
@@ -33,19 +33,19 @@ use tokio::time::timeout;
 
 /// How long the controlled Provider keeps a cache while idle: a production
 /// scale, since the clock is moved by hand.
-const LIFETIME: Duration = Duration::from_secs(10 * 60);
+pub(crate) const LIFETIME: Duration = Duration::from_secs(10 * 60);
 
 /// The lead injected in place of the production two minutes, so the moment a
 /// Compaction falls due is told apart from any the production lead would set.
-const LEAD: Duration = Duration::from_secs(30);
+pub(crate) const LEAD: Duration = Duration::from_secs(30);
 
 /// The least of the cache's life that must be left, injected in place of the
 /// production twenty seconds.
-const MARGIN: Duration = Duration::from_secs(5);
+pub(crate) const MARGIN: Duration = Duration::from_secs(5);
 
 /// Writing a million tokens to the cache costs $3.75 and reading them back
 /// $0.30, so 400,000 tokens of context forecast a $1.38 Lapse Penalty.
-const RATES: CacheRates = CacheRates {
+pub(crate) const RATES: CacheRates = CacheRates {
     input: 3.0,
     cache_read: Some(0.3),
     cache_write: Some(3.75),
@@ -59,12 +59,14 @@ pub(crate) const ON: &str = r#"{ "compaction": { "scheduled": { "enabled": true 
 /// and that hand.
 pub(crate) struct Idle {
     pub(crate) fixture: WorkingTurn,
-    hand: ManualClock,
-    clock: ServerClock,
-    _config: tempfile::TempDir,
+    /// Where the Provider's starts after the first arrive.
+    pub(crate) provider: ControlledProvider,
+    pub(crate) hand: ManualClock,
+    pub(crate) clock: ServerClock,
+    pub(crate) config: tempfile::TempDir,
 }
 
-fn filled(sequence: u64, tokens: u64) -> ProviderEvent {
+pub(crate) fn filled(sequence: u64, tokens: u64) -> ProviderEvent {
     ProviderEvent::ContextFill {
         report: ContextFillReport {
             turn_id: None,
@@ -79,7 +81,7 @@ fn filled(sequence: u64, tokens: u64) -> ProviderEvent {
 
 /// The Agent answering, which is the output an assumed lifetime counts from:
 /// a Turn's settling alone counts for nothing.
-fn answered() -> [ProviderEvent; 3] {
+pub(crate) fn answered() -> [ProviderEvent; 3] {
     [
         ProviderEvent::AgentMessageStarted,
         ProviderEvent::AgentMessageDelta {
@@ -89,7 +91,7 @@ fn answered() -> [ProviderEvent; 3] {
     ]
 }
 
-fn penalty(usd: f64) -> Option<LapsePenalty> {
+pub(crate) fn penalty(usd: f64) -> Option<LapsePenalty> {
     LapsePenalty::from_usd(usd)
 }
 
@@ -124,20 +126,49 @@ async fn idle_on(
     lifetime: CacheLifetime,
     during: impl FnOnce(&WorkingTurn, SessionTimestamp),
 ) -> Idle {
+    idle_built(
+        state,
+        channel,
+        settings,
+        priced,
+        lifetime,
+        during,
+        |timings| timings,
+        |_| {},
+    )
+    .await
+}
+
+/// [`idle_on`] on a Server whose timings `timings` sets from the fixture's
+/// own, and a Provider `prepare` declares more of before its first Session
+/// starts.
+// One parameter for each thing a test may vary.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn idle_built(
+    state: &std::path::Path,
+    channel: &str,
+    settings: &str,
+    priced: bool,
+    lifetime: CacheLifetime,
+    during: impl FnOnce(&WorkingTurn, SessionTimestamp),
+    timings: impl FnOnce(ServerTimings) -> ServerTimings,
+    prepare: impl FnOnce(&ControlledProviderRuntime),
+) -> Idle {
     let config = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(config.path().join("suru.jsonc"), settings).expect("write Config Document");
     let (clock, hand) = ServerClock::manual();
-    let fixture = working_turn_configured(
+    let (runtime, mut provider) = ControlledProvider::new();
+    runtime.declare_cache_lifetime(lifetime);
+    prepare(&runtime);
+    let fixture = working_turn_on(
         state,
         channel,
-        ServerTimings::default()
-            .with_clock(clock.clone())
-            .with_scheduled_compaction_lead(LEAD)
-            .with_scheduled_compaction_margin(MARGIN),
+        timings(scheduled_timings(&clock)),
         Some(config.path()),
+        runtime,
+        &mut provider,
     )
     .await;
-    fixture.runtime.declare_cache_lifetime(lifetime);
     if priced {
         let model = read_session(fixture.server.descriptor(), fixture.session_id)
             .await
@@ -164,9 +195,10 @@ async fn idle_on(
         .await;
     let idle = Idle {
         fixture,
+        provider,
         hand,
         clock,
-        _config: config,
+        config,
     };
     if lifetime != CacheLifetime::None {
         idle.until("the first Turn's lapse is published", |snapshot| {
@@ -181,6 +213,15 @@ async fn idle_on(
         .await;
     }
     idle
+}
+
+/// The timings every Server here runs at: on `clock`, with the injected
+/// lead and margin.
+pub(crate) fn scheduled_timings(clock: &ServerClock) -> ServerTimings {
+    ServerTimings::default()
+        .with_clock(clock.clone())
+        .with_scheduled_compaction_lead(LEAD)
+        .with_scheduled_compaction_margin(MARGIN)
 }
 
 impl Idle {
@@ -227,7 +268,7 @@ impl Idle {
     /// so far, its own wakes included, by asking it what fills the context:
     /// the actor judges a scheduled Compaction that has fallen due ahead of
     /// any request it reads after.
-    async fn after_the_actor_has_judged(&mut self) {
+    pub(crate) async fn after_the_actor_has_judged(&mut self) {
         let client = self.fixture.client.clone();
         let descriptor = self.fixture.server.descriptor().clone();
         let session_id = self.fixture.session_id;
@@ -254,7 +295,7 @@ impl Idle {
 
     /// Asserts nothing was scheduled: the Provider was asked to compact
     /// nothing, and the Session holds `turns` Turns still.
-    async fn assert_nothing_scheduled(&mut self, turns: usize, why: &str) {
+    pub(crate) async fn assert_nothing_scheduled(&mut self, turns: usize, why: &str) {
         self.after_the_actor_has_judged().await;
         assert!(
             self.fixture
@@ -267,7 +308,7 @@ impl Idle {
         assert_eq!(snapshot.turns.len(), turns, "no Turn is begun: {why}");
     }
 
-    async fn send_prompt(&self, delivery: PromptDelivery) {
+    pub(crate) async fn send_prompt(&self, delivery: PromptDelivery) {
         let descriptor = self.fixture.server.descriptor();
         self.fixture
             .client
@@ -311,7 +352,7 @@ impl Idle {
         .await;
     }
 
-    async fn mutate(&self, mutation: SettingMutation) {
+    pub(crate) async fn mutate(&self, mutation: SettingMutation) {
         let descriptor = self.fixture.server.descriptor();
         self.fixture
             .client
@@ -325,7 +366,7 @@ impl Idle {
             .expect("the Setting is taken");
     }
 
-    async fn settle_session(&self) {
+    pub(crate) async fn settle_session(&self) {
         let descriptor = self.fixture.server.descriptor();
         self.fixture
             .client
@@ -393,7 +434,7 @@ impl Idle {
     }
 }
 
-fn compactions(snapshot: &SessionSnapshot) -> Vec<&Activity> {
+pub(crate) fn compactions(snapshot: &SessionSnapshot) -> Vec<&Activity> {
     snapshot
         .activities
         .iter()

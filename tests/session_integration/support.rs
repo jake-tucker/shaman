@@ -204,8 +204,30 @@ pub async fn working_turn_configured(
     timings: ServerTimings,
     config_dir: Option<&std::path::Path>,
 ) -> WorkingTurn {
-    let workspace = tempfile::tempdir().expect("create valid Workspace");
     let (runtime, mut provider) = ControlledProvider::new();
+    working_turn_on(
+        state_dir,
+        channel,
+        timings,
+        config_dir,
+        runtime,
+        &mut provider,
+    )
+    .await
+}
+
+/// [`working_turn_configured`] on `runtime`, whose starts arrive on
+/// `provider`, so a test can declare what the Provider does before its first
+/// Session starts and take up any start after the first.
+pub async fn working_turn_on(
+    state_dir: &std::path::Path,
+    channel: &str,
+    timings: ServerTimings,
+    config_dir: Option<&std::path::Path>,
+    runtime: std::sync::Arc<ControlledProviderRuntime>,
+    provider: &mut ControlledProvider,
+) -> WorkingTurn {
+    let workspace = tempfile::tempdir().expect("create valid Workspace");
     let mut config = ServerConfig::new(state_dir, channel).expect("configure server");
     if let Some(config_dir) = config_dir {
         config = config.with_config_dir(config_dir);

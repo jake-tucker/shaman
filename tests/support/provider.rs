@@ -87,6 +87,11 @@ pub struct ControlledProviderRuntime {
     /// while idle. None by default, as a Provider that declares nothing has;
     /// a test declares one, at a millisecond scale where it counts down.
     cache_lifetime: Arc<Mutex<CacheLifetime>>,
+    /// Whether this Provider declares it launches a process for each Session,
+    /// which Suru stops once the Session has waited idle. Off by default, as
+    /// for a Provider whose one process every Session shares; a test
+    /// declares it, before any Session starts, to see that process stopped.
+    process_per_session: Arc<AtomicBool>,
     /// Whether this Provider declares it says what fills a Session's context.
     /// On by default, like the Subagent stop; a test proves the refusal by
     /// withdrawing it.
@@ -360,6 +365,7 @@ impl ControlledProvider {
                 subagent_stop_offered: Arc::new(AtomicBool::new(true)),
                 manual_compaction: Arc::new(Mutex::new(ManualCompaction::WithInstructions)),
                 cache_lifetime: Arc::default(),
+                process_per_session: Arc::new(AtomicBool::new(false)),
                 context_breakdown_offered: Arc::new(AtomicBool::new(true)),
                 cache_rates: Arc::default(),
                 prompt_rates: Arc::default(),
@@ -509,6 +515,13 @@ impl ControlledProviderRuntime {
             .cache_lifetime
             .lock()
             .expect("controlled Provider Cache Lifetime lock is not poisoned") = lifetime;
+    }
+
+    /// Declares this Provider launches a process for each Session from here
+    /// on, standing in for Claude or Codex, whose idle process Suru stops. An
+    /// actor reads it as it starts.
+    pub fn declare_process_per_session(&self) {
+        self.process_per_session.store(true, Ordering::SeqCst);
     }
 
     pub fn offer_skills(&self, catalog: SkillCatalog) {
@@ -1326,6 +1339,10 @@ impl ProviderRuntime for ControlledProviderRuntime {
             .cache_lifetime
             .lock()
             .expect("controlled Provider Cache Lifetime lock is not poisoned")
+    }
+
+    fn launches_a_process_per_session(&self) -> bool {
+        self.process_per_session.load(Ordering::SeqCst)
     }
 
     /// The prices a test stated for `model` under one of `options`, or else

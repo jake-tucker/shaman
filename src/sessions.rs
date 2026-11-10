@@ -246,6 +246,9 @@ struct SessionStoreState {
     /// form the user's own choice of it takes, where the Server hosting the
     /// store said (see [`SessionStore::name_effective_selections_by`]).
     effective_selection_names: Option<selection::SelectionNames>,
+    /// Each Session's idle stretch armed for a scheduled Compaction, and
+    /// whether it has been judged. Held in memory alone (ADR 0073).
+    scheduled_compactions: scheduled_compaction::ArmedStretches,
 }
 
 struct SessionRecord {
@@ -533,6 +536,7 @@ impl SessionStore {
             effective_selection_names: None,
             continuations_awaited: Default::default(),
             agent_moves: Default::default(),
+            scheduled_compactions: Default::default(),
         };
         state.worked_order = state.worked_order();
         // A history still waiting in storage has nothing a save could be
@@ -924,6 +928,7 @@ impl SessionStore {
                 saves = taken.saves;
             }
             state.sessions.remove(doomed_id);
+            state.scheduled_compactions.forget(*doomed_id);
             state.agent_moves.remove(doomed_id);
             state.posture_generations.remove(doomed_id);
             state.unreadable_sessions.remove(doomed_id);

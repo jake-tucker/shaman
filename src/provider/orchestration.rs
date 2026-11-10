@@ -1,4 +1,5 @@
 mod approvals;
+mod compaction_wakes;
 mod compactions;
 mod delegations;
 mod prompt_cache;
@@ -2708,21 +2709,27 @@ impl ProviderOrchestrator {
                 let task = actor.task.take();
                 let registry = self.actors.clone();
                 let own = done_rx.clone();
+                let sessions = self.sessions.clone();
                 tokio::spawn(async move {
                     if let Some(task) = task {
                         let _ = task.await;
                     }
                     done.send_replace(true);
-                    let mut actors = registry
-                        .lock()
-                        .expect("Provider actor registry lock is not poisoned");
-                    if actors
-                        .stopping
-                        .get(&owner)
-                        .is_some_and(|stopping| stopping.same_channel(&own))
                     {
-                        actors.stopping.remove(&owner);
+                        let mut actors = registry
+                            .lock()
+                            .expect("Provider actor registry lock is not poisoned");
+                        if actors
+                            .stopping
+                            .get(&owner)
+                            .is_some_and(|stopping| stopping.same_channel(&own))
+                        {
+                            actors.stopping.remove(&owner);
+                        }
                     }
+                    // A scheduled Compaction this actor held the wake of is
+                    // the Server's to wake for from here on.
+                    sessions.scheduled_compaction_holders_changed();
                 });
                 stopped.push(done_rx);
             }
@@ -2931,24 +2938,11 @@ async fn run_provider_session(
     let stops_when_idle = runtime.launches_a_process_per_session();
     // Which Turn the store has been told of, for its Prompt Cache.
     let mut prompt_cache_notes = prompt_cache::PromptCacheNotes::default();
-    // The idle stretch whose scheduled Compaction has been judged, named by
-    // the Turn that began it, which is never judged again (ADR 0073). A
-    // stretch already standing as the actor starts counts as judged: it began
-    // before the actor ran — before the Server started, say — and nothing is
-    // armed for it. A Turn opened ahead of the actor that is to run it — a
-    // Delegation's, a Compaction request's — begins a stretch of the actor's
-    // own once it settles.
-    let mut judged_stretch = sessions.snapshot(session_id).and_then(|snapshot| {
-        snapshot
-            .turns
-            .last()
-            .filter(|turn| turn.status.is_terminal())
-            .map(|turn| turn.id)
-    });
-    // The idle stretch the actor last found owed a scheduled Compaction, and
-    // when it found it on the Server's clock, which the moment it falls due
-    // is weighed against.
-    let mut stretch_found: Option<(TurnId, crate::protocol::SessionTimestamp)> = None;
+    // Which idle stretch is owed a scheduled Compaction, when it was found,
+    // and whether it has been judged are the store's to hold, so they outlive
+    // this actor (ADR 0073): a stretch standing as it starts — one an
+    // evicted tree's actor left, or a restarted Server found — is armed as
+    // any other, and one judged before is never judged again.
     // When the idle wait began, which every input restarts save the actor's
     // own wake for a scheduled Compaction that begins nothing: such a wake
     // keeps no Provider process alive.
@@ -3041,14 +3035,11 @@ async fn run_provider_session(
             }
             // The scheduled Compaction the idle stretch is owed, where it has
             // not been judged; whether it may begin is judged as it falls due.
-            let compaction_due = sessions
-                .scheduled_compaction_stretch(session_id, scheduled_compaction_lead)
-                .filter(|stretch| Some(stretch.after) != judged_stretch);
-            if let Some(stretch) = compaction_due
-                && stretch_found.is_none_or(|(after, _)| after != stretch.after)
-            {
-                stretch_found = Some((stretch.after, clock.now()));
-            }
+            let compaction_due = sessions.arm_scheduled_compaction(
+                session_id,
+                scheduled_compaction_lead,
+                clock.now(),
+            );
             let compaction_due_at = compaction_due.map_or(SessionTimestamp(0), |due| due.due_at);
             // What the actor itself owes the Session, which would begin a
             // Turn of its own or needs the Provider it has: no idle process
@@ -3148,24 +3139,17 @@ async fn run_provider_session(
                                 && in_force.settings.provider_enabled(&provider_id),
                         }
                     };
-                    let begun = if owes_nothing {
-                        let Some(begun) = updates.apply(|| {
-                            sessions.begin_scheduled_compaction(
-                                session_id,
-                                stretch.after,
-                                &rule,
-                                clock.now(),
-                                stretch_found
-                                    .filter(|(after, _)| *after == stretch.after)
-                                    .map_or_else(|| clock.now(), |(_, found_at)| found_at),
-                                &released,
-                            )
-                        }) else {
-                            break;
-                        };
-                        begun
-                    } else {
-                        Err(ScheduledCompactionSkip::HoldsWork)
+                    let Some(begun) = updates.apply(|| {
+                        sessions.begin_scheduled_compaction(
+                            session_id,
+                            stretch.after,
+                            &rule,
+                            clock.now(),
+                            !owes_nothing,
+                            &released,
+                        )
+                    }) else {
+                        break;
                     };
                     // A wake that begins nothing leaves the idle wait as it
                     // was; one that begins a Turn is that Turn's input.
@@ -3177,8 +3161,9 @@ async fn run_provider_session(
                         }),
                         // Its moment moved on: it is armed again for then.
                         Err(ScheduledCompactionSkip::NotDue) => continue,
+                        // The store has judged the stretch, and arms it no
+                        // more; or the actor was released, and stops.
                         Err(skip) => {
-                            judged_stretch = Some(stretch.after);
                             tracing::debug!(
                                 %session_id,
                                 ?skip,
@@ -9310,14 +9295,13 @@ running 1 test",
             lapses_at.0 - u64::try_from(SCHEDULED_COMPACTION_LEAD.as_millis()).unwrap(),
         );
 
-        let found_at = clock.now();
         assert_eq!(
             sessions.begin_scheduled_compaction(
                 session_id,
                 first_turn,
                 &rule,
                 due,
-                found_at,
+                false,
                 &AtomicBool::new(true)
             ),
             Err(ScheduledCompactionSkip::Released)
