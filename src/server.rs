@@ -1942,6 +1942,7 @@ async fn start(
         timings.checkout_skill_timeout,
         timings.provider_stop_timeout,
         timings.provider_idle_shutdown,
+        timings.clock.clone(),
         broker_access.clone(),
         attachment_store.clone(),
     );

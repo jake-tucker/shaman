@@ -86,7 +86,7 @@ use super::{
     theme_picker::ThemePickerRow,
     transcript::{TranscriptModelNames, TranscriptView, client_error_lines, model_display_name},
     unreachable_reason,
-    usage::{compact_cost, compact_count},
+    usage::{compact_cost, compact_count, compact_dollars},
     workspace_picker::{WorkspacePickerMenuGeometry, WorkspacePickerRowKind, WorkspaceRow},
     wrapped_text::WrappedText,
 };
@@ -7409,16 +7409,24 @@ fn render_session_surface(
             attachments.row_count(),
         )
     };
+    // A Subagent's view has no composer to warn above, and the Session shown
+    // here is only ever this one: a Subagent's own cache never reaches its
+    // parent's composer.
+    let prompt_cache = snapshot
+        .session
+        .prompt_cache
+        .clone()
+        .filter(|_| !subagent_view);
     let composer_top = slots.session_composer_top(&SessionComposerTopSlotContext {
         session_id,
         width: content_width,
-        // A Subagent's view has no composer to warn above, and the Session
-        // shown here is only ever this one: a Subagent's own cache never
-        // reaches its parent's composer.
-        prompt_cache: snapshot.session.prompt_cache.filter(|_| !subagent_view),
-        working: snapshot.working_since().is_some(),
-        now: state.session_now(),
-        warning: theme.feedback.warning,
+        lapse: prompt_cache_lapse_parts(
+            prompt_cache.as_ref(),
+            snapshot.working_since().is_some(),
+            state.session_now(),
+            theme,
+        ),
+        prompt_cache,
     });
     let working_indicator = match &tail {
         SessionTail::Quiet | SessionTail::Refused(_) => RenderedSlot::empty(),
@@ -7895,6 +7903,51 @@ fn session_footer_metrics_text(snapshot: &SessionSnapshot, width: u16) -> Option
         .into_iter()
         .chain([full, minimal].into_iter().flatten())
         .find(|text| UnicodeWidthStr::width(text.as_str()) <= usize::from(width))
+}
+
+/// The least Lapse Penalty worth a line, in billionths of a USD: five cents.
+/// Below it a cold Session is no surprise worth warning of.
+const LAPSE_PENALTY_FLOOR_NANO_USD: u64 = 50_000_000;
+
+/// What the line above the composer of a Session whose Prompt Cache has
+/// lapsed says, part by part: that it lapsed, what the next Prompt costs
+/// beyond what it would have warm — or that it re-reads the whole context,
+/// where that cannot be priced — and how to shrink it, all in the warning
+/// colour. Nothing while the Session is Working, while the cache is warm, and
+/// where the penalty is known to fall under the floor.
+///
+/// Whether the cache has lapsed is judged against this client's own clock,
+/// `now`, by the absolute moment its Server published, as every Session
+/// timestamp is read: a client on another machine is out by however far the
+/// two clocks disagree, which a lifetime of minutes leaves unnoticed. It is a
+/// line about the Session rather than a Notice: no interaction dismisses it,
+/// and it stands for as long as it is true, until the next Turn has written
+/// the cache afresh.
+fn prompt_cache_lapse_parts(
+    cache: Option<&crate::protocol::PromptCache>,
+    working: bool,
+    now: SessionTimestamp,
+    theme: &Theme,
+) -> Vec<SlotText> {
+    let Some(cache) = cache.filter(|cache| !working && cache.has_lapsed(now)) else {
+        return Vec::new();
+    };
+    let consequence = match cache.lapse_penalty {
+        Some(penalty) if penalty.nano_usd() < LAPSE_PENALTY_FLOOR_NANO_USD => return Vec::new(),
+        Some(penalty) => format!(
+            "next prompt costs ~{} more",
+            compact_dollars(penalty.nano_usd())
+        ),
+        None => "next prompt re-reads the whole context".to_owned(),
+    };
+    [
+        "Prompt cache lapsed".to_owned(),
+        consequence,
+        "/compact first to shrink it".to_owned(),
+    ]
+    .into_iter()
+    .map(|part| SlotText::new(part, theme.feedback.warning))
+    .collect()
 }
 
 /// One Cost figure as the footer states it: a known zero only where more may

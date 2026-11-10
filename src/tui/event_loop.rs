@@ -798,11 +798,7 @@ async fn run_loop(
                 ControlFlow::Continue(())
             }
             () = wait_for_prompt_cache_lapse(&mut run.prompt_cache_lapse) => {
-                // The frame judges the lapse off the Session clock, so the
-                // wakeup only has to draw it.
-                run.prompt_cache_lapse = None;
-                run.needs_redraw = true;
-                ControlFlow::Continue(())
+                run.wake_for_prompt_cache_lapse()
             }
             () = wait_for_spinner_tick(&mut run.spinner_tick) => run.advance_spinner(),
             session_event = next_session_event(&mut run.tasks.subscription) => {
@@ -2153,17 +2149,39 @@ impl RunLoop {
         });
     }
 
-    /// Keeps exactly one wakeup at the moment the open Session's Prompt Cache
-    /// lapses, while that is still ahead, and none once it has passed, the
-    /// Session has gone, or its next Turn has moved the moment on.
+    /// Keeps exactly one wakeup for the moment the open Session's Prompt
+    /// Cache lapses, while that is still ahead, and none once it has passed,
+    /// the Session has gone, or its next Turn has moved the moment on.
+    ///
+    /// The moment is on the wall clock, which a monotonic sleep does not
+    /// follow through a suspend, so no wakeup waits longer than
+    /// [`PROMPT_CACHE_LAPSE_RECHECK`] before the wall clock is read again.
     fn sync_prompt_cache_lapse(&mut self) {
         let wanted = self.application.prompt_cache_lapse_due();
         let armed = self.prompt_cache_lapse.as_ref().map(|(moment, _)| *moment);
-        if armed == wanted.map(|(moment, _)| moment) {
+        if armed == wanted.as_ref().map(|(moment, _)| *moment) {
             return;
         }
-        self.prompt_cache_lapse =
-            wanted.map(|(moment, wait)| (moment, Box::pin(tokio::time::sleep(wait))));
+        // A moment passed while its wakeup still slept — the wall clock leapt
+        // on — is drawn now rather than when the wakeup comes.
+        if armed.is_some() && wanted.is_none() {
+            self.needs_redraw = true;
+        }
+        self.prompt_cache_lapse = wanted.map(|(moment, wait)| {
+            let wait = wait.min(PROMPT_CACHE_LAPSE_RECHECK);
+            (moment, Box::pin(tokio::time::sleep(wait)))
+        });
+    }
+
+    /// Draws the line saying the open Session's Prompt Cache has lapsed, once
+    /// the wall clock has passed the moment; a wakeup that came before it
+    /// lets the next sync wait again for what is left.
+    fn wake_for_prompt_cache_lapse(&mut self) -> ControlFlow<Exit> {
+        self.prompt_cache_lapse = None;
+        if self.application.prompt_cache_lapse_due().is_none() {
+            self.needs_redraw = true;
+        }
+        ControlFlow::Continue(())
     }
 
     fn reveal_opening_loading(&mut self) -> ControlFlow<Exit> {
@@ -4982,6 +5000,10 @@ async fn wait_for_opening_loading_delay(
         None => pending().await,
     }
 }
+
+/// The longest a wakeup for a Prompt Cache's lapse sleeps before the wall
+/// clock is read again: what a suspended laptop can leave the line late by.
+const PROMPT_CACHE_LAPSE_RECHECK: Duration = Duration::from_secs(10);
 
 async fn wait_for_prompt_cache_lapse(
     lapse: &mut Option<(

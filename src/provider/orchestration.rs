@@ -12,7 +12,6 @@ use delegations::{
     PendingDelegation, SteerOutcome, open_resume, refuse_while_stopping, refuse_withdrawn,
     resume_refusal, run_delegated_turn, steer_with_delegation,
 };
-use prompt_cache::PromptCacheWrites;
 use questionnaires::{LiveQuestionnaires, QuestionnaireDeliveries};
 use watch_outcomes::{HeldWatchOutcomes, WatchOutcome};
 
@@ -49,7 +48,7 @@ use crate::protocol::{
     Activity, ActivityId, ActivityStatus, AgentIdentity, AgentSelection, ContextBreakdown,
     InterruptOutcome, Message, MessageId, MessageRole, MessageStatus, Prompt, PromptDelivery,
     PromptId, PromptOrder, PromptStatus, ProviderId, RouteDecision, SessionChange, SessionId,
-    SessionTimestamp, SettingsSnapshot, SkillPromptDelivery, TurnId, TurnStatus,
+    SettingsSnapshot, SkillPromptDelivery, TurnId, TurnStatus,
 };
 use crate::sessions::{
     ApprovalPostureUpdate, BrokeredSpawn, BrokeredSpawnCap, BrokeredSpawnError,
@@ -177,6 +176,9 @@ pub(crate) struct ProviderOrchestrator {
     /// How long an idle Session's own Provider process is kept; see
     /// [`PROVIDER_IDLE_SHUTDOWN`].
     idle_shutdown: Duration,
+    /// The Server's clock, which the moment a Prompt Cache lapses is counted
+    /// on.
+    clock: crate::clock::ServerClock,
     /// Mints the Broker token each Provider start is handed.
     broker: BrokerAccess,
     /// Where the bytes of a delivered Prompt's Attachments are read from.
@@ -534,6 +536,9 @@ struct ProviderSessionContext {
     /// How long the actor's Provider connection waits idle before it is let
     /// go of, where its runtime launches a process for each Session.
     idle_shutdown: Duration,
+    /// The Server's clock, which the moment a Prompt Cache lapses is counted
+    /// on.
+    clock: crate::clock::ServerClock,
     runtime: Arc<dyn ProviderRuntime>,
     sessions: SessionStore,
     skill_catalog: SkillCatalogService,
@@ -1622,6 +1627,7 @@ impl ProviderOrchestrator {
         checkout_skill_timeout: Duration,
         stop_timeout: Duration,
         idle_shutdown: Duration,
+        clock: crate::clock::ServerClock,
         broker: BrokerAccess,
         attachments: AttachmentStore,
     ) -> Self {
@@ -1632,6 +1638,7 @@ impl ProviderOrchestrator {
         let (shutdown_complete, _) = watch::channel(false);
         let (report_notices, held_reports) = mpsc::unbounded_channel();
         sessions.announce_held_reports_to(report_notices);
+        let (lapse_rate_requests, lapse_rates_asked) = mpsc::unbounded_channel();
         let orchestrator = Self {
             runtimes: Arc::new(runtimes),
             sessions,
@@ -1649,6 +1656,7 @@ impl ProviderOrchestrator {
             checkout_skill_timeout,
             stop_timeout,
             idle_shutdown,
+            clock,
             checkout_guards: Default::default(),
             connected_incarnations: Default::default(),
             broker,
@@ -1658,6 +1666,17 @@ impl ProviderOrchestrator {
         // Every Report the store comes to hold is handed on to the
         // actor that reaches its Agent, for as long as the Server runs.
         tokio::spawn(forward_held_reports(orchestrator.clone(), held_reports));
+        // A Lapse Penalty is forecast at prices only a Provider runtime knows.
+        tokio::spawn(prompt_cache::answer_lapse_rate_requests(
+            orchestrator.runtimes.clone(),
+            orchestrator.sessions.clone(),
+            orchestrator.updates.clone(),
+            orchestrator.shutdown.clone(),
+            lapse_rates_asked,
+        ));
+        orchestrator
+            .sessions
+            .forecast_lapse_penalties_through(lapse_rate_requests);
         orchestrator
     }
 
@@ -1987,6 +2006,7 @@ impl ProviderOrchestrator {
                 checkout_skill_timeout: self.checkout_skill_timeout,
                 stop_timeout: self.stop_timeout,
                 idle_shutdown: self.idle_shutdown,
+                clock: self.clock.clone(),
                 runtime,
                 sessions,
                 skill_catalog: self.skill_catalog.clone(),
@@ -2802,6 +2822,7 @@ async fn run_provider_session(
         checkout_skill_timeout,
         stop_timeout,
         idle_shutdown,
+        clock,
         runtime,
         sessions,
         skill_catalog,
@@ -2851,9 +2872,6 @@ async fn run_provider_session(
     // A Provider process launched for this Session alone is stopped once
     // the Session has waited idle long enough; a shared one stays.
     let stops_when_idle = runtime.launches_a_process_per_session();
-    // What the Turns have written of the Prompt Cache, published once each
-    // settles.
-    let mut prompt_cache_writes = PromptCacheWrites::default();
     let connector = ProviderConnector {
         runtime: &runtime,
         source_control: &source_control,
@@ -2877,9 +2895,6 @@ async fn run_provider_session(
             break;
         }
         if active.is_none() {
-            // The Turn that settled wrote the Prompt Cache afresh, so the
-            // moment it lapses is published before anything begins another.
-            prompt_cache_writes.publish(&sessions, &updates, session_id, &runtime);
             // What the store is told the Provider is about to wake the Agent
             // with holds a Move, however it is asked. Nothing is on its way
             // over a connection that has gone.
@@ -3101,8 +3116,10 @@ async fn run_provider_session(
                         } => match event {
                             // A moment the cache lapses at is no output of
                             // any Turn on its own.
-                            ProviderEvent::PromptCacheLapseReported { lapses_at } => {
-                                prompt_cache_writes.observe_reported_lapse(lapses_at);
+                            event @ ProviderEvent::PromptCacheLapseReported { .. } => {
+                                prompt_cache::note_reported_lapse(
+                                    &sessions, &updates, &runtime, session_id, &event,
+                                );
                             }
                             ProviderEvent::ContextFill { report } => {
                                 if let Some(turn_id) = report.turn_id.or_else(|| {
@@ -3234,8 +3251,9 @@ async fn run_provider_session(
                                 );
                                 let mut continuation =
                                     ActiveProviderTurn::new_continuation(turn_id);
-                                prompt_cache_writes
-                                    .observe_turn_output(&event, SessionTimestamp::now());
+                                prompt_cache::note_turn_output(
+                                    &sessions, &runtime, &clock, session_id, turn_id, &event,
+                                );
                                 let projection = project_provider_event(
                                     &sessions,
                                     &updates,
@@ -4663,7 +4681,14 @@ async fn run_provider_session(
                             .expect("Provider connection exists while its Turn is active")
                             .identity
                             .clone();
-                        prompt_cache_writes.observe_turn_output(&event, SessionTimestamp::now());
+                        prompt_cache::note_turn_output(
+                            &sessions,
+                            &runtime,
+                            &clock,
+                            session_id,
+                            current.turn_id,
+                            &event,
+                        );
                         // Settle before delivering queued work. The next loop drains ready
                         // Provider events first, so a buffered native Continuation establishes
                         // ownership before a Prompt can take its output and terminal result.
@@ -8610,6 +8635,7 @@ running 1 test",
             Duration::from_secs(5),
             PROVIDER_STOP_TIMEOUT,
             idle_shutdown,
+            crate::clock::ServerClock::default(),
             BrokerAccess::new(
                 "http://127.0.0.1:1/broker".to_owned(),
                 settings,

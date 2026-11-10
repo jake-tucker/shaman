@@ -226,6 +226,9 @@ impl SessionStore {
         // Session never has one: none survives a restart, and eviction stops
         // a tree's actors before it lets the tree go.
         state.adopt_hydrated_postures(&self.storage, &hydrated, &self.settings.borrow().settings);
+        // No Lapse Penalty is stored, so each history read in has its
+        // forecast again.
+        state.forecast_restored_lapse_penalties(&hydrated);
         Ok(hydrated
             .into_iter()
             .filter(|id| {
@@ -468,7 +471,8 @@ pub(super) fn restored_record(
     let (updates, _) = tokio::sync::broadcast::channel(SESSION_UPDATE_CAPACITY);
     let record = SessionRecord {
         context_fill_order: None,
-        priced_model: None,
+        prompt_cache_write: None,
+        lapse_rates: None,
         snapshot: persisted.snapshot,
         summary: persisted.summary,
         resume_states: persisted.resume_states,
@@ -509,7 +513,8 @@ impl SessionRecord {
     fn keep_runtime_of(&mut self, held: SessionRecord) {
         let SessionRecord {
             context_fill_order,
-            priced_model,
+            prompt_cache_write,
+            lapse_rates,
             snapshot: _,
             summary: _,
             updates,
@@ -533,7 +538,8 @@ impl SessionRecord {
             sidekick_work,
         } = held;
         self.context_fill_order = context_fill_order;
-        self.priced_model = priced_model;
+        self.prompt_cache_write = prompt_cache_write;
+        self.lapse_rates = lapse_rates;
         self.updates = updates;
         self.next_prompt_order = self.next_prompt_order.max(next_prompt_order);
         self.steer_targets = steer_targets;

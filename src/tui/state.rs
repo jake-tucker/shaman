@@ -6792,7 +6792,7 @@ impl Application {
         if session.parent.is_some() {
             return None;
         }
-        let lapses_at = session.prompt_cache?.lapses_at;
+        let lapses_at = session.prompt_cache.as_ref()?.lapses_at;
         let ahead = lapses_at
             .0
             .checked_sub(self.state.session_now().0)

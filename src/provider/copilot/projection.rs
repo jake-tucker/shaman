@@ -2141,9 +2141,15 @@ fn project_session_event(
             Ok(projected)
         }
         // A manual compaction's summarising call is the Turn's Usage as its
-        // `compactionTokensUsed` reports it, once.
+        // `compactionTokensUsed` reports it, once. The moment its call says
+        // the conversation's Prompt Cache lapses is no Usage, and is taken.
         SessionEventType::AssistantUsage if correlation.is_compacting_on_request() => {
-            Ok(Vec::new())
+            Ok(reported::<AssistantUsageData>(&event)
+                .filter(|_| !has_parent_tool_call(&event))
+                .and_then(|usage| reported_lapse(&event, &usage))
+                .map(|lapse| attributed(None, lapse))
+                .into_iter()
+                .collect())
         }
         SessionEventType::AssistantUsage => {
             if correlation.open_main_streams().is_none() {
@@ -2185,13 +2191,8 @@ fn project_session_event(
             }
             // A call of the conversation that wrote or refreshed its Prompt
             // Cache says when that cache lapses; Suru takes the moment as given.
-            if current_call
-                && let Some(lapses_at) = usage.cache_expires_at.as_deref().and_then(lapse_moment)
-            {
-                projected.push(attributed(
-                    None,
-                    ProviderEvent::PromptCacheLapseReported { lapses_at },
-                ));
+            if current_call && let Some(lapse) = reported_lapse(&event, &usage) {
+                projected.push(attributed(None, lapse));
             }
             if current_call && usage.is_auto == Some(false) {
                 projected.extend(
@@ -2565,6 +2566,20 @@ fn metered(
     reported_cost: Option<Cost>,
 ) -> ProviderEvent {
     ReportedMetering::accumulate_on(&mut streams.metering, model, usage, reported_cost).event()
+}
+
+/// What a call's `assistant.usage` says of the Prompt Cache it wrote or
+/// refreshed: when it lapses, on the Model the call names, kept for as long
+/// as its `cacheTtlSeconds` says. None for a call that touched no cache.
+fn reported_lapse(event: &SessionEvent, usage: &AssistantUsageData) -> Option<ProviderEvent> {
+    Some(ProviderEvent::PromptCacheLapseReported {
+        lapses_at: usage.cache_expires_at.as_deref().and_then(lapse_moment)?,
+        model: ModelId::named(&usage.model),
+        lifetime: reported_cache_ttl(event)
+            .and_then(|seconds| u64::try_from(seconds).ok())
+            .filter(|seconds| *seconds > 0)
+            .map(std::time::Duration::from_secs),
+    })
 }
 
 /// The moment a call's `cacheExpiresAt` names, an RFC 3339 timestamp, as

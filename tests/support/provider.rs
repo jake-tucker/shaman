@@ -8,7 +8,7 @@ use std::{
 
 use futures_util::{StreamExt, stream};
 use serde_json::Value;
-use suru::pricing::{CacheRates, CacheRatesFuture};
+use suru::pricing::{CacheRates, CacheRatesFuture, PromptRates, PromptRatesFuture};
 use suru::protocol::{
     AgentIdentity, AgentSelection, ContextBreakdown, ModelDescriptor, ModelId, ProviderId,
     ProviderUnavailability, SkillCatalog, SkillCatalogCapabilities, SkillCatalogStatus,
@@ -94,6 +94,9 @@ pub struct ControlledProviderRuntime {
     /// The rates this Provider prices each Model at today, as a pricing
     /// source would state them; none until a test prices one.
     cache_rates: Arc<Mutex<HashMap<ModelId, CacheRates>>>,
+    /// What this Provider prices a prompt on each Model at by its size, where
+    /// a test states more than its flat cache rates.
+    prompt_rates: Arc<Mutex<HashMap<ModelId, PromptRates>>>,
     starts: mpsc::UnboundedSender<StartRequest>,
     errands: mpsc::UnboundedSender<ErrandRequest>,
     /// Where a session-shaped Errand's startup goes. It is kept apart from
@@ -349,6 +352,7 @@ impl ControlledProvider {
                 cache_lifetime: Arc::default(),
                 context_breakdown_offered: Arc::new(AtomicBool::new(true)),
                 cache_rates: Arc::default(),
+                prompt_rates: Arc::default(),
                 starts: starts_tx,
                 errands: errands_tx,
                 errand_starts: errand_starts_tx,
@@ -422,6 +426,16 @@ impl ControlledProviderRuntime {
         self.cache_rates
             .lock()
             .expect("controlled Provider cache rates lock is not poisoned")
+            .insert(model, rates);
+    }
+
+    /// Prices a prompt on `model` at `rates` from here on, standing in for a
+    /// Provider whose prices step up for a long context or list a cache kept
+    /// an hour apart.
+    pub fn price_prompts(&self, model: ModelId, rates: PromptRates) {
+        self.prompt_rates
+            .lock()
+            .expect("controlled Provider prompt rates lock is not poisoned")
             .insert(model, rates);
     }
 
@@ -1256,6 +1270,21 @@ impl ProviderRuntime for ControlledProviderRuntime {
             .get(model)
             .copied();
         Box::pin(async move { rates })
+    }
+
+    fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
+        let stated = self
+            .prompt_rates
+            .lock()
+            .expect("controlled Provider prompt rates lock is not poisoned")
+            .get(model)
+            .cloned();
+        Box::pin(async move {
+            match stated {
+                Some(rates) => Some(rates),
+                None => self.cache_rates(model).await.map(PromptRates::flat),
+            }
+        })
     }
 
     fn list_models(&self) -> ProviderFuture<'_, ProviderModelDiscovery> {

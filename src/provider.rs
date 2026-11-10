@@ -13,7 +13,10 @@ use futures_util::Stream;
 use serde_json::Value;
 use tokio::sync::watch;
 
-use crate::pricing::{CacheRateLookup, CacheRates, CacheRatesFuture, EstimatedCost, PricingSource};
+use crate::pricing::{
+    CacheRateLookup, CacheRates, CacheRatesFuture, EstimatedCost, PricingSource, PromptRates,
+    PromptRatesFuture,
+};
 use crate::protocol::{
     AgentIdentity, AgentSelection, ApprovalPosture, Cost, CostBasis, CostCoverage,
     EffectiveSettings, FileChange, ModelDescriptor, ModelId, ModelOptionKind, ModelOptionRole,
@@ -140,9 +143,9 @@ impl ManualCompaction {
 }
 
 /// How long a Provider keeps a Session's Prompt Cache while the Session sits
-/// idle, which tells Suru when the cache lapses and the Session goes cold. A
-/// Provider declares nothing unless its cache lapses on idle, so one added
-/// later is never warned about a lapse it does not have.
+/// idle, which tells Suru when the cache lapses and the Session goes cold. It
+/// defaults to none, so a Provider added later is never warned about a lapse
+/// it does not have; every built-in Provider declares its own.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum CacheLifetime {
     /// The cache does not lapse on idle, so its Sessions are never cold.
@@ -156,13 +159,6 @@ pub enum CacheLifetime {
     /// of the Session's latest Turn. A moment the Provider reports all the
     /// same still outranks the assumption.
     Assumed(std::time::Duration),
-}
-
-impl CacheLifetime {
-    /// Whether a Session on this Provider can go cold at all.
-    pub const fn lapses(self) -> bool {
-        !matches!(self, Self::None)
-    }
 }
 
 /// Why a Provider's declared [`ManualCompaction`] refuses a request.
@@ -1480,6 +1476,11 @@ pub enum ProviderEvent {
     /// is no output of any Turn on its own: it begins no Continuation.
     PromptCacheLapseReported {
         lapses_at: crate::protocol::SessionTimestamp,
+        /// The Model whose call wrote the cache, where the Provider named it.
+        model: Option<ModelId>,
+        /// How long the Provider keeps the cache that call wrote, where it
+        /// said, which the write price it is forecast at depends on.
+        lifetime: Option<std::time::Duration>,
     },
     /// The Provider revised what it needs to carry the owning Session's
     /// conversation across a restart, replacing the Resume State its startup
@@ -1949,13 +1950,26 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     fn run_errand(&self, errand: ProviderErrand) -> ErrandFuture<'_>;
 
     /// The rates this Provider prices `model` at today, from which Insights
-    /// estimates what caching saved; absent where it knows no rate table
-    /// that prices the Model's fresh input, cache reads, and cache writes
-    /// alike. Never launches anything only to answer, so a Provider whose
-    /// rates live in a harness not running now answers none.
+    /// estimates what caching saved, and — through [`Self::prompt_rates`],
+    /// unless the runtime prices prompts by size itself — a Lapse Penalty is
+    /// forecast; absent where it knows no rate table that prices the Model's
+    /// fresh input, cache reads, and cache writes alike. Never launches
+    /// anything only to answer, so a Provider whose rates live in a harness
+    /// not running now answers none.
     fn cache_rates<'a>(&'a self, model: &'a ModelId) -> CacheRatesFuture<'a> {
         let _ = model;
         Box::pin(async { None })
+    }
+
+    /// What this Provider prices a prompt's input on `model` at, by how large
+    /// the prompt is and how long its cache is kept, from which a Session's
+    /// Lapse Penalty is forecast for the context it holds. Defaulted to
+    /// [`Self::cache_rates`] at every size, its writes at the default
+    /// lifetime's price; a runtime whose prices step up for a long context,
+    /// or list a cache kept an hour apart, states them here. Never launches
+    /// anything only to answer.
+    fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
+        Box::pin(async move { self.cache_rates(model).await.map(PromptRates::flat) })
     }
 
     /// The Errand Selection this Provider declares: the Model its own Errands
@@ -2005,10 +2019,10 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     }
 
     /// How long this Provider keeps a Session's Prompt Cache while it sits
-    /// idle. Defaulted to [`CacheLifetime::None`], so a Provider whose cache
-    /// does not lapse on idle declares nothing and its Sessions are never
-    /// cold; every lapse moment and Lapse Penalty is read off this one
-    /// declaration.
+    /// idle. Defaulted to [`CacheLifetime::None`], so a Provider added later
+    /// is never warned about a lapse it does not have; every built-in
+    /// Provider declares its own, none included. Every lapse moment is read
+    /// off this one declaration.
     fn cache_lifetime(&self) -> CacheLifetime {
         CacheLifetime::None
     }
@@ -2504,7 +2518,7 @@ mod tests {
     }
 
     /// Copilot reports when its Prompt Cache lapses; Codex's is taken not to
-    /// lapse on idle; Claude declares none until it infers its own.
+    /// lapse on idle; Claude declares none until Suru infers its lifetime.
     #[test]
     fn each_built_in_runtime_declares_the_cache_lifetime_its_provider_has() {
         let declared = runtimes(None)

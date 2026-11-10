@@ -19,7 +19,7 @@ use super::{
     transport::CopilotConnector,
 };
 use crate::{
-    pricing::CacheRatesFuture,
+    pricing::{CacheRatesFuture, PromptRatesFuture},
     protocol::{
         AgentSelection, CopilotSettings, EffectiveSettings, ModelDescriptor, ModelId,
         ModelOptionChoiceId, ModelOptionId, ModelOptionSelection, ModelOptionValue, ProviderId,
@@ -334,6 +334,15 @@ impl ProviderRuntime for CopilotRuntime {
         let rates = self
             .pricing()
             .and_then(|pricing| pricing.cache_rates(model.as_str()));
+        Box::pin(async move { rates })
+    }
+
+    /// The prices the same catalog lists for each tier of prompt size, with
+    /// each tier's hour-long write price, as a Copilot Cost is worked out at.
+    fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
+        let rates = self
+            .pricing()
+            .and_then(|pricing| pricing.prompt_rates(model.as_str()));
         Box::pin(async move { rates })
     }
 }

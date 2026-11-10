@@ -138,7 +138,7 @@ impl ValidatedChanges {
                     next.session.context_fill = *context_fill;
                 }
                 SessionChange::PromptCacheChanged { prompt_cache } => {
-                    next.session.prompt_cache = *prompt_cache;
+                    next.session.prompt_cache.clone_from(prompt_cache);
                 }
                 SessionChange::TurnAdded { turn } => {
                     let previous_model = next

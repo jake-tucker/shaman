@@ -17,8 +17,8 @@ use crate::{
         Activity, ActivityId, ActivityStatus, AgentId, AgentIdentity, AgentSelection,
         AttachmentBinding, Author, Cost, CostBasis, FileChange, Message, MessageId, MessageRole,
         MessageStatus, ModelDescriptor, ModelId, ModelOptionChoiceId, ModelOptionId,
-        ModelOptionSelection, ModelOptionValue, Outlook, Prompt, PromptDelivery, PromptId,
-        PromptOrder, PromptStatus, PromptWithdrawal, ProviderId, Session, SessionId,
+        ModelOptionSelection, ModelOptionValue, Outlook, Prompt, PromptCache, PromptDelivery,
+        PromptId, PromptOrder, PromptStatus, PromptWithdrawal, ProviderId, Session, SessionId,
         SessionRevision, SessionStandingInputs, SessionSummary, SessionTimestamp, SkillId,
         SkillInvocation, TextSpan, TranscriptItem, Turn, TurnId, TurnStatus,
         UnreadableSessionSummary, Usage, Workspace, WorkspaceDescription, WorkspaceId,
@@ -739,7 +739,7 @@ impl SessionRow {
                 .session
                 .prompt_cache
                 .as_ref()
-                .map(|cache| encode(session_id, "Prompt Cache", cache))
+                .map(|cache| encode(session_id, "Prompt Cache", &StoredPromptCache::from(cache)))
                 .transpose()?,
         })
     }
@@ -797,8 +797,9 @@ impl SessionRow {
                 prompt_cache: self
                     .prompt_cache
                     .as_deref()
-                    .map(|cache| decode(&session_id, "Prompt Cache", cache))
-                    .transpose()?,
+                    .map(|cache| decode::<StoredPromptCache>(&session_id, "Prompt Cache", cache))
+                    .transpose()?
+                    .map(PromptCache::from),
                 id,
                 execution_directory: metadata.execution_directory,
                 pending_move: metadata.pending_move,
@@ -1179,6 +1180,39 @@ fn transcript_identity(item: TranscriptItem) -> TranscriptIdentity {
     match item {
         TranscriptItem::Message { message_id } => TranscriptIdentity::Message(message_id),
         TranscriptItem::Activity { activity_id } => TranscriptIdentity::Activity(activity_id),
+    }
+}
+
+/// A Session's Prompt Cache as storage holds it: the moment it lapses and the
+/// Model whose call wrote it, but never the Lapse Penalty, which is a
+/// forecast, and is figured afresh once the Session is read back.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct StoredPromptCache {
+    lapses_at: SessionTimestamp,
+    written_by: crate::protocol::ModelId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lifetime_ms: Option<u64>,
+}
+
+impl From<&PromptCache> for StoredPromptCache {
+    fn from(cache: &PromptCache) -> Self {
+        Self {
+            lapses_at: cache.lapses_at,
+            written_by: cache.written_by.clone(),
+            lifetime_ms: cache.lifetime_ms,
+        }
+    }
+}
+
+impl From<StoredPromptCache> for PromptCache {
+    fn from(stored: StoredPromptCache) -> Self {
+        Self {
+            lapses_at: stored.lapses_at,
+            written_by: stored.written_by,
+            lifetime_ms: stored.lifetime_ms,
+            lapse_penalty: None,
+        }
     }
 }
 

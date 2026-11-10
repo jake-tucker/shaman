@@ -10,7 +10,7 @@ use github_copilot_sdk::rpc::Model;
 
 use super::catalog::{token_count, token_prices};
 use crate::{
-    pricing::CacheRates,
+    pricing::{CacheRates, PromptRateTier, PromptRates},
     protocol::{Cost, ModelPrice, ModelPriceTier, Usage},
 };
 
@@ -64,6 +64,18 @@ impl CopilotPricing {
             .cache_rates()
     }
 
+    /// The rates Copilot's catalog prices a prompt on `model` at: see
+    /// [`PriceSchedule::prompt_rates`]. Absent where it lists no price for
+    /// fresh input, or no catalog has loaded yet.
+    pub(super) fn prompt_rates(&self, model: &str) -> Option<PromptRates> {
+        self.table
+            .lock()
+            .expect("Copilot pricing lock is not poisoned")
+            .models
+            .get(model)?
+            .prompt_rates()
+    }
+
     pub(super) fn cost(
         &self,
         model: &str,
@@ -112,7 +124,37 @@ impl PriceSchedule {
     /// price is the default five-minute one, the hour-long write price set
     /// aside. Absent where the tier lists no fresh-input price.
     fn cache_rates(&self) -> Option<CacheRates> {
-        let tier = &self.standard;
+        self.tier_rates(&self.standard)
+    }
+
+    /// Every tier's input rates in USD per million tokens, as a Lapse
+    /// Penalty is forecast at for a context of a particular size: the
+    /// standard tier for a prompt up to its largest, and the long-context
+    /// tier beyond it — the tiers a Cost is worked out at — each beside its
+    /// hour-long write price. Absent where the standard tier lists no
+    /// fresh-input price; a long-context tier listing none is passed over.
+    fn prompt_rates(&self) -> Option<PromptRates> {
+        let tier = |prices: &TierPrices, max_prompt_tokens| {
+            Some(PromptRateTier {
+                max_prompt_tokens,
+                rates: self.tier_rates(prices)?,
+                hour_cache_write: prices
+                    .cache_write_1h
+                    .map(|price| self.usd_per_million(price)),
+            })
+        };
+        let mut tiers = vec![tier(&self.standard, self.standard_max_prompt_tokens)?];
+        if let Some(long_context) = self
+            .long_context
+            .as_ref()
+            .and_then(|prices| tier(prices, self.long_context_max_prompt_tokens))
+        {
+            tiers.push(long_context);
+        }
+        PromptRates::tiered(tiers)
+    }
+
+    fn tier_rates(&self, tier: &TierPrices) -> Option<CacheRates> {
         Some(CacheRates {
             input: self.usd_per_million(tier.input?),
             cache_read: tier.cache_read.map(|price| self.usd_per_million(price)),

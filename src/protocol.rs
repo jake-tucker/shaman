@@ -3820,15 +3820,27 @@ pub struct ContextFill {
 }
 
 /// A Session's Prompt Cache as its latest Turn left it: the moment it lapses,
-/// leaving the Session cold, and the Lapse Penalty its next Prompt pays once
-/// it has. A reader judges whether the moment has passed against its own
-/// clock, as it reads every other Session timestamp.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// leaving the Session cold, the Model whose call wrote it, and the Lapse
+/// Penalty its next Prompt pays once it has.
+///
+/// A reader judges whether the moment has passed against its own wall clock,
+/// as it reads every other Session timestamp, so a client on another machine
+/// is out by however far the two clocks disagree.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PromptCache {
     pub lapses_at: SessionTimestamp,
-    /// Absent where the Context Fill or its Model's token prices are unknown,
-    /// never zero for want of them.
+    /// The Model whose call last wrote the cache: the Actual Model, where the
+    /// Provider named it, and otherwise the Model the Turn selected.
+    pub written_by: ModelId,
+    /// How long the Provider keeps the cache that call wrote, in
+    /// milliseconds, where it said or Suru assumes it: a cache kept an hour
+    /// is written at a price of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifetime_ms: Option<u64>,
+    /// Suru's forecast, never stored: absent where the Context Fill or the
+    /// token prices it is figured from are unknown, never zero for want of
+    /// them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lapse_penalty: Option<LapsePenalty>,
 }
@@ -3843,22 +3855,32 @@ impl PromptCache {
 /// Suru's forecast, in USD, of what a cold Session's next Prompt costs beyond
 /// what it would have cost warm. It is a type of its own rather than a
 /// [`Cost`] so that it can never be recorded as one, nor reach Usage
-/// Metrics. Held in billionths of one USD, and never negative.
+/// Metrics. Held in billionths of one USD, as a Cost is, and never negative.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LapsePenalty(u64);
 
 impl LapsePenalty {
-    const NANO_USD_PER_USD: f64 = 1_000_000_000.0;
-
     /// A forecast of `usd`, held at zero where the figure would run negative,
-    /// and absent where it is not a finite, representable figure.
+    /// and absent where it is not finite or lies beyond what billionths of a
+    /// USD hold.
     pub fn from_usd(usd: f64) -> Option<Self> {
-        let nano_usd = (usd.max(0.0) * Self::NANO_USD_PER_USD).round();
-        (nano_usd.is_finite() && nano_usd < u64::MAX as f64).then_some(Self(nano_usd as u64))
+        if !usd.is_finite() {
+            return None;
+        }
+        let nano_usd = (usd.max(0.0) * Cost::NANO_USD_PER_USD).round();
+        (nano_usd < u64::MAX as f64).then_some(Self(nano_usd as u64))
+    }
+
+    pub const fn from_nano_usd(nano_usd: u64) -> Self {
+        Self(nano_usd)
+    }
+
+    pub const fn nano_usd(self) -> u64 {
+        self.0
     }
 
     pub fn as_usd(self) -> f64 {
-        self.0 as f64 / Self::NANO_USD_PER_USD
+        self.0 as f64 / Cost::NANO_USD_PER_USD
     }
 }
 
@@ -5096,7 +5118,7 @@ fn blended_tokens(
 pub struct Cost(u64);
 
 impl Cost {
-    const NANO_USD_PER_USD: f64 = 1_000_000_000.0;
+    pub(crate) const NANO_USD_PER_USD: f64 = 1_000_000_000.0;
 
     /// Admits a Provider's native USD figure, rejecting unknown, non-finite,
     /// negative, and unrepresentable values at the Provider boundary. A

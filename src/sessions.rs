@@ -47,6 +47,7 @@ mod posture;
 mod posture_tests;
 mod projection;
 mod prompt_cache;
+pub(crate) use prompt_cache::{CacheOutput, LapseRateRequest, ReportedLapse};
 mod prompts;
 mod remote_reports;
 pub(crate) use remote_reports::{Pairing, RemoteContribution, RemoteOwing, RemoteRaise};
@@ -227,13 +228,20 @@ struct SessionStoreState {
     /// is for, whose Agent the orchestrator then delivers it to (see
     /// [`SessionStore::announce_held_reports_to`]).
     report_notices: Option<mpsc::UnboundedSender<SessionId>>,
+    /// Where the store asks for the prices a Lapse Penalty is forecast at,
+    /// once Provider orchestration has said it answers them (see
+    /// [`SessionStore::forecast_lapse_penalties_through`]).
+    lapse_rate_requests: Option<mpsc::UnboundedSender<prompt_cache::LapseRateRequest>>,
 }
 
 struct SessionRecord {
     context_fill_order: Option<(TurnId, u64)>,
-    /// What the Session's Lapse Penalty was last priced at; see
-    /// [`prompt_cache::PricedModel`]. Never stored: the penalty it priced is.
-    priced_model: Option<prompt_cache::PricedModel>,
+    /// What the Turn at work has written of the Session's Prompt Cache, held
+    /// until it settles. Never stored: no Turn outlives its process.
+    prompt_cache_write: Option<prompt_cache::StagedWrite>,
+    /// The prices the Session's Lapse Penalty is forecast at. Never stored,
+    /// nor is the penalty.
+    lapse_rates: Option<prompt_cache::LapseRates>,
     snapshot: SessionSnapshot,
     summary: SessionSummary,
     updates: broadcast::Sender<SessionUpdate>,
@@ -482,6 +490,7 @@ impl SessionStore {
             registry_changes: Default::default(),
             worked_order: Vec::new(),
             report_notices: None,
+            lapse_rate_requests: None,
             continuations_awaited: Default::default(),
             agent_moves: Default::default(),
         };

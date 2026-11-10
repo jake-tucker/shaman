@@ -46,15 +46,11 @@ impl SessionStore {
                 context_fill: Some(fill),
             }],
         )?;
-        let record = state
+        state
             .sessions
             .get_mut(&session_id)
-            .expect("Session was just updated");
-        record.context_fill_order = Some((turn_id, report.sequence));
-        // The Lapse Penalty is figured from the Context Fill, so it follows.
-        if let Some(changes) = record.repriced_prompt_cache() {
-            record.commit_derived(&self.storage, session_id, changes)?;
-        }
+            .expect("Session was just updated")
+            .context_fill_order = Some((turn_id, report.sequence));
         Ok(())
     }
 

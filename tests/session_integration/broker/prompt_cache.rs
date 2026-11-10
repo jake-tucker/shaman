@@ -27,10 +27,16 @@ async fn a_brokered_subagents_lapse_is_its_own_and_never_its_callers() {
         .caller_provider
         .emit_and_wait_until_observed(ProviderEvent::PromptCacheLapseReported {
             lapses_at: callers,
+            model: None,
+            lifetime: None,
         })
         .await;
     child_provider
-        .emit_and_wait_until_observed(ProviderEvent::PromptCacheLapseReported { lapses_at: childs })
+        .emit_and_wait_until_observed(ProviderEvent::PromptCacheLapseReported {
+            lapses_at: childs,
+            model: None,
+            lifetime: None,
+        })
         .await;
     child_provider
         .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)

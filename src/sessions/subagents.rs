@@ -569,7 +569,8 @@ impl SessionStoreState {
             session_id,
             SessionRecord {
                 context_fill_order: None,
-                priced_model: None,
+                prompt_cache_write: None,
+                lapse_rates: None,
                 snapshot,
                 summary,
                 updates,

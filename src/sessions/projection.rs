@@ -65,6 +65,11 @@ impl SessionStoreState {
         turn_start: Option<PromptId>,
     ) -> anyhow::Result<SessionUpdate> {
         let committed = self.commit_admitted(storage, session_id, changes, turn_start);
+        // A revision that moved whose prices the Lapse Penalty is forecast at
+        // asks for them once it has landed.
+        if committed.is_ok() {
+            self.ask_for_lapse_rates(session_id);
+        }
         if committed.is_err()
             && let Some(prompt_id) = turn_start
             && let Some(record) = self.sessions.get_mut(&session_id)
@@ -834,8 +839,8 @@ impl SessionRecord {
     }
 
     /// Commits changes the server derived rather than a Provider or a reader
-    /// drove — the Subagent roll-up, the Working and Monitoring roll-up, and
-    /// Title derivation. It moves the revision
+    /// drove — the Subagent roll-up, the Working and Monitoring roll-up,
+    /// Title derivation, and the Lapse Penalty forecast. It moves the revision
     /// and persists like any commit, but leaves `updated_at` alone: a Session's
     /// own moment of last movement is about its own work. A client holding the
     /// change holds the whole of it.
@@ -1007,6 +1012,14 @@ impl SessionRecord {
                 SessionChange::SessionWaitingOnSubagentsChanged {
                     waiting_on_subagents,
                 },
+            );
+        }
+        // The Prompt Cache a Turn wrote lands in the revision that settles it,
+        // and the Lapse Penalty in whichever moves what it is figured from.
+        if let Some(prompt_cache) = self.derived_prompt_cache(&revision.changes) {
+            self.derive(
+                &mut revision,
+                SessionChange::PromptCacheChanged { prompt_cache },
             );
         }
         close_revision(&mut self.snapshot, revision.revision);

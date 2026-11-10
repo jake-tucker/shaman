@@ -30,9 +30,9 @@ use crate::{
         AgentSelection, ClaudePermissionMode, EffectiveSettings, ModelId, ProviderId, SkillCatalog,
     },
     provider::{
-        ErrandFuture, ManualCompaction, ProviderErrand, ProviderError, ProviderFuture,
-        ProviderModelDiscovery, ProviderRuntime, ProviderSessionConnection, ProviderSessionRequest,
-        harness::ProcessRegistry, resolve_executable,
+        CacheLifetime, ErrandFuture, ManualCompaction, ProviderErrand, ProviderError,
+        ProviderFuture, ProviderModelDiscovery, ProviderRuntime, ProviderSessionConnection,
+        ProviderSessionRequest, harness::ProcessRegistry, resolve_executable,
     },
 };
 
@@ -182,6 +182,13 @@ impl ProviderRuntime for ClaudeRuntime {
     // whatever follows the command as what the summary should keep.
     fn manual_compaction(&self) -> ManualCompaction {
         ManualCompaction::WithInstructions
+    }
+
+    // Claude's Prompt Cache does lapse on idle, but its lifetime is to be
+    // inferred from the tiers each request writes at; until it is, Claude
+    // declares none, and its Sessions are never warned of a lapse.
+    fn cache_lifetime(&self) -> CacheLifetime {
+        CacheLifetime::None
     }
 
     fn offers_context_breakdown(&self) -> bool {

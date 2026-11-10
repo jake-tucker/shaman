@@ -74,71 +74,44 @@ pub(super) struct LandingFooterSlotContext {
     pub(super) connection: SlotText,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct SessionComposerTopSlotContext {
     pub(super) session_id: SessionId,
     pub(super) width: u16,
-    /// The Session's own Prompt Cache as its Server published it: absent where
-    /// its Provider has no Cache Lifetime, or no Turn has written the cache.
+    /// The Session's own Prompt Cache as its Server published it: absent
+    /// where its Provider has no Cache Lifetime, or no Turn has written it.
     pub(super) prompt_cache: Option<PromptCache>,
-    /// Whether the Session is Working, which no line here speaks over.
-    pub(super) working: bool,
-    /// The moment the frame is drawn at, on the clock the Session's
-    /// timestamps are read against.
-    pub(super) now: SessionTimestamp,
-    /// The style a line warning of what the next Prompt costs is drawn in.
-    pub(super) warning: Style,
+    /// The line saying the Prompt Cache has lapsed, part by part, already
+    /// worded and styled: none where nothing is to be said of it.
+    pub(super) lapse: Vec<SlotText>,
 }
 
-/// The least Lapse Penalty worth warning of, in USD: five cents. Below it a cold Session is no surprise worth a line.
-const LAPSE_PENALTY_FLOOR_USD: f64 = 0.05;
-
-/// What the line above the composer of a Session whose Prompt Cache has
-/// lapsed says, part by part: that it lapsed, what the next Prompt costs
-/// beyond what it would have warm — or that it re-reads the whole context,
-/// where that cannot be priced — and how to shrink it. None while the Session
-/// is Working, while the cache is warm, and where the penalty is known to
-/// fall under the floor. It is a line about the Session rather than a Notice:
-/// no interaction dismisses it, and it stands for as long as it is true,
-/// until the next Turn has written the cache afresh.
-fn prompt_cache_parts(context: &SessionComposerTopSlotContext) -> Option<[String; 3]> {
-    let cache = context.prompt_cache.filter(|_| !context.working)?;
-    if !cache.has_lapsed(context.now) {
-        return None;
-    }
-    let consequence = match cache.lapse_penalty {
-        Some(penalty) if penalty.as_usd() < LAPSE_PENALTY_FLOOR_USD => return None,
-        Some(penalty) => format!("next prompt costs ~${:.2} more", penalty.as_usd()),
-        None => "next prompt re-reads the whole context".to_owned(),
-    };
-    Some([
-        "Prompt cache lapsed".to_owned(),
-        consequence,
-        "/compact first to shrink it".to_owned(),
-    ])
-}
-
-/// `parts` joined by ` · ` on as few rows of `width` as hold them whole,
-/// a row breaking only between parts, so no part is cut short while the
-/// column has room for it on a row of its own.
-fn parted_lines(width: u16, parts: &[String], style: Style) -> Vec<Line<'static>> {
+/// `parts` joined by ` · ` on as few rows of `width` as hold them whole, a
+/// row breaking only between parts, so no part is cut short while the column
+/// has room for it on a row of its own.
+fn parted_lines(width: u16, parts: &[SlotText]) -> Vec<Line<'static>> {
     const SEPARATOR: &str = " · ";
     let width = usize::from(width);
-    let mut rows: Vec<String> = Vec::new();
+    let mut rows: Vec<Vec<SlotText>> = Vec::new();
     for part in parts {
+        let fits = rows.last().is_some_and(|row| {
+            slot_text_width(row) + SEPARATOR.width() + part.text.width() <= width
+        });
         match rows.last_mut() {
-            Some(row) if row.width() + SEPARATOR.width() + part.width() <= width => {
-                row.push_str(SEPARATOR);
-                row.push_str(part);
+            Some(row) if fits => {
+                row.push(SlotText::new(SEPARATOR, part.style));
+                row.push(part.clone());
             }
-            _ => rows.push(part.clone()),
+            _ => rows.push(vec![part.clone()]),
         }
     }
     rows.into_iter()
         .map(|row| {
-            one_line(
-                width.try_into().unwrap_or(u16::MAX),
-                &SlotText::new(row, style),
+            Line::from(
+                truncate_slot_text(row, width)
+                    .into_iter()
+                    .map(|text| Span::styled(text.text, text.style))
+                    .collect::<Vec<_>>(),
             )
         })
         .collect()
@@ -390,10 +363,8 @@ impl RenderSlots {
         &self,
         context: &SessionComposerTopSlotContext,
     ) -> RenderedSlot<Line<'static>> {
-        let _ = context.session_id;
-        let default = prompt_cache_parts(context)
-            .map(|parts| parted_lines(context.width, &parts, context.warning))
-            .unwrap_or_default();
+        let _ = (context.session_id, &context.prompt_cache);
+        let default = parted_lines(context.width, &context.lapse);
         self.session_composer_top.compose(context, default)
     }
 
