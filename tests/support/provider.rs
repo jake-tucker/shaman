@@ -92,6 +92,11 @@ pub struct ControlledProviderRuntime {
     /// for a Provider whose one process every Session shares; a test
     /// declares it, before any Session starts, to see that process stopped.
     process_per_session: Arc<AtomicBool>,
+    /// Whether this Provider knows no prices until its Models have been
+    /// listed in this process, as Claude and Copilot know none until their
+    /// CLI has listed them, and whether they have been.
+    priced_once_listed: Arc<AtomicBool>,
+    listed: Arc<AtomicBool>,
     /// Whether this Provider declares it says what fills a Session's context.
     /// On by default, like the Subagent stop; a test proves the refusal by
     /// withdrawing it.
@@ -366,6 +371,8 @@ impl ControlledProvider {
                 manual_compaction: Arc::new(Mutex::new(ManualCompaction::WithInstructions)),
                 cache_lifetime: Arc::default(),
                 process_per_session: Arc::new(AtomicBool::new(false)),
+                priced_once_listed: Arc::new(AtomicBool::new(false)),
+                listed: Arc::new(AtomicBool::new(false)),
                 context_breakdown_offered: Arc::new(AtomicBool::new(true)),
                 cache_rates: Arc::default(),
                 prompt_rates: Arc::default(),
@@ -522,6 +529,13 @@ impl ControlledProviderRuntime {
     /// actor reads it as it starts.
     pub fn declare_process_per_session(&self) {
         self.process_per_session.store(true, Ordering::SeqCst);
+    }
+
+    /// Has this Provider state no prices from here on until its Models have
+    /// been listed, standing in for Claude and Copilot, which know none until
+    /// their CLI has listed them in the running process.
+    pub fn price_only_once_listed(&self) {
+        self.priced_once_listed.store(true, Ordering::SeqCst);
     }
 
     pub fn offer_skills(&self, catalog: SkillCatalog) {
@@ -1352,6 +1366,9 @@ impl ProviderRuntime for ControlledProviderRuntime {
         model: &'a ModelId,
         options: &'a [ModelOptionSelection],
     ) -> PromptRatesFuture<'a> {
+        if self.priced_once_listed.load(Ordering::SeqCst) && !self.listed.load(Ordering::SeqCst) {
+            return Box::pin(async { None });
+        }
         self.prompt_rate_lookups
             .lock()
             .expect("controlled Provider prompt rate lookups lock is not poisoned")
@@ -1398,9 +1415,13 @@ impl ProviderRuntime for ControlledProviderRuntime {
             .expect("controlled Provider Model gate lock is not poisoned")
             .take();
         let provider = self.provider.clone();
+        let listed = self.listed.clone();
         Box::pin(async move {
             if let Some(blocked) = blocked {
                 let _ = blocked.await;
+            }
+            if unavailable.is_none() {
+                listed.store(true, Ordering::SeqCst);
             }
             match unavailable {
                 Some(reason) => Err(ProviderError::unavailable(

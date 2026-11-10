@@ -31,21 +31,23 @@ use suru::{
 };
 use tokio::time::timeout;
 
+mod carried;
+
 /// How long the controlled Provider keeps a cache while idle: a production
 /// scale, since the clock is moved by hand.
-pub(crate) const LIFETIME: Duration = Duration::from_secs(10 * 60);
+const LIFETIME: Duration = Duration::from_secs(10 * 60);
 
 /// The lead injected in place of the production two minutes, so the moment a
 /// Compaction falls due is told apart from any the production lead would set.
-pub(crate) const LEAD: Duration = Duration::from_secs(30);
+const LEAD: Duration = Duration::from_secs(30);
 
 /// The least of the cache's life that must be left, injected in place of the
 /// production twenty seconds.
-pub(crate) const MARGIN: Duration = Duration::from_secs(5);
+const MARGIN: Duration = Duration::from_secs(5);
 
 /// Writing a million tokens to the cache costs $3.75 and reading them back
 /// $0.30, so 400,000 tokens of context forecast a $1.38 Lapse Penalty.
-pub(crate) const RATES: CacheRates = CacheRates {
+const RATES: CacheRates = CacheRates {
     input: 3.0,
     cache_read: Some(0.3),
     cache_write: Some(3.75),
@@ -60,13 +62,13 @@ pub(crate) const ON: &str = r#"{ "compaction": { "scheduled": { "enabled": true 
 pub(crate) struct Idle {
     pub(crate) fixture: WorkingTurn,
     /// Where the Provider's starts after the first arrive.
-    pub(crate) provider: ControlledProvider,
-    pub(crate) hand: ManualClock,
-    pub(crate) clock: ServerClock,
-    pub(crate) config: tempfile::TempDir,
+    provider: ControlledProvider,
+    hand: ManualClock,
+    clock: ServerClock,
+    config: tempfile::TempDir,
 }
 
-pub(crate) fn filled(sequence: u64, tokens: u64) -> ProviderEvent {
+fn filled(sequence: u64, tokens: u64) -> ProviderEvent {
     ProviderEvent::ContextFill {
         report: ContextFillReport {
             turn_id: None,
@@ -81,7 +83,7 @@ pub(crate) fn filled(sequence: u64, tokens: u64) -> ProviderEvent {
 
 /// The Agent answering, which is the output an assumed lifetime counts from:
 /// a Turn's settling alone counts for nothing.
-pub(crate) fn answered() -> [ProviderEvent; 3] {
+fn answered() -> [ProviderEvent; 3] {
     [
         ProviderEvent::AgentMessageStarted,
         ProviderEvent::AgentMessageDelta {
@@ -91,7 +93,7 @@ pub(crate) fn answered() -> [ProviderEvent; 3] {
     ]
 }
 
-pub(crate) fn penalty(usd: f64) -> Option<LapsePenalty> {
+fn penalty(usd: f64) -> Option<LapsePenalty> {
     LapsePenalty::from_usd(usd)
 }
 
@@ -144,7 +146,7 @@ async fn idle_on(
 /// starts.
 // One parameter for each thing a test may vary.
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn idle_built(
+async fn idle_built(
     state: &std::path::Path,
     channel: &str,
     settings: &str,
@@ -217,7 +219,7 @@ pub(crate) async fn idle_built(
 
 /// The timings every Server here runs at: on `clock`, with the injected
 /// lead and margin.
-pub(crate) fn scheduled_timings(clock: &ServerClock) -> ServerTimings {
+fn scheduled_timings(clock: &ServerClock) -> ServerTimings {
     ServerTimings::default()
         .with_clock(clock.clone())
         .with_scheduled_compaction_lead(LEAD)
@@ -254,21 +256,19 @@ impl Idle {
             .prompt_cache
             .expect("the Session's lapse is published")
             .lapses_at;
-        SessionTimestamp(lapses_at.0 - u64::try_from(LEAD.as_millis()).unwrap())
+        SessionTimestamp(lapses_at.0 - millis(LEAD))
     }
 
     /// Moves the Server's clock on to `at`.
     pub(crate) fn advance_to(&self, at: SessionTimestamp) {
-        let now = self.clock.now();
-        assert!(at >= now, "the clock only moves forward");
-        self.hand.advance(Duration::from_millis(at.0 - now.0));
+        advance(&self.clock, &self.hand, at);
     }
 
     /// Waits until the Session's Provider actor has read everything sent it
     /// so far, its own wakes included, by asking it what fills the context:
     /// the actor judges a scheduled Compaction that has fallen due ahead of
     /// any request it reads after.
-    pub(crate) async fn after_the_actor_has_judged(&mut self) {
+    async fn after_the_actor_has_judged(&mut self) {
         let client = self.fixture.client.clone();
         let descriptor = self.fixture.server.descriptor().clone();
         let session_id = self.fixture.session_id;
@@ -295,7 +295,7 @@ impl Idle {
 
     /// Asserts nothing was scheduled: the Provider was asked to compact
     /// nothing, and the Session holds `turns` Turns still.
-    pub(crate) async fn assert_nothing_scheduled(&mut self, turns: usize, why: &str) {
+    async fn assert_nothing_scheduled(&mut self, turns: usize, why: &str) {
         self.after_the_actor_has_judged().await;
         assert!(
             self.fixture
@@ -308,29 +308,14 @@ impl Idle {
         assert_eq!(snapshot.turns.len(), turns, "no Turn is begun: {why}");
     }
 
-    pub(crate) async fn send_prompt(&self, delivery: PromptDelivery) {
-        let descriptor = self.fixture.server.descriptor();
-        self.fixture
-            .client
-            .post(format!(
-                "{}/v1/sessions/{}/prompts",
-                descriptor.base_url, self.fixture.session_id
-            ))
-            .bearer_auth(&descriptor.token)
-            .json(&AdmitPromptRequest {
-                prompt: InitialPrompt {
-                    id: PromptId::new(),
-                    text: "Carry on".into(),
-                    skill_invocations: Vec::new(),
-                    attachments: Vec::new(),
-                },
-                delivery,
-            })
-            .send()
-            .await
-            .expect("send Prompt")
-            .error_for_status()
-            .expect("Prompt is admitted");
+    async fn send_prompt(&self, delivery: PromptDelivery) {
+        admit_prompt(
+            &self.fixture.client,
+            self.fixture.server.descriptor(),
+            self.fixture.session_id,
+            delivery,
+        )
+        .await;
     }
 
     /// Sends a Prompt and runs the Turn it begins to its end.
@@ -352,7 +337,7 @@ impl Idle {
         .await;
     }
 
-    pub(crate) async fn mutate(&self, mutation: SettingMutation) {
+    async fn mutate(&self, mutation: SettingMutation) {
         let descriptor = self.fixture.server.descriptor();
         self.fixture
             .client
@@ -366,7 +351,7 @@ impl Idle {
             .expect("the Setting is taken");
     }
 
-    pub(crate) async fn settle_session(&self) {
+    async fn settle_session(&self) {
         let descriptor = self.fixture.server.descriptor();
         self.fixture
             .client
@@ -434,7 +419,49 @@ impl Idle {
     }
 }
 
-pub(crate) fn compactions(snapshot: &SessionSnapshot) -> Vec<&Activity> {
+/// `duration` in the milliseconds every moment here is counted in.
+fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap()
+}
+
+/// Moves `clock`, which `hand` moves, on to `at`.
+fn advance(clock: &ServerClock, hand: &ManualClock, at: SessionTimestamp) {
+    let now = clock.now();
+    assert!(at >= now, "the clock only moves forward");
+    hand.advance(Duration::from_millis(at.0 - now.0));
+}
+
+/// Admits a Prompt to `session_id` on the Server `descriptor` describes,
+/// delivered as `delivery`.
+async fn admit_prompt(
+    client: &reqwest::Client,
+    descriptor: &suru::protocol::RuntimeDescriptor,
+    session_id: suru::protocol::SessionId,
+    delivery: PromptDelivery,
+) {
+    client
+        .post(format!(
+            "{}/v1/sessions/{session_id}/prompts",
+            descriptor.base_url
+        ))
+        .bearer_auth(&descriptor.token)
+        .json(&AdmitPromptRequest {
+            prompt: InitialPrompt {
+                id: PromptId::new(),
+                text: "Carry on".into(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+            delivery,
+        })
+        .send()
+        .await
+        .expect("send Prompt")
+        .error_for_status()
+        .expect("Prompt is admitted");
+}
+
+fn compactions(snapshot: &SessionSnapshot) -> Vec<&Activity> {
     snapshot
         .activities
         .iter()
@@ -567,9 +594,7 @@ async fn with_the_setting_off_nothing_is_ever_scheduled() {
     let due_at = idle.due_at().await;
     idle.advance_to(due_at);
     idle.assert_nothing_scheduled(1, "the Setting is off").await;
-    idle.advance_to(SessionTimestamp(
-        due_at.0 + 2 * u64::try_from(LEAD.as_millis()).unwrap(),
-    ));
+    idle.advance_to(SessionTimestamp(due_at.0 + 2 * millis(LEAD)));
     idle.assert_nothing_scheduled(1, "nor once the cache has lapsed")
         .await;
     idle.shutdown().await;
@@ -1475,10 +1500,8 @@ async fn a_cache_living_no_longer_than_the_lead_is_never_scheduled() {
     idle.prompt_and_settle().await;
     idle.assert_nothing_scheduled(2, "the lifetime is no longer than the lead")
         .await;
-    let lapses_at = idle.due_at().await.0 + u64::try_from(LEAD.as_millis()).unwrap();
-    idle.advance_to(SessionTimestamp(
-        lapses_at - u64::try_from(MARGIN.as_millis()).unwrap(),
-    ));
+    let lapses_at = idle.due_at().await.0 + millis(LEAD);
+    idle.advance_to(SessionTimestamp(lapses_at - millis(MARGIN)));
     idle.assert_nothing_scheduled(2, "nor while it still lives")
         .await;
     idle.shutdown().await;
@@ -1489,10 +1512,10 @@ async fn a_cache_living_no_longer_than_the_lead_is_never_scheduled() {
 /// is skipped. With the margin left exactly, it begins.
 #[tokio::test]
 async fn a_wake_with_less_than_the_margin_left_is_skipped() {
-    let margin = u64::try_from(MARGIN.as_millis()).unwrap();
+    let margin = millis(MARGIN);
     let state = tempfile::tempdir().unwrap();
     let mut late = idle(state.path(), "scheduled-compaction-too-late", ON, true).await;
-    let lapses_at = late.due_at().await.0 + u64::try_from(LEAD.as_millis()).unwrap();
+    let lapses_at = late.due_at().await.0 + millis(LEAD);
     late.advance_to(SessionTimestamp(lapses_at - margin + 1));
     late.assert_nothing_scheduled(1, "less than the margin is left")
         .await;
@@ -1500,7 +1523,7 @@ async fn a_wake_with_less_than_the_margin_left_is_skipped() {
 
     let state = tempfile::tempdir().unwrap();
     let mut in_time = idle(state.path(), "scheduled-compaction-just-in-time", ON, true).await;
-    let lapses_at = in_time.due_at().await.0 + u64::try_from(LEAD.as_millis()).unwrap();
+    let lapses_at = in_time.due_at().await.0 + millis(LEAD);
     in_time.advance_to(SessionTimestamp(lapses_at - margin));
     in_time.scheduled().await.succeed();
     in_time.shutdown().await;
