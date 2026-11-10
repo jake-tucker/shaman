@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use github_copilot_sdk::rpc::Model;
+use github_copilot_sdk::{rpc::Model, session_events::ContextTier};
 
 use super::catalog::{token_count, token_prices};
 use crate::{
@@ -52,16 +52,21 @@ impl CopilotPricing {
             .loaded
     }
 
-    /// The rates Copilot's catalog prices a prompt on `model` at: see
-    /// [`PriceSchedule::prompt_rates`]. Absent where it lists no price for
-    /// fresh input, or no catalog has loaded yet.
-    pub(super) fn prompt_rates(&self, model: &str) -> Option<PromptRates> {
+    /// The rates Copilot's catalog prices a prompt on `model` at, under
+    /// context `tier` where one is chosen: see [`PriceSchedule::prompt_rates`].
+    /// Absent where it lists no price for fresh input, or no catalog has
+    /// loaded yet.
+    pub(super) fn prompt_rates(
+        &self,
+        model: &str,
+        tier: Option<ContextTier>,
+    ) -> Option<PromptRates> {
         self.table
             .lock()
             .expect("Copilot pricing lock is not poisoned")
             .models
             .get(model)?
-            .prompt_rates()
+            .prompt_rates(tier)
     }
 
     pub(super) fn cost(
@@ -112,7 +117,12 @@ impl PriceSchedule {
     /// tier beyond it — the tiers a Cost is worked out at — each beside its
     /// hour-long write price. Absent where the standard tier lists no
     /// fresh-input price; a long-context tier listing none is passed over.
-    fn prompt_rates(&self) -> Option<PromptRates> {
+    ///
+    /// Under a context tier `chosen`, only that tier's: a call under the
+    /// default tier is limited to the standard prompt, and one under the long
+    /// context is priced at it however little it sends — at the standard
+    /// tier's where no long one is listed.
+    fn prompt_rates(&self, chosen: Option<ContextTier>) -> Option<PromptRates> {
         let tier = |prices: &TierPrices, max_prompt_tokens| {
             Some(PromptRateTier {
                 max_prompt_tokens,
@@ -122,14 +132,18 @@ impl PriceSchedule {
                     .map(|price| self.usd_per_million(price)),
             })
         };
-        let mut tiers = vec![tier(&self.standard, self.standard_max_prompt_tokens)?];
-        if let Some(long_context) = self
+        let standard = tier(&self.standard, self.standard_max_prompt_tokens)?;
+        let long_context = self
             .long_context
             .as_ref()
-            .and_then(|prices| tier(prices, self.long_context_max_prompt_tokens))
-        {
-            tiers.push(long_context);
-        }
+            .and_then(|prices| tier(prices, self.long_context_max_prompt_tokens));
+        let tiers = match (chosen, long_context) {
+            (Some(ContextTier::LongContext), Some(long_context)) => vec![long_context],
+            (Some(ContextTier::Default | ContextTier::LongContext), _) | (_, None) => {
+                vec![standard]
+            }
+            (_, Some(long_context)) => vec![standard, long_context],
+        };
         PromptRates::tiered(tiers)
     }
 
@@ -266,7 +280,7 @@ mod tests {
         let pricing = CopilotPricing::default();
         pricing.replace(&[luna()]);
         let rates = pricing
-            .prompt_rates("luna-fixture")
+            .prompt_rates("luna-fixture", None)
             .expect("the Model is priced");
         // What a call able to send `limit` tokens, keeping its cache for
         // `lifetime` seconds, costs to write `tokens` to the cache, less what
@@ -323,6 +337,44 @@ mod tests {
         assert_eq!(
             forecast(100_000, 872_000, Some(3600)),
             Some(by_cost(100_000, 872_000, Some(3600)))
+        );
+    }
+
+    /// A cache written by a call under one context tier is forecast, for a
+    /// Prompt under another, at the tier the next call is priced at: the one
+    /// chosen, whatever the writing call could send.
+    #[test]
+    fn a_chosen_context_tier_prices_the_lapse_penalty_at_its_own_tier() {
+        use github_copilot_sdk::session_events::ContextTier;
+
+        let pricing = CopilotPricing::default();
+        pricing.replace(&[luna()]);
+        let forecast = |tier, limit| {
+            pricing
+                .prompt_rates("luna-fixture", tier)
+                .expect("the Model is priced")
+                .lapse_penalty(
+                    100_000,
+                    CacheWrite {
+                        price: crate::protocol::CacheWritePrice::Default,
+                        prompt_limit_tokens: Some(limit),
+                    },
+                )
+                .map(LapsePenalty::nano_usd)
+        };
+        // 25.0 written less 2.0 read, then 12.5 less 1.0.
+        assert_eq!(
+            forecast(Some(ContextTier::LongContext), 272_000),
+            Some(23_000_000)
+        );
+        assert_eq!(
+            forecast(Some(ContextTier::Default), 872_000),
+            Some(11_500_000)
+        );
+        assert_eq!(
+            forecast(None, 872_000),
+            Some(23_000_000),
+            "with no tier chosen, the writing call's limit says"
         );
     }
 }

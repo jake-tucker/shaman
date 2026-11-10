@@ -19,8 +19,9 @@ use crate::pricing::{
 use crate::protocol::{
     AgentIdentity, AgentSelection, ApprovalPosture, Cost, CostBasis, CostCoverage,
     EffectiveSettings, FileChange, ModelDescriptor, ModelId, ModelOptionKind, ModelOptionRole,
-    ModelShare, ProviderId, ProviderUnavailability, SkillCatalog, SkillCatalogCapabilities,
-    SkillCatalogStatus, SkillId, SkillInvocation, SkillPromptDelivery, TextSpan, Usage,
+    ModelOptionSelection, ModelShare, ProviderId, ProviderUnavailability, SkillCatalog,
+    SkillCatalogCapabilities, SkillCatalogStatus, SkillId, SkillInvocation, SkillPromptDelivery,
+    TextSpan, Usage,
 };
 
 mod actual_model;
@@ -266,7 +267,9 @@ impl CacheRateLookup for HostedCacheRates {
             .find(|runtime| runtime.provider_id() == *provider)
         {
             Some(runtime) => {
-                let rates = runtime.prompt_rates(model);
+                // A saving is estimated at the standard tier, which no
+                // option narrows.
+                let rates = runtime.prompt_rates(model, &[]);
                 Box::pin(async move { rates.await.map(|rates| rates.standard()) })
             }
             None => Box::pin(async { None::<CacheRates> }),
@@ -2015,8 +2018,10 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// how it runs Errands rather than silently running none.
     fn run_errand(&self, errand: ProviderErrand) -> ErrandFuture<'_>;
 
-    /// What this Provider prices a prompt's input on `model` at today, by
-    /// how large the prompt is and how long its cache is kept: the one
+    /// What this Provider prices a prompt's input on `model` under `options`
+    /// at today, by how large the prompt is and how long its cache is kept —
+    /// narrowed to what `options` choose where one moves the price, as a
+    /// context tier does, and every tier where none does: the one
     /// declaration of its prices, from which a Session's Lapse Penalty is
     /// forecast and Insights estimates what caching saved, at the standard
     /// tier. Absent where it knows no rate table that prices the Model's
@@ -2029,8 +2034,12 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// is not ready. So before the future first waits it must not block, nor
     /// do synchronous I/O — read a file, start a fetch — nor call into the
     /// store; what it holds in memory it may answer from at once.
-    fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
-        let _ = model;
+    fn prompt_rates<'a>(
+        &'a self,
+        model: &'a ModelId,
+        options: &'a [ModelOptionSelection],
+    ) -> PromptRatesFuture<'a> {
+        let _ = (model, options);
         Box::pin(async { None })
     }
 

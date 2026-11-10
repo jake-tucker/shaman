@@ -574,7 +574,7 @@ async fn copilot_states_cache_rates_from_its_last_running_catalog_and_launches_n
 
     assert_eq!(
         runtime
-            .prompt_rates(&model)
+            .prompt_rates(&model, &[])
             .await
             .map(|rates| rates.standard()),
         None
@@ -594,7 +594,7 @@ async fn copilot_states_cache_rates_from_its_last_running_catalog_and_launches_n
     // cent a credit: $20, $5, and $25 a million.
     assert_eq!(
         runtime
-            .prompt_rates(&model)
+            .prompt_rates(&model, &[])
             .await
             .map(|rates| rates.standard()),
         Some(CacheRates {
@@ -605,7 +605,7 @@ async fn copilot_states_cache_rates_from_its_last_running_catalog_and_launches_n
     );
     assert_eq!(
         runtime
-            .prompt_rates(&ModelId::new("incomplete-cache-fixture"))
+            .prompt_rates(&ModelId::new("incomplete-cache-fixture"), &[])
             .await
             .map(|rates| rates.standard()),
         Some(CacheRates {
@@ -619,7 +619,7 @@ async fn copilot_states_cache_rates_from_its_last_running_catalog_and_launches_n
     copilot.wait_for_exit().await;
     assert_eq!(
         runtime
-            .prompt_rates(&model)
+            .prompt_rates(&model, &[])
             .await
             .map(|rates| rates.standard().input),
         Some(20.0),

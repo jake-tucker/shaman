@@ -414,6 +414,16 @@ fn model_option_selection(option: &str, choice: impl Into<String>) -> ModelOptio
     }
 }
 
+/// The context tier `options` choose, where they choose one this SDK build can name.
+pub(super) fn selected_context_tier(options: &[ModelOptionSelection]) -> Option<ContextTier> {
+    options.iter().find_map(|option| match &option.value {
+        ModelOptionValue::Select { choice } if option.id.as_str() == CONTEXT_TIER_OPTION_ID => {
+            context_tier(choice)
+        }
+        _ => None,
+    })
+}
+
 /// The context tier Copilot knows `choice` by, or nothing for a choice no tier this SDK build can
 /// name — one Suru could not lower back over the wire.
 fn context_tier(choice: &ModelOptionChoiceId) -> Option<ContextTier> {

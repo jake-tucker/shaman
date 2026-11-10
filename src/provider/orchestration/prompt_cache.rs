@@ -13,7 +13,6 @@ use crate::protocol::{SessionId, TurnId};
 use crate::provider::CacheLifetime;
 use futures_util::FutureExt;
 
-use crate::pricing::PromptRates;
 use crate::sessions::{
     CacheOutput, CacheRefresh, LapseRateRequest, LapseRateSource, RatesAnswer, RatesFor,
     ReportedLapse, SessionStore,
@@ -145,13 +144,20 @@ fn runtime_for<'a>(
 }
 
 /// The prices `runtime` states for `rates_for`: the selected Model's, or,
-/// where it has none of its own, the Model's that wrote the cache.
-async fn find_prices(runtime: &dyn ProviderRuntime, rates_for: &RatesFor) -> Option<PromptRates> {
-    let selected = runtime.prompt_rates(&rates_for.selected).await;
-    if selected.is_some() || rates_for.written_by == rates_for.selected {
-        return selected;
+/// where it has none of its own, the Model's that wrote the cache, each under
+/// the options selected.
+async fn find_prices(runtime: &dyn ProviderRuntime, rates_for: &RatesFor) -> RatesAnswer {
+    let options = rates_for.options.as_slice();
+    if let Some(selected) = runtime.prompt_rates(&rates_for.selected, options).await {
+        return RatesAnswer::Priced(selected);
     }
-    runtime.prompt_rates(&rates_for.written_by).await
+    if rates_for.written_by == rates_for.selected {
+        return RatesAnswer::Unpriced;
+    }
+    runtime
+        .prompt_rates(&rates_for.written_by, options)
+        .await
+        .map_or(RatesAnswer::Unpriced, RatesAnswer::StoodIn)
 }
 
 impl LapseRateSource for RuntimeLapseRates {
@@ -161,7 +167,7 @@ impl LapseRateSource for RuntimeLapseRates {
         };
         find_prices(runtime.as_ref(), rates_for)
             .now_or_never()
-            .map_or(RatesAnswer::Awaited, RatesAnswer::from)
+            .unwrap_or(RatesAnswer::Awaited)
     }
 
     fn ask(&self, request: LapseRateRequest) {
@@ -196,8 +202,13 @@ pub(super) async fn answer_lapse_rate_requests(
             // A Provider with no runtime to ask has no prices, which is an
             // answer: the Session asks again when a catalog changes.
             let Some(runtime) = runtime else {
-                let _ = updates
-                    .apply(|| sessions.price_prompt_cache(request.session_id, rates_for, None));
+                let _ = updates.apply(|| {
+                    sessions.price_prompt_cache(
+                        request.session_id,
+                        rates_for,
+                        RatesAnswer::Unpriced,
+                    )
+                });
                 return;
             };
             let found = find_prices(runtime.as_ref(), rates_for).await;

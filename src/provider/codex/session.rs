@@ -298,7 +298,11 @@ impl ProviderRuntime for CodexRuntime {
     /// The models.dev rates this runtime's Costs are estimated from, so a
     /// saving is worked out at the rates a Cost would be today. models.dev
     /// prices every prompt size alike.
-    fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
+    fn prompt_rates<'a>(
+        &'a self,
+        model: &'a ModelId,
+        _options: &'a [ModelOptionSelection],
+    ) -> PromptRatesFuture<'a> {
         Box::pin(async move {
             self.pricing
                 .as_ref()?

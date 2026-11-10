@@ -8685,6 +8685,7 @@ running 1 test",
         fn prompt_rates<'a>(
             &'a self,
             _model: &'a ModelId,
+            _options: &'a [crate::protocol::ModelOptionSelection],
         ) -> crate::pricing::PromptRatesFuture<'a> {
             let rates = self.compacting_at.clone();
             Box::pin(async move { rates })

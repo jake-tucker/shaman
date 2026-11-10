@@ -10,9 +10,9 @@ use futures_util::{StreamExt, stream};
 use serde_json::Value;
 use suru::pricing::{CacheRates, PromptRates, PromptRatesFuture};
 use suru::protocol::{
-    AgentIdentity, AgentSelection, ContextBreakdown, ModelDescriptor, ModelId, ProviderId,
-    ProviderUnavailability, SkillCatalog, SkillCatalogCapabilities, SkillCatalogStatus,
-    SkillDescriptor, SkillId, SkillPromptDelivery,
+    AgentIdentity, AgentSelection, ContextBreakdown, ModelDescriptor, ModelId,
+    ModelOptionSelection, ProviderId, ProviderUnavailability, SkillCatalog,
+    SkillCatalogCapabilities, SkillCatalogStatus, SkillDescriptor, SkillId, SkillPromptDelivery,
 };
 use suru::provider::{
     AttributedProviderEvent, CacheLifetime, ErrandAnswer, ErrandConsumption, ErrandFailed,
@@ -100,6 +100,11 @@ pub struct ControlledProviderRuntime {
     /// What this Provider prices a prompt on each Model at by its size, where
     /// a test states more than its flat cache rates.
     prompt_rates: Arc<Mutex<HashMap<ModelId, PromptRates>>>,
+    /// What this Provider prices a prompt on a Model at under a Model Option,
+    /// where a test states that the option moves the price, as a context
+    /// tier does: the first stated for an option the prompt is sent under
+    /// wins over the Model's own.
+    option_prompt_rates: Arc<Mutex<Vec<(ModelId, ModelOptionSelection, PromptRates)>>>,
     starts: mpsc::UnboundedSender<StartRequest>,
     errands: mpsc::UnboundedSender<ErrandRequest>,
     /// Where a session-shaped Errand's startup goes. It is kept apart from
@@ -356,6 +361,7 @@ impl ControlledProvider {
                 context_breakdown_offered: Arc::new(AtomicBool::new(true)),
                 cache_rates: Arc::default(),
                 prompt_rates: Arc::default(),
+                option_prompt_rates: Arc::default(),
                 routing_models: Arc::default(),
                 starts: starts_tx,
                 errands: errands_tx,
@@ -454,6 +460,21 @@ impl ControlledProviderRuntime {
             .lock()
             .expect("controlled Provider prompt rates lock is not poisoned")
             .insert(model, rates);
+    }
+
+    /// Prices a prompt on `model` sent under `option` at `rates` from here
+    /// on, standing in for a Provider — Copilot's context tier — whose price
+    /// a Model Option moves.
+    pub fn price_prompts_under(
+        &self,
+        model: ModelId,
+        option: ModelOptionSelection,
+        rates: PromptRates,
+    ) {
+        self.option_prompt_rates
+            .lock()
+            .expect("controlled Provider option prompt rates lock is not poisoned")
+            .push((model, option, rates));
     }
 
     /// Declares how far this Provider compacts on request from here on,
@@ -1293,15 +1314,27 @@ impl ProviderRuntime for ControlledProviderRuntime {
             .expect("controlled Provider Cache Lifetime lock is not poisoned")
     }
 
-    /// The prices a test stated for `model` by prompt size, or else its flat
-    /// cache rates at every size.
-    fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
+    /// The prices a test stated for `model` under one of `options`, or else
+    /// by prompt size, or else its flat cache rates at every size.
+    fn prompt_rates<'a>(
+        &'a self,
+        model: &'a ModelId,
+        options: &'a [ModelOptionSelection],
+    ) -> PromptRatesFuture<'a> {
         let stated = self
-            .prompt_rates
+            .option_prompt_rates
             .lock()
-            .expect("controlled Provider prompt rates lock is not poisoned")
-            .get(model)
-            .cloned()
+            .expect("controlled Provider option prompt rates lock is not poisoned")
+            .iter()
+            .find(|(priced, option, _)| priced == model && options.contains(option))
+            .map(|(_, _, rates)| rates.clone())
+            .or_else(|| {
+                self.prompt_rates
+                    .lock()
+                    .expect("controlled Provider prompt rates lock is not poisoned")
+                    .get(model)
+                    .cloned()
+            })
             .or_else(|| {
                 self.cache_rates
                     .lock()

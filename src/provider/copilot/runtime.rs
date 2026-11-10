@@ -14,7 +14,7 @@ use super::{
     errand::run_copilot_errand,
     fusion_tiers::{ROUTING_TIER_DISCOVERY_TIMEOUT, routing_tier_option},
     pricing::CopilotPricing,
-    session::{INTERRUPT_REQUEST_TIMEOUT, start_copilot_session},
+    session::{INTERRUPT_REQUEST_TIMEOUT, selected_context_tier, start_copilot_session},
     skills::CopilotSkills,
     transport::CopilotConnector,
 };
@@ -330,11 +330,17 @@ impl ProviderRuntime for CopilotRuntime {
     /// The prices the running harness's catalog lists for each tier of prompt
     /// size, with each tier's hour-long write price, as its Costs are worked
     /// out at — or the last harness's seen running; none until one has run,
-    /// since none is launched only to answer.
-    fn prompt_rates<'a>(&'a self, model: &'a ModelId) -> PromptRatesFuture<'a> {
+    /// since none is launched only to answer. A context tier among `options`
+    /// narrows them to that tier's, since a call under it is priced at it.
+    fn prompt_rates<'a>(
+        &'a self,
+        model: &'a ModelId,
+        options: &'a [ModelOptionSelection],
+    ) -> PromptRatesFuture<'a> {
+        let tier = selected_context_tier(options);
         let rates = self
             .pricing()
-            .and_then(|pricing| pricing.prompt_rates(model.as_str()));
+            .and_then(|pricing| pricing.prompt_rates(model.as_str(), tier));
         Box::pin(async move { rates })
     }
 }

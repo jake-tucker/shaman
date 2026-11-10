@@ -18,8 +18,9 @@ use tokio::sync::watch;
 
 use crate::pricing::{CacheWrite, PromptRates};
 use crate::protocol::{
-    CacheWritePrice, LapsePenalty, MessageRole, ModelId, PromptCache, ProviderId, SessionChange,
-    SessionId, SessionSnapshot, SessionTimestamp, Turn, TurnId, TurnStatus,
+    AgentSelection, CacheWritePrice, LapsePenalty, MessageRole, ModelId, ModelOptionSelection,
+    PromptCache, ProviderId, SessionChange, SessionId, SessionSnapshot, SessionTimestamp, Turn,
+    TurnId, TurnStatus,
 };
 use crate::provider::{CacheLifetime, CacheWritten};
 
@@ -344,14 +345,28 @@ fn cache_written(
 pub(crate) type DeclaredCacheLifetimes = Arc<dyn Fn(&ProviderId) -> CacheLifetime + Send + Sync>;
 
 /// Whose prices a Session's Lapse Penalty is forecast at: those of the Model
-/// its Agent Selection names, or, where that Model has none of its own — a
-/// Model choosing a route rather than running — those of the Model whose
-/// call wrote the cache.
+/// its Agent Selection names, under the Model Options it names — one, as a
+/// context tier, may move the price — or, where that Model has none of its
+/// own — a Model choosing a route rather than running — those of the Model
+/// whose call wrote the cache.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RatesFor {
     pub(crate) provider: ProviderId,
     pub(crate) selected: ModelId,
+    pub(crate) options: Vec<ModelOptionSelection>,
     pub(crate) written_by: ModelId,
+}
+
+impl RatesFor {
+    /// The prices a cache `written_by` is forecast at under `selection`.
+    fn of(selection: &AgentSelection, written_by: &ModelId) -> Self {
+        Self {
+            provider: selection.provider.clone(),
+            selected: selection.model.clone(),
+            options: selection.options.clone(),
+            written_by: written_by.clone(),
+        }
+    }
 }
 
 /// Asked of a [`LapseRateSource`] for the prices a Lapse Penalty is
@@ -384,11 +399,32 @@ pub(crate) trait LapseRateSource: Send + Sync {
 pub(crate) enum RatesAnswer {
     /// None has come yet, or none is to hand without waiting.
     Awaited,
-    /// The prices it found.
+    /// The prices it found for the Model selected.
     Priced(PromptRates),
+    /// The prices of the Model that wrote the cache, found where the Model
+    /// selected has none of its own: one choosing a route never has, and a
+    /// Provider may know another's only once its catalog comes, so these are
+    /// asked for again as [`Self::Unpriced`] is.
+    StoodIn(PromptRates),
     /// It found none: the Provider knew no prices for either Model, or there
     /// is no runtime for the Provider to ask.
     Unpriced,
+}
+
+impl RatesAnswer {
+    /// The prices the answer found, of whichever Model.
+    fn prices(&self) -> Option<&PromptRates> {
+        match self {
+            Self::Priced(prices) | Self::StoodIn(prices) => Some(prices),
+            Self::Awaited | Self::Unpriced => None,
+        }
+    }
+
+    /// Whether asking again may find prices the answer lacks: the selected
+    /// Model's own.
+    fn wants_asking_again(&self) -> bool {
+        matches!(self, Self::StoodIn(_) | Self::Unpriced)
+    }
 }
 
 /// The prices a Session's Lapse Penalty is forecast at, as last found for
@@ -511,15 +547,15 @@ impl SessionStore {
         Ok(())
     }
 
-    /// Takes `found` as the prices the Lapse Penalty is forecast at for
-    /// `rates_for`, and forecasts it again, where the Session's history is
+    /// Takes `found` as the answer for the prices the Lapse Penalty is
+    /// forecast at for `rates_for`, and forecasts it again, where the Session's history is
     /// read in and it still wants prices for exactly those Models: an answer
     /// for a Selection the Session has since left describes nothing of it.
     pub(crate) fn price_prompt_cache(
         &self,
         session_id: SessionId,
         rates_for: &RatesFor,
-        found: Option<PromptRates>,
+        found: RatesAnswer,
     ) -> anyhow::Result<()> {
         let mut state = self
             .state
@@ -584,7 +620,7 @@ impl SessionStore {
                 .filter(|(_, record)| record.snapshot.session.prompt_cache.is_some())
                 .filter_map(|(id, record)| {
                     let rates = record.lapse_rates.as_mut()?;
-                    matches!(rates.answer, RatesAnswer::Unpriced).then(|| {
+                    rates.answer.wants_asking_again().then(|| {
                         rates.owed = true;
                         *id
                     })
@@ -692,11 +728,7 @@ impl SessionStoreState {
         }) else {
             return;
         };
-        let wanted = RatesFor {
-            provider: selection.provider.clone(),
-            selected: selection.model.clone(),
-            written_by,
-        };
+        let wanted = RatesFor::of(selection, &written_by);
         self.take_lapse_rates_to_hand(session_id, &wanted);
     }
 
@@ -748,12 +780,6 @@ impl SessionStoreState {
     }
 }
 
-impl From<Option<PromptRates>> for RatesAnswer {
-    fn from(found: Option<PromptRates>) -> Self {
-        found.map_or(Self::Unpriced, Self::Priced)
-    }
-}
-
 impl SessionRecord {
     /// The Prompt Cache as the revision open on the snapshot, whose
     /// `changes` have landed, leaves it: the moment each Turn it settles
@@ -777,11 +803,12 @@ impl SessionRecord {
         if !moves_it {
             return None;
         }
-        // Whatever moved, an answer that found no prices is asked again.
+        // Whatever moved, an answer that found no prices of the Model
+        // selected is asked again.
         if let Some(rates) = self
             .lapse_rates
             .as_mut()
-            .filter(|rates| matches!(rates.answer, RatesAnswer::Unpriced))
+            .filter(|rates| rates.answer.wants_asking_again())
         {
             rates.owed = true;
         }
@@ -866,17 +893,13 @@ impl SessionRecord {
     /// it has a Prompt Cache and an Agent Selection.
     fn wanted_lapse_rates(&self) -> Option<RatesFor> {
         let cache = self.snapshot.session.prompt_cache.as_ref()?;
-        let (provider, model) = selected(&self.snapshot)?;
-        Some(RatesFor {
-            provider: provider.clone(),
-            selected: model.clone(),
-            written_by: cache.written_by.clone(),
-        })
+        let selection = self.snapshot.session.agent_selection.as_ref()?;
+        Some(RatesFor::of(selection, &cache.written_by))
     }
 
     /// Holds `found` as the answer for `rates_for`, where those are still
     /// the prices the Session wants; answers whether it was held.
-    fn take_lapse_rates(&mut self, rates_for: &RatesFor, found: Option<PromptRates>) -> bool {
+    fn take_lapse_rates(&mut self, rates_for: &RatesFor, found: RatesAnswer) -> bool {
         let Some(rates) = self
             .lapse_rates
             .as_mut()
@@ -884,7 +907,7 @@ impl SessionRecord {
         else {
             return false;
         };
-        rates.answer = RatesAnswer::from(found);
+        rates.answer = found;
         true
     }
 
@@ -893,12 +916,8 @@ impl SessionRecord {
     /// either is unknown. Where the prices held are for other Models, the
     /// Session comes to want them asked for, and the penalty waits.
     pub(super) fn forecast_lapse_penalty(&mut self, cache: &PromptCache) -> Option<LapsePenalty> {
-        let (provider, model) = selected(&self.snapshot)?;
-        let wanted = RatesFor {
-            provider: provider.clone(),
-            selected: model.clone(),
-            written_by: cache.written_by.clone(),
-        };
+        let selection = self.snapshot.session.agent_selection.as_ref()?;
+        let wanted = RatesFor::of(selection, &cache.written_by);
         let fill = self.snapshot.session.context_fill;
         let rates = match &mut self.lapse_rates {
             Some(rates) if rates.wanted == wanted => rates,
@@ -908,9 +927,7 @@ impl SessionRecord {
                 owed: true,
             }),
         };
-        let RatesAnswer::Priced(prices) = &rates.answer else {
-            return None;
-        };
+        let prices = rates.answer.prices()?;
         prices.lapse_penalty(
             fill?.occupied_tokens,
             CacheWrite {

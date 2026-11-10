@@ -1453,7 +1453,7 @@ async fn codex_states_its_models_cache_rates_from_the_rate_table_it_estimates_co
 
     assert_eq!(
         codex
-            .prompt_rates(&ModelId::new("priced-fixture"))
+            .prompt_rates(&ModelId::new("priced-fixture"), &[])
             .await
             .map(|rates| rates.standard()),
         Some(CacheRates {
@@ -1464,14 +1464,14 @@ async fn codex_states_its_models_cache_rates_from_the_rate_table_it_estimates_co
     );
     assert_eq!(
         codex
-            .prompt_rates(&ModelId::new("unpriced"))
+            .prompt_rates(&ModelId::new("unpriced"), &[])
             .await
             .map(|rates| rates.standard()),
         None
     );
     assert_eq!(
         CodexRuntime::new("codex")
-            .prompt_rates(&ModelId::new("priced-fixture"))
+            .prompt_rates(&ModelId::new("priced-fixture"), &[])
             .await
             .map(|rates| rates.standard()),
         None,

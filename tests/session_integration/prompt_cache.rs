@@ -924,6 +924,107 @@ async fn a_selection_whose_prices_are_to_hand_lands_its_penalty_in_the_same_revi
     fixture.server.shutdown().await.unwrap();
 }
 
+/// The fixture Session's Agent Selection as it stands.
+async fn sessions_selection(fixture: &WorkingTurn) -> AgentSelection {
+    read_session(fixture.server.descriptor(), fixture.session_id)
+        .await
+        .session
+        .agent_selection
+        .expect("the working Session has an Agent Selection")
+}
+
+#[tokio::test]
+async fn a_model_option_that_moves_the_price_prices_the_penalty_at_it_in_the_same_revision() {
+    let state = tempfile::tempdir().unwrap();
+    let channel = "prompt-cache-reselect-option";
+    let lapses_at = ahead(5);
+    let fixture = cold_priced(state.path(), channel, lapses_at).await;
+    let model = sessions_model(&fixture).await;
+    read_until(&fixture, "the penalty is forecast", |snapshot| {
+        snapshot.session.prompt_cache.clone().map(unwritten)
+            == Some(cache(lapses_at, &model, Some(1.38)))
+    })
+    .await;
+    let written_under = sessions_selection(&fixture).await;
+    // A long context tier, as Copilot prices one: dearer at every size.
+    let long = controlled_selection(model.as_str(), "high", "long");
+    fixture.runtime.price_prompts_under(
+        model.clone(),
+        long.options[1].clone(),
+        PromptRates::flat(CacheRates {
+            input: 6.0,
+            cache_read: Some(0.6),
+            cache_write: Some(7.5),
+        }),
+    );
+    let (_client, mut feed) = following(state.path(), channel, fixture.session_id).await;
+
+    select(&fixture, long).await;
+    let selected = update_holding(&mut feed, |change| {
+        matches!(change, SessionChange::AgentSelectionChanged { .. })
+    })
+    .await;
+    assert_eq!(
+        lapse_of(&selected).and_then(|cache| cache.lapse_penalty),
+        // 400,000 tokens at $7.50 written less $0.60 read, a million.
+        penalty(2.76),
+        "the option's figure lands with the Selection: {selected:?}"
+    );
+
+    select(&fixture, written_under).await;
+    let selected = update_holding(&mut feed, |change| {
+        matches!(change, SessionChange::AgentSelectionChanged { .. })
+    })
+    .await;
+    assert_eq!(
+        lapse_of(&selected).and_then(|cache| cache.lapse_penalty),
+        penalty(1.38),
+        "choosing the writer's Selection again prices the penalty at it again: {selected:?}"
+    );
+    fixture.server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_selected_model_whose_prices_come_later_is_priced_at_them_once_they_do() {
+    let state = tempfile::tempdir().unwrap();
+    let lapses_at = ahead(5);
+    let fixture = cold_priced(state.path(), "prompt-cache-reselect-later", lapses_at).await;
+    let model = sessions_model(&fixture).await;
+    read_until(&fixture, "the penalty is forecast", |snapshot| {
+        snapshot.session.prompt_cache.clone().map(unwritten)
+            == Some(cache(lapses_at, &model, Some(1.38)))
+    })
+    .await;
+
+    let later = ModelId::new("gpt-later");
+    select(
+        &fixture,
+        controlled_selection(later.as_str(), "high", "fast"),
+    )
+    .await;
+    read_until(&fixture, "the Selection lands", |snapshot| {
+        snapshot
+            .session
+            .agent_selection
+            .as_ref()
+            .is_some_and(|selection| selection.model == later)
+    })
+    .await;
+    // Its catalog comes, and its prices with it.
+    fixture.runtime.price_cache(later.clone(), CHEAPER);
+    crate::session_integration::support::refresh_catalog(fixture.server.descriptor()).await;
+    read_until(
+        &fixture,
+        "the penalty is forecast at the selected Model once its prices are known",
+        |snapshot| {
+            snapshot.session.prompt_cache.clone().map(unwritten)
+                == Some(cache(lapses_at, &model, Some(0.46)))
+        },
+    )
+    .await;
+    fixture.server.shutdown().await.unwrap();
+}
+
 /// Streams the start of an answer in the fixture's Turn at `index`, its
 /// call's usage — which names its Model — still to come, interrupts it, and
 /// reads the Session once it has settled.

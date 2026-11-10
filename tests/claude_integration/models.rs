@@ -442,14 +442,14 @@ async fn claude_prices_an_alias_at_the_models_dev_rates_of_the_model_it_resolves
     let priced = &runtime;
     let rates_of = move |model: &'static str| async move {
         priced
-            .prompt_rates(&ModelId::new(model))
+            .prompt_rates(&ModelId::new(model), &[])
             .await
             .map(|rates| rates.standard())
     };
 
     assert_eq!(
         runtime
-            .prompt_rates(&ModelId::new("default"))
+            .prompt_rates(&ModelId::new("default"), &[])
             .await
             .map(|rates| rates.standard()),
         None,
