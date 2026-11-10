@@ -14980,8 +14980,8 @@ impl Application {
     }
 
     /// Whether anything on screen has live presentation, so the run loop
-    /// ticks only while animation can be drawn and an idle TUI schedules zero
-    /// wakeups.
+    /// ticks only while animation can be drawn and animation costs an idle
+    /// TUI no wakeups.
     pub fn wants_spinner(&self) -> bool {
         // A Provider's Availability being read is live work like any other, and
         // the row showing it animates only while the tick is armed.

@@ -645,20 +645,19 @@ struct RunLoop {
     tree_loading_delay: Option<(Instant, Pin<Box<tokio::time::Sleep>>)>,
     /// The wakeup at the next moment the line above the open Session's
     /// composer changes of its own accord, paired with that moment: once when
-    /// the countdown to its Prompt Cache's lapse comes to stand, once a second
-    /// while it counts, and once at the lapse, and none before the final
-    /// stretch or after the lapse. It is the one wakeup an idle TUI schedules
-    /// beside animation (ADR 0009, ADR 0073), and is bounded by a minute.
-    /// Each wakeup reads the wall clock afresh, since the sleep is monotonic
-    /// and does not follow a suspend: the countdown is right again at the
-    /// first wakeup after one, and the cold line takes its place there or at
-    /// the next event of any kind, whichever comes first.
+    /// a countdown comes to stand, once a second while it counts, and once
+    /// when what it counts to arrives; nothing before then but the one
+    /// wakeup, and nothing after. The ticking is bounded by the countdown's
+    /// own length, and only a countdown the last frame laid out is woken for
+    /// (ADR 0009). Each sync sets the deadline afresh from the wall clock,
+    /// since the sleep is monotonic and does not follow a suspend, so any
+    /// event after a resume puts the wakeup right.
     composer_top_change: Option<(
         crate::protocol::SessionTimestamp,
         Pin<Box<tokio::time::Sleep>>,
     )>,
-    /// Armed only while something on screen animates, so an idle TUI schedules
-    /// zero wakeups (ADR 0009). Re-armed on every fire.
+    /// Armed only while something on screen animates, so animation costs an
+    /// idle TUI no wakeups (ADR 0009). Re-armed on every fire.
     spinner_tick: Option<Pin<Box<tokio::time::Sleep>>>,
     /// Set by anything that changes what is on screen, so an event the user
     /// cannot see costs no frame.
@@ -7327,8 +7326,8 @@ mod reconnect_grace_tests {
         assert_eq!(armed.len(), 1);
         assert_eq!(wait_for_reconnect_grace(&mut armed).await, laptop);
 
-        // Everything answers: nothing is armed, so an idle Client schedules no
-        // wakeup at all (ADR 0009).
+        // Everything answers: nothing is armed, so the graces wake an idle
+        // Client no more.
         sync_reconnect_grace(&mut armed, &BTreeSet::new(), grace);
         assert!(armed.is_empty());
     }
@@ -7358,8 +7357,8 @@ mod reconnect_grace_tests {
         assert_eq!(wait_for_reconnect_grace(&mut armed).await, laptop);
         drop(armed.remove(0));
 
-        // Nothing armed is nothing to wake for: an idle Client schedules no
-        // wakeup at all (ADR 0009).
+        // Nothing armed is nothing to wake for: the graces wake an idle
+        // Client no more.
         assert!(
             tokio::time::timeout(
                 Duration::from_millis(15),

@@ -1590,8 +1590,8 @@ impl Sidebar {
     /// change, and a Watch starting or settling as a Monitoring change, each
     /// taken in place by [`Self::set_working_origin`] or
     /// [`Self::set_monitoring_origin`], so the tick is
-    /// armed exactly while something drawn is live and an idle TUI schedules
-    /// zero wakeups (ADR 0007, ADR 0009).
+    /// armed exactly while something drawn is live and the Sidebar costs an
+    /// idle TUI no wakeups (ADR 0007, ADR 0009).
     pub(super) fn shows_live_work(&self, open: Option<&SessionReference>) -> bool {
         self.column.is_revealed()
             && self.column.is_on_screen()
@@ -4281,8 +4281,8 @@ mod tests {
 
         assert!(
             !sidebar.shows_live_work(None),
-            "and the last live row settling stands the tick down, so an idle \
-             TUI schedules zero wakeups again"
+            "and the last live row settling stands the tick down, so the \
+             Sidebar costs an idle TUI no wakeups again"
         );
     }
 

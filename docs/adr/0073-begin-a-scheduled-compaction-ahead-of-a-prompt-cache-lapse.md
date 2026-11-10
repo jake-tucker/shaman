@@ -20,5 +20,3 @@ A Prompt sent to steer while a scheduled Compaction runs is held, as ADR 0041 ho
 A Session's lapse moment is stored, so a restarted Server still knows which Sessions are cold and which scheduled Compactions are still ahead of it; one whose moment passed while the Server was down is skipped.
 
 The Turn records Usage and Cost like any other, so what Suru spent compacting unasked is visible in the Session's Cost and in Usage Metrics.
-
-A client counts down the final stretch before a lapse, so an idle TUI is no longer wholly without wakeups as ADR 0009 has it: it wakes once when the stretch begins, once a second through it, at most a minute, and not again once the Session is cold.

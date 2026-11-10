@@ -6,7 +6,8 @@
 //! frame, and records which lines carry one; each draw patches the current
 //! frame's glyph into those cells after the memoized lines are fetched. The
 //! run loop drives the frame index with a tick that exists only while
-//! something on screen is animating, so an idle TUI schedules zero wakeups.
+//! something on screen is animating, so animation costs an idle TUI no
+//! wakeups.
 
 use ratatui::text::Line;
 
