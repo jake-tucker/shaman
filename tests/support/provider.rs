@@ -105,6 +105,8 @@ pub struct ControlledProviderRuntime {
     /// tier does: the first stated for an option the prompt is sent under
     /// wins over the Model's own.
     option_prompt_rates: Arc<Mutex<Vec<(ModelId, ModelOptionSelection, PromptRates)>>>,
+    /// Each Model this Provider was asked the prompt prices of, in order.
+    prompt_rate_lookups: Arc<Mutex<Vec<ModelId>>>,
     starts: mpsc::UnboundedSender<StartRequest>,
     errands: mpsc::UnboundedSender<ErrandRequest>,
     /// Where a session-shaped Errand's startup goes. It is kept apart from
@@ -362,6 +364,7 @@ impl ControlledProvider {
                 cache_rates: Arc::default(),
                 prompt_rates: Arc::default(),
                 option_prompt_rates: Arc::default(),
+                prompt_rate_lookups: Arc::default(),
                 routing_models: Arc::default(),
                 starts: starts_tx,
                 errands: errands_tx,
@@ -475,6 +478,17 @@ impl ControlledProviderRuntime {
             .lock()
             .expect("controlled Provider option prompt rates lock is not poisoned")
             .push((model, option, rates));
+    }
+
+    /// How many times this Provider has been asked the prompt prices of
+    /// `model`.
+    pub fn prompt_rate_lookups(&self, model: &ModelId) -> usize {
+        self.prompt_rate_lookups
+            .lock()
+            .expect("controlled Provider prompt rate lookups lock is not poisoned")
+            .iter()
+            .filter(|asked| *asked == model)
+            .count()
     }
 
     /// Declares how far this Provider compacts on request from here on,
@@ -1321,6 +1335,10 @@ impl ProviderRuntime for ControlledProviderRuntime {
         model: &'a ModelId,
         options: &'a [ModelOptionSelection],
     ) -> PromptRatesFuture<'a> {
+        self.prompt_rate_lookups
+            .lock()
+            .expect("controlled Provider prompt rate lookups lock is not poisoned")
+            .push(model.clone());
         let stated = self
             .option_prompt_rates
             .lock()

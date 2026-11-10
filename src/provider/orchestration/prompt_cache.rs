@@ -140,22 +140,27 @@ fn runtime_for<'a>(
 ) -> Option<&'a Arc<dyn ProviderRuntime>> {
     runtimes
         .iter()
-        .find(|runtime| runtime.provider_id() == rates_for.provider)
+        .find(|runtime| runtime.provider_id() == rates_for.selection.provider)
 }
 
 /// The prices `runtime` states for `rates_for`: the selected Model's, or,
-/// where it has none of its own, the Model's that wrote the cache, each under
-/// the options selected.
+/// where it chooses a route and has none of its own, the Model's that wrote
+/// the cache, each under the options selected. A Model that runs its own
+/// calls is never priced at another's: with none of its own its penalty is
+/// unknown, not guessed.
 async fn find_prices(runtime: &dyn ProviderRuntime, rates_for: &RatesFor) -> RatesAnswer {
-    let options = rates_for.options.as_slice();
-    if let Some(selected) = runtime.prompt_rates(&rates_for.selected, options).await {
+    let selection = &rates_for.selection;
+    if let Some(selected) = runtime
+        .prompt_rates(&selection.model, &selection.options)
+        .await
+    {
         return RatesAnswer::Priced(selected);
     }
-    if rates_for.written_by == rates_for.selected {
+    if rates_for.written_by == selection.model || !runtime.takes_routing_tier(&selection.model) {
         return RatesAnswer::Unpriced;
     }
     runtime
-        .prompt_rates(&rates_for.written_by, options)
+        .prompt_rates(&rates_for.written_by, &selection.options)
         .await
         .map_or(RatesAnswer::Unpriced, RatesAnswer::StoodIn)
 }

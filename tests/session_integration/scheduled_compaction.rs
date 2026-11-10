@@ -1226,6 +1226,9 @@ async fn a_model_option_changed_since_the_cache_was_written_is_skipped() {
     back.shutdown().await;
 }
 
+/// The Model the working fixture's Agent runs on.
+const ROUTING_MODEL: &str = "gpt-subagent";
+
 /// A routing selection is judged as itself: its calls ran on a Model the
 /// Provider chose, which wrote the cache, but the Selection is the one the
 /// Turn ran under, so nothing changed.
@@ -1239,6 +1242,11 @@ async fn a_routing_selection_whose_calls_ran_on_another_model_has_not_changed() 
         false,
         CacheLifetime::Reported,
         |fixture, now| {
+            // The Model the fixture's Agent runs on routes its calls, as it
+            // does from the start on a real Provider.
+            fixture
+                .runtime
+                .declare_routing(suru::protocol::ModelId::new(ROUTING_MODEL), true);
             let actual = suru::protocol::ModelId::new("routed-actual");
             fixture.runtime.price_cache(actual.clone(), RATES);
             fixture
@@ -1254,7 +1262,7 @@ async fn a_routing_selection_whose_calls_ran_on_another_model_has_not_changed() 
     )
     .await;
     let model = routed.model().await;
-    routed.fixture.runtime.declare_routing(model.clone(), true);
+    assert_eq!(model.as_str(), ROUTING_MODEL);
     let snapshot = routed
         .until(
             "the penalty is forecast at the Model that wrote it",

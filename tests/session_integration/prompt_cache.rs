@@ -614,8 +614,9 @@ async fn selecting_another_model_prices_the_penalty_at_it_or_where_it_has_none_a
     )
     .await;
 
-    // A Model with no prices of its own — one choosing a route — is priced
-    // at the Model whose call wrote the cache.
+    // A Model with no prices of its own that chooses a route is priced at
+    // the Model whose call wrote the cache.
+    fixture.runtime.declare_routing(ModelId::new("auto"), true);
     select(&fixture, controlled_selection("auto", "high", "fast")).await;
     read_until(
         &fixture,
@@ -984,6 +985,70 @@ async fn a_model_option_that_moves_the_price_prices_the_penalty_at_it_in_the_sam
     fixture.server.shutdown().await.unwrap();
 }
 
+/// A routing Selection has no prices of its own to come, so the writer's
+/// that stand in for them are asked for again only when a catalog changes,
+/// never at each Context Fill reported.
+#[tokio::test]
+async fn a_routing_selection_asks_for_its_stand_in_prices_again_only_as_a_catalog_changes() {
+    let state = tempfile::tempdir().unwrap();
+    let lapses_at = ahead(5);
+    let fixture = cold_priced(state.path(), "prompt-cache-stand-in-asks", lapses_at).await;
+    let model = sessions_model(&fixture).await;
+    let auto = ModelId::new("auto");
+    fixture.runtime.declare_routing(auto.clone(), true);
+    select(
+        &fixture,
+        controlled_selection(auto.as_str(), "high", "fast"),
+    )
+    .await;
+    read_until(
+        &fixture,
+        "a routing choice is priced at the writer",
+        |snapshot| {
+            snapshot
+                .session
+                .agent_selection
+                .as_ref()
+                .map(|selection| &selection.model)
+                == Some(&auto)
+                && snapshot.session.prompt_cache.clone().map(unwritten)
+                    == Some(cache(lapses_at, &model, Some(1.38)))
+        },
+    )
+    .await;
+    let asked = fixture.runtime.prompt_rate_lookups(&auto);
+
+    for (sequence, tokens) in [(2, 500_000), (3, 600_000)] {
+        fixture
+            .provider_session
+            .emit_and_wait_until_observed(filled(sequence, tokens))
+            .await;
+    }
+    read_until(
+        &fixture,
+        "the penalty follows the Context Fill",
+        |snapshot| {
+            snapshot.session.prompt_cache.clone().map(unwritten)
+                == Some(cache(lapses_at, &model, Some(2.07)))
+        },
+    )
+    .await;
+    crate::session_integration::support::refresh_catalog(fixture.server.descriptor()).await;
+    timeout(PROGRESS_DEADLINE, async {
+        while fixture.runtime.prompt_rate_lookups(&auto) == asked {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the catalog change asks again");
+    assert_eq!(
+        fixture.runtime.prompt_rate_lookups(&auto),
+        asked + 1,
+        "asked once, for the catalog, and not for either Context Fill"
+    );
+    fixture.server.shutdown().await.unwrap();
+}
+
 #[tokio::test]
 async fn a_selected_model_whose_prices_come_later_is_priced_at_them_once_they_do() {
     let state = tempfile::tempdir().unwrap();
@@ -1002,7 +1067,7 @@ async fn a_selected_model_whose_prices_come_later_is_priced_at_them_once_they_do
         controlled_selection(later.as_str(), "high", "fast"),
     )
     .await;
-    read_until(&fixture, "the Selection lands", |snapshot| {
+    let selected = read_until(&fixture, "the Selection lands", |snapshot| {
         snapshot
             .session
             .agent_selection
@@ -1010,6 +1075,11 @@ async fn a_selected_model_whose_prices_come_later_is_priced_at_them_once_they_do
             .is_some_and(|selection| selection.model == later)
     })
     .await;
+    assert_eq!(
+        selected.session.prompt_cache.map(unwritten),
+        Some(cache(lapses_at, &model, None)),
+        "a Model that runs its own calls is never priced at another's: none is known yet"
+    );
     // Its catalog comes, and its prices with it.
     fixture.runtime.price_cache(later.clone(), CHEAPER);
     crate::session_integration::support::refresh_catalog(fixture.server.descriptor()).await;

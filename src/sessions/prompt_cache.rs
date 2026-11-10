@@ -18,9 +18,8 @@ use tokio::sync::watch;
 
 use crate::pricing::{CacheWrite, PromptRates};
 use crate::protocol::{
-    AgentSelection, CacheWritePrice, LapsePenalty, MessageRole, ModelId, ModelOptionSelection,
-    PromptCache, ProviderId, SessionChange, SessionId, SessionSnapshot, SessionTimestamp, Turn,
-    TurnId, TurnStatus,
+    AgentSelection, CacheWritePrice, LapsePenalty, MessageRole, ModelId, PromptCache, ProviderId,
+    SessionChange, SessionId, SessionSnapshot, SessionTimestamp, Turn, TurnId, TurnStatus,
 };
 use crate::provider::{CacheLifetime, CacheWritten};
 
@@ -345,15 +344,13 @@ fn cache_written(
 pub(crate) type DeclaredCacheLifetimes = Arc<dyn Fn(&ProviderId) -> CacheLifetime + Send + Sync>;
 
 /// Whose prices a Session's Lapse Penalty is forecast at: those of the Model
-/// its Agent Selection names, under the Model Options it names — one, as a
-/// context tier, may move the price — or, where that Model has none of its
-/// own — a Model choosing a route rather than running — those of the Model
-/// whose call wrote the cache.
+/// its Agent Selection names, under the Model Options it names, which may
+/// move the price as a context tier does; or, where that Model chooses a
+/// route and has no prices of its own, those of the Model whose call wrote
+/// the cache, under the same options.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RatesFor {
-    pub(crate) provider: ProviderId,
-    pub(crate) selected: ModelId,
-    pub(crate) options: Vec<ModelOptionSelection>,
+    pub(crate) selection: AgentSelection,
     pub(crate) written_by: ModelId,
 }
 
@@ -361,9 +358,7 @@ impl RatesFor {
     /// The prices a cache `written_by` is forecast at under `selection`.
     fn of(selection: &AgentSelection, written_by: &ModelId) -> Self {
         Self {
-            provider: selection.provider.clone(),
-            selected: selection.model.clone(),
-            options: selection.options.clone(),
+            selection: selection.clone(),
             written_by: written_by.clone(),
         }
     }
@@ -394,7 +389,8 @@ pub(crate) trait LapseRateSource: Send + Sync {
     fn ask(&self, request: LapseRateRequest);
 }
 
-/// What the last answer for the prices a Session wants found.
+/// What the last answer for the prices a Session wants found. When each is
+/// asked for again is [`Self::wants_asking_again`]'s to say.
 #[derive(Clone, Debug)]
 pub(crate) enum RatesAnswer {
     /// None has come yet, or none is to hand without waiting.
@@ -402,13 +398,24 @@ pub(crate) enum RatesAnswer {
     /// The prices it found for the Model selected.
     Priced(PromptRates),
     /// The prices of the Model that wrote the cache, found where the Model
-    /// selected has none of its own: one choosing a route never has, and a
-    /// Provider may know another's only once its catalog comes, so these are
-    /// asked for again as [`Self::Unpriced`] is.
+    /// selected chooses a route and so has none of its own.
     StoodIn(PromptRates),
-    /// It found none: the Provider knew no prices for either Model, or there
-    /// is no runtime for the Provider to ask.
+    /// It found none: the Provider knew no prices for the Model selected,
+    /// nor, where that one routes, for the Model that wrote the cache; or
+    /// there is no runtime for the Provider to ask.
     Unpriced,
+}
+
+/// What may send a Session to ask again for prices it holds an answer for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AskAgain {
+    /// A Turn wrote the cache afresh.
+    CacheWritten,
+    /// A revision moved something the penalty is forecast from: a Turn, the
+    /// Context Fill, the Agent Selection or the cache itself.
+    ForecastMoved,
+    /// A Provider's Model Catalog changed.
+    CatalogChanged,
 }
 
 impl RatesAnswer {
@@ -420,10 +427,28 @@ impl RatesAnswer {
         }
     }
 
-    /// Whether asking again may find prices the answer lacks: the selected
-    /// Model's own.
-    fn wants_asking_again(&self) -> bool {
-        matches!(self, Self::StoodIn(_) | Self::Unpriced)
+    /// Whether `occasion` has the answer asked for again: the one rule for
+    /// every state.
+    ///
+    /// - A Turn writing the cache has any answer asked for again, since a
+    ///   catalog's prices may have moved since they were found.
+    /// - [`Self::Unpriced`] is asked for again too on every revision that
+    ///   moves the forecast and on every catalog change, since a Provider may
+    ///   know no prices until its harness has run or a fetch has finished.
+    /// - [`Self::StoodIn`] is asked for again only when a catalog changes: a
+    ///   routing Model has no prices of its own to come, and the writer's
+    ///   change no sooner than its catalog does. A routing Session is always
+    ///   stood in for, so this keeps its every usage report from asking.
+    /// - [`Self::Priced`] and [`Self::Awaited`] are asked for again by
+    ///   nothing else: the one holds the prices wanted, and the other is
+    ///   being asked for already.
+    fn wants_asking_again(&self, occasion: AskAgain) -> bool {
+        matches!(
+            (self, occasion),
+            (_, AskAgain::CacheWritten)
+                | (Self::Unpriced, _)
+                | (Self::StoodIn(_), AskAgain::CatalogChanged)
+        )
     }
 }
 
@@ -535,7 +560,7 @@ impl SessionStore {
         }) else {
             return Ok(());
         };
-        record.refresh_lapse_rates();
+        record.ask_for_lapse_rates_again(AskAgain::CacheWritten);
         record.commit_derived(
             &self.storage,
             session_id,
@@ -548,9 +573,10 @@ impl SessionStore {
     }
 
     /// Takes `found` as the answer for the prices the Lapse Penalty is
-    /// forecast at for `rates_for`, and forecasts it again, where the Session's history is
-    /// read in and it still wants prices for exactly those Models: an answer
-    /// for a Selection the Session has since left describes nothing of it.
+    /// forecast at for `rates_for`, and forecasts it again, where the
+    /// Session's history is read in and it still wants exactly those prices:
+    /// an answer for a Selection the Session has since left describes
+    /// nothing of it.
     pub(crate) fn price_prompt_cache(
         &self,
         session_id: SessionId,
@@ -594,9 +620,9 @@ impl SessionStore {
     }
 
     /// Asks again, each time a Provider's Model Catalog changes, for the
-    /// prices of every Session whose last answer found none: a Provider may
-    /// know none until its harness has run, which is when its catalog comes.
-    /// Stops with the Server, on `shutdown`.
+    /// prices of every Session whose last answer
+    /// [`RatesAnswer::wants_asking_again`] then. Stops with the Server, on
+    /// `shutdown`.
     pub(crate) async fn ask_again_as_catalogs_change(
         self,
         mut changes: watch::Receiver<u64>,
@@ -614,19 +640,17 @@ impl SessionStore {
                 .state
                 .lock()
                 .expect("Session store lock is not poisoned");
-            let unpriced = state
+            let asking_again = state
                 .sessions
                 .iter_mut()
                 .filter(|(_, record)| record.snapshot.session.prompt_cache.is_some())
                 .filter_map(|(id, record)| {
-                    let rates = record.lapse_rates.as_mut()?;
-                    rates.answer.wants_asking_again().then(|| {
-                        rates.owed = true;
-                        *id
-                    })
+                    record
+                        .ask_for_lapse_rates_again(AskAgain::CatalogChanged)
+                        .then_some(*id)
                 })
                 .collect::<Vec<_>>();
-            for session_id in unpriced {
+            for session_id in asking_again {
                 if !state.is_deferred(session_id) {
                     state.ask_for_lapse_rates(session_id);
                 }
@@ -704,9 +728,9 @@ impl SessionStoreState {
     }
 
     /// Takes the prices a revision about to land on `session_id` will want,
-    /// where `changes` select another Model and those prices are to hand, so
-    /// the penalty at the new Model lands in that revision rather than after
-    /// it.
+    /// where `changes` select another Agent Selection and those prices are
+    /// to hand, so the penalty under the new Selection lands in that revision
+    /// rather than after it.
     pub(super) fn take_lapse_rates_for_selection(
         &mut self,
         session_id: SessionId,
@@ -803,15 +827,7 @@ impl SessionRecord {
         if !moves_it {
             return None;
         }
-        // Whatever moved, an answer that found no prices of the Model
-        // selected is asked again.
-        if let Some(rates) = self
-            .lapse_rates
-            .as_mut()
-            .filter(|rates| rates.answer.wants_asking_again())
-        {
-            rates.owed = true;
-        }
+        self.ask_for_lapse_rates_again(AskAgain::ForecastMoved);
         self.prompt_cache_after(changes)
     }
 
@@ -872,9 +888,7 @@ impl SessionRecord {
         );
         match settled {
             Settled::Wrote(written) => {
-                // A catalog's prices may have moved since they were last
-                // found.
-                self.refresh_lapse_rates();
+                self.ask_for_lapse_rates_again(AskAgain::CacheWritten);
                 Some(written)
             }
             Settled::Left(left) => left,
@@ -882,11 +896,17 @@ impl SessionRecord {
     }
 
     /// Has the prices held for the Lapse Penalty looked up again, keeping
-    /// them meanwhile.
-    fn refresh_lapse_rates(&mut self) {
-        if let Some(rates) = self.lapse_rates.as_mut() {
-            rates.owed = true;
-        }
+    /// them meanwhile, where `occasion` calls for it; answers whether it did.
+    fn ask_for_lapse_rates_again(&mut self, occasion: AskAgain) -> bool {
+        let Some(rates) = self
+            .lapse_rates
+            .as_mut()
+            .filter(|rates| rates.answer.wants_asking_again(occasion))
+        else {
+            return false;
+        };
+        rates.owed = true;
+        true
     }
 
     /// Whose prices the Session's Lapse Penalty is to be forecast at, where
