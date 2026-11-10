@@ -234,8 +234,8 @@ impl ProviderRuntime for ClaudeRuntime {
     /// cache-write rate models.dev lists is the five-minute one; an hour-long write is priced at
     /// twice the fresh input rate, Anthropic's published rule (see Claude's `prompt_cache`), and
     /// no long-context premium is priced. None until a catalog has been listed, since nothing is
-    /// launched only to answer. No Model Option moves a
-    /// price: the 1M-context tier is a Model of its own.
+    /// launched only to answer. No Model Option moves a price: the 1M-context tier is a Model of
+    /// its own.
     fn prompt_rates<'a>(
         &'a self,
         model: &'a ModelId,

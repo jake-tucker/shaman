@@ -297,7 +297,9 @@ impl ProviderRuntime for CodexRuntime {
 
     /// The models.dev rates this runtime's Costs are estimated from, so a
     /// saving is worked out at the rates a Cost would be today. models.dev
-    /// prices every prompt size alike.
+    /// prices every prompt size alike. A Cost is estimated without the
+    /// service tier a Selection names, so no Model Option moves these
+    /// either.
     fn prompt_rates<'a>(
         &'a self,
         model: &'a ModelId,

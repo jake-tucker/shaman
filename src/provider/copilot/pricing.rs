@@ -137,12 +137,15 @@ impl PriceSchedule {
             .long_context
             .as_ref()
             .and_then(|prices| tier(prices, self.long_context_max_prompt_tokens));
-        let tiers = match (chosen, long_context) {
-            (Some(ContextTier::LongContext), Some(long_context)) => vec![long_context],
-            (Some(ContextTier::Default | ContextTier::LongContext), _) | (_, None) => {
-                vec![standard]
-            }
-            (_, Some(long_context)) => vec![standard, long_context],
+        let tiers = match chosen {
+            Some(ContextTier::Default) => vec![standard],
+            Some(ContextTier::LongContext) => vec![long_context.unwrap_or(standard)],
+            // A tier this SDK build cannot name is no choice, and none is
+            // chosen.
+            Some(ContextTier::Unknown) | None => [Some(standard), long_context]
+                .into_iter()
+                .flatten()
+                .collect(),
         };
         PromptRates::tiered(tiers)
     }
@@ -251,6 +254,8 @@ mod tests {
     use github_copilot_sdk::rpc::Model;
     use serde_json::json;
 
+    use github_copilot_sdk::session_events::ContextTier;
+
     use super::CopilotPricing;
     use crate::pricing::CacheWrite;
     use crate::protocol::{LapsePenalty, Usage};
@@ -345,8 +350,6 @@ mod tests {
     /// chosen, whatever the writing call could send.
     #[test]
     fn a_chosen_context_tier_prices_the_lapse_penalty_at_its_own_tier() {
-        use github_copilot_sdk::session_events::ContextTier;
-
         let pricing = CopilotPricing::default();
         pricing.replace(&[luna()]);
         let forecast = |tier, limit| {
