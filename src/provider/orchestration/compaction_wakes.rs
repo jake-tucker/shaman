@@ -53,6 +53,13 @@ struct ReadIns {
     reading: bool,
 }
 
+/// Which of the signals the wake holder follows still has a sender.
+struct Following {
+    armed: bool,
+    actors: bool,
+    settings: bool,
+}
+
 /// What finished reading a tree in for a stretch.
 struct ReadIn {
     session_id: SessionId,
@@ -89,6 +96,11 @@ async fn hold_wakes(orchestrator: ProviderOrchestrator, find_prices: Arc<dyn Fn(
     let mut shutdown = orchestrator.shutdown.clone();
     let (read_tx, mut read) = mpsc::unbounded_channel::<ReadIn>();
     let mut read_ins = HashMap::<(SessionId, TurnId), ReadIns>::new();
+    let mut following = Following {
+        armed: true,
+        actors: true,
+        settings: true,
+    };
     loop {
         armed_changes.borrow_and_update();
         actors_stopped.borrow_and_update();
@@ -156,18 +168,20 @@ async fn hold_wakes(orchestrator: ProviderOrchestrator, find_prices: Arc<dyn Fn(
                 sessions.abandon_scheduled_compaction(session_id, stretch.after);
             }
         }
+        // A signal whose sender has gone never changes again, which stops
+        // nothing else being followed.
         tokio::select! {
             biased;
             _ = super::super::wait_for_shutdown(&mut shutdown) => return,
-            changed = armed_changes.changed() => if changed.is_err() {
-                return;
-            },
-            changed = actors_stopped.changed() => if changed.is_err() {
-                return;
-            },
-            changed = settings.changed() => if changed.is_err() {
-                return;
-            },
+            changed = armed_changes.changed(), if following.armed => {
+                following.armed = changed.is_ok();
+            }
+            changed = actors_stopped.changed(), if following.actors => {
+                following.actors = changed.is_ok();
+            }
+            changed = settings.changed(), if following.settings => {
+                following.settings = changed.is_ok();
+            }
             Some(done) = read.recv() => {
                 if let Some(reads) = read_ins.get_mut(&(done.session_id, done.after)) {
                     reads.reading = false;

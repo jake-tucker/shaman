@@ -9206,6 +9206,116 @@ running 1 test",
         within("the orchestrator stops", fixture.providers.shutdown()).await;
     }
 
+    /// What holds a scheduled Compaction's wake with no actor running reads
+    /// the Session in at most twice for one stretch — once ahead of its
+    /// moment and once at it — and gives the stretch up where still no actor
+    /// judges it. Each actor started for it here waits behind the first,
+    /// whose Provider is slow to stop, and is released before it can judge,
+    /// as eviction releases it; a read-in is counted by the prices it has
+    /// looked for, as every read-in does.
+    #[tokio::test]
+    async fn a_stretch_no_actor_judges_after_two_read_ins_is_given_up() {
+        let (clock, hand) = crate::clock::ServerClock::manual();
+        let mut settings = SettingsSnapshot::default();
+        settings.settings.compaction.scheduled.enabled = true;
+        let mut fixture = hand_fixture_with(
+            false,
+            Duration::from_secs(60),
+            CacheLifetime::Assumed(Duration::from_secs(10 * 60)),
+            Some(crate::pricing::PromptRates::flat(
+                crate::pricing::CacheRates {
+                    input: 3.0,
+                    cache_read: Some(0.3),
+                    cache_write: Some(3.75),
+                },
+            )),
+            clock.clone(),
+            settings,
+        )
+        .await;
+        let created = create_session(&fixture.sessions, fixture.workspace.path(), "First");
+        let session_id = created.session.id;
+        fixture
+            .providers
+            .schedule_prompt(session_id, created.prompts[0].id)
+            .expect("schedule the first Prompt");
+        let (stop_first, first_stops) = oneshot::channel();
+        let mut output = vec![ProviderEvent::ContextFill {
+            report: crate::provider::ContextFillReport {
+                turn_id: None,
+                sequence: 1,
+                fill: crate::protocol::ContextFill {
+                    occupied_tokens: 400_000,
+                    capacity_tokens: Some(2_000_000),
+                },
+            },
+        }];
+        output.extend(answered());
+        let _first = run_to_idle_after(&mut fixture, session_id, Some(first_stops), output).await;
+        let sessions = fixture.sessions.clone();
+        let lapses_at = waited("the penalty is forecast", || {
+            sessions
+                .snapshot(session_id)
+                .and_then(|snapshot| snapshot.session.prompt_cache)
+                .filter(|cache| cache.lapse_penalty.is_some())
+                .map(|cache| cache.lapses_at)
+        })
+        .await;
+        let due_at = lapses_at.0 - crate::sessions::millis(SCHEDULED_COMPACTION_LEAD);
+        let ahead = crate::sessions::millis(SCHEDULED_COMPACTION_WAKE_AHEAD);
+        let read_ins = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        fixture.providers.hold_scheduled_compaction_wakes(Arc::new({
+            let read_ins = read_ins.clone();
+            move || {
+                read_ins.fetch_add(1, Ordering::SeqCst);
+            }
+        }));
+        let providers = fixture.providers.clone();
+        let read_in = |count: usize| {
+            (read_ins.load(Ordering::SeqCst) == count && providers.has_session_actor(session_id))
+                .then_some(())
+        };
+
+        // The first actor is released, and its Provider is slow to stop.
+        let _first_stopping = fixture.providers.release_idle_actors(&[session_id]);
+        hand.advance(Duration::from_millis(due_at - ahead / 2 - clock.now().0));
+        waited("the Session is read in ahead of its moment", || read_in(1)).await;
+        let _second_stopping = fixture.providers.release_idle_actors(&[session_id]);
+        hand.advance(Duration::from_millis(due_at - clock.now().0));
+        waited("the Session is read in again at its moment", || read_in(2)).await;
+        let _third_stopping = fixture.providers.release_idle_actors(&[session_id]);
+
+        // Once the first actor stops, nothing runs for the Session, and the
+        // stretch is given up rather than read in a third time.
+        stop_first
+            .send(())
+            .expect("the first Provider waits to stop");
+        waited("the stretch is given up", || {
+            sessions
+                .armed_scheduled_compactions()
+                .is_empty()
+                .then_some(())
+        })
+        .await;
+        waited("every actor released has stopped", || {
+            (!providers.has_session_actor(session_id)).then_some(())
+        })
+        .await;
+        assert_eq!(read_ins.load(Ordering::SeqCst), 2, "read in exactly twice");
+        assert_eq!(
+            fixture.sessions.snapshot(session_id).unwrap().turns.len(),
+            1,
+            "and nothing was compacted"
+        );
+        assert!(
+            fixture.started.try_recv().is_err(),
+            "nor any Provider started for it"
+        );
+
+        fixture.stop.send_replace(true);
+        within("the orchestrator stops", fixture.providers.shutdown()).await;
+    }
+
     /// The store opens no scheduled Compaction's Turn for an actor whose
     /// released flag is set when it judges, though the Compaction is due and
     /// owed: release sets that flag under the store's lock, which the
