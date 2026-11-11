@@ -69,6 +69,7 @@ fn session_kept_for(
         prompt_limit_tokens: None,
         lapse_penalty: lapse_penalty
             .map(|usd| LapsePenalty::from_usd(usd).expect("a representable penalty")),
+        compaction_due_at: None,
     });
     snapshot
 }
@@ -327,6 +328,7 @@ fn the_line_clears_once_the_next_turn_has_written_the_cache_afresh() {
                         write_price: suru::protocol::CacheWritePrice::Default,
                         prompt_limit_tokens: None,
                         lapse_penalty: LapsePenalty::from_usd(1.70),
+                        compaction_due_at: None,
                     }),
                 }],
             },
@@ -648,6 +650,7 @@ fn a_turn_that_moves_the_lapse_starts_the_countdown_afresh() {
                         write_price: suru::protocol::CacheWritePrice::Default,
                         prompt_limit_tokens: None,
                         lapse_penalty: LapsePenalty::from_usd(1.70),
+                        compaction_due_at: None,
                     }),
                 }],
             },

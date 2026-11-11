@@ -13,7 +13,7 @@ use uuid::Uuid;
 mod workspace_paths;
 pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths};
 
-pub const PROTOCOL_VERSION: u32 = 115;
+pub const PROTOCOL_VERSION: u32 = 116;
 mod attachment;
 mod divided_usage;
 mod pair_back;
@@ -3968,10 +3968,11 @@ pub struct ContextFill {
 }
 
 /// A Session's Prompt Cache as its latest Turn left it: the moment it lapses,
-/// leaving the Session cold, the Model whose call wrote it, and the Lapse
-/// Penalty its next Prompt pays once it has.
+/// leaving the Session cold, the Model whose call wrote it, the Lapse Penalty
+/// its next Prompt pays once it has, and when a scheduled Compaction pending
+/// ahead of the lapse falls due.
 ///
-/// A reader judges whether the moment has passed against its own wall clock,
+/// A reader judges whether each moment has passed against its own wall clock,
 /// as it reads every other Session timestamp, so a client on another machine
 /// is out by however far the two clocks disagree.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -4005,6 +4006,12 @@ pub struct PromptCache {
     /// them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lapse_penalty: Option<LapsePenalty>,
+    /// When Suru's scheduled Compaction of the Session falls due, a lead
+    /// before the lapse, where one is pending: Suru would begin it then, as
+    /// things stand. Suru's judgement, never stored, and withdrawn as soon as
+    /// anything rules it out or the Compaction begins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction_due_at: Option<SessionTimestamp>,
 }
 
 /// Which of its cache-write prices a Provider charges a call that writes the

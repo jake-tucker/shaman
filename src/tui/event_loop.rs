@@ -7792,6 +7792,7 @@ mod ready_event_tests {
             write_price: crate::protocol::CacheWritePrice::Default,
             prompt_limit_tokens: None,
             lapse_penalty: None,
+            compaction_due_at: None,
         });
         let mut application = Application::new(workspace, Default::default())
             .with_session_clock(move || SessionTimestamp(wall.load(Ordering::SeqCst)));
@@ -8104,6 +8105,7 @@ mod ready_event_tests {
                     write_price: crate::protocol::CacheWritePrice::Default,
                     prompt_limit_tokens: None,
                     lapse_penalty: None,
+                    compaction_due_at: None,
                 }),
             },
         );
@@ -8138,6 +8140,7 @@ mod ready_event_tests {
             write_price: crate::protocol::CacheWritePrice::Default,
             prompt_limit_tokens: None,
             lapse_penalty: None,
+            compaction_due_at: None,
         });
         run.application
             .handle_event(ApplicationEvent::SessionAttached(other))

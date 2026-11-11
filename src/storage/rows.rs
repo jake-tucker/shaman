@@ -1185,7 +1185,8 @@ fn transcript_identity(item: TranscriptItem) -> TranscriptIdentity {
 
 /// A Session's Prompt Cache as storage holds it: the moment it lapses and the
 /// Model whose call wrote it, but never the Lapse Penalty, which is a
-/// forecast, and is figured afresh once the Session is read back.
+/// forecast, nor when a pending scheduled Compaction falls due, which is a
+/// judgement: both are figured afresh once the Session is read back.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredPromptCache {
@@ -1227,6 +1228,7 @@ impl From<StoredPromptCache> for PromptCache {
             write_price: stored.write_price,
             prompt_limit_tokens: stored.prompt_limit_tokens,
             lapse_penalty: None,
+            compaction_due_at: None,
         }
     }
 }

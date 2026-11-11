@@ -67,6 +67,7 @@ async fn the_latest_reported_lapse_of_the_sessions_conversation_becomes_its_laps
             // 12,400 tokens at the catalog's 5 credits a thousand written to a
             // cache kept an hour, less 0.5 read, a credit being a cent.
             lapse_penalty: LapsePenalty::from_usd(0.558),
+            compaction_due_at: None,
         }),
         "selected {:?}",
         settled.session.agent_selection

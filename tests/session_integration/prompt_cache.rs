@@ -105,6 +105,7 @@ fn cache(lapses_at: SessionTimestamp, written_by: &ModelId, usd: Option<f64>) ->
         write_price: suru::protocol::CacheWritePrice::Default,
         prompt_limit_tokens: None,
         lapse_penalty: usd.and_then(LapsePenalty::from_usd),
+        compaction_due_at: None,
     }
 }
 

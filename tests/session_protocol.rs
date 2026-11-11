@@ -164,6 +164,7 @@ fn a_prompt_cache_names_the_write_price_its_call_paid() {
             write_price: price,
             prompt_limit_tokens: None,
             lapse_penalty: None,
+            compaction_due_at: None,
         };
         let mut wire = json!({ "lapses_at": 1_767_225_900_000_u64, "written_by": "gpt-5" });
         if let Some(named) = named {
@@ -690,6 +691,7 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
                 write_price: suru::protocol::CacheWritePrice::Default,
                 prompt_limit_tokens: None,
                 lapse_penalty: suru::protocol::LapsePenalty::from_usd(1.65),
+                compaction_due_at: None,
             }),
             id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),
             execution_directory: suru::protocol::ExecutionDirectory {
@@ -2501,6 +2503,53 @@ fn a_completed_compaction_is_measured_after_by_the_sessions_next_context_fill_re
     );
 }
 
+/// A scheduled Compaction pending for a Session rides its Prompt Cache as
+/// the moment it falls due, and a cache with none pending says nothing of
+/// one.
+#[test]
+fn a_prompt_cache_names_when_a_pending_scheduled_compaction_falls_due() {
+    use suru::protocol::{CacheWritePrice, PromptCache};
+    const {
+        assert!(
+            PROTOCOL_VERSION >= 116,
+            "a pending scheduled Compaction on the Prompt Cache changes the wire"
+        );
+    }
+    let cache = PromptCache {
+        lapses_at: SessionTimestamp(1_767_225_900_000),
+        written_in: None,
+        written_by: ModelId::new("gpt-5"),
+        lifetime_ms: Some(300_000),
+        write_price: CacheWritePrice::Default,
+        prompt_limit_tokens: None,
+        lapse_penalty: suru::protocol::LapsePenalty::from_usd(1.65),
+        compaction_due_at: Some(SessionTimestamp(1_767_225_780_000)),
+    };
+    let wire = json!({
+        "lapses_at": 1_767_225_900_000_u64,
+        "written_by": "gpt-5",
+        "lifetime_ms": 300_000,
+        "lapse_penalty": 1.65,
+        "compaction_due_at": 1_767_225_780_000_u64
+    });
+    assert_eq!(serde_json::to_value(&cache).expect("encode it"), wire);
+    assert_eq!(
+        serde_json::from_value::<PromptCache>(wire).expect("decode it"),
+        cache
+    );
+    let none_pending = PromptCache {
+        compaction_due_at: None,
+        ..cache
+    };
+    assert!(
+        serde_json::to_value(&none_pending)
+            .expect("encode it")
+            .get("compaction_due_at")
+            .is_none(),
+        "a cache with no Compaction pending leaves the moment out"
+    );
+}
+
 #[test]
 fn a_prompt_cache_change_carries_the_whole_cache_or_its_absence() {
     let session_id = SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f"));
@@ -2519,6 +2568,7 @@ fn a_prompt_cache_change_carries_the_whole_cache_or_its_absence() {
                     write_price: suru::protocol::CacheWritePrice::Default,
                     prompt_limit_tokens: Some(272_000),
                     lapse_penalty: suru::protocol::LapsePenalty::from_usd(0.46),
+                    compaction_due_at: None,
                 }),
             },
             SessionChange::PromptCacheChanged { prompt_cache: None },

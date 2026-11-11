@@ -1,6 +1,8 @@
 //! A Session's Prompt Cache: the moment it lapses, as its latest Turn's
 //! Provider output left it, the Model whose call wrote it, and the Lapse
-//! Penalty forecast for its next Prompt once it has.
+//! Penalty forecast for its next Prompt once it has. When a scheduled
+//! Compaction pending ahead of the lapse falls due rides on it too, but is
+//! judged in [`super::scheduled_compaction`].
 //!
 //! The Session's Provider actor tells the store what each Turn's output wrote
 //! as it arrives, and the moment changes in the very revision that settles the
@@ -336,6 +338,7 @@ fn cache_written(
         write_price: written.price,
         prompt_limit_tokens: None,
         lapse_penalty: None,
+        compaction_due_at: None,
     })
 }
 
@@ -973,6 +976,7 @@ fn written_cache(
         write_price: lapse.write_price,
         prompt_limit_tokens: lapse.prompt_limit_tokens,
         lapse_penalty: None,
+        compaction_due_at: None,
     })
 }
 
