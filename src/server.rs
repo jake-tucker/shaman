@@ -3715,10 +3715,14 @@ async fn update_agent_selection(
         .apply_agent_selection_command(session_id, request)
     {
         Ok(mutation) => {
+            // Cloned out first: the store's lock is never taken with the
+            // Settings borrowed, since the store reads the Settings under its
+            // lock.
+            let settings = state.settings.borrow().settings.clone();
             state.operations.settle_actorless_posture(
                 state
                     .sessions
-                    .reconcile_tree_approval_posture(session_id, &state.settings.borrow().settings),
+                    .reconcile_tree_approval_posture(session_id, &settings),
             );
             if let Some(prompt_id) = mutation.retry_prompt_id {
                 state

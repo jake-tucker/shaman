@@ -747,10 +747,13 @@ impl SessionOperations {
                 return Err(PromptRefusal::Storage);
             }
         };
-        self.settle_actorless_posture(self.sessions.reconcile_tree_approval_posture(
-            snapshot.session.id,
-            &self.settings.borrow().settings,
-        ));
+        // Cloned out first: the store's lock is never taken with the Settings
+        // borrowed, since the store reads the Settings under its lock.
+        let settings = self.settings.borrow().settings.clone();
+        self.settle_actorless_posture(
+            self.sessions
+                .reconcile_tree_approval_posture(snapshot.session.id, &settings),
+        );
         snapshot = self
             .sessions
             .snapshot(snapshot.session.id)
