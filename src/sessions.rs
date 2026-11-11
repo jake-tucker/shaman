@@ -48,8 +48,8 @@ mod posture_tests;
 mod projection;
 mod prompt_cache;
 pub(crate) use prompt_cache::{
-    CacheOutput, CacheRefresh, LapseRateRequest, LapseRateSource, RatesAnswer, RatesFor,
-    ReportedLapse,
+    CacheDeclarations, CacheOutput, CacheRefresh, LapseRateRequest, LapseRateSource, RatesAnswer,
+    RatesFor, ReportedLapse,
 };
 mod prompts;
 mod remote_reports;
@@ -276,8 +276,9 @@ struct SessionRecord {
     /// until it settles. Never stored: no Turn outlives its process.
     prompt_cache_write: Option<prompt_cache::StagedWrite>,
     /// What each Provider declares for the Turns the revision being committed
-    /// settles with nothing staged, read just before it lands.
-    unstaged_declarations: Vec<(TurnId, crate::provider::CacheLifetime)>,
+    /// settles with nothing staged — its Cache Lifetime, and whether the
+    /// Turn's selection routes each call — read just before it lands.
+    unstaged_declarations: Vec<(TurnId, crate::provider::CacheLifetime, bool)>,
     /// The prices the Session's Lapse Penalty is forecast at. Never stored,
     /// nor is the penalty.
     lapse_rates: Option<prompt_cache::LapseRates>,

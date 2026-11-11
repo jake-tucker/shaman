@@ -9,13 +9,13 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 
 use crate::clock::ServerClock;
-use crate::protocol::{SessionId, TurnId};
+use crate::protocol::{ModelId, ProviderId, SessionId, TurnId};
 use crate::provider::CacheLifetime;
 use futures_util::FutureExt;
 
 use crate::sessions::{
-    CacheOutput, CacheRefresh, LapseRateRequest, LapseRateSource, RatesAnswer, RatesFor,
-    ReportedLapse, SessionStore,
+    CacheDeclarations, CacheOutput, CacheRefresh, LapseRateRequest, LapseRateSource, RatesAnswer,
+    RatesFor, ReportedLapse, SessionStore,
 };
 
 use super::{ProviderEvent, ProviderRuntime, ProviderUpdateGate};
@@ -90,7 +90,7 @@ impl PromptCacheNotes {
             self.told = Some(turn_id);
             let routes = sessions
                 .turn_model(session_id, turn_id)
-                .is_some_and(|model| runtime.takes_routing_tier(&model));
+                .is_some_and(|model| runtime.routes_calls(&model));
             sessions.note_prompt_cache_turn(session_id, turn_id, lifetime, routes);
         }
         let Some(output) = cache_output(event).filter(|output| output.is_read_under(lifetime))
@@ -116,6 +116,37 @@ pub(super) fn note_reported_lapse(
     }
     if let Some(CacheOutput::Lapse(lapse)) = cache_output(event) {
         let _ = updates.apply(|| sessions.report_prompt_cache_lapse(session_id, lifetime, lapse));
+    }
+}
+
+/// What the Provider runtimes a Server hosts declare of their Prompt Caches,
+/// for the store to settle by a Turn nothing staged. A Provider no runtime
+/// hosts keeps no cache that lapses.
+pub(crate) struct HostedCacheDeclarations {
+    runtimes: Arc<Vec<Arc<dyn ProviderRuntime>>>,
+}
+
+impl HostedCacheDeclarations {
+    pub(crate) fn new(runtimes: Arc<Vec<Arc<dyn ProviderRuntime>>>) -> Self {
+        Self { runtimes }
+    }
+
+    fn runtime(&self, provider: &ProviderId) -> Option<&Arc<dyn ProviderRuntime>> {
+        self.runtimes
+            .iter()
+            .find(|runtime| runtime.provider_id() == *provider)
+    }
+}
+
+impl CacheDeclarations for HostedCacheDeclarations {
+    fn cache_lifetime(&self, provider: &ProviderId) -> CacheLifetime {
+        self.runtime(provider)
+            .map_or(CacheLifetime::None, |runtime| runtime.cache_lifetime())
+    }
+
+    fn routes_calls(&self, provider: &ProviderId, model: &ModelId) -> bool {
+        self.runtime(provider)
+            .is_some_and(|runtime| runtime.routes_calls(model))
     }
 }
 
@@ -156,7 +187,7 @@ async fn find_prices(runtime: &dyn ProviderRuntime, rates_for: &RatesFor) -> Rat
     {
         return RatesAnswer::Priced(selected);
     }
-    if rates_for.written_by == selection.model || !runtime.takes_routing_tier(&selection.model) {
+    if rates_for.written_by == selection.model || !runtime.routes_calls(&selection.model) {
         return RatesAnswer::Unpriced;
     }
     runtime

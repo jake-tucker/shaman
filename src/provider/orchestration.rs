@@ -3,6 +3,7 @@ mod compaction_wakes;
 mod compactions;
 mod delegations;
 mod prompt_cache;
+pub(crate) use prompt_cache::HostedCacheDeclarations;
 mod questionnaires;
 mod scheduled_compaction_rules;
 pub(crate) use scheduled_compaction_rules::ScheduledCompactionTimings;

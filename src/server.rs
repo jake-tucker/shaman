@@ -1834,14 +1834,9 @@ async fn start(
         storage.clone(),
         preparations.resumable_sessions(),
         workspaces,
-        Some(Arc::new(move |provider: &ProviderId| {
-            declaring
-                .iter()
-                .find(|runtime| runtime.provider_id() == *provider)
-                .map_or(crate::provider::CacheLifetime::None, |runtime| {
-                    runtime.cache_lifetime()
-                })
-        })),
+        Some(Arc::new(crate::provider::HostedCacheDeclarations::new(
+            declaring,
+        ))),
     )
     .with_settings(settings.subscribe())
     .with_sidekicks(sidekick_workspace.clone(), sidekick_acts);

@@ -43,10 +43,11 @@ pub use codex::CodexRuntime;
 pub use copilot::CopilotRuntime;
 pub(crate) use orchestration::{
     BrokeredDelivery, BrokeredSendRefusal, BrokeredSpawnRefusal, BrokeredStop,
-    BrokeredSubagentRequest, ContextBreakdownError, MOVE_CONTINUATION_GRACE, MoveSettlement,
-    PROVIDER_IDLE_SHUTDOWN, PROVIDER_STOP_TIMEOUT, ProviderOrchestrator, ProviderUpdateGate,
-    SCHEDULED_COMPACTION_LEAD, SCHEDULED_COMPACTION_MARGIN, SCHEDULED_COMPACTION_WAKE_AHEAD,
-    ScheduledCompactionTimings, skill_delivery_failure_message,
+    BrokeredSubagentRequest, ContextBreakdownError, HostedCacheDeclarations,
+    MOVE_CONTINUATION_GRACE, MoveSettlement, PROVIDER_IDLE_SHUTDOWN, PROVIDER_STOP_TIMEOUT,
+    ProviderOrchestrator, ProviderUpdateGate, SCHEDULED_COMPACTION_LEAD,
+    SCHEDULED_COMPACTION_MARGIN, SCHEDULED_COMPACTION_WAKE_AHEAD, ScheduledCompactionTimings,
+    skill_delivery_failure_message,
 };
 pub use report::{
     FinalMessage, MoveNote, Report, SettledMessage, SidekickIntervention, SidekickOriginLoss,
@@ -2146,18 +2147,22 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// Whether a Selection on `model` may name a Routing Tier at all, whether or
     /// not the catalog offers one now: a Setting may have taken them away, or
     /// the Provider marked the choice disabled, and either is the Provider's to
-    /// answer as a Turn claims it.
-    ///
-    /// It is read too as whether `model` routes each call to a Model of the
-    /// Provider's choosing and so has no prices of its own: a call on it
-    /// that names no Model is no evidence of what wrote the Prompt Cache, and
-    /// its Lapse Penalty is forecast at the prices of the Model that did. A
-    /// Provider with a routing Model that offers no tier answers true for it
-    /// all the same, or its Sessions forecast no penalty. Runtimes with no
-    /// routing Model need not implement it.
+    /// answer as a Turn claims it. Runtimes offering no Routing Tier need not
+    /// implement it.
     fn takes_routing_tier(&self, model: &ModelId) -> bool {
         let _ = model;
         false
+    }
+
+    /// Whether `model` routes each Model Call to a Model of the Provider's
+    /// choosing rather than running it itself, and so has no prices of its
+    /// own: a call on it that names no Model is no evidence of what wrote
+    /// the Prompt Cache, and its Lapse Penalty is forecast at the prices of
+    /// the Model that did. Defaulted to [`Self::takes_routing_tier`], since
+    /// a Model offering Routing Tiers routes; a Provider with a routing Model
+    /// that offers no tier answers true for it here.
+    fn routes_calls(&self, model: &ModelId) -> bool {
+        self.takes_routing_tier(model)
     }
 
     /// A fingerprint of the part of `settings` this Provider's Model discovery

@@ -357,9 +357,18 @@ fn cache_written(
     })
 }
 
-/// The Cache Lifetime each Provider declares, as the Server's runtimes say
-/// now.
-pub(crate) type DeclaredCacheLifetimes = Arc<dyn Fn(&ProviderId) -> CacheLifetime + Send + Sync>;
+/// What each Provider the Server hosts declares of its Prompt Cache, as its
+/// runtime says now: how long it keeps the cache, and whether a Model routes
+/// each call to one of the Provider's choosing. A Turn whose output nothing
+/// staged — one a stop left open — settles by these. Asked under the store's
+/// lock, which [`SessionStore`] says what may run under.
+pub(crate) trait CacheDeclarations: Send + Sync {
+    fn cache_lifetime(&self, provider: &ProviderId) -> CacheLifetime;
+    fn routes_calls(&self, provider: &ProviderId, model: &ModelId) -> bool;
+}
+
+/// The [`CacheDeclarations`] a store was given.
+pub(crate) type DeclaredCacheLifetimes = Arc<dyn CacheDeclarations>;
 
 /// Whose prices a Session's Lapse Penalty is forecast at: those of the Model
 /// its Agent Selection names, under the Model Options it names, which may
@@ -720,16 +729,23 @@ impl SessionStoreState {
             .into_iter()
             .filter(|turn_id| staged != Some(*turn_id))
             .map(|turn_id| {
-                let provider = record
+                let selection = record
                     .snapshot
                     .turns
                     .iter()
                     .find(|turn| turn.id == turn_id)
                     .and_then(|turn| turn.agent.as_ref())
-                    .map(|agent| &agent.selection.provider)
-                    .or_else(|| selected(&record.snapshot).map(|(provider, _)| provider));
-                let lifetime = provider.map_or(CacheLifetime::None, |provider| declared(provider));
-                (turn_id, lifetime)
+                    .map(|agent| (&agent.selection.provider, &agent.selection.model))
+                    .or_else(|| selected(&record.snapshot));
+                // Read as a Turn staged by its actor reads them.
+                let (lifetime, routes) =
+                    selection.map_or((CacheLifetime::None, false), |(provider, model)| {
+                        (
+                            declared.cache_lifetime(provider),
+                            declared.routes_calls(provider, model),
+                        )
+                    });
+                (turn_id, lifetime, routes)
             })
             .collect();
     }
@@ -897,12 +913,14 @@ impl SessionRecord {
             .prompt_cache_write
             .take_if(|staged| staged.turn_id == turn_id)
             .unwrap_or_else(|| {
-                let declared = self
+                let (declared, routes) = self
                     .unstaged_declarations
                     .iter()
-                    .find(|(unstaged, _)| *unstaged == turn_id)
-                    .map_or(CacheLifetime::None, |(_, declared)| *declared);
-                StagedWrite::opened(turn_id, declared, false)
+                    .find(|(unstaged, _, _)| *unstaged == turn_id)
+                    .map_or((CacheLifetime::None, false), |(_, declared, routes)| {
+                        (*declared, *routes)
+                    });
+                StagedWrite::opened(turn_id, declared, routes)
             });
         let turn = self.snapshot.turns.iter().find(|turn| turn.id == turn_id)?;
         let model = turn
@@ -1150,5 +1168,150 @@ mod tests {
             .map(|cache| cache.lapses_at),
             Some(SessionTimestamp(12_000))
         );
+    }
+
+    /// Declares a reported lifetime for every Provider, whose `auto` routes
+    /// each call.
+    struct RoutingAuto;
+
+    impl CacheDeclarations for RoutingAuto {
+        fn cache_lifetime(&self, _provider: &ProviderId) -> CacheLifetime {
+            CacheLifetime::Reported
+        }
+
+        fn routes_calls(&self, _provider: &ProviderId, model: &ModelId) -> bool {
+            model.as_str() == "auto"
+        }
+    }
+
+    /// A Turn a stop left open on a routing selection, settled with nothing
+    /// staged, reads its declarations as a staged one does: Usage naming no
+    /// Model is no evidence its calls ran anywhere but where the cache was
+    /// written, so the cache stands.
+    #[tokio::test]
+    async fn an_unstaged_turn_on_a_routing_selection_leaves_the_cache_as_a_staged_one_would() {
+        use crate::protocol::{
+            AgentSelection, CreateSessionRequest, ExecutionDirectory, InitialPrompt, PromptId,
+            Usage,
+        };
+        use crate::sessions::{DeliveredTurnStatus, ProviderTurnOutcome, StoreOutcome};
+        use crate::storage::{StorageRepository, StorageWriter};
+
+        let data_dir = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let repository = StorageRepository::open(data_dir.path()).await.unwrap();
+        let (writer, sink) = StorageWriter::spawn(repository);
+        let store = SessionStore::new_with_cache_lifetimes(
+            Default::default(),
+            sink,
+            Vec::new(),
+            Default::default(),
+            Some(Arc::new(RoutingAuto)),
+        );
+        let StoreOutcome::Created(created) = store
+            .create(CreateSessionRequest {
+                session_id: None,
+                preparation_id: None,
+                agent_selection: Some(AgentSelection {
+                    provider: ProviderId::new("copilot"),
+                    model: ModelId::new("auto"),
+                    options: Vec::new(),
+                }),
+                execution_directory: ExecutionDirectory {
+                    path: workspace.path().to_owned(),
+                },
+                prompt: InitialPrompt {
+                    id: PromptId::new(),
+                    text: "Read the parser".to_owned(),
+                    skill_invocations: Vec::new(),
+                    attachments: Vec::new(),
+                },
+            })
+            .unwrap()
+        else {
+            panic!("a fresh Prompt creates a Session");
+        };
+        let session_id = created.session.id;
+        let deliver = |prompt_id| {
+            store
+                .deliver_prompt(session_id, prompt_id, None, DeliveredTurnStatus::Active)
+                .unwrap()
+                .expect("the Prompt was still owed a Turn")
+                .turn_id
+        };
+        let finish = |turn_id| {
+            store
+                .finish_provider_turn(
+                    session_id,
+                    turn_id,
+                    ProviderTurnOutcome::Completed {
+                        trailing_output: Default::default(),
+                    },
+                )
+                .unwrap();
+        };
+        // The first Turn's call, routed to a Model it names, writes the cache.
+        let first = deliver(created.prompts[0].id);
+        store.note_prompt_cache_turn(session_id, first, CacheLifetime::Reported, true);
+        store.note_prompt_cache_output(
+            session_id,
+            first,
+            CacheLifetime::Reported,
+            SessionTimestamp(1_800_000_000_000),
+            CacheOutput::Lapse(lapse(1_800_003_600_000)),
+        );
+        finish(first);
+        let written = store
+            .snapshot(session_id)
+            .unwrap()
+            .session
+            .prompt_cache
+            .expect("the first Turn wrote the cache");
+
+        // The next stands open with Usage naming no Model, and nothing staged
+        // for it, as a stop leaves one; it settles by the declarations.
+        let next_prompt = PromptId::new();
+        store
+            .admit(
+                session_id,
+                crate::protocol::AdmitPromptRequest {
+                    delivery: crate::protocol::PromptDelivery::Queue,
+                    prompt: InitialPrompt {
+                        id: next_prompt,
+                        text: "And the lexer".to_owned(),
+                        skill_invocations: Vec::new(),
+                        attachments: Vec::new(),
+                    },
+                },
+                Vec::new(),
+                None,
+            )
+            .unwrap();
+        let next = deliver(next_prompt);
+        store
+            .publish(
+                session_id,
+                vec![SessionChange::TurnUsageChanged {
+                    turn_id: next,
+                    usage: Usage {
+                        fresh_input_tokens: Some(10),
+                        ..Usage::default()
+                    },
+                    cost: None,
+                    cost_basis: None,
+                    cost_coverage: None,
+                    cost_is_partial: false,
+                    cost_recorded_at: None,
+                    model_shares: Vec::new(),
+                }],
+            )
+            .unwrap();
+        finish(next);
+        assert_eq!(
+            store.snapshot(session_id).unwrap().session.prompt_cache,
+            Some(written),
+            "a routed call naming no Model says nothing of the cache"
+        );
+        writer.shutdown().await.unwrap();
     }
 }
