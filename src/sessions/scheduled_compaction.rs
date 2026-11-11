@@ -138,10 +138,9 @@ impl ScheduledCompactionRule {
 pub(crate) trait ScheduledCompactionRuleSource: Send + Sync {
     /// The rule a Session on `provider` is judged by now.
     ///
-    /// It may be called with the Session store's lock held, so it must not
-    /// block, do synchronous I/O, or call into the store: it reads the
-    /// Settings in force and what each Provider runtime declares, in the
-    /// lock order [`SessionStore`] states.
+    /// It may be called with the Session store's lock held, under the terms
+    /// [`SessionStore`] states: it reads the Settings in force and what each
+    /// Provider runtime declares.
     fn rule_for(&self, provider: &ProviderId) -> ScheduledCompactionRule;
 
     /// How long before the lapse every scheduled Compaction falls due, which

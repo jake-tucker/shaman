@@ -31,10 +31,9 @@ pub(crate) enum AgentSelectionMutationError {
 /// choice of it takes: one naming its Model's default Routing Tier names
 /// none, as the user choosing that tier does.
 ///
-/// It is called with the Session store's lock held, so it must not block,
-/// nor do synchronous I/O, nor call into the store; it may read what it
-/// holds in memory behind locks of its own, as the Model Catalog's cached
-/// Models are.
+/// It is called with the Session store's lock held, under the terms
+/// [`SessionStore`] states; it may read what it holds in memory behind locks
+/// of its own, as the Model Catalog's cached Models are.
 pub(crate) type SelectionNames = Arc<dyn Fn(AgentSelection) -> AgentSelection + Send + Sync>;
 
 pub(crate) struct AgentSelectionMutation {

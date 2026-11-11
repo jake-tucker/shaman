@@ -154,8 +154,8 @@ impl ManualCompaction {
 /// - It says nothing, and its cache does not lapse on idle: [`Self::None`].
 /// - It reports when the cache lapses: [`Self::Reported`], stating each
 ///   moment as [`ProviderEvent::PromptCacheLapseReported`].
-/// - It says, for each request, what that request wrote to the cache:
-///   [`Self::Inferred`], stating each request as
+/// - It says, for each Model Call, what that call wrote to the cache:
+///   [`Self::Inferred`], stating each call as
 ///   [`ProviderEvent::PromptCacheRefreshed`].
 /// - It says nothing, but its cache lapses a known time after use:
 ///   [`Self::Assumed`].
@@ -165,6 +165,20 @@ impl ManualCompaction {
 /// one declaring `Assumed` has every `PromptCacheRefreshed` it states
 /// ignored, counting from its output instead; and one declaring `None` has
 /// every moment it reports ignored.
+///
+/// What else to declare. A lifetime makes the lapse countdown and the cold
+/// line possible, and makes a scheduled Compaction possible, but neither
+/// works on it alone, and what is missing fails as silently:
+///
+/// - A Provider declaring a lifetime but no
+///   [`ProviderRuntime::manual_compaction`] is never compacted on schedule:
+///   it cannot be asked.
+/// - One whose [`ProviderRuntime::prompt_rates`] answers none has no Lapse
+///   Penalty, so its scheduled Compaction is always skipped and its cold
+///   line names no figure.
+/// - One with a Model that routes each call elsewhere says so in
+///   [`ProviderRuntime::routes_calls`], or a call on it naming no Model is
+///   taken to have run on it.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum CacheLifetime {
     /// The cache does not lapse on idle, so its Sessions are never cold.
@@ -172,29 +186,29 @@ pub enum CacheLifetime {
     None,
     /// The Provider reports the moment the cache lapses, as
     /// [`ProviderEvent::PromptCacheLapseReported`] with the output of the
-    /// request that wrote it, and Suru takes that moment as given.
+    /// Model Call that wrote it, and Suru takes that moment as given.
     Reported,
     /// Suru assumes the cache lapses this long after the last Provider output
     /// of the Session's latest Turn. It is for a Provider whose cache lapses
-    /// on idle but which says nothing of it, neither moment nor request; no
-    /// built-in Provider declares it today. A moment the Provider reports all
+    /// on idle but which says nothing of it, neither moment nor Model Call;
+    /// no built-in Provider declares it today. A moment the Provider reports all
     /// the same still outranks the assumption.
     Assumed(std::time::Duration),
     /// The Provider states, as [`ProviderEvent::PromptCacheRefreshed`], each
-    /// request the conversation sends and what it wrote to the cache, and
+    /// Model Call the conversation makes and what it wrote to the cache, and
     /// Suru infers the lapse from them: the cache lapses the lifetime the
-    /// latest request wrote for after that request, or, where it wrote
-    /// nothing, the lifetime of the write last observed for the Session, or
+    /// latest call wrote for after that call, or, where it wrote nothing,
+    /// the lifetime of the write last observed for the Session, or
     /// `unobserved` where no moment stands to have observed one. Only those
-    /// requests move the moment: output with no request behind it — a Turn
+    /// calls move the moment: output with no call behind it — a Turn
     /// failing before any call, a local command's reply — leaves it standing.
     /// A moment the Provider reports all the same still outranks the
     /// inference.
     Inferred { unobserved: std::time::Duration },
 }
 
-/// What one request wrote to a Prompt Cache: how long the Provider keeps it,
-/// which says when it lapses, and which write price the request paid, which
+/// What one Model Call wrote to a Prompt Cache: how long the Provider keeps
+/// it, which says when it lapses, and which write price the call paid, which
 /// says what writing it afresh costs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CacheWritten {
@@ -1537,11 +1551,10 @@ pub enum ProviderEvent {
         /// Provider said: a Provider pricing by tier priced the call by it.
         prompt_limit_tokens: Option<u64>,
     },
-    /// A request of the conversation the event is attributed to used its
+    /// A Model Call of the conversation the event is attributed to used its
     /// Prompt Cache, which keeps the cache from lapsing, as a Provider
     /// declaring [`CacheLifetime::Inferred`] states each one. Suru takes the
-    /// moment it arrives, on the Server's clock, as the moment of the
-    /// request. Only the owning Session's are kept, and one is no output of
+    /// moment it arrives, on the Server's clock, as the moment of the call. Only the owning Session's are kept, and one is no output of
     /// any Turn on its own: it begins no Continuation.
     PromptCacheRefreshed {
         /// What the request wrote to the cache — at the shortest lifetime,
@@ -1932,6 +1945,14 @@ fn add_reported_counts(current: Option<u64>, next: Option<u64>) -> Option<u64> {
         .and_then(|(current, next)| current.checked_add(next))
 }
 
+/// A Provider Suru hosts.
+///
+/// Its declarations — [`Self::cache_lifetime`], [`Self::manual_compaction`],
+/// [`Self::takes_routing_tier`] and [`Self::routes_calls`] — are read with the
+/// Session store's lock held, as are the first poll of [`Self::prompt_rates`]
+/// and [`Self::provider_id`]: they answer from what the runtime holds in
+/// memory, as `crate::sessions::SessionStore` says of whatever runs under
+/// that lock.
 pub trait ProviderRuntime: Send + Sync + 'static {
     fn provider_id(&self) -> ProviderId;
 
@@ -2090,8 +2111,10 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// How far this Provider compacts a Session's context on request.
     /// Defaulted to [`ManualCompaction::Unsupported`], matching the refusal
     /// [`ProviderSession::compact`] defaults to, so a Provider without the
-    /// capability offers nothing and every surface explaining `/compact`
-    /// reads this one declaration.
+    /// capability offers nothing: every surface explaining `/compact` reads
+    /// this one declaration, and so does a scheduled Compaction, which asks
+    /// it with [`Self::cache_lifetime`] whether the Provider can be asked at
+    /// all.
     fn manual_compaction(&self) -> ManualCompaction {
         ManualCompaction::Unsupported
     }

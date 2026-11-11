@@ -406,8 +406,8 @@ pub(crate) trait LapseRateSource: Send + Sync {
     /// what they are, or that there are none — and [`RatesAnswer::Awaited`]
     /// where finding them would wait.
     ///
-    /// It is asked with the Session store's lock held, so it must not block,
-    /// nor do synchronous I/O, nor call into the store: it polls
+    /// It is asked with the Session store's lock held, under the terms
+    /// [`SessionStore`] states: it polls
     /// [`crate::provider::ProviderRuntime::prompt_rates`] once, and gives up
     /// on whatever that would wait for.
     fn prices_now(&self, rates_for: &RatesFor) -> RatesAnswer;

@@ -129,12 +129,29 @@ const SESSION_UPDATE_CAPACITY: usize = 256;
 /// The Server's Sessions, their histories and everything derived from them,
 /// behind one lock.
 ///
+/// What runs under that lock. Besides the store's own work, it calls these
+/// seams with the lock held, each of which must not block, do synchronous
+/// I/O, or call into the store, and answers from what it holds in memory:
+///
+/// - the prices a Lapse Penalty is forecast at, as
+///   [`prompt_cache::LapseRateSource::prices_now`] finds them to hand, which
+///   polls [`crate::provider::ProviderRuntime::prompt_rates`] once;
+/// - how a Selection a Provider reports is named
+///   ([`selection::SelectionNames`]);
+/// - what each Provider declares of its Prompt Cache
+///   ([`prompt_cache::CacheDeclarations`]);
+/// - the rule a scheduled Compaction is judged by
+///   ([`scheduled_compaction::ScheduledCompactionRuleSource`]), which reads the
+///   Settings and the runtimes' declarations.
+///
 /// Lock order: never call into the store with the Server Settings borrowed.
 /// The store reads the Settings under its own lock — a hydrated history's
 /// posture, the rule a scheduled Compaction is judged by — so a caller
 /// holding a borrow while it waits for the lock, with a Settings write
 /// queued between the two, deadlocks the Server. Clone what is needed out of
-/// the Settings first.
+/// the Settings first. The store itself never holds a Settings borrow across
+/// a commit, since a commit may read the Settings again, and two reads with
+/// a write waiting between them deadlock as surely.
 #[derive(Clone)]
 pub(crate) struct SessionStore {
     state: Arc<Mutex<SessionStoreState>>,
