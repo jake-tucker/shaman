@@ -821,9 +821,13 @@ impl SessionStoreState {
         session_id: SessionId,
         cache: &PromptCache,
     ) -> Option<SessionTimestamp> {
-        let rule = self.scheduled_compaction_rule(session_id)?;
+        // Whether a stretch is owed one reads only the Session, so it goes
+        // ahead of the rule, which reads the Settings: a Working Session's
+        // commits, whose old stretch may still stand armed, end here.
+        let lead = self.scheduled_compaction_rules.as_ref()?.lead();
         let record = self.sessions.get(&session_id)?;
-        let (stretch, cache) = owed_stretch(&record.snapshot, Some(cache), rule.lead).ok()?;
+        let (stretch, cache) = owed_stretch(&record.snapshot, Some(cache), lead).ok()?;
+        let rule = self.scheduled_compaction_rule(session_id)?;
         self.judge(session_id, &rule, stretch, cache, stretch.due_at)
             .ok()?;
         Some(stretch.due_at)

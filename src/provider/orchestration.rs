@@ -3039,6 +3039,22 @@ async fn run_provider_session(
             if !std::mem::take(&mut idle_wait_kept) {
                 idle_wait_from = tokio::time::Instant::now();
             }
+            // What the actor itself owes the Session, which would begin a
+            // Turn of its own or needs the Provider it has: no idle process
+            // is stopped, nor scheduled Compaction begun, while it does.
+            let actor_owes_work = pending_prompt.is_some()
+                || !pending_delegations.is_empty()
+                || reports_owed
+                || subagents.owes_continuation()
+                || !subagents.watch_outcomes.is_empty();
+            // The store says what is pending of a scheduled Compaction by the
+            // verdict its wake would reach: one that owes work skips it. Noted
+            // ahead of arming, so a stretch armed is published only where that
+            // verdict lets it be.
+            let owes_work_of_its_own =
+                actor_owes_work || move_holds_turns || move_continuation_owed;
+            let _ =
+                updates.apply(|| sessions.note_actor_owes_work(session_id, owes_work_of_its_own));
             // The scheduled Compaction the idle stretch is owed, where it has
             // not been judged; whether it may begin is judged as it falls due.
             // Which stretch is armed, when it was found, and whether it was
@@ -3050,20 +3066,6 @@ async fn run_provider_session(
                 .apply(|| sessions.arm_scheduled_compaction(session_id, clock.now()))
                 .flatten();
             let compaction_due_at = compaction_due.map_or(SessionTimestamp(0), |due| due.due_at);
-            // What the actor itself owes the Session, which would begin a
-            // Turn of its own or needs the Provider it has: no idle process
-            // is stopped, nor scheduled Compaction begun, while it does.
-            let actor_owes_work = pending_prompt.is_some()
-                || !pending_delegations.is_empty()
-                || reports_owed
-                || subagents.owes_continuation()
-                || !subagents.watch_outcomes.is_empty();
-            // The store says what is pending of a scheduled Compaction by the
-            // verdict its wake would reach: one that owes work skips it.
-            let owes_work_of_its_own =
-                actor_owes_work || move_holds_turns || move_continuation_owed;
-            let _ =
-                updates.apply(|| sessions.note_actor_owes_work(session_id, owes_work_of_its_own));
             let input = if let Some(connected) = provider.as_mut() {
                 tokio::select! {
                     biased;
