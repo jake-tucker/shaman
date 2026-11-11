@@ -1,5 +1,5 @@
 //! A scheduled Compaction carried across what stops the actor holding its
-//! wake (ADR 0073), as a client observes it: a Provider process stopped for
+//! wake (ADR 0074), as a client observes it: a Provider process stopped for
 //! idleness (ADR 0058), a Server restarted, a tree evicted for going unused
 //! with no client attached (ADR 0022). Each still fires on time where it is
 //! owed, holds nothing alive meanwhile, and is never judged twice: a stretch

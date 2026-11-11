@@ -257,7 +257,7 @@ struct SessionStoreState {
     /// store said (see [`SessionStore::name_effective_selections_by`]).
     effective_selection_names: Option<selection::SelectionNames>,
     /// Each Session's idle stretch armed for a scheduled Compaction, and
-    /// whether it has been judged. Held in memory alone (ADR 0073).
+    /// whether it has been judged. Held in memory alone (ADR 0074).
     scheduled_compactions: scheduled_compaction::ArmedStretches,
     /// Where the rule a scheduled Compaction is judged by is found, once
     /// Provider orchestration has said (see

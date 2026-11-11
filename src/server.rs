@@ -248,7 +248,7 @@ pub struct ServerTimings {
     /// production at twenty seconds.
     pub scheduled_compaction_margin: Duration,
     /// How long before a scheduled Compaction falls due a Session no Provider
-    /// actor runs for is read back in for it (ADR 0073). Fixed in production
+    /// actor runs for is read back in for it (ADR 0074). Fixed in production
     /// at a minute.
     pub scheduled_compaction_wake_ahead: Duration,
     /// How long a pending Move waits for the Continuation a Subagent settling

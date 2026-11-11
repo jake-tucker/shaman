@@ -3068,7 +3068,7 @@ async fn run_provider_session(
             // not been judged; whether it may begin is judged as it falls due.
             // Which stretch is armed, when it was found, and whether it was
             // judged are the store's to hold, so they outlive this actor (ADR
-            // 0073): a stretch standing as it starts — one an evicted tree's
+            // 0074): a stretch standing as it starts — one an evicted tree's
             // actor left, or a restarted Server found — is armed as any
             // other, and one judged before is never judged again.
             let compaction_due = sessions.arm_scheduled_compaction(
