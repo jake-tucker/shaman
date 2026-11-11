@@ -368,7 +368,7 @@ pub(crate) trait CacheDeclarations: Send + Sync {
 }
 
 /// The [`CacheDeclarations`] a store was given.
-pub(crate) type DeclaredCacheLifetimes = Arc<dyn CacheDeclarations>;
+pub(crate) type DeclaredCaches = Arc<dyn CacheDeclarations>;
 
 /// Whose prices a Session's Lapse Penalty is forecast at: those of the Model
 /// its Agent Selection names, under the Model Options it names, which may
@@ -715,7 +715,7 @@ impl SessionStoreState {
         session_id: SessionId,
         changes: &[SessionChange],
     ) {
-        let Some(declared) = self.cache_lifetimes.clone() else {
+        let Some(declared) = self.cache_declarations.clone() else {
             return;
         };
         let Some(record) = self.sessions.get_mut(&session_id) else {
@@ -1201,7 +1201,7 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
         let repository = StorageRepository::open(data_dir.path()).await.unwrap();
         let (writer, sink) = StorageWriter::spawn(repository);
-        let store = SessionStore::new_with_cache_lifetimes(
+        let store = SessionStore::new_with_cache_declarations(
             Default::default(),
             sink,
             Vec::new(),

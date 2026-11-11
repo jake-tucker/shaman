@@ -270,7 +270,7 @@ struct SessionStoreState {
     lapse_rate_source: Option<Arc<dyn prompt_cache::LapseRateSource>>,
     /// The Cache Lifetime each Provider declares, where the Server hosting
     /// the store said.
-    cache_lifetimes: Option<prompt_cache::DeclaredCacheLifetimes>,
+    cache_declarations: Option<prompt_cache::DeclaredCaches>,
     /// How a Selection a Provider says a Turn ran under is rewritten into the
     /// form the user's own choice of it takes, where the Server hosting the
     /// store said (see [`SessionStore::name_effective_selections_by`]).
@@ -459,7 +459,7 @@ fn dress_workspace(
 }
 
 impl SessionStore {
-    /// [`Self::new_with_cache_lifetimes`] with no Provider declaring a Cache
+    /// [`Self::new_with_cache_declarations`] with no Provider declaring a Cache
     /// Lifetime, for a test that hosts none.
     #[cfg(test)]
     pub(crate) fn new(
@@ -468,7 +468,13 @@ impl SessionStore {
         resumable_preparations: Vec<SessionId>,
         workspaces: HashMap<WorkspaceId, StoredWorkspace>,
     ) -> Self {
-        Self::new_with_cache_lifetimes(restored, storage, resumable_preparations, workspaces, None)
+        Self::new_with_cache_declarations(
+            restored,
+            storage,
+            resumable_preparations,
+            workspaces,
+            None,
+        )
     }
 
     /// `resumable_preparations` names the Sessions a stored Worktree
@@ -487,16 +493,16 @@ impl SessionStore {
     /// freshly decoded row says, which is what carries this correction
     /// forward.
     ///
-    /// `cache_lifetimes` says which Cache Lifetime each Provider declares,
+    /// `cache_declarations` says which Cache Lifetime each Provider declares,
     /// which a Turn whose output nothing staged settles by: one a stop left
     /// open, settled here or as its history is read in. With none, such a Turn
     /// settles as a Provider declaring no lifetime's would.
-    pub(crate) fn new_with_cache_lifetimes(
+    pub(crate) fn new_with_cache_declarations(
         restored: RestoredSessions,
         storage: StorageSink,
         resumable_preparations: Vec<SessionId>,
         workspaces: HashMap<WorkspaceId, StoredWorkspace>,
-        cache_lifetimes: Option<prompt_cache::DeclaredCacheLifetimes>,
+        cache_declarations: Option<prompt_cache::DeclaredCaches>,
     ) -> Self {
         let started = std::time::Instant::now();
         let RestoredSessions {
@@ -571,7 +577,7 @@ impl SessionStore {
             worked_order: Vec::new(),
             report_notices: None,
             lapse_rate_source: None,
-            cache_lifetimes,
+            cache_declarations,
             effective_selection_names: None,
             continuations_awaited: Default::default(),
             agent_moves: Default::default(),
