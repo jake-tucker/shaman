@@ -18,6 +18,10 @@ than assuming POSIX: `Path::is_absolute` is platform-defined, so `/home/user` is
 - Run tests with `cargo nextest run` (parallelizes across test binaries and reports per-test timings); `cargo test` also works. Tests must not wait out production-scale delays: timing constants (timeouts, backoff, keepalive) are injectable via builders such as `ManagedClientConfig::with_startup_timeout`, `ServerTimings`, and `CodexRuntime::with_interrupt_request_timeout`, so inject millisecond-scale values instead of sleeping. On macOS, `scripts/test-on-ramdisk.sh` runs the same suite faster, with TMPDIR on a RAM disk. Tests reach loopback Servers through `support::loopback_client()` (`runtime::loopback_http_client()` in `src`), which skips the system HTTP proxy lookup that costs `reqwest::Client::new()` most of a second per test process on macOS.
 - Code must pass `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`; CI enforces both on every platform Suru ships for. The toolchain is pinned in `rust-toolchain.toml`; bump it deliberately.
 - Use conventional commits
+- A term being defined in our domain docs does not make it a proper noun. Do not capitalise domain terms for that
+reason, least of all in text the user reads: the UI says "Moving session" and "Waiting to move", not "Moving Session"
+and "Waiting to Move". Capitalise only what ordinary English would: real names (Codex, Copilot, Claude, Suru) and the
+start of a sentence or label.
 
 ## Plugins
 
