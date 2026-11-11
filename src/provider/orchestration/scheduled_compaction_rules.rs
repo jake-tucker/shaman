@@ -40,7 +40,7 @@ pub(crate) struct ScheduledCompactionRules {
 impl ScheduledCompactionRules {
     /// The rule a Session on `provider` is judged by now. A Provider this
     /// Server does not host cannot be asked.
-    pub(crate) fn for_provider(&self, provider: &ProviderId) -> ScheduledCompactionRule {
+    fn for_provider(&self, provider: &ProviderId) -> ScheduledCompactionRule {
         let in_force = self.settings.borrow();
         let provider_compacts = self
             .runtimes
@@ -86,7 +86,7 @@ impl ProviderOrchestrator {
     }
 
     /// The rules this orchestrator's scheduled Compactions are judged by.
-    pub(crate) fn scheduled_compaction_rules(&self) -> ScheduledCompactionRules {
+    fn scheduled_compaction_rules(&self) -> ScheduledCompactionRules {
         ScheduledCompactionRules {
             runtimes: self.runtimes.clone(),
             settings: self.settings.clone(),

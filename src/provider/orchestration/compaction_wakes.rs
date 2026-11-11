@@ -25,9 +25,8 @@
 //!   at the moment, so a tree read in ahead and evicted before the moment —
 //!   eviction shorter than the time ahead — is not read in at every sweep. A
 //!   stretch still unjudged after both, with no actor to judge it, is given
-//!   up as [`Unwakeable`](crate::sessions::ScheduledCompactionSkip::Unwakeable),
-//!   as is one whose tree cannot be read back or whose Session names no
-//!   Provider.
+//!   up as `ScheduledCompactionSkip::Unwakeable`, as is one whose tree
+//!   cannot be read back or whose Session names no Provider.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -169,7 +168,7 @@ async fn hold_wakes(orchestrator: ProviderOrchestrator, find_prices: Arc<dyn Fn(
         // nothing else being followed.
         tokio::select! {
             biased;
-            _ = super::super::wait_for_shutdown(&mut shutdown) => return,
+            _ = crate::provider::wait_for_shutdown(&mut shutdown) => return,
             changed = armed_changes.changed(), if following.armed => {
                 following.armed = changed.is_ok();
             }
@@ -211,7 +210,7 @@ fn read_in(
         // stands, which leaves the tree deferred.
         tokio::select! {
             biased;
-            _ = super::super::wait_for_shutdown(&mut shutdown) => {}
+            _ = crate::provider::wait_for_shutdown(&mut shutdown) => {}
             () = wake(&orchestrator, session_id, after, find_prices.as_ref()) => {}
         }
         let _ = done.send(ReadIn { session_id, after });

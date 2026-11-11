@@ -69,7 +69,7 @@ impl ComposerTop {
     /// while the Session is Working: the update that ends the Turn is
     /// what brings the line back, so a Working Session asks for no wakeup.
     pub(super) fn of(snapshot: &SessionSnapshot, now: SessionTimestamp) -> Self {
-        if snapshot.session.parent.is_some() || snapshot.working_since().is_some() {
+        if snapshot.session.is_subagent() || snapshot.working_since().is_some() {
             return Self::QUIET;
         }
         snapshot

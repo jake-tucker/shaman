@@ -113,9 +113,9 @@ pub(super) struct PromptCacheNotes {
 impl PromptCacheNotes {
     /// Tells the store that `event`, output of the owning Session's Turn
     /// `turn_id`, arrived now on `clock`, where its Provider's cache lapses at
-    /// all: once a Turn, whether the Model the Turn selected routes its calls
-    /// — a Model that takes a Routing Tier does, as Copilot's `auto` — and
-    /// then each output its Cache Lifetime reads. The runtime is asked apart
+    /// all: once a Turn, whether the Model the Turn selected routes its calls,
+    /// as its runtime's `routes_calls` says, and then each output its Cache
+    /// Lifetime reads. The runtime is asked apart
     /// from the store's lock.
     pub(super) fn note_turn_output(
         &mut self,

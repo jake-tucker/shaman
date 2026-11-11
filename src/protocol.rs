@@ -4015,8 +4015,10 @@ pub struct PromptCache {
 }
 
 /// Which of its cache-write prices a Provider charges a call that writes the
-/// Prompt Cache. It is what the Provider says of the write, never read off
-/// how long the cache is kept, which only says when it lapses. A Provider
+/// Prompt Cache. It is what the Provider's adapter says of the write — read
+/// off whatever that Provider states, its lifetime included where that is
+/// all it states — and the generic layer never reads it off how long the
+/// cache is kept, which there only says when it lapses. A Provider
 /// reports [`Self::Default`] unless it says the write paid another price,
 /// and [`Self::Unlisted`] only where it names a price Suru has no rate for.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

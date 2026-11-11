@@ -64,8 +64,10 @@ mod restoration_tests;
 mod saves;
 mod scheduled_compaction;
 pub(crate) use prompt_cache::millis;
+#[cfg(test)]
+pub(crate) use scheduled_compaction::ScheduledCompactionSkip;
 pub(crate) use scheduled_compaction::{
-    IdleStretch, ScheduledCompactionRule, ScheduledCompactionRuleSource, ScheduledCompactionSkip,
+    IdleStretch, ScheduledCompactionRule, ScheduledCompactionRuleSource,
 };
 mod selection;
 mod session_moves;

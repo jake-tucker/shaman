@@ -58,10 +58,9 @@ use crate::sessions::{
     ApprovalPostureUpdate, BrokeredSpawn, BrokeredSpawnCap, BrokeredSpawnError,
     CompactSessionError, DelegatingAgent, DeliveredDelegation, DeliveredTurn, DeliveredTurnStatus,
     IdleStretch, InterruptSessionError, InterruptTarget, OpenInterventions, ProviderTurnOutcome,
-    ReportContinuation, ScheduledCompactionSkip, SessionStore, StoredSubagent,
-    TrailingCommandOutput, command_output_changes, earliest_pending_prompt,
-    message_content_changes, opening_subagent_row, reasoning_content_changes,
-    tool_call_output_changes,
+    ReportContinuation, SessionStore, StoredSubagent, TrailingCommandOutput,
+    command_output_changes, earliest_pending_prompt, message_content_changes, opening_subagent_row,
+    reasoning_content_changes, tool_call_output_changes,
 };
 use crate::skill_catalog::{SkillCatalogError, SkillCatalogService};
 use crate::storage::StoredSubagentIdentity;
@@ -3161,10 +3160,9 @@ async fn run_provider_session(
                             turn_id,
                             instructions: None,
                         }),
-                        // Its moment moved on: it is armed again for then.
-                        Err(ScheduledCompactionSkip::NotDue) => continue,
-                        // The store has judged the stretch, and said why, and
-                        // arms it no more; or the actor was released, and
+                        // Its moment moved on, and it is armed again for then;
+                        // or the store has judged the stretch, and said why,
+                        // and arms it no more; or the actor was released, and
                         // stops.
                         Err(_) => continue,
                     }
@@ -9665,7 +9663,7 @@ running 1 test",
                 due,
                 &AtomicBool::new(true)
             ),
-            Err(ScheduledCompactionSkip::Released)
+            Err(crate::sessions::ScheduledCompactionSkip::Released)
         );
         assert_eq!(
             sessions.snapshot(session_id).unwrap().turns.len(),
