@@ -50,8 +50,21 @@ printf '%s\n' "$attempt" > "$COPILOT_FIXTURE_ATTEMPTS"
 printf '%s\n' "$*" > "$COPILOT_FIXTURE_ARGV"
 trap 'printf exited > "$COPILOT_FIXTURE_EXITED"' EXIT
 
+# One frame at a time on stdout. macOS's shell flushes `printf` at each line, so a frame leaves as
+# several writes, and a timeline played on a background subshell would interleave its frames with
+# the main loop's replies, corrupting the stream until the SDK drops the connection. A `noclobber`
+# create is the atomic test-and-set, and builtin, as is the C locale's byte count of the frame: the
+# only process a frame costs is the `rm` that releases it. `$$` names the main process in a subshell
+# too, so a fixture killed holding the lock strands none for the one restarted after it.
 reply() {
-  printf 'Content-Length: %s\r\n\r\n%s' "$(printf '%s' "$1" | wc -c | tr -d ' ')" "$1"
+  local LC_ALL=C
+  set -C
+  until { true > "$COPILOT_FIXTURE_LOG.writing-$$"; } 2>/dev/null; do
+    test_running || exit 1
+  done
+  set +C
+  printf 'Content-Length: %s\r\n\r\n%s' "${#1}" "$1"
+  rm -f "$COPILOT_FIXTURE_LOG.writing-$$"
 }
 
 # One entry on the Session's timeline: `event <id> <type> <data-object>`. The Session it belongs to
