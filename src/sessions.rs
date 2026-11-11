@@ -65,7 +65,7 @@ mod saves;
 mod scheduled_compaction;
 pub(crate) use prompt_cache::millis;
 pub(crate) use scheduled_compaction::{
-    IdleStretch, ScheduledCompactionRule, ScheduledCompactionSkip,
+    IdleStretch, ScheduledCompactionRule, ScheduledCompactionRuleSource, ScheduledCompactionSkip,
 };
 mod selection;
 mod session_moves;
@@ -250,6 +250,15 @@ struct SessionStoreState {
     /// Each Session's idle stretch armed for a scheduled Compaction, and
     /// whether it has been judged. Held in memory alone (ADR 0073).
     scheduled_compactions: scheduled_compaction::ArmedStretches,
+    /// Where the rule a scheduled Compaction is judged by is found, once
+    /// Provider orchestration has said (see
+    /// [`SessionStore::judge_scheduled_compactions_by`]).
+    scheduled_compaction_rules:
+        Option<Arc<dyn scheduled_compaction::ScheduledCompactionRuleSource>>,
+    /// The Sessions whose running actor last said it owes them work of its
+    /// own that would begin a Turn, which skips a scheduled Compaction
+    /// falling due then. Held in memory alone, as actors are.
+    actors_owing_work: HashSet<SessionId>,
 }
 
 struct SessionRecord {
@@ -538,6 +547,8 @@ impl SessionStore {
             continuations_awaited: Default::default(),
             agent_moves: Default::default(),
             scheduled_compactions: Default::default(),
+            scheduled_compaction_rules: None,
+            actors_owing_work: Default::default(),
         };
         state.worked_order = state.worked_order();
         // A history still waiting in storage has nothing a save could be

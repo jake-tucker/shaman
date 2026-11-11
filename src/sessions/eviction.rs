@@ -134,7 +134,15 @@ impl SessionStore {
                 .filter(|session_id| state.sessions[*session_id].owns_provider_actor())
                 .copied()
                 .collect::<Vec<_>>();
-            (candidates, actors.release(&owners), judged_at)
+            let released = actors.release(&owners);
+            // A released actor begins nothing, so owes nothing any longer: a
+            // tree kept after all is judged without what it said.
+            for owner in &owners {
+                if state.set_actor_owes_work(*owner, false) {
+                    state.reconcile_pending_compaction(&self.storage, *owner);
+                }
+            }
+            (candidates, released, judged_at)
         };
         released.await;
 
@@ -389,6 +397,13 @@ impl SessionStoreState {
             snapshot.transcript = Vec::new();
             snapshot.attachments = Vec::new();
             record.unsaved = Unsaved::unheld();
+            // A deferred Session publishes nothing pending; it is judged
+            // again once read back in.
+            for session in [&mut snapshot.session, &mut record.summary.session] {
+                if let Some(cache) = session.prompt_cache.as_mut() {
+                    cache.compaction_due_at = None;
+                }
+            }
             let parent = snapshot.session.parent;
             let summary = UnreadableSessionSummary {
                 id: session_id,

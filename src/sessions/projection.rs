@@ -333,6 +333,9 @@ impl SessionStoreState {
                     inputs,
                 });
             }
+            // Interventions below hold back a scheduled Compaction pending
+            // here, as they do any work.
+            self.reconcile_pending_compaction(storage, *current);
         }
     }
 
@@ -398,6 +401,9 @@ impl SessionStoreState {
                 });
             }
         }
+        // Whatever moved what the tree holds may call off a scheduled
+        // Compaction pending in it, or leave one pending again.
+        self.reconcile_pending_compactions(storage, session_id);
     }
 
     /// Re-derives what every Session from this one up to its listed root has

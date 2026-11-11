@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use super::{
     Idle, LEAD, LIFETIME, ON, RATES, WAKE_AHEAD, admit_prompt, advance, compactions, completed,
-    filled, idle_built, millis, scheduled_timings,
+    filled, idle_built, millis, pending, scheduled_timings,
 };
 use crate::session_integration::support::{controlled_selection, read_session, read_session_until};
 use crate::support::PROGRESS_DEADLINE;
@@ -847,20 +847,7 @@ async fn a_stretch_skipped_as_settled_before_a_restart_does_not_fire_once_unsett
     idle.advance_to(due_at);
     idle.assert_nothing_scheduled(1, "the Session is Settled")
         .await;
-    let descriptor = idle.fixture.server.descriptor();
-    idle.fixture
-        .client
-        .post(format!(
-            "{}/v1/sessions/{}/settlement",
-            descriptor.base_url, idle.fixture.session_id
-        ))
-        .bearer_auth(&descriptor.token)
-        .json(&suru::protocol::SettleSessionRequest { settled: false })
-        .send()
-        .await
-        .expect("take the Session off the shelf")
-        .error_for_status()
-        .expect("the Session is active again");
+    idle.unsettle_session().await;
 
     let stopped = idle.stop().await;
     let mut restarted = stopped.restart(state.path(), channel).await;
@@ -1046,5 +1033,110 @@ async fn the_setting_turned_on_before_the_moment_reaches_an_evicted_tree() {
         .await
         .expect("the scheduled Compaction reaches the Provider");
     asked.succeed();
+    idle.shutdown().await;
+}
+
+/// A moment inside the client's two minutes before `due_at` and ahead of
+/// anything read in for it, so what a client reads there was derived with no
+/// actor running.
+fn inside_the_window_before_any_read_in(due_at: SessionTimestamp) -> SessionTimestamp {
+    SessionTimestamp(due_at.0 - millis(WAKE_AHEAD) - 30_000)
+}
+
+/// A Server restarted before the moment publishes what is pending in the
+/// very snapshot a client opening the Session first reads, with no actor
+/// running yet, and it fires as published.
+#[tokio::test]
+async fn a_restarted_server_publishes_what_is_pending_as_a_client_opens_the_session() {
+    let state = tempfile::tempdir().unwrap();
+    let channel = "carried-restart-pending";
+    let idle = idle_with(state.path(), channel, ON, |timings| timings, |_| {}).await;
+    let due_at = idle.due_at().await;
+    idle.until("it is published as pending", |snapshot| {
+        pending(snapshot) == Some(due_at)
+    })
+    .await;
+    let stopped = idle.stop().await;
+    let mut restarted = stopped.restart(state.path(), channel).await;
+
+    restarted.advance_to(inside_the_window_before_any_read_in(due_at));
+    let read = restarted.snapshot().await;
+    assert_eq!(pending(&read), Some(due_at), "read in, it is pending");
+    assert!(
+        restarted.provider.try_next_start().is_none(),
+        "and no actor was started for it"
+    );
+    restarted.advance_to(due_at);
+    let mut session = resumed(&mut restarted.provider, "the scheduled Compaction is due").await;
+    scheduled_on(&mut session, async || restarted.snapshot().await).await;
+    restarted.shutdown().await;
+}
+
+/// A Session a restarted Server would skip at the moment — the Setting
+/// pinned off while it was down, the Session Settled, or its penalty short
+/// of the minimum once priced — reads nothing pending when it is opened.
+#[tokio::test]
+async fn a_restarted_server_publishes_nothing_pending_for_a_session_the_moment_would_skip() {
+    for (channel, settled, pinned) in [
+        ("carried-restart-pending-off", false, "{}"),
+        ("carried-restart-pending-settled", true, ON),
+        (
+            "carried-restart-pending-short",
+            false,
+            r#"{ "compaction": { "scheduled": { "enabled": true, "minimumPenalty": 1.39 } } }"#,
+        ),
+    ] {
+        let state = tempfile::tempdir().unwrap();
+        let idle = idle_with(state.path(), channel, ON, |timings| timings, |_| {}).await;
+        if settled {
+            idle.settle_session().await;
+        }
+        let due_at = idle.due_at().await;
+        let stopped = idle.stop().await;
+        stopped.pin(pinned);
+        let restarted = stopped.restart(state.path(), channel).await;
+
+        restarted.advance_to(inside_the_window_before_any_read_in(due_at));
+        let read = restarted
+            .until("the penalty is forecast once read in", |snapshot| {
+                snapshot
+                    .session
+                    .prompt_cache
+                    .as_ref()
+                    .is_some_and(|cache| cache.lapse_penalty.is_some())
+            })
+            .await;
+        assert_eq!(pending(&read), None, "{channel}: nothing is pending");
+        restarted.shutdown().await;
+    }
+}
+
+/// A tree evicted with no client attached publishes what is pending the
+/// moment a client opens a Session of it again: derived as it is read in,
+/// with nothing committed or broadcast for it while nobody had it open.
+#[tokio::test]
+async fn an_evicted_tree_publishes_what_is_pending_as_a_client_opens_it_again() {
+    let state = tempfile::tempdir().unwrap();
+    let mut idle = idle_and_evictable(state.path(), "carried-evicted-pending-read", ON).await;
+    let due_at = idle.due_at().await;
+    let left = idle
+        .until("it is published as pending", |snapshot| {
+            pending(snapshot) == Some(due_at)
+        })
+        .await;
+    timeout(
+        PROGRESS_DEADLINE,
+        idle.fixture.provider_session.next_shutdown(),
+    )
+    .await
+    .expect("the tree is evicted");
+
+    idle.advance_to(inside_the_window_before_any_read_in(due_at));
+    let read = idle.snapshot().await;
+    assert_eq!(pending(&read), Some(due_at), "read in again, it is pending");
+    assert_eq!(read.revision, left.revision, "and nothing was committed");
+    idle.advance_to(due_at);
+    let mut session = resumed(&mut idle.provider, "the scheduled Compaction is due").await;
+    scheduled_on(&mut session, async || idle.snapshot().await).await;
     idle.shutdown().await;
 }

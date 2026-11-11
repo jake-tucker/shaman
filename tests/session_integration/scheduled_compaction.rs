@@ -32,6 +32,7 @@ use suru::{
 use tokio::time::timeout;
 
 mod carried;
+mod pending;
 
 /// How long the controlled Provider keeps a cache while idle: a production
 /// scale, since the clock is moved by hand.
@@ -358,6 +359,15 @@ impl Idle {
     }
 
     async fn settle_session(&self) {
+        self.settlement(true).await;
+    }
+
+    async fn unsettle_session(&self) {
+        self.settlement(false).await;
+    }
+
+    /// Settles the Session, or brings it back, as the Sidebar does.
+    async fn settlement(&self, settled: bool) {
         let descriptor = self.fixture.server.descriptor();
         self.fixture
             .client
@@ -366,12 +376,12 @@ impl Idle {
                 descriptor.base_url, self.fixture.session_id
             ))
             .bearer_auth(&descriptor.token)
-            .json(&SettleSessionRequest { settled: true })
+            .json(&SettleSessionRequest { settled })
             .send()
             .await
-            .expect("settle the Session")
+            .expect("settle the Session, or bring it back")
             .error_for_status()
-            .expect("the Session is settled");
+            .expect("the settlement is taken");
     }
 
     /// Takes the Compaction the Provider is asked for next, checking it was
@@ -465,6 +475,16 @@ async fn admit_prompt(
         .expect("send Prompt")
         .error_for_status()
         .expect("Prompt is admitted");
+}
+
+/// When `snapshot` publishes its scheduled Compaction as falling due, none
+/// where none is pending.
+pub(crate) fn pending(snapshot: &SessionSnapshot) -> Option<SessionTimestamp> {
+    snapshot
+        .session
+        .prompt_cache
+        .as_ref()
+        .and_then(|cache| cache.compaction_due_at)
 }
 
 fn compactions(snapshot: &SessionSnapshot) -> Vec<&Activity> {
@@ -1521,10 +1541,20 @@ async fn a_wake_with_less_than_the_margin_left_is_skipped() {
     let margin = millis(MARGIN);
     let state = tempfile::tempdir().unwrap();
     let mut late = idle(state.path(), "scheduled-compaction-too-late", ON, true).await;
-    let lapses_at = late.due_at().await.0 + millis(LEAD);
+    let due_at = late.due_at().await;
+    late.until("it is published as pending", |snapshot| {
+        pending(snapshot) == Some(due_at)
+    })
+    .await;
+    let lapses_at = due_at.0 + millis(LEAD);
     late.advance_to(SessionTimestamp(lapses_at - margin + 1));
     late.assert_nothing_scheduled(1, "less than the margin is left")
         .await;
+    assert_eq!(
+        pending(&late.snapshot().await),
+        None,
+        "skipped at its wake, it is withdrawn"
+    );
     late.shutdown().await;
 
     let state = tempfile::tempdir().unwrap();
@@ -1633,5 +1663,10 @@ async fn a_reported_lapse_already_within_the_lead_is_never_scheduled() {
     .await;
     idle.assert_nothing_scheduled(2, "the lapse was within the lead as it was set")
         .await;
+    assert_eq!(
+        pending(&idle.snapshot().await),
+        None,
+        "nor is one published as pending"
+    );
     idle.shutdown().await;
 }

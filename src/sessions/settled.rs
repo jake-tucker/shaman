@@ -97,6 +97,9 @@ impl SessionStoreState {
             session_id,
             settled_at,
         });
+        // Settled, it may be one a scheduled Compaction no longer reaches;
+        // brought back, one it reaches again.
+        self.reconcile_pending_compaction(storage, session_id);
         Some(summary)
     }
 }

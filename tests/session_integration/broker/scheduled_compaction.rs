@@ -11,6 +11,8 @@ use suru::{
     server::{ManualClock, ServerClock},
 };
 
+use crate::session_integration::scheduled_compaction::pending;
+
 use super::{
     sidekick::start_sidekick,
     sidekick_acts::acted,
@@ -189,13 +191,18 @@ async fn neither_a_session_with_a_subagent_working_beneath_it_nor_the_subagents_
         .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
         .await;
     let callers_due = scheduling.due_at(caller).await;
+    scheduling
+        .after_the_actor_has_judged(caller, &mut caller_provider)
+        .await;
+    let callers = read_session(&scheduling.descriptor, caller).await;
     assert!(
-        read_session(&scheduling.descriptor, caller)
-            .await
-            .session
-            .working_since
-            .is_some(),
+        callers.session.working_since.is_some(),
         "the caller is Working while its Subagent works"
+    );
+    assert_eq!(
+        pending(&callers),
+        None,
+        "nothing is pending for a Session with a Subagent working beneath it"
     );
     scheduling.advance_to(callers_due);
     scheduling
@@ -239,12 +246,73 @@ async fn neither_a_session_with_a_subagent_working_beneath_it_nor_the_subagents_
         "a Subagent's Session is never compacted this way"
     );
     assert_eq!(
+        pending(&read_session(&scheduling.descriptor, child).await),
+        None,
+        "nor is one ever pending for it"
+    );
+    assert_eq!(
         read_session(&scheduling.descriptor, child)
             .await
             .turns
             .len(),
         1
     );
+    scheduling
+        .hosted
+        .server
+        .shutdown()
+        .await
+        .expect("shut down server");
+}
+
+/// Turning a Session's Provider off withdraws what is pending of its
+/// scheduled Compaction, and turning it on again before the moment restores
+/// it: a Setting, which moves no Session, is judged as it changes.
+#[tokio::test]
+async fn turning_the_provider_off_withdraws_a_pending_compaction_and_on_again_restores_it() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let mut scheduling = scheduling(state_dir.path(), "pending-compaction-provider-off").await;
+    let workspace = scheduling.hosted.workspace.path().to_owned();
+    let (session, _handoff, provider) = start_session(
+        &scheduling.descriptor,
+        &mut scheduling.hosted.claude,
+        &workspace,
+        default_selection(&claude_models()),
+    )
+    .await;
+    provider.emit_and_wait_until_observed(filled(400_000)).await;
+    answered(&provider).await;
+    provider
+        .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
+        .await;
+    let due_at = scheduling.due_at(session).await;
+    let until_pending = |due: Option<SessionTimestamp>, why: &'static str| {
+        let descriptor = scheduling.descriptor.clone();
+        async move {
+            read_session_until(
+                &crate::support::loopback_client(),
+                &descriptor,
+                session,
+                why,
+                |snapshot| pending(snapshot) == due,
+            )
+            .await
+        }
+    };
+    until_pending(Some(due_at), "the stretch is owed one").await;
+
+    mutate_setting(
+        &scheduling.descriptor,
+        SettingMutation::ProviderClaudeEnabled { value: Some(false) },
+    )
+    .await;
+    until_pending(None, "its Provider is turned off").await;
+    mutate_setting(
+        &scheduling.descriptor,
+        SettingMutation::ProviderClaudeEnabled { value: Some(true) },
+    )
+    .await;
+    until_pending(Some(due_at), "its Provider is turned on again").await;
     scheduling
         .hosted
         .server

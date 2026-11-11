@@ -229,6 +229,9 @@ impl SessionStore {
         // No Lapse Penalty is stored, so each history read in has its
         // forecast again.
         state.forecast_restored_lapse_penalties(&hydrated);
+        // Nor is what is pending of a scheduled Compaction, which is judged
+        // again from the penalty just forecast, in place, as it is.
+        state.derive_pending_compactions_in_place(&hydrated);
         Ok(hydrated
             .into_iter()
             .filter(|id| {

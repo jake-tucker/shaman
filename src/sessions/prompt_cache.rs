@@ -554,7 +554,7 @@ impl SessionStore {
             .prompt_cache
             .as_ref()
             .and_then(|cache| cache.written_in);
-        let Some(prompt_cache) = written_cache(lapse, lifetime, || {
+        let Some(mut prompt_cache) = written_cache(lapse, lifetime, || {
             selected(&record.snapshot).map(|(_, model)| model.clone())
         })
         .map(|cache| PromptCache {
@@ -564,13 +564,21 @@ impl SessionStore {
             return Ok(());
         };
         record.ask_for_lapse_rates_again(AskAgain::CacheWritten);
-        record.commit_derived(
-            &self.storage,
-            session_id,
-            vec![SessionChange::PromptCacheChanged {
-                prompt_cache: Some(prompt_cache),
-            }],
-        )?;
+        // The revision lands the cache with its penalty and what is pending
+        // of it, rather than either in a revision after.
+        prompt_cache.lapse_penalty = record.forecast_lapse_penalty(&prompt_cache);
+        let prompt_cache = state.with_pending_compaction(session_id, prompt_cache);
+        state
+            .sessions
+            .get_mut(&session_id)
+            .expect("the Session was just read")
+            .commit_derived(
+                &self.storage,
+                session_id,
+                vec![SessionChange::PromptCacheChanged {
+                    prompt_cache: Some(prompt_cache),
+                }],
+            )?;
         state.ask_for_lapse_rates(session_id);
         Ok(())
     }
@@ -600,11 +608,19 @@ impl SessionStore {
             return Ok(());
         }
         if let Some(prompt_cache) = record.reforecast_prompt_cache() {
-            record.commit_derived(
-                &self.storage,
-                session_id,
-                vec![SessionChange::PromptCacheChanged { prompt_cache }],
-            )?;
+            // A penalty forecast afresh may reach the minimum or fall short
+            // of it, which lands in the same revision.
+            let prompt_cache =
+                prompt_cache.map(|cache| state.with_pending_compaction(session_id, cache));
+            state
+                .sessions
+                .get_mut(&session_id)
+                .expect("the Session was just read")
+                .commit_derived(
+                    &self.storage,
+                    session_id,
+                    vec![SessionChange::PromptCacheChanged { prompt_cache }],
+                )?;
         }
         Ok(())
     }

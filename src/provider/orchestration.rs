@@ -1728,6 +1728,18 @@ impl ProviderOrchestrator {
                 runtimes: orchestrator.runtimes.clone(),
                 requests: lapse_rate_requests,
             }));
+        // What is pending of a scheduled Compaction is the store's to say,
+        // by the same rules, and follows the Settings, which move no Session.
+        orchestrator.install_scheduled_compaction_rules();
+        tokio::spawn(
+            orchestrator
+                .sessions
+                .clone()
+                .reconcile_pending_compactions_as_settings_change(
+                    orchestrator.settings.clone(),
+                    orchestrator.shutdown.clone(),
+                ),
+        );
         orchestrator
     }
 
@@ -1784,6 +1796,7 @@ impl ProviderOrchestrator {
             margin,
             wake_ahead,
         };
+        self.install_scheduled_compaction_rules();
         self
     }
 
@@ -2889,8 +2902,10 @@ impl Drop for CheckoutActorCleanup {
             .lock()
             .unwrap()
             .remove(&self.session_id);
-        // However the actor ended, nothing it owed a Continuation over can come.
+        // However the actor ended, nothing it owed a Continuation over can come,
+        // nor any work of its own begin.
         self.sessions.forget_continuation_awaited(self.session_id);
+        self.sessions.forget_actor_owes_work(self.session_id);
     }
 }
 
@@ -3070,6 +3085,14 @@ async fn run_provider_session(
                 || reports_owed
                 || subagents.owes_continuation()
                 || !subagents.watch_outcomes.is_empty();
+            // The store says what is pending of a scheduled Compaction by the
+            // verdict its wake would reach: one that owes work skips it.
+            let _ = updates.apply(|| {
+                sessions.note_actor_owes_work(
+                    session_id,
+                    actor_owes_work || move_holds_turns || move_continuation_owed,
+                )
+            });
             let input = if let Some(connected) = provider.as_mut() {
                 tokio::select! {
                     biased;
@@ -9306,6 +9329,11 @@ running 1 test",
         .await;
         assert_eq!(read_ins.load(Ordering::SeqCst), 2, "read in exactly twice");
         assert_eq!(
+            pending_of(&fixture.sessions, session_id),
+            None,
+            "given up, it is pending no longer"
+        );
+        assert_eq!(
             fixture.sessions.snapshot(session_id).unwrap().turns.len(),
             1,
             "and nothing was compacted"
@@ -9313,6 +9341,184 @@ running 1 test",
         assert!(
             fixture.started.try_recv().is_err(),
             "nor any Provider started for it"
+        );
+
+        fixture.stop.send_replace(true);
+        within("the orchestrator stops", fixture.providers.shutdown()).await;
+    }
+
+    /// A Session idle after a Turn that filled 400,000 tokens of a
+    /// ten-minute cache, on an orchestrator over a manual clock with
+    /// scheduled Compaction on, once its scheduled Compaction is published
+    /// as pending; and when that falls due.
+    async fn pending_fixture() -> (HandFixture, crate::clock::ManualClock, SessionId, u64) {
+        let (clock, hand) = crate::clock::ServerClock::manual();
+        let mut settings = SettingsSnapshot::default();
+        settings.settings.compaction.scheduled.enabled = true;
+        let mut fixture = hand_fixture_with(
+            false,
+            Duration::from_secs(60),
+            CacheLifetime::Assumed(Duration::from_secs(10 * 60)),
+            Some(crate::pricing::PromptRates::flat(
+                crate::pricing::CacheRates {
+                    input: 3.0,
+                    cache_read: Some(0.3),
+                    cache_write: Some(3.75),
+                },
+            )),
+            clock,
+            settings,
+        )
+        .await;
+        let created = create_session(&fixture.sessions, fixture.workspace.path(), "First");
+        let session_id = created.session.id;
+        fixture
+            .providers
+            .schedule_prompt(session_id, created.prompts[0].id)
+            .expect("schedule the first Prompt");
+        let mut output = vec![ProviderEvent::ContextFill {
+            report: crate::provider::ContextFillReport {
+                turn_id: None,
+                sequence: 1,
+                fill: crate::protocol::ContextFill {
+                    occupied_tokens: 400_000,
+                    capacity_tokens: Some(2_000_000),
+                },
+            },
+        }];
+        output.extend(answered());
+        // The connection is kept for the Session's life: the Watches here
+        // ride it.
+        std::mem::forget(run_to_idle_after(&mut fixture, session_id, None, output).await);
+        let sessions = fixture.sessions.clone();
+        let due_at = waited("it is published as pending", || {
+            pending_of(&sessions, session_id)
+        })
+        .await;
+        (fixture, hand, session_id, due_at.0)
+    }
+
+    /// When `session_id` publishes its scheduled Compaction as falling due.
+    fn pending_of(sessions: &SessionStore, session_id: SessionId) -> Option<SessionTimestamp> {
+        sessions
+            .snapshot(session_id)
+            .and_then(|snapshot| snapshot.session.prompt_cache)
+            .and_then(|cache| cache.compaction_due_at)
+    }
+
+    /// An actor released for eviction whose tree is then kept — a client
+    /// opening it during the stop, say — leaves what is published as it will
+    /// fire: the stretch stays armed in the store, and what holds the wake
+    /// with no actor running starts one that begins it at its moment.
+    #[tokio::test]
+    async fn a_released_actor_whose_tree_is_kept_leaves_what_is_pending_as_it_will_fire() {
+        let (mut fixture, hand, session_id, due_at) = pending_fixture().await;
+        fixture
+            .providers
+            .hold_scheduled_compaction_wakes(Arc::new(|| {}));
+        within(
+            "the actor stops",
+            fixture.providers.release_idle_actors(&[session_id]),
+        )
+        .await;
+        assert!(!fixture.providers.has_session_actor(session_id));
+        assert_eq!(
+            pending_of(&fixture.sessions, session_id),
+            Some(SessionTimestamp(due_at)),
+            "the tree kept, it is still pending"
+        );
+
+        let now = fixture.providers.clock.now().0;
+        hand.advance(Duration::from_millis(due_at - now));
+        let sessions = fixture.sessions.clone();
+        waited("the scheduled Compaction begins at its moment", || {
+            sessions
+                .snapshot(session_id)
+                .and_then(|snapshot| snapshot.turns.last().cloned())
+                .filter(|turn| {
+                    turn.compaction_requested == Some(crate::protocol::CompactionRequest::Scheduled)
+                })
+                .map(drop)
+        })
+        .await;
+        assert_eq!(
+            pending_of(&fixture.sessions, session_id),
+            None,
+            "begun, it is pending no longer"
+        );
+        let _ = fixture.started.try_recv();
+        fixture.stop.send_replace(true);
+        within("the orchestrator stops", fixture.providers.shutdown()).await;
+    }
+
+    /// A Watch moves what is pending through the Session's liveness, with no
+    /// actor waking for it: started, it holds the Compaction back; settled,
+    /// or lost with the connection it ran over, it leaves it pending again.
+    #[tokio::test]
+    async fn a_watch_starting_settling_or_lost_moves_what_is_pending() {
+        let (fixture, _hand, session_id, due_at) = pending_fixture().await;
+        let sessions = &fixture.sessions;
+        let due = Some(SessionTimestamp(due_at));
+        let watch = crate::provider::ProviderWatchId::new("build");
+
+        sessions
+            .start_watch(session_id, watch.clone(), "the build".to_owned())
+            .expect("start a Watch");
+        assert_eq!(pending_of(sessions, session_id), None, "a Watch is live");
+        sessions.settle_watch(session_id, &watch, false);
+        assert_eq!(pending_of(sessions, session_id), due, "it settled");
+
+        sessions
+            .start_watch(session_id, watch, "the build".to_owned())
+            .expect("start a Watch again");
+        assert_eq!(pending_of(sessions, session_id), None, "a Watch is live");
+        sessions.lose_watches(session_id);
+        assert_eq!(pending_of(sessions, session_id), due, "it was lost");
+
+        fixture.stop.send_replace(true);
+        within("the orchestrator stops", fixture.providers.shutdown()).await;
+    }
+
+    /// A lapse reported outside any Turn moves what is pending with it, in
+    /// the one revision that lands the cache it describes.
+    #[tokio::test]
+    async fn a_lapse_reported_outside_a_turn_moves_what_is_pending_in_its_own_revision() {
+        let (fixture, _hand, session_id, due_at) = pending_fixture().await;
+        let sessions = &fixture.sessions;
+        let before = sessions.snapshot(session_id).expect("the Session").revision;
+        let lead = crate::sessions::millis(SCHEDULED_COMPACTION_LEAD);
+        let later = SessionTimestamp(due_at + lead + 60_000);
+        sessions
+            .report_prompt_cache_lapse(
+                session_id,
+                CacheLifetime::Assumed(Duration::from_secs(10 * 60)),
+                crate::sessions::ReportedLapse {
+                    lapses_at: later,
+                    model: None,
+                    lifetime: Some(Duration::from_secs(10 * 60)),
+                    write_price: crate::protocol::CacheWritePrice::Default,
+                    prompt_limit_tokens: None,
+                },
+            )
+            .expect("report the lapse");
+        let after = sessions.snapshot(session_id).expect("the Session");
+        assert_eq!(
+            after
+                .session
+                .prompt_cache
+                .as_ref()
+                .map(|cache| cache.lapses_at),
+            Some(later)
+        );
+        assert_eq!(
+            pending_of(sessions, session_id),
+            Some(SessionTimestamp(later.0 - lead)),
+            "what is pending moved with the lapse"
+        );
+        assert_eq!(
+            after.revision.0,
+            before.0 + 1,
+            "in the revision that landed the cache"
         );
 
         fixture.stop.send_replace(true);

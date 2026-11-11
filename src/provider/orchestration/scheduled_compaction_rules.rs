@@ -13,7 +13,7 @@ use tokio::sync::watch;
 
 use crate::protocol::{ProviderId, SettingsSnapshot};
 use crate::provider::{CacheLifetime, ManualCompaction, ProviderRuntime};
-use crate::sessions::ScheduledCompactionRule;
+use crate::sessions::{ScheduledCompactionRule, ScheduledCompactionRuleSource};
 
 use super::ProviderOrchestrator;
 
@@ -65,7 +65,24 @@ impl ScheduledCompactionRules {
     }
 }
 
+/// The store asks the same rules, to say what is pending with or without an
+/// actor running: they read only the Settings in force and what each runtime
+/// declares, so they may be asked under the store's lock.
+impl ScheduledCompactionRuleSource for ScheduledCompactionRules {
+    fn rule_for(&self, provider: &ProviderId) -> ScheduledCompactionRule {
+        self.for_provider(provider)
+    }
+}
+
 impl ProviderOrchestrator {
+    /// Has the Session store judge what is pending of every scheduled
+    /// Compaction by the rules this orchestrator's are judged by, as its
+    /// timings now stand.
+    pub(super) fn install_scheduled_compaction_rules(&self) {
+        self.sessions
+            .judge_scheduled_compactions_by(Arc::new(self.scheduled_compaction_rules()));
+    }
+
     /// The rules this orchestrator's scheduled Compactions are judged by.
     pub(crate) fn scheduled_compaction_rules(&self) -> ScheduledCompactionRules {
         ScheduledCompactionRules {

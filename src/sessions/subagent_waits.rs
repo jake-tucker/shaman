@@ -68,6 +68,8 @@ impl SessionStore {
         let id = NEXT_WAIT.fetch_add(1, Ordering::Relaxed);
         record.subagent_waits.push(OpenWait { id, turn_id });
         record.announce_subagent_waits(&self.storage, session_id);
+        // A wait holds back a scheduled Compaction, here and above.
+        state.reconcile_pending_compactions(&self.storage, session_id);
         Some(SubagentWait {
             sessions: self.clone(),
             session_id,
@@ -89,6 +91,7 @@ impl SessionStore {
         };
         record.subagent_waits.retain(|wait| wait.id != id);
         record.announce_subagent_waits(&self.storage, session_id);
+        state.reconcile_pending_compactions(&self.storage, session_id);
     }
 }
 
