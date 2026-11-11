@@ -762,3 +762,113 @@ async fn a_session_out_of_step_whose_deletion_fails_is_still_written_whole() {
     assert_eq!(stored.snapshot.turns, held.turns, "it is written whole");
     assert_eq!(stored.snapshot.messages, held.messages);
 }
+
+/// The prices a Lapse Penalty is forecast at, answered while the Session's
+/// tree stood evicted — read in ahead of a scheduled Compaction, asked for,
+/// and let go before the answer came — are taken all the same, so the
+/// Session read in again forecasts its penalty from them rather than asking
+/// for nothing more until its next Turn.
+#[tokio::test]
+async fn prices_answered_while_a_tree_stood_evicted_are_taken_for_its_next_read_in() {
+    use crate::protocol::{AgentSelection, ContextFill, ModelId, ProviderId};
+    use crate::sessions::{CacheOutput, RatesAnswer, RatesFor};
+
+    let data_dir = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let (_repository, writer, store) = store(data_dir.path()).await;
+    let selection = AgentSelection {
+        provider: ProviderId::new("controlled"),
+        model: ModelId::new("gpt-fixture"),
+        options: Vec::new(),
+    };
+    let StoreOutcome::Created(created) = store
+        .create(CreateSessionRequest {
+            session_id: None,
+            preparation_id: None,
+            agent_selection: Some(selection.clone()),
+            execution_directory: crate::protocol::ExecutionDirectory {
+                path: workspace.path().to_owned(),
+            },
+            prompt: InitialPrompt {
+                id: PromptId::new(),
+                text: "Read the parser".to_owned(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+        })
+        .unwrap()
+    else {
+        panic!("a fresh Prompt creates a Session");
+    };
+    let session_id = created.session.id;
+    let turn_id = store
+        .deliver_prompt(
+            session_id,
+            created.prompts[0].id,
+            None,
+            DeliveredTurnStatus::Active,
+        )
+        .unwrap()
+        .expect("the Prompt was still owed a Turn")
+        .turn_id;
+    let lifetime = crate::provider::CacheLifetime::Assumed(Duration::from_secs(600));
+    store.note_prompt_cache_turn(session_id, turn_id, lifetime, false);
+    store.note_prompt_cache_output(
+        session_id,
+        turn_id,
+        lifetime,
+        crate::protocol::SessionTimestamp(1_800_000_000_000),
+        CacheOutput::Written,
+    );
+    store
+        .publish(
+            session_id,
+            vec![
+                reply(turn_id, "Read."),
+                SessionChange::ContextFillChanged {
+                    context_fill: Some(ContextFill {
+                        occupied_tokens: 400_000,
+                        capacity_tokens: Some(2_000_000),
+                    }),
+                },
+            ],
+        )
+        .unwrap();
+    settle(&store, session_id, turn_id);
+    let cache = snapshot(&store, session_id)
+        .session
+        .prompt_cache
+        .expect("the Turn wrote the cache");
+    assert_eq!(cache.lapse_penalty, None, "no prices are known yet");
+
+    assert_eq!(
+        store.evict_idle_trees(Duration::ZERO, &NoActors).await,
+        vec![session_id]
+    );
+    store
+        .price_prompt_cache(
+            session_id,
+            &RatesFor {
+                selection,
+                written_by: cache.written_by.clone(),
+            },
+            RatesAnswer::Priced(crate::pricing::PromptRates::flat(
+                crate::pricing::CacheRates {
+                    input: 3.0,
+                    cache_read: Some(0.3),
+                    cache_write: Some(3.75),
+                },
+            )),
+        )
+        .unwrap();
+    store.hydrate(session_id).await.unwrap();
+    assert_eq!(
+        snapshot(&store, session_id)
+            .session
+            .prompt_cache
+            .and_then(|cache| cache.lapse_penalty),
+        crate::protocol::LapsePenalty::from_usd(1.38),
+        "read in again, it is forecast at the prices that came meanwhile"
+    );
+    writer.shutdown().await.unwrap();
+}

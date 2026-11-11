@@ -599,10 +599,10 @@ impl SessionStore {
     }
 
     /// Takes `found` as the answer for the prices the Lapse Penalty is
-    /// forecast at for `rates_for`, and forecasts it again, where the
-    /// Session's history is read in and it still wants exactly those prices:
-    /// an answer for a Selection the Session has since left describes
-    /// nothing of it.
+    /// forecast at for `rates_for`, where the Session still wants exactly
+    /// those prices, and forecasts it again where its history is read in;
+    /// one whose history is not is forecast from it once it is. An answer
+    /// for a Selection the Session has since left describes nothing of it.
     pub(crate) fn price_prompt_cache(
         &self,
         session_id: SessionId,
@@ -613,13 +613,14 @@ impl SessionStore {
             .state
             .lock()
             .expect("Session store lock is not poisoned");
-        if state.is_deferred(session_id) {
-            return Ok(());
-        }
+        let deferred = state.is_deferred(session_id);
         let Some(record) = state.sessions.get_mut(&session_id) else {
             return Ok(());
         };
-        if !record.take_lapse_rates(rates_for, found) {
+        // Taken even where the history is not read in — evicted since it
+        // asked — so reading it in again forecasts from it; only the
+        // forecast waits for then.
+        if !record.take_lapse_rates(rates_for, found) || deferred {
             return Ok(());
         }
         if let Some(prompt_cache) = record.reforecast_prompt_cache() {
