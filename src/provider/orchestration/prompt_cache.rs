@@ -54,7 +54,51 @@ fn cache_output(event: &ProviderEvent) -> Option<CacheOutput> {
         | ProviderEvent::AgentSelectionChanged { .. }
         | ProviderEvent::AgentSelectionCorrected { .. }
         | ProviderEvent::AgentSelectionRejected { .. } => None,
-        _ => Some(CacheOutput::Written),
+        // Listed whole, so a variant added later is placed here on purpose
+        // rather than counted as the Model's output unseen.
+        ProviderEvent::ContinuationStarted { .. }
+        | ProviderEvent::QuestionnaireRequested { .. }
+        | ProviderEvent::QuestionnaireWithdrawn { .. }
+        | ProviderEvent::ApprovalRequested { .. }
+        | ProviderEvent::ApprovalWithdrawn { .. }
+        | ProviderEvent::AgentMessageStarted
+        | ProviderEvent::AgentMessageDelta { .. }
+        | ProviderEvent::AgentMessageModelKnown { .. }
+        | ProviderEvent::AgentMessageModelCleared { .. }
+        | ProviderEvent::AgentMessageCompleted
+        | ProviderEvent::ModelCallRecorded { .. }
+        | ProviderEvent::CurrentModelChanged { .. }
+        | ProviderEvent::AgentMessageIdentified { .. }
+        | ProviderEvent::AgentMessageSuperseded { .. }
+        | ProviderEvent::Rerouted { .. }
+        | ProviderEvent::RouteDecided { .. }
+        | ProviderEvent::CommandStarted { .. }
+        | ProviderEvent::CommandOutputDelta { .. }
+        | ProviderEvent::CommandCompleted { .. }
+        | ProviderEvent::FileChangeStarted { .. }
+        | ProviderEvent::FileChangeUpdated { .. }
+        | ProviderEvent::FileChangeCompleted { .. }
+        | ProviderEvent::ToolCallStarted { .. }
+        | ProviderEvent::ToolCallInputKnown { .. }
+        | ProviderEvent::ToolCallOutputDelta { .. }
+        | ProviderEvent::ToolCallCompleted { .. }
+        | ProviderEvent::ReasoningStarted { .. }
+        | ProviderEvent::ReasoningTitleChanged { .. }
+        | ProviderEvent::ReasoningDelta { .. }
+        | ProviderEvent::ReasoningCompleted { .. }
+        | ProviderEvent::SubagentStarted { .. }
+        | ProviderEvent::SubagentResumed { .. }
+        | ProviderEvent::SubagentSteered { .. }
+        | ProviderEvent::SubagentDelegated { .. }
+        | ProviderEvent::SubagentWoken { .. }
+        | ProviderEvent::SubagentUpdated { .. }
+        | ProviderEvent::SubagentModelChanged { .. }
+        | ProviderEvent::SubagentCompleted { .. }
+        | ProviderEvent::WatchStarted { .. }
+        | ProviderEvent::WatchSettled { .. }
+        | ProviderEvent::CompactionStarted
+        | ProviderEvent::CompactionFailed { .. }
+        | ProviderEvent::Usage { .. } => Some(CacheOutput::Written),
     }
 }
 
