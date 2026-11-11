@@ -3301,10 +3301,16 @@ const ANSWER_LAPSING: &str = r#"      context_event() {
       event idle session.idle '{}'
 "#;
 
+/// The summarising call of a compaction asked for, stating when the old context's cache lapses,
+/// as Copilot reports it before the compaction completes.
+const SUMMARY_LAPSING: &str = r#"      event summary-usage assistant.usage '{"apiCallId":"summary","model":"claude-fixture","inputTokens":150000,"outputTokens":2000,"cacheExpiresAt":"SUMMARY_LAPSES_AT","cacheTtlSeconds":3600,"maxPromptTokens":128000}'
+"#;
+
 /// A scheduled Compaction reaches Copilot as the manual one does, `session.history.compact` with
 /// nothing asked of the summary, two minutes before the lapse Copilot reported, at the production
-/// lead; its Turn and the
-/// Compaction it holds are recorded as scheduled.
+/// lead; its Turn and the Compaction it holds are recorded as scheduled. The lapse its summarising
+/// call reported describes the context the Compaction replaced, so nothing is said of a Prompt
+/// Cache after it: no countdown, and no cold line asking for the `/compact` just done.
 #[tokio::test]
 async fn a_scheduled_compaction_is_copilots_manual_compact_asked_ahead_of_its_reported_lapse() {
     // An hour from now: ahead of the Server's clock, which a hand moves, and well short of the
@@ -3315,7 +3321,11 @@ async fn a_scheduled_compaction_is_copilots_manual_compact_asked_ahead_of_its_re
         conversation_arms(),
         send_arm(&ANSWER_LAPSING.replace("LAPSES_AT", &lapsing.to_string())),
         compact_arm(&format!(
-            "{MANUAL_STARTED}{SUMMARISING}{MANUAL_COMPLETED}{}",
+            "{MANUAL_STARTED}{}{SUMMARISING}{MANUAL_COMPLETED}{}",
+            SUMMARY_LAPSING.replace(
+                "SUMMARY_LAPSES_AT",
+                &(lapsing + jiff::SignedDuration::from_mins(58)).to_string()
+            ),
             answer_compaction(COMPACTED)
         )),
     ));
@@ -3404,6 +3414,10 @@ async fn a_scheduled_compaction_is_copilots_manual_compact_asked_ahead_of_its_re
         (ActivityStatus::Completed, CompactionTrigger::Scheduled)
     );
     assert!(turn.usage.is_some(), "its Usage is recorded: {turn:?}");
+    assert_eq!(
+        settled.session.prompt_cache, None,
+        "the lapse reported before the Compaction completed went with the context it described"
+    );
     drop(feed);
     drop(client);
     server.shutdown().await.unwrap();

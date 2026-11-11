@@ -74,8 +74,12 @@ pub(super) struct StagedWrite {
     /// call to one of the Provider's choosing rather than running it itself.
     selection_routes: bool,
     /// A moment the Provider reported, which outranks whatever the
-    /// declaration counts.
+    /// declaration counts. One reported before a Compaction the Turn
+    /// completed described the context that Compaction replaced, and goes
+    /// with it, as [`Counted::LastRequest`] drops the requests before one.
     reported: Option<ReportedLapse>,
+    /// Whether the Turn completed a Compaction no moment was reported after.
+    compacted_since_reported: bool,
     counted: Counted,
 }
 
@@ -128,11 +132,12 @@ impl CacheOutput {
     pub(crate) fn is_read_under(&self, declared: CacheLifetime) -> bool {
         match (declared, self) {
             (CacheLifetime::None, _) => false,
-            (_, Self::Lapse(_)) => true,
+            // A completed Compaction drops whatever was reported before it.
+            (_, Self::Lapse(_) | Self::Compacted) => true,
             (CacheLifetime::Reported, _) => false,
-            (CacheLifetime::Assumed(_), Self::Written | Self::Compacted) => true,
+            (CacheLifetime::Assumed(_), Self::Written) => true,
             (CacheLifetime::Assumed(_), Self::Refreshed(_)) => false,
-            (CacheLifetime::Inferred { .. }, Self::Refreshed(_) | Self::Compacted) => true,
+            (CacheLifetime::Inferred { .. }, Self::Refreshed(_)) => true,
             (CacheLifetime::Inferred { .. }, Self::Written) => false,
         }
     }
@@ -259,6 +264,7 @@ impl StagedWrite {
             declared,
             selection_routes,
             reported: None,
+            compacted_since_reported: false,
             counted: Counted::under(declared),
         }
     }
@@ -271,7 +277,15 @@ impl StagedWrite {
             self.counted = Counted::under(declared);
         }
         match output {
-            CacheOutput::Lapse(lapse) => self.reported = Some(lapse),
+            CacheOutput::Lapse(lapse) => {
+                self.reported = Some(lapse);
+                self.compacted_since_reported = false;
+            }
+            CacheOutput::Compacted => {
+                self.reported = None;
+                self.compacted_since_reported = true;
+                self.counted.take(CacheOutput::Compacted, at);
+            }
             output => self.counted.take(output, at),
         }
     }
@@ -308,7 +322,8 @@ impl StagedWrite {
         let Some(current) = current else {
             return Settled::Left(None);
         };
-        let compacted = self.counted.compacted() || turn.compacted_as_asked;
+        let compacted =
+            self.compacted_since_reported || self.counted.compacted() || turn.compacted_as_asked;
         let ran_elsewhere = !self.counted.states_requests()
             && (turn.ran_on)().is_some_and(|models| !models.contains(&current.written_by));
         Settled::Left((!compacted && !ran_elsewhere).then_some(current))
@@ -1065,4 +1080,74 @@ fn lifetime_ms(reported: Option<std::time::Duration>, declared: CacheLifetime) -
 
 pub(crate) fn millis(duration: std::time::Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lapse(at: u64) -> ReportedLapse {
+        ReportedLapse {
+            lapses_at: SessionTimestamp(at),
+            model: Some(ModelId::new("claude-fixture")),
+            lifetime: Some(std::time::Duration::from_secs(3_600)),
+            write_price: CacheWritePrice::Hour,
+            prompt_limit_tokens: None,
+        }
+    }
+
+    /// What a Turn whose output is `outputs`, completing no Compaction it
+    /// was asked for, leaves of a Prompt Cache that stood before it.
+    fn settled(outputs: Vec<CacheOutput>) -> Option<PromptCache> {
+        let mut staged = StagedWrite::opened(TurnId::new(), CacheLifetime::Reported, false);
+        for (at, output) in outputs.into_iter().enumerate() {
+            staged.take(
+                CacheLifetime::Reported,
+                output,
+                SessionTimestamp(u64::try_from(at).unwrap()),
+            );
+        }
+        let before = cache_written(
+            SessionTimestamp(0),
+            CacheWritten {
+                lifetime: std::time::Duration::from_secs(3_600),
+                price: CacheWritePrice::Hour,
+            },
+            ModelId::new("claude-fixture"),
+        );
+        match staged.settle(
+            before,
+            SettlingTurn {
+                model: Some(ModelId::new("claude-fixture")),
+                compacted_as_asked: false,
+                ran_on: || None,
+            },
+        ) {
+            Settled::Wrote(cache) | Settled::Left(Some(cache)) => Some(cache),
+            Settled::Left(None) => None,
+        }
+    }
+
+    /// A lapse reported before a Compaction completes described the context
+    /// it replaced, and goes with it, leaving no cache at all; one reported
+    /// after it describes the compacted context, and stands.
+    #[test]
+    fn a_lapse_reported_before_a_compaction_goes_with_it_and_one_after_stands() {
+        assert_eq!(
+            settled(vec![
+                CacheOutput::Lapse(lapse(9_000)),
+                CacheOutput::Compacted
+            ]),
+            None
+        );
+        assert_eq!(
+            settled(vec![
+                CacheOutput::Lapse(lapse(9_000)),
+                CacheOutput::Compacted,
+                CacheOutput::Lapse(lapse(12_000)),
+            ])
+            .map(|cache| cache.lapses_at),
+            Some(SessionTimestamp(12_000))
+        );
+    }
 }
