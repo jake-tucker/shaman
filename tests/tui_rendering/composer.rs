@@ -3447,3 +3447,161 @@ fn context_fill_footer_formats_partial_zero_and_over_capacity_measurements() {
         }
     }
 }
+
+/// An Application whose presentation clock a test moves by hand, in
+/// milliseconds from where it began.
+fn application_on_a_stopped_clock() -> (Application, std::sync::Arc<std::sync::atomic::AtomicU64>) {
+    let elapsed = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let observed = std::sync::Arc::clone(&elapsed);
+    let origin = std::time::Instant::now();
+    let application = Application::default().with_presentation_clock(move || {
+        origin
+            + std::time::Duration::from_millis(observed.load(std::sync::atomic::Ordering::Relaxed))
+    });
+    (application, elapsed)
+}
+
+/// The cell the composer's caret stands on, as the run loop draws it: the
+/// frame, and then the caret over it.
+fn caret_cell(application: &Application) -> ratatui::buffer::Cell {
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 15))
+        .expect("create test terminal");
+    terminal
+        .draw(|frame| {
+            application.render(frame);
+            application.render_caret(frame);
+        })
+        .expect("render the frame and its caret");
+    let caret = terminal
+        .get_cursor_position()
+        .expect("read where the caret is parked");
+    terminal.backend().buffer()[(caret.x, caret.y)].clone()
+}
+
+/// The same cell as the frame alone draws it, with no caret over it.
+fn cell_beneath_the_caret(application: &Application) -> ratatui::buffer::Cell {
+    let caret = rendered_application_cursor_at(application, 80, 15);
+    rendered_application_buffer(application, 80, 15)[(caret.x, caret.y)].clone()
+}
+
+/// Whether a lit caret is drawn: a block of its own colour over the cell.
+fn caret_is_lit(application: &Application) -> bool {
+    caret_cell(application).bg != cell_beneath_the_caret(application).bg
+}
+
+/// A little over half of the caret's blink.
+const HALF_A_BLINK: u64 = 540;
+
+#[test]
+fn the_composer_draws_its_own_caret_and_blinks_it() {
+    use std::sync::atomic::Ordering;
+    let (application, clock) = application_on_a_stopped_clock();
+
+    assert!(caret_is_lit(&application), "the caret begins lit");
+    clock.store(HALF_A_BLINK, Ordering::Relaxed);
+    assert!(!caret_is_lit(&application), "the caret goes dark");
+    clock.store(HALF_A_BLINK * 2, Ordering::Relaxed);
+    assert!(caret_is_lit(&application), "the caret is lit again");
+}
+
+#[test]
+fn typing_keeps_the_caret_lit() {
+    use std::sync::atomic::Ordering;
+    let (mut application, clock) = application_on_a_stopped_clock();
+
+    clock.store(HALF_A_BLINK, Ordering::Relaxed);
+    assert!(!caret_is_lit(&application));
+    type_terminal_text(&mut application, "a");
+    assert!(caret_is_lit(&application), "a key lights a dark caret");
+    clock.store(HALF_A_BLINK * 2 - 20, Ordering::Relaxed);
+    assert!(
+        caret_is_lit(&application),
+        "the blink begins afresh from the key, so the caret holds lit"
+    );
+}
+
+/// A key no mode has a use for changes nothing else on screen, so the frame
+/// that lights the caret has to be asked for by the caret itself.
+#[test]
+fn a_key_that_does_nothing_else_still_asks_for_the_frame_that_lights_the_caret() {
+    use std::sync::atomic::Ordering;
+    let (mut application, clock) = application_on_a_stopped_clock();
+    let unbound = || InputEvent::Key(KeyEvent::new(KeyCode::F(20), KeyModifiers::NONE));
+
+    let lit = application
+        .take_terminal_event(unbound())
+        .expect("take an unbound key");
+    assert!(!lit.changed, "a lit caret looks the same after the key");
+
+    clock.store(HALF_A_BLINK, Ordering::Relaxed);
+    let dark = application
+        .take_terminal_event(unbound())
+        .expect("take an unbound key");
+    assert!(dark.changed, "a dark caret is lit by the key");
+}
+
+#[test]
+fn a_window_without_the_keys_shows_a_steady_muted_caret() {
+    use std::sync::atomic::Ordering;
+    let (mut application, clock) = application_on_a_stopped_clock();
+    let lit = caret_cell(&application);
+    let beneath = cell_beneath_the_caret(&application);
+    assert_ne!(lit.bg, beneath.bg);
+
+    let lost = application
+        .take_terminal_event(InputEvent::FocusLost)
+        .expect("lose the window's focus");
+    assert!(lost.changed, "losing the keys changes the caret");
+    let muted = caret_cell(&application);
+    assert!(
+        muted.bg != beneath.bg && muted.bg != lit.bg,
+        "the caret is a block of a colour of its own"
+    );
+    clock.store(HALF_A_BLINK, Ordering::Relaxed);
+    assert_eq!(caret_cell(&application), muted, "and it does not blink");
+
+    let gained = application
+        .take_terminal_event(InputEvent::FocusGained)
+        .expect("regain the window's focus");
+    assert!(gained.changed);
+    assert_eq!(caret_cell(&application), lit, "the caret comes back lit");
+}
+
+#[test]
+fn a_caret_behind_an_overlay_is_not_drawn() {
+    let (mut application, _clock) = application_on_a_stopped_clock();
+    assert!(caret_is_lit(&application));
+
+    application
+        .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
+            suru::tui::SemanticCommandId::ThemeList,
+        )))
+        .expect("open the Theme picker");
+
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 15))
+        .expect("create test terminal");
+    let with_caret = terminal
+        .draw(|frame| {
+            application.render(frame);
+            application.render_caret(frame);
+        })
+        .expect("render the frame and its caret")
+        .buffer
+        .clone();
+    assert_eq!(
+        with_caret,
+        rendered_application_buffer(&application, 80, 15),
+        "no caret is drawn while a picker holds the keys"
+    );
+}
+
+/// What a frame draws is a matter of the Application's state alone: the
+/// caret is drawn over it, so no frame changes with the caret's blink.
+#[test]
+fn the_frame_itself_does_not_change_as_the_caret_blinks() {
+    use std::sync::atomic::Ordering;
+    let (application, clock) = application_on_a_stopped_clock();
+    let lit = rendered_application_buffer(&application, 80, 15);
+    clock.store(HALF_A_BLINK, Ordering::Relaxed);
+    assert_eq!(rendered_application_buffer(&application, 80, 15), lit);
+}

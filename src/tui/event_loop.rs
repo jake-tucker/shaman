@@ -29,7 +29,10 @@ use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use crossterm::{
     cursor::{Hide, Show},
-    event::{DisableBracketedPaste, EnableBracketedPaste, Event as InputEvent},
+    event::{
+        DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange,
+        Event as InputEvent,
+    },
     execute,
     style::available_color_count,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
@@ -643,6 +646,11 @@ struct RunLoop {
     /// The Aside's one-shot wakeup at the end of a tree's quiet period, so a
     /// tree still arriving is redrawn saying Loading.
     tree_loading_delay: Option<(Instant, Pin<Box<tokio::time::Sleep>>)>,
+    /// The wakeup at the composer's caret's next blink, paired with that
+    /// moment. Armed only while a frame draws a caret that blinks, so a caret
+    /// behind an overlay, or steady in a window without the keys, wakes
+    /// nothing (ADR 0075).
+    caret_blink: Option<(Instant, Pin<Box<tokio::time::Sleep>>)>,
     /// The wakeup at the next moment the line above the open Session's
     /// composer changes of its own accord, paired with that moment: once when
     /// a countdown comes to stand, once a second while it counts, and once
@@ -737,6 +745,7 @@ async fn run_loop(
         reconnect_grace: Vec::new(),
         opening_loading_delay: None,
         tree_loading_delay: None,
+        caret_blink: None,
         composer_top_change: None,
         spinner_tick: None,
         needs_redraw: true,
@@ -760,7 +769,7 @@ async fn run_loop(
             draw_frame(
                 terminal,
                 run.application.terminal_facts.hyperlinks,
-                |frame| run.application.render(frame),
+                |frame| render_with_caret(&run.application, frame),
             )?;
             run.needs_redraw = false;
             // A frame is what learns which thumbnails a strip in view needs.
@@ -782,6 +791,7 @@ async fn run_loop(
         // Working Indicator that may have scrolled out of the viewport.
         run.sync_opening_loading_delay();
         run.sync_tree_loading_delay();
+        sync_caret_blink(&mut run.caret_blink, run.application.caret_blink_deadline());
         run.sync_composer_top_change();
         run.sync_spinner_tick();
         // Every arm reports through ControlFlow so the two events that can end
@@ -803,6 +813,13 @@ async fn run_loop(
                 // The frame reads Loading off the presentation clock, so the
                 // wakeup only has to draw it.
                 run.tree_loading_delay = None;
+                run.needs_redraw = true;
+                ControlFlow::Continue(())
+            }
+            () = wait_for_opening_loading_delay(&mut run.caret_blink) => {
+                // The frame reads the caret's phase off the presentation
+                // clock, so the wakeup only has to draw it.
+                run.caret_blink = None;
                 run.needs_redraw = true;
                 ControlFlow::Continue(())
             }
@@ -862,10 +879,17 @@ async fn run_loop(
 fn leave_run_loop(terminal: &mut TuiTerminal, application: &Application, exit: Exit) -> Result<()> {
     if exit == Exit::AfterFinalFrame {
         draw_frame(terminal, application.terminal_facts.hyperlinks, |frame| {
-            application.render(frame)
+            render_with_caret(application, frame);
         })?;
     }
     Ok(())
+}
+
+/// Draws a frame as the terminal is to see it: what the Application renders,
+/// and the composer's caret over it (ADR 0075).
+fn render_with_caret(application: &Application, frame: &mut ratatui::Frame<'_>) {
+    application.render(frame);
+    application.render_caret(frame);
 }
 
 /// Draws one frame and ends it, so the frame reaches the terminal whole even
@@ -5030,6 +5054,28 @@ async fn wait_for_reconnect_grace(
     }
 }
 
+/// Keeps one wakeup at the caret's next blink, and none where it will not
+/// blink. A wakeup armed for an earlier moment than the one now wanted is
+/// left to fire: it may already be due, with a blink no frame has drawn yet,
+/// and where typing merely put the blink off it costs one frame that changes
+/// nothing.
+fn sync_caret_blink(
+    armed: &mut Option<(Instant, Pin<Box<tokio::time::Sleep>>)>,
+    wanted: Option<Instant>,
+) {
+    let Some(wanted) = wanted else {
+        *armed = None;
+        return;
+    };
+    if armed
+        .as_ref()
+        .is_some_and(|(deadline, _)| *deadline <= wanted)
+    {
+        return;
+    }
+    *armed = Some((wanted, Box::pin(tokio::time::sleep_until(wanted.into()))));
+}
+
 async fn wait_for_opening_loading_delay(
     delay: &mut Option<(Instant, Pin<Box<tokio::time::Sleep>>)>,
 ) {
@@ -5491,18 +5537,27 @@ fn enable_terminal_features(output: &mut impl TerminalSink) -> std::io::Result<(
     // that cannot read clicks or the wheel is worth refusing to start.
     output.apply(EnableMouseButtonReporting)?;
     ignore_unsupported(output.apply(PushModifiedKeyReporting))?;
-    ignore_unsupported(output.apply(EnableTerminalThemeUpdates))
+    ignore_unsupported(output.apply(EnableTerminalThemeUpdates))?;
+    // So the caret Suru draws can stand steady and muted while the window is
+    // without the keys, as a terminal's own cursor does (ADR 0075). A terminal
+    // that reports nothing is taken to hold them always.
+    ignore_unsupported(output.apply(EnableFocusChange))
 }
 
 /// Every restore is attempted even after one of them fails: leaving the terminal
 /// in mouse capture is worse than a restore whose error nobody could act on. The
 /// first failure is the one reported.
 fn disable_terminal_features(output: &mut impl TerminalSink) -> std::io::Result<()> {
+    let focus = ignore_unsupported(output.apply(DisableFocusChange));
     let theme_updates = ignore_unsupported(output.apply(DisableTerminalThemeUpdates));
     let modified_keys = ignore_unsupported(output.apply(PopModifiedKeyReporting));
     let mouse = output.apply(DisableMouseButtonReporting);
     let paste = ignore_unsupported(output.apply(DisableBracketedPaste));
-    theme_updates.and(modified_keys).and(mouse).and(paste)
+    focus
+        .and(theme_updates)
+        .and(modified_keys)
+        .and(mouse)
+        .and(paste)
 }
 
 /// Gives the terminal back the screen it was showing and the cursor it was
@@ -5932,8 +5987,8 @@ mod tests {
     }
 
     /// The frame -- cell writes and the cursor trip they end with -- has to
-    /// reach the terminal inside one synchronized update, or the cursor is
-    /// visibly parked on the animation cell until the frame moves it back.
+    /// reach the terminal inside one synchronized update, or it is presented
+    /// in pieces.
     #[test]
     fn a_frame_is_drawn_inside_one_synchronized_update() {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
@@ -5957,8 +6012,8 @@ mod tests {
             transcript,
             &[
                 "\x1b[?2026h", // synchronized update opened
+                "\x1b[?25l",   // cursor hidden
                 "\x1b[1;1H",   // the frame's first painted cell
-                "\x1b[?25h",   // cursor shown
                 "\x1b[3;4H",   // cursor parked at the composer caret
                 "\x1b[?2026l", // synchronized update closed
             ],
@@ -6024,10 +6079,8 @@ mod tests {
         terminal.backend().inner().transcript()[before..].to_owned()
     }
 
-    /// Terminals restart the blink phase whenever the cursor is shown or moved,
-    /// and the run loop redraws every 32 ms while anything animates. A frame
-    /// that changes nothing has to say nothing about the cursor, or the
-    /// composer caret never gets to its dark phase.
+    /// A frame that changes nothing says nothing: the hidden cursor is already
+    /// parked at the caret.
     #[test]
     fn a_redraw_with_the_same_content_and_caret_writes_nothing_but_the_synchronized_update() {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
@@ -6161,39 +6214,35 @@ mod tests {
         assert!(!frame.contains("\x1b]8;;"));
     }
 
-    /// Hide and Show are transitions, not per-frame decorations: once the first
-    /// paint has settled, three frames that toggle the caret off and on again
-    /// cost one Hide and one Show.
+    /// The terminal's cursor is hidden once and stays hidden: Suru draws the
+    /// caret itself (ADR 0075), so no frame -- with a caret or without, changed
+    /// or not -- ever shows it, and none hides it a second time.
     #[test]
-    fn cursor_visibility_is_only_written_when_it_changes() {
+    fn the_terminal_cursor_is_hidden_once_and_never_shown() {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
         let caret = Some(Position::new(3, 2));
-        // The first paint hides an unknown cursor across its repaint; the
-        // transitions are counted from a settled screen.
-        draw_recorded_frame(&mut terminal, caret, "suru");
 
-        let mut frames = String::new();
-        frames += &draw_recorded_frame(&mut terminal, caret, "suru");
+        let mut frames = draw_recorded_frame(&mut terminal, caret, "suru");
+        frames += &draw_recorded_frame(&mut terminal, caret, "sura");
+        frames += &draw_recorded_frame(&mut terminal, None, "sura");
         frames += &draw_recorded_frame(&mut terminal, None, "suru");
         frames += &draw_recorded_frame(&mut terminal, caret, "suru");
 
         assert_eq!(
             frames.matches("\x1b[?25l").count(),
             1,
-            "Hide was written other than on the one transition: {frames:?}"
+            "a hidden cursor was hidden again: {frames:?}"
         );
-        assert_eq!(
-            frames.matches("\x1b[?25h").count(),
-            1,
-            "Show was written other than on the one transition: {frames:?}"
+        assert!(
+            !frames.contains("\x1b[?25h"),
+            "the terminal's cursor was shown: {frames:?}"
         );
     }
 
-    /// Display entry writes its own Hide past the memory, and a resumed
-    /// terminal may have been handed back with any cursor, so the first frame
-    /// after forgetting re-asserts both visibility and position.
+    /// A resumed terminal may have been handed back with any cursor, so the
+    /// first frame after forgetting hides it and parks it afresh.
     #[test]
-    fn forgetting_the_cursor_makes_the_next_frame_re_assert_it() {
+    fn forgetting_the_cursor_makes_the_next_frame_hide_and_park_it_again() {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
         let caret = Some(Position::new(3, 2));
 
@@ -6201,18 +6250,15 @@ mod tests {
         terminal.backend_mut().forget_cursor();
         let resumed = draw_recorded_frame(&mut terminal, caret, "suru");
 
-        assert!(
-            resumed.contains("\x1b[?25h"),
-            "the first frame after forgetting did not show the cursor: {resumed:?}"
-        );
-        assert!(
-            resumed.contains("\x1b[3;4H"),
-            "the first frame after forgetting did not park the caret: {resumed:?}"
+        assert_eq!(
+            resumed, "\x1b[?2026h\x1b[?25l\x1b[3;4H\x1b[?2026l",
+            "the first frame after forgetting did not hide and park the cursor"
         );
     }
 
-    /// Typing moves the caret without changing the visible cells: only the
-    /// move is written, since the cursor is already shown.
+    /// The hidden cursor follows the caret, since an input method composes
+    /// where it is parked: a caret that moves over unchanged cells costs the
+    /// one move.
     #[test]
     fn a_moved_caret_over_unchanged_content_writes_only_the_move() {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
@@ -6220,22 +6266,17 @@ mod tests {
         draw_recorded_frame(&mut terminal, Some(Position::new(3, 2)), "suru");
         let moved = draw_recorded_frame(&mut terminal, Some(Position::new(4, 2)), "suru");
 
-        assert!(
-            moved.contains("\x1b[3;5H"),
-            "the caret was not moved to its new cell: {moved:?}"
-        );
-        assert!(
-            !moved.contains("\x1b[?25h"),
-            "an already shown cursor was shown again: {moved:?}"
+        assert_eq!(
+            moved, "\x1b[?2026h\x1b[3;5H\x1b[?2026l",
+            "a moved caret wrote more than its move"
         );
     }
 
-    /// On a terminal that ignores mode 2026 the diff is presented as it is
-    /// written, so a shown cursor is dragged across every repainted cell. The
-    /// cursor is hidden ahead of the diff and shown again once, after it, at
-    /// the caret -- and no more than once each.
+    /// A repaint leaves the terminal's cursor on the last cell it wrote, so
+    /// the frame parks it at the caret again -- hidden throughout, with
+    /// nothing said about its visibility.
     #[test]
-    fn a_changed_diff_hides_the_cursor_across_the_repaint_and_shows_it_once_at_the_caret() {
+    fn a_changed_diff_parks_the_hidden_cursor_at_the_caret_again() {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
         let caret = Some(Position::new(3, 2));
 
@@ -6246,54 +6287,26 @@ mod tests {
             &repainted,
             &[
                 "\x1b[?2026h", // synchronized update opened
-                "\x1b[?25l",   // cursor hidden ahead of the diff
                 "\x1b[1;4H",   // the changed cell repainted
-                "\x1b[?25h",   // cursor shown again after the diff
                 "\x1b[3;4H",   // cursor parked at the composer caret
                 "\x1b[?2026l", // synchronized update closed
             ],
         );
         assert!(
             positions.is_sorted(),
-            "the repaint was not bracketed by Hide and Show: {repainted:?}"
-        );
-        assert_eq!(
-            repainted.matches("\x1b[?25l").count(),
-            1,
-            "the cursor was hidden more than once in one frame: {repainted:?}"
-        );
-        assert_eq!(
-            repainted.matches("\x1b[?25h").count(),
-            1,
-            "the cursor was shown more than once in one frame: {repainted:?}"
-        );
-    }
-
-    /// A surface without a caret hides the cursor once; later repaints find
-    /// it already hidden and have nothing to say about it.
-    #[test]
-    fn repaints_without_a_caret_hide_the_cursor_once_and_never_show_it() {
-        let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
-
-        let mut frames = draw_recorded_frame(&mut terminal, None, "suru");
-        frames += &draw_recorded_frame(&mut terminal, None, "sura");
-
-        assert_eq!(
-            frames.matches("\x1b[?25l").count(),
-            1,
-            "a hidden cursor was hidden again: {frames:?}"
+            "the cursor was not parked after the repaint: {repainted:?}"
         );
         assert!(
-            !frames.contains("\x1b[?25h"),
-            "a caret-less surface showed the cursor: {frames:?}"
+            !repainted.contains("\x1b[?25"),
+            "a repaint spoke of the cursor's visibility: {repainted:?}"
         );
     }
 
-    /// Before the first frame nothing is known about the cursor, and a cursor
-    /// that might be shown is treated as shown: the first repaint is hidden
-    /// too.
+    /// Before the first frame nothing is known about the cursor, so it is
+    /// hidden ahead of the first repaint: a terminal that ignores mode 2026
+    /// presents the diff as it is written, with a shown cursor riding along.
     #[test]
-    fn the_first_frame_hides_an_unknown_cursor_ahead_of_its_repaint() {
+    fn the_first_frame_hides_the_cursor_ahead_of_its_repaint() {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
 
         let first = draw_recorded_frame(&mut terminal, Some(Position::new(3, 2)), "suru");
@@ -6303,7 +6316,7 @@ mod tests {
             &[
                 "\x1b[?25l", // cursor hidden ahead of the diff
                 "\x1b[1;1H", // the frame's first painted cell
-                "\x1b[?25h", // cursor shown again after the diff
+                "\x1b[3;4H", // cursor parked at the composer caret
             ],
         );
         assert!(
@@ -7082,6 +7095,7 @@ mod tests {
                 "\x1b[?1002h", // button-motion reporting
                 "\x1b[>1u",    // modified key reporting
                 "\x1b[?2031h", // terminal Theme updates
+                "\x1b[?1004h", // focus reporting
             ],
         );
         assert!(
@@ -7099,6 +7113,7 @@ mod tests {
         let positions = AnsiTranscript::positions(
             &transcript,
             &[
+                "\x1b[?1004l", // focus reporting
                 "\x1b[?2031l", // terminal Theme updates
                 "\x1b[<1u",    // modified key reporting
                 "\x1b[?1002l", // button-motion reporting
@@ -7134,6 +7149,7 @@ mod tests {
             ("\x1b[?1002h", "\x1b[?1002l"),
             ("\x1b[>1u", "\x1b[<1u"),
             ("\x1b[?2031h", "\x1b[?2031l"),
+            ("\x1b[?1004h", "\x1b[?1004l"),
         ] {
             assert!(
                 entered.contains(enabled),
@@ -7241,6 +7257,39 @@ mod tests {
             PopModifiedKeyReporting.is_ansi_code_supported(),
             "modified-key restoration did not use the VT input stream"
         );
+    }
+}
+
+#[cfg(test)]
+mod caret_blink_tests {
+    use std::time::{Duration, Instant};
+
+    use super::sync_caret_blink;
+
+    #[tokio::test]
+    async fn one_wakeup_is_kept_for_the_carets_next_blink() {
+        let now = Instant::now();
+        let (soon, later) = (
+            now + Duration::from_secs(60),
+            now + Duration::from_secs(120),
+        );
+        let mut armed = None;
+
+        sync_caret_blink(&mut armed, Some(later));
+        assert_eq!(armed.as_ref().map(|(deadline, _)| *deadline), Some(later));
+
+        // The reader is back in the window, or a caret came into view, with
+        // a blink due sooner than the one armed.
+        sync_caret_blink(&mut armed, Some(soon));
+        assert_eq!(armed.as_ref().map(|(deadline, _)| *deadline), Some(soon));
+
+        // Typing puts the blink off; the wakeup already armed still fires,
+        // so a blink that came due unseen is never skipped.
+        sync_caret_blink(&mut armed, Some(later));
+        assert_eq!(armed.as_ref().map(|(deadline, _)| *deadline), Some(soon));
+
+        sync_caret_blink(&mut armed, None);
+        assert!(armed.is_none(), "a caret that will not blink wakes nothing");
     }
 }
 
@@ -7765,6 +7814,7 @@ mod ready_event_tests {
             reconnect_grace: Vec::new(),
             opening_loading_delay: None,
             tree_loading_delay: None,
+            caret_blink: None,
             composer_top_change: None,
             spinner_tick: None,
             needs_redraw: false,

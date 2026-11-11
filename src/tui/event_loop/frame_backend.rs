@@ -6,7 +6,7 @@ use std::{
 
 use crossterm::{
     Command,
-    cursor::{Hide, MoveTo, Show},
+    cursor::{Hide, MoveTo},
     terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate},
 };
 use ratatui::{
@@ -172,41 +172,28 @@ fn carries_graphics(cell: &Cell) -> bool {
     cell.symbol().starts_with('\x1b')
 }
 
-/// Whether the terminal was last told to show or hide its cursor.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CursorVisibility {
-    Unknown,
-    Hidden,
-    Shown,
-}
-
 /// A backend that makes each ratatui draw reach the terminal as one frame:
 /// bracketed in a DEC private mode 2026 (synchronized output) update, with the
-/// cursor hidden across the diff, and with cursor traffic written only when it
+/// terminal's cursor kept hidden, and with cursor traffic written only when it
 /// changes something. The three are one concern -- what the terminal is
 /// allowed to present between two frames -- so they live together.
 ///
 /// The bracket means the terminal presents the whole frame in a single
-/// repaint: no intermediate cursor position is ever displayed and frame
-/// tearing goes with it. Terminals that do not implement mode 2026 ignore both
-/// sequences, which costs them nothing. The bracket is written into the same
-/// buffer as the diff and ended in ratatui's own end-of-draw flush, so a frame
-/// is one write rather than a Begin, a diff, and an End each flushed apart.
+/// repaint, so frame tearing goes with it. Terminals that do not implement
+/// mode 2026 ignore both sequences, which costs them nothing. The bracket is
+/// written into the same buffer as the diff and ended in ratatui's own
+/// end-of-draw flush, so a frame is one write rather than a Begin, a diff, and
+/// an End each flushed apart.
 ///
-/// ratatui re-emits Show and MoveTo on every draw, and the run loop redraws
-/// every 32 ms while anything animates. Terminals restart the cursor blink
-/// phase on both sequences, so the composer caret is put back in its lit phase
-/// far more often than any blink interval and never goes dark. Remembering what
-/// was last written lets an unchanged caret cost nothing at all.
-///
-/// A frame that repaints anything hides the cursor ahead of its diff. That is
-/// what makes the synchronized-output bracket safe on terminals that ignore
-/// mode 2026 -- legacy conhost among them -- where the diff is otherwise
-/// presented cell by cell with the caret riding along. The known cost: on such
-/// a terminal, one that also restarts the blink phase on Show, the caret looks
-/// solid while a spinner animates, since every repainting frame hides and
-/// re-shows it. Idle redraws (empty diff, unchanged caret) still write nothing
-/// and keep blinking.
+/// The terminal's cursor is never shown (ADR 0075). Every frame that repaints
+/// a cell moves it, and the run loop redraws every 32 ms while anything
+/// animates; terminals restart the cursor's blink phase when it is shown or
+/// moved, and one that ignores mode 2026 presents it riding along the diff.
+/// So the composer's caret is a cell Suru draws itself, in
+/// [`crate::tui::caret`], and the cursor the terminal owns stays hidden. It is
+/// still parked at the caret after each frame, since that is where a terminal
+/// places an input method's composition, and remembering where it was last
+/// parked lets an unchanged caret cost nothing at all.
 ///
 /// Cursor sequences are written here rather than through the inner backend's
 /// own cursor methods: `CrosstermBackend` writes those with `execute!`, and
@@ -219,7 +206,9 @@ enum CursorVisibility {
 pub(super) struct FrameBackend<B> {
     inner: B,
     frame_open: bool,
-    visibility: CursorVisibility,
+    /// Whether the terminal has been told to hide its cursor since anything
+    /// else last had the chance to show it.
+    cursor_hidden: bool,
     /// The last MoveTo written, or `None` when the terminal's cursor is
     /// somewhere else: unknown at start, or displaced by the diff's own moves.
     position: Option<Position>,
@@ -232,20 +221,20 @@ impl<B> FrameBackend<B> {
         Self {
             inner,
             frame_open: false,
-            visibility: CursorVisibility::Unknown,
+            cursor_hidden: false,
             position: None,
             hyperlinks: BTreeMap::new(),
             graphics: SentGraphics::default(),
         }
     }
 
-    /// Forgets what the terminal was last told, so the next frame re-asserts
-    /// both visibility and position and sends every image it draws again.
-    /// Called whenever the display is entered, because entering writes its
-    /// own Hide through the sink, past this memory, onto a screen that shows
-    /// none of the last frame.
+    /// Forgets what the terminal was last told, so the next frame hides the
+    /// cursor and parks it afresh and sends every image it draws again.
+    /// Called whenever the display is entered: the terminal may have been
+    /// handed back with any cursor at all, onto a screen that shows none of
+    /// the last frame.
     pub(super) fn forget_cursor(&mut self) {
-        self.visibility = CursorVisibility::Unknown;
+        self.cursor_hidden = false;
         self.position = None;
         self.hyperlinks.clear();
         self.graphics.forget();
@@ -382,12 +371,11 @@ impl<B: Backend + Write> Backend for FrameBackend<B> {
         // In the order they are written, since what one paints over decides
         // whether a payload after it has to be sent again.
         cells.retain(|(position, cell)| self.graphics.must_write(*position, cell));
+        // Ahead of the diff, so a terminal that presents the diff as it
+        // arrives never shows the cursor riding along it. The memory makes
+        // this one Hide for as long as nothing else can have shown it.
+        self.hide_cursor()?;
         if !cells.is_empty() {
-            // A cursor that might be shown is dragged across every repainted
-            // cell on a terminal that presents the diff as it arrives, so it
-            // is hidden ahead of the diff. ratatui shows and parks it again
-            // afterwards, and the memory makes that a single Show.
-            self.hide_cursor()?;
             // The diff's own moves leave the terminal cursor on the last
             // repainted cell, so an unchanged caret still has to be parked
             // again afterwards.
@@ -404,18 +392,18 @@ impl<B: Backend + Write> Backend for FrameBackend<B> {
     }
 
     fn hide_cursor(&mut self) -> std::io::Result<()> {
-        if self.visibility != CursorVisibility::Hidden {
+        if !self.cursor_hidden {
             self.queue(Hide)?;
-            self.visibility = CursorVisibility::Hidden;
+            self.cursor_hidden = true;
         }
         Ok(())
     }
 
+    /// ratatui asks for the cursor to be shown wherever a frame names a
+    /// position for it. The position is kept, as where an input method
+    /// composes; the cursor itself stays hidden, since the frame has already
+    /// drawn the caret.
     fn show_cursor(&mut self) -> std::io::Result<()> {
-        if self.visibility != CursorVisibility::Shown {
-            self.queue(Show)?;
-            self.visibility = CursorVisibility::Shown;
-        }
         Ok(())
     }
 

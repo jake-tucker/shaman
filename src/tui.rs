@@ -6,6 +6,7 @@ mod approval_posture_picker;
 mod aside;
 mod attachment_check;
 mod attachment_preview;
+mod caret;
 mod clipboard;
 mod clipboard_paste;
 mod commands;

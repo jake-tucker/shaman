@@ -811,6 +811,8 @@ pub struct TuiState {
     /// frame, as [`Self::session_animation_on_screen`] is, so a line covered
     /// by Usage Metrics or a terminal too small for it wakes nothing.
     pub(super) composer_top_drawn: Cell<Option<SessionId>>,
+    /// The composer's caret, which Suru draws itself (ADR 0075).
+    pub(super) caret: super::caret::Caret,
     /// The Monitoring Session whose Watches the reader has confirmed stopping,
     /// with when that Monitoring began. The stop settles nothing itself — the
     /// Session stops Monitoring once the Watches settle — so the Working
@@ -1235,6 +1237,7 @@ impl TuiState {
             rail_origins: RefCell::new(HashMap::new()),
             session_animation_on_screen: Cell::new(false),
             composer_top_drawn: Cell::new(None),
+            caret: super::caret::Caret::new(Instant::now()),
             watch_stop: None,
             live_outputs_started_at: HashMap::new(),
             live_output_visibility: LiveOutputVisibility::default(),
@@ -6735,6 +6738,8 @@ impl Application {
         clock: impl Fn() -> Instant + Send + Sync + 'static,
     ) -> Self {
         self.state.presentation_clock = PresentationClock(Arc::new(clock));
+        // The caret began its blink on the clock this one replaces.
+        self.state.caret = super::caret::Caret::new(self.state.presentation_clock.now());
         self
     }
 
@@ -14179,6 +14184,19 @@ impl Application {
         );
     }
 
+    /// Draws the composer's caret over a frame [`Self::render`] has drawn,
+    /// where that frame placed one (ADR 0075). It is drawn apart from the
+    /// frame, as the terminal's own cursor was: what a frame draws is a
+    /// matter of the Application's state, and whether the caret is lit this
+    /// instant is a matter of the clock alone.
+    pub fn render_caret(&self, frame: &mut Frame<'_>) {
+        self.state.caret.paint(
+            frame.buffer_mut(),
+            self.state.presentation_clock.now(),
+            (&self.theme).into(),
+        );
+    }
+
     pub fn handle_terminal_event(&mut self, event: InputEvent) -> Result<ApplicationTransition> {
         Ok(self.take_terminal_event(event)?.transition)
     }
@@ -14200,6 +14218,14 @@ impl Application {
         }
         let mut changed = self.note_interaction(&event);
         let interaction = is_reader_interaction(&event);
+        let now = self.state.presentation_clock.now();
+        changed |= match &event {
+            InputEvent::FocusGained => self.state.caret.set_window_focused(true, now),
+            InputEvent::FocusLost => self.state.caret.set_window_focused(false, now),
+            // The caret holds lit while the reader types, as a terminal's does.
+            _ if interaction => self.state.caret.touch(now),
+            _ => false,
+        };
         let command = self.command_for_terminal_input(event);
         if interaction {
             changed |= self.settle_armed_removals(command.as_ref());
@@ -14823,6 +14849,14 @@ impl Application {
 
     pub(super) fn subagent_tree_request(&self) -> Option<SessionReference> {
         self.state.aside.tree_request(self.state.route.as_ref())
+    }
+
+    /// The moment the composer's caret next blinks, and `None` where the
+    /// last frame placed none or it stands steady.
+    pub(super) fn caret_blink_deadline(&self) -> Option<Instant> {
+        self.state
+            .caret
+            .next_change(self.state.presentation_clock.now())
     }
 
     /// When the Aside's Subagents Section may next say Loading for a tree

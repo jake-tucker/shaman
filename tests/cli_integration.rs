@@ -1835,10 +1835,12 @@ fn answer_terminal_color_queries(
     answered: &mut bool,
 ) {
     const LAST_QUERY: &[u8] = b"\x1b]11;?\x1b\\";
+    // A frame ends by closing its synchronized update.
+    const FIRST_FRAME_END: &[u8] = b"\x1b[?2026l";
     if *answered
         || !shown
-            .windows(b"\x1b[?25h".len())
-            .any(|window| window == b"\x1b[?25h")
+            .windows(FIRST_FRAME_END.len())
+            .any(|window| window == FIRST_FRAME_END)
         || !shown
             .windows(LAST_QUERY.len())
             .any(|window| window == LAST_QUERY)
@@ -2187,11 +2189,13 @@ async fn clean_tui_exit_restores_the_terminal() {
     // is what says Ctrl+C will reach the composer as a keystroke rather than
     // reaching the process as a signal. A re-rendering pseudo-console keeps
     // none of the escape sequences that entering the display writes, so the
-    // frame is what the wait can look for on every platform.
+    // frame is what the wait can look for on every platform. The composer's
+    // caret is a block over the placeholder's first letter, which the bytes
+    // style apart from the letters after it.
     timeout(PROGRESS_DEADLINE, async {
         loop {
             assert!(tui.is_running(), "TUI exited before clean-exit input");
-            if String::from_utf8_lossy(&tui.shown()).contains("Type a prompt") {
+            if String::from_utf8_lossy(&tui.shown()).contains("ype a prompt") {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -2231,7 +2235,8 @@ async fn clean_tui_exit_restores_the_terminal() {
     #[cfg(unix)]
     {
         let query = outcome.position_of("\u{1b}]11;?\u{1b}\\");
-        let first_frame = outcome.position_of("\u{1b}[?25h");
+        // A frame ends by closing its synchronized update.
+        let first_frame = outcome.position_of("\u{1b}[?2026l");
         assert!(
             query < first_frame,
             "the first frame preceded the terminal probe"

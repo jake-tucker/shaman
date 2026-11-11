@@ -241,6 +241,7 @@ pub(super) fn render_with_slots(
     // small for the Session leaves undrawn.
     state.session_animation_on_screen.set(false);
     state.composer_top_drawn.set(None);
+    state.caret.forget_frame();
     if terminal_is_too_small(frame.area()) {
         render_terminal_too_small(frame, theme);
         return;
@@ -527,9 +528,14 @@ pub(super) fn render_with_slots(
         && matches!(state.command_mode, CommandMode::Composer)
         // The frame may have drawn no composer at all — a Subagent's Session
         // stands one down — and then there is no caret to place.
-        && let Some(cursor) = composer.cursor
+        && let Some(caret) = composer.cursor
     {
-        frame.set_cursor_position(cursor);
+        // The terminal's own cursor is never shown (ADR 0075), but it is
+        // still parked where the caret is: an input method composes at it.
+        // The caret itself is drawn over the finished frame, by
+        // `Application::render_caret`.
+        frame.set_cursor_position(caret);
+        state.caret.place(caret);
     }
     if let Some(selection) = state.text_selection.get()
         && selection.surface != SelectionSurface::Transcript
