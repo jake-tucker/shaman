@@ -40,7 +40,7 @@ const ERROR_GLYPH: &str = "×";
 const WARNING_GLYPH: &str = "!";
 
 /// Where the diagnostics the Notice had no room for live.
-const LOG_POINTER: &str = "see the Log";
+const LOG_POINTER: &str = "see the log";
 
 /// Where a reader told a Relay needs a login goes to log in there.
 pub(super) const RELAY_LOGIN_POINTER: &str = "/relay to log in";
@@ -395,10 +395,10 @@ impl AttachmentDemotion {
             [] => String::new(),
         };
         let what = match (self, one) {
-            (Self::NoLongerStored, true) => "is no longer on the Server",
-            (Self::NoLongerStored, false) => "are no longer on the Server",
-            (Self::LeftBehind, true) => "is on another Server",
-            (Self::LeftBehind, false) => "are on another Server",
+            (Self::NoLongerStored, true) => "is no longer on the server",
+            (Self::NoLongerStored, false) => "are no longer on the server",
+            (Self::LeftBehind, true) => "is on another server",
+            (Self::LeftBehind, false) => "are on another server",
         };
         let labels = if one {
             "its label stays"
@@ -672,19 +672,19 @@ mod tests {
     fn a_demotion_names_each_image_and_agrees_with_how_many_there_are() {
         assert_eq!(
             AttachmentDemotion::NoLongerStored.summary(&["Image 2"]),
-            "Image 2 is no longer on the Server; its label stays as text"
+            "Image 2 is no longer on the server; its label stays as text"
         );
         assert_eq!(
             AttachmentDemotion::NoLongerStored.summary(&["Image 1", "Image 3"]),
-            "Image 1 and Image 3 are no longer on the Server; their labels stay as text"
+            "Image 1 and Image 3 are no longer on the server; their labels stay as text"
         );
         assert_eq!(
             AttachmentDemotion::LeftBehind.summary(&["Image 1"]),
-            "Image 1 is on another Server; its label stays as text"
+            "Image 1 is on another server; its label stays as text"
         );
         assert_eq!(
             AttachmentDemotion::LeftBehind.summary(&["Image 1", "Image 2", "Image 4"]),
-            "Image 1, Image 2, and Image 4 are on another Server; their labels stay as text"
+            "Image 1, Image 2, and Image 4 are on another server; their labels stay as text"
         );
     }
 

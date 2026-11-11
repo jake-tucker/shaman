@@ -73,11 +73,11 @@ pub(in crate::tui) fn render(
     view.forget_targets();
     match view.content(origin, range) {
         InsightsContent::Reading => {
-            buffer.set_string(body.x, body.y, "Reading Insights…", theme.text.subdued);
+            buffer.set_string(body.x, body.y, "Reading insights…", theme.text.subdued);
         }
         InsightsContent::Refused(refusal) => {
             let heading = match refusal {
-                MetricsReadRefusal::Refused(_) => "The Server refused the Insights read",
+                MetricsReadRefusal::Refused(_) => "The server refused the insights read",
                 MetricsReadRefusal::Failed(_) => "Insights could not be read",
             };
             buffer.set_string(

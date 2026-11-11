@@ -72,7 +72,7 @@ async fn appearance_theme_round_trips_byte_preservingly_and_reaches_every_client
         "  \"transcript\": { \"reasoningVisibility\": \"shown\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write Config Document");
+    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-theme")
             .expect("configure server")
@@ -95,7 +95,7 @@ async fn appearance_theme_round_trips_byte_preservingly_and_reaches_every_client
             value: Some("gruvbox".to_owned()),
         })
         .await
-        .expect("pin another Theme");
+        .expect("pin another theme");
     assert_eq!(answered.settings.appearance.theme, "gruvbox");
     for client in [&mut editor, &mut onlooker] {
         assert_eq!(next_snapshot(client).await, answered);
@@ -103,7 +103,7 @@ async fn appearance_theme_round_trips_byte_preservingly_and_reaches_every_client
     assert_eq!(
         config_document(config_dir.path()),
         original.replace("\"catppuccin\"", "\"gruvbox\""),
-        "only the Theme pin's bytes change"
+        "only the theme pin's bytes change"
     );
 
     drop(editor);
@@ -131,7 +131,7 @@ async fn panda_defaults_while_a_pinned_system_theme_survives_restart_and_reset()
             value: Some("system".to_owned()),
         })
         .await
-        .expect("pin the System Theme");
+        .expect("pin the System theme");
     assert_eq!(pinned.settings.appearance.theme, "system");
     assert_eq!(pinned.pinned_keys(), ["appearance.theme"]);
     assert!(config_document(config_dir.path()).contains("\"theme\": \"system\""));
@@ -153,7 +153,7 @@ async fn panda_defaults_while_a_pinned_system_theme_survives_restart_and_reset()
     let reset = client
         .mutate_setting(SettingMutation::AppearanceTheme { value: None })
         .await
-        .expect("reset the Theme");
+        .expect("reset the theme");
     assert_eq!(reset.settings.appearance.theme, "panda");
     assert_eq!(reset.pinned_keys(), [] as [String; 0]);
     assert!(!config_document(config_dir.path()).contains("\"theme\""));
@@ -171,12 +171,12 @@ async fn appearance_mode_round_trips_byte_preservingly_and_reaches_every_client(
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let original = concat!(
         "{\n",
-        "  // Keep this Theme in its light variant.\n",
+        "  // Keep this theme in its light variant.\n",
         "  \"appearance\": { \"mode\":    \"light\" },\n",
         "  \"transcript\": { \"reasoningVisibility\": \"shown\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write Config Document");
+    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-mode")
             .expect("configure server")
@@ -233,7 +233,7 @@ async fn nerd_font_icons_round_trip_byte_preservingly_and_reach_every_client() {
         "  \"transcript\": { \"reasoningVisibility\": \"shown\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write Config Document");
+    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-icons")
             .expect("configure server")
@@ -281,7 +281,7 @@ async fn an_invalid_appearance_mode_is_ignored_alone_and_names_all_three_accepte
             "transcript": { "reasoningVisibility": "shown" }
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-mode-invalid")
             .expect("configure server")
@@ -320,7 +320,7 @@ async fn an_unknown_theme_name_is_a_valid_open_setting_pin() {
             "transcript": { "reasoningVisibility": "shown" }
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-open-theme")
             .expect("configure server")
@@ -338,7 +338,7 @@ async fn an_unknown_theme_name_is_a_valid_open_setting_pin() {
     assert_eq!(
         snapshot.diagnostics,
         [],
-        "runtime Theme discovery, not the schema, decides whether a name resolves"
+        "runtime theme discovery, not the schema, decides whether a name resolves"
     );
 
     server.shutdown().await.expect("shut down server");
@@ -351,13 +351,13 @@ async fn a_pinned_setting_reaches_every_connecting_client_and_the_rest_default()
     std::fs::write(
         config_dir.path().join("suru.jsonc"),
         r#"{
-            // Sessions should open with everything visible.
+            // sessions should open with everything visible.
             "transcript": {
                 "defaultFoldPosture": "expanded",
             },
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-pin")
             .expect("configure server")
@@ -375,7 +375,7 @@ async fn a_pinned_setting_reaches_every_connecting_client_and_the_rest_default()
         assert_eq!(
             snapshot.settings.provider.codex.reasoning_summary,
             ReasoningSummaryDetail::Auto,
-            "an unpinned Setting keeps its built-in default"
+            "an unpinned setting keeps its built-in default"
         );
         assert_eq!(snapshot.pinned_keys(), ["transcript.defaultFoldPosture"]);
         assert_eq!(snapshot.diagnostics, []);
@@ -392,7 +392,7 @@ async fn serving_settings_pin_from_the_config_document_with_dual_stack_defaults(
     assert_eq!(
         defaults.bind_address,
         IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
-        "the default bind answers on every address an Invite could offer"
+        "the default bind answers on every address an invite could offer"
     );
 
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
@@ -407,7 +407,7 @@ async fn serving_settings_pin_from_the_config_document_with_dual_stack_defaults(
             },
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-serving")
             .expect("configure server")
@@ -434,7 +434,7 @@ async fn serving_settings_pin_from_the_config_document_with_dual_stack_defaults(
             value: Some(IpAddr::from([127, 0, 0, 1])),
         })
         .await
-        .expect("pin the localhost Serving address");
+        .expect("pin the localhost serving address");
     assert_eq!(
         answered.settings.serving.bind_address,
         IpAddr::from([127, 0, 0, 1])
@@ -455,18 +455,18 @@ async fn the_serving_listener_is_on_by_default_and_pins_beside_the_other_serving
         suru::protocol::EffectiveSettings::default()
             .serving
             .listener,
-        "a Serving Server listens at its own addresses unless its user says otherwise"
+        "a serving server listens at its own addresses unless its user says otherwise"
     );
 
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let original = concat!(
         "{\n",
-        "  // This machine is reached through its Relays alone.\n",
+        "  // This machine is reached through its relays alone.\n",
         "  \"serving\": { \"listener\":    false, \"port\": 8443 },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write Config Document");
+    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-serving-listener")
             .expect("configure server")
@@ -485,7 +485,7 @@ async fn the_serving_listener_is_on_by_default_and_pins_beside_the_other_serving
     let answered = editor
         .mutate_setting(SettingMutation::ServingListener { value: Some(true) })
         .await
-        .expect("turn the Serving listener on");
+        .expect("turn the serving listener on");
     assert!(answered.settings.serving.listener);
     for client in [&mut editor, &mut onlooker] {
         assert_eq!(next_snapshot(client).await, answered);
@@ -499,7 +499,7 @@ async fn the_serving_listener_is_on_by_default_and_pins_beside_the_other_serving
     let reset = editor
         .mutate_setting(SettingMutation::ServingListener { value: None })
         .await
-        .expect("leave the Serving listener to its default");
+        .expect("leave the serving listener to its default");
     assert!(reset.settings.serving.listener);
     assert_eq!(reset.pinned_keys(), ["serving.port"]);
 
@@ -519,7 +519,7 @@ async fn showing_reasoning_pins_from_a_document_and_resets_to_the_hidden_default
             "transcript": { "reasoningVisibility": "shown" },
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-reasoning")
             .expect("configure server")
@@ -536,7 +536,7 @@ async fn showing_reasoning_pins_from_a_document_and_resets_to_the_hidden_default
     assert_eq!(
         opening.settings.provider.codex.reasoning_summary,
         ReasoningSummaryDetail::Auto,
-        "what a Transcript draws is presentation and asks Codex for nothing different"
+        "what a transcript draws is presentation and asks Codex for nothing different"
     );
     assert_eq!(opening.pinned_keys(), ["transcript.reasoningVisibility"]);
     assert_eq!(opening.diagnostics, []);
@@ -544,7 +544,7 @@ async fn showing_reasoning_pins_from_a_document_and_resets_to_the_hidden_default
     let answered = client
         .mutate_setting(SettingMutation::TranscriptReasoningVisibility { value: None })
         .await
-        .expect("reset the Setting");
+        .expect("reset the setting");
     assert_eq!(
         answered.settings.transcript.reasoning_visibility,
         ReasoningVisibility::Hidden,
@@ -571,7 +571,7 @@ async fn hiding_tool_calls_pins_from_a_document_and_resets_to_the_shown_default(
             "transcript": { "toolCallVisibility": "hidden", "reasoningVisibility": "shown" },
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-tool-calls")
             .expect("configure server")
@@ -584,7 +584,7 @@ async fn hiding_tool_calls_pins_from_a_document_and_resets_to_the_shown_default(
             .transcript
             .tool_call_visibility,
         ToolCallVisibility::Shown,
-        "a Transcript draws Tool Calls unless the user says otherwise"
+        "a transcript draws tool calls unless the user says otherwise"
     );
 
     let (client, opening) = attach(state_dir.path(), "settings-tool-calls").await;
@@ -595,7 +595,7 @@ async fn hiding_tool_calls_pins_from_a_document_and_resets_to_the_shown_default(
     assert_eq!(
         opening.settings.transcript.reasoning_visibility,
         ReasoningVisibility::Shown,
-        "each kind's visibility is its own Setting"
+        "each kind's visibility is its own setting"
     );
     let pinned = opening.pinned_keys();
     assert_eq!(
@@ -610,7 +610,7 @@ async fn hiding_tool_calls_pins_from_a_document_and_resets_to_the_shown_default(
     let answered = client
         .mutate_setting(SettingMutation::TranscriptToolCallVisibility { value: None })
         .await
-        .expect("reset the Setting");
+        .expect("reset the setting");
     assert_eq!(
         answered.settings.transcript.tool_call_visibility,
         ToolCallVisibility::Shown,
@@ -643,11 +643,11 @@ async fn tool_call_visibility_mutations_land_in_the_document_and_reach_every_cli
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let original = concat!(
         "{\n",
-        "  // Keep the Transcript's other choices exactly as written.\n",
+        "  // Keep the transcript's other choices exactly as written.\n",
         "  \"transcript\": { \"reasoningVisibility\": \"shown\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write Config Document");
+    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-tool-call-mutations")
             .expect("configure server")
@@ -667,7 +667,7 @@ async fn tool_call_visibility_mutations_land_in_the_document_and_reach_every_cli
             value: Some(ToolCallVisibility::Hidden),
         })
         .await
-        .expect("hide Tool Calls");
+        .expect("hide tool calls");
     assert_eq!(
         hidden.settings.transcript.tool_call_visibility,
         ToolCallVisibility::Hidden
@@ -675,7 +675,7 @@ async fn tool_call_visibility_mutations_land_in_the_document_and_reach_every_cli
     assert_eq!(
         hidden.settings.transcript.reasoning_visibility,
         ReasoningVisibility::Shown,
-        "the rest of the Transcript's Settings stand"
+        "the rest of the transcript's settings stand"
     );
     for client in [&mut editor, &mut onlooker] {
         assert_eq!(next_snapshot(client).await, hidden);
@@ -683,10 +683,10 @@ async fn tool_call_visibility_mutations_land_in_the_document_and_reach_every_cli
     let document = config_document(config_dir.path());
     assert!(
         document.contains("\"toolCallVisibility\": \"hidden\""),
-        "the pin lands in the Config Document: {document}"
+        "the pin lands in the config document: {document}"
     );
     assert!(
-        document.contains("// Keep the Transcript's other choices exactly as written.")
+        document.contains("// Keep the transcript's other choices exactly as written.")
             && document.contains("\"reasoningVisibility\": \"shown\""),
         "and leaves the rest of it alone: {document}"
     );
@@ -696,7 +696,7 @@ async fn tool_call_visibility_mutations_land_in_the_document_and_reach_every_cli
             value: Some(ToolCallVisibility::Shown),
         })
         .await
-        .expect("show Tool Calls again");
+        .expect("show tool calls again");
     assert_eq!(
         shown.settings.transcript.tool_call_visibility,
         ToolCallVisibility::Shown
@@ -730,7 +730,7 @@ async fn an_invalid_tool_call_visibility_is_ignored_alone_and_names_both_accepte
             "transcript": { "toolCallVisibility": "invisible", "reasoningVisibility": "shown" }
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-tool-calls-invalid")
             .expect("configure server")
@@ -792,7 +792,7 @@ async fn collapsing_pastes_defaults_on_pins_off_through_the_config_document_and_
     let document = config_document(config_dir.path());
     assert!(
         document.contains("\"collapsePastes\": false"),
-        "the pin lands in the Config Document: {document}"
+        "the pin lands in the config document: {document}"
     );
 
     let reset = editor
@@ -819,11 +819,11 @@ async fn image_previews_default_on_pin_off_through_the_config_document_and_reset
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let original = concat!(
         "{\n",
-        "  // Keep the Transcript's other choices exactly as written.\n",
+        "  // Keep the transcript's other choices exactly as written.\n",
         "  \"transcript\": { \"reasoningVisibility\": \"shown\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write Config Document");
+    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-image-previews")
             .expect("configure server")
@@ -847,7 +847,7 @@ async fn image_previews_default_on_pin_off_through_the_config_document_and_reset
     assert_eq!(
         pinned.settings.transcript.reasoning_visibility,
         ReasoningVisibility::Shown,
-        "the rest of the Transcript's Settings stand"
+        "the rest of the transcript's settings stand"
     );
     let pinned_keys = pinned.pinned_keys();
     assert_eq!(
@@ -860,10 +860,10 @@ async fn image_previews_default_on_pin_off_through_the_config_document_and_reset
     let document = config_document(config_dir.path());
     assert!(
         document.contains("\"imagePreviews\": false"),
-        "the pin lands in the Config Document: {document}"
+        "the pin lands in the config document: {document}"
     );
     assert!(
-        document.contains("// Keep the Transcript's other choices exactly as written.")
+        document.contains("// Keep the transcript's other choices exactly as written.")
             && document.contains("\"reasoningVisibility\": \"shown\""),
         "and leaves the rest of it alone: {document}"
     );
@@ -883,7 +883,7 @@ async fn image_previews_default_on_pin_off_through_the_config_document_and_reset
         "the reset takes the pin back out: {document}"
     );
     assert!(
-        document.contains("// Keep the Transcript's other choices exactly as written.")
+        document.contains("// Keep the transcript's other choices exactly as written.")
             && document.contains("\"reasoningVisibility\": \"shown\""),
         "and leaves the rest of the document alone: {document}"
     );
@@ -903,11 +903,11 @@ async fn hiding_subsessions_defaults_on_pins_off_through_the_config_document_and
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let original = concat!(
         "{\n",
-        "  // Keep the Sidebar's other choices exactly as written.\n",
+        "  // Keep the sidebar's other choices exactly as written.\n",
         "  \"sidebar\": { \"autoSettle\": \"off\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write Config Document");
+    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-hide-subsessions")
             .expect("configure server")
@@ -926,12 +926,12 @@ async fn hiding_subsessions_defaults_on_pins_off_through_the_config_document_and
     let pinned = editor
         .mutate_setting(SettingMutation::SidekickHideSubsessions { value: Some(false) })
         .await
-        .expect("list Subsessions");
+        .expect("list subsessions");
     assert!(!pinned.settings.sidekick.hide_subsessions);
     assert_eq!(
         pinned.settings.sidebar.auto_settle,
         AutoSettle::Off,
-        "the Sidebar's own Settings stand"
+        "the sidebar's own settings stand"
     );
     let pinned_keys = pinned.pinned_keys();
     assert_eq!(
@@ -944,10 +944,10 @@ async fn hiding_subsessions_defaults_on_pins_off_through_the_config_document_and
     let document = config_document(config_dir.path());
     assert!(
         document.contains("\"hideSubsessions\": false"),
-        "the pin lands in the Config Document: {document}"
+        "the pin lands in the config document: {document}"
     );
     assert!(
-        document.contains("// Keep the Sidebar's other choices exactly as written.")
+        document.contains("// Keep the sidebar's other choices exactly as written.")
             && document.contains("\"autoSettle\": \"off\""),
         "and leaves the rest of it alone: {document}"
     );
@@ -955,7 +955,7 @@ async fn hiding_subsessions_defaults_on_pins_off_through_the_config_document_and
     let reset = editor
         .mutate_setting(SettingMutation::SidekickHideSubsessions { value: None })
         .await
-        .expect("reset hiding Subsessions");
+        .expect("reset hiding subsessions");
     assert!(
         reset.settings.sidekick.hide_subsessions,
         "unpinning it lets the built-in default resume"
@@ -980,7 +980,7 @@ async fn command_auto_expansion_pins_a_millisecond_delay_and_resets_to_off() {
         config_dir.path().join("suru.jsonc"),
         r#"{ "transcript": { "commandAutoExpand": 275 } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-command-auto-expand")
             .expect("configure server")
@@ -1000,7 +1000,7 @@ async fn command_auto_expansion_pins_a_millisecond_delay_and_resets_to_off() {
     let reset = client
         .mutate_setting(SettingMutation::TranscriptCommandAutoExpand { value: None })
         .await
-        .expect("reset Command auto-expansion");
+        .expect("reset command auto-expansion");
     assert_eq!(
         reset.settings.transcript.command_auto_expand,
         CommandAutoExpand::Off
@@ -1022,7 +1022,7 @@ async fn transcript_groups_pin_from_a_document_move_by_mutation_and_reset_to_col
         config_dir.path().join("suru.jsonc"),
         r#"{ "transcript": { "groups": "off" } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-transcript-groups")
             .expect("configure server")
@@ -1047,17 +1047,17 @@ async fn transcript_groups_pin_from_a_document_move_by_mutation_and_reset_to_col
             value: Some(GroupPosture::Expanded),
         })
         .await
-        .expect("open Groups expanded");
+        .expect("open groups expanded");
     assert_eq!(expanded.settings.transcript.groups, GroupPosture::Expanded);
     assert!(
         config_document(config_dir.path()).contains("\"groups\": \"expanded\""),
-        "the mutation lands in the Config Document"
+        "the mutation lands in the config document"
     );
 
     let reset = client
         .mutate_setting(SettingMutation::TranscriptGroups { value: None })
         .await
-        .expect("reset Groups");
+        .expect("reset groups");
     assert_eq!(reset.settings.transcript.groups, GroupPosture::Collapsed);
     assert_eq!(reset.pinned_keys(), [] as [String; 0]);
 
@@ -1076,7 +1076,7 @@ async fn a_hidden_sidebar_pins_from_a_document_and_resets_to_the_shown_default()
             "sidebar": { "initialVisibility": "hidden" },
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-sidebar")
             .expect("configure server")
@@ -1096,7 +1096,7 @@ async fn a_hidden_sidebar_pins_from_a_document_and_resets_to_the_shown_default()
     let answered = client
         .mutate_setting(SettingMutation::SidebarInitialVisibility { value: None })
         .await
-        .expect("reset the Setting");
+        .expect("reset the setting");
     assert_eq!(
         answered.settings.sidebar.initial_visibility,
         SidebarVisibility::Shown,
@@ -1116,7 +1116,7 @@ async fn sidebar_initial_width_loads_without_a_product_level_maximum_and_resets(
         config_dir.path().join("suru.jsonc"),
         r#"{ "sidebar": { "initialWidth": 1000000 } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-sidebar-width")
             .expect("configure server")
@@ -1133,14 +1133,14 @@ async fn sidebar_initial_width_loads_without_a_product_level_maximum_and_resets(
     let minimum = client
         .mutate_setting(SettingMutation::SidebarInitialWidth { value: Some(24) })
         .await
-        .expect("pin the minimum Sidebar width");
+        .expect("pin the minimum sidebar width");
     assert_eq!(minimum.settings.sidebar.initial_width, 24);
     assert_eq!(minimum.pinned_keys(), ["sidebar.initialWidth"]);
 
     let reset = client
         .mutate_setting(SettingMutation::SidebarInitialWidth { value: None })
         .await
-        .expect("reset Sidebar width at launch");
+        .expect("reset sidebar width at launch");
     assert_eq!(reset.settings.sidebar.initial_width, 40);
     assert_eq!(reset.pinned_keys(), [] as [String; 0]);
 
@@ -1159,7 +1159,7 @@ async fn a_sidebar_width_below_the_floor_is_ignored_individually_with_a_diagnost
             "transcript": { "reasoningVisibility": "shown" }
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-sidebar-width-invalid")
             .expect("configure server")
@@ -1200,7 +1200,7 @@ async fn a_hidden_aside_pins_from_a_document_and_resets_to_the_shown_default() {
             "aside": { "initialVisibility": "hidden" },
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-aside")
             .expect("configure server")
@@ -1220,7 +1220,7 @@ async fn a_hidden_aside_pins_from_a_document_and_resets_to_the_shown_default() {
     let answered = client
         .mutate_setting(SettingMutation::AsideInitialVisibility { value: None })
         .await
-        .expect("reset the Setting");
+        .expect("reset the setting");
     assert_eq!(
         answered.settings.aside.initial_visibility,
         AsideVisibility::Shown,
@@ -1240,7 +1240,7 @@ async fn aside_initial_width_pins_from_a_document_and_resets_to_its_default() {
         config_dir.path().join("suru.jsonc"),
         r#"{ "aside": { "initialWidth": 48 } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-aside-width")
             .expect("configure server")
@@ -1253,7 +1253,7 @@ async fn aside_initial_width_pins_from_a_document_and_resets_to_its_default() {
     assert_eq!(opening.settings.aside.initial_width, 48);
     assert_eq!(
         opening.settings.sidebar.initial_width, 40,
-        "the Aside's width is its own, not the Sidebar's"
+        "the aside's width is its own, not the sidebar's"
     );
     assert_eq!(opening.pinned_keys(), ["aside.initialWidth"]);
     assert_eq!(opening.diagnostics, []);
@@ -1261,14 +1261,14 @@ async fn aside_initial_width_pins_from_a_document_and_resets_to_its_default() {
     let minimum = client
         .mutate_setting(SettingMutation::AsideInitialWidth { value: Some(24) })
         .await
-        .expect("pin the minimum Aside width");
+        .expect("pin the minimum aside width");
     assert_eq!(minimum.settings.aside.initial_width, 24);
     assert_eq!(minimum.pinned_keys(), ["aside.initialWidth"]);
 
     let reset = client
         .mutate_setting(SettingMutation::AsideInitialWidth { value: None })
         .await
-        .expect("reset Aside width at launch");
+        .expect("reset aside width at launch");
     assert_eq!(reset.settings.aside.initial_width, 40);
     assert_eq!(reset.pinned_keys(), [] as [String; 0]);
 
@@ -1287,7 +1287,7 @@ async fn an_aside_width_below_the_floor_is_ignored_individually_with_a_diagnosti
             "transcript": { "reasoningVisibility": "shown" }
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-aside-width-invalid")
             .expect("configure server")
@@ -1324,11 +1324,11 @@ async fn an_everywhere_sidebar_at_launch_pins_from_a_document_and_resets_to_ever
     std::fs::write(
         config_dir.path().join("suru.jsonc"),
         r#"{
-            // Every Origin is where I look for work.
+            // Every origin is where I look for work.
             "sidebar": { "initialScope": "everywhere" },
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-sidebar-scope")
             .expect("configure server")
@@ -1364,17 +1364,17 @@ async fn an_everywhere_sidebar_at_launch_pins_from_a_document_and_resets_to_ever
     assert_eq!(
         everywhere.settings.sidebar.initial_scope,
         SidebarScope::Everywhere,
-        "Everywhere survives the round trip through the Config Document"
+        "Everywhere survives the round trip through the config document"
     );
     assert!(
         config_document(config_dir.path()).contains(r#""initialScope": "everywhere""#),
-        "the Setting keeps the schema's spelling in the document"
+        "the setting keeps the schema's spelling in the document"
     );
 
     let answered = client
         .mutate_setting(SettingMutation::SidebarInitialScope { value: None })
         .await
-        .expect("reset the Setting");
+        .expect("reset the setting");
     assert_eq!(
         answered.settings.sidebar.initial_scope,
         SidebarScope::AllWorkspaces,
@@ -1394,7 +1394,7 @@ async fn an_invalid_sidebar_scope_names_all_three_accepted_values() {
         config_dir.path().join("suru.jsonc"),
         r#"{ "sidebar": { "initialScope": "nearby" } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-sidebar-scope-invalid")
             .expect("configure server")
@@ -1434,7 +1434,7 @@ async fn the_auto_settle_setting_pins_from_a_document_and_resets_to_its_default(
             "sidebar": { "autoSettle": 7 },
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-auto-settle")
             .expect("configure server")
@@ -1457,14 +1457,14 @@ async fn the_auto_settle_setting_pins_from_a_document_and_resets_to_its_default(
     assert_eq!(
         answered.settings.sidebar.auto_settle,
         AutoSettle::Off,
-        "one Setting holds both the threshold and the word that suspends it"
+        "one setting holds both the threshold and the word that suspends it"
     );
     assert_eq!(answered.pinned_keys(), ["sidebar.autoSettle"]);
 
     let answered = client
         .mutate_setting(SettingMutation::SidebarAutoSettle { value: None })
         .await
-        .expect("reset the Setting");
+        .expect("reset the setting");
     assert_eq!(
         answered.settings.sidebar.auto_settle,
         AutoSettle::Idle(3),
@@ -1484,7 +1484,7 @@ async fn the_auto_reclaim_setting_round_trips_both_scalar_forms_and_defaults_to_
         config_dir.path().join("suru.jsonc"),
         r#"{ "worktree": { "autoReclaim": 7 } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-auto-reclaim")
             .expect("configure server")
@@ -1505,13 +1505,13 @@ async fn the_auto_reclaim_setting_round_trips_both_scalar_forms_and_defaults_to_
             value: Some(AutoReclaim::Off),
         })
         .await
-        .expect("turn Reclaim off");
+        .expect("turn reclaim off");
     assert_eq!(off.settings.worktree.auto_reclaim, AutoReclaim::Off);
 
     let reset = client
         .mutate_setting(SettingMutation::WorktreeAutoReclaim { value: None })
         .await
-        .expect("reset Reclaim");
+        .expect("reset reclaim");
     assert_eq!(
         reset.settings.worktree.auto_reclaim,
         AutoReclaim::AfterDays(14)
@@ -1529,7 +1529,7 @@ async fn auto_reclaim_rejects_values_below_one_with_the_usual_diagnostic() {
         config_dir.path().join("suru.jsonc"),
         r#"{ "worktree": { "autoReclaim": 0 } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-auto-reclaim-invalid")
             .expect("configure server")
@@ -1582,7 +1582,7 @@ async fn workspace_roots_pin_from_a_document_round_trip_whole_and_reach_every_cl
             .workspace
             .roots
             .is_empty(),
-        "no Workspace Root is named until the user names one"
+        "no workspace root is named until the user names one"
     );
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
@@ -1597,7 +1597,7 @@ async fn workspace_roots_pin_from_a_document_round_trip_whole_and_reach_every_cl
         ),
         named
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), &original).expect("write Config Document");
+    std::fs::write(config_dir.path().join("suru.jsonc"), &original).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-workspace-roots")
             .expect("configure server")
@@ -1622,7 +1622,7 @@ async fn workspace_roots_pin_from_a_document_round_trip_whole_and_reach_every_cl
             value: Some(vec![ABSOLUTE_ROOT.to_owned(), "~/notes".to_owned()]),
         })
         .await
-        .expect("name the Workspace Roots");
+        .expect("name the workspace roots");
     assert_eq!(
         answered.settings.workspace.roots,
         [ABSOLUTE_ROOT, "~/notes"]
@@ -1637,13 +1637,13 @@ async fn workspace_roots_pin_from_a_document_round_trip_whole_and_reach_every_cl
             &named,
             &format!("[{}, \"~/notes\"]", json_string(ABSOLUTE_ROOT))
         ),
-        "only the Roots' bytes change"
+        "only the roots' bytes change"
     );
 
     let reset = editor
         .mutate_setting(SettingMutation::WorkspaceRoots { value: None })
         .await
-        .expect("take the Workspace Roots out of the document");
+        .expect("take the workspace roots out of the document");
     assert!(reset.settings.workspace.roots.is_empty());
     assert_eq!(reset.pinned_keys(), ["transcript.reasoningVisibility"]);
     for client in [&mut editor, &mut onlooker] {
@@ -1652,7 +1652,7 @@ async fn workspace_roots_pin_from_a_document_round_trip_whole_and_reach_every_cl
     let document = config_document(config_dir.path());
     assert!(
         !document.contains("roots") && document.contains("\"reasoningVisibility\": \"shown\""),
-        "the reset takes the Roots alone out: {document}"
+        "the reset takes the roots alone out: {document}"
     );
 
     drop(editor);
@@ -1674,7 +1674,7 @@ async fn a_workspace_root_neither_absolute_nor_beginning_with_a_tilde_is_ignored
             json_string(ABSOLUTE_ROOT)
         ),
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-workspace-roots-invalid")
             .expect("configure server")
@@ -1687,7 +1687,7 @@ async fn a_workspace_root_neither_absolute_nor_beginning_with_a_tilde_is_ignored
     assert_eq!(
         snapshot.settings.workspace.roots,
         ["~/src", ABSOLUTE_ROOT, "~"],
-        "every other Root stands, a drive-rooted one on Windows among them"
+        "every other root stands, a drive-rooted one on Windows among them"
     );
     assert_eq!(
         snapshot.settings.transcript.reasoning_visibility,
@@ -1723,7 +1723,7 @@ async fn a_workspace_root_neither_absolute_nor_beginning_with_a_tilde_is_ignored
             value: Some(vec!["~/src".to_owned(), "work/projects".to_owned()]),
         })
         .await
-        .expect("name a relative Root among the Workspace Roots");
+        .expect("name a relative root among the workspace roots");
     assert_eq!(answered.settings.workspace.roots, ["~/src"]);
     let [diagnostic] = answered.diagnostics.as_slice() else {
         panic!("expected one diagnostic: {:?}", answered.diagnostics);
@@ -1745,7 +1745,7 @@ async fn workspace_roots_that_are_not_a_list_are_ignored_saying_what_the_setting
         config_dir.path().join("suru.jsonc"),
         r#"{ "workspace": { "roots": "~/src" } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-workspace-roots-scalar")
             .expect("configure server")
@@ -1790,7 +1790,7 @@ async fn invalid_auto_settle_pins_are_ignored_individually_with_diagnostics() {
                 }}"#
             ),
         )
-        .expect("write Config Document");
+        .expect("write config document");
         let channel = format!("settings-auto-settle-invalid-{case}");
         let server = server::spawn(
             ServerConfig::new(state_dir.path(), &channel)
@@ -1837,7 +1837,7 @@ async fn fill_session_content_width_loads_from_a_config_document() {
         config_dir.path().join("suru.jsonc"),
         r#"{ "session": { "contentWidth": "fill" } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-content-fill")
             .expect("configure server")
@@ -1865,7 +1865,7 @@ async fn minimum_session_content_width_loads_from_a_config_document() {
         config_dir.path().join("suru.jsonc"),
         r#"{ "session": { "contentWidth": 50 } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-content-minimum")
             .expect("configure server")
@@ -1893,7 +1893,7 @@ async fn session_content_width_has_no_product_level_maximum() {
         config_dir.path().join("suru.jsonc"),
         r#"{ "session": { "contentWidth": 1000000 } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-content-unbounded")
             .expect("configure server")
@@ -1934,7 +1934,7 @@ async fn invalid_session_content_width_pins_are_ignored_individually_with_diagno
                 }}"#
             ),
         )
-        .expect("write Config Document");
+        .expect("write config document");
         let channel = format!("settings-content-invalid-{case}");
         let server = server::spawn(
             ServerConfig::new(state_dir.path(), &channel)
@@ -1984,7 +1984,7 @@ async fn suru_json_alone_works_and_is_parsed_just_as_leniently() {
             "provider": { "codex": { "reasoningSummary": "detailed", } },
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-json")
             .expect("configure server")
@@ -2012,7 +2012,7 @@ async fn suru_jsonc_wins_over_a_duplicate_suru_json_with_a_diagnostic() {
         config_dir.path().join("suru.jsonc"),
         r#"{ "transcript": { "defaultFoldPosture": "expanded" } }"#,
     )
-    .expect("write primary Config Document");
+    .expect("write primary config document");
     std::fs::write(
         config_dir.path().join("suru.json"),
         r#"{
@@ -2020,7 +2020,7 @@ async fn suru_jsonc_wins_over_a_duplicate_suru_json_with_a_diagnostic() {
             "provider": { "codex": { "reasoningSummary": "detailed" } }
         }"#,
     )
-    .expect("write duplicate Config Document");
+    .expect("write duplicate config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-duplicate")
             .expect("configure server")
@@ -2057,14 +2057,14 @@ async fn a_syntax_broken_document_never_blocks_startup_and_defaults_apply_loudly
         config_dir.path().join("suru.jsonc"),
         r#"{ "transcript": { "defaultFoldPosture" "#,
     )
-    .expect("write broken Config Document");
+    .expect("write broken config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-broken")
             .expect("configure server")
             .with_config_dir(config_dir.path()),
     )
     .await
-    .expect("a broken Config Document never prevents startup");
+    .expect("a broken config document never prevents startup");
 
     let snapshot = attach(state_dir.path(), "settings-broken").await.1;
     assert_eq!(snapshot.settings, Default::default());
@@ -2093,7 +2093,7 @@ async fn unknown_and_mistyped_keys_are_ignored_alone_while_the_rest_applies() {
             "provider": { "codex": { "reasoningSummary": "concise" } }
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-perkey")
             .expect("configure server")
@@ -2111,7 +2111,7 @@ async fn unknown_and_mistyped_keys_are_ignored_alone_while_the_rest_applies() {
     assert_eq!(
         snapshot.settings.transcript.default_fold_posture,
         FoldPosture::Folded,
-        "the mistyped Setting keeps its built-in default"
+        "the mistyped setting keeps its built-in default"
     );
     assert_eq!(snapshot.pinned_keys(), ["provider.codex.reasoningSummary"]);
     let keys: Vec<_> = snapshot
@@ -2156,7 +2156,7 @@ async fn without_a_config_root_every_setting_is_its_built_in_default() {
     assert_eq!(
         snapshot.settings.session.content_width,
         SessionContentWidth::Maximum(80),
-        "the Session Content Column defaults to an 80-column maximum"
+        "the session content column defaults to an 80-column maximum"
     );
     assert_eq!(snapshot.pinned_keys(), [] as [String; 0]);
     assert_eq!(snapshot.diagnostics, []);
@@ -2172,7 +2172,7 @@ async fn a_flat_dotted_spelling_is_not_a_second_way_to_pin() {
         config_dir.path().join("suru.jsonc"),
         r#"{ "transcript.defaultFoldPosture": "expanded" }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-flat")
             .expect("configure server")
@@ -2185,7 +2185,7 @@ async fn a_flat_dotted_spelling_is_not_a_second_way_to_pin() {
     assert_eq!(
         snapshot.settings.transcript.default_fold_posture,
         FoldPosture::Folded,
-        "only the nested spelling the schema defines can pin a Setting"
+        "only the nested spelling the schema defines can pin a setting"
     );
     assert_eq!(snapshot.pinned_keys(), [] as [String; 0]);
     let [diagnostic] = snapshot.diagnostics.as_slice() else {
@@ -2203,7 +2203,7 @@ async fn a_flat_dotted_spelling_is_not_a_second_way_to_pin() {
 /// A hand-written Config Document: comments, tabs, irregular spacing around a
 /// value, and a key order the author chose. Suru's edits must leave every byte
 /// of it alone except the value they target.
-const HAND_WRITTEN: &str = "{\n\t// Codex should say as much about its thinking as it likes.\n\t\"provider\": {\n\t\t\"codex\": { \"reasoningSummary\":    \"detailed\" }\n\t},\n\n\t// I read my Sessions folded.\n\t\"transcript\": { \"defaultFoldPosture\": \"folded\" },\n}\n";
+const HAND_WRITTEN: &str = "{\n\t// Codex should say as much about its thinking as it likes.\n\t\"provider\": {\n\t\t\"codex\": { \"reasoningSummary\":    \"detailed\" }\n\t},\n\n\t// I read my sessions folded.\n\t\"transcript\": { \"defaultFoldPosture\": \"folded\" },\n}\n";
 
 const CONTENT_WIDTH_DOCUMENT: &str = concat!(
     "{\n",
@@ -2214,7 +2214,7 @@ const CONTENT_WIDTH_DOCUMENT: &str = concat!(
 );
 
 fn config_document(config_dir: &Path) -> String {
-    std::fs::read_to_string(config_dir.join("suru.jsonc")).expect("read the Config Document")
+    std::fs::read_to_string(config_dir.join("suru.jsonc")).expect("read the config document")
 }
 
 #[tokio::test]
@@ -2222,7 +2222,7 @@ async fn session_content_width_mutations_preserve_bytes_broadcast_and_reset() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(config_dir.path().join("suru.jsonc"), CONTENT_WIDTH_DOCUMENT)
-        .expect("write Config Document");
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-content-mutation")
             .expect("configure server")
@@ -2277,7 +2277,7 @@ async fn session_content_width_mutations_preserve_bytes_broadcast_and_reset() {
     let reset = editor
         .mutate_setting(SettingMutation::SessionContentWidth { value: None })
         .await
-        .expect("reset the Setting");
+        .expect("reset the setting");
     assert_eq!(
         reset.settings.session.content_width,
         SessionContentWidth::Maximum(80)
@@ -2289,7 +2289,7 @@ async fn session_content_width_mutations_preserve_bytes_broadcast_and_reset() {
     assert!(
         config_document(config_dir.path())
             .contains("\t\"transcript\": { \"reasoningVisibility\": \"shown\" },"),
-        "reset leaves the unrelated hand-written Setting bytes alone"
+        "reset leaves the unrelated hand-written setting bytes alone"
     );
 
     drop(editor);
@@ -2320,7 +2320,7 @@ async fn a_set_reaches_the_document_the_mutating_client_and_a_second_client() {
             value: Some(FoldPosture::Expanded),
         })
         .await
-        .expect("set the Setting");
+        .expect("set the setting");
 
     assert_eq!(
         answered.settings.transcript.default_fold_posture,
@@ -2349,7 +2349,7 @@ async fn an_edit_leaves_a_hand_written_document_byte_for_byte_except_its_target(
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(config_dir.path().join("suru.jsonc"), HAND_WRITTEN)
-        .expect("write Config Document");
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-bytes")
             .expect("configure server")
@@ -2364,7 +2364,7 @@ async fn an_edit_leaves_a_hand_written_document_byte_for_byte_except_its_target(
             value: Some(FoldPosture::Expanded),
         })
         .await
-        .expect("set the Setting");
+        .expect("set the setting");
 
     assert_eq!(
         config_document(config_dir.path()),
@@ -2390,7 +2390,7 @@ async fn a_new_key_lands_in_the_documents_own_indent_style_leaving_the_rest_alon
         "    }\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), seeded).expect("write Config Document");
+    std::fs::write(config_dir.path().join("suru.jsonc"), seeded).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-insert")
             .expect("configure server")
@@ -2405,7 +2405,7 @@ async fn a_new_key_lands_in_the_documents_own_indent_style_leaving_the_rest_alon
             value: Some(FoldPosture::Expanded),
         })
         .await
-        .expect("set the Setting");
+        .expect("set the setting");
 
     assert_eq!(
         config_document(config_dir.path()),
@@ -2818,7 +2818,7 @@ async fn broker_enabled_defaults_on_pins_through_the_config_document_and_resets(
     let (client, initial) = attach(state_dir.path(), "settings-broker-enabled").await;
     assert!(
         initial.settings.broker.enabled,
-        "every Provider Session is offered the Broker unless the user turns it off"
+        "every provider session is offered the broker unless the user turns it off"
     );
 
     let pinned = client
@@ -2857,7 +2857,7 @@ async fn broker_max_depth_defaults_to_three_pins_through_the_config_document_and
     let (client, initial) = attach(state_dir.path(), "settings-broker-max-depth").await;
     assert_eq!(
         initial.settings.broker.max_depth, 3,
-        "a tree reaches three Sessions deep through the Broker unless the user says otherwise"
+        "a tree reaches three sessions deep through the broker unless the user says otherwise"
     );
 
     let pinned = client
@@ -2897,7 +2897,7 @@ async fn broker_max_concurrent_subagents_defaults_to_six_pins_through_the_config
     let (client, initial) = attach(state_dir.path(), "settings-broker-concurrency").await;
     assert_eq!(
         initial.settings.broker.max_concurrent_subagents, 6,
-        "six brokered Subagents may work at once unless the user says otherwise"
+        "six brokered subagents may work at once unless the user says otherwise"
     );
 
     let pinned = client
@@ -2944,7 +2944,7 @@ async fn broker_caps_load_without_a_product_level_maximum_and_pin_down_to_one() 
     assert_eq!(
         opening.settings.broker.max_concurrent_subagents,
         u32::MAX,
-        "the largest count the Broker keeps is a cap like any other"
+        "the largest count the broker keeps is a cap like any other"
     );
     assert_eq!(
         opening.pinned_keys(),
@@ -3050,7 +3050,7 @@ async fn an_unset_keeps_the_comments_that_outlive_the_pin_it_removes() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(config_dir.path().join("suru.jsonc"), HAND_WRITTEN)
-        .expect("write Config Document");
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-unset-comments")
             .expect("configure server")
@@ -3072,12 +3072,12 @@ async fn an_unset_keeps_the_comments_that_outlive_the_pin_it_removes() {
     assert_eq!(snapshot.pinned_keys(), ["provider.codex.reasoningSummary"]);
     let document = config_document(config_dir.path());
     assert!(
-        document.contains("// I read my Sessions folded."),
+        document.contains("// I read my sessions folded."),
         "a comment about the removed pin is the author's to delete, not Suru's: {document:?}"
     );
     assert!(
         document.contains("\"reasoningSummary\":    \"detailed\""),
-        "the untouched Setting keeps its spacing: {document:?}"
+        "the untouched setting keeps its spacing: {document:?}"
     );
     assert!(
         !document.contains("defaultFoldPosture"),
@@ -3109,7 +3109,7 @@ async fn the_first_set_creates_the_config_document_under_the_config_root() {
             value: Some(FoldPosture::Expanded),
         })
         .await
-        .expect("set the Setting");
+        .expect("set the setting");
 
     assert_eq!(
         config_document(&config_dir),
@@ -3117,7 +3117,7 @@ async fn the_first_set_creates_the_config_document_under_the_config_root() {
     );
     assert!(
         !config_dir.join("suru.json").exists(),
-        "Suru creates the primary Config Document, never the fallback name"
+        "Suru creates the primary config document, never the fallback name"
     );
 
     drop(client);
@@ -3129,7 +3129,7 @@ async fn a_document_that_does_not_parse_is_refused_rather_than_rewritten() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let broken = r#"{ "transcript": { "defaultFoldPosture" "#;
-    std::fs::write(config_dir.path().join("suru.jsonc"), broken).expect("write Config Document");
+    std::fs::write(config_dir.path().join("suru.jsonc"), broken).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-refuse")
             .expect("configure server")
@@ -3233,7 +3233,7 @@ async fn a_provider_pinned_off_round_trips_and_the_rest_default_to_enabled() {
             },
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-provider-off")
             .expect("configure server")
@@ -3246,7 +3246,7 @@ async fn a_provider_pinned_off_round_trips_and_the_rest_default_to_enabled() {
     assert!(!snapshot.settings.provider.copilot.enabled);
     assert!(
         snapshot.settings.provider.codex.enabled && snapshot.settings.provider.claude.enabled,
-        "a Provider with no pin is enabled, so a fresh install works without finding the Setting"
+        "a provider with no pin is enabled, so a fresh install works without finding the setting"
     );
     assert_eq!(snapshot.pinned_keys(), ["provider.copilot.enabled"]);
     assert_eq!(snapshot.diagnostics, []);
@@ -3259,7 +3259,7 @@ async fn turning_a_provider_off_and_resetting_it_leaves_the_rest_of_the_document
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(config_dir.path().join("suru.jsonc"), HAND_WRITTEN)
-        .expect("write Config Document");
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-provider-toggle")
             .expect("configure server")
@@ -3272,7 +3272,7 @@ async fn turning_a_provider_off_and_resetting_it_leaves_the_rest_of_the_document
     let disabled = client
         .mutate_setting(SettingMutation::ProviderClaudeEnabled { value: Some(false) })
         .await
-        .expect("turn the Provider off");
+        .expect("turn the provider off");
     assert!(!disabled.settings.provider.claude.enabled);
     assert!(disabled.pinned.contains_key("provider.claude.enabled"));
     let document = config_document(config_dir.path());
@@ -3282,10 +3282,10 @@ async fn turning_a_provider_off_and_resetting_it_leaves_the_rest_of_the_document
     );
     assert!(
         document.contains("\"reasoningSummary\":    \"detailed\""),
-        "the untouched Setting keeps its spacing: {document:?}"
+        "the untouched setting keeps its spacing: {document:?}"
     );
     assert!(
-        document.contains("// I read my Sessions folded."),
+        document.contains("// I read my sessions folded."),
         "the author's comments survive: {document:?}"
     );
 
@@ -3354,7 +3354,7 @@ async fn a_mistyped_enablement_is_diagnosed_with_unquoted_booleans_and_ignored_a
             }
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-provider-mistyped")
             .expect("configure server")
@@ -3368,7 +3368,7 @@ async fn a_mistyped_enablement_is_diagnosed_with_unquoted_booleans_and_ignored_a
         .1;
     assert!(
         snapshot.settings.provider.codex.enabled,
-        "the mistyped Setting keeps its built-in default"
+        "the mistyped setting keeps its built-in default"
     );
     assert!(
         !snapshot.settings.provider.copilot.enabled,
@@ -3401,7 +3401,7 @@ async fn a_mistyped_enablement_is_diagnosed_with_unquoted_booleans_and_ignored_a
     );
     assert_eq!(
         *gemini_key, "provider.gemini",
-        "a Provider that does not exist is visible rather than silent"
+        "a provider that does not exist is visible rather than silent"
     );
 
     server.shutdown().await.expect("shut down server");
@@ -3424,13 +3424,13 @@ async fn turning_a_provider_off_in_one_client_reaches_every_other() {
     let answered = editor
         .mutate_setting(SettingMutation::ProviderCopilotEnabled { value: Some(false) })
         .await
-        .expect("turn the Provider off");
+        .expect("turn the provider off");
 
     for client in [&mut editor, &mut onlooker] {
         let pushed = next_snapshot(client).await;
         assert_eq!(
             pushed, answered,
-            "every view agrees on which Providers exist"
+            "every view agrees on which providers exist"
         );
         assert!(!pushed.settings.provider.copilot.enabled);
     }
@@ -3462,7 +3462,7 @@ async fn a_pinned_derivation_errand_selection_round_trips_through_a_config_docum
     std::fs::write(
         config_dir.path().join("suru.jsonc"),
         r#"{
-            // Every Title and Icon written by the cheap Model, whatever the Session uses.
+            // Every title and icon written by the cheap model, whatever the session uses.
             "derivation": {
                 "errand": {
                     "provider": "codex",
@@ -3472,7 +3472,7 @@ async fn a_pinned_derivation_errand_selection_round_trips_through_a_config_docum
             },
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-derivation-pin")
             .expect("configure server")
@@ -3494,7 +3494,7 @@ async fn a_pinned_derivation_errand_selection_round_trips_through_a_config_docum
             value: Some(DerivationErrand::Off),
         })
         .await
-        .expect("turn Title, Icon, and branch derivation off");
+        .expect("turn title, icon, and branch derivation off");
     assert_eq!(off.settings.derivation.errand, DerivationErrand::Off);
     let document = config_document(config_dir.path());
     assert!(
@@ -3507,11 +3507,11 @@ async fn a_pinned_derivation_errand_selection_round_trips_through_a_config_docum
             value: Some(DerivationErrand::Pinned(pinned_title_selection())),
         })
         .await
-        .expect("pin an Agent Selection again");
+        .expect("pin an agent selection again");
     assert_eq!(
         repinned.settings.derivation.errand,
         DerivationErrand::Pinned(pinned_title_selection()),
-        "an Agent Selection survives the round trip through the document"
+        "an agent selection survives the round trip through the document"
     );
 
     let reset = client
@@ -3521,7 +3521,7 @@ async fn a_pinned_derivation_errand_selection_round_trips_through_a_config_docum
     assert_eq!(
         reset.settings.derivation.errand,
         DerivationErrand::FollowSession,
-        "the built-in default follows the Session's own Provider"
+        "the built-in default follows the session's own provider"
     );
     assert_eq!(reset.pinned_keys(), [] as [String; 0]);
     let emptied = config_document(config_dir.path());
@@ -3530,7 +3530,7 @@ async fn a_pinned_derivation_errand_selection_round_trips_through_a_config_docum
         "the pin takes the object that existed only to hold it with it: {emptied:?}"
     );
     assert!(
-        emptied.contains("// Every Title and Icon written by the cheap Model"),
+        emptied.contains("// Every title and icon written by the cheap model"),
         "the author's comment about the removed pin is theirs to delete: {emptied:?}"
     );
 
@@ -3549,7 +3549,7 @@ async fn a_mistyped_derivation_errand_is_ignored_alone_and_says_what_it_accepts(
             "transcript": { "reasoningVisibility": "shown" }
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-derivation-mistyped")
             .expect("configure server")
@@ -3564,7 +3564,7 @@ async fn a_mistyped_derivation_errand_is_ignored_alone_and_says_what_it_accepts(
     assert_eq!(
         snapshot.settings.derivation.errand,
         DerivationErrand::FollowSession,
-        "the mistyped Setting keeps its built-in default"
+        "the mistyped setting keeps its built-in default"
     );
     assert_eq!(
         snapshot.settings.transcript.reasoning_visibility,
@@ -3582,8 +3582,8 @@ async fn a_mistyped_derivation_errand_is_ignored_alone_and_says_what_it_accepts(
     assert!(
         diagnostic
             .message
-            .contains("one of \"session\", \"off\", or an Agent Selection"),
-        "a Setting the schema cannot enumerate names what it can and describes the rest: {:?}",
+            .contains("one of \"session\", \"off\", or an agent selection"),
+        "a setting the schema cannot enumerate names what it can and describes the rest: {:?}",
         diagnostic.message
     );
 
@@ -3602,7 +3602,7 @@ async fn the_retired_title_derivation_key_is_no_longer_a_known_setting() {
         config_dir.path().join("suru.jsonc"),
         r#"{ "session": { "title": { "errand": "off" } } }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-derivation-retired-key")
             .expect("configure server")
@@ -3626,7 +3626,7 @@ async fn the_retired_title_derivation_key_is_no_longer_a_known_setting() {
     assert_eq!(diagnostic.severity, SettingsDiagnosticSeverity::Warning);
     assert_eq!(diagnostic.key.as_deref(), Some("session.title"));
     assert!(
-        diagnostic.message.contains("not a known Setting"),
+        diagnostic.message.contains("not a known setting"),
         "the retired path is diagnosed exactly like any other unknown key: {:?}",
         diagnostic.message
     );
@@ -3824,7 +3824,7 @@ async fn a_config_root_that_cannot_be_searched_is_an_error_and_takes_no_change()
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let document = r#"{ "transcript": { "reasoningVisibility": "shown" } }"#;
-    std::fs::write(config_dir.path().join("suru.jsonc"), document).expect("write Config Document");
+    std::fs::write(config_dir.path().join("suru.jsonc"), document).expect("write config document");
     std::fs::set_permissions(config_dir.path(), std::fs::Permissions::from_mode(0o000))
         .expect("seal the config root");
     let unseal = Unseal(config_dir.path());
@@ -3854,7 +3854,7 @@ async fn a_config_root_that_cannot_be_searched_is_an_error_and_takes_no_change()
                     && diagnostic.key.is_none()
                     && diagnostic.file.parent() == Some(config_dir.path())
                     && diagnostic.message.starts_with(
-                        "ignored, with every Config Document beside it, because \
+                        "ignored, with every config document beside it, because \
                                       whether it exists could not be told: ",
                     )
             }),
@@ -3866,7 +3866,7 @@ async fn a_config_root_that_cannot_be_searched_is_an_error_and_takes_no_change()
             .mutate_setting(SettingMutation::AppearanceShowIcons { value: Some(false) })
             .await
             .is_err(),
-        "a change of a Setting is refused"
+        "a change of a setting is refused"
     );
 
     drop(client);
@@ -3911,7 +3911,7 @@ async fn an_outside_edit_of_a_setting_waits_for_the_next_start_saying_so() {
         &document,
         "{ \"transcript\": { \"reasoningVisibility\": \"shown\" } }\n",
     )
-    .expect("write the Config Document");
+    .expect("write the config document");
     let told = next_snapshot(&mut client).await;
     assert_eq!(told.settings, opening.settings, "nothing moved");
     assert_eq!(told.pinned_keys(), [] as [&str; 0], "and nothing is pinned");
@@ -3935,23 +3935,23 @@ async fn an_outside_edit_of_a_setting_waits_for_the_next_start_saying_so() {
             value: Some(AppearanceMode::Dark),
         })
         .await
-        .expect("change another Setting");
+        .expect("change another setting");
     assert_eq!(
         unrelated.settings.transcript.reasoning_visibility, in_force,
-        "a change of another Setting adopts none of the edit"
+        "a change of another setting adopts none of the edit"
     );
     assert_eq!(unrelated.pinned_keys(), ["appearance.mode"]);
     assert_eq!(
         unrelated.diagnostics, told.diagnostics,
         "and it is still said"
     );
-    let on_disk = std::fs::read_to_string(&document).expect("read the Config Document");
+    let on_disk = std::fs::read_to_string(&document).expect("read the config document");
     assert!(
         on_disk.contains("\"reasoningVisibility\": \"shown\"") && on_disk.contains("\"dark\""),
         "the document keeps the edit beside the change: {on_disk}"
     );
 
-    std::fs::write(&document, "{ \"transcript\": ").expect("write the Config Document");
+    std::fs::write(&document, "{ \"transcript\": ").expect("write the config document");
     let troubled = loop {
         let told = next_snapshot(&mut client).await;
         if told
@@ -3972,7 +3972,7 @@ async fn an_outside_edit_of_a_setting_waits_for_the_next_start_saying_so() {
         &document,
         "{ \"appearance\": { \"mode\": \"dark\" }, \"transcript\": { \"reasoningVisibility\": \"shown\" } }\n",
     )
-    .expect("write the Config Document");
+    .expect("write the config document");
     let mended = loop {
         let told = next_snapshot(&mut client).await;
         if told.diagnostics == unrelated.diagnostics {
@@ -3986,7 +3986,7 @@ async fn an_outside_edit_of_a_setting_waits_for_the_next_start_saying_so() {
             value: Some(in_force),
         })
         .await
-        .expect("change the very Setting");
+        .expect("change the very setting");
     assert_eq!(won.settings.transcript.reasoning_visibility, in_force);
     assert_eq!(won.diagnostics, [], "the two agree again");
 
@@ -3998,7 +3998,7 @@ async fn an_outside_edit_of_a_setting_waits_for_the_next_start_saying_so() {
         &document,
         "{ \"transcript\": { \"reasoningVisibility\": \"shown\" } }\n",
     )
-    .expect("write the Config Document");
+    .expect("write the config document");
     next_snapshot(&mut client).await;
     drop(client);
     server.shutdown().await.expect("shut down server");

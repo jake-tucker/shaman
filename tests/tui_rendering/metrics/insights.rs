@@ -65,7 +65,7 @@ fn expect_insights_reads(transition: ApplicationTransition) -> InsightsReads {
             workspaces_request_id,
             workspaces,
         },
-        other => panic!("the tab reads the Outlook's Server's Insights, not {other:?}"),
+        other => panic!("the tab reads the outlook's server's insights, not {other:?}"),
     }
 }
 
@@ -77,7 +77,7 @@ fn expect_insights_read(transition: ApplicationTransition) -> (Outlook, Uuid, In
 fn expect_metrics_read(transition: ApplicationTransition) -> UsageMetricsQuery {
     match transition {
         ApplicationTransition::ReadUsageMetrics { query, .. } => query,
-        other => panic!("the Overview reads its Usage Metrics, not {other:?}"),
+        other => panic!("the Overview reads its usage metrics, not {other:?}"),
     }
 }
 
@@ -88,7 +88,7 @@ fn answer_insights(
 ) {
     application
         .handle_event(ApplicationEvent::InsightsRead { request_id, result })
-        .expect("deliver the Insights");
+        .expect("deliver the insights");
 }
 
 /// The one interval a metrics query's buckets span, first to last.
@@ -310,7 +310,7 @@ fn the_view_opens_on_overview_and_ctrl_right_reads_insights_for_the_shared_range
     let rows = screen(&application);
     assert!(row(&rows, "Insights").contains("▐Insights▌"), "{rows:#?}");
     assert!(row(&rows, "30 days").contains("▐30 days▌"));
-    row(&rows, "Reading Insights…");
+    row(&rows, "Reading insights…");
 }
 
 #[test]
@@ -586,7 +586,7 @@ fn a_range_with_no_turns_says_so_in_the_panel() {
     let rows = screen(&application);
 
     row(&rows, "Turns");
-    row(&rows, "No Turns in the last 30 days");
+    row(&rows, "No turns in the last 30 days");
 }
 
 #[test]
@@ -609,13 +609,13 @@ fn turns_that_ended_without_both_moments_are_counted_but_give_no_durations() {
 #[test]
 fn a_refused_read_shows_its_reason_in_place_of_the_panels() {
     let application = on_insights(Err(MetricsReadRefusal::Refused(
-        "An Insights query's interval ends before it begins".to_owned(),
+        "An insights query's interval ends before it begins".to_owned(),
     )));
 
     let rows = screen(&application);
 
-    row(&rows, "The Server refused the Insights read");
-    row(&rows, "An Insights query's interval ends before it begins");
+    row(&rows, "The server refused the insights read");
+    row(&rows, "An insights query's interval ends before it begins");
     assert!(!rows.iter().any(|row| row.contains("Turns")), "{rows:#?}");
 }
 
@@ -636,7 +636,7 @@ fn insights_asked_of_a_remote_that_stopped_answering_are_refused_in_the_tab() {
     assert_eq!(
         press(&mut application, '2'),
         ApplicationTransition::Continue,
-        "a range read waits for the Remote"
+        "a range read waits for the remote"
     );
 
     let rows = screen(&application);
@@ -666,7 +666,7 @@ fn turning_the_outlook_beneath_insights_reads_both_tabs_from_the_server_it_now_n
 
     assert_eq!(reads.origin, Outlook::Local);
     let rows = screen(&application);
-    row(&rows, "Reading Insights…");
+    row(&rows, "Reading insights…");
     assert!(
         !rows.iter().any(|row| row.contains("median 48s")),
         "{rows:#?}"
@@ -676,7 +676,7 @@ fn turning_the_outlook_beneath_insights_reads_both_tabs_from_the_server_it_now_n
     assert_eq!(
         origin,
         Outlook::Local,
-        "studio's Overview went with the Outlook, so this machine's is read"
+        "studio's Overview went with the outlook, so this machine's is read"
     );
 }
 
@@ -696,7 +696,7 @@ fn a_refresh_lets_go_of_the_other_tab_s_figures_so_the_tabs_never_disagree() {
 
 /// What Insights says of All time where Turns stored before Suru timed
 /// them lie outside it.
-const UNTIMED_NOTE: &str = "Turns recorded before Suru timed Turns are not included";
+const UNTIMED_NOTE: &str = "Turns recorded before Suru timed turns are not included";
 
 /// [`on_insights`] of All time, its Workspace read saying `untimed_turns`
 /// Turns are untimed, and the 30 days before it read alike.
@@ -848,7 +848,7 @@ fn when_you_work_shades_each_local_hour_of_the_week_by_its_share_of_the_busiest(
 
     let rows = screen(&application);
 
-    row(&rows, "When you work (Turns by hour)");
+    row(&rows, "When you work (turns by hour)");
     row(&rows, "fewer ░▒▓█ more");
     assert!(
         row(&rows, "00      04      08      12      16      20").contains("00      04"),
@@ -862,7 +862,7 @@ fn when_you_work_shades_each_local_hour_of_the_week_by_its_share_of_the_busiest(
     assert_eq!(
         heat_row(&rows, "Wed"),
         format!("Wed  {}░░", "· ".repeat(23)),
-        "a Turn at 23:45 New York time, 03:45 UTC on Thursday, is Wednesday's"
+        "a turn at 23:45 New York time, 03:45 UTC on Thursday, is Wednesday's"
     );
     for day in ["Mon", "Thu", "Fri", "Sat", "Sun"] {
         assert_eq!(heat_row(&rows, day), format!("{day}  {}", "· ".repeat(24)));
@@ -924,7 +924,7 @@ fn a_cell_selected_by_keys_or_by_a_click_states_its_hour_turns_tokens_and_cost()
         key(&mut keyed, KeyCode::Right);
     }
     let rows = screen(&keyed);
-    row(&rows, "Tue 14:00–15:00 · 40 Turns · 2.1M tokens · $14.20");
+    row(&rows, "Tue 14:00–15:00 · 40 turns · 2.1M tokens · $14.20");
 
     // A click selects the cell by its place, Tuesday's fifteenth hour, as
     // the semantic command does, and either of a cell's columns is it.
@@ -957,11 +957,11 @@ fn a_cell_selected_by_keys_or_by_a_click_states_its_hour_turns_tokens_and_cost()
     }
     row(
         &screen(&clicked),
-        "Wed 23:00–24:00 · 1 Turn · 500 tokens · $0.05+",
+        "Wed 23:00–24:00 · 1 turn · 500 tokens · $0.05+",
     );
     key(&mut clicked, KeyCode::Up);
     key(&mut clicked, KeyCode::Left);
-    row(&screen(&clicked), "Tue 22:00–23:00 · no Turns");
+    row(&screen(&clicked), "Tue 22:00–23:00 · no turns");
 }
 
 #[test]
@@ -1048,7 +1048,7 @@ fn the_tools_panel_lists_the_most_used_first_and_folds_the_rest_into_more() {
         vec![
             "Tool uses ↓ failed",
             "Command 4,210 212",
-            "File Change 2,987 9",
+            "File change 2,987 9",
             "Read 2,544 3",
             "github · create_pr 41 2",
             "(4 more)",
@@ -1075,7 +1075,7 @@ fn f_sorts_the_tools_by_failures_and_again_by_uses() {
         vec![
             "Tool uses failed ↓",
             "Command 4,210 212",
-            "File Change 2,987 9",
+            "File change 2,987 9",
             "Subagent 30 5",
             "fs · write 9 4",
             "(4 more)",
@@ -1099,7 +1099,7 @@ fn arrows_scroll_the_tools_into_the_rows_folded_away() {
     assert_eq!(
         tools_panel(&application)[1..],
         [
-            "File Change 2,987 9",
+            "File change 2,987 9",
             "Read 2,544 3",
             "github · create_pr 41 2",
             "Subagent 30 5",
@@ -1146,7 +1146,7 @@ fn the_wheel_over_the_tools_panel_scrolls_it_without_focusing_it() {
     assert_eq!(
         tools_panel(&application)[1..],
         [
-            "File Change 2,987 9",
+            "File change 2,987 9",
             "Read 2,544 3",
             "github · create_pr 41 2",
             "Subagent 30 5",
@@ -1202,7 +1202,7 @@ fn a_range_whose_turns_used_no_tool_says_so_in_the_panel() {
 
     assert_eq!(
         tools_panel(&application)[0],
-        "No Tools used in the last 30 days"
+        "No tools used in the last 30 days"
     );
 }
 
@@ -1215,7 +1215,7 @@ const READING_ORDER: [&str; 8] = [
     " Cache ",
     " Compactions ",
     " Approvals ",
-    "Workspaces by Cost",
+    "Workspaces by cost",
     "Tools used",
     " Delegation ",
 ];
@@ -1253,19 +1253,19 @@ fn panels_stand_as_the_mockup_lays_them_out() {
     assert_eq!(
         (turns.0, cache.0),
         (heatmap.0, heatmap.0),
-        "Turns, then Cache, stand beneath When you work, at its left edge"
+        "Turns, then cache, stand beneath When you work, at its left edge"
     );
     assert!(heatmap.1 < turns.1 && turns.1 < cache.1);
     assert_eq!(
         (compactions.1, approvals.0),
         (turns.1, compactions.0),
-        "Compactions stand beside Turns beneath When you work, Approvals beneath them"
+        "Compactions stand beside turns beneath When you work, approvals beneath them"
     );
     assert!(approvals.1 > compactions.1);
     assert_eq!(
         (tools.0, delegation.0),
         (workspaces.0, workspaces.0),
-        "Tools, then Delegation, stand beneath Workspaces in the right-hand column"
+        "Tools, then delegation, stand beneath workspaces in the right-hand column"
     );
     assert!(workspaces.1 < tools.1 && tools.1 < delegation.1);
     assert!(
@@ -1331,7 +1331,7 @@ fn the_compactions_panel_names_those_suru_scheduled_where_there_were_any() {
     assert_eq!(
         panel_lines_at(&application, " Compactions ", STACKED_WIDTH),
         [
-            "30 Compactions · 6 manual · 3 scheduled · ✗ 2 failed",
+            "30 compactions · 6 manual · 3 scheduled · ✗ 2 failed",
             "frees 61% of context on average",
         ]
     );
@@ -1391,7 +1391,7 @@ fn a_range_with_no_compactions_says_so_in_the_panel() {
 
     assert_eq!(
         panel_lines(&application, " Compactions ")[0],
-        "No Compactions"
+        "No compactions"
     );
 }
 
@@ -1408,8 +1408,8 @@ fn the_approvals_panel_states_how_many_were_asked_and_how_each_was_decided() {
         vec![
             "188 asked",
             "✓ 171 ✗ 12 ⧗ 5",
-            "11 for the Session",
-            "2 interrupted the Turn",
+            "11 for the session",
+            "2 interrupted the turn",
         ]
     );
 }
@@ -1420,12 +1420,12 @@ fn a_range_with_no_approvals_says_so_in_the_panel() {
 
     assert_eq!(
         panel_lines(&application, " Approvals ")[0],
-        "No Approvals asked"
+        "No approvals asked"
     );
 }
 
 fn delegation_panel(application: &Application) -> Vec<String> {
-    panel_lines(application, "Delegation (Cost)")
+    panel_lines(application, "Delegation (cost)")
 }
 
 #[test]
@@ -1439,12 +1439,12 @@ fn the_delegation_panel_divides_cost_by_role_with_brokered_subagents_beside_thei
     assert_eq!(
         delegation_panel(&application),
         vec![
-            "own Sessions 71% $293.13 ████████████",
+            "own sessions 71% $293.13 ████████████",
             "Subagents 22% $90.83 ███▊ brokered 9%",
             "Sidekicks 6% $24.77 █",
             "Subsessions 1% $4.13 ▏",
             "Errands <1% $0.41 ▏",
-            "A Claude Session's Subagents are in its Cost",
+            "A Claude session's subagents are in its cost",
         ]
     );
 }
@@ -1455,7 +1455,7 @@ fn the_delegation_panel_s_errands_row_states_suru_s_own_cost_in_the_errands_colo
     report.delegation.errands = role(41.33, true);
     let application = on_insights(Ok(report));
 
-    let lines = panel_lines_at(&application, "Delegation (Cost)", 140);
+    let lines = panel_lines_at(&application, "Delegation (cost)", 140);
     assert_eq!(lines[4], "Errands 9%+ $41.33+ ██▌");
     let buffer = rendered_application_buffer(&application, 140, HEIGHT);
     let bar = |label: &str| {
@@ -1468,10 +1468,10 @@ fn the_delegation_panel_s_errands_row_states_suru_s_own_cost_in_the_errands_colo
     let errands = bar("Errands");
     assert_ne!(
         errands,
-        bar("own Sessions"),
-        "the Errands bar takes the colour reserved for them, as on Overview"
+        bar("own sessions"),
+        "the errands bar takes the colour reserved for them, as on Overview"
     );
-    assert_eq!(bar("Sidekicks"), bar("own Sessions"));
+    assert_eq!(bar("Sidekicks"), bar("own sessions"));
 }
 
 #[test]
@@ -1486,12 +1486,12 @@ fn a_role_whose_cost_is_partial_says_so_with_a_plus() {
     let application = on_insights(Ok(report));
 
     // Wide enough for every Cost beside the bars and the brokered share.
-    let lines = panel_lines_at(&application, "Delegation (Cost)", 140);
+    let lines = panel_lines_at(&application, "Delegation (cost)", 140);
     assert_eq!(
         lines[1], "Subagents 24%+ $90.83+ ██████▍ brokered 10%+",
         "partial where its brokered part is, and its shares of a partial whole"
     );
-    assert_eq!(lines[2], "Sidekicks 0% —", "no work, so no Cost to state");
+    assert_eq!(lines[2], "Sidekicks 0% —", "no work, so no cost to state");
     assert_eq!(
         lines[3], "Subsessions 0%+ unpriced",
         "work, none of it priced, is never a zero"
@@ -1503,7 +1503,7 @@ fn a_range_with_no_cost_says_so_in_the_delegation_panel() {
     let application = on_insights(Ok(InsightsReport::default()));
     assert_eq!(
         delegation_panel(&application)[0],
-        "No Cost in the last 30 days"
+        "No cost in the last 30 days"
     );
 
     let mut report = InsightsReport::default();
@@ -1582,7 +1582,7 @@ fn delegation_leaves_its_costs_out_where_they_would_crowd_the_brokered_share() {
     assert_eq!(
         delegation_panel(&application)[..2],
         [
-            "own Sessions 71%+ ████████████████████▋",
+            "own sessions 71%+ ████████████████████▋",
             "Subagents 22%+ ██████▍ brokered 9%+"
         ]
     );
@@ -1611,7 +1611,7 @@ fn below_the_mockup_s_width_the_small_panels_stack_and_say_it_all_where_they_fit
 
     assert!(
         left.iter().all(|(x, _)| *x == left[0].0) && left.windows(2).all(|two| two[0].1 < two[1].1),
-        "When you work, Turns, Cache, Compactions, and Approvals stack in one column: {left:?}"
+        "When you work, turns, cache, compactions, and approvals stack in one column: {left:?}"
     );
     let lines = |title| panel_lines_at(&application, title, STACKED_WIDTH);
     assert_eq!(
@@ -1628,7 +1628,7 @@ fn below_the_mockup_s_width_the_small_panels_stack_and_say_it_all_where_they_fit
     assert_eq!(
         lines(" Compactions "),
         [
-            "27 Compactions · 6 manual · ✗ 1 failed",
+            "27 compactions · 6 manual · ✗ 1 failed",
             "frees 61% of context on average",
         ]
     );
@@ -1637,7 +1637,7 @@ fn below_the_mockup_s_width_the_small_panels_stack_and_say_it_all_where_they_fit
         [
             "188 asked",
             "✓ 171 accepted ✗ 12 declined ⧗ 5 waiting or expired",
-            "11 for the Session · 2 also interrupted the Turn",
+            "11 for the session · 2 also interrupted the turn",
         ],
         "only the rows it fills"
     );

@@ -557,7 +557,7 @@ impl QuestionnairePanels {
         }
 
         let navigation = if panel.review {
-            body.text(Line::styled("Review Answer", theme.accent.primary));
+            body.text(Line::styled("Review answer", theme.accent.primary));
             for (index, (question, draft)) in questionnaire
                 .questions
                 .iter()
@@ -743,7 +743,7 @@ impl QuestionnairePanels {
         );
         let mut footer = footer;
         footer.push(Line::styled(
-            "Alt+↑/↓ scroll question · PgUp/PgDn browse Transcript",
+            "Alt+↑/↓ scroll question · PgUp/PgDn browse transcript",
             theme.text.subdued,
         ));
         frame.render_widget(

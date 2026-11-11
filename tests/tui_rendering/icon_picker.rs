@@ -52,14 +52,14 @@ fn sidebar_with_one_session(
     let ApplicationTransition::ListSessions(request) =
         deliver_settings(&mut application, shown_with_icons(show_icons))
     else {
-        panic!("a Sidebar coming into view asks for its Sessions");
+        panic!("a sidebar coming into view asks for its sessions");
     };
     application
         .handle_event(ApplicationEvent::SessionsListed {
             request,
             sessions: vec![listed_as(session_id, title, workspace)],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     application
 }
 
@@ -111,7 +111,7 @@ fn type_text(application: &mut Application, text: &str) {
 fn picker_is_drawn(application: &Application) -> bool {
     rendered_application_rows_at(application, WIDE, TALL)
         .iter()
-        .any(|row| row.contains("Choose Icon"))
+        .any(|row| row.contains("Choose icon"))
 }
 
 /// Opens the Icon Picker on the one listed Session, through its Sidebar row's
@@ -126,7 +126,7 @@ fn open_picker_from_sidebar_menu(workspace: &Path, session_id: SessionId) -> App
     let index = items
         .iter()
         .position(|label| label.contains("Choose icon"))
-        .expect("the menu offers Choose icon while Icons are shown");
+        .expect("the menu offers Choose icon while icons are shown");
     press(
         &mut application,
         MouseButton::Left,
@@ -135,7 +135,7 @@ fn open_picker_from_sidebar_menu(workspace: &Path, session_id: SessionId) -> App
     );
     assert!(
         picker_is_drawn(&application),
-        "choosing the menu item opens the Icon Picker"
+        "choosing the menu item opens the icon picker"
     );
     application
 }
@@ -173,7 +173,7 @@ fn the_sidebar_menu_offers_choose_icon_only_while_icons_are_shown() {
     let items = menu_item_labels(&with_icons, anchor);
     assert!(
         items.iter().any(|label| label.contains("Choose icon")),
-        "the menu offers Choose icon while Icons are shown: {items:?}"
+        "the menu offers Choose icon while icons are shown: {items:?}"
     );
 
     let without_icons =
@@ -184,7 +184,7 @@ fn the_sidebar_menu_offers_choose_icon_only_while_icons_are_shown() {
     let items = menu_item_labels(&without_icons, anchor);
     assert!(
         !items.iter().any(|label| label.contains("Choose icon")),
-        "the menu offers no Choose icon item while Icons are hidden: {items:?}"
+        "the menu offers no Choose icon item while icons are hidden: {items:?}"
     );
 }
 
@@ -206,7 +206,7 @@ fn application_with_open_session_icon(workspace: &Path, icon: &str) -> Applicati
     snapshot.icon = Some(icon.to_owned());
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
-        .expect("show the titled, iconed Session");
+        .expect("show the titled, iconed session");
     application
 }
 
@@ -219,7 +219,7 @@ fn pressing_the_header_icon_opens_the_icon_picker() {
     press(&mut application, MouseButton::Left, column, row);
     assert!(
         picker_is_drawn(&application),
-        "a press on the header Icon opens the Icon Picker"
+        "a press on the header icon opens the icon picker"
     );
 }
 
@@ -233,11 +233,11 @@ fn pressing_the_header_icon_does_nothing_while_icons_are_hidden() {
     snapshot.icon = Some("md-bug".to_owned());
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
-        .expect("show the titled Session with Icons hidden");
+        .expect("show the titled session with icons hidden");
     let rows_before = rendered_application_rows_at(&application, WIDE, TALL);
     assert!(
         !rows_before.iter().any(|row| row.contains('\u{f00e4}')),
-        "nothing is drawn for the Icon while Icons are hidden"
+        "nothing is drawn for the icon while icons are hidden"
     );
     // The press lands where the Title begins — the leading Icon column when
     // Icons are shown — and opens no picker: no Icon span was ever recorded,
@@ -255,7 +255,7 @@ fn pressing_the_header_icon_does_nothing_while_icons_are_hidden() {
             modifiers: KeyModifiers::NONE,
         },
     )
-    .expect("press near the Title");
+    .expect("press near the title");
     assert!(
         matches!(
             transition,
@@ -278,7 +278,7 @@ fn the_grid_renders_glyphs_and_the_footer_names_the_focused_one() {
     let text = rows.join("\n");
     assert!(
         text.contains("md-bug"),
-        "the footer names the focused glyph's Catalog name: {text}"
+        "the footer names the focused glyph's catalog name: {text}"
     );
     // A second glyph the Catalog carries also stands somewhere in the grid.
     assert!(
@@ -324,7 +324,7 @@ fn keyboard_choice_emits_the_set_icon_transition_and_closes() {
     assert_eq!(icon, "dev-rust");
     assert!(
         !picker_is_drawn(&application),
-        "choosing closes the Icon Picker"
+        "choosing closes the icon picker"
     );
 }
 
@@ -375,7 +375,7 @@ fn escape_cancels_without_choosing() {
     let text = rendered_application_rows_at(&application, WIDE, TALL).join("\n");
     assert!(
         text.contains('\u{f00e4}'),
-        "the original Icon still draws: {text}"
+        "the original icon still draws: {text}"
     );
 }
 
@@ -424,7 +424,7 @@ fn sidebar_with_selector_open(root: &Path, show_icons: bool) -> (Application, Wo
     let ApplicationTransition::ListSessions(request) =
         deliver_settings(&mut application, shown_with_icons(show_icons))
     else {
-        panic!("a Sidebar coming into view asks for its Sessions");
+        panic!("a sidebar coming into view asks for its sessions");
     };
     application
         .handle_event(ApplicationEvent::SessionsListed {
@@ -434,7 +434,7 @@ fn sidebar_with_selector_open(root: &Path, show_icons: bool) -> (Application, Wo
                 listed_as(SessionId::new(), "Birch work", &birch),
             ],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     // The selector's own line stands closed, marked "▸", above the entries a
     // press on it opens.
     let selector_row = drawn_at(&application, "\u{25b8} ");
@@ -458,7 +458,7 @@ fn open_picker_from_selector_menu(root: &Path) -> (Application, WorkspaceId) {
     let index = items
         .iter()
         .position(|label| label.contains("Choose icon"))
-        .expect("the selector entry's menu offers Choose icon while Icons are shown");
+        .expect("the selector entry's menu offers Choose icon while icons are shown");
     press(
         &mut application,
         MouseButton::Left,
@@ -467,7 +467,7 @@ fn open_picker_from_selector_menu(root: &Path) -> (Application, WorkspaceId) {
     );
     assert!(
         picker_is_drawn(&application),
-        "choosing the menu item opens the Icon Picker"
+        "choosing the menu item opens the icon picker"
     );
     (application, workspace_id)
 }
@@ -482,7 +482,7 @@ fn the_selector_entry_menu_offers_choose_icon_only_while_icons_are_shown() {
     let items = menu_item_labels(&with_icons, anchor);
     assert!(
         items.iter().any(|label| label.contains("Choose icon")),
-        "the entry's menu offers Choose icon while Icons are shown: {items:?}"
+        "the entry's menu offers Choose icon while icons are shown: {items:?}"
     );
 
     let (mut without_icons, _) = sidebar_with_selector_open(workspace.path(), false);
@@ -492,7 +492,7 @@ fn the_selector_entry_menu_offers_choose_icon_only_while_icons_are_shown() {
     let after = rendered_application_rows_at(&without_icons, WIDE, TALL);
     assert_eq!(
         before, after,
-        "a right press draws no menu at all while Icons are hidden"
+        "a right press draws no menu at all while icons are hidden"
     );
 }
 
@@ -523,7 +523,7 @@ fn keyboard_choice_over_a_selector_entry_emits_set_workspace_icon_and_closes() {
     assert_eq!(icon, "dev-rust");
     assert!(
         !picker_is_drawn(&application),
-        "choosing closes the Icon Picker"
+        "choosing closes the icon picker"
     );
 }
 
@@ -562,7 +562,7 @@ fn pointer_choice_over_a_selector_entry_does_the_same() {
 
 fn expect_workspace_listing(transition: ApplicationTransition) -> WorkspaceListRequest {
     let ApplicationTransition::ListWorkspaces(request) = transition else {
-        panic!("opening the Workspace Picker asks for the Server's Workspaces, not {transition:?}");
+        panic!("opening the workspace picker asks for the server's workspaces, not {transition:?}");
     };
     request
 }
@@ -582,7 +582,7 @@ fn workspace_picker_with_two_workspaces(
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceList,
             )))
-            .expect("open the Workspace Picker"),
+            .expect("open the workspace picker"),
     );
     application
         .handle_event(ApplicationEvent::WorkspacesListed {
@@ -592,7 +592,7 @@ fn workspace_picker_with_two_workspaces(
                 Workspace::directory(birch),
             ]),
         })
-        .expect("hydrate the Workspace Picker");
+        .expect("hydrate the workspace picker");
     (application, WorkspaceId::directory(&acorn))
 }
 
@@ -607,7 +607,7 @@ fn open_picker_from_workspace_picker_row_menu(root: &Path) -> (Application, Work
     let index = items
         .iter()
         .position(|label| label.contains("Choose icon"))
-        .expect("the row's menu offers Choose icon while Icons are shown");
+        .expect("the row's menu offers Choose icon while icons are shown");
     press(
         &mut application,
         MouseButton::Left,
@@ -616,7 +616,7 @@ fn open_picker_from_workspace_picker_row_menu(root: &Path) -> (Application, Work
     );
     assert!(
         picker_is_drawn(&application),
-        "choosing the menu item opens the Icon Picker"
+        "choosing the menu item opens the icon picker"
     );
     (application, workspace_id)
 }
@@ -632,7 +632,7 @@ fn the_workspace_picker_row_menu_offers_choose_icon_only_while_icons_are_shown()
     let items = menu_item_labels(&with_icons, row);
     assert!(
         items.iter().any(|label| label.contains("Choose icon")),
-        "the row's menu offers Choose icon while Icons are shown: {items:?}"
+        "the row's menu offers Choose icon while icons are shown: {items:?}"
     );
 
     let (mut without_icons, _) = workspace_picker_with_two_workspaces(workspace.path(), false);
@@ -642,7 +642,7 @@ fn the_workspace_picker_row_menu_offers_choose_icon_only_while_icons_are_shown()
     let items = menu_item_labels(&without_icons, row);
     assert!(
         !items.iter().any(|label| label.contains("Choose icon")),
-        "the row's menu offers no Choose icon item while Icons are hidden: {items:?}"
+        "the row's menu offers no Choose icon item while icons are hidden: {items:?}"
     );
 }
 
@@ -674,7 +674,7 @@ fn keyboard_choice_over_a_workspace_picker_row_emits_set_workspace_icon_and_clos
     assert_eq!(icon, "dev-rust");
     assert!(
         !picker_is_drawn(&application),
-        "choosing closes the Icon Picker"
+        "choosing closes the icon picker"
     );
 }
 

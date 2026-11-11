@@ -195,7 +195,7 @@ impl RemoteProbeStatus {
     fn remembered(status: RemoteStatus) -> Self {
         match status {
             RemoteStatus::Available => Self::Available,
-            RemoteStatus::Unavailable => Self::Unavailable("could not reach Remote".to_owned()),
+            RemoteStatus::Unavailable => Self::Unavailable("could not reach remote".to_owned()),
             RemoteStatus::Revoked => Self::Revoked,
             RemoteStatus::ProtocolMismatch => Self::ProtocolMismatch(None),
         }
@@ -493,19 +493,19 @@ impl ConnectOverlay {
 
     pub(super) fn loading_label(&self) -> Option<&'static str> {
         match &self.state {
-            ConnectOverlayState::Loading => Some("Loading Remotes…"),
+            ConnectOverlayState::Loading => Some("Loading remotes…"),
             ConnectOverlayState::Fetching {
                 asked_to_leave: false,
                 ..
-            } => Some("Asking for the Invite…"),
+            } => Some("Asking for the invite…"),
             ConnectOverlayState::Fetching { .. } => Some(
-                "Asking for the Invite… The code's one try is under way, so this stays to show \
-                 how it went. It ends on its own, in seconds unless a Relay is slow to answer, \
+                "Asking for the invite… The code's one try is under way, so this stays to show \
+                 how it went. It ends on its own, in seconds unless a relay is slow to answer, \
                  when it can take a minute or so for each",
             ),
-            ConnectOverlayState::Inspecting { .. } => Some("Inspecting Invite…"),
-            ConnectOverlayState::Redeeming { .. } => Some("Pairing Remote…"),
-            ConnectOverlayState::Removing { .. } => Some("Removing Remote…"),
+            ConnectOverlayState::Inspecting { .. } => Some("Inspecting invite…"),
+            ConnectOverlayState::Redeeming { .. } => Some("Pairing remote…"),
+            ConnectOverlayState::Removing { .. } => Some("Removing remote…"),
             ConnectOverlayState::Accepting(accepting) if accepting.asked() => {
                 Some("Accepting the offer…")
             }
@@ -685,7 +685,7 @@ impl ConnectOverlay {
         self.machines.focus_invite();
         let invite = invite.trim().to_owned();
         if invite.is_empty() {
-            *error = Some("Paste an Invite first".to_owned());
+            *error = Some("Paste an invite first".to_owned());
             return None;
         }
         // A code goes to a machine, and this field would only call it malformed.
@@ -868,7 +868,7 @@ impl ConnectOverlay {
             return None;
         }
         if self.known_names.iter().any(|known| known == &name) {
-            draft.error = Some(format!("A Remote named `{name}` already exists"));
+            draft.error = Some(format!("A remote named `{name}` already exists"));
             return None;
         }
         let draft = draft.clone();
@@ -1017,7 +1017,7 @@ impl ConnectOverlay {
     pub(super) fn addition_failed(&mut self, request: RelayRequest, error: &str) {
         self.stop_where(
             |step| matches!(step, LoginStep::Adding(awaited) if *awaited == request),
-            |relay| format!("Could not add the Relay at {relay}: {error}"),
+            |relay| format!("Could not add the relay at {relay}: {error}"),
         );
     }
 

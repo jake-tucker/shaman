@@ -80,12 +80,12 @@ fn a_subagent_session_header_shows_its_observed_model() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach a Subagent Session with observed identity");
+        .expect("attach a subagent session with observed identity");
 
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         text.contains("child-model"),
-        "the child Session presents its own Model: {text}"
+        "the child session presents its own model: {text}"
     );
 }
 
@@ -201,7 +201,7 @@ fn pressing_a_working_subagent_row_opens_the_childs_session() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with a working Subagent");
+        .expect("attach a session with a working subagent");
 
     assert_eq!(
         press_text(&mut application, 80, 22, "Explore: Map the provider seams"),
@@ -209,7 +209,7 @@ fn pressing_a_working_subagent_row_opens_the_childs_session() {
             suru::protocol::Outlook::Local,
             child_id,
         )),
-        "pressing the row asks to open the child Session it names"
+        "pressing the row asks to open the child session it names"
     );
 }
 
@@ -225,14 +225,14 @@ fn a_settled_subagent_row_in_history_still_opens_the_child() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session whose Subagent settled");
+        .expect("attach a session whose subagent settled");
     // The settled Turn folds to its marker, so the reader opens the Turn
     // Folds before the row is theirs to press.
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::TranscriptTurnsToggle,
         )))
-        .expect("open the settled Turn Folds");
+        .expect("open the settled turn folds");
 
     assert_eq!(
         press_text(&mut application, 80, 22, "Explore: Map the provider seams"),
@@ -252,7 +252,7 @@ fn escape_in_a_subagent_session_returns_to_the_parent() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach a Subagent's Session");
+        .expect("attach a subagent's session");
     rendered_application_rows_at(&application, 80, 22);
 
     assert_eq!(
@@ -261,7 +261,7 @@ fn escape_in_a_subagent_session_returns_to_the_parent() {
             suru::protocol::Outlook::Local,
             parent_id,
         )),
-        "Escape reports the root parent Viewed while opening it, never interrupting the child"
+        "Escape reports the root parent viewed while opening it, never interrupting the child"
     );
 }
 
@@ -275,7 +275,7 @@ fn a_turn_settling_in_an_open_subagent_view_yields_no_viewed_request() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach a Subagent's Session");
+        .expect("attach a subagent's session");
 
     assert_eq!(
         application
@@ -290,9 +290,9 @@ fn a_turn_settling_in_an_open_subagent_view_yields_no_viewed_request() {
                     }],
                 },
             )))
-            .expect("settle the Subagent's Turn"),
+            .expect("settle the subagent's turn"),
         ApplicationTransition::Continue,
-        "a Subagent view never reports Viewed"
+        "a subagent view never reports viewed"
     );
 }
 
@@ -304,7 +304,7 @@ fn returning_to_the_parent_restores_the_readers_view_state() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(parent.clone()))
-        .expect("attach the parent Session");
+        .expect("attach the parent session");
     rendered_application_rows_at(&application, 80, 15);
     for _ in 0..3 {
         application
@@ -314,7 +314,7 @@ fn returning_to_the_parent_restores_the_readers_view_state() {
                 row: 5,
                 modifiers: KeyModifiers::NONE,
             }))
-            .expect("scroll the parent's Transcript up");
+            .expect("scroll the parent's transcript up");
         rendered_application_rows_at(&application, 80, 15);
     }
     let left_at = rendered_application_rows_at(&application, 80, 15);
@@ -322,7 +322,7 @@ fn returning_to_the_parent_restores_the_readers_view_state() {
     let child = child_session_snapshot(SessionId::new(), parent_id, workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("open the Subagent's Session");
+        .expect("open the subagent's session");
     rendered_application_rows_at(&application, 80, 15);
     assert_eq!(
         press_key(&mut application, KeyCode::Esc),
@@ -330,11 +330,11 @@ fn returning_to_the_parent_restores_the_readers_view_state() {
             suru::protocol::Outlook::Local,
             parent_id,
         )),
-        "Escape reports the root parent Viewed while asking for it back"
+        "Escape reports the root parent viewed while asking for it back"
     );
     application
         .handle_event(ApplicationEvent::SessionAttached(parent))
-        .expect("return to the parent Session");
+        .expect("return to the parent session");
 
     assert_eq!(
         rendered_application_rows_at(&application, 80, 15),
@@ -387,16 +387,16 @@ fn a_subagent_view_brackets_its_own_subtree_while_the_parent_brackets_the_whole_
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(parent))
-        .expect("attach the delegating Session");
+        .expect("attach the delegating session");
     let delegating = buffer_rows(&rendered_application_buffer(&application, 80, 22)).join("\n");
     assert!(
         delegating.contains("12.4K (6%) · $0.31 ($0.43)"),
-        "the parent states its own Cost beside its tree's: {delegating}"
+        "the parent states its own cost beside its tree's: {delegating}"
     );
 
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("open the Subagent's Session");
+        .expect("open the subagent's session");
     let delegated = buffer_rows(&rendered_application_buffer(&application, 80, 22)).join("\n");
     assert!(
         delegated.contains("1K (1%) · $0.10 ($0.12)"),
@@ -404,7 +404,7 @@ fn a_subagent_view_brackets_its_own_subtree_while_the_parent_brackets_the_whole_
     );
     assert!(
         !delegated.contains("$0.43"),
-        "and never its parent's Cost: {delegated}"
+        "and never its parent's cost: {delegated}"
     );
     assert!(
         !delegated.contains("20K"),
@@ -419,14 +419,14 @@ fn a_subagent_session_offers_no_path_to_a_prompt() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach a Subagent's Session");
+        .expect("attach a subagent's session");
     rendered_application_rows_at(&application, 80, 22);
 
     type_terminal_text(&mut application, "hello agent");
     assert_eq!(
         press_key(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "Enter delivers nothing from a Subagent's Session"
+        "Enter delivers nothing from a subagent's session"
     );
 
     let buffer = rendered_application_buffer(&application, 80, 22);
@@ -445,7 +445,7 @@ fn a_subagent_session_offers_no_path_to_a_prompt() {
     );
     assert!(
         text.contains("Working (") && !text.contains("Esc to interrupt"),
-        "the child states its own Working duration without mislabelling Escape: {text}"
+        "the child states its own working duration without mislabelling Escape: {text}"
     );
 }
 
@@ -459,7 +459,7 @@ fn a_subagent_session_streams_live_while_attached() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach a Subagent's Session");
+        .expect("attach a subagent's session");
 
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
@@ -482,12 +482,12 @@ fn a_subagent_session_streams_live_while_attached() {
                 }],
             },
         )))
-        .expect("stream the Subagent's next message");
+        .expect("stream the subagent's next message");
 
     let rows = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         rows.contains("Found the orchestration seam"),
-        "the child's Transcript streams live while the Subagent works: {rows}"
+        "the child's transcript streams live while the subagent works: {rows}"
     );
 }
 
@@ -544,7 +544,7 @@ fn child_questionnaire_attention_opens_the_child_panel_and_preserves_parent_and_
     type_terminal_text(&mut app, "Parent composer draft");
     let screen = rendered_application_rows_at(&app, 100, 26).join("\n");
     assert!(
-        screen.contains("1 Subagent questionnaires pending")
+        screen.contains("1 subagent questionnaires pending")
             && !screen.contains("Which child setting?"),
         "{screen}"
     );
@@ -687,15 +687,15 @@ fn child_approval_attention_opens_the_owning_session_and_submits_its_decision_th
     app.handle_event(ApplicationEvent::SessionAttached(parent))
         .unwrap();
     let screen = rendered_application_rows_at(&app, 110, 26).join("\n");
-    assert!(screen.contains("1 Subagent questionnaire"), "{screen}");
-    assert!(screen.contains("1 Approval pending"), "{screen}");
+    assert!(screen.contains("1 subagent questionnaire"), "{screen}");
+    assert!(screen.contains("1 approval pending"), "{screen}");
     app.handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
         SemanticCommandId::SubagentBrowse,
     )))
     .unwrap();
     let screen = rendered_application_rows_at(&app, 110, 26).join("\n");
     assert!(screen.contains("1 pending question"), "{screen}");
-    assert!(screen.contains("1 pending Approval"), "{screen}");
+    assert!(screen.contains("1 pending approval"), "{screen}");
     assert!(
         matches!(press_key(&mut app, KeyCode::Enter), ApplicationTransition::AttachSession(reference) if reference.session_id == child_id)
     );
@@ -773,7 +773,7 @@ fn subagent_view_follows_latest_on_control_end_and_has_no_composer_line_motion()
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach a Subagent's Session");
+        .expect("attach a subagent's session");
     for (code, modifiers, command) in [
         (
             KeyCode::End,
@@ -863,14 +863,14 @@ fn a_delegation_is_drawn_apart_from_a_user_message_naming_the_agent_that_sent_it
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(parent.clone()))
-        .expect("attach the delegating Session");
+        .expect("attach the delegating session");
     let delegating = rendered_application_buffer(&application, 80, 22);
     let (user_bar, user_row) = text_position(&delegating, "┃ Please map the seams");
 
     let child = delegated_child_snapshot(parent.session.id, SessionId::new(), workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach the Subagent's Session");
+        .expect("attach the subagent's session");
     let delegated = rendered_application_buffer(&application, 80, 22);
     let text = buffer_rows(&delegated).join("\n");
 
@@ -880,7 +880,7 @@ fn a_delegation_is_drawn_apart_from_a_user_message_naming_the_agent_that_sent_it
     ] {
         assert!(
             text.contains(&format!("│ {sender}")),
-            "a Delegation names the Agent that sent it, {sender:?}: {text}"
+            "a delegation names the agent that sent it, {sender:?}: {text}"
         );
         assert!(
             text.contains(asked),
@@ -889,18 +889,18 @@ fn a_delegation_is_drawn_apart_from_a_user_message_naming_the_agent_that_sent_it
     }
     assert!(
         !text.contains("┃ Map the provider seams.") && !text.contains("┃ Delegated by"),
-        "a Delegation never wears a user Message's bar: {text}"
+        "a delegation never wears a user message's bar: {text}"
     );
     let (delegation_bar, delegation_row) = text_position(&delegated, "│ Map the provider seams.");
     assert_ne!(
         delegated[(delegation_bar, delegation_row)].fg,
         delegating[(user_bar, user_row)].fg,
-        "a Delegation's bar is drawn in another role than a user Message's"
+        "a delegation's bar is drawn in another role than a user message's"
     );
     assert_eq!(
         delegated[(delegation_bar + 2, delegation_row)].bg,
         delegating[(user_bar + 2, user_row)].bg,
-        "though both sit on the surface of what an Agent was asked"
+        "though both sit on the surface of what an agent was asked"
     );
 }
 
@@ -926,7 +926,7 @@ fn a_delegation_heading_too_long_for_its_row_wraps_rather_than_being_cut_short()
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach the Subagent's Session");
+        .expect("attach the subagent's session");
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
 
     assert!(
@@ -987,17 +987,17 @@ fn a_folded_turn_in_a_subagent_session_keeps_its_delegation_visible() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach a Subagent's Session whose Turn settled");
+        .expect("attach a subagent's session whose turn settled");
 
     let rows = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         rows.contains("✓ Worked for 12s"),
-        "the settled Turn stands as its marker: {rows}"
+        "the settled turn stands as its marker: {rows}"
     );
     for hidden in ["rg -l ProviderRuntime", "Mapping the provider seams"] {
         assert!(
             !rows.contains(hidden),
-            "the Turn Fold hides the work it stands for, but {hidden:?} rendered: {rows}"
+            "the turn fold hides the work it stands for, but {hidden:?} rendered: {rows}"
         );
     }
     for kept in [
@@ -1007,21 +1007,21 @@ fn a_folded_turn_in_a_subagent_session_keeps_its_delegation_visible() {
     ] {
         assert!(
             rows.contains(kept),
-            "the Turn's Delegation and its answer stay outside the fold, but {kept:?} is \
+            "the turn's delegation and its answer stay outside the fold, but {kept:?} is \
              missing: {rows}"
         );
     }
     let delegation_row = rows
         .lines()
         .position(|row| row.contains("Map the provider seams."))
-        .expect("the Delegation renders");
+        .expect("the delegation renders");
     let marker_row = rows
         .lines()
         .position(|row| row.contains("✓ Worked"))
         .expect("the marker renders");
     assert!(
         delegation_row < marker_row,
-        "the Delegation opens the Turn its marker answers: {rows}"
+        "the delegation opens the turn its marker answers: {rows}"
     );
 }
 
@@ -1032,14 +1032,14 @@ fn a_subagent_session_opened_by_delegations_still_offers_no_prompt_composer() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach a Subagent's Session");
+        .expect("attach a subagent's session");
     rendered_application_rows_at(&application, 80, 22);
 
     type_terminal_text(&mut application, "hello agent");
     assert_eq!(
         press_key(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "Enter delivers nothing from a Subagent's Session, whoever delegated to it"
+        "Enter delivers nothing from a subagent's session, whoever delegated to it"
     );
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
@@ -1064,7 +1064,7 @@ fn a_brokered_subagents_row_renders_like_a_native_one_and_opens_its_session() {
         let mut application = connected_application(workspace.path());
         application
             .handle_event(ApplicationEvent::SessionAttached(snapshot))
-            .expect("attach a Session with a Subagent row");
+            .expect("attach a session with a subagent row");
         let rows = rendered_application_rows_at(&application, 80, 22);
         let line = rows
             .iter()
@@ -1104,7 +1104,7 @@ fn a_brokered_subagents_row_renders_like_a_native_one_and_opens_its_session() {
             suru::protocol::Outlook::Local,
             child_id,
         )),
-        "and pressing it opens the brokered Subagent's own Session"
+        "and pressing it opens the brokered subagent's own session"
     );
 
     let codex = AgentSelection {
@@ -1133,19 +1133,19 @@ fn a_brokered_subagents_row_renders_like_a_native_one_and_opens_its_session() {
     child.messages.insert(0, spawn);
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach the brokered Subagent's Session");
+        .expect("attach the brokered subagent's session");
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         text.contains("│ Delegated by parent") && text.contains("│ Map the provider seams."),
-        "its Transcript opens with the Delegation, naming the Agent that sent it: {text}"
+        "its transcript opens with the delegation, naming the agent that sent it: {text}"
     );
     assert!(
         !text.contains("┃ Map the provider seams."),
-        "drawn apart from a user Message: {text}"
+        "drawn apart from a user message: {text}"
     );
     assert!(
         text.contains("gpt-5.5"),
-        "on the Model its own Provider runs: {text}"
+        "on the model its own provider runs: {text}"
     );
 }
 

@@ -277,7 +277,7 @@ fn the_wheel_scrolls_the_column_except_over_rows_of_a_panel_s_own_until_they_end
     assert_eq!(
         corner(&application, NARROW, SHORT, "Tools used"),
         tools,
-        "over the Tools, the wheel scrolls their rows, the column staying put"
+        "over the tools, the wheel scrolls their rows, the column staying put"
     );
     assert_ne!(panel_rows(&application, "Tools used"), first_rows);
     for _ in 0..2 {
@@ -291,7 +291,7 @@ fn the_wheel_scrolls_the_column_except_over_rows_of_a_panel_s_own_until_they_end
     let moved = corner(&application, NARROW, SHORT, "Tools used");
     assert!(
         moved.1 < tools.1,
-        "at the Tools' last row the wheel carries on down the column: {moved:?}"
+        "at the tools' last row the wheel carries on down the column: {moved:?}"
     );
     assert_eq!(panel_rows(&application, "Tools used"), last_rows);
 }
@@ -342,7 +342,7 @@ fn clicks_land_on_the_cells_bins_and_rows_shown_in_the_scrolled_column() {
             &cell,
             NARROW,
             SHORT,
-            "Tue 14:00–15:00 · 40 Turns · 2.1M tokens · $14.20"
+            "Tue 14:00–15:00 · 40 turns · 2.1M tokens · $14.20"
         ),
         "{}",
         rendered_application_rows_at(&cell, NARROW, SHORT).join("\n")
@@ -358,7 +358,7 @@ fn clicks_land_on_the_cells_bins_and_rows_shown_in_the_scrolled_column() {
     let (x, y) = text_position(&buffer, "▁▃▇█▆▃▂▁");
     press_at(&mut bin, (x + 3, y));
     assert!(
-        shows(&bin, NARROW, SHORT, "1–2m · 80 Turns · 26%"),
+        shows(&bin, NARROW, SHORT, "1–2m · 80 turns · 26%"),
         "the bin clicked is the one selected, named in full in a column this wide"
     );
 
@@ -374,11 +374,11 @@ fn clicks_land_on_the_cells_bins_and_rows_shown_in_the_scrolled_column() {
             .style()
             .add_modifier
             .contains(Modifier::REVERSED),
-        "the Tool clicked is the one selected"
+        "the tool clicked is the one selected"
     );
 
     let mut workspace = on_insights(Ok(worked()));
-    page_to(&mut workspace, "Workspaces by Cost");
+    page_to(&mut workspace, "Workspaces by cost");
     let buffer = rendered_application_buffer(&workspace, NARROW, SHORT);
     let blog = text_position(&buffer, "blog");
     let opened = press_at(&mut workspace, blog);
@@ -386,7 +386,7 @@ fn clicks_land_on_the_cells_bins_and_rows_shown_in_the_scrolled_column() {
     assert_eq!(
         workspaces::dimmed(&workspace, ["suru", "relay-infra", "dotfiles", "blog"]),
         [Some(true), Some(true), Some(true), Some(false)],
-        "the Workspace clicked is the one opened"
+        "the workspace clicked is the one opened"
     );
 }
 

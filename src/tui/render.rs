@@ -352,17 +352,17 @@ pub(super) fn render_with_slots(
         let mut intervention_notices = Vec::new();
         if subagent_questions > 0 || subagent_approvals > 0 {
             let pending = match (subagent_questions, subagent_approvals) {
-                (questions, 0) => format!("{questions} Subagent questionnaires pending"),
-                (0, approvals) => format!("{approvals} Subagent Approvals pending"),
+                (questions, 0) => format!("{questions} subagent questionnaires pending"),
+                (0, approvals) => format!("{approvals} subagent approvals pending"),
                 (questions, approvals) => {
                     format!(
-                        "{questions} Subagent questionnaire{} · {approvals} Approval{} pending",
+                        "{questions} subagent questionnaire{} · {approvals} approval{} pending",
                         if questions == 1 { "" } else { "s" },
                         if approvals == 1 { "" } else { "s" },
                     )
                 }
             };
-            intervention_notices.push(format!("{pending} · ↓ browse Subagents"));
+            intervention_notices.push(format!("{pending} · ↓ browse subagents"));
         }
         if !pending_approvals.is_empty() {
             intervention_notices.push(format!(
@@ -710,13 +710,13 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             .any(|way| matches!(way, Way::Relay(address) if needs_login(address)))
         {
             body.extend(wrapped_lines(
-                "To pair through a Relay that needs a login, this Server logs in there first",
+                "To pair through a relay that needs a login, this server logs in there first",
                 content_width,
                 theme.text.subdued,
             ));
         }
         let mut lines = vec![Line::styled(
-            "Confirm Serving Server",
+            "Confirm serving server",
             theme.text.primary.add_modifier(Modifier::BOLD),
         )];
         // Nothing an Invite offers is left out before it is trusted: what
@@ -764,7 +764,7 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
     }
     if let Some((relay, step)) = overlay.login_step() {
         let content_width = area.width.saturating_sub(2);
-        const CONTEXT: &str = "To pair through this Relay, this Server logs in there first";
+        const CONTEXT: &str = "To pair through this relay, this server logs in there first";
         let heading = || {
             wrapped_lines(
                 &format!("Log in at {relay}"),
@@ -794,7 +794,7 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
                 lines.extend(wrapped_lines(CONTEXT, content_width, theme.text.subdued));
                 lines.push(Line::styled(
                     if matches!(step, LoginStep::Adding(_)) {
-                        "Adding Relay…"
+                        "Adding relay…"
                     } else {
                         "Beginning login…"
                     },
@@ -818,7 +818,7 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
     if let Some(details) = overlay.details() {
         let content_width = area.width.saturating_sub(2);
         let mut lines = vec![Line::styled(
-            "Configure Remote",
+            "Configure remote",
             theme.text.primary.add_modifier(Modifier::BOLD),
         )];
         lines.push(Line::styled("Remote name", theme.text.subdued));
@@ -985,7 +985,7 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         return;
     }
     let mut lines = vec![Line::styled(
-        "Paired Remotes",
+        "Paired remotes",
         theme.text.primary.add_modifier(Modifier::BOLD),
     )];
     let note_rows = usize::from(overlay.picker_note().is_some());
@@ -1004,7 +1004,7 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
     let relays = overlay.selected_relays();
     let mut through = Vec::new();
     if !relays.is_empty() {
-        through.push(Line::styled("Relays it Serves through", theme.text.subdued));
+        through.push(Line::styled("Relays it serves through", theme.text.subdued));
     }
     for address in relays {
         let standing = match state.relay_overlay.held_state(address) {
@@ -1157,7 +1157,7 @@ fn pair_back_keys(details: &ConnectDetails<'_>, option: &PairBackOption) -> Stri
             let fix = fix
                 .as_ref()
                 .map_or(String::new(), |fix| format!("Space {} · ", fix.label()));
-            format!("{fix}a add a Relay · ")
+            format!("{fix}a add a relay · ")
         }
     };
     format!("{acting}↑↓ move · Tab field · Enter pair · Esc cancel")
@@ -1253,7 +1253,7 @@ fn invite_entry_lines(
     let machines = overlay.machines();
     let on_the_field = machines.selected_fingerprint().is_none();
     let mut field = vec![Line::styled(
-        "Paste Invite",
+        "Paste invite",
         theme.text.primary.add_modifier(Modifier::BOLD),
     )];
     field.push(if invite.is_empty() {
@@ -1267,7 +1267,7 @@ fn invite_entry_lines(
     // A login the reader left came to stand since: the Invite now pairs.
     if let Some(relay) = overlay.logged_in_at() {
         field.extend(wrapped_lines(
-            &format!("Logged in at {relay}; paste the Invite again to pair through it"),
+            &format!("Logged in at {relay}; paste the invite again to pair through it"),
             width,
             theme.text.subdued,
         ));
@@ -1281,14 +1281,14 @@ fn invite_entry_lines(
     }
     if !machines.any_relays() {
         below.extend(wrapped_lines(
-            "To pair by a short code instead, add a Relay in /relay or /serve: your machines \
+            "To pair by a short code instead, add a relay in /relay or /serve: your machines \
              logged in there are then listed here",
             width,
             theme.text.subdued,
         ));
     }
     let walking = match (on_the_field, machines.any_relays()) {
-        (false, _) => "↑↓ choose · Enter choose · Tab Invite · ",
+        (false, _) => "↑↓ choose · Enter choose · Tab invite · ",
         (true, true) => "↑↓ machines · Enter inspect · ",
         (true, false) => "Enter inspect · ",
     };
@@ -1341,7 +1341,7 @@ fn code_entry_lines(
         theme.text.primary,
     );
     let keys = wrapped_lines(
-        "Enter ask for its Invite · Esc back",
+        "Enter ask for its invite · Esc back",
         width,
         theme.text.subdued,
     );
@@ -1421,8 +1421,8 @@ fn found_machine_lines(
             GroupState::Asking => Some("looking…".to_owned()),
             GroupState::Listed { .. } if !group.machines.is_empty() => None,
             GroupState::Listed { elsewhere: 0 } => Some("no other machines".to_owned()),
-            GroupState::Listed { .. } => Some("none but those under another Relay".to_owned()),
-            GroupState::NotListed => Some("cannot list machines; paste an Invite".to_owned()),
+            GroupState::Listed { .. } => Some("none but those under another relay".to_owned()),
+            GroupState::NotListed => Some("cannot list machines; paste an invite".to_owned()),
             GroupState::LoginNeeded => {
                 Some("login needed; log in from /relay or /serve".to_owned())
             }
@@ -1447,7 +1447,7 @@ fn found_machine_lines(
         }
         if group.cut_short {
             let more = wrapped_lines(
-                "…and more this Relay did not list",
+                "…and more this relay did not list",
                 width,
                 theme.text.subdued,
             );
@@ -1489,7 +1489,7 @@ fn found_machine_row(
     let state = match &machine.state {
         MachineState::Serving => "Serving",
         MachineState::RemoteAlready(_) => "Remote already",
-        MachineState::NotServing => "not Serving (run /serve there)",
+        MachineState::NotServing => "not serving (run /serve there)",
     };
     let others = machine
         .waiting_at
@@ -1569,7 +1569,7 @@ fn render_relay_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
     if let Some(label) = overlay.loading_label() {
         lines.push(Line::styled(label, theme.text.subdued));
     } else if let Some((address, error)) = overlay.address_entry() {
-        lines.push(heading("Add a Relay".to_owned()));
+        lines.push(heading("Add a relay".to_owned()));
         lines.push(Line::styled("Relay address", theme.text.subdued));
         lines.extend(wrapped_lines(
             &format!("> {address}▏"),
@@ -1633,8 +1633,8 @@ fn render_relay_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
                 .map(|offer| format!("{offer} · "))
                 .unwrap_or_default();
             let serve = match overlay.selected_serve_through() {
-                Some(true) => "s stop Serving through · ",
-                Some(false) => "s Serve through · ",
+                Some(true) => "s stop serving through · ",
+                Some(false) => "s serve through · ",
                 None => "",
             };
             // A Relay a Config Document pins is not its reader's to remove
@@ -1652,7 +1652,7 @@ fn render_relay_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
             .collect::<Vec<_>>();
         if relays.is_empty() {
             if overlay.listing_error().is_none() {
-                lines.push(Line::styled("No Relays added", theme.text.subdued));
+                lines.push(Line::styled("No relays added", theme.text.subdued));
             }
         } else {
             let capacity = usize::from(area.height.saturating_sub(2))
@@ -1833,14 +1833,14 @@ fn render_context_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
     let overlay = &state.context_overlay;
     let lines = match overlay.view() {
         ContextOverlayView::Reading => vec![Line::styled(
-            "Asking the Provider what fills this Session's context…",
+            "Asking the provider what fills this session's context…",
             theme.text.subdued,
         )],
         ContextOverlayView::Failed(message) => {
             vec![Line::styled(message.to_owned(), theme.feedback.error)]
         }
         ContextOverlayView::Unsupported { provider, fill } => {
-            let provider = provider.unwrap_or("This Session's Provider");
+            let provider = provider.unwrap_or("This session's provider");
             fill.map(|fill| Line::styled(fill, theme.text.primary.add_modifier(Modifier::BOLD)))
                 .into_iter()
                 .chain([Line::styled(
@@ -1942,7 +1942,7 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
             state,
             SelectionSurface::Serve,
             area,
-            vec![Line::styled("Preparing Serving…", theme.text.subdued)],
+            vec![Line::styled("Preparing serving…", theme.text.subdued)],
             " Serve ",
             theme,
         );
@@ -1963,11 +1963,11 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         };
         let mut lines = vec![match invite_ended {
             Some(_) => Line::styled(
-                "This Invite no longer works",
+                "This invite no longer works",
                 theme.feedback.error.add_modifier(Modifier::BOLD),
             ),
             None => Line::styled(
-                "Fresh Invite",
+                "Fresh invite",
                 theme.text.primary.add_modifier(Modifier::BOLD),
             ),
         }];
@@ -1993,9 +1993,9 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
             ));
         }
         lines.extend(invite_lines);
-        lines.push(Line::styled("Enrolled Peers", theme.text.primary));
+        lines.push(Line::styled("Enrolled peers", theme.text.primary));
         if state.serve_overlay.peers().is_empty() {
-            lines.push(Line::styled("No Peers enrolled", theme.text.subdued));
+            lines.push(Line::styled("No peers enrolled", theme.text.subdued));
         } else {
             let error_rows = usize::from(state.serve_overlay.error().is_some());
             let peer_capacity = content_height.saturating_sub(lines.len() + error_rows + 1);
@@ -2050,9 +2050,9 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
             let copy_invite = if invite_ended.is_some() {
                 ""
             } else {
-                "Ctrl+C copy Invite · "
+                "Ctrl+C copy invite · "
             };
-            format!("{copy_invite}{copy_code}{new_code}↑↓ choose Peer · x remove · Esc close")
+            format!("{copy_invite}{copy_code}{new_code}↑↓ choose peer · x remove · Esc close")
         };
         lines.extend(wrapped_lines(&keys, content_width, theme.text.subdued));
         render_overlay_box(
@@ -2147,10 +2147,10 @@ fn serve_picker_lines(state: &TuiState, area: Rect, theme: &Theme) -> Vec<Line<'
     // The keys are taught for the way the reader is on, and not offered where
     // what would make them safe to press cannot be shown.
     let keys = match candidates.get(selected) {
-        None => "a add Relay · Esc close".to_owned(),
-        Some(_) if !statement_fits => "↑↓ move · a add Relay · Esc close".to_owned(),
+        None => "a add relay · Esc close".to_owned(),
+        Some(_) if !statement_fits => "↑↓ move · a add relay · Esc close".to_owned(),
         Some(candidate) => format!(
-            "↑↓ move · Space {} · a add Relay · Enter issue Invite · Esc close",
+            "↑↓ move · Space {} · a add relay · Enter issue invite · Esc close",
             candidate.action.label()
         ),
     };
@@ -2199,7 +2199,7 @@ fn serve_picker_lines(state: &TuiState, area: Rect, theme: &Theme) -> Vec<Line<'
     let mut lines = Vec::new();
     if layout.heading {
         lines.push(Line::styled(
-            "Choose Invite addresses",
+            "Choose invite addresses",
             theme.text.primary.add_modifier(Modifier::BOLD),
         ));
     }
@@ -2460,7 +2460,7 @@ fn render_session_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, th
         ));
     }
     if state.session_picker.is_loading() && lines.len() < usize::from(content_height) {
-        lines.push(Line::styled("Loading Sessions…", theme.text.subdued));
+        lines.push(Line::styled("Loading sessions…", theme.text.subdued));
     } else {
         let current = state.open_session_reference();
         let footer_rows = usize::from(shows_search_and_footer);
@@ -2483,7 +2483,7 @@ fn render_session_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, th
             .collect::<Vec<_>>();
         if rows.is_empty() && lines.len() < usize::from(content_height).saturating_sub(footer_rows)
         {
-            lines.push(Line::styled("No Sessions found", theme.text.subdued));
+            lines.push(Line::styled("No sessions found", theme.text.subdued));
         } else {
             lines.extend(rows);
         }
@@ -2539,9 +2539,9 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
     if let Some(preview) = &picker.removal {
         lines.push(Line::styled(
             format!(
-                "Remove linked Worktree on {}?",
+                "Remove linked worktree on {}?",
                 match &state.outlook {
-                    crate::protocol::Outlook::Local => "Local Server",
+                    crate::protocol::Outlook::Local => "Local server",
                     crate::protocol::Outlook::Remote(alias) => alias.as_str(),
                 }
             ),
@@ -2551,12 +2551,12 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             state.workspace_label(&state.outlook, &preview.target.checkout.root),
         ));
         lines.push(Line::raw(format!(
-            "{} affected Sessions on this Server · {} Working",
+            "{} affected sessions on this server · {} working",
             preview.affected_sessions, preview.working_sessions
         )));
         if preview.pending_moves != 0 {
             lines.push(Line::raw(format!(
-                "A pending Move is bound here for {} of them; cancel or replace it with /move",
+                "A pending move is bound here for {} of them; cancel or replace it with /move",
                 preview.pending_moves
             )));
         }
@@ -2579,7 +2579,7 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             lines.push(Line::raw("Initialized submodules will be removed"));
         }
         lines.push(Line::raw(format!(
-            "{}; Session histories retained; uncommitted files cannot be recovered",
+            "{}; session histories retained; uncommitted files cannot be recovered",
             match preview.branch_outcome {
                 crate::protocol::CheckoutBranchOutcome::Deleted => "Branch will be deleted",
                 crate::protocol::CheckoutBranchOutcome::Retained => "Branch retained",
@@ -2588,16 +2588,16 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         lines.push(Line::raw(if picker.loading {
             "Removing…"
         } else if preview.working_sessions != 0 {
-            "Working Sessions block removal · Esc cancel"
+            "Working sessions block removal · Esc cancel"
         } else if preview.pending_moves != 0 {
-            "A pending Move blocks removal · Esc cancel"
+            "A pending move blocks removal · Esc cancel"
         } else if facts.requires_force() {
             "F Force remove · Esc cancel"
         } else {
             "Enter Remove · Esc cancel"
         }));
     } else if picker.loading {
-        lines.push(Line::styled("Loading Worktrees…", theme.text.subdued));
+        lines.push(Line::styled("Loading worktrees…", theme.text.subdued));
     } else if picker.context.is_some() || picker.offers_elsewhere() {
         let mut rows = Vec::new();
         if let Some(context) = &picker.context {
@@ -2611,7 +2611,7 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
                 .map(|repository| repository.presentation_path());
             let heading = if picker.asks_which() {
                 format!(
-                    "Which Worktree of {}?",
+                    "Which worktree of {}?",
                     state.workspace_name(&state.outlook, &context.workspace.path)
                 )
             } else {
@@ -2636,12 +2636,12 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
                     .map(|r| &r.capabilities.create_checkout);
                 rows.push(match reason {
                     Some(crate::protocol::SourceControlCapability::Available) => {
-                        "New Worktree".to_owned()
+                        "New worktree".to_owned()
                     }
                     Some(crate::protocol::SourceControlCapability::Unsupported { reason }) => {
-                        format!("New Worktree unavailable · {reason}")
+                        format!("New worktree unavailable · {reason}")
                     }
-                    None => "New Worktree unavailable · no Repository".to_owned(),
+                    None => "New worktree unavailable · no repository".to_owned(),
                 });
                 rows.extend(context.checkouts.iter().map(|checkout| {
                     // The Worktree the reader is already in is marked rather
@@ -2665,7 +2665,7 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             }
         }
         if picker.offers_elsewhere() {
-            rows.push("Another Workspace…".to_owned());
+            rows.push("Another workspace…".to_owned());
             rows.push("Browse…".to_owned());
         }
         let available_rows = capacity.saturating_sub(2).max(1);
@@ -2696,7 +2696,7 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         }
         lines.push(Line::styled(
             if picker.offers_removal() {
-                "Enter select · d Remove linked Worktree · Esc close"
+                "Enter select · d Remove linked worktree · Esc close"
             } else if picker.asks_which() {
                 "Enter select · Esc back"
             } else {
@@ -2720,7 +2720,7 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
         area,
         lines,
         if picker.is_moving() {
-            " Move Session "
+            " Move session "
         } else {
             " Worktrees "
         },
@@ -2781,7 +2781,7 @@ fn render_workspace_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, 
         }
     }
     if state.workspace_picker.is_loading() && lines.len() < content_height {
-        lines.push(Line::styled("Loading Workspaces…", theme.text.subdued));
+        lines.push(Line::styled("Loading workspaces…", theme.text.subdued));
     } else {
         let footer_rows = usize::from(shows_footer);
         let capacity = content_height.saturating_sub(lines.len() + footer_rows + description_rows);
@@ -2839,7 +2839,7 @@ fn render_workspace_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, 
             // Workspace the client works in always stand otherwise — and it is
             // said in words, because an empty box would read as the reader
             // having no Workspaces at all.
-            lines.push(Line::styled("No Workspaces found", theme.text.subdued));
+            lines.push(Line::styled("No workspaces found", theme.text.subdued));
         } else {
             lines.extend(rows);
         }
@@ -2996,7 +2996,7 @@ fn render_directory_browser(frame: &mut Frame<'_>, state: &TuiState, main: Rect,
             ));
         }
         lines.push(if state.reading_move_workspace() {
-            named("Reading that Repository… · Esc back", "Reading… · Esc")
+            named("Reading that repository… · Esc back", "Reading… · Esc")
         } else {
             named(
                 "↑↓ move · Space open/close · → open · ← up · Enter choose · Esc close",
@@ -3010,7 +3010,7 @@ fn render_directory_browser(frame: &mut Frame<'_>, state: &TuiState, main: Rect,
         SelectionSurface::DirectoryBrowser,
         area,
         lines,
-        " Directory Browser ",
+        " Directory browser ",
         theme,
     );
 }
@@ -3450,7 +3450,7 @@ fn render_rename_dialog(
             theme.feedback.error,
         )
     } else if dialog.deriving {
-        let label = "Deriving a Title…";
+        let label = "Deriving a title…";
         Line::from(shimmered_label_spans(
             label,
             state.shimmer_clock.frame(label, state.spinner_frame),
@@ -3469,7 +3469,7 @@ fn render_rename_dialog(
         Line::styled(format!("{}/{MAX_TITLE_CHARS}", dialog.kept_chars), style)
     };
     lines.push(status);
-    const DERIVE_BUTTON: &str = "[ Derive a Title ]";
+    const DERIVE_BUTTON: &str = "[ Derive a title ]";
     if derive_line {
         lines.push(Line::styled(DERIVE_BUTTON, theme.accent.primary));
     }
@@ -3628,7 +3628,7 @@ fn render_icon_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, theme
     let grid_rows = state.icon_picker.visible_rows(columns, grid_capacity);
     if grid_rows.is_empty() {
         if lines.len() < content_height {
-            lines.push(Line::styled("No Icons found", theme.text.subdued));
+            lines.push(Line::styled("No icons found", theme.text.subdued));
         }
     } else {
         for row in &grid_rows {
@@ -3660,7 +3660,7 @@ fn render_icon_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, theme
         let footer = state
             .icon_picker
             .focused_entry()
-            .map_or("No Icons found", |entry| entry.name);
+            .map_or("No icons found", |entry| entry.name);
         lines.push(Line::styled(
             truncate_to_width(footer, usize::from(content_width)),
             theme.text.subdued,
@@ -3672,7 +3672,7 @@ fn render_icon_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, theme
         SelectionSurface::Icons,
         area,
         lines,
-        " Choose Icon ",
+        " Choose icon ",
         theme,
     );
 }
@@ -3727,7 +3727,7 @@ fn render_model_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, them
         ));
     }
     if state.model_picker.is_loading() && lines.len() < usize::from(content_height) {
-        lines.push(Line::styled("Loading Models…", theme.text.subdued));
+        lines.push(Line::styled("Loading models…", theme.text.subdued));
     } else {
         let footer_rows = usize::from(content_height >= 3);
         let room = usize::from(content_height).saturating_sub(lines.len() + strip_rows);
@@ -3756,7 +3756,7 @@ fn render_model_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, them
             ..line
         }));
         if !state.model_picker.list().has_rows() && lines.len() < usize::from(content_height) {
-            lines.push(Line::styled("No Models found", theme.text.subdued));
+            lines.push(Line::styled("No models found", theme.text.subdued));
         }
     }
     if let Some(strip) = strip {
@@ -3952,7 +3952,7 @@ fn render_approval_posture_picker(
             );
             let label = match row {
                 ApprovalPostureChoice::Value { label, .. } => label,
-                ApprovalPostureChoice::Reset => "Follow Server Settings (reset)",
+                ApprovalPostureChoice::Reset => "Follow server settings (reset)",
             };
             let marker = if selected { "› " } else { "  " };
             Line::styled(
@@ -3967,7 +3967,7 @@ fn render_approval_posture_picker(
         .collect::<Vec<_>>();
     clear_over(frame, state, area);
     frame.render_widget(
-        Paragraph::new(lines).block(titled_overlay_block(" Approval Posture ", theme)),
+        Paragraph::new(lines).block(titled_overlay_block(" Approval posture ", theme)),
         area,
     );
 }
@@ -4023,7 +4023,7 @@ fn render_theme_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, them
         });
     }
     if !state.theme_picker.has_rows() && lines.len() < usize::from(content_height) {
-        lines.push(Line::styled("No Themes found", theme.text.subdued));
+        lines.push(Line::styled("No themes found", theme.text.subdued));
     }
     if content_height >= 3 && lines.len() < usize::from(content_height) {
         lines.push(Line::styled(
@@ -4277,7 +4277,7 @@ fn settings_footer(rows: &[SettingRow], provider: Option<&ProviderFocus>, width:
             }));
             if provider.row.opens == RowOpens::ProviderSettings {
                 hints.push(Cow::Owned(format!(
-                    "Enter {}'s Settings",
+                    "Enter {}'s settings",
                     provider.row.label
                 )));
             }
@@ -4573,9 +4573,9 @@ fn render_model_options(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
             pane.blank();
             pane.wrap(
                 if state.model_options.is_valid() {
-                    "Apply the staged Model Options."
+                    "Apply the staged model options."
                 } else {
-                    "The Model or a selected value is unavailable. Choose available values before applying."
+                    "The model or a selected value is unavailable. Choose available values before applying."
                 },
                 "",
                 width,
@@ -4587,7 +4587,7 @@ fn render_model_options(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
     let model = state
         .model_options
         .model()
-        .expect("an open options screen has a Model");
+        .expect("an open options screen has a model");
     if content_height >= 3 || (state.model_options.is_choice_picker_open() && content_height >= 2) {
         let unavailable = if model.availability == ModelAvailability::Unavailable {
             " · unavailable"
@@ -4742,7 +4742,7 @@ fn render_model_options(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
                 theme.text.subdued,
             ));
         }
-        " Model Options ".to_owned()
+        " Model options ".to_owned()
     };
     let Some(split) = split else {
         render_overlay_box(
@@ -4993,7 +4993,7 @@ fn session_picker_row_text(
         metadata.push(format!("{} pending questions", row.pending_questionnaires));
     }
     if row.pending_approvals > 0 {
-        metadata.push(format!("{} pending Approvals", row.pending_approvals));
+        metadata.push(format!("{} pending approvals", row.pending_approvals));
     }
     let fixed_metadata_width = metadata.join(separator).width();
     if let Some(workspace) = row.workspace {
@@ -5525,7 +5525,7 @@ fn subagent_picker_entries(
                 ));
             }
             if entry.pending_approvals > 0 {
-                interventions.push(format!("{} pending Approvals", entry.pending_approvals));
+                interventions.push(format!("{} pending approvals", entry.pending_approvals));
             }
             let interventions = if interventions.is_empty() {
                 String::new()
@@ -5551,7 +5551,7 @@ fn subagent_picker_entries(
                     .map(|model| format!(" · {model}"))
                     .unwrap_or_default();
                 let intervention = if session.needs_intervention {
-                    " · Needs Intervention"
+                    " · Needs intervention"
                 } else {
                     ""
                 };
@@ -5735,7 +5735,7 @@ impl SessionStanding {
         match self {
             Self::NeedsIntervention => StandingPresentation {
                 feedback: StandingFeedback::Warning,
-                slot: StandingSlot::Word("Needs Intervention"),
+                slot: StandingSlot::Word("Needs intervention"),
             },
             Self::Working => StandingPresentation {
                 feedback: StandingFeedback::Info,
@@ -5971,18 +5971,18 @@ fn tail_to_width(text: &str, width: usize) -> String {
 /// nothing about whether their query matches anything.
 fn sidebar_empty_reading(sidebar: &Sidebar) -> Option<&'static str> {
     if sidebar.is_loading() {
-        return Some("Loading Sessions…");
+        return Some("Loading sessions…");
     }
     if sidebar.error().is_some() {
         return None;
     }
     Some(match (sidebar.query().is_empty(), sidebar.is_narrowed()) {
-        (false, _) => "No Sessions match",
+        (false, _) => "No sessions match",
         // A reader who narrowed to one Workspace is told that Workspace is
         // empty rather than that they have no work, which would be a lie about
         // the rest of it.
-        (true, true) => "No Sessions in this Workspace",
-        (true, false) => "No Sessions yet",
+        (true, true) => "No sessions in this workspace",
+        (true, false) => "No sessions yet",
     })
 }
 
@@ -6773,7 +6773,7 @@ fn execution_readings(state: &TuiState, show_icons: bool, width: usize) -> Vec<E
     }
     let worktree_intent = || {
         ExecutionReading::pressable(
-            icon_label(show_icons, NF_COD_WORKTREE, "New Worktree on submit"),
+            icon_label(show_icons, NF_COD_WORKTREE, "New worktree on submit"),
             SemanticCommandId::WorktreeList,
         )
     };
@@ -6827,7 +6827,7 @@ fn execution_readings(state: &TuiState, show_icons: bool, width: usize) -> Vec<E
             trailing.push(if state.new_worktree.is_some() {
                 worktree_intent()
             } else {
-                ExecutionReading::inert("Choose a working copy to start a Session")
+                ExecutionReading::inert("Choose a working copy to start a session")
             });
         }
     }
@@ -7067,7 +7067,7 @@ fn render_opening_session(
         state
             .route
             .clone()
-            .expect("the opening shell is drawn for the Session the route names"),
+            .expect("the opening shell is drawn for the session the route names"),
     );
     let composer_text = state.composers.text(key.clone());
     let composer_cursor = state.composers.cursor(key.clone());
@@ -7231,20 +7231,20 @@ fn render_provisional_session(
     let claim = state
         .provisional
         .as_ref()
-        .expect("the Provisional Session renderer requires the claim it draws");
+        .expect("the provisional session renderer requires the claim it draws");
     let snapshot = state
         .provisional_snapshot()
-        .expect("a Provisional Session draws the Session it claims");
+        .expect("a provisional session draws the session it claims");
     let interaction = state
         .provisional_interaction()
         .expect("a claim keeps its own view state while it stands");
     let content_width = session_content_area(area, state).width;
     let transcript = state
         .provisional_transcript_view(&snapshot, theme, content_width)
-        .expect("a Provisional Session projects the Prompt it stands for");
+        .expect("a provisional session projects the prompt it stands for");
     let tail = match &claim.standing {
         ClaimStanding::Refused { error } => SessionTail::Refused(format!(
-            "Could not create Session: {error} · Enter to retry, or type a new prompt"
+            "Could not create session: {error} · Enter to retry, or type a new prompt"
         )),
         ClaimStanding::Claimed { interrupt_intent } => SessionTail::Working {
             state: match claim.phase {
@@ -7295,7 +7295,7 @@ fn render_session(
     let snapshot = state
         .session
         .as_ref()
-        .expect("Session renderer requires a Session")
+        .expect("Session renderer requires a session")
         .snapshot();
     let session_reference = state
         .session_reference
@@ -7307,7 +7307,7 @@ fn render_session(
     let content_width = session_content_area(area, state).width;
     let transcript = state
         .transcript_view(theme, content_width)
-        .expect("the rendered Session has its projection and interaction");
+        .expect("the rendered session has its projection and interaction");
     // A Subagent's Session is read rather than conversed with: Escape leaves it
     // instead of interrupting, so its indicator carries elapsed work but no
     // false gesture — until only its Watches are left, which Escape there
@@ -7808,9 +7808,9 @@ fn render_session_surface(
                 // Escape leaves, unless all that is left in the Subagent's
                 // Session is its Watches, which Escape there stops instead.
                 if snapshot.working_since().is_none() && snapshot.monitoring_since().is_some() {
-                    "Subagent Session · Esc stops its Watches"
+                    "Subagent session · Esc stops its watches"
                 } else {
-                    "Subagent Session · Esc returns to the parent"
+                    "Subagent session · Esc returns to the parent"
                 },
                 theme.text.subdued,
             )),
@@ -8004,7 +8004,7 @@ fn watching_subject(watches: &[WatchSummary]) -> Option<String> {
     match watches {
         [] => None,
         [watch] => Some(watch.description.clone()),
-        several => Some(format!("{} Watches", several.len())),
+        several => Some(format!("{} watches", several.len())),
     }
 }
 
@@ -8564,7 +8564,7 @@ fn render_pending_prompts(
                 Some(Author::Sidekick { session_id, title }) => {
                     let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
                     let name = if title.is_empty() {
-                        "A Sidekick".to_owned()
+                        "A sidekick".to_owned()
                     } else {
                         format!("Sidekick · {title}")
                     };
@@ -8572,7 +8572,7 @@ fn render_pending_prompts(
                 }
                 Some(Author::PeerSidekick { peer, .. }) => (
                     format!(
-                        "A Sidekick on {}",
+                        "A sidekick on {}",
                         peer.split_whitespace().collect::<Vec<_>>().join(" ")
                     ),
                     None,
@@ -8719,12 +8719,12 @@ fn render_reconnect_overlay(frame: &mut Frame<'_>, theme: &Theme) {
         vec![
             Line::styled("Reconnecting to Suru…", theme.feedback.warning),
             Line::default(),
-            Line::styled("Your Session will resume automatically", theme.text.subdued),
+            Line::styled("Your session will resume automatically", theme.text.subdued),
         ]
     } else {
         vec![
             Line::styled("Reconnecting to Suru…", theme.feedback.warning),
-            Line::styled("Your Session will", theme.text.subdued),
+            Line::styled("Your session will", theme.text.subdued),
             Line::styled("resume automatically", theme.text.subdued),
         ]
     };
@@ -9228,7 +9228,7 @@ mod tests {
             assert_eq!(
                 session_footer_metrics_text(&unfilled, width).as_deref(),
                 expected,
-                "width {width} without Context Fill"
+                "width {width} without context fill"
             );
         }
 
@@ -9237,13 +9237,13 @@ mod tests {
         assert_eq!(
             session_footer_metrics_text(&leaf, 80).as_deref(),
             Some("$242.97"),
-            "a Session whose descendants added nothing states one figure"
+            "a session whose descendants added nothing states one figure"
         );
         leaf.own_cost = None;
         assert_eq!(
             session_footer_metrics_text(&leaf, 80).as_deref(),
             Some("$242.97"),
-            "an unknown own Cost is absent rather than drawn"
+            "an unknown own cost is absent rather than drawn"
         );
 
         let mut zeroes = unfilled.clone();
@@ -9252,7 +9252,7 @@ mod tests {
         assert_eq!(
             session_footer_metrics_text(&zeroes, 80).as_deref(),
             Some("$0.00 ($0.10)"),
-            "a known-zero partial own Cost stays visible"
+            "a known-zero partial own cost stays visible"
         );
         zeroes.own_cost = cost(0.0, false);
         assert_eq!(
@@ -9264,7 +9264,7 @@ mod tests {
         assert_eq!(
             session_footer_metrics_text(&zeroes, 80).as_deref(),
             Some("$0.00"),
-            "a known-zero partial tree Cost stays visible beside a hidden own zero"
+            "a known-zero partial tree cost stays visible beside a hidden own zero"
         );
     }
 
@@ -9488,7 +9488,7 @@ mod tests {
         );
         assert!(
             notice < composer,
-            "the Notice sits above the Landing rather than over it"
+            "the notice sits above the landing rather than over it"
         );
     }
 
@@ -9595,7 +9595,7 @@ mod tests {
                     diagnostics: Vec::new(),
                 },
             )))
-            .expect("receive Session content width");
+            .expect("receive session content width");
         application
             .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
                 SessionSnapshot {

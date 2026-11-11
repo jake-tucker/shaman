@@ -309,7 +309,7 @@ mod wsl {
     /// script there, so PowerShell exits otherwise and says why on standard
     /// error.
     const SCRIPT: &str = "$ErrorActionPreference = 'Stop'; \
-        $image = Get-Clipboard -Format Image; \
+        $image = Get-clipboard -Format Image; \
         if ($image -eq $null) { exit 3 }; \
         $stream = New-Object System.IO.MemoryStream; \
         $image.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png); \
@@ -691,12 +691,12 @@ mod wsl {
 
             assert_eq!(
                 failed(
-                    "printf '\\nGet-Clipboard : The clipboard is busy.\\nAt line:1 char:10\\n' >&2; \
+                    "printf '\\nGet-clipboard : The clipboard is busy.\\nAt line:1 char:10\\n' >&2; \
                      exit 2"
                 ),
                 ClipboardRead::Failed {
                     reason: "sh exited with status 2 on the Windows clipboard: \
-                             Get-Clipboard : The clipboard is busy."
+                             Get-clipboard : The clipboard is busy."
                         .to_owned()
                 },
                 "the first line PowerShell wrote to standard error says why"

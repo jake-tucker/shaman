@@ -260,7 +260,7 @@ async fn describe_setting_says_what_each_kind_of_setting_holds_and_accepts() {
         json!({
             "key": "appearance.mode",
             "label": "Mode",
-            "description": "Whether Themes follow the terminal or use a dark or light variant",
+            "description": "Whether themes follow the terminal or use a dark or light variant",
             "group": "appearance",
             "scope": "client",
             "value": "dark",
@@ -299,7 +299,7 @@ async fn describe_setting_says_what_each_kind_of_setting_holds_and_accepts() {
             &json!("panda"),
             &json!("panda"),
             &json!(false),
-            &json!("one of \"system\" or a Theme name")
+            &json!("one of \"system\" or a theme name")
         ),
         "text, which names what else it takes: {theme}"
     );
@@ -315,7 +315,7 @@ async fn describe_setting_says_what_each_kind_of_setting_holds_and_accepts() {
             &json!({ "provider": "claude", "model": "claude-opus-4-5", "options": [] }),
             &json!("session"),
             &json!("server"),
-            &json!("one of \"session\", \"off\", or an Agent Selection")
+            &json!("one of \"session\", \"off\", or an agent selection")
         ),
         "a Server Setting holding an Agent Selection, as the Config Document spells it: {errand}"
     );
@@ -586,7 +586,7 @@ async fn a_rejected_value_is_answered_with_what_to_type_instead_and_changes_noth
         (
             "derivation.errand",
             json!("sometimes"),
-            "one of \"session\", \"off\", or an Agent Selection",
+            "one of \"session\", \"off\", or an agent selection",
         ),
         (
             "session.contentWidth",
@@ -1082,7 +1082,7 @@ async fn a_setting_a_sidekick_may_only_read_is_listed_and_described_but_never_ch
             assert_eq!(
                 refusal,
                 format!(
-                    "`{key}` is a Setting a Sidekick may read but not change, since {why}, so it \
+                    "`{key}` is a setting a sidekick may read but not change, since {why}, so it \
                      was left as it is; tell the user, who may change it in Suru's settings \
                      panel."
                 ),
@@ -1155,7 +1155,7 @@ async fn a_sidekick_reads_the_workspace_roots_but_is_refused_changing_them() {
         describe(&mut sidekick, "workspace.roots").await,
         json!({
             "key": "workspace.roots",
-            "label": "Workspace Roots",
+            "label": "Workspace roots",
             "description": "The directories your work lives in, each an absolute path or one \
                 beginning with ~",
             "group": "source_control",
@@ -1177,8 +1177,8 @@ async fn a_sidekick_reads_the_workspace_roots_but_is_refused_changing_them() {
     ] {
         assert_eq!(
             refused(&mut sidekick, "set_setting", arguments.clone()).await,
-            "`workspace.roots` is a Setting a Sidekick may read but not change, since the \
-             Workspace Roots bound where a Sidekick may write, so it was left as it is; tell the \
+            "`workspace.roots` is a setting a sidekick may read but not change, since the \
+             workspace roots bound where a sidekick may write, so it was left as it is; tell the \
              user, who may change it in Suru's settings panel.",
             "{arguments}"
         );

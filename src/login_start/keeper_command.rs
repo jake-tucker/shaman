@@ -112,7 +112,7 @@ impl KeepCommand {
             .find(|argument| argument.chars().any(char::is_control))
         {
             bail!(
-                "cannot register a Login start naming {argument:?}: it holds a control character"
+                "cannot register a login start naming {argument:?}: it holds a control character"
             );
         }
         // The program is the binary a Server is launched from, so what a
@@ -131,7 +131,7 @@ impl KeepCommand {
 
 fn unicode(path: &Path) -> Result<String> {
     path.to_str().map(str::to_owned).with_context(|| {
-        format!("cannot register a Login start naming {path:?}: it is not valid Unicode")
+        format!("cannot register a login start naming {path:?}: it is not valid Unicode")
     })
 }
 

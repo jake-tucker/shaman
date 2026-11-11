@@ -203,7 +203,7 @@ async fn main() -> Result<ExitCode> {
                     health.identity.pid, health.identity.instance_id
                 ),
                 ServerStop::NoneRunning => println!(
-                    "No Suru server was running on the `{}` Channel. A stop is recorded, so none \
+                    "No Suru server was running on the `{}` channel. A stop is recorded, so none \
                      is restarted until the next login or `suru server start`.",
                     config.channel()
                 ),

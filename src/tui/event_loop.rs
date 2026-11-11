@@ -90,7 +90,7 @@ type TuiTerminal = Terminal<
 
 pub async fn run(client: ManagedClient) -> Result<()> {
     let workspace =
-        std::env::current_dir().map_err(|error| anyhow!("read current Workspace: {error}"))?;
+        std::env::current_dir().map_err(|error| anyhow!("read current workspace: {error}"))?;
     let mut session = TerminalSession::enter()?;
     let mut input = TerminalEvents::open()?;
     // A window that reports its pixels spares the probe asking for the cell
@@ -1077,7 +1077,7 @@ impl RunLoop {
         &mut self,
         answer: Option<ApplicationEvent>,
     ) -> Result<ControlFlow<Exit>> {
-        let answer = answer.ok_or_else(|| anyhow!("Context Breakdown task channel stopped"))?;
+        let answer = answer.ok_or_else(|| anyhow!("Context breakdown task channel stopped"))?;
         self.needs_redraw = true;
         let transition = self.application.handle_event(answer)?;
         Ok(self.dispatch_transition(transition))
@@ -1087,7 +1087,7 @@ impl RunLoop {
         &mut self,
         answer: Option<ApplicationEvent>,
     ) -> Result<ControlFlow<Exit>> {
-        let answer = answer.ok_or_else(|| anyhow!("Usage Metrics task channel stopped"))?;
+        let answer = answer.ok_or_else(|| anyhow!("Usage metrics task channel stopped"))?;
         self.needs_redraw = true;
         let transition = self.application.handle_event(answer)?;
         Ok(self.dispatch_transition(transition))
@@ -1561,7 +1561,7 @@ impl RunLoop {
                 );
             }
             ApplicationTransition::SubscribeSession(_) => {
-                unreachable!("terminal input cannot end a Session subscription")
+                unreachable!("terminal input cannot end a session subscription")
             }
             ApplicationTransition::ViewSession(reference) => {
                 spawn_session_view(
@@ -1842,7 +1842,7 @@ impl RunLoop {
                     WorkspaceResolutionSurface::Outlook,
                     self.application
                         .pending_workspace_resolution(WorkspaceResolutionSurface::Outlook)
-                        .expect("turning Outlook begins Workspace resolution"),
+                        .expect("turning outlook begins workspace resolution"),
                     self.application.current_workspace_request(),
                     &self.channels.workspaces,
                 );
@@ -1964,7 +1964,7 @@ impl RunLoop {
             }
             ApplicationTransition::Continue => {}
             other => unreachable!(
-                "a Sidebar pending after an Outlook turn only lists Sessions: {other:?}"
+                "a sidebar pending after an outlook turn only lists sessions: {other:?}"
             ),
         }
     }
@@ -2017,7 +2017,7 @@ impl RunLoop {
             let commands = self.client.session_commands();
             tokio::spawn(async move {
                 if let Err(error) = commands.warm_models().await {
-                    tracing::warn!("could not warm the Model Catalog on connect: {error:#}");
+                    tracing::warn!("could not warm the model catalog on connect: {error:#}");
                 }
             });
             // What the Client draws beside each Remote's name, its Icon, is
@@ -2050,7 +2050,7 @@ impl RunLoop {
                 requests,
             } => self.reconcile_catalog_origins(catalog_origins, requests),
             ApplicationTransition::RetryCatalogOrigin(_) => {
-                unreachable!("managed events cannot explicitly retry a Remote")
+                unreachable!("managed events cannot explicitly retry a remote")
             }
             ApplicationTransition::ListEverywhereRemotes(request_id) => {
                 spawn_everywhere_remote_listing(
@@ -2128,7 +2128,7 @@ impl RunLoop {
             | ApplicationTransition::CancelWorkspaceResolution(_)
             | ApplicationTransition::ListDirectory { .. }
             | ApplicationTransition::ListWorkspaces(_) => {
-                unreachable!("managed events issue no other Session command");
+                unreachable!("managed events issue no other session command");
             }
         }
         // The transition carries at most one Session command, and the Sidebar
@@ -2342,7 +2342,7 @@ impl RunLoop {
                         let _ = self.dispatch_transition(transition);
                     }
                     other => unreachable!(
-                        "an open Session event only continues or reports Viewed: {other:?}"
+                        "an open session event only continues or reports viewed: {other:?}"
                     ),
                 }
             }
@@ -2764,7 +2764,7 @@ impl RunLoop {
     ) -> Result<ControlFlow<Exit>> {
         self.needs_redraw = true;
         let result =
-            result.ok_or_else(|| anyhow!("Skill Catalog task channel stopped unexpectedly"))?;
+            result.ok_or_else(|| anyhow!("Skill catalog task channel stopped unexpectedly"))?;
         match result {
             SkillCatalogResult::Listed {
                 outlook,
@@ -3394,7 +3394,7 @@ fn spawn_remotes_known(commands: SessionCommandClient, results: UnboundedSender<
             Ok(remotes) => {
                 let _ = results.send(PairingResult::RemotesKnown(remotes));
             }
-            Err(error) => tracing::warn!("could not list Remotes on connect: {error:#}"),
+            Err(error) => tracing::warn!("could not list remotes on connect: {error:#}"),
         }
     });
 }
@@ -3832,7 +3832,7 @@ async fn thumbnail_answer(
             thumbnail,
         },
         Err(error) => {
-            tracing::warn!("could not make a thumbnail of Attachment {attachment_id}: {error:#}");
+            tracing::warn!("could not make a thumbnail of attachment {attachment_id}: {error:#}");
             ApplicationEvent::AttachmentThumbnailFailed {
                 request,
                 attachment_id,
@@ -4462,9 +4462,9 @@ fn spawn_session_attach(
             let event = subscription
                 .next()
                 .await
-                .ok_or_else(|| anyhow!("target Session subscription ended before hydration"))??;
+                .ok_or_else(|| anyhow!("target session subscription ended before hydration"))??;
             let SessionEvent::Snapshot(snapshot) = event else {
-                return Err(anyhow!("target Session updated before hydration"));
+                return Err(anyhow!("target session updated before hydration"));
             };
             Ok::<_, anyhow::Error>(SessionPickerResult::Attached {
                 reference: reference.clone(),
@@ -4560,7 +4560,7 @@ impl SessionOperation {
                         delivery.err().map(|error| error.to_string())
                     }
                     Some(crate::protocol::ApprovalOutcome::DeliveryUncertain) => Some(
-                        "Provider delivery is uncertain. This Decision will not be resent.".into(),
+                        "Provider delivery is uncertain. This decision will not be resent.".into(),
                     ),
                     Some(crate::protocol::ApprovalOutcome::SubmissionRejected) => {
                         Some("Decision was not delivered. Review and retry.".into())
@@ -4658,7 +4658,7 @@ impl SessionOperation {
                         | crate::protocol::QuestionnaireOutcome::Declined,
                     ) => None,
                     Some(crate::protocol::QuestionnaireOutcome::DeliveryUncertain) => Some(
-                        "Provider delivery is uncertain. This Answer will not be resent.".into(),
+                        "Provider delivery is uncertain. This answer will not be resent.".into(),
                     ),
                     Some(crate::protocol::QuestionnaireOutcome::SubmissionRejected) => {
                         Some("Answer was not delivered. Review your draft and retry.".into())
@@ -4715,14 +4715,14 @@ fn compaction_refusal(error: &anyhow::Error) -> String {
     };
     match refusal.code {
         SessionErrorCode::WorkingSession => {
-            "The Session is still Working; compact it once it is idle".to_owned()
+            "The session is still working; compact it once it is idle".to_owned()
         }
         SessionErrorCode::PendingIntervention => {
-            "The Session is waiting on you; answer its Approval or Questionnaire before compacting"
+            "The session is waiting on you; answer its approval or questionnaire before compacting"
                 .to_owned()
         }
         SessionErrorCode::SubagentSession => {
-            "A Subagent's context is compacted only when its Provider chooses to".to_owned()
+            "A subagent's context is compacted only when its provider chooses to".to_owned()
         }
         SessionErrorCode::CompactionUnsupported => {
             compaction_refusal_text(ManualCompactionRefusal::Unsupported, None)
@@ -4925,7 +4925,7 @@ fn spawn_setting_mutation(
 fn spawn_onboarded_mark(commands: SessionCommandClient) {
     tokio::spawn(async move {
         if let Err(error) = commands.mark_onboarded().await {
-            tracing::warn!("could not mark this Server onboarded: {error:#}");
+            tracing::warn!("could not mark this server onboarded: {error:#}");
         }
     });
 }
@@ -4970,7 +4970,7 @@ fn spawn_session_view(commands: SessionCommandClient, session: SessionReference)
             tracing::warn!(
                 session_id = %session.session_id,
                 origin = ?session.origin,
-                "could not report Session Viewed: {error}"
+                "could not report session viewed: {error}"
             );
         }
     });
@@ -5360,10 +5360,10 @@ impl<W: FnMut(NativeClipboardTarget, &ClipboardContent) -> Result<(), arboard::E
         let delivered = result.is_ok();
         if let Err(error) = result {
             if self.failure_reported {
-                tracing::debug!(%error, "could not write native Clipboard");
+                tracing::debug!(%error, "could not write native clipboard");
             } else {
                 self.failure_reported = true;
-                tracing::warn!(%error, "could not write native Clipboard");
+                tracing::warn!(%error, "could not write native clipboard");
             }
         }
         completed(delivered);
@@ -5503,7 +5503,7 @@ impl ClipboardDelivery {
                 biased;
                 result = &mut copy.result => result.unwrap_or(false),
                 () = tokio::time::sleep_until(copy.deadline) => {
-                    tracing::debug!("native Clipboard delivery exceeded its timeout");
+                    tracing::debug!("native clipboard delivery exceeded its timeout");
                     false
                 }
             };
@@ -5517,7 +5517,7 @@ impl ClipboardDelivery {
 
 fn copy_to_terminal(output: &mut impl TerminalSink, text: &str) {
     if let Err(error) = ignore_unsupported(output.apply(CopyToClipboard(text))) {
-        tracing::warn!(%error, "could not write Clipboard through OSC 52");
+        tracing::warn!(%error, "could not write clipboard through OSC 52");
     }
 }
 
@@ -5691,19 +5691,19 @@ mod tests {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::SessionList,
             )))
-            .expect("open the Session picker");
+            .expect("open the session picker");
         let mut discovery = None;
         for _ in 0..2 {
             if let ApplicationTransition::ListEverywhereRemotes(request) = application
                 .handle_event(ApplicationEvent::Command(CommandId::ToggleSessionScope))
-                .expect("widen the Session picker")
+                .expect("widen the session picker")
             {
                 discovery = Some(request);
             }
         }
         application
             .handle_event(ApplicationEvent::EverywhereRemotesListed {
-                request: discovery.expect("Everywhere discovers its Remotes"),
+                request: discovery.expect("Everywhere discovers its remotes"),
                 remotes: vec![crate::protocol::Remote {
                     name: "studio".to_owned(),
                     fingerprint: "studio-fingerprint".to_owned(),
@@ -5712,7 +5712,7 @@ mod tests {
                     icon: None,
                 }],
             })
-            .expect("discover the Remote");
+            .expect("discover the remote");
 
         for event in [
             ManagedEvent::Recovering(crate::managed_client::RecoveryStatus {
@@ -5761,9 +5761,9 @@ mod tests {
         let outlook = Outlook::Remote("studio".to_owned());
         let event = remote_failure_from_session_error(
             outlook.clone(),
-            &SessionStreamError::remote(RemoteStatus::Revoked, "Remote revoked this Pairing"),
+            &SessionStreamError::remote(RemoteStatus::Revoked, "Remote revoked this pairing"),
         )
-        .expect("terminal Remote Session errors become Outlook failures");
+        .expect("terminal remote session errors become outlook failures");
 
         assert_eq!(event.outlook, outlook);
         assert!(matches!(
@@ -5771,7 +5771,7 @@ mod tests {
             ManagedEvent::RemoteFailed {
                 status: RemoteStatus::Revoked,
                 ref message,
-            } if message == "Remote revoked this Pairing"
+            } if message == "Remote revoked this pairing"
         ));
     }
 
@@ -6857,7 +6857,7 @@ mod tests {
                     let row = (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>();
                     row.find("Some chosen").map(|x| (x as u16, y))
                 })
-                .expect("the Agent Message is painted");
+                .expect("the agent message is painted");
             let mut released = ApplicationTransition::Continue;
             for (kind, column) in [
                 (MouseEventKind::Down(MouseButton::Left), start.0),
@@ -7046,7 +7046,7 @@ mod tests {
             assert!(line.contains("primary selection"), "{log}");
         }
         assert!(lines[2].contains("WARN"), "{log}");
-        assert!(lines[2].contains("native Clipboard"), "{log}");
+        assert!(lines[2].contains("native clipboard"), "{log}");
     }
 
     #[test]
@@ -7082,7 +7082,7 @@ mod tests {
         assert!(lines[1].contains("DEBUG"), "{log}");
         assert!(lines[2].contains("DEBUG"), "{log}");
         assert!(
-            lines.iter().all(|line| line.contains("native Clipboard")),
+            lines.iter().all(|line| line.contains("native clipboard")),
             "{log}"
         );
     }
@@ -7336,7 +7336,7 @@ mod reconnect_grace_tests {
 
         application
             .handle_event(recovering(1))
-            .expect("lose the local Server");
+            .expect("lose the local server");
         sync_reconnect_grace(&mut armed, &application.origins_awaiting_grace(), grace);
         assert_eq!(armed.len(), 1, "a fresh loss is owed its grace");
 
@@ -7364,7 +7364,7 @@ mod reconnect_grace_tests {
             .expect("answer again");
         application
             .handle_event(recovering(1))
-            .expect("lose the local Server afresh");
+            .expect("lose the local server afresh");
         sync_reconnect_grace(&mut armed, &application.origins_awaiting_grace(), grace);
         assert_eq!(armed.len(), 1, "a fresh loss is owed a grace of its own");
     }
@@ -7489,9 +7489,9 @@ mod compaction_refusal_tests {
             }))
         };
         for (code, explained) in [
-            (SessionErrorCode::WorkingSession, "still Working"),
+            (SessionErrorCode::WorkingSession, "still working"),
             (SessionErrorCode::PendingIntervention, "waiting on you"),
-            (SessionErrorCode::SubagentSession, "A Subagent's context"),
+            (SessionErrorCode::SubagentSession, "A subagent's context"),
             (
                 SessionErrorCode::CompactionUnsupported,
                 "compacts only when it chooses to",
@@ -7537,7 +7537,7 @@ mod attachment_upload_tests {
             "Only PNG, JPEG, GIF, and WebP images can be attached"
         );
 
-        let unreachable = anyhow::anyhow!("connection refused").context("send Attachment upload");
+        let unreachable = anyhow::anyhow!("connection refused").context("send attachment upload");
         assert_eq!(
             upload_failure_reason(&unreachable),
             "Could not upload the image"
@@ -7558,7 +7558,7 @@ mod redemption_refusal_tests {
         let refused = |code, unreachable| {
             anyhow::Error::new(SessionError {
                 code,
-                message: format!("this Server holds no Login at the Relay at {RELAY}"),
+                message: format!("this server holds no login at the relay at {RELAY}"),
                 unreachable,
             })
         };
@@ -7674,7 +7674,7 @@ mod thumbnail_tests {
         // either way the dimmed line stands, and no Notice says so.
         for fetched in [
             Err(anyhow::anyhow!(
-                "the fetched Attachment is larger than an Attachment may be"
+                "the fetched attachment is larger than an attachment may be"
             )),
             Ok((
                 "image/png".to_owned(),
@@ -7735,7 +7735,7 @@ mod thumbnail_tests {
         assert_eq!(
             dropped.try_recv(),
             Err(tokio::sync::oneshot::error::TryRecvError::Empty),
-            "a fetch the open Session still waits on runs on"
+            "a fetch the open session still waits on runs on"
         );
 
         previews.hold_for(
@@ -7857,7 +7857,7 @@ mod ready_event_tests {
             .with_session_clock(move || SessionTimestamp(wall.load(Ordering::SeqCst)));
         application
             .handle_event(ApplicationEvent::SessionAttached(snapshot))
-            .expect("open the Session");
+            .expect("open the session");
         let mut run = offline_run_loop(application);
         run.needs_redraw = false;
         run
@@ -7933,7 +7933,7 @@ mod ready_event_tests {
             .state
             .session
             .as_ref()
-            .expect("a Session is open")
+            .expect("a session is open")
             .snapshot();
         let update = SessionUpdate {
             session_id: snapshot.session.id,
@@ -7948,7 +7948,7 @@ mod ready_event_tests {
     #[tokio::test(start_paused = true)]
     async fn a_pending_compaction_redraws_once_a_second_until_it_falls_due_and_then_the_lapse_does()
     {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         // Due two minutes before a lapse three minutes off: its countdown
         // stands from the start.
@@ -7959,12 +7959,12 @@ mod ready_event_tests {
             .state
             .session
             .as_ref()
-            .expect("a Session is open")
+            .expect("a session is open")
             .snapshot()
             .session
             .prompt_cache
             .clone()
-            .expect("the Session has a Prompt Cache");
+            .expect("the session has a prompt cache");
         cache.compaction_due_at = Some(due_at);
         update(
             &mut run,
@@ -8006,7 +8006,7 @@ mod ready_event_tests {
 
     #[tokio::test(start_paused = true)]
     async fn an_idle_loop_first_wakes_when_the_final_stretch_begins() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 90_000);
         assert_eq!(pass(&mut run), None);
@@ -8022,7 +8022,7 @@ mod ready_event_tests {
 
     #[tokio::test(start_paused = true)]
     async fn the_countdown_redraws_once_a_second_until_the_lapse_and_then_never() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 60_000);
         assert_eq!(pass(&mut run).as_deref(), Some("1:00"));
@@ -8049,7 +8049,7 @@ mod ready_event_tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_wakeup_after_a_suspend_reads_the_wall_clock_afresh() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 50_000);
         assert_eq!(pass(&mut run).as_deref(), Some("0:50"));
@@ -8081,7 +8081,7 @@ mod ready_event_tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_suspend_before_the_final_stretch_moves_its_first_wakeup_by_the_wall_clock() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 300_000);
         assert_eq!(pass(&mut run), None);
@@ -8110,7 +8110,7 @@ mod ready_event_tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_lapse_passed_before_its_wakeup_is_drawn_by_the_next_frame() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 90_000);
         assert_eq!(pass(&mut run), None);
@@ -8126,7 +8126,7 @@ mod ready_event_tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_wakeup_that_comes_early_draws_nothing_and_waits_for_the_rest() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
         assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
@@ -8144,7 +8144,7 @@ mod ready_event_tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_wall_clock_stepped_back_out_of_the_final_stretch_takes_the_countdown_down() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
         assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
@@ -8169,7 +8169,7 @@ mod ready_event_tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_lapse_as_far_off_as_a_timestamp_reaches_arms_its_wakeup_without_overflow() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let ahead = u64::MAX - wall.load(Ordering::SeqCst);
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), ahead);
@@ -8179,7 +8179,7 @@ mod ready_event_tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_session_going_working_mid_countdown_stands_the_wakeup_down_until_it_is_idle() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
         assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
@@ -8193,7 +8193,7 @@ mod ready_event_tests {
         assert_eq!(pass(&mut run), None);
         assert!(
             run.composer_top_change.is_none(),
-            "a Working Session wakes nothing"
+            "a working session wakes nothing"
         );
 
         tokio::time::advance(Duration::from_secs(5)).await;
@@ -8210,7 +8210,7 @@ mod ready_event_tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_lapse_moved_or_dropped_mid_countdown_moves_or_drops_the_wakeup() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
         assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
@@ -8247,7 +8247,7 @@ mod ready_event_tests {
 
     #[tokio::test(start_paused = true)]
     async fn opening_another_session_arms_the_wakeup_for_its_line() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
         assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
@@ -8265,7 +8265,7 @@ mod ready_event_tests {
         });
         run.application
             .handle_event(ApplicationEvent::SessionAttached(other))
-            .expect("open the other Session");
+            .expect("open the other session");
         assert_eq!(pass(&mut run), None);
         assert_eq!(armed_wait(&run), Some(Duration::from_secs(30)));
 
@@ -8273,14 +8273,14 @@ mod ready_event_tests {
         quiet.session.prompt_cache = None;
         run.application
             .handle_event(ApplicationEvent::SessionAttached(quiet))
-            .expect("open a Session with no Prompt Cache");
+            .expect("open a session with no prompt cache");
         assert_eq!(pass(&mut run), None);
         assert!(run.composer_top_change.is_none());
     }
 
     #[tokio::test(start_paused = true)]
     async fn no_wakeup_is_armed_while_usage_metrics_cover_the_session() {
-        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let workspace = tempfile::tempdir().expect("create a workspace");
         let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
         let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 30_000);
         assert_eq!(pass(&mut run).as_deref(), Some("0:30"));
@@ -8289,7 +8289,7 @@ mod ready_event_tests {
             .handle_event(ApplicationEvent::Command(
                 crate::tui::CommandId::InvokeSemantic(crate::tui::SemanticCommandId::MetricsShow),
             ))
-            .expect("open Usage Metrics");
+            .expect("open usage metrics");
         assert_eq!(pass(&mut run), None);
         assert!(
             run.composer_top_change.is_none(),
@@ -8302,7 +8302,7 @@ mod ready_event_tests {
             .handle_event(ApplicationEvent::Command(
                 crate::tui::CommandId::InvokeSemantic(crate::tui::SemanticCommandId::MetricsClose),
             ))
-            .expect("close Usage Metrics");
+            .expect("close usage metrics");
         assert_eq!(pass(&mut run).as_deref(), Some("0:20"));
         assert_eq!(armed_wait(&run), Some(Duration::from_secs(1)));
     }
@@ -8482,12 +8482,12 @@ mod ready_event_tests {
         run.client = ManagedClient::reaching(&server_of_a_session_deleted_after(&snapshot).await);
         run.application
             .handle_event(ApplicationEvent::SessionAttached(snapshot))
-            .expect("open the Session");
+            .expect("open the session");
         run.tasks.adopt(
             run.client
                 .attach_session(session_id)
                 .await
-                .expect("attach the Session"),
+                .expect("attach the session"),
         );
 
         while let Some(subscription) = run.tasks.subscription.as_mut() {
@@ -8496,11 +8496,11 @@ mod ready_event_tests {
                 .expect("the stream hears of the deletion");
             let step = run
                 .receive_session_event(event)
-                .expect("a Session's deletion does not end the client");
+                .expect("a session's deletion does not end the client");
             assert_eq!(step, ControlFlow::Continue(()));
         }
 
-        assert!(run.application.state.session.is_none(), "the Session ended");
+        assert!(run.application.state.session.is_none(), "the session ended");
         assert_eq!(
             run.application.state.submission_error.as_deref(),
             Some("Session ended because it was deleted"),
@@ -8535,16 +8535,16 @@ mod ready_event_tests {
             ManagedClient::reaching(&server_of_a_session_deleted_after(&left_behind).await);
         run.application
             .handle_event(ApplicationEvent::SessionAttached(on_screen))
-            .expect("open the Session");
+            .expect("open the session");
         run.tasks.adopt(
             run.client
                 .attach_session(left_behind.session.id)
                 .await
-                .expect("attach the Session left behind"),
+                .expect("attach the session left behind"),
         );
         let mut subscription = run.tasks.subscription.take().expect("just adopted");
         let hydration = subscription.next().await.expect("its snapshot arrives");
-        assert!(hydration.is_ok(), "the Session left behind was read once");
+        assert!(hydration.is_ok(), "the session left behind was read once");
         run.tasks.adopt(subscription);
 
         while let Some(subscription) = run.tasks.subscription.as_mut() {
@@ -8553,7 +8553,7 @@ mod ready_event_tests {
                 .expect("the stream hears of the deletion");
             let step = run
                 .receive_session_event(event)
-                .expect("a Session's deletion does not end the client");
+                .expect("a session's deletion does not end the client");
             assert_eq!(step, ControlFlow::Continue(()));
         }
 
@@ -8561,7 +8561,7 @@ mod ready_event_tests {
         assert_eq!(
             open.map(|session| session.snapshot().session.id),
             Some(on_screen_id),
-            "the Session on screen stays"
+            "the session on screen stays"
         );
         assert_eq!(run.application.state.submission_error, None);
     }
@@ -8577,15 +8577,15 @@ mod ready_event_tests {
             .session_commands_for(Outlook::Remote("studio".to_owned()))
             .attach_session(session_id)
             .await
-            .expect("attach the Session");
+            .expect("attach the session");
 
         let hydration = subscription.next().await.expect("its snapshot arrives");
-        assert!(hydration.is_ok(), "the Session was read once");
+        assert!(hydration.is_ok(), "the session was read once");
         let error = tokio::time::timeout(Duration::from_secs(10), subscription.next())
             .await
             .expect("the stream hears of the deletion")
             .expect("the stream says why it ended")
-            .expect_err("the Session is gone");
+            .expect_err("the session is gone");
 
         assert_eq!(error.deleted_session(), Some(session_id));
     }
@@ -8731,14 +8731,14 @@ mod ready_event_tests {
         let open = run
             .application
             .session_reference()
-            .expect("the Session is still open");
+            .expect("the session is still open");
         assert_eq!(
             run.tasks
                 .subscribing
                 .as_ref()
                 .map(|(reference, _)| reference),
             Some(&open),
-            "a new subscription is asked for the Session still open"
+            "a new subscription is asked for the session still open"
         );
         let composer = run
             .application
@@ -8818,7 +8818,7 @@ mod relay_notice_tests {
             ),
         )
         .await
-        .expect("the Server is told until it hears");
+        .expect("the server is told until it hears");
         assert_eq!(tries.load(Ordering::SeqCst), 4);
     }
 
@@ -8827,7 +8827,7 @@ mod relay_notice_tests {
         let refused = |code| {
             Err::<bool, _>(anyhow::Error::new(SessionError {
                 code,
-                message: "the Server's own words".to_owned(),
+                message: "the server's own words".to_owned(),
                 unreachable: None,
             }))
         };
@@ -8838,14 +8838,14 @@ mod relay_notice_tests {
         assert_eq!(
             Told::of(&refused(SessionErrorCode::RelayRecordsUnwritable)),
             Told::Unheard,
-            "a Server that could not store it is told again"
+            "a server that could not store it is told again"
         );
         assert_eq!(
             Told::of::<bool>(&Err(anyhow::anyhow!(
-                "send Relay login-needed Notice claim"
+                "send relay login-needed notice claim"
             ))),
             Told::Unheard,
-            "nor a Server not reached"
+            "nor a server not reached"
         );
     }
 }

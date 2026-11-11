@@ -143,7 +143,7 @@ fn a_selected_bar_s_legend_reads_that_day_s_errands() {
     // Opus 5M, Codex 1M, Copilot 250K and the Errands' 500K, by the three
     // Sessions alone.
     let rows = screen(&application);
-    row(&rows, "Tue 13 Oct · 6.75M tokens · 3 Sessions · 30 Turns");
+    row(&rows, "Tue 13 Oct · 6.75M tokens · 3 sessions · 30 turns");
     let errands = row(&rows, "Errands");
     assert!(
         errands.contains("500K") && errands.contains("7%"),
@@ -187,7 +187,7 @@ fn the_headline_counts_errands_in_cost_tokens_and_cache_but_not_sessions_or_turn
         without.contains("0% from cache") && with.contains("19% from cache"),
         "{without}\n{with}"
     );
-    for counted in ["15 Sessions", "300 Turns"] {
+    for counted in ["15 sessions", "300 turns"] {
         assert!(
             without.contains(counted) && with.contains(counted),
             "{with}"

@@ -48,13 +48,13 @@ fn picker_shows_a_subagents_confirmed_model() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with a known Subagent Model");
+        .expect("attach a session with a known subagent model");
     press_key(&mut application, KeyCode::Down);
 
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         text.contains("Explore · child-model: Map the provider seams"),
-        "the picker presents Provider-confirmed child identity: {text}"
+        "the picker presents provider-confirmed child identity: {text}"
     );
 }
 
@@ -251,7 +251,7 @@ fn settle_subagent(
                 }],
             },
         )))
-        .expect("settle the Subagent over the session stream");
+        .expect("settle the subagent over the session stream");
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn down_opens_the_picker_while_subagents_work() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with working Subagents");
+        .expect("attach a session with working subagents");
 
     assert_eq!(
         press_key(&mut application, KeyCode::Down),
@@ -284,7 +284,7 @@ fn down_opens_the_picker_while_subagents_work() {
     assert!(
         text.contains("├ ⠋ Explore: Map the provider seams")
             && text.contains("└ ⠋ Plan: Design the picker"),
-        "every working Subagent stands in the tree it spawned in: {text}"
+        "every working subagent stands in the tree it spawned in: {text}"
     );
 }
 
@@ -296,7 +296,7 @@ fn down_traverses_a_wrapped_draft_before_opening_the_picker() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with a working Subagent");
+        .expect("attach a session with a working subagent");
     type_terminal_text(&mut application, "abcdefghijklmnopqrstuvwxyz");
 
     // The narrow frame gives the composer 22 text columns and paints the
@@ -315,7 +315,7 @@ fn down_traverses_a_wrapped_draft_before_opening_the_picker() {
         rendered_application_rows_at(&application, 28, 22)
             .join("\n")
             .contains("Subagents"),
-        "Down on the final painted Row opens the picker immediately"
+        "Down on the final painted row opens the picker immediately"
     );
 }
 
@@ -333,7 +333,7 @@ fn down_stays_inert_without_working_subagents() {
         ..
     } = &mut snapshot.activities[0]
     else {
-        panic!("the fixture's first Activity is the Subagent row");
+        panic!("the fixture's first activity is the subagent row");
     };
     *status = ActivityStatus::Completed;
     *duration_ms = Some(12_000);
@@ -341,7 +341,7 @@ fn down_stays_inert_without_working_subagents() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session whose Subagent settled");
+        .expect("attach a session whose subagent settled");
     let before = rendered_application_rows_at(&application, 80, 22);
 
     assert_eq!(
@@ -364,7 +364,7 @@ fn down_moves_the_caret_before_it_opens_the_picker() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with a working Subagent");
+        .expect("attach a session with a working subagent");
     type_terminal_text(&mut application, "first line");
     application
         .handle_event(ApplicationEvent::Command(
@@ -417,14 +417,14 @@ fn down_keeps_walking_history_even_while_subagents_work() {
                 }],
             },
         )))
-        .expect("spawn a working Subagent over the session stream");
+        .expect("spawn a working subagent over the session stream");
 
     // Up recalls the submitted Prompt, so a history walk is in progress.
     press_key(&mut application, KeyCode::Up);
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
-        text.contains("│ Initial Prompt"),
-        "Up recalls the submitted Prompt into the composer: {text}"
+        text.contains("│ Initial prompt"),
+        "Up recalls the submitted prompt into the composer: {text}"
     );
 
     // Down keeps stepping the walk — here, back off its end to the scratch —
@@ -432,7 +432,7 @@ fn down_keeps_walking_history_even_while_subagents_work() {
     press_key(&mut application, KeyCode::Down);
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
-        !text.contains("│ Initial Prompt"),
+        !text.contains("│ Initial prompt"),
         "Down steps the history walk back to the empty scratch: {text}"
     );
     assert!(
@@ -460,7 +460,7 @@ fn the_picker_takes_in_a_subagent_spawning_while_it_is_open() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with a working Subagent");
+        .expect("attach a session with a working subagent");
     press_key(&mut application, KeyCode::Down);
 
     application
@@ -484,13 +484,13 @@ fn the_picker_takes_in_a_subagent_spawning_while_it_is_open() {
                 }],
             },
         )))
-        .expect("spawn a second Subagent over the session stream");
+        .expect("spawn a second subagent over the session stream");
 
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         text.contains("├ ⠋ Explore: Map the provider seams")
             && text.contains("└ ⠋ Plan: Design the picker"),
-        "a Subagent spawning while the picker is open joins the tree: {text}"
+        "a subagent spawning while the picker is open joins the tree: {text}"
     );
 }
 
@@ -509,7 +509,7 @@ fn the_picker_updates_live_and_closes_when_the_last_subagent_settles() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with working Subagents");
+        .expect("attach a session with working subagents");
     press_key(&mut application, KeyCode::Down);
 
     settle_subagent(
@@ -521,12 +521,12 @@ fn the_picker_updates_live_and_closes_when_the_last_subagent_settles() {
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         text.contains("└ ⠋ Plan: Design the picker"),
-        "the Subagent still working keeps its entry, now the tree's last: {text}"
+        "the subagent still working keeps its entry, now the tree's last: {text}"
     );
     assert_eq!(
         text.matches("Explore: Map the provider seams").count(),
         1,
-        "a settled Subagent leaves the picker — only its Transcript row remains: {text}"
+        "a settled subagent leaves the picker — only its transcript row remains: {text}"
     );
 
     settle_subagent(
@@ -555,7 +555,7 @@ fn arrows_choose_and_enter_opens_the_chosen_subagent() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with working Subagents");
+        .expect("attach a session with working subagents");
     press_key(&mut application, KeyCode::Down);
 
     press_key(&mut application, KeyCode::Down);
@@ -565,7 +565,7 @@ fn arrows_choose_and_enter_opens_the_chosen_subagent() {
             suru::protocol::Outlook::Local,
             spawned[1].child_id,
         )),
-        "Enter opens the Session of the Subagent the arrows chose"
+        "Enter opens the session of the subagent the arrows chose"
     );
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
@@ -582,7 +582,7 @@ fn escape_closes_the_picker_and_lands_back_where_it_opened() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with a working Subagent");
+        .expect("attach a session with a working subagent");
     type_terminal_text(&mut application, "a draft in progress");
     let before = rendered_application_rows_at(&application, 80, 22);
 
@@ -612,7 +612,7 @@ fn rows_answer_the_pointer_as_readily_as_the_keys() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with working Subagents");
+        .expect("attach a session with working subagents");
     press_key(&mut application, KeyCode::Down);
 
     assert_eq!(
@@ -621,7 +621,7 @@ fn rows_answer_the_pointer_as_readily_as_the_keys() {
             suru::protocol::Outlook::Local,
             spawned[1].child_id,
         )),
-        "pressing a picker row opens the Subagent it names"
+        "pressing a picker row opens the subagent it names"
     );
 }
 
@@ -633,7 +633,7 @@ fn clicks_and_drags_outside_the_picker_dismiss_it_only_on_release() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with a working Subagent");
+        .expect("attach a session with a working subagent");
     type_terminal_text(&mut application, "hello world");
     press_key(&mut application, KeyCode::Down);
     let buffer = rendered_application_buffer(&application, 80, 22);
@@ -701,13 +701,13 @@ fn a_subagent_session_browses_its_own_working_subagents() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("attach a Subagent's Session that delegated further");
+        .expect("attach a subagent's session that delegated further");
 
     press_key(&mut application, KeyCode::Down);
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         text.contains("└ ⠋ Verify · grandchild-model: Check the mapped seams"),
-        "the picker browses the open Session's own working Subagents, one level down: {text}"
+        "the picker browses the open session's own working subagents, one level down: {text}"
     );
     assert_eq!(
         press_key(&mut application, KeyCode::Enter),
@@ -715,7 +715,7 @@ fn a_subagent_session_browses_its_own_working_subagents() {
             suru::protocol::Outlook::Local,
             grandchild_id,
         )),
-        "Enter steps into the grandchild's Session"
+        "Enter steps into the grandchild's session"
     );
 }
 
@@ -743,12 +743,12 @@ fn x_stops_the_chosen_subagent_at_once_where_the_provider_allows() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with working Subagents");
+        .expect("attach a session with working subagents");
     press_key(&mut application, KeyCode::Down);
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         text.contains("Enter open · x stop · Esc close"),
-        "the footer offers the stop where the Provider allows it: {text}"
+        "the footer offers the stop where the provider allows it: {text}"
     );
 
     // One press stops the Subagent the reader is on — no confirmation,
@@ -761,7 +761,7 @@ fn x_stops_the_chosen_subagent_at_once_where_the_provider_allows() {
                 spawned[0].child_id,
             )
         },
-        "the stop interrupts the chosen Subagent's own Session"
+        "the stop interrupts the chosen subagent's own session"
     );
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
@@ -779,7 +779,7 @@ fn x_stays_inert_and_unadvertised_where_the_provider_offers_no_stop() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Copilot Session with a working Subagent");
+        .expect("attach a Copilot session with a working subagent");
     press_key(&mut application, KeyCode::Down);
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
@@ -790,7 +790,7 @@ fn x_stays_inert_and_unadvertised_where_the_provider_offers_no_stop() {
     assert_eq!(
         press_key(&mut application, KeyCode::Char('x')),
         ApplicationTransition::Continue,
-        "Copilot offers no per-Subagent stop in this cut"
+        "Copilot offers no per-subagent stop in this cut"
     );
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
@@ -823,13 +823,13 @@ fn x_stops_a_brokered_subagent_whatever_its_parents_provider_offers() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Copilot Session with a native and a brokered Subagent working");
+        .expect("attach a Copilot session with a native and a brokered subagent working");
 
     press_key(&mut application, KeyCode::Down);
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         text.contains("Enter open · Esc close") && !text.contains("x stop"),
-        "on the native Subagent Copilot cannot stop, the footer names no stop: {text}"
+        "on the native subagent Copilot cannot stop, the footer names no stop: {text}"
     );
     assert_eq!(
         press_key(&mut application, KeyCode::Char('x')),
@@ -841,7 +841,7 @@ fn x_stops_a_brokered_subagent_whatever_its_parents_provider_offers() {
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         text.contains("Enter open · x stop · Esc close"),
-        "on the brokered Subagent the footer offers the stop: {text}"
+        "on the brokered subagent the footer offers the stop: {text}"
     );
     assert_eq!(
         press_key(&mut application, KeyCode::Char('x')),
@@ -851,7 +851,7 @@ fn x_stops_a_brokered_subagent_whatever_its_parents_provider_offers() {
                 spawned[1].child_id,
             )
         },
-        "the stop interrupts the brokered Subagent's own Session, which Suru runs itself"
+        "the stop interrupts the brokered subagent's own session, which Suru runs itself"
     );
 }
 
@@ -868,11 +868,11 @@ fn escape_interrupts_the_session_when_only_subagents_keep_it_working() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session whose Subagent outlived its Turn");
+        .expect("attach a session whose subagent outlived its turn");
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
         text.contains("Waiting for subagents") && text.contains("Esc to interrupt"),
-        "the Working Indicator names the surviving Subagents and keeps offering the interrupt: {text}"
+        "the working indicator names the surviving subagents and keeps offering the interrupt: {text}"
     );
 
     assert_eq!(
@@ -893,7 +893,7 @@ fn escape_interrupts_the_session_when_only_subagents_keep_it_working() {
                 session_id,
             ),
         },
-        "the second Esc interrupts the Session even with no Turn active"
+        "the second Esc interrupts the session even with no turn active"
     );
 }
 
@@ -910,7 +910,7 @@ fn the_pointer_chooses_a_row_for_enter_as_the_arrows_do() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with working Subagents");
+        .expect("attach a session with working subagents");
     press_key(&mut application, KeyCode::Down);
     assert!(application.wants_pointer_motion());
 

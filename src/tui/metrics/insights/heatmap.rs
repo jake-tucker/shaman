@@ -154,7 +154,7 @@ pub(super) fn render(
     let room = usize::from(area.width);
     let busiest = heatmap.busiest();
     if busiest == 0 {
-        let note = format!("No Turns {}", range.within());
+        let note = format!("No turns {}", range.within());
         buffer.set_string(
             area.x,
             area.y,
@@ -240,7 +240,7 @@ fn named_cell(heatmap: &Heatmap, day: usize, hour: usize) -> String {
         hour + 1
     )];
     if cell.turns == 0 {
-        parts.push("no Turns".to_owned());
+        parts.push("no turns".to_owned());
         return parts.join(" · ");
     }
     parts.push(counted(cell.turns));
@@ -497,7 +497,7 @@ mod tests {
 
         assert_eq!(
             named_cell(&heatmap, MONDAY, 9),
-            "Mon 09:00–10:00 · 2 Turns · unpriced"
+            "Mon 09:00–10:00 · 2 turns · unpriced"
         );
     }
 }

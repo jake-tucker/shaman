@@ -41,7 +41,7 @@ fn paste(application: &mut Application, text: &str) {
 fn submitted_text(application: &mut Application) -> String {
     match command(application, CommandId::SubmitSteer) {
         ApplicationTransition::CreateSession(created) => created.prompt.text,
-        other => panic!("the Landing's draft begins a Session, not {other:?}"),
+        other => panic!("the landing's draft begins a session, not {other:?}"),
     }
 }
 
@@ -282,7 +282,7 @@ fn bindings_written_after_a_label_follow_the_words_put_back_before_them() {
     let ApplicationTransition::CreateSession(created) =
         command(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the Landing's draft begins a Session");
+        panic!("the landing's draft begins a session");
     };
     assert_eq!(
         created.prompt.text,
@@ -309,7 +309,7 @@ fn nothing_inside_a_paste_makes_a_command_of_its_draft() {
     assert_eq!(
         submitted_text(&mut application),
         "/compact\nkeep\nthis ",
-        "the pasted words are a Prompt, whatever they open with"
+        "the pasted words are a prompt, whatever they open with"
     );
 }
 
@@ -365,7 +365,7 @@ fn a_refused_prompt_comes_back_folded_and_is_sent_again_as_the_prompt_it_was() {
     let ApplicationTransition::AdmitPrompt { session, request } =
         command(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the draft is admitted into its Session");
+        panic!("the draft is admitted into its session");
     };
     assert_eq!(request.prompt.text, format!("Read {THREE_LINES} "));
     application
@@ -416,7 +416,7 @@ fn history_recalls_a_sent_prompt_folded_as_it_was_written() {
     let ApplicationTransition::CreateSession(request) =
         command(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the Landing's Prompt begins a Session");
+        panic!("the landing's prompt begins a session");
     };
     let created = crate::tui_rendering::provisional_session::created_session_snapshot(
         SessionId::new(),
@@ -426,7 +426,7 @@ fn history_recalls_a_sent_prompt_folded_as_it_was_written() {
     );
     application
         .handle_event(ApplicationEvent::SessionCreated(created))
-        .expect("take the created Session");
+        .expect("take the created session");
     assert!(!draft(&application).contains("[Paste"));
 
     key(&mut application, KeyCode::Up);
@@ -438,7 +438,7 @@ fn history_recalls_a_sent_prompt_folded_as_it_was_written() {
     let ApplicationTransition::AdmitPrompt { request, .. } =
         command(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the recalled Prompt is admitted into the Session");
+        panic!("the recalled prompt is admitted into the session");
     };
     assert_eq!(
         request.prompt.text,

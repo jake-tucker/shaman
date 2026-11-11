@@ -209,7 +209,7 @@ pub enum OutsideEdit {
 /// values for which Tool uses ask (ADR 0026), which every Session on that
 /// Provider follows until the user overrides its posture.
 const APPROVAL_POSTURE_ACCESS: SidekickAccess = SidekickAccess::ReadOnly {
-    why: "it is part of an Approval Posture, which bounds what Agents may do without asking \
+    why: "it is part of an approval posture, which bounds what agents may do without asking \
           the user",
 };
 
@@ -540,7 +540,7 @@ fn admits_workspace_root(root: &str) -> bool {
 
 pub(crate) const WORKSPACE_ROOTS_LIST: TextListSettingChoice = TextListSettingChoice::new(
     "Directories your work lives in",
-    "add a Root",
+    "add a root",
     "an absolute path or a path beginning with ~",
     admits_workspace_root,
     |settings| settings.workspace.roots.clone(),
@@ -565,9 +565,9 @@ fn one_entry_each(addresses: Vec<String>) -> Vec<String> {
 }
 
 const SERVING_RELAYS_LIST: TextListSettingChoice = TextListSettingChoice::new(
-    "Relays this Server holds an entry for",
-    "add a Relay's address",
-    "an http:// or https:// address of at most 512 characters naming a Relay's host, with no \
+    "Relays this server holds an entry for",
+    "add a relay's address",
+    "an http:// or https:// address of at most 512 characters naming a relay's host, with no \
      credentials, query or fragment",
     |address| holdable_address(address).is_some(),
     |settings| settings.serving.relays.clone(),
@@ -655,7 +655,7 @@ const SIDEBAR_AUTO_SETTLE_NUMERIC: NumericSettingChoice = NumericSettingChoice::
 );
 
 const WORKTREE_AUTO_RECLAIM_NUMERIC: NumericSettingChoice = NumericSettingChoice::new(
-    "Days before Reclaim",
+    "Days before reclaim",
     |settings| match settings.worktree.auto_reclaim {
         AutoReclaim::Off => 14,
         AutoReclaim::AfterDays(days) => days,
@@ -764,7 +764,7 @@ fn broker_cap(value: &Value) -> Option<u32> {
 /// The count an accepted edit pins: the numeric editor only hands its pin what
 /// [`validate_broker_cap`] took, which parsed as the `u32` a cap is kept in.
 fn accepted_broker_cap(cap: u64) -> u32 {
-    u32::try_from(cap).expect("an accepted Broker cap fits the u32 it is kept in")
+    u32::try_from(cap).expect("an accepted broker cap fits the u32 it is kept in")
 }
 
 const BROKER_MAX_DEPTH_NUMERIC: NumericSettingChoice = NumericSettingChoice::new(
@@ -857,7 +857,7 @@ impl SettingChoice {
     fn pinned_value(&self) -> Value {
         pin_for(&self.mutation())
             .1
-            .expect("a Setting's choice always pins a value")
+            .expect("a setting's choice always pins a value")
     }
 
     /// The choice as a message naming it spells it: quoted when a Config
@@ -962,7 +962,7 @@ impl SettingDescriptor {
             values.push(accepts.to_owned());
         }
         match values.split_last() {
-            None => "a value this Setting accepts".to_owned(),
+            None => "a value this setting accepts".to_owned(),
             Some((last, [])) => last.clone(),
             Some((last, [first])) => format!("one of {first} or {last}"),
             Some((last, rest)) => format!("one of {}, or {last}", rest.join(", ")),
@@ -1164,7 +1164,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: APPEARANCE_THEME,
         label: "Theme",
-        description: "The Theme every open view is painted in",
+        description: "The theme every open view is painted in",
         group: SettingGroup::Appearance,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1176,7 +1176,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
                     value: Some("system".to_owned()),
                 },
             }],
-            accepts: "a Theme name",
+            accepts: "a theme name",
             spell: |settings| settings.appearance.theme.clone(),
             chosen_at: Some(SettingChoiceSurface::Theme {
                 current: |settings| settings.appearance.theme.clone(),
@@ -1193,7 +1193,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: APPEARANCE_MODE,
         label: "Mode",
-        description: "Whether Themes follow the terminal or use a dark or light variant",
+        description: "Whether themes follow the terminal or use a dark or light variant",
         group: SettingGroup::Appearance,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1281,8 +1281,8 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: TRANSCRIPT_DEFAULT_FOLD_POSTURE,
-        label: "Default Fold posture",
-        description: "How a Session view opens: folded to its markers, or expanded in full",
+        label: "Default fold posture",
+        description: "How a session view opens: folded to its markers, or expanded in full",
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1311,7 +1311,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: TRANSCRIPT_GROUPS,
         label: "Groups",
-        description: "How a Session view opens its Groups of Commands, Tool Calls, and Reasoning: collapsed, expanded, or not grouped at all",
+        description: "How a session view opens its groups of commands, tool calls, and reasoning: collapsed, expanded, or not grouped at all",
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1346,7 +1346,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: TRANSCRIPT_REASONING_VISIBILITY,
         label: "Reasoning visibility",
-        description: "Whether a Transcript hides Reasoning or draws it",
+        description: "Whether a transcript hides reasoning or draws it",
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1374,8 +1374,8 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: TRANSCRIPT_TOOL_CALL_VISIBILITY,
-        label: "Tool Call visibility",
-        description: "Whether a Transcript draws Tool Calls or hides them",
+        label: "Tool call visibility",
+        description: "Whether a transcript draws tool calls or hides them",
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1404,7 +1404,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: TRANSCRIPT_COMMAND_AUTO_EXPAND,
         label: "Command auto-expansion",
-        description: "When an Active Command or Tool Call grows into its live output tail, if it is not hidden in a collapsed Group",
+        description: "When an Active command or tool call grows into its live output tail, if it is not hidden in a collapsed group",
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1438,7 +1438,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: TRANSCRIPT_IMAGE_PREVIEWS,
         label: "Image previews",
-        description: "Whether an image Attachment is drawn as a picture where the terminal can draw one",
+        description: "Whether an image attachment is drawn as a picture where the terminal can draw one",
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1463,7 +1463,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: SESSION_CONTENT_WIDTH,
         label: "Session content width",
-        description: "Whether the Session Content Column fills the terminal or has a maximum",
+        description: "Whether the session content column fills the terminal or has a maximum",
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1493,8 +1493,8 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: DERIVATION_ERRAND,
-        label: "Title, Icon, and branch derivation",
-        description: "Which Agent Selection derives a Session's Title, a Workspace's Icon, and a new Managed Worktree's branch name, if any",
+        label: "Title, icon, and branch derivation",
+        description: "Which agent selection derives a session's title, a workspace's icon, and a new managed worktree's branch name, if any",
         group: SettingGroup::General,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1514,7 +1514,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
                     },
                 },
             ],
-            accepts: "an Agent Selection",
+            accepts: "an agent selection",
             spell: |settings| {
                 let errand = &settings.derivation.errand;
                 match errand {
@@ -1529,7 +1529,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
                     // written down rather than repeated here.
                     DerivationErrand::FollowSession | DerivationErrand::Off => errand
                         .named()
-                        .expect("every value but a pinned Selection has a word")
+                        .expect("every value but a pinned selection has a word")
                         .to_owned(),
                 }
             },
@@ -1553,7 +1553,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: SIDEBAR_INITIAL_VISIBILITY,
         label: "Sidebar at launch",
-        description: "Whether a TUI opens with the Sidebar beside its main view",
+        description: "Whether a TUI opens with the sidebar beside its main view",
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1582,7 +1582,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: SIDEBAR_INITIAL_WIDTH,
         label: "Sidebar width at launch",
-        description: "How many columns wide a TUI's Sidebar opens",
+        description: "How many columns wide a TUI's sidebar opens",
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1605,7 +1605,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: SIDEBAR_INITIAL_SCOPE,
         label: "Sidebar scope at launch",
-        description: "Which Workspaces a TUI's Sidebar lists when it opens",
+        description: "Which workspaces a TUI's sidebar lists when it opens",
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1639,8 +1639,8 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: SIDEBAR_AUTO_SETTLE,
-        label: "Settle idle Sessions",
-        description: "Whether a Session settles itself once it has been left alone long enough",
+        label: "Settle idle sessions",
+        description: "Whether a session settles itself once it has been left alone long enough",
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1671,8 +1671,8 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: SIDEKICK_HIDE_SUBSESSIONS,
-        label: "Hide Subsessions",
-        description: "Whether Subsessions are left out of the Sidebar and the Session picker, reached through their Sidekick's Session instead",
+        label: "Hide subsessions",
+        description: "Whether subsessions are left out of the sidebar and the session picker, reached through their sidekick's session instead",
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1697,7 +1697,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: ASIDE_INITIAL_VISIBILITY,
         label: "Aside at launch",
-        description: "Whether a TUI opens a Session with the Aside beside its main view",
+        description: "Whether a TUI opens a session with the aside beside its main view",
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1726,7 +1726,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: ASIDE_INITIAL_WIDTH,
         label: "Aside width at launch",
-        description: "How many columns wide a TUI's Aside opens",
+        description: "How many columns wide a TUI's aside opens",
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1752,7 +1752,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     // Provider's own row rather than in this order.
     SettingDescriptor {
         key: TEXT_SELECTION_COPY,
-        label: "Copy Text Selection",
+        label: "Copy text selection",
         description: "Copy when a drag ends, or manually with Ctrl+C or right-click",
         group: SettingGroup::General,
         scope: SettingScope::Client,
@@ -1777,7 +1777,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: TEXT_SELECTION_PLAIN_TEXT,
-        label: "Copy as Plain Text",
+        label: "Copy as plain text",
         description: "What a text-only paste of several blocks holds: the words shown, or Markdown",
         group: SettingGroup::General,
         scope: SettingScope::Client,
@@ -1807,7 +1807,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: COMPOSER_COLLAPSE_PASTES,
         label: "Collapse large pastes",
-        description: "Whether a large paste stands in the composer as a label such as [Paste 1: 12 lines] until the Prompt is sent",
+        description: "Whether a large paste stands in the composer as a label such as [Paste 1: 12 lines] until the prompt is sent",
         group: SettingGroup::General,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1831,12 +1831,12 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: WORKTREE_AUTO_RECLAIM,
-        label: "Reclaim Managed Worktrees",
-        description: "Reclaim unused Managed Worktrees automatically",
+        label: "Reclaim managed worktrees",
+        description: "Reclaim unused managed worktrees automatically",
         group: SettingGroup::SourceControl,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadOnly {
-            why: "turning it on lets Suru remove Worktrees, ignored files and all, which no \
+            why: "turning it on lets Suru remove worktrees, ignored files and all, which no \
                   later change can undo",
         },
         outside_edit: OutsideEdit::AtNextStart,
@@ -1863,8 +1863,8 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: WORKTREE_AFTER_CREATION,
-        label: "After creating a Worktree",
-        description: "Return the Landing to where it stood, or stay in the Worktree created on submit",
+        label: "After creating a worktree",
+        description: "Return the landing to where it stood, or stay in the worktree created on submit",
         group: SettingGroup::SourceControl,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1892,12 +1892,12 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: WORKSPACE_ROOTS,
-        label: "Workspace Roots",
+        label: "Workspace roots",
         description: "The directories your work lives in, each an absolute path or one beginning with ~",
         group: SettingGroup::SourceControl,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadOnly {
-            why: "the Workspace Roots bound where a Sidekick may write",
+            why: "the workspace roots bound where a sidekick may write",
         },
         outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Open {
@@ -1916,7 +1916,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: PROVIDER_CODEX_ENABLED,
-        label: "Codex Provider",
+        label: "Codex provider",
         description: "Whether Suru offers Codex, or leaves it entirely alone",
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
@@ -1944,7 +1944,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         // A Provider-scoped Setting is read under the Provider it configures,
         // which names it, so the label names the Setting alone.
         label: "Reasoning summary",
-        description: "How much Reasoning summary detail each Turn asks Codex for",
+        description: "How much reasoning summary detail each turn asks Codex for",
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1985,7 +1985,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: PROVIDER_CODEX_APPROVAL_POLICY,
         label: "Approval policy",
-        description: "When Codex asks before running a Tool",
+        description: "When Codex asks before running a tool",
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: APPROVAL_POSTURE_ACCESS,
@@ -2020,7 +2020,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: PROVIDER_CODEX_SANDBOX_MODE,
         label: "Sandbox mode",
-        description: "What Codex may access without an Approval",
+        description: "What Codex may access without an approval",
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: APPROVAL_POSTURE_ACCESS,
@@ -2054,7 +2054,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: PROVIDER_COPILOT_ENABLED,
-        label: "Copilot Provider",
+        label: "Copilot provider",
         description: "Whether Suru offers Copilot, or leaves it entirely alone",
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
@@ -2080,7 +2080,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: PROVIDER_COPILOT_PERMISSIONS,
         label: "Permissions",
-        description: "When Copilot asks before using a Tool",
+        description: "When Copilot asks before using a tool",
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: APPROVAL_POSTURE_ACCESS,
@@ -2114,7 +2114,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: PROVIDER_CLAUDE_ENABLED,
-        label: "Claude Provider",
+        label: "Claude provider",
         description: "Whether Suru offers Claude, or leaves it entirely alone",
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
@@ -2140,7 +2140,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: PROVIDER_CLAUDE_PERMISSION_MODE,
         label: "Permission mode",
-        description: "When Claude asks before using a Tool",
+        description: "When Claude asks before using a tool",
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: APPROVAL_POSTURE_ACCESS,
@@ -2188,7 +2188,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: SERVING_ENABLED,
         label: "Serving",
-        description: "Whether this Server accepts paired Servers at all, on its listener or through the Relays it Serves through",
+        description: "Whether this server accepts paired servers at all, on its listener or through the relays it serves through",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::Hidden,
@@ -2213,7 +2213,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: SERVING_LISTENER,
         label: "Serving listener",
-        description: "Whether, while Serving, this Server listens for paired Servers at the Serving bind address and port, beside the Relays it Serves through",
+        description: "Whether, while serving, this server listens for paired servers at the serving bind address and port, beside the relays it serves through",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::Hidden,
@@ -2238,7 +2238,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: SERVING_PORT,
         label: "Serving port",
-        description: "The TCP port the Serving listener binds",
+        description: "The TCP port the serving listener binds",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::Hidden,
@@ -2259,7 +2259,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: SERVING_BIND_ADDRESS,
         label: "Serving bind address",
-        description: "Which local network address the Serving listener binds",
+        description: "Which local network address the serving listener binds",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::Hidden,
@@ -2305,7 +2305,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: SERVING_RELAYS,
         label: "Relays",
-        description: "The Relays this Server holds an entry for, each logged in to and Served through only by its user's own choice on this machine; taken out of here, an entry stays until its user removes it",
+        description: "The relays this server holds an entry for, each logged in to and served through only by its user's own choice on this machine; taken out of here, an entry stays until its user removes it",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::Hidden,
@@ -2314,7 +2314,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         outside_edit: OutsideEdit::Followed,
         values: SettingValues::Open {
             named: &[],
-            accepts: "a list of http:// or https:// addresses each naming a Relay's host",
+            accepts: "a list of http:// or https:// addresses each naming a relay's host",
             spell: |settings| match settings.serving.relays.as_slice() {
                 [] => "none".to_owned(),
                 relays => relays.join(", "),
@@ -2331,7 +2331,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: BROKER_ENABLED,
         label: "Broker",
-        description: "Whether every Provider Session is offered the Broker's Tools",
+        description: "Whether every provider session is offered the broker's tools",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
@@ -2356,7 +2356,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: BROKER_MAX_DEPTH,
         label: "Broker depth limit",
-        description: "How many Sessions deep the Broker may spawn Subagents, the top-level Session counting as one",
+        description: "How many sessions deep the broker may spawn subagents, the top-level session counting as one",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
@@ -2379,7 +2379,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: BROKER_MAX_CONCURRENT_SUBAGENTS,
         label: "Broker concurrency limit",
-        description: "How many brokered Subagents may work at once beneath one top-level Session",
+        description: "How many brokered subagents may work at once beneath one top-level session",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
@@ -2407,7 +2407,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: PROVIDER_COPILOT_FUSION_TIERS,
         label: "Copilot Fusion tiers",
-        description: "Whether Copilot's Auto Model offers Fusion's Routing Tiers, by asserting from now on, on each Session opened or resumed, an experiment assignment Copilot's service did not issue. Turned off, a Session on a Routing Tier runs on plain Auto from its next Turn",
+        description: "Whether Copilot's Auto model offers Fusion's routing tiers, by asserting from now on, on each session opened or resumed, an experiment assignment Copilot's service did not issue. Turned off, a session on a routing tier runs on plain Auto from its next turn",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadOnly {
@@ -2438,8 +2438,8 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: COMPACTION_SCHEDULED_ENABLED,
-        label: "Scheduled Compaction",
-        description: "Whether Suru compacts an idle Session of its own accord two minutes before its Prompt Cache lapses, so it goes cold small, where the Lapse Penalty reaches the Scheduled Compaction minimum",
+        label: "Scheduled compaction",
+        description: "Whether Suru compacts an idle session of its own accord two minutes before its prompt cache lapses, so it goes cold small, where the lapse penalty reaches the Scheduled compaction minimum",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SCHEDULED_COMPACTION_ACCESS,
@@ -2467,8 +2467,8 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: COMPACTION_SCHEDULED_MINIMUM_PENALTY,
-        label: "Scheduled Compaction minimum",
-        description: "The least Lapse Penalty, in dollars, worth a scheduled Compaction: a Session forecast below it, or not forecast at all, goes cold as it is, and 0 compacts every Session with any priced context",
+        label: "Scheduled compaction minimum",
+        description: "The least lapse penalty, in dollars, worth a scheduled compaction: a session forecast below it, or not forecast at all, goes cold as it is, and 0 compacts every session with any priced context",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SCHEDULED_COMPACTION_ACCESS,
@@ -2493,8 +2493,8 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         key: COMPACTION_SCHEDULED_SESSIONS,
-        label: "Scheduled Compaction reaches",
-        description: "Whether a scheduled Compaction reaches only Sessions that are not Settled, or Settled ones too",
+        label: "Scheduled compaction reaches",
+        description: "Whether a scheduled compaction reaches only sessions that are not settled, or settled ones too",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SCHEDULED_COMPACTION_ACCESS,
@@ -2646,7 +2646,7 @@ impl ConfigDocuments {
         let _writer = self
             .writer
             .lock()
-            .expect("Config Document writer lock is not poisoned");
+            .expect("Config document writer lock is not poisoned");
         let (key, value) = pin_for(mutation);
         write_pin(root, key, value.as_ref())?;
         Ok(next_in_force(in_force, load(Some(root)), Some(key)))
@@ -2792,13 +2792,13 @@ impl fmt::Display for SettingsMutationError {
         match self {
             Self::NoConfigRoot => write!(
                 formatter,
-                "no config root is configured, so there is nowhere to pin a Setting"
+                "no config root is configured, so there is nowhere to pin a setting"
             ),
             Self::NotEditable { path, reason } => {
-                write!(formatter, "Config Document {path:?} {reason}")
+                write!(formatter, "Config document {path:?} {reason}")
             }
             Self::Io { path, message } => {
-                write!(formatter, "Config Document {path:?} {message}")
+                write!(formatter, "Config document {path:?} {message}")
             }
         }
     }
@@ -2990,7 +2990,7 @@ fn edited_document(
         None => return Err(not_editable("does not hold an object at its top level")),
     };
     let mut names = key.split('.').collect::<Vec<_>>();
-    let name = names.pop().expect("every schema key names a Setting");
+    let name = names.pop().expect("every schema key names a setting");
     // Each group on the way in, with the object holding it, so an unset can
     // take the groups that existed only for the pin it removes.
     let mut groups: Vec<(CstObject, &str, CstObject)> = Vec::new();
@@ -2999,7 +2999,7 @@ fn edited_document(
         object = match value {
             Some(_) => holder.object_value_or_create(group).ok_or_else(|| {
                 not_editable(&format!(
-                    "holds something other than an object at {group:?}, where this Setting belongs"
+                    "holds something other than an object at {group:?}, where this setting belongs"
                 ))
             })?,
             // Nothing to unset below a group the document never wrote.
@@ -3140,7 +3140,7 @@ pub fn log_diagnostics(diagnostics: &[SettingsDiagnostic]) {
             SettingsDiagnosticSeverity::AtNextStart => tracing::info!(
                 file = %diagnostic.file.display(),
                 key = diagnostic.key.as_deref(),
-                "Config Document {}",
+                "Config document {}",
                 diagnostic.message
             ),
         }
@@ -3182,7 +3182,7 @@ fn discover_documents_by(
                 file: path.to_path_buf(),
                 key: None,
                 message: format!(
-                    "ignored, with every Config Document beside it, because whether it exists \
+                    "ignored, with every config document beside it, because whether it exists \
                      could not be told: {error}"
                 ),
             });
@@ -3272,7 +3272,7 @@ fn apply_key(
             severity: SettingsDiagnosticSeverity::Warning,
             file: path.to_path_buf(),
             key: Some(key),
-            message: "ignored because Settings nest as objects, not dotted names".to_owned(),
+            message: "ignored because settings nest as objects, not dotted names".to_owned(),
         });
         return;
     }
@@ -3312,7 +3312,7 @@ fn apply_key(
             severity: SettingsDiagnosticSeverity::Warning,
             file: path.to_path_buf(),
             key: Some(key),
-            message: "ignored because it is not a known Setting".to_owned(),
+            message: "ignored because it is not a known setting".to_owned(),
         });
         return;
     }
@@ -3326,7 +3326,7 @@ fn apply_key(
             severity: SettingsDiagnosticSeverity::Warning,
             file: path.to_path_buf(),
             key: Some(key),
-            message: "ignored because it should be an object of Settings".to_owned(),
+            message: "ignored because it should be an object of settings".to_owned(),
         }),
     }
 }
@@ -3401,8 +3401,8 @@ mod tests {
     const fn posture_stand_in(values: SettingValues) -> SettingDescriptor {
         SettingDescriptor {
             key: TRANSCRIPT_DEFAULT_FOLD_POSTURE,
-            label: "Default Fold posture",
-            description: "How a Session view opens",
+            label: "Default fold posture",
+            description: "How a session view opens",
             group: SettingGroup::General,
             scope: SettingScope::Client,
             sidekick: SidekickAccess::ReadAndChange,
@@ -3519,7 +3519,7 @@ mod tests {
             for _ in 0..descriptor.values.named().len() {
                 let next = descriptor
                     .next_choice(&settings)
-                    .expect("a Setting always offers somewhere to step");
+                    .expect("a setting always offers somewhere to step");
                 assert!(
                     (descriptor.apply)(&mut settings, &pinned_value(&next.mutation()))
                         == Applied::Whole,
@@ -3559,7 +3559,7 @@ mod tests {
         assert_eq!(
             expected,
             vec![
-                "one of \"system\" or a Theme name".to_owned(),
+                "one of \"system\" or a theme name".to_owned(),
                 "one of \"system\", \"dark\", or \"light\"".to_owned(),
                 "one of \"Minimal\" or \"Fancy\"".to_owned(),
                 "one of false or true".to_owned(),
@@ -3572,7 +3572,7 @@ mod tests {
                 "one of \"fill\" or an integer of at least 50".to_owned(),
                 // A Setting the schema can only partly enumerate names what it
                 // can and describes the rest, in the same breath.
-                "one of \"session\", \"off\", or an Agent Selection".to_owned(),
+                "one of \"session\", \"off\", or an agent selection".to_owned(),
                 "one of \"shown\" or \"hidden\"".to_owned(),
                 "an integer of at least 24".to_owned(),
                 "one of \"all_workspaces\", \"current_workspace\", or \"everywhere\"".to_owned(),
@@ -3601,7 +3601,7 @@ mod tests {
                 "one of true or false".to_owned(),
                 "a port from 0 to 65535".to_owned(),
                 "one of \"127.0.0.1\", \"::1\", \"0.0.0.0\", \"::\", or an IP address".to_owned(),
-                "a list of http:// or https:// addresses each naming a Relay's host".to_owned(),
+                "a list of http:// or https:// addresses each naming a relay's host".to_owned(),
                 "one of true or false".to_owned(),
                 // A Broker cap names both ends of what it takes, the upper one
                 // being the most the count it is kept in can hold.
@@ -3632,7 +3632,7 @@ mod tests {
         let descriptor = SCHEMA
             .iter()
             .find(|descriptor| descriptor.key == TRANSCRIPT_COMMAND_AUTO_EXPAND)
-            .expect("the Command auto-expansion Setting is defined");
+            .expect("the command auto-expansion setting is defined");
         let Some(SettingChoiceSurface::Numeric(choice)) = descriptor.chosen_at() else {
             panic!("the auto-expansion delay is chosen at the numeric editor");
         };
@@ -3670,12 +3670,12 @@ mod tests {
                 .effective(&settings)
                 .map(|choice| choice.value),
             None,
-            "a value the Setting names no choice for is on no choice"
+            "a value the setting names no choice for is on no choice"
         );
         assert_eq!(
             OPEN_STAND_IN.spelling(&settings).as_deref(),
             Some("expanded"),
-            "and the Setting spells it for whatever is drawing it"
+            "and the setting spells it for whatever is drawing it"
         );
         assert_eq!(
             OPEN_STAND_IN
@@ -3717,7 +3717,7 @@ mod tests {
         let descriptor = SCHEMA
             .iter()
             .find(|descriptor| descriptor.key == DERIVATION_ERRAND)
-            .expect("the Title, Icon, and branch derivation Setting is defined");
+            .expect("the title, icon, and branch derivation setting is defined");
         let chosen = AgentSelection {
             provider: crate::protocol::ProviderId::new("codex"),
             model: crate::protocol::ModelId::new("gpt-5-mini"),
@@ -3725,14 +3725,14 @@ mod tests {
         };
         let Some(SettingChoiceSurface::AgentSelection { current, pin }) = descriptor.chosen_at()
         else {
-            panic!("an Agent Selection is chosen at the Model picker");
+            panic!("an agent selection is chosen at the model picker");
         };
 
         let mut settings = EffectiveSettings::default();
         assert_eq!(
             current(&settings),
             None,
-            "a Setting holding one of its named values opens the picker on nothing in particular"
+            "a setting holding one of its named values opens the picker on nothing in particular"
         );
         assert_eq!(
             (descriptor.apply)(&mut settings, &pinned_value(&pin(chosen.clone()))),
@@ -3742,22 +3742,22 @@ mod tests {
         assert_eq!(
             settings.derivation.errand,
             DerivationErrand::Pinned(chosen.clone()),
-            "the pin puts the reader's own Selection in force"
+            "the pin puts the reader's own selection in force"
         );
         assert_eq!(
             current(&settings),
             Some(chosen.clone()),
-            "and reopening the picker lands on the Model they chose"
+            "and reopening the picker lands on the model they chose"
         );
         assert_eq!(
             descriptor.effective(&settings).map(|choice| choice.value),
             None,
-            "a pinned Selection is none of the values the schema names"
+            "a pinned selection is none of the values the schema names"
         );
         assert_eq!(
             descriptor.spelling(&settings).as_deref(),
             Some("codex · gpt-5-mini"),
-            "so the Setting spells it for whatever is drawing it"
+            "so the setting spells it for whatever is drawing it"
         );
         assert_eq!(
             descriptor.next_choice(&settings).map(|choice| choice.value),
@@ -3786,7 +3786,7 @@ mod tests {
             let mut settings = EffectiveSettings::default();
             assert!(
                 settings.provider_enabled(&provider),
-                "{} must leave its Provider on unless the user says otherwise",
+                "{} must leave its provider on unless the user says otherwise",
                 descriptor.key
             );
             assert_eq!(
@@ -3797,12 +3797,12 @@ mod tests {
             );
             assert!(
                 !settings.provider_enabled(&provider),
-                "{} does not reach the gate that reads Provider `{provider}`'s Enablement",
+                "{} does not reach the gate that reads provider `{provider}`'s enablement",
                 descriptor.key
             );
             checked += 1;
         }
-        assert!(checked > 0, "no Provider Enablement Setting is defined");
+        assert!(checked > 0, "no provider enablement setting is defined");
     }
 
     /// The Setting the schema keys `key`.
@@ -3810,7 +3810,7 @@ mod tests {
         SCHEMA
             .iter()
             .find(|descriptor| descriptor.key == key)
-            .unwrap_or_else(|| panic!("{key} is a Setting"))
+            .unwrap_or_else(|| panic!("{key} is a setting"))
     }
 
     /// A value in force reads as the pin that would hold it — the JSON a
@@ -3879,8 +3879,8 @@ mod tests {
         };
         let errand = setting(DERIVATION_ERRAND);
         let pinned = errand
-            .pin(&serde_json::to_value(&selection).expect("a Selection serializes"))
-            .expect("an Agent Selection is a derivation Errand's");
+            .pin(&serde_json::to_value(&selection).expect("a selection serializes"))
+            .expect("an agent selection is a derivation errand's");
         assert_eq!(
             pinned,
             SettingMutation::DerivationErrand {
@@ -4101,7 +4101,7 @@ mod tests {
                 assert_eq!(
                     descriptor.sidekick,
                     SidekickAccess::Hidden,
-                    "{} governs Serving, so no Sidekick reads or changes it",
+                    "{} governs serving, so no sidekick reads or changes it",
                     descriptor.key
                 );
             }
@@ -4268,7 +4268,7 @@ mod tests {
                 assert_eq!(
                     descriptor.sidekick,
                     SidekickAccess::Hidden,
-                    "{} is keyed where Serving and Pairing are",
+                    "{} is keyed where serving and pairing are",
                     descriptor.key
                 );
             }
@@ -4276,7 +4276,7 @@ mod tests {
         for reserved in ["pairing.inviteLifetime", "serving.tls", "Serving.Port"] {
             assert!(
                 is_reserved_for_serving_and_pairing(reserved),
-                "{reserved} is reserved, whether or not a Setting is keyed so"
+                "{reserved} is reserved, whether or not a setting is keyed so"
             );
         }
         for open in ["servings.enabled", "broker.serving", "appearance.mode"] {
@@ -4320,7 +4320,7 @@ mod tests {
                 moving.push(descriptor.key);
                 assert_eq!(
                     descriptor.sidekick, APPROVAL_POSTURE_ACCESS,
-                    "{} moves an Approval Posture, which no Sidekick changes",
+                    "{} moves an approval posture, which no sidekick changes",
                     descriptor.key
                 );
             }
@@ -4382,7 +4382,7 @@ mod tests {
     fn workspace_roots_list() -> TextListSettingChoice {
         let Some(SettingChoiceSurface::TextList(list)) = setting(WORKSPACE_ROOTS).chosen_at()
         else {
-            panic!("the Workspace Roots are chosen at the list editor");
+            panic!("the workspace roots are chosen at the list editor");
         };
         list
     }
@@ -4446,7 +4446,7 @@ mod tests {
         assert_eq!(
             descriptor.pin(&serde_json::json!(["~/src", "projects"])),
             None,
-            "a list with an entry the Setting refuses pins nothing for a Sidekick"
+            "a list with an entry the setting refuses pins nothing for a sidekick"
         );
         assert_eq!(
             descriptor.spelling(&settings).as_deref(),

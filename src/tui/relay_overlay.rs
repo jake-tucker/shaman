@@ -464,19 +464,19 @@ impl RelayOverlay {
 
     pub(super) fn loading_label(&self) -> Option<&'static str> {
         match self.state {
-            RelayOverlayState::Loading => Some("Loading Relays…"),
-            RelayOverlayState::Adding { .. } => Some("Adding Relay…"),
+            RelayOverlayState::Loading => Some("Loading relays…"),
+            RelayOverlayState::Adding { .. } => Some("Adding relay…"),
             RelayOverlayState::BeginningLogin { .. } => Some("Beginning login…"),
-            RelayOverlayState::Removing { .. } => Some("Removing Relay…"),
-            RelayOverlayState::AwaitingListing(_) => Some("Updating the Relays…"),
+            RelayOverlayState::Removing { .. } => Some("Removing relay…"),
+            RelayOverlayState::AwaitingListing(_) => Some("Updating the relays…"),
             RelayOverlayState::SettingServeThrough {
                 serve_through: true,
                 ..
-            } => Some("Turning Serve through on…"),
+            } => Some("Turning serve through on…"),
             RelayOverlayState::SettingServeThrough {
                 serve_through: false,
                 ..
-            } => Some("Turning Serve through off…"),
+            } => Some("Turning serve through off…"),
             _ => None,
         }
     }
@@ -640,7 +640,7 @@ impl RelayOverlay {
         }
         self.listing = None;
         self.listing_landed(Some(ListNote::failed(format!(
-            "Could not list this Server's Relays: {error}"
+            "Could not list this server's relays: {error}"
         ))));
         self.listing_error = Some(error);
         self.log_in_at = None;
@@ -694,7 +694,7 @@ impl RelayOverlay {
             RelayOverlayState::AddressEntry { address, error } => {
                 let address = address.trim().to_owned();
                 if address.is_empty() {
-                    *error = Some("Type a Relay's address first".to_owned());
+                    *error = Some("Type a relay's address first".to_owned());
                     return None;
                 }
                 let request = self.issue();
@@ -1064,7 +1064,7 @@ impl RelayOverlay {
             self.state = Self::listing(Some(ListNote::said(if acknowledged {
                 format!("Removed {address}")
             } else {
-                format!("Removed {address} here; the Relay did not answer")
+                format!("Removed {address} here; the relay did not answer")
             })));
         }
         self.ask_for_listing()
@@ -1136,7 +1136,7 @@ impl RelayOverlay {
         {
             let address = address.clone();
             let note = ListNote::failed(format!(
-                "Could not change whether this Server Serves through {address}: {error}"
+                "Could not change whether this server serves through {address}: {error}"
             ));
             self.returned(&address, Some(note));
         }

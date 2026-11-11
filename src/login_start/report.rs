@@ -19,12 +19,12 @@ pub(super) fn install_report(
 ) -> String {
     let channel = &login_start.channel;
     let mut report = format!(
-        "Registered a Login start for the `{channel}` Channel's Server: {location}\n\n\
-         It comes into force at the next login and changes nothing until then: a Server \
+        "Registered a login start for the `{channel}` channel's server: {location}\n\n\
+         It comes into force at the next login and changes nothing until then: a server \
          running now is left running, and `suru server start` starts one where none is.\n\
-         At each login a Keeper starts the Server and restarts it if it crashes. A Server \
+         At each login a keeper starts the server and restarts it if it crashes. A server \
          stopped by `suru server stop` stays stopped until the next login or `suru server \
-         start`. So does one ended by a plain `kill`, which a Server takes as a stop.\n\n{}\n\n\
+         start`. So does one ended by a plain `kill`, which a server takes as a stop.\n\n{}\n\n\
          `suru server status` reads the registration alone, and cannot see it turned off \
          in the service manager itself.\n\n\
          Providers are found on the PATH this command ran with, which the registration \
@@ -33,15 +33,15 @@ pub(super) fn install_report(
     );
     if !findings.fleeting_path_entries.is_empty() {
         report.push_str(&format!(
-            "These PATH entries may not be there after a reboot, so a Provider found only \
+            "These PATH entries may not be there after a reboot, so a provider found only \
              through one will not be found: {}\n",
             findings.fleeting_path_entries.join(", ")
         ));
     }
     if !findings.uncarried.is_empty() {
         report.push_str(&format!(
-            "Not carried, because they may hold secrets or belong to this shell: {}. A Server \
-             started at login does not have them, so a Provider or Relay relying on one needs \
+            "Not carried, because they may hold secrets or belong to this shell: {}. A server \
+             started at login does not have them, so a provider or relay relying on one needs \
              another way in.\n",
             findings.uncarried.join(", ")
         ));
@@ -58,23 +58,23 @@ pub(super) fn install_report(
 }
 
 pub(super) fn uninstall_report(channel: &str, removal: &Removal) -> String {
-    const LEFT_ALONE: &str = "A Server running now is left running; `suru server stop` stops it.";
+    const LEFT_ALONE: &str = "A server running now is left running; `suru server stop` stops it.";
     match removal {
         Removal::Removed { location } => format!(
-            "Removed the Login start for the `{channel}` Channel's Server: {location}\n\
+            "Removed the login start for the `{channel}` channel's server: {location}\n\
              {LEFT_ALONE}\n"
         ),
         Removal::RemovedUnanswered { location, reason } => format!(
-            "Removed the Login start for the `{channel}` Channel's Server: {location}\n\
+            "Removed the login start for the `{channel}` channel's server: {location}\n\
              The service manager did not answer, so it reads this at its next start: {reason}\n\
              {LEFT_ALONE}\n"
         ),
         Removal::NothingRegistered => format!(
-            "No Login start is registered for the `{channel}` Channel, so there is nothing \
+            "No login start is registered for the `{channel}` channel, so there is nothing \
              to remove.\n"
         ),
         Removal::NoServiceManager { reason } => format!(
-            "No Login start is registered for the `{channel}` Channel, and this machine has \
+            "No login start is registered for the `{channel}` channel, and this machine has \
              no service manager to hold one: {reason}\n"
         ),
     }
@@ -123,7 +123,7 @@ mod tests {
             },
         );
         assert!(
-            report.contains("`beta` Channel's Server: somewhere"),
+            report.contains("`beta` channel's server: somewhere"),
             "{report}"
         );
         assert!(report.contains("ANTHROPIC_API_KEY"), "{report}");

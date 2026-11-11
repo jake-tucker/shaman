@@ -93,7 +93,7 @@ impl Sidekick {
                 subagent(
                     self.survey,
                     self.top,
-                    ("Explore", "Survey the Sessions"),
+                    ("Explore", "Survey the sessions"),
                     ActivityStatus::Completed,
                     Some(12_000),
                 ),
@@ -215,7 +215,7 @@ fn open(application: &mut Application, workspace: &std::path::Path, session_id: 
     let snapshot = failed_session_snapshot(session_id, PromptId::new(), "Open work", workspace);
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("open a Session");
+        .expect("open a session");
 }
 
 fn deliver(application: &mut Application, through: SessionId, event: SubagentTreeEvent) {
@@ -224,7 +224,7 @@ fn deliver(application: &mut Application, through: SessionId, event: SubagentTre
             through: local(through),
             event,
         })
-        .expect("take a Subagent tree event");
+        .expect("take a subagent tree event");
 }
 
 fn change(application: &mut Application, through: SessionId, change: SubagentTreeChange) {
@@ -276,7 +276,7 @@ fn aside_row_position(application: &Application, needle: &str) -> (u16, u16) {
     let row = rows
         .iter()
         .position(|row| row.contains(needle))
-        .unwrap_or_else(|| panic!("the Aside draws {needle:?}: {rows:#?}"));
+        .unwrap_or_else(|| panic!("the aside draws {needle:?}: {rows:#?}"));
     (
         WIDTH - ASIDE_WIDTH + 4,
         u16::try_from(row).expect("row fits"),
@@ -299,7 +299,7 @@ fn click(application: &mut Application, (column, row): (u16, u16)) -> Applicatio
             modifiers: KeyModifiers::NONE,
         },
     )
-    .expect("click the Aside")
+    .expect("click the aside")
 }
 
 fn press(application: &mut Application, code: KeyCode) -> ApplicationTransition {
@@ -330,7 +330,7 @@ fn a_sidekicks_tree_is_headed_sessions_and_lists_them_working_first_then_by_its_
             "✓ Plan the week",
             "│ sidekick",
             "│ Claude · opus                 1m 5s",
-            "├ ✓ Survey the Sessions",
+            "├ ✓ Survey the sessions",
             "│   Explore                       12s",
             "├ ⠋ Untangle the build",
             "│ │ build",
@@ -345,11 +345,11 @@ fn a_sidekicks_tree_is_headed_sessions_and_lists_them_working_first_then_by_its_
             "    gpt-5.5 · Stopped              3s",
             "",
         ],
-        "headed Sessions and counted the usual way, the Sidekick's own Subagent \
-         first, then the Session that works, then the rest by the Sidekick's latest \
-         act — the Subsession it began drawn as the Sessions it only acted on are — \
-         each in three lines with its own Subagents beneath it, as the Sidekick's own \
-         Session is above them: {rows:#?}"
+        "headed sessions and counted the usual way, the sidekick's own subagent \
+         first, then the session that works, then the rest by the sidekick's latest \
+         act — the subsession it began drawn as the sessions it only acted on are — \
+         each in three lines with its own subagents beneath it, as the sidekick's own \
+         session is above them: {rows:#?}"
     );
 }
 
@@ -397,7 +397,7 @@ fn each_workspace_is_named_beside_its_icon_where_icons_are_drawn() {
     let rows = aside_rows(&application);
     assert!(
         rows.contains(&format!("│   {BUG} auth")),
-        "a Workspace with an Icon is named beside it: {rows:#?}"
+        "a workspace with an icon is named beside it: {rows:#?}"
     );
     assert!(
         rows.contains(&format!("    {FOLDER} docs")),
@@ -419,7 +419,7 @@ fn the_sidekicks_own_entry_names_its_workspace_beside_its_icon_and_follows_it_as
     assert_eq!(
         aside_rows(&application)[2],
         format!("│ {FOLDER} sidekick"),
-        "the Sidekick's own entry names its Workspace on its second line"
+        "the sidekick's own entry names its workspace on its second line"
     );
 
     change(
@@ -434,7 +434,7 @@ fn the_sidekicks_own_entry_names_its_workspace_beside_its_icon_and_follows_it_as
     assert_eq!(
         aside_rows(&application)[2],
         format!("│ {BUG} planning"),
-        "and names the Workspace it works in now, beside that Workspace's Icon"
+        "and names the workspace it works in now, beside that workspace's icon"
     );
 }
 
@@ -460,7 +460,7 @@ fn an_act_moves_its_session_up_and_settled_work_moves_down_but_stays_drawn_as_se
             < rows
                 .iter()
                 .position(|row| row.contains("Fix the flaky login test")),
-        "the Session acted on most recently stands ahead of the others not working: {rows:#?}"
+        "the session acted on most recently stands ahead of the others not working: {rows:#?}"
     );
 
     // The working Session settles, and so does its Subagent.
@@ -496,7 +496,7 @@ fn an_act_moves_its_session_up_and_settled_work_moves_down_but_stays_drawn_as_se
             "✓ Plan the week",
             "│ sidekick",
             "│ Claude · opus                 1m 5s",
-            "├ ✓ Survey the Sessions",
+            "├ ✓ Survey the sessions",
             "│   Explore                       12s",
             "├ × Tidy the docs",
             "│   docs",
@@ -590,7 +590,7 @@ fn where_a_line_runs_short_the_title_and_workspace_are_cut_and_the_model_gives_w
             "    documentation-of-every-service-w…",
             "    gpt-5.5 · Stopped              3s",
         ],
-        "a long Title and Workspace are each cut short with an ellipsis"
+        "a long title and workspace are each cut short with an ellipsis"
     );
     assert_eq!(
         entry_lines(
@@ -600,7 +600,7 @@ fn where_a_line_runs_short_the_title_and_workspace_are_cut_and_the_model_gives_w
             true,
         )[1],
         format!("    {FOLDER} documentation-of-every-service…"),
-        "where Icons are drawn the Workspace keeps its Icon and its name gives way"
+        "where icons are drawn the workspace keeps its icon and its name gives way"
     );
     assert_eq!(
         entry_lines(
@@ -610,12 +610,12 @@ fn where_a_line_runs_short_the_title_and_workspace_are_cut_and_the_model_gives_w
             false,
         )[2],
         "    claude-sonnet-4-5-w… · Stopped 3s",
-        "a Model too long for the line gives way, never the outcome or the time"
+        "a model too long for the line gives way, never the outcome or the time"
     );
     assert_eq!(
         entry_lines("Tidy the docs", "docs", None, false)[2],
         "    Stopped                        3s",
-        "with no Model, the outcome stands alone beside the time"
+        "with no model, the outcome stands alone beside the time"
     );
 }
 
@@ -627,23 +627,23 @@ fn every_line_of_an_entry_opens_its_session_and_the_open_entry_opens_nothing() {
         assert_eq!(
             click_on(&mut application, line),
             ApplicationTransition::ViewAndAttachSession(local(sidekick.subsession)),
-            "pressing {line:?} opens the Session the whole entry stands for"
+            "pressing {line:?} opens the session the whole entry stands for"
         );
     }
     assert_eq!(
         click_on(&mut application, "gpt-5.5 · Stopped"),
         ApplicationTransition::ViewAndAttachSession(local(sidekick.docs)),
-        "a Session only acted on opens the same way"
+        "a session only acted on opens the same way"
     );
     assert_eq!(
         click_on(&mut application, "Probe the build"),
         ApplicationTransition::AttachSession(local(sidekick.probe)),
-        "its Subagent still opens as a Subagent does"
+        "its subagent still opens as a subagent does"
     );
     assert_eq!(
         click_on(&mut application, "Plan the week"),
         ApplicationTransition::Continue,
-        "the open Sidekick's own entry opens nothing"
+        "the open sidekick's own entry opens nothing"
     );
 }
 
@@ -668,7 +668,7 @@ fn row_focus_walks_an_entry_as_one_and_enter_opens_it() {
             "│   auth",
             "│   sonnet                        45s"
         ],
-        "a step walks past a nested Subagent onto the next whole entry"
+        "a step walks past a nested subagent onto the next whole entry"
     );
     assert_eq!(
         press(&mut application, KeyCode::Enter),
@@ -737,14 +737,14 @@ fn opening_a_subsession_keeps_the_sidekicks_tree_and_a_session_only_acted_on_sho
     assert_eq!(
         aside_rows(&application),
         before,
-        "a Subsession's tree is its Sidekick's, so the Section stands as it was"
+        "a subsession's tree is its sidekick's, so the section stands as it was"
     );
 
     open(&mut application, workspace.path(), sidekick.docs);
     assert_eq!(
         aside_rows(&application)[..2],
         ["Subagents", ""],
-        "a Session only acted on is not answered with its Sidekick's tree"
+        "a session only acted on is not answered with its sidekick's tree"
     );
     deliver(
         &mut application,
@@ -773,7 +773,7 @@ fn opening_a_subsession_keeps_the_sidekicks_tree_and_a_session_only_acted_on_sho
     assert_eq!(
         aside_rows(&application)[..3],
         ["Subagents 0", "Tidy the docs", ""],
-        "it heads its own tree, with no Sidekick above it"
+        "it heads its own tree, with no sidekick above it"
     );
 }
 
@@ -816,7 +816,7 @@ fn deleting_the_sidekick_leaves_an_open_subsession_showing_its_own_tree() {
     assert_eq!(
         aside_rows(&application)[..3],
         ["Subagents 0", "Fix the flaky login test", ""],
-        "the Subsession heads its own tree once its Sidekick's Session is gone"
+        "the subsession heads its own tree once its sidekick's session is gone"
     );
 }
 
@@ -881,26 +881,26 @@ fn at_the_narrowest_aside_the_slot_stands_whole_and_what_precedes_it_gives_way()
     for row in &rows {
         assert!(
             row.chars().count() <= content,
-            "no line runs past the Aside's {content} columns: {row:?} in {rows:#?}"
+            "no line runs past the aside's {content} columns: {row:?} in {rows:#?}"
         );
     }
     let interventions = rows
         .iter()
-        .filter(|row| row.ends_with(" Needs Intervention"))
+        .filter(|row| row.ends_with(" Needs intervention"))
         .count();
     assert_eq!(
         interventions, 3,
-        "the Session's third line, its Subagent's second and the nested Subagent's second \
+        "the session's third line, its subagent's second and the nested subagent's second \
          each keep the whole slot: {rows:#?}"
     );
     let entry = rows
         .iter()
         .position(|row| row.contains("Untangle"))
-        .expect("the working Session's entry is drawn");
+        .expect("the working session's entry is drawn");
     assert_eq!(
         rows[entry + 2],
-        "│  Needs Intervention",
-        "the Model gives way, then the guides, never the slot: {rows:#?}"
+        "│  Needs intervention",
+        "the model gives way, then the guides, never the slot: {rows:#?}"
     );
 }
 
@@ -917,11 +917,11 @@ fn the_picker_offers_the_working_sessions_and_stopping_one_interrupts_it() {
     let text = open_picker(&mut application);
     assert!(
         text.contains("└ ⠋ build · gpt-5.5: Untangle the build"),
-        "the working Session the Sidekick acted on is offered: {text}"
+        "the working session the sidekick acted on is offered: {text}"
     );
     assert!(
         !text.contains(": Fix the flaky login test") && !text.contains(": Tidy the docs"),
-        "settled Sessions are not the picker's concern: {text}"
+        "settled sessions are not the picker's concern: {text}"
     );
     assert!(
         text.contains("Enter open · x stop · Esc close"),
@@ -932,12 +932,12 @@ fn the_picker_offers_the_working_sessions_and_stopping_one_interrupts_it() {
         ApplicationTransition::InterruptSession {
             session: local(sidekick.build)
         },
-        "stopping it interrupts it as the user stops any Session of theirs"
+        "stopping it interrupts it as the user stops any session of theirs"
     );
     assert_eq!(
         press(&mut application, KeyCode::Enter),
         ApplicationTransition::ViewAndAttachSession(local(sidekick.build)),
-        "and choosing it opens it as the Session it is"
+        "and choosing it opens it as the session it is"
     );
 }
 
@@ -961,7 +961,7 @@ fn the_picker_keeps_a_session_while_its_subagents_work_and_closes_when_nothing_d
     let text = rendered_application_rows_at(&application, WIDTH, HEIGHT).join("\n");
     assert!(
         text.contains("└ ⠋ build · gpt-5.5: Untangle the build"),
-        "a Session whose own Turn settled still works while its Subagent does: {text}"
+        "a session whose own turn settled still works while its subagent does: {text}"
     );
     assert_eq!(
         press(&mut application, KeyCode::Char('x')),
@@ -973,7 +973,7 @@ fn the_picker_keeps_a_session_while_its_subagents_work_and_closes_when_nothing_d
     let rows = aside_rows(&application);
     assert!(
         rows.contains(&"├ ✓ Untangle the build".to_owned()),
-        "while its entry wears the Marker its own Turn settled with: {rows:#?}"
+        "while its entry wears the marker its own turn settled with: {rows:#?}"
     );
 
     change(
@@ -999,7 +999,7 @@ fn the_picker_keeps_a_session_while_its_subagents_work_and_closes_when_nothing_d
     let text = open_picker(&mut application);
     assert!(
         !text.contains(": Untangle the build"),
-        "only the Sidekick's own Session offers them: {text}"
+        "only the sidekick's own session offers them: {text}"
     );
 }
 
@@ -1068,17 +1068,17 @@ fn a_session_on_a_remote_names_its_remote_first_which_gives_way_before_its_works
             "    workstation · ledger",
             "    sonnet"
         ],
-        "the Remote's name leads the line where the Workspace is named"
+        "the remote's name leads the line where the workspace is named"
     );
     assert_eq!(
         remote_entry_lines("ledger", true)[1],
         format!("    {MONITOR} workstation · {FOLDER} ledger"),
-        "beside its own glyph, ahead of the Workspace's Icon"
+        "beside its own glyph, ahead of the workspace's icon"
     );
     assert_eq!(
         remote_entry_lines("ledger-of-every-account", true)[1],
         format!("    {MONITOR} wo… · {FOLDER} ledger-of-every-account"),
-        "where the line runs short the Remote's name is cut, its glyph kept"
+        "where the line runs short the remote's name is cut, its glyph kept"
     );
     assert_eq!(
         remote_entry_lines("ledger-of-every-last-account", true)[1],
@@ -1088,17 +1088,17 @@ fn a_session_on_a_remote_names_its_remote_first_which_gives_way_before_its_works
     assert_eq!(
         remote_entry_lines("ledger-of-the-old-account", false)[1],
         "    work… · ledger-of-the-old-account",
-        "where the line runs short the Remote's name is cut first"
+        "where the line runs short the remote's name is cut first"
     );
     assert_eq!(
         remote_entry_lines("ledger-of-every-older-account", false)[1],
         "    ledger-of-every-older-account",
-        "then left out, with what parts it from the Workspace"
+        "then left out, with what parts it from the workspace"
     );
     assert_eq!(
         remote_entry_lines("documentation-of-every-service-we-run", false)[1],
         "    documentation-of-every-service-w…",
-        "and only then is the Workspace's name cut"
+        "and only then is the workspace's name cut"
     );
 }
 
@@ -1121,14 +1121,14 @@ fn a_session_whose_remote_does_not_answer_keeps_what_named_it_and_says_it_does_n
             format!("    {MONITOR} workstation · {FOLDER} ledger"),
             "    not answering".to_owned(),
         ],
-        "its last Title, Workspace and Remote, without a Marker, Model or time"
+        "its last title, workspace and remote, without a marker, model or time"
     );
     let buffer = rendered_application_buffer(&application, WIDTH, HEIGHT);
     let column = WIDTH - ASIDE_WIDTH + 2;
     assert_eq!(
         (buffer[(column + 2, 4)].symbol(), buffer[(column + 2, 4)].fg),
         ("B", buffer[(column + 4, 5)].fg),
-        "its Title drawn dimmed, as its Workspace is"
+        "its title drawn dimmed, as its workspace is"
     );
 
     let never_said = SubagentTreeSession {
@@ -1144,7 +1144,7 @@ fn a_session_whose_remote_does_not_answer_keeps_what_named_it_and_says_it_does_n
             format!("    {MONITOR} workstation"),
             "    not answering".to_owned()
         ],
-        "one whose Remote never said what it is, is named by its Remote alone"
+        "one whose remote never said what it is, is named by its remote alone"
     );
 }
 
@@ -1165,7 +1165,7 @@ fn a_session_the_sidekicks_act_on_is_not_yet_confirmed_stands_as_one_not_answeri
             "    workstation · ledger",
             "    not confirmed"
         ],
-        "named by what it asked for, saying it is not yet confirmed in place of its Model and time"
+        "named by what it asked for, saying it is not yet confirmed in place of its model and time"
     );
 }
 
@@ -1201,7 +1201,7 @@ fn a_remote_session_sharing_the_heads_identity_is_the_open_entry_and_the_head_is
         let row = rows
             .iter()
             .position(|row| row.contains(needle))
-            .unwrap_or_else(|| panic!("the Aside draws {needle:?}: {rows:?}"));
+            .unwrap_or_else(|| panic!("the aside draws {needle:?}: {rows:?}"));
         let column = rows[row].find(needle).expect("found above");
         let column = WIDTH - ASIDE_WIDTH
             + 2
@@ -1211,7 +1211,7 @@ fn a_remote_session_sharing_the_heads_identity_is_the_open_entry_and_the_head_is
     assert_ne!(
         fg_of("Plan the week"),
         fg_of("Bind the ledger"),
-        "the open entry's Title is drawn as the open one, and the head's is not"
+        "the open entry's title is drawn as the open one, and the head's is not"
     );
 }
 
@@ -1243,7 +1243,7 @@ fn a_subagent_whose_remote_does_not_answer_is_named_dimmed_with_nothing_of_its_w
     assert_eq!(
         rows[7..9],
         ["  └ Read the old entries", "      Explore · not answering"],
-        "named as it last was, beneath its Session, with no Marker, outcome or time"
+        "named as it last was, beneath its session, with no marker, outcome or time"
     );
     assert_eq!(rows[0], "Sessions 2", "and nothing of it counts as working");
 }
@@ -1262,13 +1262,13 @@ fn a_remote_session_whose_subagents_are_not_all_shown_says_opening_it_shows_them
     let (application, _) = sidekick_listing(cut.clone(), false);
     assert_eq!(
         aside_rows(&application)[6],
-        "    sonnet-4-5 · open for all Subage…",
-        "beside its Model, cut where the line runs short"
+        "    sonnet-4-5 · open for all subage…",
+        "beside its model, cut where the line runs short"
     );
     let (application, _) = sidekick_listing(SubagentTreeSession { model: None, ..cut }, false);
     assert_eq!(
         aside_rows(&application)[6],
-        "    open for all Subagents",
+        "    open for all subagents",
         "and whole where it has the line"
     );
 }
@@ -1288,7 +1288,7 @@ fn opening_a_session_on_a_remote_turns_the_outlook_toward_that_remote() {
                 ApplicationTransition::TurnOutlookAndViewAndAttach { session, .. }
                     if session == opened
             ),
-            "pressing {line:?} opens the Session on its Remote, turning the Outlook there"
+            "pressing {line:?} opens the session on its remote, turning the outlook there"
         );
     }
     invoke(&mut application, SemanticCommandId::AsideToggle);
@@ -1341,7 +1341,7 @@ fn opening_a_subsession_begun_on_a_remote_keeps_the_sidekicks_tree_here() {
     assert_eq!(
         aside_rows(&application)[..5],
         before[..5],
-        "a Subsession's tree is its Sidekick's, wherever it was begun"
+        "a subsession's tree is its sidekick's, wherever it was begun"
     );
     change(
         &mut application,
@@ -1353,7 +1353,7 @@ fn opening_a_subsession_begun_on_a_remote_keeps_the_sidekicks_tree_here() {
     assert_eq!(
         aside_rows(&application)[1],
         "✓ Plan the month",
-        "and it is still followed through this client's own Server"
+        "and it is still followed through this client's own server"
     );
 
     let (mut application, _) =
@@ -1363,7 +1363,7 @@ fn opening_a_subsession_begun_on_a_remote_keeps_the_sidekicks_tree_here() {
     assert_eq!(
         aside_rows(&application)[..2],
         ["Subagents", ""],
-        "a Session only acted on there heads its own tree there"
+        "a session only acted on there heads its own tree there"
     );
 }
 
@@ -1381,7 +1381,7 @@ fn the_sidekicks_entry_names_its_workspace_in_its_own_servers_paths_beside_a_rem
                 WorkspacePaths::default().with_sidekick_workspace(&sidekick.root.join("sidekick")),
             ),
         )))
-        .expect("connect naming the Sidekick Workspace");
+        .expect("connect naming the sidekick workspace");
     open(&mut application, workspace.path(), sidekick.top);
     let ledger = SessionId::new();
     let mut snapshot = sidekick.snapshot();
@@ -1403,7 +1403,7 @@ fn the_sidekicks_entry_names_its_workspace_in_its_own_servers_paths_beside_a_rem
     assert_eq!(
         aside_rows(&application)[2],
         "│ Sidekick",
-        "the Sidekick's Workspace is still named as its own Server names it"
+        "the sidekick's workspace is still named as its own server names it"
     );
 }
 
@@ -1430,7 +1430,7 @@ fn from_a_subsession_on_a_remote_the_sidekicks_entry_turns_the_outlook_back_to_o
                 workspace.path(),
             ),
         })
-        .expect("attach the Subsession");
+        .expect("attach the subsession");
 
     assert!(
         matches!(
@@ -1438,7 +1438,7 @@ fn from_a_subsession_on_a_remote_the_sidekicks_entry_turns_the_outlook_back_to_o
             ApplicationTransition::TurnOutlookAndViewAndAttach { session, .. }
                 if session == local(sidekick.top)
         ),
-        "the Sidekick's entry opens it on this client's own Server"
+        "the sidekick's entry opens it on this client's own server"
     );
     application
         .handle_event(ApplicationEvent::OriginSessionAttached {
@@ -1450,11 +1450,11 @@ fn from_a_subsession_on_a_remote_the_sidekicks_entry_turns_the_outlook_back_to_o
                 workspace.path(),
             ),
         })
-        .expect("attach the Sidekick's Session");
+        .expect("attach the sidekick's session");
     let screen = rendered_application_rows_at(&application, WIDTH, HEIGHT).join("\n");
     assert!(
         screen.contains("Sidekick work") && !screen.contains("Subsession work"),
-        "the Sidekick's Session is open again: {screen}"
+        "the sidekick's session is open again: {screen}"
     );
 }
 
@@ -1504,8 +1504,8 @@ fn a_remote_sessions_subagents_stand_beneath_it_alone_and_open_on_its_remote() {
             "    audit",
             "    gpt-5.5                        3s",
         ],
-        "the Remote's Subagent stands beneath its Remote's Session alone, which says its \
-         Model and time"
+        "the remote's subagent stands beneath its remote's session alone, which says its \
+         model and time"
     );
     assert!(
         matches!(
@@ -1513,7 +1513,7 @@ fn a_remote_sessions_subagents_stand_beneath_it_alone_and_open_on_its_remote() {
             ApplicationTransition::TurnOutlookAndViewAndAttach { session, .. }
                 if session == on_remote(explore)
         ),
-        "and opens on that Remote, turning the Outlook there"
+        "and opens on that remote, turning the outlook there"
     );
 }
 
@@ -1530,7 +1530,7 @@ fn the_picker_offers_a_working_session_on_a_remote_and_stops_it_there() {
     let text = open_picker(&mut application);
     assert!(
         text.contains("└ ⠋ workstation · ledger · sonnet: Bind the ledger"),
-        "it is offered, named by its Remote: {text}"
+        "it is offered, named by its remote: {text}"
     );
     assert!(
         text.contains("Enter open · x stop · Esc close"),
@@ -1541,7 +1541,7 @@ fn the_picker_offers_a_working_session_on_a_remote_and_stops_it_there() {
         ApplicationTransition::InterruptSession {
             session: on_remote(ledger)
         },
-        "stopping it interrupts it on its Remote"
+        "stopping it interrupts it on its remote"
     );
     assert!(
         matches!(
@@ -1623,7 +1623,7 @@ fn a_sessions_provider_and_model_are_named_as_its_servers_catalog_names_them() {
             "│   Claude · Sonnet 4.5           45s",
             "    GPT-5.5 Preview · Stopped      3s",
         ],
-        "the Provider leads the Model, each by its name, and gives way first where the \
+        "the provider leads the model, each by its name, and gives way first where the \
          line runs short"
     );
     assert_eq!(
@@ -1632,7 +1632,7 @@ fn a_sessions_provider_and_model_are_named_as_its_servers_catalog_names_them() {
             format!("│   {CLAUDE} Claude · Sonnet 4.5         45s"),
             format!("    {CODEX} GPT-5.5 Preview · Stopped    3s"),
         ],
-        "where Icons are drawn the Provider stands beside its glyph, which it keeps \
+        "where icons are drawn the provider stands beside its glyph, which it keeps \
          where its name gives way"
     );
     assert_eq!(
@@ -1641,7 +1641,7 @@ fn a_sessions_provider_and_model_are_named_as_its_servers_catalog_names_them() {
             "│   Claude · sonnet               45s",
             "    Codex · gpt-5.5 · Stopped      3s",
         ],
-        "with no catalog to name it, a Model goes by what its Agent Selection calls it"
+        "with no catalog to name it, a model goes by what its agent selection calls it"
     );
 }
 
@@ -1672,12 +1672,12 @@ fn a_subagents_model_is_named_as_its_servers_catalog_names_it_where_it_does() {
     assert_eq!(
         survey_line(Some(catalog("Sonnet 4.5", "GPT-5.5"))),
         "│   Explore · Sonnet 4.5          12s",
-        "the Model the Provider confirmed goes by its catalog name"
+        "the model the provider confirmed goes by its catalog name"
     );
     assert_eq!(
         survey_line(None),
         "│   Explore · sonnet              12s",
-        "and by what the Provider called it where no catalog names it"
+        "and by what the provider called it where no catalog names it"
     );
 }
 
@@ -1710,7 +1710,7 @@ fn a_remote_sessions_provider_and_model_are_named_as_its_remotes_catalog_names_t
         catalog_origins, ..
     } = transition
     else {
-        panic!("a tree naming a Remote asks for that Remote's catalog: {transition:?}");
+        panic!("a tree naming a remote asks for that remote's catalog: {transition:?}");
     };
     assert!(
         catalog_origins.contains(&Outlook::Remote(REMOTE.to_owned())),
@@ -1719,7 +1719,7 @@ fn a_remote_sessions_provider_and_model_are_named_as_its_remotes_catalog_names_t
     assert_eq!(
         aside_rows(&application)[6],
         "    Claude · sonnet",
-        "until it is heard, the Model goes by what its Agent Selection calls it"
+        "until it is heard, the model goes by what its agent selection calls it"
     );
 
     application
@@ -1727,11 +1727,11 @@ fn a_remote_sessions_provider_and_model_are_named_as_its_remotes_catalog_names_t
             outlook: Outlook::Remote(REMOTE.to_owned()),
             event: ManagedEvent::ModelCatalog(catalog("Sonnet 4.5", "GPT-5.5")),
         })
-        .expect("take in the Remote's catalog");
+        .expect("take in the remote's catalog");
     assert_eq!(
         aside_rows(&application)[6],
         "    Claude · Sonnet 4.5",
-        "and then by what its Remote's catalog calls it"
+        "and then by what its remote's catalog calls it"
     );
 }
 
@@ -1772,6 +1772,6 @@ fn at_the_narrowest_aside_the_providers_glyph_gives_way_before_the_slot() {
     let line = &rows[6];
     assert!(
         line.ends_with(" · Stopped 1m 1s") && line.chars().count() <= usize::from(NARROWEST - 3),
-        "the outcome and the whole slot stand, and nothing runs past the Aside: {rows:#?}"
+        "the outcome and the whole slot stand, and nothing runs past the aside: {rows:#?}"
     );
 }

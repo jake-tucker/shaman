@@ -35,7 +35,7 @@ impl KeeperArguments {
         // A home that is not back yet at login holds no Log for a while, which
         // is no reason to give up keeping a Server.
         let _log_guard = logging::init(config.runtime(), logging::Role::Keeper)
-            .inspect_err(|error| eprintln!("Could not open a Log: {error:#}"))
+            .inspect_err(|error| eprintln!("Could not open a log: {error:#}"))
             .ok();
         // One that cannot say whether it is registered goes on as if it were.
         let login_start = LoginStart::for_this_user(config.channel(), self.stand_in)

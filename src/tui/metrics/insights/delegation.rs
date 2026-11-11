@@ -44,8 +44,8 @@ const BRIEF_LEAD_WIDTH: usize = LABEL_WIDTH + 1 + SHARE_WIDTH + 2;
 
 /// The note beneath the roles, fully and briefly.
 const NOTE: [&str; 2] = [
-    "A Claude Session's native Subagents are in its Cost",
-    "A Claude Session's Subagents are in its Cost",
+    "A Claude session's native subagents are in its cost",
+    "A Claude session's subagents are in its cost",
 ];
 
 /// One row of the panel: a role, or the Errands.
@@ -87,7 +87,7 @@ pub(super) fn render(
         let note = if total.is_partial {
             "No work priced"
         } else {
-            "No Cost"
+            "No cost"
         };
         let note = nothing(room, note, range);
         buffer.set_string(area.x, area.y, note, subdued);
@@ -104,7 +104,7 @@ pub(super) fn render(
         .map(|brokered| format!("  brokered {}", share_of(brokered, total)))
         .unwrap_or_default();
     let rows = [
-        Row::of("own Sessions", delegation.own_sessions, accent),
+        Row::of("own sessions", delegation.own_sessions, accent),
         Row {
             brokered,
             ..Row::of("Subagents", subagents, accent)

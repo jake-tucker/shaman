@@ -39,7 +39,7 @@ fn cycle_and_picker_use_the_typed_approval_posture_without_losing_the_draft() {
     type_terminal_text(&mut application, "draft survives posture changes");
 
     let frame = rendered_application_rows_at(&application, 80, 24).join("\n");
-    assert!(!frame.contains("Approval Posture:"), "{frame}");
+    assert!(!frame.contains("Approval posture:"), "{frame}");
     assert!(!frame.contains("on-request"), "{frame}");
     assert!(!frame.contains("workspace-write"), "{frame}");
 
@@ -77,7 +77,7 @@ fn cycle_and_picker_use_the_typed_approval_posture_without_losing_the_draft() {
         "Sandbox: read-only",
         "Sandbox: workspace-write",
         "Sandbox: danger-full-access",
-        "Follow Server Settings (reset)",
+        "Follow server settings (reset)",
     ] {
         assert!(picker.contains(choice), "missing {choice}: {picker}");
     }
@@ -95,7 +95,7 @@ fn cycle_and_picker_use_the_typed_approval_posture_without_losing_the_draft() {
     }
     let short_picker = rendered_application_rows_at(&application, 80, 12).join("\n");
     assert!(
-        short_picker.contains("Follow Server Settings (reset)"),
+        short_picker.contains("Follow server settings (reset)"),
         "the focused reset remains visible in a short picker: {short_picker}"
     );
     assert_eq!(
@@ -152,14 +152,14 @@ fn a_subagents_inherited_posture_has_no_independent_controls() {
                 )))
                 .unwrap(),
             ApplicationTransition::Continue,
-            "a Subagent cannot issue an independent posture mutation"
+            "a subagent cannot issue an independent posture mutation"
         );
     }
     let frame = rendered_application_rows_at(&application, 80, 24).join("\n");
     assert!(!frame.contains("Claude dontAsk"), "{frame}");
     assert!(!frame.contains("inherited"), "{frame}");
     assert!(!frame.contains("pinned"), "{frame}");
-    assert!(!frame.contains("Follow Server Settings (reset)"), "{frame}");
+    assert!(!frame.contains("Follow server settings (reset)"), "{frame}");
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn codex_posture_delay_is_absent_from_the_composer() {
         .unwrap();
 
     let frame = rendered_application_rows_at(&application, 80, 24).join("\n");
-    assert!(!frame.contains("takes effect next Turn"), "{frame}");
+    assert!(!frame.contains("takes effect next turn"), "{frame}");
 }
 
 #[test]
@@ -218,7 +218,7 @@ fn outstanding_native_posture_application_is_absent_from_the_composer() {
         .unwrap();
 
     let frame = rendered_application_rows_at(&application, 80, 24).join("\n");
-    assert!(!frame.contains("Approval Posture: applying"), "{frame}");
+    assert!(!frame.contains("Approval posture: applying"), "{frame}");
 }
 
 #[test]

@@ -17,8 +17,8 @@ use super::{
     },
 };
 
-const CURRENT_WORKSPACE: &str = "Current Workspace";
-const ALL_WORKSPACES: &str = "All Workspaces";
+const CURRENT_WORKSPACE: &str = "Current workspace";
+const ALL_WORKSPACES: &str = "All workspaces";
 const EVERYWHERE: &str = "Everywhere";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

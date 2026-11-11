@@ -96,7 +96,7 @@ fn slash_settle_on_the_landing_sets_nothing_aside() {
                 KeyCode::Enter,
                 KeyModifiers::NONE,
             )))
-            .expect("invoke the settle command with no Session open"),
+            .expect("invoke the settle command with no session open"),
         ApplicationTransition::Continue
     );
 }
@@ -131,7 +131,7 @@ fn insert_completion_replaces_its_range_and_keeps_the_composer_open() {
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("submit the completed Prompt separately")
+        .expect("submit the completed prompt separately")
     else {
         panic!("completion confirmation should not submit the composer");
     };
@@ -185,7 +185,7 @@ fn models_commands_dispatch_one_semantic_model_list_action() {
     assert!(
         rendered_application_rows(&canonical)
             .join("\n")
-            .contains("Choose Model")
+            .contains("Choose model")
     );
     assert!(matches!(
         canonical
@@ -227,7 +227,7 @@ fn models_commands_dispatch_one_semantic_model_list_action() {
                 KeyCode::Char('m'),
                 KeyModifiers::NONE,
             )))
-            .expect("invoke Model picker"),
+            .expect("invoke model picker"),
         ApplicationTransition::ListModels(_)
     ));
 }
@@ -239,7 +239,7 @@ fn themes_command_alias_and_keybinding_open_the_same_picker() {
     assert!(
         rendered_application_rows(&canonical)
             .join("\n")
-            .contains("Choose Theme")
+            .contains("Choose theme")
     );
     assert_eq!(
         canonical
@@ -291,7 +291,7 @@ fn themes_command_alias_and_keybinding_open_the_same_picker() {
                 KeyCode::Char('t'),
                 KeyModifiers::NONE,
             )))
-            .expect("invoke Theme picker"),
+            .expect("invoke theme picker"),
         ApplicationTransition::Continue
     );
     assert!(
@@ -313,7 +313,7 @@ fn options_commands_dispatch_one_semantic_model_options_action() {
     assert!(
         rendered_application_rows(&canonical)
             .join("\n")
-            .contains("Configure Model Options")
+            .contains("Configure model options")
     );
     assert!(matches!(
         canonical
@@ -355,7 +355,7 @@ fn options_commands_dispatch_one_semantic_model_options_action() {
                 KeyCode::Char('o'),
                 KeyModifiers::NONE,
             )))
-            .expect("invoke Model Options"),
+            .expect("invoke model options"),
         ApplicationTransition::ListModels(_)
     ));
 
@@ -393,10 +393,10 @@ fn slash_completion_details_the_selected_command_beside_the_list() {
 
     let buffer = rendered_application_buffer(&application, 120, 30);
     let rows = buffer_rows(&buffer);
-    let name = text_position(&buffer, "/models  Choose Model");
-    let description = text_position(&buffer, "Search available Provider Models");
+    let name = text_position(&buffer, "/models  Choose model");
+    let description = text_position(&buffer, "Search available provider models");
     assert!(
-        description.0 > name.0 + "/models  Choose Model".len() as u16 && description.1 > name.1,
+        description.0 > name.0 + "/models  Choose model".len() as u16 && description.1 > name.1,
         "the description stands in a pane beside the list: {rows:#?}"
     );
     assert!(
@@ -410,12 +410,12 @@ fn slash_completion_details_the_selected_command_beside_the_list() {
 
     let narrow = rendered_application_rows_at(&application, 60, 30).join("\n");
     assert!(
-        narrow.contains("/models  Choose Model · Search"),
+        narrow.contains("/models  Choose model · Search"),
         "a narrow composer keeps the one-line rows: {narrow}"
     );
     let short = rendered_application_rows_at(&application, 120, 15).join("\n");
     assert!(
-        short.contains("/models  Choose Model · Search"),
+        short.contains("/models  Choose model · Search"),
         "a dock too short to reach the description keeps the one-line rows: {short}"
     );
 }
@@ -450,9 +450,9 @@ fn dismissed_alias_is_submitted_literally_before_turn_interruption() {
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("submit dismissed alias as literal Prompt input")
+        .expect("submit dismissed alias as literal prompt input")
     else {
-        panic!("dismissed slash text should remain a normal Prompt");
+        panic!("dismissed slash text should remain a normal prompt");
     };
     assert_eq!(request.prompt.text, "/clear");
 }
@@ -470,7 +470,7 @@ fn pasted_and_multiline_slash_text_remain_literal_prompts() {
         )))
         .expect("submit pasted slash text")
     else {
-        panic!("pasted slash text should create a Session Prompt");
+        panic!("pasted slash text should create a session prompt");
     };
     assert_eq!(pasted_request.prompt.text, "/new");
 
@@ -498,7 +498,7 @@ fn pasted_and_multiline_slash_text_remain_literal_prompts() {
         )))
         .expect("submit multiline slash text")
     else {
-        panic!("multiline slash text should create a Session Prompt");
+        panic!("multiline slash text should create a session prompt");
     };
     assert_eq!(multiline_request.prompt.text, "/new\nliteral continuation");
 }
@@ -524,7 +524,7 @@ fn a_slash_command_no_command_answers_to_is_refused_and_kept_to_be_corrected() {
                 )))
                 .expect("submit an unknown slash command"),
             ApplicationTransition::Continue,
-            "{draft:?} is refused rather than sent as a Prompt"
+            "{draft:?} is refused rather than sent as a prompt"
         );
         let rows = rendered_application_rows(&application).join("\n");
         assert!(
@@ -553,7 +553,7 @@ fn a_draft_opening_with_a_path_is_a_prompt_rather_than_a_command() {
         )))
         .expect("submit a draft opening with a path")
     else {
-        panic!("a draft opening with a path should create a Session Prompt");
+        panic!("a draft opening with a path should create a session prompt");
     };
     assert_eq!(request.prompt.text, "/tmp/build.log is empty");
 }
@@ -643,12 +643,12 @@ fn autocomplete_tracks_the_active_composer_when_a_session_attaches() {
         .handle_event(ApplicationEvent::SessionAttached(failed_session_snapshot(
             SessionId::new(),
             PromptId::new(),
-            "Existing Session Prompt",
+            "Existing session prompt",
             workspace.path(),
         )))
-        .expect("attach an existing Session with an empty composer");
+        .expect("attach an existing session with an empty composer");
     let attached = rendered_application_rows(&application).join("\n");
-    assert!(attached.contains("Existing Session Prompt"));
+    assert!(attached.contains("Existing session prompt"));
     assert!(!attached.contains("/new"));
 }
 
@@ -665,7 +665,7 @@ fn move_and_its_alias_dispatch_one_semantic_move_action() {
         type_terminal_text(&mut application, typed);
         let autocomplete = rendered_application_rows(&application).join("\n");
         assert!(
-            autocomplete.contains("/move") && autocomplete.contains("Move Session"),
+            autocomplete.contains("/move") && autocomplete.contains("Move session"),
             "{typed} finds the command: {autocomplete}"
         );
         type_terminal_text(&mut application, " ~/elsewhere");
@@ -679,7 +679,7 @@ fn move_and_its_alias_dispatch_one_semantic_move_action() {
                     },
                 },
             },
-            "{typed} Moves the open Session to what follows it"
+            "{typed} moves the open session to what follows it"
         );
     }
 }
@@ -698,7 +698,7 @@ pub(crate) fn enter_idle_session_on(
     });
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach the idle Session");
+        .expect("attach the idle session");
     session_id
 }
 
@@ -724,7 +724,7 @@ fn slash_compact_asks_the_open_sessions_provider_to_compact_now() {
     type_terminal_text(&mut application, "/compact");
     let autocomplete = rendered_application_rows(&application).join("\n");
     assert!(autocomplete.contains("/compact"), "{autocomplete}");
-    assert!(autocomplete.contains("Compact Context"), "{autocomplete}");
+    assert!(autocomplete.contains("Compact context"), "{autocomplete}");
 
     assert_eq!(
         press_enter(&mut application),
@@ -732,7 +732,7 @@ fn slash_compact_asks_the_open_sessions_provider_to_compact_now() {
             session: SessionReference::new(Outlook::Local, session_id),
             request: CompactSessionRequest { instructions: None },
         },
-        "the slash invokes session.compact on the open Session, which carries no instructions"
+        "the slash invokes session.compact on the open session, which carries no instructions"
     );
     assert!(
         !rendered_application_rows(&application)
@@ -784,7 +784,7 @@ fn text_after_slash_compact_is_sent_as_instructions_where_the_provider_takes_the
                 },
             },
             "{provider} takes instructions, so everything after the command name is sent as \
-             them, never as a Prompt for the Agent"
+             them, never as a prompt for the agent"
         );
         assert!(
             !rendered_application_rows(&application)
@@ -805,12 +805,12 @@ fn text_after_slash_compact_is_refused_with_the_reason_where_the_provider_takes_
     assert_eq!(
         press_enter(&mut application),
         ApplicationTransition::Continue,
-        "Codex takes no instructions, so nothing is sent and no Turn begins: the instructions \
-         are refused rather than dropped, or sent to the Agent as a Prompt"
+        "Codex takes no instructions, so nothing is sent and no turn begins: the instructions \
+         are refused rather than dropped, or sent to the agent as a prompt"
     );
     let screen = rendered_application_rows(&application).join("\n");
     assert!(
-        screen.contains("Codex takes no instructions for a Compaction"),
+        screen.contains("Codex takes no instructions for a compaction"),
         "the refusal says why: {screen}"
     );
     assert!(
@@ -826,26 +826,26 @@ fn slash_compact_with_no_session_to_compact_is_refused_on_the_landing_and_while_
     assert_eq!(press_enter(&mut landing), ApplicationTransition::Continue);
     let screen = rendered_application_rows(&landing).join("\n");
     assert!(
-        screen.contains("Open a Session to compact its context"),
-        "the Landing explains the refusal: {screen}"
+        screen.contains("Open a session to compact its context"),
+        "the landing explains the refusal: {screen}"
     );
 
     let workspace = workspace_dir();
     let mut provisional = Application::new(workspace.path(), Default::default());
     type_terminal_text(&mut provisional, "Map the parser");
     let ApplicationTransition::CreateSession(_) = press_enter(&mut provisional) else {
-        panic!("the Landing's first Prompt asks for a Session");
+        panic!("the landing's first prompt asks for a session");
     };
     type_terminal_text(&mut provisional, "/compact");
     assert_eq!(
         press_enter(&mut provisional),
         ApplicationTransition::Continue,
-        "a Provisional Session has no conversation on any Server to compact"
+        "a provisional session has no conversation on any server to compact"
     );
     let screen = rendered_application_rows(&provisional).join("\n");
     assert!(
-        screen.contains("This Session has not started yet"),
-        "the Provisional Session explains the refusal: {screen}"
+        screen.contains("This session has not started yet"),
+        "the provisional session explains the refusal: {screen}"
     );
 }
 
@@ -892,7 +892,7 @@ fn slash_compact_is_the_command_however_its_line_is_formatted() {
                 session: SessionReference::new(Outlook::Local, session_id),
                 request: CompactSessionRequest { instructions: None },
             },
-            "{lines:?} asks for a Compaction with nothing but whitespace after the command"
+            "{lines:?} asks for a compaction with nothing but whitespace after the command"
         );
     }
 }
@@ -913,7 +913,7 @@ fn text_after_slash_compact_on_lines_of_its_own_is_instructions() {
             },
         },
         "a multiline line is the command's instructions, whole across their lines, never a \
-         Prompt for the Agent"
+         prompt for the agent"
     );
 
     let mut codex = Application::new(workspace.path(), Default::default());
@@ -927,7 +927,7 @@ fn text_after_slash_compact_on_lines_of_its_own_is_instructions() {
     assert!(
         rendered_application_rows(&codex)
             .join("\n")
-            .contains("Codex takes no instructions for a Compaction")
+            .contains("Codex takes no instructions for a compaction")
     );
 
     for lines in [&["/compact "][..], &["/compact keep", "these notes"][..]] {
@@ -936,12 +936,12 @@ fn text_after_slash_compact_on_lines_of_its_own_is_instructions() {
         assert_eq!(
             press_enter(&mut landing),
             ApplicationTransition::Continue,
-            "{lines:?} on the Landing creates no Session"
+            "{lines:?} on the landing creates no session"
         );
         assert!(
             rendered_application_rows(&landing)
                 .join("\n")
-                .contains("Open a Session to compact its context")
+                .contains("Open a session to compact its context")
         );
     }
 }

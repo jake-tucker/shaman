@@ -75,7 +75,7 @@ fn ordered(tools: &[ToolTally], sort: ToolsSort) -> Vec<&ToolTally> {
 fn label(tool: &InsightsTool) -> Cow<'_, str> {
     match tool {
         InsightsTool::Command => Cow::Borrowed("Command"),
-        InsightsTool::FileChange => Cow::Borrowed("File Change"),
+        InsightsTool::FileChange => Cow::Borrowed("File change"),
         InsightsTool::Subagent => Cow::Borrowed("Subagent"),
         InsightsTool::Named { name, server: None } => Cow::Borrowed(name),
         InsightsTool::Named {
@@ -100,7 +100,7 @@ pub(super) fn render(
     let room = usize::from(area.width);
     let subdued = theme.text.subdued;
     if tools.is_empty() {
-        let note = nothing(room, "No Tools used", range);
+        let note = nothing(room, "No tools used", range);
         buffer.set_string(area.x, area.y, note, subdued);
         return;
     }
@@ -121,7 +121,7 @@ pub(super) fn render(
     buffer.set_string(area.x, area.y, truncate_to_width(&header, room), subdued);
     let ordered = ordered(tools, sort);
     let panel = InsightsPanel::Tools;
-    let lines = panel.room().expect("the Tools panel scrolls");
+    let lines = panel.room().expect("the tools panel scrolls");
     let window = RowWindow::new(ordered.len(), lines, view.scrolled(panel));
     let rows = ordered
         .iter()

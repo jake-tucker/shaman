@@ -55,7 +55,7 @@ const BREAKDOWN_LEAD: &str = "by ";
 /// What stands before the Model views beneath them.
 const MODEL_VIEW_LEAD: &str = "Model: ";
 /// What heads the Sessions that cost the most.
-const TOP_SESSIONS_HEADING: &str = "Most expensive Sessions";
+const TOP_SESSIONS_HEADING: &str = "Most expensive sessions";
 /// The fewest rows the chart keeps however many Sessions are listed under
 /// it: the list takes room from the chart only down to this.
 const CHART_FLOOR: u16 = 8;
@@ -92,10 +92,10 @@ pub(super) const MIN_WIDTH: u16 = 80;
 pub(super) const MIN_HEIGHT: u16 =
     HEAD_ROWS + HEADLINE_ROWS + 1 + CHART_FLOOR + 1 + FLOWED_LEGEND_FLOOR + 1 + MIX_ROWS + 1;
 /// What the view says in place of itself in a smaller frame.
-const TOO_SMALL: &str = "Make the terminal larger to see Usage Metrics";
+const TOO_SMALL: &str = "Make the terminal larger to see usage metrics";
 /// What stands in for the chart where All time's every Turn is untimed.
 const UNCHARTED: &str =
-    "This Usage was recorded before Suru timed Turns, so none of it can be charted.";
+    "This usage was recorded before Suru timed turns, so none of it can be charted.";
 
 /// Draws `view` over the whole frame, the Outlook turned toward `outlook`,
 /// whose figures alone it shows.
@@ -246,12 +246,12 @@ pub(in crate::tui) fn render(
     view.record_chart_target(body);
     match view.content(outlook) {
         MetricsContent::Reading => {
-            buffer.set_string(body.x, body.y, "Reading Usage Metrics…", subdued);
+            buffer.set_string(body.x, body.y, "Reading usage metrics…", subdued);
         }
         MetricsContent::Refused(refusal) => {
             let heading = match refusal {
-                MetricsReadRefusal::Refused(_) => "The Server refused the Usage Metrics read",
-                MetricsReadRefusal::Failed(_) => "Usage Metrics could not be read",
+                MetricsReadRefusal::Refused(_) => "The server refused the usage metrics read",
+                MetricsReadRefusal::Failed(_) => "Usage metrics could not be read",
             };
             buffer.set_string(
                 body.x,
@@ -405,7 +405,7 @@ pub(in crate::tui) fn render(
 
 /// What Insights says of All time where Turns stored before Suru timed them
 /// lie outside it.
-const UNTIMED_NOTE: &str = "Turns recorded before Suru timed Turns are not included";
+const UNTIMED_NOTE: &str = "Turns recorded before Suru timed turns are not included";
 
 /// The Insights tab beneath the tab bar: the range bar alone, the row under
 /// it saying what became of a read — or of All time, what it leaves out —
@@ -786,7 +786,7 @@ impl Legend {
                 heading.push_str(&MetricsMeasure::Sessions.total(Figure::measured(whole.sessions)));
             }
             heading.push_str(" · ");
-            heading.push_str(&chart::counted(whole.turns, "Turn", "Turns"));
+            heading.push_str(&chart::counted(whole.turns, "turn", "turns"));
         }
         Self {
             heading,
@@ -1102,7 +1102,7 @@ fn render_flowed_legend(
 /// in the words of the breakdown that splits them.
 fn overlap_note(breakdown: UsageMetricsBreakdown) -> String {
     format!(
-        "A Session that used several {} counts once for each",
+        "A session that used several {} counts once for each",
         breakdown.plural()
     )
 }

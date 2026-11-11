@@ -40,7 +40,7 @@ fn prose(application: &Application) -> String {
 fn pushed(application: &mut Application, event: ManagedEvent) {
     application
         .handle_event(ApplicationEvent::Managed(event))
-        .expect("take what the Server pushed");
+        .expect("take what the server pushed");
 }
 
 /// Has the Client hear that Serving stands so, and how its listener does.
@@ -100,7 +100,7 @@ fn configure_remote(application: &mut Application, reaches_here: bool) {
         .unwrap();
     let ApplicationTransition::PreviewInvite { request, .. } = press(application, KeyCode::Enter)
     else {
-        panic!("the Invite is previewed");
+        panic!("the invite is previewed");
     };
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
@@ -120,7 +120,7 @@ fn configure_remote(application: &mut Application, reaches_here: bool) {
 fn redeemed_offering(transition: ApplicationTransition) -> bool {
     match transition {
         ApplicationTransition::RedeemInvite { redemption, .. } => redemption.pair_back,
-        other => panic!("expected the Invite redeemed, got {other:?}"),
+        other => panic!("expected the invite redeemed, got {other:?}"),
     }
 }
 
@@ -147,7 +147,7 @@ fn choosing_the_option_offers_and_says_what_it_lets_that_machine_do() {
     let shown = prose(&application);
     assert!(shown.contains("run commands here"), "{shown}");
     assert!(
-        shown.contains("Every address and Relay this machine has is offered then"),
+        shown.contains("Every address and relay this machine has is offered then"),
         "the reader is told it is not the choice /serve gives: {shown}"
     );
     assert!(shown.contains("Space toggle"), "{shown}");
@@ -173,12 +173,12 @@ fn with_serving_off_it_says_why_and_turning_it_on_is_a_key_of_its_own_on_what_wa
     );
     let shown = prose(&application);
     assert!(shown.contains("[-] Also let studio"), "{shown}");
-    assert!(shown.contains("This machine is not Serving"), "{shown}");
+    assert!(shown.contains("This machine is not serving"), "{shown}");
     assert!(
-        shown.contains("accept the Servers paired with it"),
+        shown.contains("accept the servers paired with it"),
         "{shown}"
     );
-    assert!(shown.contains("Space turn Serving on"), "{shown}");
+    assert!(shown.contains("Space turn serving on"), "{shown}");
 
     let ApplicationTransition::MutateSetting { mutation, .. } =
         press(&mut application, KeyCode::Char(' '))
@@ -242,8 +242,8 @@ fn with_no_relay_it_says_so_and_one_can_be_added_over_it() {
     on_the_option(&mut application, false);
 
     let shown = prose(&application);
-    assert!(shown.contains("An Invite has no way to offer"), "{shown}");
-    assert!(shown.contains("a add a Relay"), "{shown}");
+    assert!(shown.contains("An invite has no way to offer"), "{shown}");
+    assert!(shown.contains("a add a relay"), "{shown}");
     press(&mut application, KeyCode::Char('a'));
     assert!(prose(&application).contains("Relay address"));
     press(&mut application, KeyCode::Esc);
@@ -382,7 +382,7 @@ fn accepting_refuses_a_name_taken_and_says_what_the_server_refused() {
         press(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue
     );
-    assert!(prose(&application).contains("A Remote named `laptop` already exists"));
+    assert!(prose(&application).contains("A remote named `laptop` already exists"));
 
     type_terminal_text(&mut application, "2");
     assert!(matches!(
@@ -437,8 +437,8 @@ fn it_says_why_an_accepted_offer_has_not_formed_in_words_of_its_own() {
     let mut application = Application::default();
     connect(&mut application, Vec::new());
     for (held_up, said) in [
-        (OfferHeldUp::ServingOff, "laptop is not Serving"),
-        (OfferHeldUp::NoWay, "laptop Serves, and has no way to offer"),
+        (OfferHeldUp::ServingOff, "laptop is not serving"),
+        (OfferHeldUp::NoWay, "laptop serves, and has no way to offer"),
         (
             OfferHeldUp::RedemptionFailed {
                 why: RedemptionFailure::NotReached,
@@ -664,7 +664,7 @@ fn the_row_says_why_it_cannot_be_offered_with_the_keys_elsewhere() {
     serving(&mut application, false, ListenerState::Off);
     configure_remote(&mut application, false);
     assert!(
-        prose(&application).contains("[-] Also let studio reach this machine · not Serving"),
+        prose(&application).contains("[-] Also let studio reach this machine · not serving"),
         "{}",
         prose(&application)
     );
@@ -768,7 +768,7 @@ fn accepting_and_declining_are_commands_of_their_own() {
     assert_eq!(
         invoke(&mut application, SemanticCommandId::ConnectRemoveRemote),
         ApplicationTransition::Continue,
-        "removing a Remote declines no offer, however often asked"
+        "removing a remote declines no offer, however often asked"
     );
     assert_eq!(
         invoke(&mut application, SemanticCommandId::OutlookSelect),

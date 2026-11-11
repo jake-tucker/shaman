@@ -45,7 +45,7 @@ fn attached(workspace: &std::path::Path, snapshot: SessionSnapshot) -> Applicati
     let mut application = connected_application(workspace);
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach the Monitoring Session");
+        .expect("attach the monitoring session");
     application
 }
 
@@ -78,11 +78,11 @@ fn the_monitoring_line_names_its_one_watch_by_its_description() {
     let screen = drawn(&application);
     assert!(
         screen.contains("Monitoring cargo test (0s • Esc to stop)"),
-        "the line names the Watch it waits on and offers to stop it: {screen}"
+        "the line names the watch it waits on and offers to stop it: {screen}"
     );
     assert!(
         !screen.contains("Working") && !screen.contains("to interrupt"),
-        "a Session that is only Monitoring is not Working, and stopping it interrupts no Turn: \
+        "a session that is only monitoring is not working, and stopping it interrupts no turn: \
          {screen}"
     );
 }
@@ -101,8 +101,8 @@ fn the_monitoring_line_counts_several_watches_to_stay_one_line() {
 
     let screen = drawn(&application);
     assert!(
-        screen.contains("Monitoring 3 Watches (0s • Esc to stop)"),
-        "several Watches are counted rather than named: {screen}"
+        screen.contains("Monitoring 3 watches (0s • Esc to stop)"),
+        "several watches are counted rather than named: {screen}"
     );
     assert!(!screen.contains("cargo test"), "{screen}");
 }
@@ -119,10 +119,10 @@ fn the_monitoring_line_counts_its_elapsed_time_from_when_monitoring_began() {
     let line = screen
         .lines()
         .find(|row| row.contains("Monitoring cargo test"))
-        .unwrap_or_else(|| panic!("the Monitoring line is drawn: {screen}"));
+        .unwrap_or_else(|| panic!("the monitoring line is drawn: {screen}"));
     assert!(
         line.contains("(1m ") && line.contains("s • Esc to stop)"),
-        "Monitoring counts from monitoring_since, not from the Turn before it: {line}"
+        "Monitoring counts from monitoring_since, not from the turn before it: {line}"
     );
 }
 
@@ -156,12 +156,12 @@ fn the_monitoring_line_shimmers_only_its_label() {
     assert_ne!(
         styles_of(&after, label, "Monitoring".len()),
         label_before,
-        "the Monitoring label advances its shimmer"
+        "the monitoring label advances its shimmer"
     );
     assert_eq!(
         styles_of(&after, description, "cargo test".len()),
         description_before,
-        "the Watch's description stays still and readable"
+        "the watch's description stays still and readable"
     );
     assert_eq!(
         styles_of(&after, metadata, "Esc to stop".len()),
@@ -196,13 +196,13 @@ fn escape_arms_and_then_requests_stopping_the_watches() {
     );
 
     let ApplicationTransition::InterruptSession { session } = press_escape(&mut application) else {
-        panic!("the second Escape asks the Server to interrupt the Session");
+        panic!("the second Escape asks the server to interrupt the session");
     };
     assert_eq!(session.session_id, session_id);
     let requested = drawn(&application);
     assert!(
         requested.contains("Monitoring cargo test (") && requested.contains("s • stopping…)"),
-        "a confirmed stop says it is under way until the Watches settle: {requested}"
+        "a confirmed stop says it is under way until the watches settle: {requested}"
     );
     assert!(!requested.contains("Esc"), "{requested}");
 
@@ -221,16 +221,16 @@ fn escape_arms_and_then_requests_stopping_the_watches() {
                 ],
             },
         )))
-        .expect("the Watches settle over the Session stream");
+        .expect("the watches settle over the session stream");
     let idle = drawn(&application);
     assert!(
         !idle.contains("Monitoring") && !idle.contains("stopping"),
-        "the Session goes idle once its Watches settle: {idle}"
+        "the session goes idle once its watches settle: {idle}"
     );
     assert_eq!(
         press_escape(&mut application),
         ApplicationTransition::Continue,
-        "an idle Session has nothing left to stop"
+        "an idle session has nothing left to stop"
     );
     assert!(!drawn(&application).contains("again to stop"));
 }
@@ -251,7 +251,7 @@ fn a_watch_stop_that_fails_offers_the_gesture_again() {
                 suru::protocol::Outlook::Local,
                 session_id,
             )),
-            error: "Provider Watch stop failed".to_owned(),
+            error: "Provider watch stop failed".to_owned(),
         })
         .expect("report the refused stop");
     let screen = drawn(&application);
@@ -275,8 +275,8 @@ fn escape_in_a_monitoring_subagents_session_stops_its_watches_before_it_leaves()
 
     let monitoring = drawn(&application);
     assert!(
-        monitoring.contains("s • Esc to stop)") && monitoring.contains("Esc stops its Watches"),
-        "a Subagent's Session that is only Monitoring offers the stop: {monitoring}"
+        monitoring.contains("s • Esc to stop)") && monitoring.contains("Esc stops its watches"),
+        "a subagent's session that is only monitoring offers the stop: {monitoring}"
     );
     assert!(
         !monitoring.contains("Esc returns to the parent"),
@@ -290,11 +290,11 @@ fn escape_in_a_monitoring_subagents_session_stops_its_watches_before_it_leaves()
     );
     assert!(drawn(&application).contains("s • Esc again to stop)"));
     let ApplicationTransition::InterruptSession { session } = press_escape(&mut application) else {
-        panic!("the second Escape asks the Server to interrupt the Subagent's Session");
+        panic!("the second Escape asks the server to interrupt the subagent's session");
     };
     assert_eq!(
         session.session_id, session_id,
-        "the interrupt names the Subagent's own Session, not its parent"
+        "the interrupt names the subagent's own session, not its parent"
     );
     assert!(drawn(&application).contains("s • stopping…)"));
 
@@ -313,7 +313,7 @@ fn escape_in_a_monitoring_subagents_session_stops_its_watches_before_it_leaves()
                 ],
             },
         )))
-        .expect("the Watches settle over the Session stream");
+        .expect("the watches settle over the session stream");
     assert!(drawn(&application).contains("Esc returns to the parent"));
     assert!(
         matches!(

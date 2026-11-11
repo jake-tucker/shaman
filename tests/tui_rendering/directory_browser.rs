@@ -62,7 +62,7 @@ fn the_browse_command_opens_the_browser_rooted_at_the_execution_directory() {
     assert_eq!(
         outlook,
         Outlook::Local,
-        "the Outlook's Server is asked for its directories"
+        "the outlook's server is asked for its directories"
     );
     assert_eq!(
         request,
@@ -70,7 +70,7 @@ fn the_browse_command_opens_the_browser_rooted_at_the_execution_directory() {
             path: here.clone(),
             base: Some(here.clone()),
         },
-        "the root is the Landing's Execution Directory, and a path is read from it"
+        "the root is the landing's execution directory, and a path is read from it"
     );
     assert_eq!(
         path_field(&application),
@@ -111,7 +111,7 @@ fn pressing_the_landing_s_subdirectory_opens_the_browser_rooted_there() {
     assert_eq!(
         outlook,
         Outlook::Local,
-        "the Outlook's Server is asked for its directories"
+        "the outlook's server is asked for its directories"
     );
     assert_eq!(
         request,
@@ -119,7 +119,7 @@ fn pressing_the_landing_s_subdirectory_opens_the_browser_rooted_there() {
             path: source.clone(),
             base: Some(source.clone()),
         },
-        "the root is the subdirectory the Landing named"
+        "the root is the subdirectory the landing named"
     );
     assert_eq!(path_field(&application), spelled(&source));
     assert_eq!(tree(&application), ["› ▾ src", "    Loading…"]);
@@ -163,7 +163,7 @@ fn choosing_from_the_browser_the_landing_s_subdirectory_opened_lands_there() {
             "feature/browse (worktree) · {}",
             Path::new("src").join("lib").display()
         )),
-        "the Landing works in the directory chosen: {location}"
+        "the landing works in the directory chosen: {location}"
     );
     assert_eq!(next_session_directory(&mut application), library);
 }
@@ -183,19 +183,19 @@ fn escape_closes_the_browser_the_landing_s_subdirectory_opened_outright() {
     assert_eq!(
         key(&mut application, KeyCode::Esc),
         ApplicationTransition::Continue,
-        "backing out of the browser asks the Server for nothing"
+        "backing out of the browser asks the server for nothing"
     );
 
     let screen = rendered_application_rows_at(&application, WIDTH, HEIGHT).join("\n");
     assert!(!screen.contains("Path:"), "the browser is gone: {screen}");
     assert!(
         !screen.contains(" Workspaces "),
-        "and no Workspace Picker stands in its place: {screen}"
+        "and no workspace picker stands in its place: {screen}"
     );
     assert_eq!(
         landing_location(&application),
         location,
-        "the Landing is as it was"
+        "the landing is as it was"
     );
 }
 
@@ -210,7 +210,7 @@ fn the_root_s_children_are_listed_beneath_it_as_the_server_answers() {
     assert_eq!(
         tree(&application),
         ["› ▾ here · [current]", "    ▸ alpha", "    ▸ beta"],
-        "only what the Server listed stands beneath the root, indented"
+        "only what the server listed stands beneath the root, indented"
     );
 }
 
@@ -224,7 +224,7 @@ fn a_directory_s_children_are_asked_for_only_when_it_is_opened() {
     assert_eq!(
         key(&mut application, KeyCode::Down),
         ApplicationTransition::Continue,
-        "walking onto a row asks nothing of the Server"
+        "walking onto a row asks nothing of the server"
     );
     let (outlook, listing_id, request) = expect_listing(key(&mut application, KeyCode::Char(' ')));
 
@@ -235,7 +235,7 @@ fn a_directory_s_children_are_asked_for_only_when_it_is_opened() {
             path: here.join("alpha"),
             base: Some(here.clone()),
         },
-        "opening a row asks for that directory, read from the Execution Directory"
+        "opening a row asks for that directory, read from the execution directory"
     );
     assert_eq!(
         tree(&application),
@@ -245,7 +245,7 @@ fn a_directory_s_children_are_asked_for_only_when_it_is_opened() {
             "      Loading…",
             "    ▸ beta"
         ],
-        "the row opened says it is being read until the Server answers"
+        "the row opened says it is being read until the server answers"
     );
 
     answer(
@@ -285,7 +285,7 @@ fn right_opens_the_focused_row_and_steps_onto_its_first_child_once_listed() {
             "      Loading…",
             "    ▸ beta"
         ],
-        "focus waits on the row while the Server reads it"
+        "focus waits on the row while the server reads it"
     );
 
     answer(
@@ -620,7 +620,7 @@ fn left_on_the_root_re_roots_the_tree_at_its_parent_and_focuses_it() {
             path: parent.clone(),
             base: Some(here.clone()),
         },
-        "the parent's children are asked for by the Server's own path for it"
+        "the parent's children are asked for by the server's own path for it"
     );
     assert_eq!(
         path_field(&application),
@@ -659,7 +659,7 @@ fn left_on_a_root_without_a_parent_moves_nothing() {
     assert_eq!(
         key(&mut application, KeyCode::Left),
         ApplicationTransition::Continue,
-        "nothing is asked of the Server"
+        "nothing is asked of the server"
     );
     assert_eq!(path_field(&application), field);
     assert_eq!(tree(&application), rows);
@@ -768,7 +768,7 @@ fn a_directory_two_open_branches_both_list_is_a_row_beneath_each() {
     assert_eq!(
         request.path,
         shared.join("inner"),
-        "the Server is asked for the directory by its own path"
+        "the server is asked for the directory by its own path"
     );
     answer(
         &mut application,
@@ -893,7 +893,7 @@ fn hidden_directories_are_left_out_until_alt_h_shows_them_in_place() {
     assert_eq!(
         show_or_hide_hidden(&mut application),
         ApplicationTransition::Continue,
-        "showing hidden directories asks the Server for nothing"
+        "showing hidden directories asks the server for nothing"
     );
     assert_eq!(
         tree(&application),
@@ -904,7 +904,7 @@ fn hidden_directories_are_left_out_until_alt_h_shows_them_in_place() {
             "    ▸ marked",
             "    ▸ zeta"
         ],
-        "each stands in its place among the others, as the Server ordered them"
+        "each stands in its place among the others, as the server ordered them"
     );
 
     assert_eq!(
@@ -987,7 +987,7 @@ fn a_hidden_directory_the_tail_begins_is_left_out_until_alt_h_shows_it() {
     assert_eq!(
         show_or_hide_hidden(&mut application),
         ApplicationTransition::Continue,
-        "showing hidden directories asks the Server for nothing"
+        "showing hidden directories asks the server for nothing"
     );
     assert_eq!(
         tree(&application),
@@ -1110,7 +1110,7 @@ fn escape_closes_the_browser_leaving_the_landing_as_it_was() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "an unsent draft".to_owned(),
         )))
-        .expect("type a Landing draft");
+        .expect("type a landing draft");
     // Typed, `/browse` would only add to the draft, so the chord opens it.
     let (_, listing_id, _) = browse_by_chord(&mut application);
     answer(&mut application, listing_id, &here, &["alpha"]);
@@ -1118,7 +1118,7 @@ fn escape_closes_the_browser_leaving_the_landing_as_it_was() {
     assert_eq!(
         key(&mut application, KeyCode::Esc),
         ApplicationTransition::Continue,
-        "backing out of the browser asks the Server for nothing"
+        "backing out of the browser asks the server for nothing"
     );
 
     let landing = rendered_application_rows_at(&application, WIDTH, HEIGHT).join("\n");
@@ -1137,9 +1137,9 @@ fn an_unreachable_remote_refuses_to_open_the_browser() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceBrowse,
             )))
-            .expect("refuse the browser bound for the Remote"),
+            .expect("refuse the browser bound for the remote"),
         ApplicationTransition::Continue,
-        "nothing is asked of a Remote that is not answering"
+        "nothing is asked of a remote that is not answering"
     );
 
     let screen = rendered_application_rows_at(&application, WIDTH, HEIGHT).join("\n");
@@ -1159,13 +1159,13 @@ fn the_browser_lists_the_directories_of_the_server_the_outlook_is_turned_toward(
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceBrowse,
             )))
-            .expect("open the browser toward the Remote"),
+            .expect("open the browser toward the remote"),
     );
 
     assert_eq!(
         outlook,
         Outlook::Remote("studio".to_owned()),
-        "a Remote's directories are read on the Remote, never on this Client"
+        "a remote's directories are read on the remote, never on this client"
     );
 }
 
@@ -1266,12 +1266,12 @@ fn enter_chooses_the_focused_directory_and_lands_there_once_the_server_answers()
     assert_eq!(
         outlook,
         Outlook::Local,
-        "the Outlook's Server is asked where the directory chosen stands"
+        "the outlook's server is asked where the directory chosen stands"
     );
     assert_eq!(
         surface,
         WorkspaceResolutionSurface::WorkspacePicker,
-        "and its answer is taken as the Workspace Picker's choice is"
+        "and its answer is taken as the workspace picker's choice is"
     );
     assert_eq!(
         request,
@@ -1282,8 +1282,8 @@ fn enter_chooses_the_focused_directory_and_lands_there_once_the_server_answers()
             base: Some(here.clone()),
             path: alpha.clone(),
         },
-        "the directory chosen goes by the Server's own path, read from the Landing's \
-         Execution Directory"
+        "the directory chosen goes by the server's own path, read from the landing's \
+         execution directory"
     );
     let landing = rendered_application_rows_at(&application, WIDTH, HEIGHT).join("\n");
     assert!(
@@ -1292,11 +1292,11 @@ fn enter_chooses_the_focused_directory_and_lands_there_once_the_server_answers()
     );
     assert!(
         landing.contains("Type a prompt"),
-        "the Landing stands in its place: {landing}"
+        "the landing stands in its place: {landing}"
     );
     assert!(
         landing_location(&application).ends_with(&format!("alpha · {SPINNER}")),
-        "naming the directory chosen while its Server answers: {landing}"
+        "naming the directory chosen while its server answers: {landing}"
     );
 
     resolve(
@@ -1308,12 +1308,12 @@ fn enter_chooses_the_focused_directory_and_lands_there_once_the_server_answers()
     let location = landing_location(&application);
     assert!(
         location.ends_with("alpha") && !location.contains(SPINNER),
-        "the Landing stands in the directory's Workspace: {location}"
+        "the landing stands in the directory's workspace: {location}"
     );
     assert_eq!(
         next_session_directory(&mut application),
         alpha,
-        "and the next Session begins in the directory chosen"
+        "and the next session begins in the directory chosen"
     );
 }
 
@@ -1347,7 +1347,7 @@ fn choosing_a_subdirectory_inside_a_worktree_makes_it_the_execution_directory() 
             "{} · feature/browse (worktree) · src",
             main.display()
         )),
-        "the Landing works in the subdirectory of the Worktree: {location}"
+        "the landing works in the subdirectory of the worktree: {location}"
     );
     assert_eq!(next_session_directory(&mut application), source);
 }
@@ -1372,14 +1372,14 @@ fn choosing_a_bare_repository_root_lands_with_the_worktree_choice_still_owed() {
 
     let location = landing_location(&application);
     assert!(
-        location.ends_with("store.git · Choose a working copy to start a Session"),
+        location.ends_with("store.git · Choose a working copy to start a session"),
         "{location}"
     );
     type_terminal_text(&mut application, "Keep this draft");
     assert_eq!(
         key(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "no Session begins until a working copy is chosen"
+        "no session begins until a working copy is chosen"
     );
     let landing = rendered_application_rows_at(&application, WIDTH, HEIGHT).join("\n");
     assert!(landing.contains("Keep this draft"), "{landing}");
@@ -1405,13 +1405,13 @@ fn a_refused_choice_is_said_on_the_landing_and_leaves_the_workspace_as_it_was() 
             Err("Permission denied".to_owned())
         ),
         ApplicationTransition::Continue,
-        "a refused choice asks nothing more of the Server"
+        "a refused choice asks nothing more of the server"
     );
 
     let landing = rendered_application_rows_at(&application, WIDTH, HEIGHT).join("\n");
     assert!(
-        landing.contains("Could not open the alpha Workspace: Permission denied"),
-        "the refusal stands on the Landing the reader is on: {landing}"
+        landing.contains("Could not open the alpha workspace: Permission denied"),
+        "the refusal stands on the landing the reader is on: {landing}"
     );
     assert!(
         !landing.contains("Path:"),
@@ -1420,7 +1420,7 @@ fn a_refused_choice_is_said_on_the_landing_and_leaves_the_workspace_as_it_was() 
     assert!(landing.contains("Keep this draft"), "{landing}");
     assert!(
         landing_location(&application).ends_with("here"),
-        "the Landing names the Workspace the client still works in: {landing}"
+        "the landing names the workspace the client still works in: {landing}"
     );
     assert_eq!(next_session_directory(&mut application), here);
 }
@@ -1455,7 +1455,7 @@ fn a_late_answer_for_a_choice_let_go_of_moves_nothing() {
     assert_eq!(
         rendered_application_rows_at(&application, WIDTH, HEIGHT),
         before,
-        "the fresh Landing stands exactly as it was"
+        "the fresh landing stands exactly as it was"
     );
     assert_eq!(next_session_directory(&mut application), here);
 }
@@ -1488,7 +1488,7 @@ fn a_newer_choice_supersedes_a_directory_still_resolving() {
     );
     assert!(
         landing_location(&application).ends_with(&format!("beta · {SPINNER}")),
-        "the superseded answer does not pull the Landing back to the earlier choice"
+        "the superseded answer does not pull the landing back to the earlier choice"
     );
 
     resolve(
@@ -1514,7 +1514,7 @@ fn choosing_is_refused_while_the_remote_has_stopped_answering() {
     assert_eq!(
         key(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "nothing is asked of a Remote that is not answering"
+        "nothing is asked of a remote that is not answering"
     );
 
     let screen = rendered_application_rows_at(&application, WIDTH, HEIGHT);
@@ -1522,19 +1522,19 @@ fn choosing_is_refused_while_the_remote_has_stopped_answering() {
     assert_eq!(
         inside_box(&screen[field + 1]).trim_end(),
         "Error: studio is unreachable; this waits until it answers",
-        "the refusal is said inside the browser, which stands over the Landing: {screen:#?}"
+        "the refusal is said inside the browser, which stands over the landing: {screen:#?}"
     );
     assert_eq!(
         focused(&application),
         "alpha",
-        "the browser stays open where the reader was, to choose again once the Remote answers"
+        "the browser stays open where the reader was, to choose again once the remote answers"
     );
 
     key(&mut application, KeyCode::Esc);
     let landing = rendered_application_rows_at(&application, WIDTH, HEIGHT).join("\n");
     assert!(
         landing.contains("studio is unreachable; this waits until it answers"),
-        "the Landing goes on saying it once the browser closes: {landing}"
+        "the landing goes on saying it once the browser closes: {landing}"
     );
 }
 
@@ -1551,13 +1551,13 @@ fn choosing_waits_while_an_agent_selection_change_is_unsettled() {
         .handle_event(ApplicationEvent::SessionAttached(
             selected_session_snapshot(SessionId::new(), &here, reasoning_selection("low")),
         ))
-        .expect("attach a Session with an Agent Selection");
+        .expect("attach a session with an agent selection");
     warm_model_catalog(&mut application);
     let ApplicationTransition::UpdateAgentSelection {
         request: change, ..
     } = chord(&mut application, KeyCode::Char('t'), KeyModifiers::CONTROL)
     else {
-        panic!("cycling reasoning asks the Server to change the Agent Selection");
+        panic!("cycling reasoning asks the server to change the agent selection");
     };
     assert_eq!(change.selection, reasoning_selection("high"));
     let (_, listing_id, _) = browse_by_chord(&mut application);
@@ -1598,7 +1598,7 @@ fn choosing_waits_while_an_agent_selection_change_is_unsettled() {
     let landing = rendered_application_rows_at(&application, WIDTH, HEIGHT).join("\n");
     assert!(
         landing.contains("Reasoning GPT · Low") && !landing.contains("Reasoning GPT · High"),
-        "the Landing begins from the selection that stands, not the rejected one: {landing}"
+        "the landing begins from the selection that stands, not the rejected one: {landing}"
     );
 }
 
@@ -1636,11 +1636,11 @@ fn choosing_leaves_the_open_session_working_and_the_sidebar_its_scope() {
     let frame = rows.join("\n");
     assert!(
         frame.contains("Type a prompt"),
-        "the Landing stands where the Session was: {frame}"
+        "the landing stands where the session was: {frame}"
     );
     assert!(
         drawn_in_sidebar(&rows, "Long-running work"),
-        "the Session left is still listed: {frame}"
+        "the session left is still listed: {frame}"
     );
     assert!(
         rows.iter()
@@ -1650,7 +1650,7 @@ fn choosing_leaves_the_open_session_working_and_the_sidebar_its_scope() {
     assert_eq!(
         selector_label(&rows),
         scope,
-        "the Sidebar answers for the scope it did: {frame}"
+        "the sidebar answers for the scope it did: {frame}"
     );
 }
 
@@ -1711,7 +1711,7 @@ fn a_root_at_a_detached_commit_shows_the_commit_as_a_sidebar_row_draws_it() {
             "    ▸ detached · [repository] · 0123456",
             "    ▸ linked · [repository] · 0123456",
         ],
-        "a detached head names its commit, short, wherever its Worktree is"
+        "a detached head names its commit, short, wherever its worktree is"
     );
     assert_eq!(
         tree_drawn(&here, Icons::Shown, Vec::new(), &children)[1..],
@@ -1743,7 +1743,7 @@ fn a_root_whose_checkout_state_the_server_could_not_read_is_marked_unavailable()
             format!("    ▸ {REPOSITORY} linked · [unavailable]"),
             format!("    ▸ {REPOSITORY} main · [unavailable]"),
         ],
-        "the marker is words alike either way, as a Sidebar row draws it"
+        "the marker is words alike either way, as a sidebar row draws it"
     );
 }
 
@@ -1819,12 +1819,12 @@ fn a_workspace_the_workspace_picker_listed_wears_its_icon_while_the_sidebar_is_h
     let transition = deliver_settings(&mut application, settings);
     assert!(
         !matches!(transition, ApplicationTransition::ListSessions(_)),
-        "a hidden Sidebar asks for no Sessions: {transition:?}"
+        "a hidden sidebar asks for no sessions: {transition:?}"
     );
     let ApplicationTransition::ListWorkspaces(request) =
         invoke(&mut application, SemanticCommandId::WorkspaceList)
     else {
-        panic!("the Workspace Picker asks its Server for its Workspaces");
+        panic!("the workspace picker asks its server for its workspaces");
     };
     application
         .handle_event(ApplicationEvent::WorkspacesListed {
@@ -1834,7 +1834,7 @@ fn a_workspace_the_workspace_picker_listed_wears_its_icon_while_the_sidebar_is_h
                 workspace_with_icon(&here.join("iconed"), Some("dev-rust")),
             ]),
         })
-        .expect("list the Workspace Picker's Workspaces");
+        .expect("list the workspace picker's workspaces");
     let children = [
         ("iconed", repository_root(branch("main"))),
         ("plain", DirectorySourceControl::Plain),
@@ -1881,7 +1881,7 @@ fn a_workspace_the_workspace_picker_listed_wears_its_icon_while_the_sidebar_is_h
             format!("    ▸ {REPOSITORY} iconed · {BRANCH} main"),
             format!("    ▸ {FOLDER} plain"),
         ],
-        "the same directory on another Server is no Workspace this client knows there"
+        "the same directory on another server is no workspace this client knows there"
     );
     assert!(
         !toward_studio[0].contains(PYTHON) && !toward_studio[0].contains("[current]"),
@@ -1911,7 +1911,7 @@ fn the_current_workspace_is_marked_current_as_the_workspace_picker_marks_it() {
             "    ▸ other · [workspace] · main",
             "    ▸ plain",
         ],
-        "only the current Workspace is marked current, not every Workspace"
+        "only the current workspace is marked current, not every workspace"
     );
     assert_eq!(
         tree_drawn(&here, Icons::Shown, sessions, &children),
@@ -2099,11 +2099,11 @@ fn tree_drawn_from(
     settings.appearance.show_icons = matches!(icons, Icons::Shown);
     let ApplicationTransition::ListSessions(request) = deliver_settings(&mut application, settings)
     else {
-        panic!("a Sidebar coming into view asks for its Sessions");
+        panic!("a sidebar coming into view asks for its sessions");
     };
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("list the Sidebar's Sessions");
+        .expect("list the sidebar's sessions");
     let (_, listing_id, _) = browse(&mut application);
     answer_with(&mut application, listing_id, root, read, children);
     tree(&application)
@@ -2122,7 +2122,7 @@ fn workspace_with_icon(path: &Path, icon: Option<&str>) -> Workspace {
 fn session_in(path: &Path, icon: Option<&str>) -> SessionListItem {
     let mut session = listed_session(SessionId::new(), "Work", path, 1, 1);
     let SessionListItem::Readable(summary) = &mut session else {
-        unreachable!("a listed Session is readable")
+        unreachable!("a listed session is readable")
     };
     summary.session.workspace.icon = icon.map(str::to_owned);
     session
@@ -2164,7 +2164,7 @@ fn typing_narrows_the_root_s_children_to_those_the_tail_begins() {
 
     assert!(
         type_path(&mut application, "b").is_empty(),
-        "typing within the tail asks the Server for nothing"
+        "typing within the tail asks the server for nothing"
     );
 
     assert_eq!(path_field(&application), format!("{}b", spelled(&here)));
@@ -2277,7 +2277,7 @@ fn backspace_deletes_the_last_character_walking_the_root_up_a_directory() {
 
     assert!(
         type_path(&mut application, &format!("e{SEPARATOR}")).is_empty(),
-        "the Execution Directory has been read already"
+        "the execution directory has been read already"
     );
     assert_eq!(tree(&application), ["› ▾ here · [current]", "    ▸ alpha"]);
 }
@@ -2403,7 +2403,7 @@ fn a_relative_path_is_read_from_the_execution_directory_and_the_server_s_root_is
     assert_eq!(
         tree(&application),
         ["› ▾ nowhere", "    ▸ here · [current]", "    ▸ there"],
-        "the root is the directory the Server read the path as"
+        "the root is the directory the server read the path as"
     );
     assert!(
         type_path(&mut application, MAIN_SEPARATOR_STR).is_empty(),
@@ -2469,7 +2469,7 @@ fn a_tilde_is_read_from_the_server_s_home() {
             path: PathBuf::from("~"),
             base: Some(here.clone()),
         },
-        "the Server reads `~` itself"
+        "the server reads `~` itself"
     );
     assert_eq!(beneath_path_field(&application), ["Loading…"]);
     assert_eq!(tree(&application), ["› ▾ here · [current]", "    ▸ alpha"]);
@@ -2499,7 +2499,7 @@ fn a_home_the_server_cannot_read_leaves_the_last_good_root_standing() {
         refuse(
             &mut application,
             *listing_id,
-            "The Server's home is unknown"
+            "The server's home is unknown"
         ),
         ApplicationTransition::Continue,
         "nothing shorter than `~` is asked for"
@@ -2507,7 +2507,7 @@ fn a_home_the_server_cannot_read_leaves_the_last_good_root_standing() {
 
     assert_eq!(
         beneath_path_field(&application),
-        ["Error: The Server's home is unknown"]
+        ["Error: The server's home is unknown"]
     );
     assert_eq!(tree(&application), ["› ▾ here · [current]", "    ▸ alpha"]);
 }
@@ -2642,7 +2642,7 @@ fn a_directory_already_listed_is_not_asked_for_again_when_the_field_reaches_it()
     assert_eq!(
         paste(&mut application, &spelled(&sibling)),
         ApplicationTransition::Continue,
-        "the Server's own path for a root it read by another spelling asks nothing"
+        "the server's own path for a root it read by another spelling asks nothing"
     );
     assert_eq!(tree(&application), ["› ▾ sibling", "    ▸ leaf"]);
 }
@@ -2903,7 +2903,7 @@ fn a_double_press_on_a_row_chooses_it_as_enter_does() {
     assert_eq!(
         rendered_application_rows_at(&pointed, WIDTH, HEIGHT),
         rendered_application_rows_at(&keyed, WIDTH, HEIGHT),
-        "and the same Landing stands in the browser's place"
+        "and the same landing stands in the browser's place"
     );
 }
 
@@ -3056,7 +3056,7 @@ fn a_listing_answered_after_a_double_press_chose_its_row_moves_nothing() {
     assert_eq!(
         rendered_application_rows_at(&application, WIDTH, HEIGHT),
         landing,
-        "no browser is drawn again, and the Landing stands as it was"
+        "no browser is drawn again, and the landing stands as it was"
     );
 }
 
@@ -3150,7 +3150,7 @@ fn the_wheel_scrolls_the_tree_without_moving_focus() {
     assert_eq!(
         wheel_on(&mut application, "dir05", MouseEventKind::ScrollDown),
         ApplicationTransition::Continue,
-        "the wheel asks nothing of the Server"
+        "the wheel asks nothing of the server"
     );
 
     let wheeled = tree(&application);
@@ -3242,7 +3242,7 @@ fn a_press_outside_the_browser_closes_it_as_escape_does() {
     assert_eq!(
         landing,
         rendered_application_rows_at(&keyed, WIDTH, HEIGHT),
-        "leaving the Landing as Esc leaves it"
+        "leaving the landing as Esc leaves it"
     );
 }
 
@@ -3310,7 +3310,7 @@ fn a_press_lands_on_the_row_drawn_under_it_beside_a_sidebar() {
     );
     assert!(
         column > column_alone,
-        "the Sidebar moves the browser right, from {column_alone} to {column}"
+        "the sidebar moves the browser right, from {column_alone} to {column}"
     );
     let screen = rendered_application_rows_at(&application, WIDTH, HEIGHT);
     let right_edge = screen[usize::from(line)]
@@ -3468,7 +3468,7 @@ fn the_wheel_outside_the_browser_moves_what_it_is_over_and_not_the_tree() {
     let wheeled = drawn_titles(&application);
     assert!(
         !wheeled.contains(&listed[0]),
-        "the wheel over the Sidebar moves its list: {listed:?} became {wheeled:?}"
+        "the wheel over the sidebar moves its list: {listed:?} became {wheeled:?}"
     );
     assert_eq!(tree(&application), tree_before, "and never the tree");
 }
@@ -3572,7 +3572,7 @@ fn a_double_press_waits_while_an_agent_selection_change_is_unsettled_as_enter_do
             .handle_event(ApplicationEvent::SessionAttached(
                 selected_session_snapshot(SessionId::new(), &here, reasoning_selection("low")),
             ))
-            .expect("attach a Session with an Agent Selection");
+            .expect("attach a session with an agent selection");
         warm_model_catalog(&mut application);
         chord(&mut application, KeyCode::Char('t'), KeyModifiers::CONTROL);
         let (_, listing_id, _) = browse_by_chord(&mut application);
@@ -3696,7 +3696,7 @@ fn left_on_a_drive_root_reaches_the_drive_list_with_the_path_field_empty() {
             path: PathBuf::from(DRIVE_LIST),
             base: Some(PathBuf::from(r"C:\")),
         },
-        "the drive list is asked for by the path the Server named the drive's parent"
+        "the drive list is asked for by the path the server named the drive's parent"
     );
     assert_eq!(path_field(&application), "", "the drive list is no path");
     assert_eq!(tree(&application), ["› ▾ Drives", "    Loading…"]);
@@ -3726,7 +3726,7 @@ fn left_on_the_drive_list_moves_nothing() {
     assert_eq!(
         key(&mut application, KeyCode::Left),
         ApplicationTransition::Continue,
-        "nothing is asked of the Server"
+        "nothing is asked of the server"
     );
     assert_eq!(path_field(&application), "");
     assert_eq!(tree(&application), rows);
@@ -3742,7 +3742,7 @@ fn enter_on_the_drive_list_chooses_nothing() {
     assert_eq!(
         key(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "no Workspace resolution is asked for"
+        "no workspace resolution is asked for"
     );
     assert_eq!(path_field(&application), "");
     assert_eq!(tree(&application), rows, "the browser stays open");
@@ -3895,7 +3895,7 @@ fn before_the_drive_list_is_reached_an_empty_path_field_names_the_execution_dire
         assert_eq!(
             key(&mut application, KeyCode::Backspace),
             ApplicationTransition::Continue,
-            "{remaining:?}: nothing is asked of the Server"
+            "{remaining:?}: nothing is asked of the server"
         );
         assert_eq!(path_field(&application), remaining);
     }
@@ -3903,7 +3903,7 @@ fn before_the_drive_list_is_reached_an_empty_path_field_names_the_execution_dire
     assert_eq!(
         tree(&application),
         ["› ▾ me · [current]", "    ▸ src"],
-        "the tree stands on the Execution Directory, not the drive list"
+        "the tree stands on the execution directory, not the drive list"
     );
 }
 
@@ -4115,7 +4115,7 @@ fn browsing_on_windows(directory: &str, parent: Option<&str>, children: &[&str])
                 checkout_states: Vec::new(),
             }),
         })
-        .expect("the Remote says its paths are Windows'");
+        .expect("the remote says its paths are Windows'");
     expect_listing(invoke(&mut application, SemanticCommandId::WorkspaceBrowse));
     let choice = key(&mut application, KeyCode::Enter);
     resolve(
@@ -4237,7 +4237,7 @@ fn landing_resolved_to(launched: &Path, resolved: ResolvedWorkspace) -> Applicat
             request_id,
             result: Ok(resolved),
         })
-        .expect("resolve the Landing where the client launched");
+        .expect("resolve the landing where the client launched");
     application
 }
 
@@ -4251,12 +4251,12 @@ fn expect_choice(
 ) -> (Outlook, WorkspaceResolutionSurface, ResolveWorkspaceRequest) {
     let ApplicationTransition::DetachSessionAndResolveWorkspace { .. } = transition else {
         panic!(
-            "choosing opens the Landing, letting go of whatever the client was on, and asks \
-             the Server to resolve the directory chosen, not {transition:?}"
+            "choosing opens the landing, letting go of whatever the client was on, and asks \
+             the server to resolve the directory chosen, not {transition:?}"
         );
     };
     let (outlook, surface, _, request) =
-        workspace_resolution(transition).expect("choosing asks for a Workspace resolution");
+        workspace_resolution(transition).expect("choosing asks for a workspace resolution");
     (outlook, surface, request)
 }
 
@@ -4267,7 +4267,7 @@ fn resolve(
     result: Result<ResolvedWorkspace, String>,
 ) -> ApplicationTransition {
     let (outlook, surface, request_id, _) =
-        workspace_resolution(choice).expect("choosing asks for a Workspace resolution");
+        workspace_resolution(choice).expect("choosing asks for a workspace resolution");
     application
         .handle_event(ApplicationEvent::WorkspaceResolved {
             outlook,
@@ -4275,7 +4275,7 @@ fn resolve(
             request_id,
             result,
         })
-        .expect("deliver the Server's Workspace resolution")
+        .expect("deliver the server's workspace resolution")
 }
 
 /// Where a Prompt sent from the Landing begins its Session.
@@ -4284,12 +4284,12 @@ fn next_session_directory(application: &mut Application) -> PathBuf {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "Begin here".to_owned(),
         )))
-        .expect("write a Prompt");
+        .expect("write a prompt");
     let transition = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("send the Prompt");
+        .expect("send the prompt");
     let ApplicationTransition::CreateSession(request) = transition else {
-        panic!("a Prompt sent from the Landing begins a Session, not {transition:?}");
+        panic!("a prompt sent from the landing begins a session, not {transition:?}");
     };
     request.execution_directory.path
 }
@@ -4301,7 +4301,7 @@ fn landing_location(application: &Application) -> String {
     let composer_bottom = screen
         .iter()
         .position(|row| row.contains('└'))
-        .unwrap_or_else(|| panic!("the Landing draws its composer: {screen:#?}"));
+        .unwrap_or_else(|| panic!("the landing draws its composer: {screen:#?}"));
     screen[composer_bottom + 1].trim().to_owned()
 }
 
@@ -4411,7 +4411,7 @@ fn reasoning_selection(effort: &str) -> AgentSelection {
 fn warm_model_catalog(application: &mut Application) {
     let transition = invoke(application, SemanticCommandId::ModelList);
     let ApplicationTransition::ListModels(request) = transition else {
-        panic!("the Model picker asks for the catalog, not {transition:?}");
+        panic!("the model picker asks for the catalog, not {transition:?}");
     };
     let mut model = model_descriptor(
         "codex",
@@ -4450,7 +4450,7 @@ fn warm_model_catalog(application: &mut Application) {
                 }],
             },
         })
-        .expect("hold the Model Catalog");
+        .expect("hold the model catalog");
     key(application, KeyCode::Esc);
 }
 
@@ -4472,11 +4472,11 @@ fn show_sidebar_scoped_to_current_workspace(
         },
     );
     let ApplicationTransition::ListSessions(request) = transition else {
-        panic!("a Sidebar coming into view asks for its Sessions, not {transition:?}");
+        panic!("a sidebar coming into view asks for its sessions, not {transition:?}");
     };
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
 }
 
 /// A listed Session mid-Turn, its times read off the clock because a Sidebar
@@ -4486,7 +4486,7 @@ fn working(title: &str, session_id: SessionId, workspace: &Path) -> SessionListI
     let SessionListItem::Readable(mut summary) =
         listed_session(session_id, title, workspace, now.0, now.0)
     else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     summary.session.status = SessionStatus::Active;
     summary.session.working_since = Some(SessionTimestamp(now.0.saturating_sub(90 * 1_000)));
@@ -4541,7 +4541,7 @@ fn expect_listing(
         request,
     } = transition
     else {
-        panic!("the browser asks the Server for a directory's children, not {transition:?}");
+        panic!("the browser asks the server for a directory's children, not {transition:?}");
     };
     (outlook, listing_id, request)
 }
@@ -4634,7 +4634,7 @@ fn answer_listing(
             listing_id,
             result: Ok(listing),
         })
-        .expect("deliver the Server's listing")
+        .expect("deliver the server's listing")
 }
 
 fn refuse(
@@ -4647,7 +4647,7 @@ fn refuse(
             listing_id,
             result: Err(reason.to_owned()),
         })
-        .expect("deliver the Server's refusal")
+        .expect("deliver the server's refusal")
 }
 
 /// What the path field says, read off its line.

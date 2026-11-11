@@ -82,7 +82,7 @@ fn session_picker_orders_marks_focuses_and_wraps_live_sessions() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 suru::tui::SemanticCommandId::SessionList,
             )))
-            .expect("open Session picker"),
+            .expect("open session picker"),
         SessionListScope::CurrentWorkspace((workspace.path().to_owned()).into()),
     );
     application
@@ -112,7 +112,7 @@ fn session_picker_orders_marks_focuses_and_wraps_live_sessions() {
                 ),
             ],
         })
-        .expect("hydrate Session picker");
+        .expect("hydrate session picker");
 
     let rows = rendered_application_rows(&application);
     assert!(rendered_row(&rows, "Newest work") < rendered_row(&rows, "Current work"));
@@ -120,7 +120,7 @@ fn session_picker_orders_marks_focuses_and_wraps_live_sessions() {
     let current_row = rows
         .iter()
         .find(|row| row.contains("Current work"))
-        .expect("render current Session row");
+        .expect("render current session row");
     assert!(current_row.contains("current"));
     assert!(current_row.contains("active"));
     assert!(current_row.contains('›'));
@@ -129,7 +129,7 @@ fn session_picker_orders_marks_focuses_and_wraps_live_sessions() {
             !rows
                 .iter()
                 .find(|row| row.contains(title))
-                .expect("render Session picker row")
+                .expect("render session picker row")
                 .contains(workspace.path().to_string_lossy().as_ref())
         );
     }
@@ -141,7 +141,7 @@ fn session_picker_orders_marks_focuses_and_wraps_live_sessions() {
                 KeyCode::Down,
                 KeyModifiers::NONE,
             )))
-            .expect("wrap Session picker selection");
+            .expect("wrap session picker selection");
     }
     assert_eq!(
         application
@@ -149,7 +149,7 @@ fn session_picker_orders_marks_focuses_and_wraps_live_sessions() {
                 KeyCode::Enter,
                 KeyModifiers::NONE,
             )))
-            .expect("select wrapped Session row"),
+            .expect("select wrapped session row"),
         ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
             suru::protocol::Outlook::Local,
             newest_id,
@@ -169,14 +169,14 @@ fn session_picker_requires_confirmation_and_removes_authoritatively_deleted_sess
             session_summary(
                 selected_id,
                 workspace.path(),
-                "Delete this Session",
+                "Delete this session",
                 SessionStatus::Idle,
                 20,
             ),
             session_summary(
                 remaining_id,
                 workspace.path(),
-                "Keep this Session",
+                "Keep this session",
                 SessionStatus::Idle,
                 10,
             ),
@@ -189,12 +189,12 @@ fn session_picker_requires_confirmation_and_removes_authoritatively_deleted_sess
                 KeyCode::Char('d'),
                 KeyModifiers::CONTROL,
             )))
-            .expect("request Session deletion confirmation"),
+            .expect("request session deletion confirmation"),
         ApplicationTransition::Continue
     );
     let confirming = rendered_application_rows(&application).join("\n");
     assert!(confirming.contains("Press Ctrl+D again to confirm"));
-    assert!(confirming.contains("Keep this Session"));
+    assert!(confirming.contains("Keep this session"));
 
     assert_eq!(
         application
@@ -202,7 +202,7 @@ fn session_picker_requires_confirmation_and_removes_authoritatively_deleted_sess
                 KeyCode::Char('d'),
                 KeyModifiers::CONTROL,
             )))
-            .expect("confirm Session deletion"),
+            .expect("confirm session deletion"),
         ApplicationTransition::DeleteSession(suru::protocol::SessionReference::new(
             suru::protocol::Outlook::Local,
             selected_id,
@@ -214,11 +214,11 @@ fn session_picker_requires_confirmation_and_removes_authoritatively_deleted_sess
                 session_id: selected_id,
             },
         )))
-        .expect("apply authoritative Session deletion");
+        .expect("apply authoritative session deletion");
 
     let deleted = rendered_application_rows(&application).join("\n");
-    assert!(!deleted.contains("Delete this Session"));
-    assert!(deleted.contains("Keep this Session"));
+    assert!(!deleted.contains("Delete this session"));
+    assert!(deleted.contains("Keep this session"));
 }
 
 #[test]
@@ -233,14 +233,14 @@ fn reconnect_catalog_removes_a_missed_current_session_deletion() {
             session_summary(
                 current_id,
                 workspace.path(),
-                "Current Session",
+                "Current session",
                 SessionStatus::Active,
                 20,
             ),
             session_summary(
                 remaining_id,
                 workspace.path(),
-                "Remaining Session",
+                "Remaining session",
                 SessionStatus::Idle,
                 10,
             ),
@@ -261,15 +261,15 @@ fn reconnect_catalog_removes_a_missed_current_session_deletion() {
         ApplicationTransition::SessionEnded
     );
     let picker = rendered_application_rows(&application).join("\n");
-    assert!(!picker.contains("Current Session"));
-    assert!(picker.contains("Remaining Session"));
+    assert!(!picker.contains("Current session"));
+    assert!(picker.contains("Remaining session"));
 
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Esc,
             KeyModifiers::NONE,
         )))
-        .expect("close Session picker");
+        .expect("close session picker");
     let landing = rendered_application_rows(&application).join("\n");
     assert!(!landing.contains("Long-running work"));
     assert!(landing.contains("Session ended because it was deleted"));
@@ -285,7 +285,7 @@ fn session_picker_selection_opens_the_target_optimistically_and_keeps_the_old_dr
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "preserved draft".to_owned(),
         )))
-        .expect("type original Session draft");
+        .expect("type original session draft");
     let target_id = SessionId::new();
 
     open_session_picker_with(
@@ -294,14 +294,14 @@ fn session_picker_selection_opens_the_target_optimistically_and_keeps_the_old_dr
             session_summary(
                 original_id,
                 workspace.path(),
-                "Original Session",
+                "Original session",
                 SessionStatus::Active,
                 20,
             ),
             session_summary(
                 target_id,
                 workspace.path(),
-                "Target Session",
+                "Target session",
                 SessionStatus::Idle,
                 10,
             ),
@@ -312,7 +312,7 @@ fn session_picker_selection_opens_the_target_optimistically_and_keeps_the_old_dr
             KeyCode::Down,
             KeyModifiers::NONE,
         )))
-        .expect("focus target Session");
+        .expect("focus target session");
     assert_eq!(
         application
             .handle_terminal_event(InputEvent::Key(KeyEvent::new(
@@ -333,7 +333,7 @@ fn session_picker_selection_opens_the_target_optimistically_and_keeps_the_old_dr
         .handle_event(ApplicationEvent::SessionAttachFailed(
             "target disappeared".to_owned(),
         ))
-        .expect("refresh point-in-time Session status");
+        .expect("refresh point-in-time session status");
     let failed = rendered_application_rows(&application).join("\n");
     assert!(failed.contains("target disappeared"));
     assert!(!failed.contains("Long-running work"));
@@ -348,14 +348,14 @@ fn session_picker_selection_opens_the_target_optimistically_and_keeps_the_old_dr
             session_summary(
                 original_id,
                 workspace.path(),
-                "Original Session",
+                "Original session",
                 SessionStatus::Active,
                 30,
             ),
             session_summary(
                 target_id,
                 workspace.path(),
-                "Target Session",
+                "Target session",
                 SessionStatus::Idle,
                 20,
             ),
@@ -370,19 +370,19 @@ fn session_picker_selection_opens_the_target_optimistically_and_keeps_the_old_dr
     let target_snapshot = failed_session_snapshot(
         target_id,
         PromptId::new(),
-        "Target Session transcript",
+        "Target session transcript",
         workspace.path(),
     );
     application
         .handle_event(ApplicationEvent::SessionAttached(target_snapshot))
-        .expect("hydrate target Session");
+        .expect("hydrate target session");
     let target = rendered_application_rows(&application).join("\n");
-    assert!(target.contains("Target Session transcript"));
+    assert!(target.contains("Target session transcript"));
     assert!(!target.contains("Sessions"));
 
     application
         .handle_event(ApplicationEvent::SessionAttached(original_snapshot))
-        .expect("return to original Session");
+        .expect("return to original session");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
@@ -433,7 +433,7 @@ fn session_picker_searches_titles_and_remembers_all_workspace_scope() {
                 ),
             ],
         })
-        .expect("hydrate current-Workspace Sessions");
+        .expect("hydrate current-workspace sessions");
     type_terminal_text(&mut application, "gMg");
     let filtered = rendered_application_rows(&application).join("\n");
     assert!(filtered.contains("Gamma migration"));
@@ -445,11 +445,11 @@ fn session_picker_searches_titles_and_remembers_all_workspace_scope() {
                 KeyCode::Char('a'),
                 KeyModifiers::CONTROL,
             )))
-            .expect("toggle all Workspaces"),
+            .expect("toggle all workspaces"),
         SessionListScope::AllWorkspaces,
     );
     let loading = rendered_application_rows(&application).join("\n");
-    assert!(loading.contains("All Workspaces"));
+    assert!(loading.contains("All workspaces"));
     assert!(loading.contains("Loading"));
     application
         .handle_event(ApplicationEvent::SessionsListed {
@@ -457,15 +457,15 @@ fn session_picker_searches_titles_and_remembers_all_workspace_scope() {
             sessions: vec![session_summary(
                 SessionId::new(),
                 workspace.path(),
-                "Stale current-Workspace result",
+                "Stale current-workspace result",
                 SessionStatus::Idle,
                 40,
             )],
         })
-        .expect("ignore stale current-Workspace result");
+        .expect("ignore stale current-workspace result");
     let still_loading = rendered_application_rows(&application).join("\n");
     assert!(still_loading.contains("Loading"));
-    assert!(!still_loading.contains("Stale current-Workspace result"));
+    assert!(!still_loading.contains("Stale current-workspace result"));
     application
         .handle_event(ApplicationEvent::SessionsListed {
             request: all_request,
@@ -477,7 +477,7 @@ fn session_picker_searches_titles_and_remembers_all_workspace_scope() {
                 30,
             )],
         })
-        .expect("hydrate all-Workspace Sessions");
+        .expect("hydrate all-workspace sessions");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
@@ -489,7 +489,7 @@ fn session_picker_searches_titles_and_remembers_all_workspace_scope() {
             KeyCode::Esc,
             KeyModifiers::NONE,
         )))
-        .expect("close Session picker");
+        .expect("close session picker");
     type_terminal_text(&mut application, "/resume");
     expect_session_list_request(
         application
@@ -527,7 +527,7 @@ fn session_picker_scope_cycles_through_current_all_and_everywhere() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::SessionList,
         )))
-        .expect("open the Session picker");
+        .expect("open the session picker");
     expect_session_list_request(
         current,
         SessionListScope::CurrentWorkspace((workspace.path().to_owned()).into()),
@@ -535,7 +535,7 @@ fn session_picker_scope_cycles_through_current_all_and_everywhere() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Current Workspace")
+            .contains("Current workspace")
     );
 
     let all = application
@@ -543,12 +543,12 @@ fn session_picker_scope_cycles_through_current_all_and_everywhere() {
             KeyCode::Char('a'),
             KeyModifiers::CONTROL,
         )))
-        .expect("widen to all Workspaces");
+        .expect("widen to all workspaces");
     expect_session_list_request(all, SessionListScope::AllWorkspaces);
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("All Workspaces")
+            .contains("All workspaces")
     );
 
     let ApplicationTransition::ListEverywhereRemotes(request) = application
@@ -558,7 +558,7 @@ fn session_picker_scope_cycles_through_current_all_and_everywhere() {
         )))
         .expect("widen to Everywhere")
     else {
-        panic!("Everywhere first discovers the paired Remotes");
+        panic!("Everywhere first discovers the paired remotes");
     };
     assert_eq!(request.surface(), SessionListSurface::SessionPicker);
     assert!(
@@ -575,9 +575,9 @@ fn session_picker_scope_cycles_through_current_all_and_everywhere() {
             KeyCode::Char('a'),
             KeyModifiers::CONTROL,
         )))
-        .expect("narrow to the current Workspace")
+        .expect("narrow to the current workspace")
     else {
-        panic!("leaving Everywhere reconciles its Origin interests");
+        panic!("leaving Everywhere reconciles its origin interests");
     };
     assert!(catalog_origins.is_empty());
     assert_eq!(requests.len(), 1);
@@ -589,7 +589,7 @@ fn session_picker_scope_cycles_through_current_all_and_everywhere() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Current Workspace")
+            .contains("Current workspace")
     );
 }
 
@@ -607,7 +607,7 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::SessionList,
         )))
-        .expect("open the Session picker");
+        .expect("open the session picker");
     expect_session_list_request(
         current,
         SessionListScope::CurrentWorkspace((workspace.path().to_owned()).into()),
@@ -618,7 +618,7 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
                 KeyCode::Char('a'),
                 KeyModifiers::CONTROL,
             )))
-            .expect("widen to all Workspaces"),
+            .expect("widen to all workspaces"),
         SessionListScope::AllWorkspaces,
     );
     let ApplicationTransition::ListEverywhereRemotes(discovery) = application
@@ -628,7 +628,7 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
         )))
         .expect("widen to Everywhere")
     else {
-        panic!("Everywhere first discovers its Origins");
+        panic!("Everywhere first discovers its origins");
     };
 
     let ApplicationTransition::ReconcileCatalogOrigins {
@@ -643,9 +643,9 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
                 remote("revoked", RemoteStatus::Revoked),
             ],
         })
-        .expect("discover the picker's Origins")
+        .expect("discover the picker's origins")
     else {
-        panic!("one Session listing should be requested per participating Origin");
+        panic!("one session listing should be requested per participating origin");
     };
     assert_eq!(
         catalog_origins,
@@ -683,11 +683,11 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
                 SessionStatus::Idle,
                 10,
             )],
-            outlook => panic!("unexpected Origin: {outlook:?}"),
+            outlook => panic!("unexpected origin: {outlook:?}"),
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("merge one Origin's Session listing");
+            .expect("merge one origin's session listing");
     }
 
     let rows = rendered_application_rows_at(&application, 120, 24);
@@ -696,7 +696,7 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
     let studio_row = rows
         .iter()
         .find(|row| row.contains("X [studio]"))
-        .expect("draw the studio Session");
+        .expect("draw the studio session");
     assert_eq!(studio_row.matches("[studio]").count(), 2);
     assert!(
         studio_row.contains('›'),
@@ -705,14 +705,14 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
     assert!(
         rows.iter()
             .find(|row| row.contains("Sleeping oldest"))
-            .expect("draw the sleeping Session")
+            .expect("draw the sleeping session")
             .contains("[sleeping]")
     );
     assert!(
         !rows
             .iter()
             .find(|row| row.contains("Local middle"))
-            .expect("draw the local Session")
+            .expect("draw the local session")
             .contains("[local]")
     );
     let buffer = rendered_application_buffer(&application, 120, 24);
@@ -724,23 +724,23 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
     assert_ne!(
         buffer
             .cell((tag_columns[0], row))
-            .expect("draw the Origin-like text in the title")
+            .expect("draw the origin-like text in the title")
             .fg,
         PANDA.muted,
-        "title text that resembles an Origin tag keeps the row style"
+        "title text that resembles an origin tag keeps the row style"
     );
     assert_eq!(
         buffer
             .cell((tag_columns[1], row))
-            .expect("draw the actual Origin tag")
+            .expect("draw the actual origin tag")
             .fg,
         PANDA.muted,
-        "the foreign Origin tag is subdued independently of row focus"
+        "the foreign origin tag is subdued independently of row focus"
     );
     assert_eq!(
         buffer
             .cell((tag_columns[1], row))
-            .expect("draw the actual Origin tag")
+            .expect("draw the actual origin tag")
             .bg,
         buffer
             .cell((tag_columns[0], row))
@@ -760,7 +760,7 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
         moved
             .iter()
             .find(|row| row.contains("Local middle"))
-            .expect("draw the local Session")
+            .expect("draw the local session")
             .contains('›'),
         "navigation follows the same recency order the picker draws: {moved:?}"
     );
@@ -773,19 +773,19 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
                 message: "Pairing revoked".to_owned(),
             },
         })
-        .expect("end the studio Origin");
+        .expect("end the studio origin");
     let ApplicationTransition::ReconcileCatalogOrigins {
         catalog_origins, ..
     } = transition
     else {
-        panic!("ending a background Origin reconciles catalog ownership");
+        panic!("ending a background origin reconciles catalog ownership");
     };
     assert!(!catalog_origins.contains(&Outlook::Remote("studio".to_owned())));
     assert!(
         !rendered_application_rows_at(&application, 120, 24)
             .join("\n")
             .contains("X [studio]"),
-        "an ended Origin takes its picker rows with it"
+        "an ended origin takes its picker rows with it"
     );
 }
 
@@ -818,13 +818,13 @@ fn choosing_a_foreign_picker_row_turns_and_opens_without_moving_sidebar_scope() 
                 diagnostics: Vec::new(),
             },
         )))
-        .expect("show the Sidebar on its default all-Workspaces scope");
+        .expect("show the sidebar on its default all-workspaces scope");
 
     let current = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::SessionList,
         )))
-        .expect("open the Session picker");
+        .expect("open the session picker");
     expect_session_list_request(
         current,
         SessionListScope::CurrentWorkspace((workspace.path().to_owned()).into()),
@@ -835,7 +835,7 @@ fn choosing_a_foreign_picker_row_turns_and_opens_without_moving_sidebar_scope() 
                 KeyCode::Char('a'),
                 KeyModifiers::CONTROL,
             )))
-            .expect("widen to all Workspaces"),
+            .expect("widen to all workspaces"),
         SessionListScope::AllWorkspaces,
     );
     let ApplicationTransition::ListEverywhereRemotes(discovery) = application
@@ -845,10 +845,10 @@ fn choosing_a_foreign_picker_row_turns_and_opens_without_moving_sidebar_scope() 
         )))
         .expect("widen the picker to Everywhere")
     else {
-        panic!("Everywhere first discovers its Origins");
+        panic!("Everywhere first discovers its origins");
     };
     let before = rendered_application_rows_at(&application, 120, 24);
-    assert!(before.iter().any(|row| row.contains("▸ All Workspaces")));
+    assert!(before.iter().any(|row| row.contains("▸ All workspaces")));
     assert!(before.join("\n").contains("Everywhere"));
 
     let ApplicationTransition::ReconcileCatalogOrigins { requests, .. } = application
@@ -856,9 +856,9 @@ fn choosing_a_foreign_picker_row_turns_and_opens_without_moving_sidebar_scope() 
             request: discovery,
             remotes: vec![remote("studio", RemoteStatus::Available)],
         })
-        .expect("discover the studio Origin")
+        .expect("discover the studio origin")
     else {
-        panic!("the discovered Origins should each be listed");
+        panic!("the discovered origins should each be listed");
     };
     for request in requests {
         let sessions = match request.outlook() {
@@ -870,11 +870,11 @@ fn choosing_a_foreign_picker_row_turns_and_opens_without_moving_sidebar_scope() 
                 SessionStatus::Idle,
                 20,
             )],
-            outlook => panic!("unexpected Origin: {outlook:?}"),
+            outlook => panic!("unexpected origin: {outlook:?}"),
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("merge the Origin's Sessions");
+            .expect("merge the origin's sessions");
     }
 
     let reference =
@@ -894,7 +894,7 @@ fn choosing_a_foreign_picker_row_turns_and_opens_without_moving_sidebar_scope() 
                 KeyCode::Enter,
                 KeyModifiers::NONE,
             )))
-            .expect("choose the foreign Session"),
+            .expect("choose the foreign session"),
         ApplicationTransition::TurnOutlookAndViewAndAttach {
             catalog_origins: std::collections::HashSet::from([Outlook::Remote(
                 "studio".to_owned(),
@@ -904,16 +904,16 @@ fn choosing_a_foreign_picker_row_turns_and_opens_without_moving_sidebar_scope() 
     );
     let after = rendered_application_rows_at(&application, 120, 24);
     assert!(
-        after.iter().any(|row| row.contains("▸ All Workspaces")),
-        "the Sidebar keeps its own scope when the picker turns the Outlook: {after:?}"
+        after.iter().any(|row| row.contains("▸ All workspaces")),
+        "the sidebar keeps its own scope when the picker turns the outlook: {after:?}"
     );
     let ApplicationTransition::ListEverywhereRemotes(reopened) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::SessionList,
         )))
-        .expect("reopen the Session picker")
+        .expect("reopen the session picker")
     else {
-        panic!("the Session picker keeps its own Everywhere scope across the turn");
+        panic!("the session picker keeps its own Everywhere scope across the turn");
     };
     assert_eq!(reopened.surface(), SessionListSurface::SessionPicker);
 }
@@ -926,30 +926,30 @@ fn an_open_everywhere_picker_catches_up_only_the_origin_whose_catalog_moved() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::SessionList,
         )))
-        .expect("open the Session picker");
+        .expect("open the session picker");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Char('a'),
             KeyModifiers::CONTROL,
         )))
-        .expect("advance to all Workspaces");
+        .expect("advance to all workspaces");
     let ApplicationTransition::ListEverywhereRemotes(discovery) = application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Char('a'),
             KeyModifiers::CONTROL,
         )))
-        .expect("advance the Session picker to Everywhere")
+        .expect("advance the session picker to Everywhere")
     else {
-        panic!("Everywhere first discovers its Origins");
+        panic!("Everywhere first discovers its origins");
     };
     let ApplicationTransition::ReconcileCatalogOrigins { requests, .. } = application
         .handle_event(ApplicationEvent::EverywhereRemotesListed {
             request: discovery,
             remotes: vec![remote("studio", RemoteStatus::Available)],
         })
-        .expect("discover the studio Origin")
+        .expect("discover the studio origin")
     else {
-        panic!("the picker should list every discovered Origin");
+        panic!("the picker should list every discovered origin");
     };
     for request in requests {
         application
@@ -969,7 +969,7 @@ fn an_open_everywhere_picker_catches_up_only_the_origin_whose_catalog_moved() {
         })
         .expect("take a background catalog change")
     else {
-        panic!("the picker should catch up the changed Origin");
+        panic!("the picker should catch up the changed origin");
     };
     assert_eq!(request.surface(), SessionListSurface::SessionPicker);
     assert_eq!(request.outlook(), &Outlook::Remote("studio".to_owned()));
@@ -1027,13 +1027,13 @@ fn a_terminal_remote_failure_does_not_touch_an_independently_scoped_picker() {
                 message: "Pairing revoked".to_owned(),
             },
         })
-        .expect("end an unrelated Remote");
+        .expect("end an unrelated remote");
 
     assert!(
         rendered_application_rows(&application)
             .join("\n")
             .contains("Keep local"),
-        "an ended Remote removes only its own rows"
+        "an ended remote removes only its own rows"
     );
 }
 
@@ -1047,14 +1047,14 @@ fn session_picker_switching_restores_each_transcript_viewport() {
     let mut application = Application::new(workspace.path(), Default::default());
     application
         .handle_event(ApplicationEvent::SessionAttached(first_snapshot.clone()))
-        .expect("attach first Session");
+        .expect("attach first session");
     rendered_application_rows_at(&application, 72, 18);
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::PageUp,
             KeyModifiers::NONE,
         )))
-        .expect("page into first Session history");
+        .expect("page into first session history");
     let first_history = rendered_application_rows_at(&application, 72, 18).join("\n");
     assert!(first_history.contains("Latest"));
 
@@ -1064,14 +1064,14 @@ fn session_picker_switching_restores_each_transcript_viewport() {
             session_summary(
                 first_id,
                 workspace.path(),
-                "First Session",
+                "First session",
                 SessionStatus::Idle,
                 20,
             ),
             session_summary(
                 second_id,
                 workspace.path(),
-                "Second Session",
+                "Second session",
                 SessionStatus::Idle,
                 10,
             ),
@@ -1082,16 +1082,16 @@ fn session_picker_switching_restores_each_transcript_viewport() {
             KeyCode::Down,
             KeyModifiers::NONE,
         )))
-        .expect("focus second Session");
+        .expect("focus second session");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("select second Session");
+        .expect("select second session");
     application
         .handle_event(ApplicationEvent::SessionAttached(second_snapshot))
-        .expect("hydrate second Session");
+        .expect("hydrate second session");
     assert!(
         rendered_application_rows_at(&application, 72, 18)
             .join("\n")
@@ -1104,14 +1104,14 @@ fn session_picker_switching_restores_each_transcript_viewport() {
             session_summary(
                 second_id,
                 workspace.path(),
-                "Second Session",
+                "Second session",
                 SessionStatus::Idle,
                 30,
             ),
             session_summary(
                 first_id,
                 workspace.path(),
-                "First Session",
+                "First session",
                 SessionStatus::Idle,
                 20,
             ),
@@ -1122,16 +1122,16 @@ fn session_picker_switching_restores_each_transcript_viewport() {
             KeyCode::Down,
             KeyModifiers::NONE,
         )))
-        .expect("focus first Session");
+        .expect("focus first session");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("select first Session");
+        .expect("select first session");
     application
         .handle_event(ApplicationEvent::SessionAttached(first_snapshot))
-        .expect("rehydrate first Session");
+        .expect("rehydrate first session");
     let restored = rendered_application_rows_at(&application, 72, 18).join("\n");
     assert!(restored.contains("Latest"));
     assert!(!restored.contains("Agent section 8"));
@@ -1146,7 +1146,7 @@ fn session_picker_stays_searchable_at_supported_small_terminal_sizes() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 suru::tui::SemanticCommandId::SessionList,
             )))
-            .expect("open Session picker"),
+            .expect("open session picker"),
         SessionListScope::CurrentWorkspace((workspace.path().to_owned()).into()),
     );
     let loading = rendered_application_rows_at(&application, 28, 5).join("\n");
@@ -1173,7 +1173,7 @@ fn session_picker_stays_searchable_at_supported_small_terminal_sizes() {
                 ),
             ],
         })
-        .expect("hydrate Session picker");
+        .expect("hydrate session picker");
     assert!(
         rendered_application_rows_at(&application, 28, 5)
             .join("\n")
@@ -1202,7 +1202,7 @@ fn session_picker_scroll_window_keeps_the_current_session_visible() {
             "Current transcript",
             workspace.path(),
         )))
-        .expect("attach current Session");
+        .expect("attach current session");
     let newest_id = SessionId::new();
     let mut sessions = (1..=12)
         .map(|index| {
@@ -1213,7 +1213,7 @@ fn session_picker_scroll_window_keeps_the_current_session_visible() {
                     SessionId::new()
                 },
                 workspace.path(),
-                &format!("Recent Session {index}"),
+                &format!("Recent session {index}"),
                 SessionStatus::Idle,
                 100 + index,
             )
@@ -1222,27 +1222,27 @@ fn session_picker_scroll_window_keeps_the_current_session_visible() {
     sessions.push(session_summary(
         current_id,
         workspace.path(),
-        "Current Session",
+        "Current session",
         SessionStatus::Idle,
         1,
     ));
     open_session_picker_with(&mut application, sessions);
 
     let picker = rendered_application_rows_at(&application, 80, 15).join("\n");
-    assert!(picker.contains("Current Session"));
+    assert!(picker.contains("Current session"));
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
         )))
-        .expect("wrap from current Session to newest Session");
+        .expect("wrap from current session to newest session");
     assert_eq!(
         application
             .handle_terminal_event(InputEvent::Key(KeyEvent::new(
                 KeyCode::Enter,
                 KeyModifiers::NONE,
             )))
-            .expect("select wrapped newest Session"),
+            .expect("select wrapped newest session"),
         ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
             suru::protocol::Outlook::Local,
             newest_id,
@@ -1257,14 +1257,14 @@ fn unreadable_session_picker_rows_remain_navigable_without_attaching() {
     let mut sessions = vec![session_summary(
         SessionId::new(),
         workspace.path(),
-        "Readable Session",
+        "Readable session",
         SessionStatus::Idle,
         100,
     )];
     sessions.extend((1..=12).map(|index| {
         SessionListItem::Unreadable(UnreadableSessionSummary {
             id: SessionId::new(),
-            title: format!("Unreadable Session {index}"),
+            title: format!("Unreadable session {index}"),
             created_at: SessionTimestamp(1),
             updated_at: SessionTimestamp(100 - index),
             workspace: Some(Workspace::directory(workspace.path().to_owned())),
@@ -1278,13 +1278,13 @@ fn unreadable_session_picker_rows_remain_navigable_without_attaching() {
                 KeyCode::Down,
                 KeyModifiers::NONE,
             )))
-            .expect("navigate through unreadable Sessions");
+            .expect("navigate through unreadable sessions");
     }
     let picker = rendered_application_rows_at(&application, 80, 10).join("\n");
     let oldest = picker
         .lines()
-        .find(|row| row.contains("Unreadable Session 12"))
-        .expect("selected unreadable Session is scrolled into view");
+        .find(|row| row.contains("Unreadable session 12"))
+        .expect("selected unreadable session is scrolled into view");
     assert!(oldest.contains("[unreadable]"));
     assert!(oldest.contains('›'));
     assert_eq!(
@@ -1293,7 +1293,7 @@ fn unreadable_session_picker_rows_remain_navigable_without_attaching() {
                 KeyCode::Enter,
                 KeyModifiers::NONE,
             )))
-            .expect("unreadable Session has no attach action"),
+            .expect("unreadable session has no attach action"),
         ApplicationTransition::Continue
     );
 }
@@ -1312,13 +1312,13 @@ fn session_picker_reserves_required_metadata_before_truncating_long_titles() {
     snapshot.session.status = SessionStatus::Active;
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach current active Session");
+        .expect("attach current active session");
     let current_request = expect_session_list_request(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 suru::tui::SemanticCommandId::SessionList,
             )))
-            .expect("open Session picker"),
+            .expect("open session picker"),
         SessionListScope::CurrentWorkspace((workspace.path().to_owned()).into()),
     );
     let all_request = expect_session_list_request(
@@ -1327,7 +1327,7 @@ fn session_picker_reserves_required_metadata_before_truncating_long_titles() {
                 KeyCode::Char('a'),
                 KeyModifiers::CONTROL,
             )))
-            .expect("toggle all Workspaces"),
+            .expect("toggle all workspaces"),
         SessionListScope::AllWorkspaces,
     );
     application
@@ -1348,18 +1348,18 @@ fn session_picker_reserves_required_metadata_before_truncating_long_titles() {
             sessions: vec![session_summary(
                 current_id,
                 std::path::Path::new("/a/very/long/workspace/path/remote-two"),
-                "A deliberately enormous Session title that must yield to metadata",
+                "A deliberately enormous session title that must yield to metadata",
                 SessionStatus::Active,
                 10,
             )],
         })
-        .expect("hydrate all-Workspace Session");
+        .expect("hydrate all-workspace session");
 
     let rows = rendered_application_rows_at(&application, 80, 15);
     let row = rows
         .iter()
         .find(|row| row.contains("current"))
-        .expect("render current Session metadata");
+        .expect("render current session metadata");
     assert!(row.contains("active"));
     assert!(row.contains("ago"));
     assert!(row.contains("remote-two"));
@@ -1368,7 +1368,7 @@ fn session_picker_reserves_required_metadata_before_truncating_long_titles() {
     let intermediate_row = intermediate_rows
         .iter()
         .find(|row| row.contains("current"))
-        .expect("render current Session metadata at intermediate width");
+        .expect("render current session metadata at intermediate width");
     assert!(intermediate_row.contains("active"));
     assert!(intermediate_row.contains("ago"));
     assert!(intermediate_row.contains("-two"));
@@ -1383,13 +1383,13 @@ fn session_picker_consumes_input_before_hidden_composer_actions() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "do not submit this draft".to_owned(),
         )))
-        .expect("type Session draft");
+        .expect("type session draft");
     open_session_picker_with(
         &mut application,
         vec![session_summary(
             session_id,
             workspace.path(),
-            "Current Session",
+            "Current session",
             SessionStatus::Active,
             10,
         )],
@@ -1409,7 +1409,7 @@ fn session_picker_consumes_input_before_hidden_composer_actions() {
             KeyCode::Esc,
             KeyModifiers::NONE,
         )))
-        .expect("close Session picker");
+        .expect("close session picker");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
@@ -1437,7 +1437,7 @@ fn a_title_arriving_while_the_picker_is_open_lands_on_its_row() {
             session_summary(
                 SessionId::new(),
                 workspace.path(),
-                "Untouched Session",
+                "Untouched session",
                 SessionStatus::Idle,
                 10,
             ),
@@ -1452,19 +1452,19 @@ fn a_title_arriving_while_the_picker_is_open_lands_on_its_row() {
                 icon: Some("md-bug".to_owned()),
             }),
         ))
-        .expect("apply a derived Title and Icon");
+        .expect("apply a derived title and icon");
 
     let retitled = rendered_application_rows(&application);
     let derived_row = retitled
         .iter()
         .find(|row| row.contains("Reasoning group flicker fixed"))
-        .expect("redraw the retitled Session's row");
+        .expect("redraw the retitled session's row");
     // In place: the row keeps the position and the focus it had, so a Title
     // landing under a reader's eyes never moves what they were about to open.
     assert!(derived_row.contains('›'));
     assert!(
         rendered_row(&retitled, "Reasoning group flicker fixed")
-            < rendered_row(&retitled, "Untouched Session")
+            < rendered_row(&retitled, "Untouched session")
     );
     assert!(
         !retitled
@@ -1512,17 +1512,17 @@ fn session_picker_draws_an_icon_beside_its_title_and_leaves_a_session_without_on
     assert!(
         rows.iter()
             .find(|row| row.contains("Reasoning group flicker fixed"))
-            .expect("render the Session with an Icon")
+            .expect("render the session with an icon")
             .contains(MD_BUG),
-        "a Session with an Icon draws it on its Title's row"
+        "a session with an icon draws it on its title's row"
     );
     assert!(
         !rows
             .iter()
             .find(|row| row.contains("look at this stack trace"))
-            .expect("render the Session without an Icon")
+            .expect("render the session without an icon")
             .contains(MD_BUG),
-        "an Icon belongs to one Session's row and no other"
+        "an icon belongs to one session's row and no other"
     );
     // Both rows begin at the same place: the box's own left edge, which the
     // search line above them starts at, plus the two columns every row spends
@@ -1534,16 +1534,16 @@ fn session_picker_draws_an_icon_beside_its_title_and_leaves_a_session_without_on
     assert_eq!(
         text_position(&mixed_buffer, &MD_BUG.to_string()).0,
         first_column,
-        "an Icon draws at the front of its own row"
+        "an icon draws at the front of its own row"
     );
     assert!(
         text_position(&mixed_buffer, "Reasoning group flicker fixed").0 > first_column,
-        "the Title it stands for follows it"
+        "the title it stands for follows it"
     );
     assert_eq!(
         text_position(&mixed_buffer, "look at this").0,
         first_column,
-        "a Session without an Icon draws where it always did"
+        "a session without an icon draws where it always did"
     );
 
     // The Icon costs its own columns and no more, so a Title still reads at
@@ -1553,7 +1553,7 @@ fn session_picker_draws_an_icon_beside_its_title_and_leaves_a_session_without_on
         narrow
             .iter()
             .find(|row| row.contains("Reasoning"))
-            .expect("render the Session with an Icon on a narrow terminal")
+            .expect("render the session with an icon on a narrow terminal")
             .contains(MD_BUG)
     );
     assert!(narrow.join("\n").contains("look at this"));
@@ -1582,17 +1582,17 @@ fn a_session_picker_row_draws_its_icon_only_where_the_setting_shows_them() {
     let row = drawn
         .iter()
         .find(|row| row.contains("Reasoning group flicker fixed"))
-        .expect("render the Session")
+        .expect("render the session")
         .clone();
     assert!(
         !row.contains(MD_BUG),
-        "a Session's name carries no Icon until the reader asks for one: {row:?}"
+        "a session's name carries no icon until the reader asks for one: {row:?}"
     );
     let buffer = rendered_application_buffer(&hidden, 80, 15);
     assert_eq!(
         text_position(&buffer, "Reasoning group flicker fixed").0,
         text_position(&buffer, "Search:").0 + SESSION_ROW_MARKER_WIDTH,
-        "and its Title holds no cell open where an Icon would have gone"
+        "and its title holds no cell open where an icon would have gone"
     );
 
     let mut shown = client_showing_icons(workspace.path());
@@ -1601,9 +1601,9 @@ fn a_session_picker_row_draws_its_icon_only_where_the_setting_shows_them() {
         rendered_application_rows(&shown)
             .iter()
             .find(|row| row.contains("Reasoning group flicker fixed"))
-            .expect("render the Session")
+            .expect("render the session")
             .contains(MD_BUG),
-        "and the Icon leads the row once they have"
+        "and the icon leads the row once they have"
     );
 
     let mut unknown = client_showing_icons(workspace.path());
@@ -1620,10 +1620,10 @@ fn a_session_picker_row_draws_its_icon_only_where_the_setting_shows_them() {
     let row = rendered_application_rows(&unknown)
         .into_iter()
         .find(|row| row.contains("Unresolved icon session"))
-        .expect("render the Session");
+        .expect("render the session");
     assert!(
         !row.contains(MD_BUG),
-        "an Icon Catalog name the Catalog no longer carries draws as no Icon at all: {row:?}"
+        "an icon catalog name the catalog no longer carries draws as no icon at all: {row:?}"
     );
 }
 
@@ -1662,13 +1662,13 @@ fn session_picker_search_matches_the_words_of_a_title_and_never_the_icon_beside_
                 KeyCode::Backspace,
                 KeyModifiers::NONE,
             )))
-            .expect("clear the Session picker search");
+            .expect("clear the session picker search");
     }
     type_terminal_text(&mut application, "md-bug");
     let by_icon_name = rendered_application_rows(&application).join("\n");
     assert!(
-        by_icon_name.contains("No Sessions found"),
-        "an Icon Catalog name is carried beside a Title and is never matched against"
+        by_icon_name.contains("No sessions found"),
+        "an icon catalog name is carried beside a title and is never matched against"
     );
     assert!(!by_icon_name.contains("Rocket telemetry parsed"));
 }
@@ -1783,18 +1783,18 @@ fn open_session_picker_with(application: &mut Application, sessions: Vec<Session
         .first()
         .and_then(SessionListItem::workspace)
         .map(|workspace| workspace.path.clone())
-        .unwrap_or_else(|| std::env::current_dir().expect("read current Workspace"));
+        .unwrap_or_else(|| std::env::current_dir().expect("read current workspace"));
     let request = expect_session_list_request(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 suru::tui::SemanticCommandId::SessionList,
             )))
-            .expect("open Session picker"),
+            .expect("open session picker"),
         SessionListScope::CurrentWorkspace((workspace).into()),
     );
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("hydrate Session picker");
+        .expect("hydrate session picker");
 }
 
 fn expect_session_list_request(
@@ -1802,7 +1802,7 @@ fn expect_session_list_request(
     expected_scope: SessionListScope,
 ) -> SessionListRequest {
     let ApplicationTransition::ListSessions(request) = transition else {
-        panic!("expected Session listing transition");
+        panic!("expected session listing transition");
     };
     assert_eq!(request.scope(), &expected_scope);
     request

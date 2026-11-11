@@ -25,7 +25,7 @@ fn session_with_width(
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             content_width_snapshot(content_width, Vec::new()),
         )))
-        .expect("receive Session content width");
+        .expect("receive session content width");
     let (_, snapshot) = enter_session(&mut application, workspace);
     (application, snapshot)
 }
@@ -103,7 +103,7 @@ fn click(application: &mut Application, column: u16, row: u16) {
             modifiers: KeyModifiers::NONE,
         },
     )
-    .expect("handle Transcript click");
+    .expect("handle transcript click");
 }
 
 fn change_content_width(application: &mut Application, content_width: SessionContentWidth) {
@@ -111,7 +111,7 @@ fn change_content_width(application: &mut Application, content_width: SessionCon
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             content_width_snapshot(content_width, vec!["session.contentWidth".to_owned()]),
         )))
-        .expect("receive a changed Session content width");
+        .expect("receive a changed session content width");
 }
 
 fn content_width_snapshot(
@@ -155,7 +155,7 @@ fn session_with_foldable_command(
     let activity_id = snapshot.activities[0].id();
     let turn_id = snapshot.activities[0]
         .turn_id()
-        .expect("the fixture's Activity belongs to a Turn");
+        .expect("the fixture's activity belongs to a turn");
     snapshot.session.status = SessionStatus::Active;
     snapshot.turns[0].status = TurnStatus::Active;
     snapshot.turns[0].settled_at = None;
@@ -195,7 +195,7 @@ fn session_with_reflowing_transcript(
     }
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
-        .expect("attach a reflowing Transcript");
+        .expect("attach a reflowing transcript");
     application
 }
 
@@ -260,21 +260,21 @@ fn session_surfaces_share_the_column_while_the_header_keeps_terminal_width() {
     let snapshot = navigable_session_snapshot(session_id, workspace.path(), 10);
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
-        .expect("attach a long Transcript");
+        .expect("attach a long transcript");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "Queued inside the column".to_owned(),
         )))
-        .expect("type a queued Prompt");
+        .expect("type a queued prompt");
     application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitQueue))
-        .expect("dock the queued Prompt optimistically");
+        .expect("dock the queued prompt optimistically");
 
     // Establish the rendered viewport before moving away from the latest row.
     rendered_application_rows_at(&application, 120, 30);
     application
         .handle_event(ApplicationEvent::Command(CommandId::ScrollTranscriptPageUp))
-        .expect("move into Transcript history");
+        .expect("move into transcript history");
     let rows = rendered_application_rows_at(&application, 120, 30);
 
     for surface in [
@@ -320,13 +320,13 @@ fn session_content_width_does_not_change_the_landing() {
                 vec!["session.contentWidth".to_owned()],
             ),
         )))
-        .expect("receive Session content width");
+        .expect("receive session content width");
 
     let rows = rendered_application_rows_at(&application, 120, 20);
     assert_eq!(
         composer_columns(&rows),
         (24, 95),
-        "the Landing keeps its independent 72-column composer"
+        "the landing keeps its independent 72-column composer"
     );
 }
 
@@ -341,19 +341,19 @@ fn centered_column_gutters_do_not_toggle_transcript_folds() {
     click(&mut application, 5, command_row);
     assert!(
         !command_output_is_visible(&application, 120, 24),
-        "a click in the left gutter changes no Transcript disclosure"
+        "a click in the left gutter changes no transcript disclosure"
     );
 
     click(&mut application, 110, command_row);
     assert!(
         !command_output_is_visible(&application, 120, 24),
-        "a click in the right gutter changes no Transcript disclosure"
+        "a click in the right gutter changes no transcript disclosure"
     );
 
     click(&mut application, 35, command_row);
     assert!(
         command_output_is_visible(&application, 120, 24),
-        "the same row remains interactive inside the Session Content Column"
+        "the same row remains interactive inside the session content column"
     );
 }
 
@@ -388,13 +388,13 @@ fn changing_width_keeps_a_scrolled_reader_anchored_to_the_same_message_and_row()
     let wider_maximum_reflow_rows = reflow_row_count(&reflow_probe);
     assert!(
         wider_maximum_reflow_rows < narrow_reflow_rows,
-        "a larger Maximum must reproject the Transcript into fewer wrapped rows"
+        "a larger Maximum must reproject the transcript into fewer wrapped rows"
     );
     change_content_width(&mut reflow_probe, SessionContentWidth::Fill);
     let fill_reflow_rows = reflow_row_count(&reflow_probe);
     assert!(
         fill_reflow_rows < wider_maximum_reflow_rows,
-        "Fill must reproject the Transcript into fewer wrapped rows than Maximum"
+        "Fill must reproject the transcript into fewer wrapped rows than Maximum"
     );
 
     let mut application =
@@ -407,7 +407,7 @@ fn changing_width_keeps_a_scrolled_reader_anchored_to_the_same_message_and_row()
                 position: Position::new(60, 5),
                 direction: ScrollDirection::Up,
             }))
-            .expect("move the ninth Agent Message to the viewport boundary");
+            .expect("move the ninth agent message to the viewport boundary");
     }
     let maximum = rendered_application_rows_at(&application, 120, 20);
     let anchor_row = rendered_row(&maximum, "Agent section 9");
@@ -418,7 +418,7 @@ fn changing_width_keeps_a_scrolled_reader_anchored_to_the_same_message_and_row()
     assert_eq!(
         rendered_row(&wider_maximum, "Agent section 9"),
         anchor_row,
-        "the logical Message anchor stays on its screen row between maximum values"
+        "the logical message anchor stays on its screen row between maximum values"
     );
 
     change_content_width(&mut application, SessionContentWidth::Fill);
@@ -427,7 +427,7 @@ fn changing_width_keeps_a_scrolled_reader_anchored_to_the_same_message_and_row()
     assert_eq!(
         rendered_row(&fill, "Agent section 9"),
         anchor_row,
-        "the logical Message anchor stays on its screen row after reflow"
+        "the logical message anchor stays on its screen row after reflow"
     );
     assert!(fill.join("\n").contains("Latest ↓"));
 }
@@ -460,7 +460,7 @@ fn transcript_pointer_geometry_tracks_width_changes_and_terminal_resize() {
     click(&mut application, 5, fill_command_row);
     assert!(
         command_output_is_visible(&application, 120, 24),
-        "a former gutter column becomes interactive when Fill reaches it"
+        "a former gutter column becomes interactive when fill reaches it"
     );
     click(&mut application, 5, fill_command_row);
 
@@ -483,6 +483,6 @@ fn transcript_pointer_geometry_tracks_width_changes_and_terminal_resize() {
     click(&mut application, 25, resized_command_row);
     assert!(
         command_output_is_visible(&application, 90, 24),
-        "the resized Session Content Column remains interactive"
+        "the resized session content column remains interactive"
     );
 }

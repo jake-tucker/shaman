@@ -55,10 +55,10 @@ fn application_with(
                 diagnostics: Vec::new(),
             },
         )))
-        .expect("receive the effective Settings");
+        .expect("receive the effective settings");
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("open the Session");
+        .expect("open the session");
     application
 }
 
@@ -172,7 +172,7 @@ fn update(application: &mut Application, change: SessionChange) {
         .state
         .session
         .as_ref()
-        .expect("a Session is open")
+        .expect("a session is open")
         .snapshot();
     let (session_id, revision) = (snapshot.session.id, snapshot.revision);
     application
@@ -183,7 +183,7 @@ fn update(application: &mut Application, change: SessionChange) {
                 changes: vec![change],
             },
         )))
-        .expect("apply the Session update");
+        .expect("apply the session update");
 }
 
 fn tick_at(application: &mut Application, elapsed_ms: &AtomicU64, at: u64) {
@@ -200,11 +200,11 @@ fn open_group(application: &Application, leader: ActivityId) {
         .state
         .session_reference
         .as_ref()
-        .expect("a Session is open");
+        .expect("a session is open");
     application
         .state
         .session_interaction(reference)
-        .expect("the open Session has view state")
+        .expect("the open session has view state")
         .groups
         .borrow_mut()
         .expand(leader);
@@ -215,11 +215,11 @@ fn folds(application: &Application) -> Ref<'_, TranscriptFolds> {
         .state
         .session_reference
         .as_ref()
-        .expect("a Session is open");
+        .expect("a session is open");
     application
         .state
         .session_interaction(reference)
-        .expect("the open Session has view state")
+        .expect("the open session has view state")
         .folds
         .borrow()
 }
@@ -244,14 +244,14 @@ fn a_promoted_command_never_plans_the_transcript_again() {
     assert_eq!(
         (step(&application, ids[0]), plans(&application)),
         (FoldStep::Folded, 0),
-        "nothing is planned while no Command has aged"
+        "nothing is planned while no command has aged"
     );
 
     tick_at(&mut application, &elapsed_ms, 500);
     assert_eq!(
         (step(&application, ids[0]), plans(&application)),
         (FoldStep::Peek, 1),
-        "the Command that aged is promoted from one plan"
+        "the command that aged is promoted from one plan"
     );
 
     for at in (532..2_000).step_by(32) {
@@ -267,7 +267,7 @@ fn a_promoted_command_never_plans_the_transcript_again() {
     assert_eq!(
         (step(&application, ids[0]), plans(&application)),
         (FoldStep::Peek, 1),
-        "a promoted Command streaming on plans the Transcript no more"
+        "a promoted command streaming on plans the transcript no more"
     );
 }
 
@@ -287,18 +287,18 @@ fn an_aged_command_in_a_collapsed_group_grows_once_the_group_opens() {
     assert_eq!(
         (step(&application, ids[2]), plans(&application)),
         (FoldStep::Folded, 1),
-        "a Command hidden in a collapsed Group stays folded, and waiting plans only once"
+        "a command hidden in a collapsed group stays folded, and waiting plans only once"
     );
 
     let reference = application
         .state
         .session_reference
         .clone()
-        .expect("a Session is open");
+        .expect("a session is open");
     application
         .state
         .session_interaction(&reference)
-        .expect("the open Session has view state")
+        .expect("the open session has view state")
         .groups
         .borrow_mut()
         .expand(ids[0]);
@@ -306,14 +306,14 @@ fn an_aged_command_in_a_collapsed_group_grows_once_the_group_opens() {
     assert_eq!(
         (step(&application, ids[2]), plans(&application)),
         (FoldStep::Peek, 2),
-        "opening the Group lets the next tick see the Command and grow it"
+        "opening the group lets the next tick see the command and grow it"
     );
 
     tick_at(&mut application, &elapsed_ms, 160);
     assert_eq!(
         plans(&application),
         2,
-        "once grown, the Command asks for no further plan"
+        "once grown, the command asks for no further plan"
     );
 }
 
@@ -329,11 +329,11 @@ fn a_reader_folding_a_promoted_command_keeps_it_folded() {
         .state
         .session_reference
         .clone()
-        .expect("a Session is open");
+        .expect("a session is open");
     application
         .state
         .session_interaction(&reference)
-        .expect("the open Session has view state")
+        .expect("the open session has view state")
         .folds
         .borrow_mut()
         .fold(ids[0]);
@@ -343,7 +343,7 @@ fn a_reader_folding_a_promoted_command_keeps_it_folded() {
     assert_eq!(
         (step(&application, ids[0]), plans(&application)),
         (FoldStep::Folded, 1),
-        "the reader's Fold outlasts later ticks, which plan nothing for it"
+        "the reader's fold outlasts later ticks, which plan nothing for it"
     );
 }
 
@@ -371,7 +371,7 @@ fn a_second_command_aging_grows_beside_the_first() {
     assert_eq!(
         (step(&application, second_id), plans(&application)),
         (FoldStep::Folded, 1),
-        "the second Command waits out its own latency without a plan"
+        "the second command waits out its own latency without a plan"
     );
 
     tick_at(&mut application, &elapsed_ms, 1_100);
@@ -382,7 +382,7 @@ fn a_second_command_aging_grows_beside_the_first() {
             plans(&application)
         ),
         (FoldStep::Peek, FoldStep::Peek, 2),
-        "the second Command grows when it ages, and the first stays grown"
+        "the second command grows when it ages, and the first stays grown"
     );
 
     tick_at(&mut application, &elapsed_ms, 1_132);
@@ -407,7 +407,7 @@ fn an_equal_revision_snapshot_replacement_is_read_afresh() {
     assert_eq!(
         (step(&application, ids[1]), plans(&application)),
         (FoldStep::Folded, 1),
-        "the Command waits hidden in a collapsed Group"
+        "the command waits hidden in a collapsed group"
     );
 
     // A fresh snapshot at the same revision — as after a reconnect — whose
@@ -418,12 +418,12 @@ fn an_equal_revision_snapshot_replacement_is_read_afresh() {
         .handle_event(ApplicationEvent::SessionAttached(replaced(
             &snapshot, activities,
         )))
-        .expect("replace the Session's snapshot");
+        .expect("replace the session's snapshot");
     tick_at(&mut application, &elapsed_ms, 32);
     assert_eq!(
         (step(&application, ids[1]), plans(&application)),
         (FoldStep::Peek, 2),
-        "the replacement is planned afresh, and the Command it shows grows"
+        "the replacement is planned afresh, and the command it shows grows"
     );
 }
 
@@ -444,7 +444,7 @@ fn the_same_session_on_another_origin_is_read_afresh() {
     assert_eq!(
         (step(&application, ids[1]), plans(&application)),
         (FoldStep::Folded, 1),
-        "the Command waits hidden in a collapsed Group"
+        "the command waits hidden in a collapsed group"
     );
 
     // Another Origin holds a Session of the same id at the same revision,
@@ -458,12 +458,12 @@ fn the_same_session_on_another_origin_is_read_afresh() {
             &snapshot,
             vec![leader, elsewhere],
         )))
-        .expect("open the same Session id on another Origin");
+        .expect("open the same session id on another origin");
     open_group(&application, leader_id);
     tick_at(&mut application, &elapsed_ms, 32);
     assert_eq!(
         (step(&application, elsewhere_id), plans(&application)),
         (FoldStep::Peek, 2),
-        "the other Origin's Session is planned afresh, and its Command grows"
+        "the other origin's session is planned afresh, and its command grows"
     );
 }

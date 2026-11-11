@@ -83,12 +83,12 @@ fn submit_landing_prompt(application: &mut Application, text: &str) -> InitialPr
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             text.to_owned(),
         )))
-        .expect("type the Landing Prompt");
+        .expect("type the landing prompt");
     let ApplicationTransition::CreateSession(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit the Landing Prompt")
+        .expect("submit the landing prompt")
     else {
-        panic!("a Landing submission should request a Session");
+        panic!("a landing submission should request a session");
     };
     request.prompt
 }
@@ -107,7 +107,7 @@ fn the_created_session_replaces_the_provisional_one_in_place() {
             workspace.path(),
             SessionTimestamp(SessionTimestamp::now().0.saturating_sub(4_000)),
         )))
-        .expect("take the created Session");
+        .expect("take the created session");
 
     let drawn = rendered_application_rows(&application).join("\n");
     // The user row stands where it stood, from the Server's own Pending Prompt
@@ -127,7 +127,7 @@ fn the_landing_abandons_a_provisional_session_and_a_late_creation_leaves_the_rou
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionNew,
         )))
-        .expect("return to the Landing");
+        .expect("return to the landing");
     let landing = rendered_application_rows(&application).join("\n");
     assert!(!landing.contains("Rename the widget"), "{landing}");
 
@@ -152,7 +152,7 @@ fn a_refusal_after_leaving_restores_the_landing_draft_and_says_why() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionNew,
         )))
-        .expect("return to the Landing");
+        .expect("return to the landing");
 
     application
         .handle_event(ApplicationEvent::SessionCreationFailed {
@@ -194,7 +194,7 @@ fn a_refusal_leaves_the_provisional_session_standing_with_its_prompt() {
     let flattened = drawn.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
         flattened.contains(
-            "Error: Could not create Session: Provider unavailable · Enter to retry, or type a new prompt"
+            "Error: Could not create session: Provider unavailable · Enter to retry, or type a new prompt"
         ),
         "{drawn}"
     );
@@ -212,15 +212,15 @@ fn an_empty_submit_retries_the_refused_prompt_itself() {
 
     let ApplicationTransition::CreateSession(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("retry the refused Prompt")
+        .expect("retry the refused prompt")
     else {
-        panic!("an empty submit over a refusal should ask for the Session again");
+        panic!("an empty submit over a refusal should ask for the session again");
     };
     assert_eq!(request.prompt.id, prompt.id);
     assert_eq!(request.prompt.text, prompt.text);
 
     let drawn = rendered_application_rows(&application).join("\n");
-    assert!(!drawn.contains("Could not create Session"), "{drawn}");
+    assert!(!drawn.contains("Could not create session"), "{drawn}");
     assert!(drawn.contains("Working"), "{drawn}");
 }
 
@@ -235,12 +235,12 @@ fn a_typed_submit_replaces_the_refused_prompt() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "Rename the gadget".to_owned(),
         )))
-        .expect("type a new Prompt over the refusal");
+        .expect("type a new prompt over the refusal");
     let ApplicationTransition::CreateSession(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit the replacement")
     else {
-        panic!("a typed submit over a refusal should ask for the Session again");
+        panic!("a typed submit over a refusal should ask for the session again");
     };
     assert_ne!(request.prompt.id, prompt.id);
     assert_eq!(request.prompt.text, "Rename the gadget");
@@ -265,7 +265,7 @@ fn a_replacement_typed_before_the_refusal_survives_and_can_be_submitted() {
     refuse_creation(
         &mut application,
         &prompt,
-        "Destination Skill `review` is ambiguous",
+        "Destination skill `review` is ambiguous",
     );
     let drawn = rendered_application_rows(&application).join("\n");
     assert!(drawn.contains("Rename the gadget"), "{drawn}");
@@ -273,7 +273,7 @@ fn a_replacement_typed_before_the_refusal_survives_and_can_be_submitted() {
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit the preserved replacement")
     else {
-        panic!("the preserved replacement should retry Session creation")
+        panic!("the preserved replacement should retry session creation")
     };
     assert_ne!(request.prompt.id, prompt.id);
     assert_eq!(request.prompt.text, "Rename the gadget");
@@ -288,17 +288,17 @@ fn a_destination_skill_refusal_restores_the_original_prompt_for_editing() {
         .handle_event(ApplicationEvent::SessionCreationFailed {
             prompt_id: prompt.id,
             code: Some(SessionErrorCode::InvalidSkillInvocation),
-            error: "Destination Skill `review` is ambiguous".to_owned(),
+            error: "Destination skill `review` is ambiguous".to_owned(),
         })
-        .expect("take the destination Skill refusal");
+        .expect("take the destination skill refusal");
 
     let drawn = rendered_application_rows(&application).join("\n");
     assert_eq!(drawn.matches("Use $review here").count(), 3, "{drawn}");
     let ApplicationTransition::CreateSession(retry) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit the editable original Prompt")
+        .expect("submit the editable original prompt")
     else {
-        panic!("the restored Skill Prompt should retry creation")
+        panic!("the restored skill prompt should retry creation")
     };
     assert_eq!(retry.prompt.id, prompt.id);
     assert_eq!(retry.prompt.text, prompt.text);
@@ -315,7 +315,7 @@ fn leaving_a_refused_provisional_session_keeps_its_text_as_the_landing_draft() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionNew,
         )))
-        .expect("return to the Landing");
+        .expect("return to the landing");
     let drawn = rendered_application_rows(&application).join("\n");
     assert!(drawn.contains("Rename the widget"), "{drawn}");
 
@@ -323,7 +323,7 @@ fn leaving_a_refused_provisional_session_keeps_its_text_as_the_landing_draft() {
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit the restored draft")
     else {
-        panic!("the restored draft should ask for the Session again");
+        panic!("the restored draft should ask for the session again");
     };
     assert_eq!(request.prompt.id, prompt.id);
 }
@@ -364,9 +364,9 @@ fn escape_in_a_provisional_session_arms_an_interrupt_that_waits_for_the_session(
             workspace.path(),
             SessionTimestamp::now(),
         )))
-        .expect("take the created Session");
+        .expect("take the created session");
     let ApplicationTransition::InterruptSession { session } = transition else {
-        panic!("a confirmed interrupt should travel with the Session's arrival: {transition:?}");
+        panic!("a confirmed interrupt should travel with the session's arrival: {transition:?}");
     };
     assert_eq!(session.session_id, session_id);
 }
@@ -389,7 +389,7 @@ fn un_arming_an_interrupt_drops_the_intent() {
             workspace.path(),
             SessionTimestamp::now(),
         )))
-        .expect("take the created Session");
+        .expect("take the created session");
     assert_eq!(transition, ApplicationTransition::Continue);
 }
 
@@ -406,7 +406,7 @@ fn a_session_working_only_for_an_undelivered_prompt_can_be_interrupted() {
             workspace.path(),
             SessionTimestamp::now(),
         )))
-        .expect("take the created Session");
+        .expect("take the created session");
 
     assert_eq!(
         press_escape(&mut application),
@@ -416,7 +416,7 @@ fn a_session_working_only_for_an_undelivered_prompt_can_be_interrupted() {
     assert!(armed.contains("again to interrupt"), "{armed}");
     let transition = press_escape(&mut application);
     let ApplicationTransition::InterruptSession { session } = transition else {
-        panic!("interrupting a Session owed to a Prompt should reach it: {transition:?}");
+        panic!("interrupting a session owed to a prompt should reach it: {transition:?}");
     };
     assert_eq!(session.session_id, session_id);
 
@@ -444,12 +444,12 @@ fn a_session_working_only_for_an_undelivered_prompt_can_be_interrupted() {
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit the returned text")
     else {
-        panic!("the withdrawn Prompt should stand in this Session's composer");
+        panic!("the withdrawn prompt should stand in this session's composer");
     };
     assert_eq!(request.prompt.text, prompt.text);
     assert_ne!(
         request.prompt.id, prompt.id,
-        "the withdrawn Prompt stays withdrawn, so sending its text again asks for a new one"
+        "the withdrawn prompt stays withdrawn, so sending its text again asks for a new one"
     );
 }
 
@@ -463,14 +463,14 @@ fn a_draft_typed_while_the_server_answers_is_kept_and_migrates_onto_the_session(
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "A later thought".to_owned(),
         )))
-        .expect("type while the Server answers");
+        .expect("type while the server answers");
     let drawn = rendered_application_rows(&application).join("\n");
     assert!(drawn.contains("A later thought"), "{drawn}");
     // Nothing is delivered until the Session arrives.
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("submit while the Server answers"),
+            .expect("submit while the server answers"),
         ApplicationTransition::Continue
     );
 
@@ -481,7 +481,7 @@ fn a_draft_typed_while_the_server_answers_is_kept_and_migrates_onto_the_session(
             workspace.path(),
             SessionTimestamp::now(),
         )))
-        .expect("take the created Session");
+        .expect("take the created session");
 
     let drawn = rendered_application_rows(&application).join("\n");
     assert!(drawn.contains("A later thought"), "{drawn}");
@@ -489,7 +489,7 @@ fn a_draft_typed_while_the_server_answers_is_kept_and_migrates_onto_the_session(
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit the migrated draft")
     else {
-        panic!("the draft should have migrated onto the created Session's composer");
+        panic!("the draft should have migrated onto the created session's composer");
     };
     assert_eq!(request.prompt.text, "A later thought");
 }
@@ -503,10 +503,10 @@ fn a_refusal_waits_for_the_landing_while_another_session_is_open() {
         .handle_event(ApplicationEvent::SessionAttached(failed_session_snapshot(
             SessionId::new(),
             PromptId::new(),
-            "Another Session",
+            "Another session",
             workspace.path(),
         )))
-        .expect("open another Session");
+        .expect("open another session");
 
     refuse_creation(&mut application, &prompt, "Provider unavailable");
     let opened = rendered_application_rows(&application).join("\n");
@@ -517,7 +517,7 @@ fn a_refusal_waits_for_the_landing_while_another_session_is_open() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionNew,
         )))
-        .expect("return to the Landing");
+        .expect("return to the landing");
     let landing = rendered_application_rows(&application).join("\n");
     assert!(landing.contains("Provider unavailable"), "{landing}");
     assert!(landing.contains("Rename the widget"), "{landing}");
@@ -593,7 +593,7 @@ fn open_working_session(
         session_id,
         &InitialPrompt {
             id: PromptId::new(),
-            text: "Held Session".to_owned(),
+            text: "Held session".to_owned(),
             skill_invocations: Vec::new(),
             attachments: Vec::new(),
         },
@@ -604,7 +604,7 @@ fn open_working_session(
     snapshot.turns = turns;
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot.clone()))
-        .expect("open the Working Session");
+        .expect("open the working session");
     (session_id, snapshot)
 }
 
@@ -642,8 +642,8 @@ fn only_the_prompt_owed_a_turn_comes_back_from_an_interrupt() {
         &mut application,
         workspace.path(),
         vec![
-            admitted_steer("Already taken by a Turn", 0, delivering),
-            admitted_steer("Still owed a Turn", 1, owed),
+            admitted_steer("Already taken by a turn", 0, delivering),
+            admitted_steer("Still owed a turn", 1, owed),
         ],
         vec![turn_for(delivering)],
     );
@@ -656,11 +656,11 @@ fn only_the_prompt_owed_a_turn_comes_back_from_an_interrupt() {
         )))
         .expect("take the withdrawal");
 
-    let returned = composer_holds(&mut application).expect("a withdrawn Prompt comes back");
-    assert_eq!(returned.text, "Still owed a Turn");
+    let returned = composer_holds(&mut application).expect("a withdrawn prompt comes back");
+    assert_eq!(returned.text, "Still owed a turn");
     assert_ne!(
         returned.id, owed,
-        "sent again, it is a new Prompt: the one it was stays withdrawn"
+        "sent again, it is a new prompt: the one it was stays withdrawn"
     );
 }
 
@@ -691,7 +691,7 @@ fn two_prompts_owed_a_turn_return_the_earliest_and_never_overwrite_it() {
         )))
         .expect("take the withdrawal");
 
-    let returned = composer_holds(&mut application).expect("a withdrawn Prompt comes back");
+    let returned = composer_holds(&mut application).expect("a withdrawn prompt comes back");
     assert_eq!(returned.text, "Asked first");
     assert_ne!(returned.id, earliest);
 }
@@ -743,7 +743,7 @@ fn leaving_a_session_gives_up_the_withdrawal_it_was_owed() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionNew,
         )))
-        .expect("leave for the Landing");
+        .expect("leave for the landing");
     // Coming back to it, the reader has written something of their own.
     application
         .handle_event(ApplicationEvent::SessionAttached(withdrawn(snapshot)))
@@ -782,7 +782,7 @@ fn a_confirmed_interrupt_says_so_until_the_session_takes_it() {
             workspace.path(),
             SessionTimestamp::now(),
         )))
-        .expect("take the created Session");
+        .expect("take the created session");
     assert!(
         matches!(transition, ApplicationTransition::InterruptSession { .. }),
         "{transition:?}"
@@ -810,7 +810,7 @@ fn a_session_carrying_another_prompt_neither_replaces_the_claim_nor_takes_its_in
             workspace.path(),
             SessionTimestamp::now(),
         )))
-        .expect("take a creation that answers another Prompt");
+        .expect("take a creation that answers another prompt");
     assert_eq!(transition, ApplicationTransition::Continue);
 
     let drawn = rendered_application_rows(&application).join("\n");
@@ -826,7 +826,7 @@ fn a_session_carrying_another_prompt_neither_replaces_the_claim_nor_takes_its_in
             workspace.path(),
             SessionTimestamp::now(),
         )))
-        .expect("take the claim's own Session");
+        .expect("take the claim's own session");
     assert!(
         matches!(transition, ApplicationTransition::InterruptSession { .. }),
         "{transition:?}"
@@ -949,20 +949,20 @@ mod aside {
         let (mut application, _now) = landing(workspace.path());
         assert!(
             !aside_is_drawn(&application),
-            "the Landing has no Session for the Aside to answer for"
+            "the landing has no session for the aside to answer for"
         );
 
         submit_landing_prompt(&mut application, "Rename the widget");
 
         assert!(
             aside_is_drawn(&application),
-            "the Aside appears the moment the first Prompt is submitted"
+            "the aside appears the moment the first prompt is submitted"
         );
         assert_eq!(
             aside_rows(&application)[..3],
             PROVISIONAL_ENTRY,
-            "with one entry: the Title the Prompt gives and the Working Marker, and no \
-             time, since only the Server knows when Working began"
+            "with one entry: the title the prompt gives and the working marker, and no \
+             time, since only the server knows when working began"
         );
     }
 
@@ -980,14 +980,14 @@ mod aside {
                 workspace.path(),
                 SessionTimestamp::now(),
             )))
-            .expect("take the created Session");
+            .expect("take the created session");
         for waited in [0, 300, 1_000] {
             advance(&now, waited);
-            assert!(aside_is_drawn(&application), "the Aside never leaves");
+            assert!(aside_is_drawn(&application), "the aside never leaves");
             assert_eq!(
                 aside_rows(&application)[..3],
                 PROVISIONAL_ENTRY,
-                "until its tree lands, the Session carries on the entry the claim stood \
+                "until its tree lands, the session carries on the entry the claim stood \
                  in — neither blank nor Loading, however long the tree takes"
             );
         }
@@ -998,7 +998,7 @@ mod aside {
                 through: SessionReference::new(Outlook::Local, top),
                 event: SubagentTreeEvent::Snapshot(tree(top, explore)),
             })
-            .expect("take the Session's tree");
+            .expect("take the session's tree");
 
         assert_eq!(
             aside_rows(&application)[..5],
@@ -1023,11 +1023,11 @@ mod aside {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::SessionNew,
             )))
-            .expect("abandon the Provisional Session for the Landing");
+            .expect("abandon the provisional session for the landing");
 
         assert!(
             !aside_is_drawn(&application),
-            "the Aside behaves as the Landing does"
+            "the aside behaves as the landing does"
         );
     }
 
@@ -1042,17 +1042,17 @@ mod aside {
         assert_eq!(
             aside_rows(&application)[..2],
             ["Subagents 0", "Rename the widget"],
-            "the refused view stands, and its entry is no longer Working"
+            "the refused view stands, and its entry is no longer working"
         );
 
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::SessionNew,
             )))
-            .expect("leave the refused Provisional Session");
+            .expect("leave the refused provisional session");
         assert!(
             !aside_is_drawn(&application),
-            "leaving it for the Landing takes the Aside away"
+            "leaving it for the landing takes the aside away"
         );
     }
 }

@@ -88,9 +88,9 @@ impl UsageMetricsBreakdown {
     /// beside its control's.
     pub(super) fn plural(self) -> &'static str {
         match self {
-            Self::Model => "Models",
-            Self::Provider => "Providers",
-            Self::Workspace => "Workspaces",
+            Self::Model => "models",
+            Self::Provider => "providers",
+            Self::Workspace => "workspaces",
         }
     }
 }

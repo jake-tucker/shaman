@@ -73,7 +73,7 @@ fn expect_read(transition: ApplicationTransition) -> (Outlook, Uuid, UsageMetric
             request_id,
             query,
         } => (origin, request_id, query),
-        other => panic!("the view reads the Outlook's Server, not {other:?}"),
+        other => panic!("the view reads the outlook's server, not {other:?}"),
     }
 }
 
@@ -84,7 +84,7 @@ fn answer(
 ) {
     application
         .handle_event(ApplicationEvent::UsageMetricsRead { request_id, result })
-        .expect("deliver the Usage Metrics");
+        .expect("deliver the usage metrics");
 }
 
 fn model(provider: &str, model: &str) -> UsageMetricsKey {
@@ -319,7 +319,7 @@ fn slash_metrics_reads_the_last_thirty_local_days_by_model() {
     );
     let rows = screen(&application);
     assert!(rows[0].starts_with(" Metrics"), "{rows:#?}");
-    row(&rows, "Reading Usage Metrics…");
+    row(&rows, "Reading usage metrics…");
 }
 
 #[test]
@@ -432,7 +432,7 @@ fn each_bar_stacks_its_models_largest_first_in_theme_colours_to_an_eighth_of_a_r
     );
     assert!(
         opus != codex && codex != copilot && opus != copilot,
-        "each Model its own colour: {opus:?} {codex:?} {copilot:?}"
+        "each model its own colour: {opus:?} {codex:?} {copilot:?}"
     );
     assert!(![opus, codex, copilot].contains(&Color::Reset));
 
@@ -523,7 +523,7 @@ fn a_range_without_usage_says_so() {
     );
 
     let rows = screen(&application);
-    row(&rows, "No Usage in the last 30 days.");
+    row(&rows, "No usage in the last 30 days.");
     assert!(!rows.join("\n").contains('└'), "no empty chart is drawn");
 }
 
@@ -535,13 +535,13 @@ fn a_refused_read_shows_its_reason() {
         &mut application,
         request_id,
         Err(MetricsReadRefusal::Refused(
-            "A Usage Metrics query's buckets overlap".to_owned(),
+            "A usage metrics query's buckets overlap".to_owned(),
         )),
     );
 
     let rows = screen(&application);
-    row(&rows, "The Server refused the Usage Metrics read");
-    row(&rows, "A Usage Metrics query's buckets overlap");
+    row(&rows, "The server refused the usage metrics read");
+    row(&rows, "A usage metrics query's buckets overlap");
 }
 
 #[test]
@@ -552,12 +552,12 @@ fn a_read_that_never_reached_a_server_says_so() {
         &mut application,
         request_id,
         Err(MetricsReadRefusal::Failed(
-            "send Usage Metrics read command: connection refused".to_owned(),
+            "send usage metrics read command: connection refused".to_owned(),
         )),
     );
 
     let rows = screen(&application);
-    row(&rows, "Usage Metrics could not be read");
+    row(&rows, "Usage metrics could not be read");
     row(&rows, "connection refused");
 }
 
@@ -593,15 +593,15 @@ fn a_refused_refresh_keeps_the_figures_and_says_why_above_them() {
         &mut application,
         second,
         Err(MetricsReadRefusal::Failed(
-            "the Server is busy compacting its store and asks to be read again later".to_owned(),
+            "the server is busy compacting its store and asks to be read again later".to_owned(),
         )),
     );
     for width in [80, WIDTH] {
         let rows = rendered_application_rows_at(&application, width, HEIGHT);
-        let note = row(&rows, "Could not refresh: the Server is busy");
+        let note = row(&rows, "Could not refresh: the server is busy");
         let (reason, control) = note
             .split_once("Model:")
-            .unwrap_or_else(|| panic!("the Model view beside the note: {note:?}"));
+            .unwrap_or_else(|| panic!("the model view beside the note: {note:?}"));
         assert!(reason.trim_end().ends_with('…'), "{width}: {note:?}");
         assert!(
             reason.ends_with("    "),
@@ -728,7 +728,7 @@ fn the_view_covers_the_sidebar_and_the_aside() {
     let beneath = wide(&application);
     assert!(
         beneath.join("\n").contains("Subagents") && rules_in_a_row(&beneath) >= 2,
-        "the Sidebar's rule and the Aside's: {beneath:#?}"
+        "the sidebar's rule and the aside's: {beneath:#?}"
     );
 
     let (_, request_id, query) = ask(&mut application);
@@ -737,7 +737,7 @@ fn the_view_covers_the_sidebar_and_the_aside() {
     let covered = wide(&application);
     let text = covered.join("\n");
     assert!(covered[0].starts_with(" Metrics"), "{text}");
-    assert!(!text.contains("Subagents"), "no Aside: {text}");
+    assert!(!text.contains("Subagents"), "no aside: {text}");
     assert_eq!(
         rules_in_a_row(&covered),
         1,
@@ -807,7 +807,7 @@ fn r_reads_again_and_only_the_newest_answer_lands() {
     quieter.across_buckets_and_untimed = UsageMetricsAggregate::default();
     answer(&mut application, second, Ok(quieter));
     let rows = screen(&application);
-    row(&rows, "No Usage in the last 30 days.");
+    row(&rows, "No usage in the last 30 days.");
     assert!(!rows.join("\n").contains("Refreshing…"));
 }
 
@@ -825,7 +825,7 @@ fn a_remote_outlook_reads_the_remote_and_its_silence_is_explained() {
     assert_eq!(
         key(&mut application, KeyCode::Char('r')),
         ApplicationTransition::Continue,
-        "a refresh waits for the Remote"
+        "a refresh waits for the remote"
     );
     row(&screen(&application), "studio is unreachable");
     key(&mut application, KeyCode::Esc);
@@ -840,10 +840,10 @@ fn a_remote_outlook_reads_the_remote_and_its_silence_is_explained() {
     assert_eq!(
         key(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "an Unreachable Origin refuses the view"
+        "an unreachable origin refuses the view"
     );
     let rows = screen(&application);
-    assert!(!rows[0].starts_with(" Metrics"));
+    assert!(!rows[0].starts_with(" metrics"));
     row(&rows, "studio is unreachable");
 }
 
@@ -868,7 +868,7 @@ fn a_selection_left_beneath_the_view_takes_neither_esc_nor_ctrl_c_from_it() {
     invoke(&mut application, SemanticCommandId::MetricsShow);
     key(&mut application, KeyCode::Esc);
     assert!(
-        !screen(&application)[0].starts_with(" Metrics"),
+        !screen(&application)[0].starts_with(" metrics"),
         "the first Esc closes the view"
     );
 
@@ -1031,7 +1031,7 @@ fn all_time_with_no_report_yet_first_reads_when_the_earliest_turn_was() {
     let (_, probe, first) = expect_read(press(&mut application, '5'));
     assert!(
         first.buckets.is_empty() && first.comparison.is_none(),
-        "the first read asks only when the earliest Turn was"
+        "the first read asks only when the earliest turn was"
     );
     let earliest = in_new_york(date(2025, 6, 14).at(9, 0, 0, 0));
 
@@ -1045,14 +1045,14 @@ fn all_time_with_no_report_yet_first_reads_when_the_earliest_turn_was() {
             .expect("deliver a straggler"),
         ApplicationTransition::Continue
     );
-    row(&screen(&application), "Reading Usage Metrics…");
+    row(&screen(&application), "Reading usage metrics…");
 
     let transition = application
         .handle_event(ApplicationEvent::UsageMetricsRead {
             request_id: probe,
             result: Ok(empty_report(&first, Some(earliest))),
         })
-        .expect("deliver the earliest Turn");
+        .expect("deliver the earliest turn");
     let (origin, request_id, all_time) = expect_read(transition);
     assert_eq!(origin, Outlook::Local);
     let mut months: Vec<jiff::civil::DateTime> = (6..=12)
@@ -1062,14 +1062,14 @@ fn all_time_with_no_report_yet_first_reads_when_the_earliest_turn_was() {
     assert_eq!(
         new_york_starts(&all_time),
         months,
-        "every month from the earliest Turn's to this one"
+        "every month from the earliest turn's to this one"
     );
     assert_eq!(
         all_time.comparison, None,
         "nothing comes before all of time"
     );
     assert!(contiguous(&all_time));
-    row(&screen(&application), "Reading Usage Metrics…");
+    row(&screen(&application), "Reading usage metrics…");
 
     answer(&mut application, request_id, Ok(report(&all_time)));
     let rows = screen(&application);
@@ -1130,7 +1130,7 @@ fn all_time_reads_again_when_its_report_names_an_earlier_turn() {
         })
         .expect("deliver the report");
     assert_eq!(landed, ApplicationTransition::Continue);
-    row(&screen(&application), "No Usage yet.");
+    row(&screen(&application), "No usage yet.");
 }
 
 #[test]
@@ -1158,7 +1158,7 @@ fn all_time_without_a_timed_turn_is_this_month_alone() {
         })
         .expect("deliver the report");
     assert_eq!(landed, ApplicationTransition::Continue);
-    row(&screen(&application), "No Usage yet.");
+    row(&screen(&application), "No usage yet.");
 }
 
 #[test]
@@ -1180,7 +1180,7 @@ fn a_range_chosen_while_all_time_learns_its_beginning_drops_that_answer() {
         .expect("deliver the late answer");
 
     assert_eq!(late, ApplicationTransition::Continue, "nothing read again");
-    row(&screen(&application), "Reading Usage Metrics…");
+    row(&screen(&application), "Reading usage metrics…");
     answer(&mut application, request_id, Ok(report(&week)));
     let rows = screen(&application);
     row(&rows, "▐7 days▌");
@@ -1208,7 +1208,7 @@ fn the_range_outlives_the_view_and_all_time_learns_its_beginning_anew_on_opening
 
     assert!(
         reopened.buckets.is_empty(),
-        "All time still, read from its earliest Turn again"
+        "All time still, read from its earliest turn again"
     );
     row(&screen(&application), "▐All time▌");
 }
@@ -1527,7 +1527,7 @@ fn work_with_no_known_cost_is_not_shown_as_no_usage() {
     answer(&mut application, request_id, Ok(report));
 
     let rows = screen(&application);
-    assert!(!rows.join("\n").contains("No Usage"), "{rows:#?}");
+    assert!(!rows.join("\n").contains("No usage"), "{rows:#?}");
     row(&rows, "Last 30 days · unpriced");
 }
 
@@ -1559,7 +1559,7 @@ fn measure_keys_tab_and_clicks_choose_a_measure_without_reading_again() {
     };
     let tokens = ("▐Tokens▌", "Last 30 days · 109M tokens");
     let cost = ("▐Cost▌", "Last 30 days · $120.00+");
-    let sessions = ("▐Sessions▌", "Last 30 days · 15 Sessions");
+    let sessions = ("▐Sessions▌", "Last 30 days · 15 sessions");
     shows(&application, cost.0, cost.1);
     let label_at = |application: &Application, label: &str| {
         let buffer = rendered_application_buffer(application, WIDTH, HEIGHT);
@@ -1683,7 +1683,7 @@ fn measure_keys_tab_and_clicks_choose_a_measure_without_reading_again() {
 
 /// The note the legend carries where its series count more Sessions than
 /// worked in all.
-const OVERLAP_NOTE: &str = "A Session that used several Models counts once for each";
+const OVERLAP_NOTE: &str = "A session that used several models counts once for each";
 
 #[test]
 fn sessions_plot_each_model_s_sessions_over_the_distinct_total_with_a_note() {
@@ -1709,7 +1709,7 @@ fn sessions_plot_each_model_s_sessions_over_the_distinct_total_with_a_note() {
     assert!(!shown.contains("5 ┤"), "{shown}");
     // The heading counts each Session once; each Model counts those that
     // used it, their share of all the Sessions that worked.
-    row(&rows, "Last 30 days · 15 Sessions");
+    row(&rows, "Last 30 days · 15 sessions");
     for (label, figures) in [
         ("Claude Opus 5.5", [" 12 ", "80%"]),
         ("GPT-5.5 Codex", [" 4 ", "27%"]),
@@ -1743,7 +1743,7 @@ fn sessions_that_each_used_one_model_carry_no_note() {
     press(&mut application, 's');
 
     let rows = screen(&application);
-    row(&rows, "Last 30 days · 19 Sessions");
+    row(&rows, "Last 30 days · 19 sessions");
     assert!(!rows.join("\n").contains(OVERLAP_NOTE), "{rows:#?}");
 }
 
@@ -1774,10 +1774,10 @@ fn one_session_is_named_in_the_singular() {
     press(&mut application, 's');
 
     let rows = screen(&application);
-    row(&rows, "Last 30 days · 1 Session");
+    row(&rows, "Last 30 days · 1 session");
     assert!(
-        !rows.join("\n").contains("1 Sessions"),
-        "Subagents are not counted among the Sessions: {rows:#?}"
+        !rows.join("\n").contains("1 sessions"),
+        "Subagents are not counted among the sessions: {rows:#?}"
     );
 }
 
@@ -1917,7 +1917,7 @@ fn b_and_clicks_choose_a_breakdown_and_read_it_anew() {
         assert!(
             screen(&application)
                 .iter()
-                .any(|row| row.contains("Reading Usage Metrics")),
+                .any(|row| row.contains("Reading usage metrics")),
             "{expected:?}"
         );
         let chosen = match expected {
@@ -1974,7 +1974,7 @@ fn a_provider_breakdown_names_each_provider_and_notes_sessions_counted_under_sev
     }
     row(
         &rows,
-        "A Session that used several Providers counts once for each",
+        "A session that used several providers counts once for each",
     );
     assert!(!rows.join("\n").contains("several Models"));
 }
@@ -2160,12 +2160,12 @@ fn other_counts_the_sessions_of_the_keys_it_holds_once_for_each() {
     press(&mut application, 's');
 
     let rows = screen(&application);
-    row(&rows, "Last 30 days · 1 Session");
+    row(&rows, "Last 30 days · 1 session");
     let other = row(&rows, "█ Other");
     assert!(other.contains(" 2 "), "{other:?}");
     row(
         &rows,
-        "A Session that used several Models counts once for each",
+        "A session that used several models counts once for each",
     );
 }
 
@@ -2386,7 +2386,7 @@ fn a_selected_bar_reads_its_own_figures_in_the_legend() {
     eprintln!("{shown}");
     assert_eq!(
         legend_heading(&application),
-        "Tue 13 Oct · 6.25M tokens · 3 Sessions · 30 Turns"
+        "Tue 13 Oct · 6.25M tokens · 3 sessions · 30 turns"
     );
     assert!(!shown.contains("Last 30 days"), "{shown}");
     for (label, figures) in [
@@ -2404,7 +2404,7 @@ fn a_selected_bar_reads_its_own_figures_in_the_legend() {
     press(&mut application, 'c');
     assert_eq!(
         legend_heading(&application),
-        "Tue 13 Oct · — · 3 Sessions · 30 Turns"
+        "Tue 13 Oct · — · 3 sessions · 30 turns"
     );
 
     // Sessions count the bucket's distinct total, which the Models overcount.
@@ -2412,7 +2412,7 @@ fn a_selected_bar_reads_its_own_figures_in_the_legend() {
     let rows = screen(&application);
     assert_eq!(
         legend_heading(&application),
-        "Tue 13 Oct · 3 Sessions · 30 Turns"
+        "Tue 13 Oct · 3 sessions · 30 turns"
     );
     for (label, sessions) in [
         ("Claude Opus 5.5", "2 "),
@@ -2424,7 +2424,7 @@ fn a_selected_bar_reads_its_own_figures_in_the_legend() {
     }
     row(
         &rows,
-        "A Session that used several Models counts once for each",
+        "A session that used several models counts once for each",
     );
 
     // Clearing it restores the range's figures.
@@ -2447,7 +2447,7 @@ fn a_selected_bar_s_cost_is_partial_where_its_own_work_is() {
     let rows = screen(&application);
     assert_eq!(
         legend_heading(&application),
-        "Tue 13 Oct · $7.00+ · 3 Sessions · 30 Turns"
+        "Tue 13 Oct · $7.00+ · 3 sessions · 30 turns"
     );
     for (label, figures) in [
         ("Claude Opus 5.5", ["$5.00 ", "71%"]),
@@ -2467,7 +2467,7 @@ fn a_selected_bar_s_cost_is_partial_where_its_own_work_is() {
     );
     assert_eq!(
         legend_heading(&application),
-        "Wed 30 Sep · $3.00 · 2 Sessions · 20 Turns"
+        "Wed 30 Sep · $3.00 · 2 sessions · 20 turns"
     );
 }
 
@@ -3296,8 +3296,8 @@ fn the_headline_states_the_range_s_figures_against_the_period_before() {
             &[
                 "$412.86+",
                 "27M tokens",
-                "96 Sessions",
-                "1.28K Turns",
+                "96 sessions",
+                "1.28K turns",
                 "71% from cache"
             ]
         ),
@@ -3317,7 +3317,7 @@ fn the_headline_states_the_range_s_figures_against_the_period_before() {
             &details,
             &[
                 "$37.10 estimated",
-                "12 Subagents",
+                "12 subagents",
                 "40 failed · 31 interrupted"
             ]
         ),
@@ -3326,7 +3326,7 @@ fn the_headline_states_the_range_s_figures_against_the_period_before() {
     // Each column's lines begin where its figure does.
     let column = |line: &str, word: &str| line.find(word).unwrap();
     assert_eq!(column(&figures, "$412"), column(&compared, "▲ 18%"));
-    assert_eq!(column(&figures, "96 Sessions"), column(&details, "12 Sub"));
+    assert_eq!(column(&figures, "96 sessions"), column(&details, "12 sub"));
     assert_eq!(column(&figures, "1.28K"), column(&details, "40 failed"));
 }
 
@@ -3335,7 +3335,7 @@ fn the_comparison_is_left_out_where_the_period_before_had_no_usage() {
     for (case, comparison) in [
         ("no comparison answered", None),
         (
-            "a period of Turns that recorded nothing",
+            "a period of turns that recorded nothing",
             Some(UsageMetricsAggregate {
                 sessions: 3,
                 turns: 4,
@@ -3364,7 +3364,7 @@ fn the_comparison_is_left_out_where_the_period_before_had_no_usage() {
             "{case}: {shown}"
         );
         assert!(
-            in_order(&compared, &["$37.10 estimated", "12 Subagents"]),
+            in_order(&compared, &["$37.10 estimated", "12 subagents"]),
             "{case}: the details close up under their figures: {compared:?}"
         );
         assert!(
@@ -3425,7 +3425,7 @@ fn all_time_headline_figures_count_untimed_turns_and_no_other_range_s_do() {
     answer(&mut application, request_id, Ok(with_untimed(&query)));
     let [figures, _, _] = headline(&screen(&application));
     assert!(
-        in_order(&figures, &["$412.86+", "96 Sessions", "1.28K Turns"]),
+        in_order(&figures, &["$412.86+", "96 sessions", "1.28K turns"]),
         "{figures:?}"
     );
 
@@ -3435,7 +3435,7 @@ fn all_time_headline_figures_count_untimed_turns_and_no_other_range_s_do() {
     let rows = screen(&application);
     let [figures, compared, _] = headline(&rows);
     assert!(
-        in_order(&figures, &["$422.86+", "98 Sessions", "1.3K Turns"]),
+        in_order(&figures, &["$422.86+", "98 sessions", "1.3K turns"]),
         "{figures:?}"
     );
     assert!(
@@ -3472,7 +3472,7 @@ fn all_time_with_no_timed_turn_still_heads_the_view_with_its_untimed_figures() {
                 request_id: probe,
                 result: Ok(only_untimed(&first)),
             })
-            .expect("deliver the earliest Turn"),
+            .expect("deliver the earliest turn"),
     );
     answer(&mut application, request_id, Ok(only_untimed(&this_month)));
 
@@ -3481,11 +3481,11 @@ fn all_time_with_no_timed_turn_still_heads_the_view_with_its_untimed_figures() {
     eprintln!("{shown}");
     let [figures, compared, _] = headline(&rows);
     assert!(
-        in_order(&figures, &["$5.00", "4K tokens", "2 Sessions", "7 Turns"]),
+        in_order(&figures, &["$5.00", "4K tokens", "2 sessions", "7 turns"]),
         "{figures:?}"
     );
     assert!(compared.contains("1 failed"), "{compared:?}");
-    assert!(!shown.contains("No Usage yet."), "{shown}");
+    assert!(!shown.contains("No usage yet."), "{shown}");
     row(&rows, "none of it can be charted");
     assert!(!shown.contains('└'), "no empty chart is drawn");
 
@@ -3529,7 +3529,7 @@ fn a_selected_bar_s_legend_is_headed_by_its_sessions_and_turns() {
 
     assert_eq!(
         legend_heading(&application),
-        "Mon 12 Oct · 4.5M tokens · 2 Sessions · 20 Turns"
+        "Mon 12 Oct · 4.5M tokens · 2 sessions · 20 turns"
     );
     invoke(&mut application, SemanticCommandId::MetricsBucketClear);
     assert_eq!(legend_heading(&application), "Last 30 days · 109M tokens");
@@ -3552,7 +3552,7 @@ fn the_usage_mix_strip_shows_under_tokens_alone_and_keeps_absent_parts_absent() 
         Ok(without_cache_writes(&query)),
     );
     let shown = screen(&application).join("\n");
-    assert!(!shown.contains("Usage mix"), "not under Cost: {shown}");
+    assert!(!shown.contains("Usage mix"), "not under cost: {shown}");
 
     show_tokens(&mut application);
 
@@ -3633,8 +3633,8 @@ fn the_headline_fits_eighty_columns() {
             &[
                 "$412.86+",
                 "27M tokens",
-                "96 Sessions",
-                "1.28K Turns",
+                "96 sessions",
+                "1.28K turns",
                 "71%"
             ]
         ),
@@ -3645,7 +3645,7 @@ fn the_headline_fits_eighty_columns() {
         "{compared:?}"
     );
     assert!(
-        in_order(&details, &["$37.10", "12 Subagents", "40 failed", "31"]),
+        in_order(&details, &["$37.10", "12 subagents", "40 failed", "31"]),
         "{details:?}"
     );
 }
@@ -3730,7 +3730,7 @@ fn the_most_expensive_sessions_are_listed_under_the_legend() {
     let (application, _) = thirty_days_of_top_sessions(reader_in(NEW_YORK, afternoon()));
 
     let rows = screen(&application);
-    let heading = rendered_row(&rows, "Most expensive Sessions");
+    let heading = rendered_row(&rows, "Most expensive sessions");
     assert!(
         rendered_row(&rows, "copilot · GPT-5.5") < heading,
         "beneath the legend: {rows:#?}"
@@ -3776,7 +3776,7 @@ fn a_range_with_no_priced_sessions_lists_none_under_no_heading() {
     answer(&mut application, request_id, Ok(priced_report(&query)));
 
     let shown = screen(&application).join("\n");
-    assert!(!shown.contains("Most expensive Sessions"), "{shown}");
+    assert!(!shown.contains("Most expensive sessions"), "{shown}");
 }
 
 #[test]
@@ -3846,8 +3846,8 @@ fn down_past_the_legend_focuses_the_sessions_and_enter_opens_one_closing_the_vie
         ))
     );
     assert!(
-        !screen(&application)[0].starts_with(" Metrics"),
-        "opening a Session closes the view"
+        !screen(&application)[0].starts_with(" metrics"),
+        "opening a session closes the view"
     );
 }
 
@@ -3864,7 +3864,7 @@ fn a_click_on_a_session_row_opens_it_from_the_server_the_view_reads() {
             top[2].session_id
         ))
     );
-    assert!(!screen(&application)[0].starts_with(" Metrics"));
+    assert!(!screen(&application)[0].starts_with(" metrics"));
 
     // A remote Outlook's Sessions open on that Remote.
     let (mut remote, top) = thirty_days_of_top_sessions(
@@ -3946,7 +3946,7 @@ pub(super) fn remove_studio(application: &mut Application) -> ApplicationTransit
                 acknowledged: true,
             }),
         })
-        .expect("remove the Remote");
+        .expect("remove the remote");
     assert!(
         matches!(
             turned,
@@ -3973,7 +3973,7 @@ fn turning_the_outlook_beneath_the_overview_reads_the_server_it_now_names() {
     assert_eq!(origin, Outlook::Local);
     let rows = screen(&application);
     assert!(rows[0].starts_with(" Metrics"), "the view stays open");
-    row(&rows, "Reading Usage Metrics…");
+    row(&rows, "Reading usage metrics…");
     assert!(
         !rows.join("\n").contains("Fix Windows path fixtures"),
         "studio's figures are never shown as this machine's: {rows:#?}"
@@ -4290,8 +4290,8 @@ fn at_eighty_columns_the_headline_s_columns_stand_evenly_apart() {
     let columns = [
         (column(&figures, "$412.86+"), width("▲ 18% vs prev 30d")),
         (column(&figures, "27M tokens"), width("27M tokens")),
-        (column(&figures, "96 Sessions"), width("12 Subagents")),
-        (column(&figures, "1.28K Turns"), width("1.28K Turns")),
+        (column(&figures, "96 sessions"), width("12 subagents")),
+        (column(&figures, "1.28K turns"), width("1.28K turns")),
         (column(&figures, "71% from cache"), width("71% from cache")),
     ];
     let gaps: Vec<usize> = columns

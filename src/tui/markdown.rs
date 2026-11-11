@@ -2115,7 +2115,7 @@ pub(super) mod tests {
                 .iter()
                 .flat_map(|line| &line.spans)
                 .all(|span| span.style.fg == theme.text.subdued.fg),
-            "every Markdown role follows Reasoning's subdued posture"
+            "every Markdown role follows reasoning's subdued posture"
         );
     }
 

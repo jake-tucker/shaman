@@ -83,7 +83,7 @@ fn session_with_its_tree(
                 sessions: Vec::new(),
             }),
         })
-        .expect("take the Session's tree");
+        .expect("take the session's tree");
     (snapshot, turn_id)
 }
 
@@ -138,7 +138,7 @@ fn an_approval_arrives(
         None,
     );
     let suru::protocol::Activity::Approval { approval, .. } = &activity else {
-        unreachable!("an Approval Activity carries an Approval")
+        unreachable!("an approval activity carries an approval")
     };
     snapshot.pending_approvals.push(approval.id);
     snapshot.revision = suru::protocol::SessionRevision(snapshot.revision.0 + 1);
@@ -148,7 +148,7 @@ fn an_approval_arrives(
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             snapshot.clone(),
         )))
-        .expect("deliver the pending Approval");
+        .expect("deliver the pending approval");
 }
 
 fn screen(application: &Application) -> String {
@@ -181,7 +181,7 @@ fn an_overlay_opens_over_the_main_view_and_never_over_the_aside() {
         assert_eq!(
             aside_columns(&application, 32),
             before,
-            "{overlay:?} is centred on the main view and leaves every cell of the Aside standing"
+            "{overlay:?} is centred on the main view and leaves every cell of the aside standing"
         );
         key(&mut application, KeyCode::Esc);
     }
@@ -194,8 +194,8 @@ fn an_open_intervention_panel_outranks_an_aside_holding_the_keys_until_it_closes
     let (mut snapshot, turn_id) = session_with_its_tree(&mut application, workspace.path());
     an_approval_arrives(&mut application, &mut snapshot, turn_id);
     assert!(
-        screen(&application).contains("Approval · Choose Decision"),
-        "the Approval presents itself"
+        screen(&application).contains("Approval · Choose decision"),
+        "the approval presents itself"
     );
 
     // The Leader is reachable from the panel, so the reader can give the
@@ -203,29 +203,29 @@ fn an_open_intervention_panel_outranks_an_aside_holding_the_keys_until_it_closes
     press_leader_chord(&mut application, 'a');
     assert!(
         focused_aside_rows(&application).is_empty(),
-        "the panel outranks the Aside, so no row focus is painted beneath it"
+        "the panel outranks the aside, so no row focus is painted beneath it"
     );
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
     assert!(
         screen(&application).contains("> 1. Accept once"),
-        "the keys go to the Intervention: {}",
+        "the keys go to the intervention: {}",
         screen(&application)
     );
     assert!(focused_aside_rows(&application).is_empty());
 
     press(&mut application, KeyCode::Esc, KeyModifiers::NONE);
-    assert!(!screen(&application).contains("Approval · Choose Decision"));
+    assert!(!screen(&application).contains("Approval · Choose decision"));
     assert_eq!(
         focused_aside_rows(&application),
         [1, 2],
-        "with the panel put away the Aside has the keys it was given, focus on the open \
+        "with the panel put away the aside has the keys it was given, focus on the open \
          entry's two lines"
     );
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
     assert_eq!(
         focused_aside_rows(&application),
         [3, 4],
-        "and they walk its entries, a Subagent's two lines painted as one"
+        "and they walk its entries, a subagent's two lines painted as one"
     );
 }
 
@@ -239,15 +239,15 @@ fn an_intervention_arriving_while_the_aside_holds_the_keys_waits_for_them() {
 
     an_approval_arrives(&mut application, &mut snapshot, turn_id);
     assert!(
-        !screen(&application).contains("Approval · Choose Decision"),
-        "an arrival does not take the keys from a column the reader is driving, as with the Sidebar"
+        !screen(&application).contains("Approval · Choose decision"),
+        "an arrival does not take the keys from a column the reader is driving, as with the sidebar"
     );
     assert_eq!(focused_aside_rows(&application), [1, 2]);
 
     press(&mut application, KeyCode::Esc, KeyModifiers::NONE);
     assert!(
-        screen(&application).contains("Approval · Choose Decision"),
-        "handing the keys back lets the waiting Approval present itself"
+        screen(&application).contains("Approval · Choose decision"),
+        "handing the keys back lets the waiting approval present itself"
     );
     assert!(focused_aside_rows(&application).is_empty());
 }
@@ -291,7 +291,7 @@ fn incremental_width_commands_stop_at_the_aside_and_main_view_floors() {
     assert_eq!(
         rule_column(&minimum, WIDTH),
         Some(usize::from(WIDTH - 24)),
-        "the Aside's own floor"
+        "the aside's own floor"
     );
 
     let mut maximum = client(workspace.path(), 46);
@@ -319,6 +319,6 @@ fn incremental_width_commands_stop_at_the_aside_and_main_view_floors() {
     assert_eq!(
         rule_column(&hidden, WIDTH),
         Some(usize::from(WIDTH - 40)),
-        "a hidden Aside is not resized"
+        "a hidden aside is not resized"
     );
 }

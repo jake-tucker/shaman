@@ -51,21 +51,21 @@ pub(super) fn in_full(reason: &UnreachableReason) -> String {
                 "connections"
             };
             format!(
-                "Your Account has reached the Relay's cap of {limit} {connections} joined at \
-                 once at {relay}, so it joins no more until one ends; ask the Relay's operator \
+                "Your account has reached the relay's cap of {limit} {connections} joined at \
+                 once at {relay}, so it joins no more until one ends; ask the relay's operator \
                  to raise the cap if that is too few"
             )
         }
         UnreachableReason::RelayDifferentAccounts { relay, account } => format!(
-            "Accounts differ at the Relay at {relay}: this Server is logged in there as {} ({}) \
-             and the Remote under another Account, and a Relay joins only Servers logged in \
-             under the same one, so log this Server in there as the user the Remote is logged \
+            "Accounts differ at the relay at {relay}: this server is logged in there as {} ({}) \
+             and the remote under another account, and a relay joins only servers logged in \
+             under the same one, so log this server in there as the user the remote is logged \
              in as, or pair the two directly",
             account.username, account.provider
         ),
         UnreachableReason::RelayLoginNeeded { relay } => format!(
-            "Login needed at the Relay at {relay}: it joins this Server to nothing until this \
-             Server logs in there, so log in to try again"
+            "Login needed at the relay at {relay}: it joins this server to nothing until this \
+             server logs in there, so log in to try again"
         ),
     }
 }

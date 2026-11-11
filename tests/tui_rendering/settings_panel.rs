@@ -57,7 +57,7 @@ fn client_showing(workspace: &Path, settings: EffectiveSettings, pinned: &[&str]
                 .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                     SemanticCommandId::SidebarToggle,
                 )))
-                .expect("hide the fixture Sidebar without changing its effective Settings");
+                .expect("hide the fixture sidebar without changing its effective settings");
         }
     }
     application
@@ -235,7 +235,7 @@ fn read_providers_tab(application: &mut Application) -> ModelListRequest {
     let ApplicationTransition::ListModels(request) =
         press(application, KeyCode::Right, KeyModifiers::NONE)
     else {
-        panic!("entering the Providers tab reads every enabled Provider's Availability");
+        panic!("entering the providers tab reads every enabled provider's availability");
     };
     request
 }
@@ -268,7 +268,7 @@ fn deliver_catalog(
             request,
             catalog: catalog(providers),
         })
-        .expect("receive what the Availability read found");
+        .expect("receive what the availability read found");
 }
 
 /// Walks the focus down to the Setting spelling `key`, which the panel names
@@ -299,7 +299,7 @@ fn focused_key(application: &Application) -> String {
         .collect::<Vec<_>>();
     match named.as_slice() {
         [key] => (*key).to_owned(),
-        _ => panic!("the settings panel named {named:?} rather than one focused Setting"),
+        _ => panic!("the settings panel named {named:?} rather than one focused setting"),
     }
 }
 
@@ -465,7 +465,7 @@ fn the_tab_bar_names_every_tab_and_left_and_right_switch_between_them_with_wrap(
         rendered_application_rows(&application)
             .join("\n")
             .contains("Session content width"),
-        "and lists that tab's Settings"
+        "and lists that tab's settings"
     );
 
     press(&mut application, KeyCode::Right, KeyModifiers::NONE);
@@ -476,13 +476,13 @@ fn the_tab_bar_names_every_tab_and_left_and_right_switch_between_them_with_wrap(
             styling(&switched, "General")
         ),
         (active, idle),
-        "Right moves the active tab on to Providers"
+        "Right moves the active tab on to providers"
     );
     assert!(
         rendered_application_rows(&application)
             .join("\n")
             .contains("Codex"),
-        "and the panel lists the Providers instead"
+        "and the panel lists the providers instead"
     );
 
     press(&mut application, KeyCode::Right, KeyModifiers::NONE);
@@ -506,7 +506,7 @@ fn the_tab_bar_names_every_tab_and_left_and_right_switch_between_them_with_wrap(
     assert_eq!(
         styling(&source_control, "Source Control"),
         active,
-        "Source Control follows Transcript"
+        "Source Control follows transcript"
     );
 
     press(&mut application, KeyCode::Right, KeyModifiers::NONE);
@@ -551,7 +551,7 @@ fn the_transcript_tab_presents_image_previews_on_by_default_beside_the_other_tra
     assert_ne!(
         styling(&transcript, "Transcript"),
         styling(&transcript, "General"),
-        "the Transcript tab is drawn as the active one"
+        "the transcript tab is drawn as the active one"
     );
     let previews = shown(&application, "Image previews");
     assert_eq!(
@@ -559,14 +559,14 @@ fn the_transcript_tab_presents_image_previews_on_by_default_beside_the_other_tra
         "image previews ride their built-in default: {previews:?}"
     );
     for label in [
-        "Default Fold posture",
+        "Default fold posture",
         "Reasoning visibility",
-        "Tool Call visibility",
+        "Tool call visibility",
         "Command auto-expansion",
     ] {
         assert!(
             has_row(&application, label),
-            "the Transcript tab presents {label}"
+            "the transcript tab presents {label}"
         );
     }
     focus_setting(&mut application, "transcript.imagePreviews");
@@ -586,22 +586,22 @@ fn the_transcript_tab_presents_image_previews_on_by_default_beside_the_other_tra
         let descriptor = suru::settings::SCHEMA
             .iter()
             .find(|descriptor| descriptor.key == key)
-            .expect("the Transcript Setting is in the schema");
+            .expect("the transcript setting is in the schema");
         assert_eq!(descriptor.group, SettingGroup::Transcript, "{key}");
         assert_eq!(descriptor.scope, SettingScope::Client, "{key}");
     }
 
     click_tab(&mut application, "General");
     for label in [
-        "Default Fold posture",
+        "Default fold posture",
         "Reasoning visibility",
-        "Tool Call visibility",
+        "Tool call visibility",
         "Command auto-expansion",
         "Image previews",
     ] {
         assert!(
             !has_row(&application, label),
-            "a Transcript Setting is not also a General one: {label}"
+            "a transcript setting is not also a General one: {label}"
         );
     }
 }
@@ -616,14 +616,14 @@ fn the_transcript_tab_presents_tool_call_visibility_shown_by_default_beneath_rea
     let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
     open_transcript_tab(&mut application);
 
-    let tool_calls = shown(&application, "Tool Call visibility");
+    let tool_calls = shown(&application, "Tool call visibility");
     assert_eq!(
         tool_calls, "shown",
-        "Tool Calls ride their shown default: {tool_calls:?}"
+        "Tool calls ride their shown default: {tool_calls:?}"
     );
     let rows = rendered_application_rows(&application);
     assert_eq!(
-        row_index(&rows, "Tool Call visibility"),
+        row_index(&rows, "Tool call visibility"),
         row_index(&rows, "Reasoning visibility") + 1,
         "the two kinds a reader may hide keep company: {rows:?}"
     );
@@ -649,10 +649,10 @@ fn the_transcript_tab_presents_tool_call_visibility_shown_by_default_beneath_rea
         &["transcript.toolCallVisibility"],
     );
     open_transcript_tab(&mut application);
-    let tool_calls = shown(&application, "Tool Call visibility");
+    let tool_calls = shown(&application, "Tool call visibility");
     assert_eq!(
         tool_calls, "hidden ●",
-        "a Config Document that hides them shows its pinned value: {tool_calls:?}"
+        "a config document that hides them shows its pinned value: {tool_calls:?}"
     );
     focus_setting(&mut application, "transcript.toolCallVisibility");
     assert_eq!(
@@ -671,7 +671,7 @@ fn source_control_tab_presents_the_server_reclaim_setting_between_providers_and_
     open_panel(&mut application);
     click_tab(&mut application, "Source Control");
 
-    let reclaim_row = shown(&application, "Reclaim Managed Worktrees");
+    let reclaim_row = shown(&application, "Reclaim managed worktrees");
     assert_eq!(
         reclaim_row, "14 days",
         "default threshold is visible: {reclaim_row}"
@@ -680,7 +680,7 @@ fn source_control_tab_presents_the_server_reclaim_setting_between_providers_and_
     let descriptor = suru::settings::SCHEMA
         .iter()
         .find(|descriptor| descriptor.key == "worktree.autoReclaim")
-        .expect("schema declares Reclaim");
+        .expect("schema declares reclaim");
     assert_eq!(descriptor.group, SettingGroup::SourceControl);
     assert_eq!(descriptor.scope, SettingScope::Server);
 
@@ -695,7 +695,7 @@ fn source_control_tab_presents_the_server_reclaim_setting_between_providers_and_
         },
         &["worktree.autoReclaim"],
     );
-    assert_eq!(shown(&application, "Reclaim Managed Worktrees"), "off ●");
+    assert_eq!(shown(&application, "Reclaim managed worktrees"), "off ●");
 }
 
 #[test]
@@ -707,12 +707,12 @@ fn source_control_tab_offers_whether_the_landing_returns_from_a_worktree_it_crea
 
     let rows = rendered_application_rows(&application);
     assert!(
-        row_index(&rows, "Reclaim Managed Worktrees")
-            < row_index(&rows, "After creating a Worktree")
-            && row_index(&rows, "After creating a Worktree") < row_index(&rows, "Workspace Roots"),
-        "it keeps the other worktree Setting company: {rows:?}"
+        row_index(&rows, "Reclaim managed worktrees")
+            < row_index(&rows, "After creating a worktree")
+            && row_index(&rows, "After creating a worktree") < row_index(&rows, "Workspace roots"),
+        "it keeps the other worktree setting company: {rows:?}"
     );
-    let after = row(&application, "After creating a Worktree");
+    let after = row(&application, "After creating a worktree");
     assert_eq!(shown_in(&after), "return", "{after}");
     let descriptor = suru::settings::SCHEMA
         .iter()
@@ -788,24 +788,24 @@ fn the_source_control_tab_presents_the_workspace_roots_beneath_reclaim_naming_no
 
     let rows = rendered_application_rows(&application);
     assert!(
-        row_index(&rows, "Reclaim Managed Worktrees") < row_index(&rows, "Workspace Roots"),
-        "the Roots keep the worktree Settings' company: {rows:?}"
+        row_index(&rows, "Reclaim managed worktrees") < row_index(&rows, "Workspace roots"),
+        "the roots keep the worktree settings' company: {rows:?}"
     );
-    let roots = shown(&application, "Workspace Roots");
+    let roots = shown(&application, "Workspace roots");
     assert_eq!(
         roots, "none",
-        "no Root is named until the user names one: {roots}"
+        "no root is named until the user names one: {roots}"
     );
     let descriptor = suru::settings::SCHEMA
         .iter()
         .find(|descriptor| descriptor.key == "workspace.roots")
-        .expect("the schema declares the Workspace Roots");
+        .expect("the schema declares the workspace roots");
     assert_eq!(descriptor.group, SettingGroup::SourceControl);
     assert_eq!(descriptor.scope, SettingScope::Server);
     focus_setting(&mut application, "workspace.roots");
     assert!(
         screen(&application).contains("Enter choose"),
-        "the row teaches that Enter opens where its Roots are chosen"
+        "the row teaches that Enter opens where its roots are chosen"
     );
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
@@ -818,11 +818,11 @@ fn the_source_control_tab_presents_the_workspace_roots_beneath_reclaim_naming_no
         with_workspace_roots(&["~/src", WORK_ROOT]),
         &["workspace.roots"],
     );
-    let roots = row(&application, "Workspace Roots");
+    let roots = row(&application, "Workspace roots");
     assert_eq!(
         shown_in(&roots),
         format!("~/src, {WORK_ROOT} ●"),
-        "the row names every Root as the user named it: {roots}"
+        "the row names every root as the user named it: {roots}"
     );
 }
 
@@ -844,8 +844,8 @@ fn the_workspace_roots_list_editor_adds_edits_and_removes_rows_and_saves_them_as
         opened.contains(ROOTS_EDITOR)
             && opened.contains("› ~/src")
             && opened.contains(WORK_ROOT)
-            && opened.contains("add a Root"),
-        "the editor opens on the Roots in force, focused on the first: {opened}"
+            && opened.contains("add a root"),
+        "the editor opens on the roots in force, focused on the first: {opened}"
     );
 
     // Edit the focused row in place.
@@ -877,7 +877,7 @@ fn the_workspace_roots_list_editor_adds_edits_and_removes_rows_and_saves_them_as
     type_terminal_text(&mut application, ARCHIVE_ROOT);
     let added = screen(&application);
     assert!(
-        added.contains(&format!("› {ARCHIVE_ROOT}")) && added.contains("add a Root"),
+        added.contains(&format!("› {ARCHIVE_ROOT}")) && added.contains("add a root"),
         "typing on the add row makes it an entry, with a new add row beneath: {added}"
     );
     assert_eq!(
@@ -892,7 +892,7 @@ fn the_workspace_roots_list_editor_adds_edits_and_removes_rows_and_saves_them_as
         "saving closes the editor"
     );
     assert_eq!(
-        shown(&application, "Workspace Roots"),
+        shown(&application, "Workspace roots"),
         format!("~/src, {WORK_ROOT} ●"),
         "and the row waits for the refreshed snapshot"
     );
@@ -901,7 +901,7 @@ fn the_workspace_roots_list_editor_adds_edits_and_removes_rows_and_saves_them_as
         with_workspace_roots(&["~/code", ARCHIVE_ROOT]),
         &["workspace.roots"],
     );
-    assert!(shown(&application, "Workspace Roots") == format!("~/code, {ARCHIVE_ROOT} ●"));
+    assert!(shown(&application, "Workspace roots") == format!("~/code, {ARCHIVE_ROOT} ●"));
 }
 
 /// The Relays a Config Document pins are presented and edited with the other
@@ -929,12 +929,12 @@ fn the_experimental_tab_presents_and_edits_the_relays_pinned() {
     press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
     let opened = screen(&application);
     assert!(
-        opened.contains(&format!("› {COMPANY}")) && opened.contains("add a Relay's address"),
+        opened.contains(&format!("› {COMPANY}")) && opened.contains("add a relay's address"),
         "{opened}"
     );
     assert!(
         !opened.contains("browse"),
-        "a Relay is no directory: {opened}"
+        "a relay is no directory: {opened}"
     );
 
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
@@ -942,7 +942,7 @@ fn the_experimental_tab_presents_and_edits_the_relays_pinned() {
     assert_eq!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::Continue,
-        "an address no Relay is reached at pins nothing"
+        "an address no relay is reached at pins nothing"
     );
     assert!(
         screen(&application).contains("\"ftp://nope.example.com\" is not"),
@@ -977,7 +977,7 @@ fn a_root_neither_absolute_nor_beginning_with_a_tilde_keeps_the_list_editor_open
     let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
     open_workspace_roots_editor(&mut application);
     assert!(
-        screen(&application).contains("› add a Root"),
+        screen(&application).contains("› add a root"),
         "a list with no entries opens on the row to add one at: {}",
         screen(&application)
     );
@@ -989,7 +989,7 @@ fn a_root_neither_absolute_nor_beginning_with_a_tilde_keeps_the_list_editor_open
     assert_eq!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::Continue,
-        "a relative Root pins nothing"
+        "a relative root pins nothing"
     );
     let refused = screen(&application);
     assert!(
@@ -1010,7 +1010,7 @@ fn a_root_neither_absolute_nor_beginning_with_a_tilde_keeps_the_list_editor_open
         MutatesSetting(SettingMutation::WorkspaceRoots {
             value: Some(vec!["~/src".to_owned(), WORK_ROOT.to_owned()]),
         }),
-        "an absolute Root and a home-relative one are saved; an emptied row is no entry"
+        "an absolute root and a home-relative one are saved; an emptied row is no entry"
     );
 
     press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
@@ -1024,7 +1024,7 @@ fn a_root_neither_absolute_nor_beginning_with_a_tilde_keeps_the_list_editor_open
         !screen(&application).contains(ROOTS_EDITOR),
         "Esc closes the editor"
     );
-    assert_eq!(shown(&application, "Workspace Roots"), "none");
+    assert_eq!(shown(&application, "Workspace roots"), "none");
 }
 
 #[test]
@@ -1052,7 +1052,7 @@ fn list_editor_commands_can_be_invoked_semantically_and_take_pasted_text() {
     }
     application
         .handle_terminal_event(InputEvent::Paste(format!("{ARCHIVE_ROOT}\n")))
-        .expect("paste a Root");
+        .expect("paste a root");
     assert!(
         screen(&application).contains(&format!("› {ARCHIVE_ROOT}")),
         "a paste lands on the focused row, its line break dropped: {}",
@@ -1131,7 +1131,7 @@ fn a_list_editor_closes_with_its_panel_and_takes_no_input_while_another_overlay_
             ),
             ApplicationTransition::BeginServing { .. }
         ),
-        "the Serving overlay opens over the editor"
+        "the serving overlay opens over the editor"
     );
     for command in [
         CommandId::InvokeSemanticText(SemanticCommandId::SettingsListInsert, "~/hidden".to_owned()),
@@ -1147,7 +1147,7 @@ fn a_list_editor_closes_with_its_panel_and_takes_no_input_while_another_overlay_
             CommandId::InvokeSemantic(SemanticCommandId::SettingsListSave)
         ),
         ApplicationTransition::Continue,
-        "an editor beneath the Serving overlay saves nothing"
+        "an editor beneath the serving overlay saves nothing"
     );
     invoke(
         &mut application,
@@ -1159,7 +1159,7 @@ fn a_list_editor_closes_with_its_panel_and_takes_no_input_while_another_overlay_
         MutatesSetting(SettingMutation::WorkspaceRoots {
             value: Some(vec!["~/src".to_owned()]),
         }),
-        "neither an edit nor a cancel reached the editor while the Serving overlay hid it"
+        "neither an edit nor a cancel reached the editor while the serving overlay hid it"
     );
 
     open_workspace_roots_editor(&mut application);
@@ -1191,12 +1191,12 @@ fn expect_listing(transition: ApplicationTransition) -> (DirectoryListingId, Pat
         request,
     } = transition
     else {
-        panic!("the browser asks the Server for a directory's children, not {transition:?}");
+        panic!("the browser asks the server for a directory's children, not {transition:?}");
     };
     assert_eq!(
         outlook,
         Outlook::Local,
-        "the Server whose Settings are edited is the one browsed"
+        "the server whose settings are edited is the one browsed"
     );
     (listing_id, request.path)
 }
@@ -1227,7 +1227,7 @@ fn answer_listing(
                     .collect(),
             }),
         })
-        .expect("deliver the Server's listing")
+        .expect("deliver the server's listing")
 }
 
 /// Whether the list editor's focused row is an entry ending in the directory
@@ -1265,7 +1265,7 @@ fn tab_in_the_workspace_roots_editor_opens_the_directory_browser_over_the_panel(
     assert_eq!(
         root,
         workspace.path(),
-        "the browser is rooted where the Landing works"
+        "the browser is rooted where the landing works"
     );
     answer_listing(&mut application, listing_id, &root, &["projects"]);
     let browsing = screen(&application);
@@ -1311,7 +1311,7 @@ fn a_directory_chosen_in_the_browser_adds_a_root_or_replaces_the_focused_one() {
     open_workspace_roots_editor(&mut application);
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
-    assert!(screen(&application).contains("› add a Root"));
+    assert!(screen(&application).contains("› add a root"));
 
     let (listing_id, root) =
         expect_listing(press(&mut application, KeyCode::Tab, KeyModifiers::NONE));
@@ -1320,12 +1320,12 @@ fn a_directory_chosen_in_the_browser_adds_a_root_or_replaces_the_focused_one() {
     assert_eq!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::Continue,
-        "a Root chosen is a draft, and no Workspace is resolved"
+        "a root chosen is a draft, and no workspace is resolved"
     );
     let added = screen(&application);
     assert!(
         !added.contains("Path:") && focuses_entry_ending(&added, "projects"),
-        "the choice closes the browser and adds the directory as a Root: {added}"
+        "the choice closes the browser and adds the directory as a root: {added}"
     );
 
     press(&mut application, KeyCode::Up, KeyModifiers::NONE);
@@ -1347,7 +1347,7 @@ fn a_directory_chosen_in_the_browser_adds_a_root_or_replaces_the_focused_one() {
         MutatesSetting(SettingMutation::WorkspaceRoots {
             value: Some(vec!["~/src".to_owned(), notes, projects]),
         }),
-        "the browsed Roots are saved with the rest as one mutation"
+        "the browsed roots are saved with the rest as one mutation"
     );
 }
 
@@ -1402,7 +1402,7 @@ fn browsing_for_a_root_lists_the_client_s_own_server_while_looking_at_a_remote()
     assert_eq!(
         projects,
         root.join("projects"),
-        "every listing the tree asks for is asked of the Client's own Server"
+        "every listing the tree asks for is asked of the client's own server"
     );
     answer_listing(&mut application, listing_id, &projects, &[]);
     assert_eq!(
@@ -1412,7 +1412,7 @@ fn browsing_for_a_root_lists_the_client_s_own_server_while_looking_at_a_remote()
     let chosen = screen(&application);
     assert!(
         !chosen.contains("Path:") && !chosen.contains("studio is unreachable"),
-        "the choice is no work for the Remote: {chosen}"
+        "the choice is no work for the remote: {chosen}"
     );
     assert_eq!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
@@ -1456,13 +1456,13 @@ fn the_appearance_theme_row_opens_the_picker_and_cancel_returns_to_the_row() {
     let theme = shown(&application, "Theme");
     assert_eq!(
         theme, "catppuccin ●",
-        "the row shows the effective open Setting value: {theme:?}"
+        "the row shows the effective open setting value: {theme:?}"
     );
     assert_eq!(focused_key(&application), "appearance.theme");
     assert_eq!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::Continue,
-        "opening a Theme picker is entirely client-local"
+        "opening a theme picker is entirely client-local"
     );
     assert!(
         rendered_application_rows(&application)
@@ -1490,7 +1490,7 @@ fn the_appearance_theme_row_opens_the_picker_and_cancel_returns_to_the_row() {
         MutatesSetting(SettingMutation::AppearanceTheme {
             value: Some("system".to_owned()),
         }),
-        "the picker returns through the Theme row's typed pin"
+        "the picker returns through the theme row's typed pin"
     );
     assert!(has_row(&application, "Theme"));
     assert_eq!(focused_key(&application), "appearance.theme");
@@ -1564,11 +1564,11 @@ fn the_experimental_tab_stands_past_the_providers_and_lists_the_settings_declare
     assert_eq!(
         focused_key(&application),
         "serving.enabled",
-        "the focused Setting names the key a Config Document would spell"
+        "the focused setting names the key a config document would spell"
     );
     assert!(
         !has_row(&application, "Session content width") && !has_row(&application, "Codex"),
-        "the Experimental tab lists its own Settings and nobody else's"
+        "the Experimental tab lists its own settings and nobody else's"
     );
     for label in [
         "Serving",
@@ -1578,13 +1578,13 @@ fn the_experimental_tab_stands_past_the_providers_and_lists_the_settings_declare
     ] {
         assert!(
             has_row(&application, label),
-            "the Experimental tab presents the {label} Server Setting"
+            "the Experimental tab presents the {label} server setting"
         );
     }
     let listener = shown(&application, "Serving listener");
     assert_eq!(
         listener, "true",
-        "the listener is on until the reader turns it off, so Serving opens it as it always \
+        "the listener is on until the reader turns it off, so serving opens it as it always \
          has: {listener:?}"
     );
     for key in [
@@ -1605,17 +1605,17 @@ fn the_experimental_tab_stands_past_the_providers_and_lists_the_settings_declare
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::ServingEnabled { value: Some(true) }),
-        "and Space cycles it on, as it cycles any other Setting"
+        "and Space cycles it on, as it cycles any other setting"
     );
 
     press(&mut application, KeyCode::Right, KeyModifiers::NONE);
     assert!(
         !has_row(&application, "Serving"),
-        "an experimental Setting is not also a General one"
+        "an experimental setting is not also a General one"
     );
     assert!(
         has_row(&application, "Session content width"),
-        "and the General tab keeps every Setting it had"
+        "and the General tab keeps every setting it had"
     );
 }
 
@@ -1631,7 +1631,7 @@ fn the_broker_setting_stands_under_the_experimental_tab_and_is_on_by_default() {
     let broker = shown(&application, "Broker");
     assert_eq!(
         broker, "true",
-        "the Broker is offered until the reader turns it off: {broker:?}"
+        "the broker is offered until the reader turns it off: {broker:?}"
     );
     let descriptor = suru::settings::SCHEMA
         .iter()
@@ -1644,13 +1644,13 @@ fn the_broker_setting_stands_under_the_experimental_tab_and_is_on_by_default() {
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::BrokerEnabled { value: Some(false) }),
-        "Space cycles the Broker off, as it cycles any other Setting"
+        "Space cycles the broker off, as it cycles any other setting"
     );
 
     press(&mut application, KeyCode::Right, KeyModifiers::NONE);
     assert!(
         !has_row(&application, "Broker"),
-        "an experimental Setting is not also a General one"
+        "an experimental setting is not also a General one"
     );
 }
 
@@ -1752,7 +1752,7 @@ fn the_broker_limits_stand_under_the_experimental_tab_and_take_a_typed_cap() {
     assert!(
         !has_row(&application, "Broker depth limit")
             && !has_row(&application, "Broker concurrency limit"),
-        "an experimental Setting is not also a General one"
+        "an experimental setting is not also a General one"
     );
 }
 
@@ -1803,7 +1803,7 @@ fn a_broker_limit_outside_its_bound_stays_in_the_editor_and_escape_discards_the_
         MutatesSetting(SettingMutation::BrokerMaxConcurrentSubagents {
             value: Some(u32::MAX),
         }),
-        "the largest count the Broker keeps is pinned like any other"
+        "the largest count the broker keeps is pinned like any other"
     );
 
     press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
@@ -1841,7 +1841,7 @@ fn clicking_a_tab_label_switches_to_that_tab() {
             click_tab(&mut application, "Providers"),
             ApplicationTransition::ListModels(_)
         ),
-        "clicking the Providers tab arrives on it and reads the Providers"
+        "clicking the providers tab arrives on it and reads the providers"
     );
     assert!(
         has_row(&application, "Codex"),
@@ -1859,7 +1859,7 @@ fn clicking_a_tab_label_switches_to_that_tab() {
             click_tab(&mut application, "Providers"),
             ApplicationTransition::ListModels(_)
         ),
-        "clicking the tab already showing asks the Providers again"
+        "clicking the tab already showing asks the providers again"
     );
 
     assert_eq!(
@@ -1869,7 +1869,7 @@ fn clicking_a_tab_label_switches_to_that_tab() {
     );
     assert!(
         has_row(&application, "Session content width"),
-        "and lists the Settings that configure no Provider"
+        "and lists the settings that configure no provider"
     );
 }
 
@@ -1890,7 +1890,7 @@ fn clicking_a_row_selects_it_without_changing_a_value() {
     assert_eq!(
         click_row(&mut application, "Reasoning visibility"),
         ApplicationTransition::Continue,
-        "a click selects, so nothing goes out to the Config Document"
+        "a click selects, so nothing goes out to the config document"
     );
     assert_eq!(
         focused_key(&application),
@@ -1908,7 +1908,7 @@ fn clicking_a_row_selects_it_without_changing_a_value() {
         MutatesSetting(SettingMutation::TranscriptReasoningVisibility {
             value: Some(ReasoningVisibility::Shown),
         }),
-        "and Space still edits the focused Setting, wherever the focus came from"
+        "and Space still edits the focused setting, wherever the focus came from"
     );
 }
 
@@ -1924,23 +1924,23 @@ fn clicking_a_provider_row_neither_toggles_it_nor_steps_into_it() {
     assert_eq!(
         click_row(&mut application, "Copilot"),
         ApplicationTransition::Continue,
-        "no click ever edits a Setting"
+        "no click ever edits a setting"
     );
     assert_eq!(
         focused_key(&application),
         "provider.copilot.enabled",
-        "the Provider row takes the focus like any other"
+        "the provider row takes the focus like any other"
     );
     let copilot = row(&application, "Copilot");
     assert!(
         !copilot.contains("disabled"),
-        "and the Provider is left exactly as it was: {copilot:?}"
+        "and the provider is left exactly as it was: {copilot:?}"
     );
 
     assert_eq!(
         click_row(&mut application, "Codex"),
         ApplicationTransition::Continue,
-        "clicking another Provider edits nothing either"
+        "clicking another provider edits nothing either"
     );
     assert_eq!(
         focused_key(&application),
@@ -1949,7 +1949,7 @@ fn clicking_a_provider_row_neither_toggles_it_nor_steps_into_it() {
     );
     assert!(
         back_line(&application, "Codex").is_none() && has_row(&application, "Claude"),
-        "and the keys stay on the Providers, because stepping in is Enter's"
+        "and the keys stay on the providers, because stepping in is Enter's"
     );
 }
 
@@ -2013,26 +2013,26 @@ fn the_transcript_tab_marks_each_setting_pinned_or_riding_its_default() {
     );
     open_transcript_tab(&mut application);
 
-    let fold = shown(&application, "Default Fold posture");
+    let fold = shown(&application, "Default fold posture");
     assert_eq!(
         fold, "expanded ●",
-        "a Setting a Config Document pins shows its pinned value: {fold:?}"
+        "a setting a config document pins shows its pinned value: {fold:?}"
     );
     let visibility = shown(&application, "Reasoning visibility");
     assert_eq!(
         visibility, "hidden",
-        "a Setting nothing pins rides its built-in default: {visibility:?}"
+        "a setting nothing pins rides its built-in default: {visibility:?}"
     );
     assert_eq!(
         focused_key(&application),
         "transcript.defaultFoldPosture",
-        "the focused Setting names the key a Config Document would spell"
+        "the focused setting names the key a config document would spell"
     );
     assert!(
         !rendered_application_rows(&application)
             .join("\n")
             .contains("Codex"),
-        "a Provider is the Providers tab's business, not the Transcript's"
+        "a provider is the providers tab's business, not the transcript's"
     );
 }
 
@@ -2053,25 +2053,25 @@ fn the_providers_tab_lists_every_built_in_provider_by_display_name_whatever_its_
     assert!(
         row_index(&rows, "Codex") < row_index(&rows, "Copilot")
             && row_index(&rows, "Copilot") < row_index(&rows, "Claude"),
-        "the Providers keep the built-in order, named as the reader knows them: {rows:?}"
+        "the providers keep the built-in order, named as the reader knows them: {rows:?}"
     );
 
     let copilot = shown(&application, "Copilot");
     assert_eq!(
         copilot, "disabled ●",
-        "the Provider the reader turned off says so: {copilot:?}"
+        "the provider the reader turned off says so: {copilot:?}"
     );
     let claude = row(&application, "Claude");
     assert!(
         !claude.contains("disabled") && !claude.ends_with('●'),
-        "a Provider nothing pins is on, and an enabled Provider claims nothing further: {claude:?}"
+        "a provider nothing pins is on, and an enabled provider claims nothing further: {claude:?}"
     );
 
     let buffer = rendered_application_buffer(&application, 80, 15);
     assert_ne!(
         styling(&buffer, "Copilot"),
         styling(&buffer, "Claude"),
-        "the disabled Provider's row is dimmed beside the Providers still on"
+        "the disabled provider's row is dimmed beside the providers still on"
     );
 }
 
@@ -2098,7 +2098,7 @@ fn the_providers_tab_prefixes_each_provider_with_its_icon_when_enabled() {
     ] {
         assert!(
             row(&application, provider).contains(&format!("{icon} {provider}")),
-            "the {provider} row carries its Provider icon: {:?}",
+            "the {provider} row carries its provider icon: {:?}",
             row(&application, provider)
         );
     }
@@ -2109,7 +2109,7 @@ fn the_providers_tab_prefixes_each_provider_with_its_icon_when_enabled() {
             !rendered_application_rows(&application)
                 .join("\n")
                 .contains(icon),
-            "turning Show icons off removes Provider icons"
+            "turning Show icons off removes provider icons"
         );
     }
 }
@@ -2130,7 +2130,7 @@ fn space_on_a_provider_row_toggles_that_providers_enablement() {
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::ProviderCodexEnabled { value: Some(false) }),
-        "Space on a Provider row turns that Provider off"
+        "Space on a provider row turns that provider off"
     );
     assert!(
         !row(&application, "Codex").contains("disabled"),
@@ -2163,7 +2163,7 @@ fn space_on_a_provider_row_toggles_that_providers_enablement() {
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::ProviderCodexEnabled { value: Some(true) }),
-        "Space turns a Provider back on"
+        "Space turns a provider back on"
     );
     assert_eq!(
         press(&mut application, KeyCode::Char('d'), KeyModifiers::CONTROL),
@@ -2187,7 +2187,7 @@ fn entering_the_providers_tab_reads_availability_every_time() {
             press(&mut application, KeyCode::Right, KeyModifiers::NONE),
             ApplicationTransition::ListModels(_)
         ),
-        "arriving on the Providers tab reads the Providers"
+        "arriving on the providers tab reads the providers"
     );
     assert_eq!(
         press(&mut application, KeyCode::Left, KeyModifiers::NONE),
@@ -2207,28 +2207,28 @@ fn entering_the_providers_tab_reads_availability_every_time() {
     assert_eq!(
         press(&mut application, KeyCode::Left, KeyModifiers::NONE),
         ApplicationTransition::Continue,
-        "wrapping backwards off the first tab lands on one presenting no Provider"
+        "wrapping backwards off the first tab lands on one presenting no provider"
     );
     assert!(
         matches!(
             press(&mut application, KeyCode::Left, KeyModifiers::NONE),
             ApplicationTransition::Continue
         ),
-        "crossing Source Control reads no Provider"
+        "crossing Source Control reads no provider"
     );
     assert!(
         matches!(
             press(&mut application, KeyCode::Left, KeyModifiers::NONE),
             ApplicationTransition::Continue
         ),
-        "crossing Transcript reads no Provider"
+        "crossing transcript reads no provider"
     );
     assert!(
         matches!(
             press(&mut application, KeyCode::Left, KeyModifiers::NONE),
             ApplicationTransition::Continue
         ),
-        "crossing Appearance reads no Provider"
+        "crossing Appearance reads no provider"
     );
     assert!(
         matches!(
@@ -2330,7 +2330,7 @@ fn a_providers_fix_is_given_whole_beneath_the_headline_rather_than_on_its_row() 
     for provider in ["Codex", "Copilot", "Claude"] {
         assert!(
             has_row(&application, provider),
-            "the box grows to fit the fix rather than hiding a Provider: {panel}"
+            "the box grows to fit the fix rather than hiding a provider: {panel}"
         );
     }
 }
@@ -2464,7 +2464,7 @@ fn a_provider_compatibility_warning_is_shown_without_disabling_the_provider() {
     );
     assert!(
         !codex.contains("disabled") && !codex.contains("incompatible version"),
-        "the warning does not claim the Provider is unavailable: {codex:?}"
+        "the warning does not claim the provider is unavailable: {codex:?}"
     );
     let panel = rendered_application_rows(&application).join("\n");
     assert!(
@@ -2488,7 +2488,7 @@ fn a_failed_read_says_error_while_a_serving_catalog_says_nothing() {
             (
                 "codex",
                 ProviderCatalogStatus::Failed {
-                    message: "the codex CLI answered with no Models at all".to_owned(),
+                    message: "the codex CLI answered with no models at all".to_owned(),
                 },
             ),
             ("copilot", ProviderCatalogStatus::Fresh),
@@ -2504,17 +2504,17 @@ fn a_failed_read_says_error_while_a_serving_catalog_says_nothing() {
     let codex = row(&application, "Codex");
     assert!(
         codex.contains("error"),
-        "the Provider whose read failed says so: {codex:?}"
+        "the provider whose read failed says so: {codex:?}"
     );
     let panel = rendered_application_rows(&application).join("\n");
     assert!(
-        panel.contains("answered with no Models"),
+        panel.contains("answered with no models"),
         "with the whole message in the headline: {panel}"
     );
     let copilot = row(&application, "Copilot");
     assert_eq!(
         copilot, "  Copilot",
-        "a fresh catalog leaves nothing after the Provider's name: {copilot:?}"
+        "a fresh catalog leaves nothing after the provider's name: {copilot:?}"
     );
     let claude = row(&application, "Claude");
     assert_eq!(
@@ -2535,7 +2535,7 @@ fn a_provider_shows_a_spinner_while_its_availability_is_being_read() {
     for provider in ["Codex", "Copilot", "Claude"] {
         assert!(
             reading[row_index(&reading, provider)].contains(SPINNER),
-            "every enabled Provider is being read: {reading:?}"
+            "every enabled provider is being read: {reading:?}"
         );
     }
 
@@ -2552,7 +2552,7 @@ fn a_provider_shows_a_spinner_while_its_availability_is_being_read() {
         !rendered_application_rows(&application)
             .join("\n")
             .contains(SPINNER),
-        "and the Spinner goes the moment the read settles"
+        "and the spinner goes the moment the read settles"
     );
 }
 
@@ -2589,7 +2589,7 @@ fn a_disabled_provider_is_never_read_and_makes_no_availability_claim() {
     let codex = row(&application, "Codex");
     assert!(
         !codex.contains("not signed in") && !codex.contains("error"),
-        "and its row claims nothing about a Provider Suru has not consulted: {codex:?}"
+        "and its row claims nothing about a provider Suru has not consulted: {codex:?}"
     );
     let panel = rendered_application_rows(&application).join("\n");
     assert!(
@@ -2621,7 +2621,7 @@ fn a_listing_that_never_came_back_leaves_every_asked_about_provider_in_error() {
         let row = row(&application, provider);
         assert!(
             row.contains("error") && !row.contains(SPINNER),
-            "the Provider asked about has its answer, such as it is: {row:?}"
+            "the provider asked about has its answer, such as it is: {row:?}"
         );
     }
     let codex = row(&application, "Codex");
@@ -2697,7 +2697,7 @@ fn a_provider_the_answer_passes_over_stops_waiting_and_says_so() {
     let claude = row(&application, "Claude");
     assert!(
         claude.contains("error") && !claude.contains(SPINNER),
-        "a Provider the answer never named is answered badly, not still being read: {claude:?}"
+        "a provider the answer never named is answered badly, not still being read: {claude:?}"
     );
 }
 
@@ -2725,7 +2725,7 @@ fn turning_a_provider_off_after_a_read_silences_its_row_and_the_headline() {
         rendered_application_rows(&application)
             .join("\n")
             .contains("not signed in"),
-        "the Provider has something to say while it is on"
+        "the provider has something to say while it is on"
     );
 
     deliver_snapshot(
@@ -2769,28 +2769,28 @@ fn enter_lists_a_providers_own_settings_in_a_narrow_panel_and_esc_steps_back_out
     focus_setting(&mut application, "provider.codex.enabled");
     assert!(
         !has_row(&application, "Reasoning summary"),
-        "a Provider's own Settings are no rows of the list of Providers"
+        "a provider's own settings are no rows of the list of providers"
     );
     let footer = rendered_application_rows(&application).join("\n");
     assert!(
-        footer.contains("Space disable · Enter Codex's Settings · Left/Right tabs")
+        footer.contains("Space disable · Enter Codex's settings · Left/Right tabs")
             && footer.contains("Esc close"),
-        "the Provider's row teaches what its keys do to it: {footer}"
+        "the provider's row teaches what its keys do to it: {footer}"
     );
 
     press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
     let rows = rendered_application_rows(&application);
     let screen = rows.join("\n");
     let back = back_line(&application, "Codex")
-        .unwrap_or_else(|| panic!("the Settings are headed by the Provider they are: {screen}"));
+        .unwrap_or_else(|| panic!("the settings are headed by the provider they are: {screen}"));
     assert!(
         back.ends_with(SPINNER),
-        "with the Provider's condition where its row would have said it: {back:?}"
+        "with the provider's condition where its row would have said it: {back:?}"
     );
     for provider in ["Copilot", "Claude"] {
         assert!(
             !has_row(&application, provider),
-            "the Provider's own Settings stand in the Providers' place: {screen}"
+            "the provider's own settings stand in the providers' place: {screen}"
         );
     }
     assert_eq!(
@@ -2806,7 +2806,7 @@ fn enter_lists_a_providers_own_settings_in_a_narrow_panel_and_esc_steps_back_out
         assert_eq!(
             shown(&application, label),
             value,
-            "each an ordinary Setting row, value and provenance alike: {screen}"
+            "each an ordinary setting row, value and provenance alike: {screen}"
         );
     }
     assert!(
@@ -2829,7 +2829,7 @@ fn enter_lists_a_providers_own_settings_in_a_narrow_panel_and_esc_steps_back_out
     );
     assert!(
         has_row(&application, "Copilot") && back_line(&application, "Codex").is_none(),
-        "Esc steps back out to the Providers rather than closing the panel"
+        "Esc steps back out to the providers rather than closing the panel"
     );
     assert_eq!(focused_key(&application), "provider.codex.enabled");
 
@@ -2838,7 +2838,7 @@ fn enter_lists_a_providers_own_settings_in_a_narrow_panel_and_esc_steps_back_out
         !rendered_application_rows(&application)
             .join("\n")
             .contains("Settings ─"),
-        "and Esc on the Providers closes it"
+        "and Esc on the providers closes it"
     );
 }
 
@@ -2857,18 +2857,18 @@ fn left_and_tab_step_back_out_of_a_providers_settings_instead_of_moving_on() {
         assert_eq!(
             press(&mut application, code, KeyModifiers::NONE),
             ApplicationTransition::Continue,
-            "{code:?} read no Providers, so walked no tab"
+            "{code:?} read no providers, so walked no tab"
         );
         assert_eq!(
             focused_key(&application),
             "provider.claude.enabled",
-            "{code:?} steps back out onto the Provider"
+            "{code:?} steps back out onto the provider"
         );
     }
     assert_eq!(
         press(&mut application, KeyCode::Right, KeyModifiers::NONE),
         ApplicationTransition::Continue,
-        "Right on the Providers walks on to the next tab"
+        "Right on the providers walks on to the next tab"
     );
     assert!(!has_row(&application, "Claude"));
 
@@ -2885,7 +2885,7 @@ fn left_and_tab_step_back_out_of_a_providers_settings_instead_of_moving_on() {
         !rendered_application_rows(&application)
             .join("\n")
             .contains("Settings ─"),
-        "closing the panel by its command closes it from a Provider's own Settings too"
+        "closing the panel by its command closes it from a provider's own settings too"
     );
 }
 
@@ -2906,7 +2906,7 @@ fn a_providers_own_setting_walks_cycles_and_resets_like_any_other_row() {
     assert_eq!(
         focused_key(&application),
         "provider.codex.reasoningSummary",
-        "Down walks the Provider's own Settings, wrapping past the last onto the first"
+        "Down walks the provider's own settings, wrapping past the last onto the first"
     );
 
     assert_eq!(
@@ -2914,7 +2914,7 @@ fn a_providers_own_setting_walks_cycles_and_resets_like_any_other_row() {
         MutatesSetting(SettingMutation::ProviderCodexReasoningSummary {
             value: Some(ReasoningSummaryDetail::Concise),
         }),
-        "Space cycles the focused Setting on from the value in force"
+        "Space cycles the focused setting on from the value in force"
     );
 
     deliver_snapshot(
@@ -2940,7 +2940,7 @@ fn a_providers_own_setting_walks_cycles_and_resets_like_any_other_row() {
     assert_eq!(
         press(&mut application, KeyCode::Char('d'), KeyModifiers::CONTROL),
         MutatesSetting(SettingMutation::ProviderCodexReasoningSummary { value: None }),
-        "and Ctrl+D unpins it as it would any other Setting"
+        "and Ctrl+D unpins it as it would any other setting"
     );
 
     deliver_snapshot(
@@ -2962,7 +2962,7 @@ fn a_providers_own_setting_walks_cycles_and_resets_like_any_other_row() {
         MutatesSetting(SettingMutation::ProviderCodexReasoningSummary {
             value: Some(ReasoningSummaryDetail::Auto),
         }),
-        "a Setting on its last value wraps to the first, like every other"
+        "a setting on its last value wraps to the first, like every other"
     );
 }
 
@@ -2979,7 +2979,7 @@ fn a_providers_enablement_never_appears_among_its_own_settings() {
         let pane = pane(&application);
         assert!(
             !pane.iter().any(|row| row.contains("Provider")),
-            "the {provider} pane lists no Enablement among its Settings: {pane:#?}"
+            "the {provider} pane lists no enablement among its settings: {pane:#?}"
         );
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
         let rows = rendered_application_rows(&application);
@@ -2987,7 +2987,7 @@ fn a_providers_enablement_never_appears_among_its_own_settings() {
         assert!(
             !rows
                 .iter()
-                .any(|row| is_row_for(row, left, &format!("{provider} Provider"))),
+                .any(|row| is_row_for(row, left, &format!("{provider} provider"))),
             "nor does the {provider} drill-in: {rows:#?}"
         );
         press(&mut application, KeyCode::Esc, KeyModifiers::NONE);
@@ -3014,7 +3014,7 @@ fn the_keys_are_back_on_the_providers_each_time_the_panel_opens() {
     open_providers_tab(&mut application);
     assert!(
         back_line(&application, "Codex").is_none() && has_row(&application, "Claude"),
-        "the reopened panel lists the Providers"
+        "the reopened panel lists the providers"
     );
     assert_eq!(focused_key(&application), "provider.codex.enabled");
 }
@@ -3036,7 +3036,7 @@ fn a_disabled_providers_pane_says_so_and_its_settings_stay_editable() {
     assert_eq!(
         shown(&application, "Codex"),
         "disabled ●",
-        "the Provider is one the reader turned off"
+        "the provider is one the reader turned off"
     );
 
     let details = pane(&application);
@@ -3049,7 +3049,7 @@ fn a_disabled_providers_pane_says_so_and_its_settings_stay_editable() {
     pane_row(&details, "Sandbox mode workspace-write");
     let footer = rendered_application_rows(&application).join("\n");
     assert!(
-        footer.contains("Space enable · Enter Codex's Settings"),
+        footer.contains("Space enable · Enter Codex's settings"),
         "Space would turn it back on: {footer}"
     );
 
@@ -3060,7 +3060,7 @@ fn a_disabled_providers_pane_says_so_and_its_settings_stay_editable() {
         MutatesSetting(SettingMutation::ProviderCodexApprovalPolicy {
             value: Some(suru::protocol::CodexApprovalPolicy::Never),
         }),
-        "and whose Settings are edited as they would be were it enabled"
+        "and whose settings are edited as they would be were it enabled"
     );
 }
 
@@ -3104,19 +3104,19 @@ fn each_provider_row_ends_on_its_condition_in_the_value_column() {
     assert_eq!(
         listed.len(),
         3,
-        "one row per built-in Provider and nothing else: {rows:#?}"
+        "one row per built-in provider and nothing else: {rows:#?}"
     );
     assert_eq!(shown(&application, "Codex"), "disabled ●");
     assert_eq!(
         shown(&application, "Copilot"),
         "not signed in",
-        "a Provider Suru cannot use names why in the column, its fix left to \
+        "a provider Suru cannot use names why in the column, its fix left to \
          where the reader is looking: {rows:#?}"
     );
     assert_eq!(
         row(&application, "Claude"),
         "  Claude",
-        "an enabled Provider still serving its catalog says nothing more than its name"
+        "an enabled provider still serving its catalog says nothing more than its name"
     );
     let column = |label: &str, value: &str| {
         let row = &listed[row_index_inside(&listed, label)];
@@ -3139,7 +3139,7 @@ fn each_provider_row_ends_on_its_condition_in_the_value_column() {
     assert_ne!(
         styling(&buffer, "not signed in"),
         styling(&buffer, "Copilot"),
-        "a condition to fix stands out from the Provider it is about"
+        "a condition to fix stands out from the provider it is about"
     );
 }
 
@@ -3181,32 +3181,32 @@ fn a_wide_panel_accounts_for_the_focused_provider_and_its_own_settings() {
     assert_eq!(
         &details[summary + 1..summary + 3],
         ["Approval policy on-request", "Sandbox mode read-only ●"],
-        "the Provider's own Settings, each with its value and a pin's mark, and no \
-         condition led with for a Provider with nothing to report: {details:#?}"
+        "the provider's own settings, each with its value and a pin's mark, and no \
+         condition led with for a provider with nothing to report: {details:#?}"
     );
     assert_eq!(summary, 3, "{details:#?}");
     pane_row(&details, "provider.codex.reasoningSummary");
     assert!(
         pane_text(&application).contains(
-            "provider.codex.reasoningSummary How much Reasoning summary detail each Turn \
+            "provider.codex.reasoningSummary How much reasoning summary detail each turn \
              asks Codex for"
         ),
         "then the first of them in detail: {details:#?}"
     );
     pane_row(&details, "● auto default");
-    pane_row(&details, "Applies on the Server");
+    pane_row(&details, "Applies on the server");
     pane_row(&details, "Sidekicks read and change");
 
     let (list, _) = split_panel(&application);
     assert!(list[0].starts_with("› Codex"), "{list:#?}");
     assert!(
         !list.iter().any(|row| row.contains("Reasoning summary")),
-        "the list holds the Providers alone: {list:#?}"
+        "the list holds the providers alone: {list:#?}"
     );
     let footer = rendered_application_rows_at(&application, WIDE.0, WIDE.1).join("\n");
     assert!(
         footer.contains(
-            "Space disable · Enter Codex's Settings · Left/Right tabs · Ctrl+D reset · Esc close"
+            "Space disable · Enter Codex's settings · Left/Right tabs · Ctrl+D reset · Esc close"
         ),
         "{footer}"
     );
@@ -3255,7 +3255,7 @@ fn enter_moves_the_keys_into_the_pane_where_they_edit_and_esc_brings_them_back()
     assert_ne!(
         styling(&in_pane, "Codex  "),
         styling(&on_list, "› Codex"),
-        "and the Provider's row no longer is"
+        "and the provider's row no longer is"
     );
     // Read beside the Enablement key the heading stands over: the Provider's
     // name above it, and the pane's rule two columns to its left.
@@ -3294,7 +3294,7 @@ fn enter_moves_the_keys_into_the_pane_where_they_edit_and_esc_brings_them_back()
         MutatesSetting(SettingMutation::ProviderCodexApprovalPolicy {
             value: Some(suru::protocol::CodexApprovalPolicy::Never),
         }),
-        "Space edits the Setting the pane has the keys on"
+        "Space edits the setting the pane has the keys on"
     );
     assert_eq!(
         press(&mut application, KeyCode::Char('d'), KeyModifiers::CONTROL),
@@ -3305,7 +3305,7 @@ fn enter_moves_the_keys_into_the_pane_where_they_edit_and_esc_brings_them_back()
         press(&mut application, code, KeyModifiers::NONE);
         assert!(
             split_panel(&application).0[0].starts_with("› Codex"),
-            "{code:?} brings the keys back to the Provider"
+            "{code:?} brings the keys back to the provider"
         );
         let details = pane(&application);
         pane_row(&details, "Approval policy on-request");
@@ -3336,7 +3336,7 @@ fn each_tab_keeps_its_own_selected_row_while_the_panel_is_open() {
     assert_eq!(
         focused_key(&application),
         "provider.copilot.enabled",
-        "and so is Providers"
+        "and so is providers"
     );
 }
 
@@ -3378,7 +3378,7 @@ fn choosing_a_value_pins_it_and_the_row_follows_the_refreshed_snapshot() {
         "choosing a value emits its set mutation immediately"
     );
     assert_eq!(
-        shown(&application, "Default Fold posture"),
+        shown(&application, "Default fold posture"),
         "folded",
         "the row waits for the server rather than showing an edit the file has not taken"
     );
@@ -3392,7 +3392,7 @@ fn choosing_a_value_pins_it_and_the_row_follows_the_refreshed_snapshot() {
         )))
         .expect("receive the settings the edit left in force");
     assert_eq!(
-        shown(&application, "Default Fold posture"),
+        shown(&application, "Default fold posture"),
         "expanded ●",
         "the row reflects the refreshed snapshot the edit produced"
     );
@@ -3415,7 +3415,7 @@ fn session_content_width_row_spells_maxima_and_space_selects_fill() {
         MutatesSetting(SettingMutation::SessionContentWidth {
             value: Some(SessionContentWidth::Fill),
         }),
-        "Space selects the Setting's named fill choice"
+        "Space selects the setting's named fill choice"
     );
 
     deliver_snapshot(
@@ -3481,7 +3481,7 @@ fn sidebar_width_at_launch_uses_the_numeric_editor_and_typed_mutation() {
     let rendered = rendered_application_rows(&application).join("\n");
     assert!(
         rendered.contains("Columns at launch") && rendered.contains("48"),
-        "Enter opens the numeric editor prefilled from the effective Setting: {rendered}"
+        "Enter opens the numeric editor prefilled from the effective setting: {rendered}"
     );
     press(&mut application, KeyCode::Backspace, KeyModifiers::NONE);
     press(&mut application, KeyCode::Backspace, KeyModifiers::NONE);
@@ -3516,7 +3516,7 @@ fn aside_width_at_launch_uses_the_numeric_editor_and_typed_mutation() {
     let rendered = rendered_application_rows(&application).join("\n");
     assert!(
         rendered.contains("Columns at launch") && rendered.contains("48"),
-        "Enter opens the numeric editor prefilled from the effective Setting: {rendered}"
+        "Enter opens the numeric editor prefilled from the effective setting: {rendered}"
     );
     press(&mut application, KeyCode::Backspace, KeyModifiers::NONE);
     press(&mut application, KeyCode::Backspace, KeyModifiers::NONE);
@@ -3556,7 +3556,7 @@ fn a_valid_numeric_edit_emits_a_typed_mutation_and_waits_for_the_refreshed_snaps
         MutatesSetting(SettingMutation::SessionContentWidth {
             value: Some(SessionContentWidth::Maximum(120)),
         }),
-        "Enter applies the edited number through the Setting's typed mutation"
+        "Enter applies the edited number through the setting's typed mutation"
     );
     assert_eq!(
         shown(&application, "Session content width"),
@@ -3587,17 +3587,17 @@ fn the_auto_settle_row_spells_its_threshold_and_space_turns_settling_off() {
     focus_setting(&mut application, "sidebar.autoSettle");
 
     assert_eq!(
-        shown(&application, "Settle idle Sessions"),
+        shown(&application, "Settle idle sessions"),
         "3 days",
         "the built-in threshold is visible as a default: {:?}",
-        row(&application, "Settle idle Sessions")
+        row(&application, "Settle idle sessions")
     );
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::SidebarAutoSettle {
             value: Some(AutoSettle::Off),
         }),
-        "Space selects the Setting's one named choice"
+        "Space selects the setting's one named choice"
     );
 
     assert_eq!(
@@ -3617,7 +3617,7 @@ fn the_auto_settle_row_spells_its_threshold_and_space_turns_settling_off() {
         MutatesSetting(SettingMutation::SidebarAutoSettle {
             value: Some(AutoSettle::Idle(7)),
         }),
-        "Enter applies the edited number through the Setting's typed mutation"
+        "Enter applies the edited number through the setting's typed mutation"
     );
 }
 
@@ -3684,7 +3684,7 @@ fn fill_has_no_hidden_maximum_and_cancel_discards_the_numeric_edit() {
     let opened = rendered_application_rows(&application).join("\n");
     assert!(
         opened.contains("Maximum columns") && opened.contains("80"),
-        "Fill opens from the Setting's useful default rather than hidden state: {opened}"
+        "Fill opens from the setting's useful default rather than hidden state: {opened}"
     );
     press(&mut application, KeyCode::Char('9'), KeyModifiers::NONE);
     assert_eq!(
@@ -3702,7 +3702,7 @@ fn fill_has_no_hidden_maximum_and_cancel_discards_the_numeric_edit() {
     let reopened = rendered_application_rows(&application).join("\n");
     assert!(
         reopened.contains("Maximum columns") && reopened.contains("80"),
-        "reopening from Fill forgets the cancelled number: {reopened}"
+        "reopening from fill forgets the cancelled number: {reopened}"
     );
 }
 
@@ -3786,7 +3786,7 @@ fn a_numeric_editor_hidden_by_a_newer_overlay_accepts_no_input() {
                 .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                     SemanticCommandId::ModelList,
                 )))
-                .expect("open the Model picker over the numeric editor"),
+                .expect("open the model picker over the numeric editor"),
             ApplicationTransition::ListModels(_)
         ),
         "the newer overlay opens"
@@ -3900,13 +3900,13 @@ fn the_aside_rows_stand_in_general_beside_the_sidebars_and_visibility_cycles() {
 
     let rows = rendered_application_rows(&application);
     assert!(
-        row_index(&rows, "Settle idle Sessions") < row_index(&rows, "Aside at launch"),
-        "the Aside's Settings follow the Sidebar's on the General tab: {rows:?}"
+        row_index(&rows, "Settle idle sessions") < row_index(&rows, "Aside at launch"),
+        "the aside's settings follow the sidebar's on the General tab: {rows:?}"
     );
     assert_eq!(
         shown(&application, "Aside at launch"),
         "shown",
-        "the Aside begins shown unless a Setting says otherwise"
+        "the aside begins shown unless a setting says otherwise"
     );
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
@@ -3936,14 +3936,14 @@ fn the_general_tab_presents_hiding_subsessions_on_by_default_beside_the_sidebars
     assert_eq!(focused_key(&application), "sidekick.hideSubsessions");
     let rows = rendered_application_rows(&application);
     assert!(
-        row_index(&rows, "Settle idle Sessions") < row_index(&rows, "Hide Subsessions"),
-        "it follows the Sidebar's own Settings: {rows:?}"
+        row_index(&rows, "Settle idle sessions") < row_index(&rows, "Hide subsessions"),
+        "it follows the sidebar's own settings: {rows:?}"
     );
     assert_eq!(
-        shown(&application, "Hide Subsessions"),
+        shown(&application, "Hide subsessions"),
         "true",
         "Subsessions are hidden unless the reader says otherwise: {:?}",
-        row(&application, "Hide Subsessions")
+        row(&application, "Hide subsessions")
     );
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
@@ -3953,7 +3953,7 @@ fn the_general_tab_presents_hiding_subsessions_on_by_default_beside_the_sidebars
     let descriptor = suru::settings::SCHEMA
         .iter()
         .find(|descriptor| descriptor.key == "sidekick.hideSubsessions")
-        .expect("the Setting is in the schema");
+        .expect("the setting is in the schema");
     assert_eq!(descriptor.group, SettingGroup::General);
     assert_eq!(descriptor.scope, SettingScope::Client);
 
@@ -3968,10 +3968,10 @@ fn the_general_tab_presents_hiding_subsessions_on_by_default_beside_the_sidebars
         &["sidekick.hideSubsessions"],
     );
     assert_eq!(
-        shown(&application, "Hide Subsessions"),
+        shown(&application, "Hide subsessions"),
         "false ●",
         "the refreshed snapshot moves the row to the pin: {:?}",
-        row(&application, "Hide Subsessions")
+        row(&application, "Hide subsessions")
     );
 }
 
@@ -3988,18 +3988,18 @@ fn enter_never_edits_a_value_and_opens_nothing_on_a_row_that_stands_for_nothing(
     assert_eq!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::Continue,
-        "Enter edited a Transcript Setting"
+        "Enter edited a transcript setting"
     );
     assert_eq!(
-        shown(&application, "Default Fold posture"),
+        shown(&application, "Default fold posture"),
         "folded",
-        "every Setting stays exactly where it was"
+        "every setting stays exactly where it was"
     );
 
     application
         .handle_event(ApplicationEvent::SettingMutationFailed {
             request: SettingRequest::new(),
-            error: "Config Document \"suru.jsonc\" is not valid JSONC".to_owned(),
+            error: "Config document \"suru.jsonc\" is not valid JSONC".to_owned(),
         })
         .expect("hear that an edit never landed");
     press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
@@ -4018,12 +4018,12 @@ fn enter_never_edits_a_value_and_opens_nothing_on_a_row_that_stands_for_nothing(
     assert_eq!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::Continue,
-        "Enter edited one of a Provider's own Settings"
+        "Enter edited one of a provider's own settings"
     );
     assert_eq!(
         rendered_application_rows(&application),
         stepped_in,
-        "a Provider's own Setting has nothing further to step into"
+        "a provider's own setting has nothing further to step into"
     );
 }
 
@@ -4048,7 +4048,7 @@ fn resetting_a_pinned_setting_unpins_it_and_the_row_returns_to_the_default() {
         )))
         .expect("receive the settings the reset left in force");
     assert_eq!(
-        shown(&application, "Default Fold posture"),
+        shown(&application, "Default fold posture"),
         "folded",
         "the row returns to the built-in default, unmarked as pinned"
     );
@@ -4091,17 +4091,17 @@ fn an_edit_the_server_refuses_says_so_and_leaves_the_row_where_it_was() {
     application
         .handle_event(ApplicationEvent::SettingMutationFailed {
             request: SettingRequest::new(),
-            error: "Config Document \"suru.jsonc\" is not valid JSONC".to_owned(),
+            error: "Config document \"suru.jsonc\" is not valid JSONC".to_owned(),
         })
         .expect("hear that the edit never landed");
     let panel = rendered_application_rows(&application).join("\n");
     assert!(
         panel.contains("not valid JSONC"),
-        "the panel says why the Config Document did not change: {panel}"
+        "the panel says why the config document did not change: {panel}"
     );
     assert!(
         !row(&application, "Codex").contains("disabled"),
-        "a refused edit leaves the Provider exactly where it was"
+        "a refused edit leaves the provider exactly where it was"
     );
 
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
@@ -4132,7 +4132,7 @@ fn an_edit_command_invoked_while_the_panel_is_closed_touches_no_setting() {
                 )))
                 .expect("invoke a settings command with the panel closed"),
             ApplicationTransition::Continue,
-            "{command:?} edited a Setting with no panel open"
+            "{command:?} edited a setting with no panel open"
         );
     }
 }
@@ -4154,7 +4154,7 @@ fn clicking_a_providers_own_setting_in_a_narrow_panel_focuses_it_without_editing
     assert_eq!(
         click_row(&mut application, "Reasoning summary"),
         ApplicationTransition::Continue,
-        "a Provider's own Setting is selected by a click, not edited by one"
+        "a provider's own setting is selected by a click, not edited by one"
     );
     assert_eq!(
         focused_key(&application),
@@ -4183,7 +4183,7 @@ fn clicking_a_providers_own_setting_in_a_narrow_panel_focuses_it_without_editing
     );
     assert!(
         has_row(&application, "Claude") && back_line(&application, "Codex").is_none(),
-        "pointing at the line naming the Provider goes back to the Providers"
+        "pointing at the line naming the provider goes back to the providers"
     );
     assert_eq!(focused_key(&application), "provider.codex.enabled");
 }
@@ -4283,11 +4283,11 @@ fn the_open_panel_takes_the_keys_the_composer_would_otherwise_get() {
 
     // Space-free, because Space is the panel's own change key rather than a
     // character the composer would have taken.
-    type_terminal_text(&mut application, "not-a-Prompt");
+    type_terminal_text(&mut application, "not-a-prompt");
     assert!(
         !rendered_application_rows(&application)
             .join("\n")
-            .contains("not-a-Prompt"),
+            .contains("not-a-prompt"),
         "typing over an open panel never reaches the composer"
     );
 
@@ -4374,7 +4374,7 @@ fn focused_model(application: &Application) -> String {
     let rows = rendered_application_rows(application);
     rows.iter()
         .find(|row| row.contains('›'))
-        .unwrap_or_else(|| panic!("the Model picker focused nothing: {rows:?}"))
+        .unwrap_or_else(|| panic!("the model picker focused nothing: {rows:?}"))
         .trim()
         .to_owned()
 }
@@ -4390,10 +4390,10 @@ fn the_title_derivation_row_cycles_its_named_values_and_spells_a_pinned_selectio
     focus_setting(&mut application, "derivation.errand");
 
     assert_eq!(
-        shown(&application, "Title, Icon, and branch derivation"),
+        shown(&application, "Title, icon, and branch derivation"),
         "session",
-        "the built-in default follows the Session's own Provider: {:?}",
-        row(&application, "Title, Icon, and branch derivation")
+        "the built-in default follows the session's own provider: {:?}",
+        row(&application, "Title, icon, and branch derivation")
     );
     assert!(
         rendered_application_rows(&application)
@@ -4415,10 +4415,10 @@ fn the_title_derivation_row_cycles_its_named_values_and_spells_a_pinned_selectio
         deriving_titles_with(DerivationErrand::Pinned(pinned_selection())),
         &["derivation.errand"],
     );
-    let pinned_row = shown(&application, "Title, Icon, and branch derivation");
+    let pinned_row = shown(&application, "Title, icon, and branch derivation");
     assert_eq!(
         pinned_row, "codex · gpt-5-mini ●",
-        "a value the schema never named is spelled by the Setting itself: {pinned_row:?}"
+        "a value the schema never named is spelled by the setting itself: {pinned_row:?}"
     );
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
@@ -4440,7 +4440,7 @@ fn pinning_title_derivation_offers_no_routing_tier() {
     let ApplicationTransition::ListModels(request) =
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE)
     else {
-        panic!("opening the row opens the Model picker onto a fresh catalog listing");
+        panic!("opening the row opens the model picker onto a fresh catalog listing");
     };
     let tier = |id: &str| ModelOptionChoice {
         id: ModelOptionChoiceId::new(id),
@@ -4503,7 +4503,7 @@ fn opening_the_title_derivation_row_pins_the_model_chosen_at_the_picker() {
     let ApplicationTransition::ListModels(request) =
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE)
     else {
-        panic!("opening the row opens the Model picker onto a fresh catalog listing");
+        panic!("opening the row opens the model picker onto a fresh catalog listing");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed {
@@ -4513,12 +4513,12 @@ fn opening_the_title_derivation_row_pins_the_model_chosen_at_the_picker() {
         .expect("receive the catalog the picker asked for");
     let showing = rendered_application_rows(&application).join("\n");
     assert!(
-        showing.contains("GPT-5 Mini") && !showing.contains("Title, Icon, and branch derivation"),
+        showing.contains("GPT-5 Mini") && !showing.contains("Title, icon, and branch derivation"),
         "the picker is drawn over the panel that opened it, and answers the keys: {showing}"
     );
     assert!(
         focused_model(&application).contains("· gpt-5 ·"),
-        "a Setting holding no Selection yet opens the picker where it would open anyway: {:?}",
+        "a setting holding no selection yet opens the picker where it would open anyway: {:?}",
         focused_model(&application)
     );
 
@@ -4528,10 +4528,10 @@ fn opening_the_title_derivation_row_pins_the_model_chosen_at_the_picker() {
     assert_eq!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::Continue,
-        "choosing a configurable Model stages its options before saving"
+        "choosing a configurable model stages its options before saving"
     );
     let options = rendered_application_rows(&application).join("\n");
-    assert!(options.contains("Model Options"), "{options}");
+    assert!(options.contains("Model options"), "{options}");
     assert!(
         options.contains("Reasoning · Provider default"),
         "{options}"
@@ -4541,8 +4541,8 @@ fn opening_the_title_derivation_row_pins_the_model_chosen_at_the_picker() {
         MutatesSetting(SettingMutation::DerivationErrand {
             value: Some(DerivationErrand::Pinned(pinned_selection())),
         }),
-        "the Model the reader chose is pinned as this Setting's value, not as the Agent, \
-         and the pin claims the Model alone rather than freezing today's Model Options"
+        "the model the reader chose is pinned as this setting's value, not as the agent, \
+         and the pin claims the model alone rather than freezing today's model options"
     );
     assert!(
         !rendered_application_rows(&application)
@@ -4571,7 +4571,7 @@ fn opening_the_title_derivation_row_pins_the_model_chosen_at_the_picker() {
         .expect("receive the catalog the reopened picker asked for");
     assert!(
         focused_model(&application).contains("gpt-5-mini"),
-        "the picker opens on the Model this Setting already holds: {:?}",
+        "the picker opens on the model this setting already holds: {:?}",
         focused_model(&application)
     );
 }
@@ -4602,14 +4602,14 @@ fn a_catalog_landing_leaves_the_pinned_model_focused_rather_than_the_sessions() 
                 },
             ),
         ))
-        .expect("attach a Session conversing at another Model");
+        .expect("attach a session conversing at another model");
     open_panel(&mut application);
     focus_setting(&mut application, "derivation.errand");
 
     let ApplicationTransition::ListModels(request) =
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE)
     else {
-        panic!("opening the row opens the Model picker");
+        panic!("opening the row opens the model picker");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed {
@@ -4620,7 +4620,7 @@ fn a_catalog_landing_leaves_the_pinned_model_focused_rather_than_the_sessions() 
 
     assert!(
         focused_model(&application).contains("gpt-5-mini"),
-        "the catalog landing moved the focus onto the Session's Model rather than the pin: {:?}",
+        "the catalog landing moved the focus onto the session's model rather than the pin: {:?}",
         focused_model(&application)
     );
 }
@@ -4638,7 +4638,7 @@ fn cancelling_the_picker_leaves_the_settings_panel_where_it_was() {
     press(&mut application, KeyCode::Esc, KeyModifiers::NONE);
 
     assert!(
-        has_row(&application, "Title, Icon, and branch derivation"),
+        has_row(&application, "Title, icon, and branch derivation"),
         "Esc closes the picker alone"
     );
     assert_eq!(
@@ -4654,11 +4654,11 @@ fn open_title_options(application: &mut Application, catalog: ModelCatalog) {
     let ApplicationTransition::ListModels(request) =
         press(application, KeyCode::Enter, KeyModifiers::NONE)
     else {
-        panic!("title selection should request Models");
+        panic!("title selection should request models");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed { request, catalog })
-        .expect("load title Models");
+        .expect("load title models");
     assert_eq!(
         press(application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::Continue
@@ -4666,7 +4666,7 @@ fn open_title_options(application: &mut Application, catalog: ModelCatalog) {
     assert!(
         rendered_application_rows(application)
             .join("\n")
-            .contains("Model Options")
+            .contains("Model options")
     );
 }
 
@@ -4743,7 +4743,7 @@ fn title_options_reopen_own_overrides_and_can_restore_provider_defaults() {
                 },
             ),
         ))
-        .expect("attach a Session with a different Agent Selection");
+        .expect("attach a session with a different agent selection");
     open_title_options(&mut application, configurable_title_catalog("codex"));
     let options = rendered_application_rows(&application).join("\n");
     assert!(options.contains("Speed · On"), "{options}");
@@ -4784,7 +4784,7 @@ fn cancelling_title_options_discards_staged_changes_and_preserves_the_setting() 
     );
     assert_eq!(focused_key(&application), "derivation.errand");
     assert_eq!(
-        shown(&application, "Title, Icon, and branch derivation"),
+        shown(&application, "Title, icon, and branch derivation"),
         "session"
     );
 }
@@ -4839,7 +4839,7 @@ fn copy_text_selection_cycles_on_the_general_tab() {
         deliver_snapshot(&mut application, settings, &["textSelection.copy"]);
         focus_setting(&mut application, "textSelection.copy");
         assert!(
-            shown(&application, "Copy Text Selection")
+            shown(&application, "Copy text selection")
                 == match current {
                     TextSelectionCopy::Release => "release ●",
                     TextSelectionCopy::Manual => "manual ●",
@@ -4866,7 +4866,7 @@ fn copy_as_plain_text_cycles_on_the_general_tab() {
         settings.text_selection.plain_text = current;
         deliver_snapshot(&mut application, settings, &["textSelection.plainText"]);
         focus_setting(&mut application, "textSelection.plainText");
-        assert_eq!(shown(&application, "Copy as Plain Text"), shows);
+        assert_eq!(shown(&application, "Copy as plain text"), shows);
         assert_eq!(
             press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
             MutatesSetting(SettingMutation::TextSelectionPlainText { value: Some(next) })
@@ -5002,7 +5002,7 @@ fn a_wide_panel_details_the_focused_setting_in_a_pane_beside_its_rows() {
     focus_setting(&mut application, "transcript.groups");
 
     let details = pane(&application);
-    assert_eq!(details[0], "Groups", "the pane is headed by the Setting");
+    assert_eq!(details[0], "Groups", "the pane is headed by the setting");
     assert_eq!(
         details[1], "transcript.groups",
         "then the key it is pinned by"
@@ -5010,7 +5010,7 @@ fn a_wide_panel_details_the_focused_setting_in_a_pane_beside_its_rows() {
     let text = pane_text(&application);
     assert!(
         text.contains(
-            "How a Session view opens its Groups of Commands, Tool Calls, and Reasoning: \
+            "How a session view opens its groups of commands, tool calls, and reasoning: \
              collapsed, expanded, or not grouped at all"
         ),
         "the description is given whole, however many rows it takes: {details:#?}"
@@ -5025,20 +5025,20 @@ fn a_wide_panel_details_the_focused_setting_in_a_pane_beside_its_rows() {
     let pinned = pane_row(&details, "Pinned");
     assert_eq!(
         &details[pinned + 1..pinned + 3],
-        ["Applies in every Client", "Sidekicks read and change"],
-        "then where it applies and what a Sidekick may do with it: {details:#?}"
+        ["Applies in every client", "Sidekicks read and change"],
+        "then where it applies and what a sidekick may do with it: {details:#?}"
     );
 
     let (list, _) = split_panel(&application);
     assert!(
-        list[0].starts_with("  Default Fold posture"),
+        list[0].starts_with("  Default fold posture"),
         "the rows begin straight beneath the tab bar, the headline gone to the pane: \
          {list:#?}"
     );
     let groups = list
         .iter()
         .find(|row| row.contains("Groups"))
-        .expect("the list has a Groups row");
+        .expect("the list has a groups row");
     assert_eq!(shown_in(groups), "expanded ●", "{groups:?}");
     assert!(
         !list.iter().any(|row| row.contains("transcript.groups")),
@@ -5047,7 +5047,7 @@ fn a_wide_panel_details_the_focused_setting_in_a_pane_beside_its_rows() {
 
     press(&mut application, KeyCode::Up, KeyModifiers::NONE);
     let details = pane(&application);
-    assert_eq!(details[0], "Default Fold posture", "the pane follows focus");
+    assert_eq!(details[0], "Default fold posture", "the pane follows focus");
     pane_row(&details, "Built-in default");
 }
 
@@ -5076,16 +5076,16 @@ fn the_rows_end_on_a_value_column_that_holds_still_and_marks_a_pin() {
                 .count()
         };
         assert_eq!(
-            value_column("Default Fold posture", "expanded"),
+            value_column("Default fold posture", "expanded"),
             value_column("Reasoning visibility", "hidden"),
             "the values stand in one column: {rows:#?}"
         );
         assert_eq!(
-            value_column("Default Fold posture", "expanded"),
+            value_column("Default fold posture", "expanded"),
             value_column("Command auto-expansion", "false"),
             "{rows:#?}"
         );
-        let fold = &rows[row_index_inside(&rows, "Default Fold posture")];
+        let fold = &rows[row_index_inside(&rows, "Default fold posture")];
         let visibility = &rows[row_index_inside(&rows, "Reasoning visibility")];
         assert!(
             fold.trim_end().ends_with('●') && !visibility.contains('●'),
@@ -5128,7 +5128,7 @@ fn the_pane_lists_an_open_settings_unnamed_values_beside_what_else_it_accepts() 
     assert_eq!(
         &details[default + 1..default + 3],
         ["● 48 columns", "or an integer of at least 24"],
-        "the built-in default, the value in force, and what else the Setting takes: \
+        "the built-in default, the value in force, and what else the setting takes: \
          {details:#?}"
     );
 }
@@ -5150,7 +5150,7 @@ fn the_pane_lists_a_list_settings_entries_one_to_a_row() {
     assert_eq!(
         &details[first + 1..first + 3],
         ["● ~/src".to_owned(), WORK_ROOT.to_owned()],
-        "each Root on a row of its own beneath the one mark: {details:#?}"
+        "each root on a row of its own beneath the one mark: {details:#?}"
     );
     assert!(
         pane_text(&application).contains("or a list of absolute paths or paths beginning with ~"),
@@ -5167,10 +5167,10 @@ fn the_pane_says_where_a_setting_applies_and_why_a_sidekick_may_only_read_it() {
     focus_setting(&mut application, "worktree.autoReclaim");
 
     let text = pane_text(&application);
-    assert!(text.contains("Applies on the Server"), "{text}");
+    assert!(text.contains("Applies on the server"), "{text}");
     assert!(
         text.contains(
-            "Sidekicks read only, since turning it on lets Suru remove Worktrees, ignored \
+            "Sidekicks read only, since turning it on lets Suru remove worktrees, ignored \
              files and all, which no later change can undo"
         ),
         "the reason is given whole, wrapped beneath its label: {text}"
@@ -5179,7 +5179,7 @@ fn the_pane_says_where_a_setting_applies_and_why_a_sidekick_may_only_read_it() {
     let sidekicks = details
         .iter()
         .position(|row| row.starts_with("Sidekicks"))
-        .expect("the pane says what a Sidekick may do");
+        .expect("the pane says what a sidekick may do");
     let (_, rows) = split_panel(&application);
     assert!(
         rows[sidekicks + 1].starts_with("            "),
@@ -5234,12 +5234,12 @@ fn a_wide_panel_leads_its_pane_with_a_providers_condition_and_its_whole_fix() {
     assert_eq!(
         &details[..2],
         ["Copilot enabled", "provider.copilot.enabled"],
-        "beneath the Provider's heading: {details:#?}"
+        "beneath the provider's heading: {details:#?}"
     );
     let settings = pane_row(&details, "Permissions auto");
     assert!(
         message < settings,
-        "and both lead the Provider's own Settings: {details:#?}"
+        "and both lead the provider's own settings: {details:#?}"
     );
     let (list, _) = split_panel(&application);
     assert!(
@@ -5287,7 +5287,7 @@ fn a_refused_edit_leads_the_pane_above_the_providers_own_condition() {
     application
         .handle_event(ApplicationEvent::SettingMutationFailed {
             request: SettingRequest::new(),
-            error: "Config Document \"suru.jsonc\" is not valid JSONC".to_owned(),
+            error: "Config document \"suru.jsonc\" is not valid JSONC".to_owned(),
         })
         .expect("hear that the edit never landed");
 
@@ -5304,11 +5304,11 @@ fn a_refused_edit_leads_the_pane_above_the_providers_own_condition() {
             .unwrap_or_else(|| panic!("the pane says {needle:?}: {text}"))
     };
     assert!(
-        at("Config Document \"suru.jsonc\" is not valid JSONC")
+        at("Config document \"suru.jsonc\" is not valid JSONC")
             < at("the codex CLI is not on PATH fix the CLI")
             && at("the codex CLI is not on PATH") < at("Reasoning summary auto"),
-        "the refusal leads, and the Provider's condition still follows with its fix, \
-         ahead of the Provider's own Settings: {text}"
+        "the refusal leads, and the provider's condition still follows with its fix, \
+         ahead of the provider's own settings: {text}"
     );
     let buffer = rendered_application_buffer(&application, WIDE.0, TIGHT);
     assert_eq!(
@@ -5399,11 +5399,11 @@ fn a_diagnostic_naming_the_focused_setting_leads_the_pane_with_its_file() {
             "{}: ignored because its value is not one of \"collapsed\", \"expanded\", or \"off\"",
             file.display()
         )),
-        "the pin Suru ignored is named with the Config Document it was in: {text}"
+        "the pin Suru ignored is named with the config document it was in: {text}"
     );
     assert!(
         !text.contains("ignored for a test"),
-        "another Setting's diagnostic is that Setting's business: {text}"
+        "another setting's diagnostic is that setting's business: {text}"
     );
 }
 
@@ -5415,7 +5415,7 @@ fn a_panel_too_narrow_to_split_keeps_its_headline_above_the_rows() {
 
     let narrow = rendered_application_rows_at(&application, 103, 20).join("\n");
     assert!(
-        narrow.contains("transcript.defaultFoldPosture · How a Session view opens"),
+        narrow.contains("transcript.defaultFoldPosture · How a session view opens"),
         "a panel short of the room to split heads its rows with the headline: {narrow}"
     );
     let wide = rendered_application_rows_at(&application, 104, 30);
@@ -5503,7 +5503,7 @@ fn a_click_on_a_providers_own_setting_in_the_pane_takes_the_keys_onto_it() {
 
     let buffer = rendered_application_buffer(&application, WIDE.0, WIDE.1);
     let before = rendered_application_rows_at(&application, WIDE.0, WIDE.1);
-    for needle in ["provider.codex.enabled", "How much Reasoning summary"] {
+    for needle in ["provider.codex.enabled", "How much reasoning summary"] {
         let (column, row) = text_position(&buffer, needle);
         assert_eq!(
             click(&mut application, column, row),
@@ -5520,7 +5520,7 @@ fn a_click_on_a_providers_own_setting_in_the_pane_takes_the_keys_onto_it() {
     assert_eq!(
         click(&mut application, column, row),
         ApplicationTransition::Continue,
-        "a click on one of the Provider's own Settings edits nothing"
+        "a click on one of the provider's own settings edits nothing"
     );
     let details = pane(&application);
     pane_row(&details, "› Sandbox mode workspace-write");
@@ -5530,7 +5530,7 @@ fn a_click_on_a_providers_own_setting_in_the_pane_takes_the_keys_onto_it() {
         MutatesSetting(SettingMutation::ProviderCodexSandboxMode {
             value: Some(suru::protocol::CodexSandboxMode::DangerFullAccess),
         }),
-        "the keys are on the Setting the reader pointed at"
+        "the keys are on the setting the reader pointed at"
     );
 
     let (column, row) = text_position(&buffer, "Copilot");
@@ -5538,7 +5538,7 @@ fn a_click_on_a_providers_own_setting_in_the_pane_takes_the_keys_onto_it() {
     let (list, _) = split_panel(&application);
     assert!(
         list[1].starts_with("› Copilot"),
-        "a click on a Provider's row takes the keys back to the list: {list:#?}"
+        "a click on a provider's row takes the keys back to the list: {list:#?}"
     );
     let details = pane(&application);
     assert_eq!(details[0], "Copilot enabled");
@@ -5573,13 +5573,13 @@ fn a_diagnostic_naming_one_of_a_providers_own_settings_leads_its_pane() {
     assert!(
         text.find("Sandbox mode workspace-write")
             .is_some_and(|settings| diagnostic < settings),
-        "ahead of the Settings it is about: {text}"
+        "ahead of the settings it is about: {text}"
     );
 
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
     assert!(
         !pane_text(&application).contains("ignored for a test"),
-        "another Provider's pin is that Provider's business"
+        "another provider's pin is that provider's business"
     );
 }
 
@@ -5641,8 +5641,8 @@ fn the_pane_scrolls_the_setting_the_keys_are_on_into_view_with_all_its_detail() 
     pane_row(&details, "› Reasoning summary auto");
     let text = pane_text_at(&application, SHORT);
     assert!(
-        text.ends_with("Applies on the Server Sidekicks read and change"),
-        "the Setting the keys are on shows with all of its detail: {details:#?}"
+        text.ends_with("Applies on the server Sidekicks read and change"),
+        "the setting the keys are on shows with all of its detail: {details:#?}"
     );
 
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
@@ -5651,8 +5651,8 @@ fn the_pane_scrolls_the_setting_the_keys_are_on_into_view_with_all_its_detail() 
     let text = pane_text_at(&application, SHORT);
     assert!(
         text.ends_with(
-            "Sidekicks read only, since it is part of an Approval Posture, which bounds \
-             what Agents may do without asking the user"
+            "Sidekicks read only, since it is part of an approval posture, which bounds \
+             what agents may do without asking the user"
         ),
         "{details:#?}"
     );
@@ -5694,17 +5694,17 @@ fn scheduled_compaction_stands_on_the_experimental_tab_and_takes_its_minimum_in_
 
     for (label, key, default) in [
         (
-            "Scheduled Compaction",
+            "Scheduled compaction",
             "compaction.scheduled.enabled",
             "false",
         ),
         (
-            "Scheduled Compaction minimum",
+            "Scheduled compaction minimum",
             "compaction.scheduled.minimumPenalty",
             "$0.50",
         ),
         (
-            "Scheduled Compaction reaches",
+            "Scheduled compaction reaches",
             "compaction.scheduled.sessions",
             "active",
         ),
@@ -5730,7 +5730,7 @@ fn scheduled_compaction_stands_on_the_experimental_tab_and_takes_its_minimum_in_
         MutatesSetting(SettingMutation::CompactionScheduledSessions {
             value: Some(suru::protocol::ScheduledCompactionSessions::All),
         }),
-        "and widens it to every Session"
+        "and widens it to every session"
     );
 
     focus_setting(&mut application, "compaction.scheduled.minimumPenalty");
@@ -5780,7 +5780,7 @@ fn scheduled_compaction_stands_on_the_experimental_tab_and_takes_its_minimum_in_
         &["compaction.scheduled.minimumPenalty"],
     );
     assert_eq!(
-        shown(&application, "Scheduled Compaction minimum"),
+        shown(&application, "Scheduled compaction minimum"),
         "$1.25 ●",
         "the row reads the dollars the refreshed snapshot pinned"
     );
@@ -5837,7 +5837,7 @@ fn leads_however_long_never_push_the_setting_the_keys_are_on_out_of_the_pane() {
     application
         .handle_event(ApplicationEvent::SettingMutationFailed {
             request: SettingRequest::new(),
-            error: "Config Document \"suru.jsonc\" is not valid JSONC: expected a value \
+            error: "Config document \"suru.jsonc\" is not valid JSONC: expected a value \
                     at line 3, column 14, so Suru left it exactly as it was"
                 .to_owned(),
         })
@@ -5853,10 +5853,10 @@ fn leads_however_long_never_push_the_setting_the_keys_are_on_out_of_the_pane() {
     }
     assert!(
         pane_text_at(&application, TIGHT).ends_with(
-            "Sidekicks read only, since it is part of an Approval Posture, which bounds what \
-             Agents may do without asking the user"
+            "Sidekicks read only, since it is part of an approval posture, which bounds what \
+             agents may do without asking the user"
         ),
-        "with the room, all of the Setting's detail too: {:#?}",
+        "with the room, all of the setting's detail too: {:#?}",
         pane_at(&application, TIGHT)
     );
     assert_eq!(
@@ -5924,8 +5924,8 @@ fn a_fact_or_a_value_copies_with_its_label_whether_or_not_it_wraps() {
     focus_setting(&mut application, "worktree.autoReclaim");
 
     assert_eq!(
-        copy_across(&mut application, "Applies", "on the Server"),
-        ApplicationTransition::CopyToClipboard("Applies    on the Server".into()),
+        copy_across(&mut application, "Applies", "on the server"),
+        ApplicationTransition::CopyToClipboard("Applies    on the server".into()),
         "a fact on one row copies with its label"
     );
     assert_eq!(
@@ -5935,7 +5935,7 @@ fn a_fact_or_a_value_copies_with_its_label_whether_or_not_it_wraps() {
             "no later change can undo"
         ),
         ApplicationTransition::CopyToClipboard(
-            "Sidekicks  read only, since turning it on lets Suru remove Worktrees, ignored \
+            "Sidekicks  read only, since turning it on lets Suru remove worktrees, ignored \
              files and all, which no later change can undo"
                 .into()
         ),
@@ -5986,7 +5986,7 @@ fn a_diagnostic_names_its_config_document_from_the_readers_home() {
                 checkout_states: Vec::new(),
             }),
         })
-        .expect("hear how the reader's own Server spells its paths");
+        .expect("hear how the reader's own server spells its paths");
     let file = Path::new(READER_HOME)
         .join(".config")
         .join("suru")
@@ -6037,7 +6037,7 @@ fn a_refused_edit_holds_in_view_while_the_pane_scrolls_to_the_setting_refused() 
     application
         .handle_event(ApplicationEvent::SettingMutationFailed {
             request: SettingRequest::new(),
-            error: "Config Document \"suru.jsonc\" is not valid JSONC".to_owned(),
+            error: "Config document \"suru.jsonc\" is not valid JSONC".to_owned(),
         })
         .expect("hear that the edit never landed");
 
@@ -6049,7 +6049,7 @@ fn a_refused_edit_holds_in_view_while_the_pane_scrolls_to_the_setting_refused() 
                 "Codex enabled",
                 "provider.codex.enabled",
                 "",
-                "Config Document \"suru.jsonc\" is not valid JSONC"
+                "Config document \"suru.jsonc\" is not valid JSONC"
             ],
             "the refusal holds beneath the heading at {height} rows: {details:#?}"
         );
@@ -6083,8 +6083,8 @@ fn the_pane_packs_its_detail_before_it_scrolls_anything_out_of_view() {
         "the condition and its fix stay above the Provider's own Settings: {details:#?}"
     );
     assert!(
-        text.ends_with("Applies on the Server Sidekicks read and change"),
-        "and the Setting the keys are on shows to the foot of its detail: {details:#?}"
+        text.ends_with("Applies on the server Sidekicks read and change"),
+        "and the setting the keys are on shows to the foot of its detail: {details:#?}"
     );
     let key = pane_row(&details, "provider.codex.reasoningSummary");
     assert_eq!(
@@ -6106,8 +6106,8 @@ fn the_pane_packs_its_detail_while_the_keys_are_on_the_providers() {
         "nothing is cut away: {details:#?}"
     );
     assert!(
-        pane_text(&application).ends_with("Applies on the Server Sidekicks read and change"),
-        "the picked Setting shows to the foot of its detail: {details:#?}"
+        pane_text(&application).ends_with("Applies on the server Sidekicks read and change"),
+        "the picked setting shows to the foot of its detail: {details:#?}"
     );
 }
 
@@ -6132,7 +6132,7 @@ fn the_pointer_moves_the_list_editors_focus_and_a_press_saves_nothing() {
     assert!(point_at(&mut application, work));
     assert!(screen(&application).contains(&format!("› {WORK_ROOT}")));
 
-    let addition = cell(&application, "add a Root");
+    let addition = cell(&application, "add a root");
     assert_eq!(
         left_click_at(&mut application, addition),
         ApplicationTransition::Continue,

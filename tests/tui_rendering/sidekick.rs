@@ -49,8 +49,8 @@ fn home() -> Home {
     let root = suru::paths::canonical(directory.path()).expect("read the home");
     let workspace = root.join("Projects").join("suru");
     let sidekick = root.join("data").join("sidekick");
-    std::fs::create_dir_all(&workspace).expect("create the Workspace");
-    std::fs::create_dir_all(&sidekick).expect("create the Sidekick Workspace");
+    std::fs::create_dir_all(&workspace).expect("create the workspace");
+    std::fs::create_dir_all(&sidekick).expect("create the sidekick workspace");
     Home {
         _directory: directory,
         workspace,
@@ -91,7 +91,7 @@ fn application_in(home: &Home) -> Application {
                         home.workspace
                             .parent()
                             .and_then(std::path::Path::parent)
-                            .expect("the Workspace lies beneath the home")
+                            .expect("the workspace lies beneath the home")
                             .to_str()
                             .expect("the home is UTF-8")
                             .into(),
@@ -112,7 +112,7 @@ fn landing_location(application: &Application) -> String {
     let composer_bottom = screen
         .iter()
         .position(|row| row.contains('└'))
-        .unwrap_or_else(|| panic!("the Landing draws its composer: {screen:#?}"));
+        .unwrap_or_else(|| panic!("the landing draws its composer: {screen:#?}"));
     screen[composer_bottom + 1].trim().to_owned()
 }
 
@@ -150,13 +150,13 @@ fn the_sidekick_command_is_semantic_and_typed_as_a_slash_with_no_arguments() {
         request_id: _,
     } = transition
     else {
-        panic!("/sidekick asks the Outlook's Server for its Sidekick Workspace: {transition:?}");
+        panic!("/sidekick asks the outlook's server for its sidekick workspace: {transition:?}");
     };
     assert_eq!(outlook, Outlook::Local);
     assert_eq!(
         landing_location(&application),
         label(&["Projects", "suru"]),
-        "nothing moves until the Server answers"
+        "nothing moves until the server answers"
     );
 }
 
@@ -172,7 +172,7 @@ fn the_landing_opens_in_the_sidekick_workspace_once_the_server_answers_from_an_o
         request_id,
     } = invoke_sidekick(&mut application)
     else {
-        panic!("/sidekick asks for the Sidekick Workspace");
+        panic!("/sidekick asks for the sidekick workspace");
     };
     let transition = application
         .handle_event(ApplicationEvent::WorkspaceResolved {
@@ -181,22 +181,22 @@ fn the_landing_opens_in_the_sidekick_workspace_once_the_server_answers_from_an_o
             request_id,
             result: Ok(ResolvedWorkspace::directory(home.sidekick.clone())),
         })
-        .expect("deliver the Sidekick Workspace");
+        .expect("deliver the sidekick workspace");
     assert_eq!(
         transition,
         ApplicationTransition::DetachSession,
-        "the Session being left is let go of, and the Landing opens"
+        "the session being left is let go of, and the landing opens"
     );
     assert_eq!(
         landing_location(&application),
         "Sidekick",
-        "the Landing stands in the Sidekick Workspace, so a Session begun there is a \
-         Sidekick's, and names it for what it is rather than by its directory"
+        "the landing stands in the sidekick workspace, so a session begun there is a \
+         sidekick's, and names it for what it is rather than by its directory"
     );
     let screen = rendered_application_rows_at(&application, 200, 30).join("\n");
     assert!(
         !screen.contains("half a thought"),
-        "a fresh Landing carries no draft over: {screen}"
+        "a fresh landing carries no draft over: {screen}"
     );
 }
 
@@ -212,7 +212,7 @@ fn turned_toward_a_remote_the_sidekick_command_asks_that_remote() {
             ApplicationTransition::ResolveSidekickWorkspace { outlook, .. }
                 if outlook == &Outlook::Remote("studio".to_owned())
         ),
-        "a Remote's own Sidekick is reached the way everything else on it is: {transition:?}"
+        "a remote's own sidekick is reached the way everything else on it is: {transition:?}"
     );
 }
 
@@ -225,7 +225,7 @@ fn a_refused_sidekick_workspace_leaves_the_reader_where_they_were_saying_why() {
         request_id,
     } = invoke_sidekick(&mut application)
     else {
-        panic!("/sidekick asks for the Sidekick Workspace");
+        panic!("/sidekick asks for the sidekick workspace");
     };
     application
         .handle_event(ApplicationEvent::WorkspaceResolved {
@@ -238,7 +238,7 @@ fn a_refused_sidekick_workspace_leaves_the_reader_where_they_were_saying_why() {
 
     let screen = rendered_application_rows_at(&application, 200, 30).join("\n");
     assert!(
-        screen.contains("Could not open the Sidekick Workspace: the disk is full"),
+        screen.contains("Could not open the sidekick workspace: the disk is full"),
         "{screen}"
     );
     assert_eq!(landing_location(&application), label(&["Projects", "suru"]));
@@ -253,7 +253,7 @@ fn an_answer_to_a_superseded_sidekick_command_is_ignored() {
         request_id: first,
     } = invoke_sidekick(&mut application)
     else {
-        panic!("/sidekick asks for the Sidekick Workspace");
+        panic!("/sidekick asks for the sidekick workspace");
     };
     let ApplicationTransition::ResolveSidekickWorkspace { .. } = invoke_sidekick(&mut application)
     else {
@@ -301,13 +301,13 @@ fn a_late_answer_after_the_reader_went_to_a_fresh_landing_leaves_their_new_draft
         request_id,
     } = invoke_sidekick(&mut application)
     else {
-        panic!("/sidekick asks for the Sidekick Workspace");
+        panic!("/sidekick asks for the sidekick workspace");
     };
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionNew,
         )))
-        .expect("go to a fresh Landing instead");
+        .expect("go to a fresh landing instead");
     type_terminal_text(&mut application, "a different thought");
 
     assert_eq!(
@@ -329,7 +329,7 @@ fn a_late_answer_after_the_reader_began_a_session_leaves_it_open_with_its_draft(
         request_id,
     } = invoke_sidekick(&mut application)
     else {
-        panic!("/sidekick asks for the Sidekick Workspace");
+        panic!("/sidekick asks for the sidekick workspace");
     };
     enter_active_session(&mut application, &home.workspace);
     type_terminal_text(&mut application, "half a reply");
@@ -337,13 +337,13 @@ fn a_late_answer_after_the_reader_began_a_session_leaves_it_open_with_its_draft(
     assert_eq!(
         answer_late(&mut application, &home, outlook, request_id),
         ApplicationTransition::Continue,
-        "the Session the reader began is not detached"
+        "the session the reader began is not detached"
     );
     let screen = rendered_application_rows_at(&application, 200, 30).join("\n");
     assert!(screen.contains("half a reply"), "{screen}");
     assert!(
         !screen.contains("Sidekick"),
-        "the Landing did not open in the Sidekick Workspace: {screen}"
+        "the landing did not open in the sidekick workspace: {screen}"
     );
 }
 
@@ -436,17 +436,17 @@ fn a_message_a_sidekick_sent_is_drawn_apart_from_the_users_naming_the_sidekick()
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach the Session a Sidekick prompted");
+        .expect("attach the session a sidekick prompted");
     let buffer = rendered_application_buffer(&application, 80, 22);
     let text = buffer_rows(&buffer).join("\n");
 
     assert!(
         text.contains("┃ Prompt section 1"),
-        "the user's own Message wears the user's bar: {text}"
+        "the user's own message wears the user's bar: {text}"
     );
     assert!(
-        text.contains("│ Sent by Sidekick · Tidy the listing"),
-        "a Sidekick's Message names the Sidekick that sent it: {text}"
+        text.contains("│ Sent by sidekick · Tidy the listing"),
+        "a sidekick's message names the sidekick that sent it: {text}"
     );
     assert!(
         text.contains("│ Cover the empty input as well."),
@@ -454,19 +454,19 @@ fn a_message_a_sidekick_sent_is_drawn_apart_from_the_users_naming_the_sidekick()
     );
     assert!(
         !text.contains("┃ Cover the empty input") && !text.contains("┃ Sent by"),
-        "a Sidekick's Message never wears the user's bar: {text}"
+        "a sidekick's message never wears the user's bar: {text}"
     );
     let (user_bar, user_row) = text_position(&buffer, "┃ Prompt section 1");
     let (sidekick_bar, sidekick_row) = text_position(&buffer, "│ Cover the empty input");
     assert_ne!(
         buffer[(sidekick_bar, sidekick_row)].fg,
         buffer[(user_bar, user_row)].fg,
-        "a Sidekick's bar is drawn in another role than the user's"
+        "a sidekick's bar is drawn in another role than the user's"
     );
     assert_eq!(
         buffer[(sidekick_bar + 2, sidekick_row)].bg,
         buffer[(user_bar + 2, user_row)].bg,
-        "though both sit on the surface of what an Agent was asked"
+        "though both sit on the surface of what an agent was asked"
     );
 }
 
@@ -477,11 +477,11 @@ fn a_sidekick_known_by_no_title_is_still_named_a_sidekick() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach the Session a Sidekick prompted");
+        .expect("attach the session a sidekick prompted");
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
 
-    assert!(text.contains("│ Sent by a Sidekick"), "{text}");
-    assert!(!text.contains("Sent by Sidekick ·"), "{text}");
+    assert!(text.contains("│ Sent by a sidekick"), "{text}");
+    assert!(!text.contains("Sent by sidekick ·"), "{text}");
 }
 
 #[test]
@@ -492,20 +492,20 @@ fn pressing_the_sidekicks_name_opens_the_sidekicks_session() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach the Session a Sidekick prompted");
+        .expect("attach the session a sidekick prompted");
 
     assert_eq!(
         press_text(&mut application, 80, 22, "Cover the empty input"),
         ApplicationTransition::Continue,
-        "what the Sidekick asked is text to select, not a way anywhere"
+        "what the sidekick asked is text to select, not a way anywhere"
     );
     assert_eq!(
-        press_text(&mut application, 80, 22, "Sent by Sidekick"),
+        press_text(&mut application, 80, 22, "Sent by sidekick"),
         ApplicationTransition::ViewAndAttachSession(SessionReference::new(
             Outlook::Local,
             sidekick,
         )),
-        "the Sidekick's name leads into its Session"
+        "the sidekick's name leads into its session"
     );
 }
 
@@ -591,7 +591,7 @@ fn hear_deleted(application: &mut Application, session_id: SessionId) {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SessionDeleted(
             SessionDeleted { session_id },
         )))
-        .expect("hear the Session was deleted");
+        .expect("hear the session was deleted");
 }
 
 #[test]
@@ -603,25 +603,25 @@ fn a_prompt_a_sidekick_sent_is_drawn_apart_while_the_providers_startup_is_held()
         .handle_event(ApplicationEvent::SessionAttached(
             awaiting_a_sidekicks_prompt(workspace.path(), sidekick),
         ))
-        .expect("attach the Session waiting on its Provider");
+        .expect("attach the session waiting on its provider");
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
 
     assert!(
-        text.contains("│ Sent by Sidekick · Tidy the listing")
+        text.contains("│ Sent by sidekick · Tidy the listing")
             && text.contains("│ Cover the empty input as well."),
-        "before it is delivered, the Prompt stands as the Sidekick's Message will: {text}"
+        "before it is delivered, the prompt stands as the sidekick's message will: {text}"
     );
     assert!(
         !text.contains("┃ Cover the empty input"),
         "and never as the user's own words: {text}"
     );
     assert_eq!(
-        press_text(&mut application, 80, 22, "Sent by Sidekick"),
+        press_text(&mut application, 80, 22, "Sent by sidekick"),
         ApplicationTransition::ViewAndAttachSession(SessionReference::new(
             Outlook::Local,
             sidekick,
         )),
-        "its heading already leads into the Sidekick's Session"
+        "its heading already leads into the sidekick's session"
     );
 }
 
@@ -634,12 +634,12 @@ fn a_queued_prompt_a_sidekick_sent_names_the_sidekick_among_the_pending() {
         .handle_event(ApplicationEvent::SessionAttached(
             queued_behind_a_working_turn(workspace.path(), sidekick),
         ))
-        .expect("attach the working Session");
+        .expect("attach the working session");
     let text = rendered_application_rows_at(&application, 100, 24).join("\n");
 
     assert!(
         text.contains("Sidekick · Tidy the listing: Then write the changelog entry."),
-        "a queued Prompt names the Sidekick that sent it: {text}"
+        "a queued prompt names the sidekick that sent it: {text}"
     );
     assert!(
         text.contains("  And tell me when it is done."),
@@ -651,7 +651,7 @@ fn a_queued_prompt_a_sidekick_sent_names_the_sidekick_among_the_pending() {
             Outlook::Local,
             sidekick,
         )),
-        "the name leads into the Sidekick's Session"
+        "the name leads into the sidekick's session"
     );
 }
 
@@ -666,25 +666,25 @@ fn a_sidekick_whose_session_is_gone_is_still_named_but_offers_no_way_in() {
             sidekick,
             "Tidy the listing",
         )))
-        .expect("attach the Session a Sidekick prompted");
+        .expect("attach the session a sidekick prompted");
     hear_deleted(&mut application, sidekick);
 
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
-        text.contains("│ Sent by Sidekick · Tidy the listing"),
-        "the Message still names the Sidekick by the Title it sent under: {text}"
+        text.contains("│ Sent by sidekick · Tidy the listing"),
+        "the message still names the sidekick by the title it sent under: {text}"
     );
     assert_eq!(
-        press_text(&mut application, 80, 22, "Sent by Sidekick"),
+        press_text(&mut application, 80, 22, "Sent by sidekick"),
         ApplicationTransition::Continue,
-        "but leads nowhere, since there is no Session left to open"
+        "but leads nowhere, since there is no session left to open"
     );
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::SidekickOpen,
             )))
-            .expect("invoke the command naming no Session"),
+            .expect("invoke the command naming no session"),
         ApplicationTransition::Continue,
     );
 
@@ -693,13 +693,13 @@ fn a_sidekick_whose_session_is_gone_is_still_named_but_offers_no_way_in() {
         .handle_event(ApplicationEvent::SessionAttached(
             queued_behind_a_working_turn(workspace.path(), sidekick),
         ))
-        .expect("attach the working Session");
+        .expect("attach the working session");
     hear_deleted(&mut application, sidekick);
     assert!(
         rendered_application_rows_at(&application, 100, 24)
             .join("\n")
             .contains("Sidekick · Tidy the listing: Then write the changelog entry."),
-        "a queued Prompt still names its gone Sidekick"
+        "a queued prompt still names its gone sidekick"
     );
     assert_eq!(
         press_text(&mut application, 100, 24, "Sidekick · Tidy the listing"),
@@ -719,34 +719,34 @@ fn a_sidekicks_session_that_cannot_be_opened_leaves_the_reader_where_they_were_s
             sidekick,
             "Tidy the listing",
         )))
-        .expect("attach the Session a Sidekick prompted");
+        .expect("attach the session a sidekick prompted");
 
     let reference = SessionReference::new(Outlook::Local, sidekick);
     assert_eq!(
-        press_text(&mut application, 80, 22, "Sent by Sidekick"),
+        press_text(&mut application, 80, 22, "Sent by sidekick"),
         ApplicationTransition::ViewAndAttachSession(reference.clone()),
     );
     assert!(
         rendered_application_rows_at(&application, 80, 22)
             .join("\n")
             .contains("│ Cover the empty input as well."),
-        "the Transcript stays on show until the Sidekick's Session is in hand"
+        "the transcript stays on show until the sidekick's session is in hand"
     );
 
     application
         .handle_event(ApplicationEvent::OriginSessionAttachFailed {
             reference,
-            error: "The Session does not exist on this Suru server.".to_owned(),
+            error: "The session does not exist on this Suru server.".to_owned(),
         })
         .expect("deliver the failed attach");
     let text = rendered_application_rows_at(&application, 160, 22).join("\n");
     assert!(
         text.contains("│ Cover the empty input as well."),
-        "the reader is left on the Transcript they were reading: {text}"
+        "the reader is left on the transcript they were reading: {text}"
     );
     assert!(
-        text.contains("Could not open the Sidekick's Session: The Session does not exist"),
-        "told why the Sidekick's Session did not open: {text}"
+        text.contains("Could not open the sidekick's session: The session does not exist"),
+        "told why the sidekick's session did not open: {text}"
     );
 }
 
@@ -759,12 +759,12 @@ fn a_sidekick_title_too_long_for_its_row_is_cut_short_and_still_leads_in() {
         .handle_event(ApplicationEvent::SessionAttached(prompted_by_a_sidekick(
             workspace.path(),
             sidekick,
-            "Tidy the listing, then go through every Workspace and settle what is done",
+            "Tidy the listing, then go through every workspace and settle what is done",
         )))
-        .expect("attach the Session a Sidekick prompted");
+        .expect("attach the session a sidekick prompted");
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
-        text.contains("│ Sent by Sidekick · Tidy the listing"),
+        text.contains("│ Sent by sidekick · Tidy the listing"),
         "the heading keeps to one row: {text}"
     );
     assert!(
@@ -772,7 +772,7 @@ fn a_sidekick_title_too_long_for_its_row_is_cut_short_and_still_leads_in() {
         "cut short where it runs long, rather than wrapped: {text}"
     );
     assert_eq!(
-        press_text(&mut application, 80, 22, "Sent by Sidekick"),
+        press_text(&mut application, 80, 22, "Sent by sidekick"),
         ApplicationTransition::ViewAndAttachSession(SessionReference::new(
             Outlook::Local,
             sidekick,
@@ -889,7 +889,7 @@ fn attached(workspace: &std::path::Path, snapshot: SessionSnapshot) -> Applicati
     let mut application = connected_application(workspace);
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach the Session");
+        .expect("attach the session");
     application
 }
 
@@ -910,7 +910,7 @@ fn an_answer_a_sidekick_gave_is_drawn_apart_from_the_users_naming_the_sidekick()
         .collect::<Vec<_>>();
     assert_eq!(answered.len(), 2, "both Questionnaires stand: {rows:#?}");
     assert!(
-        rows[answered[0] + 1].contains("│ Answered by Sidekick · Tidy the listing"),
+        rows[answered[0] + 1].contains("│ Answered by sidekick · Tidy the listing"),
         "the Sidekick's Answer names the Sidekick beneath it: {rows:#?}"
     );
     assert!(
@@ -932,8 +932,8 @@ fn an_answer_a_sidekick_gave_is_drawn_apart_from_the_users_naming_the_sidekick()
         (bar.fg, text.fg, text.bg)
     };
     assert_eq!(
-        drawn(&buffer, "Answered by Sidekick"),
-        drawn(&messaged, "Sent by Sidekick"),
+        drawn(&buffer, "Answered by sidekick"),
+        drawn(&messaged, "Sent by sidekick"),
         "the Sidekick is named as it heads a Message it sent"
     );
 
@@ -944,7 +944,7 @@ fn an_answer_a_sidekick_gave_is_drawn_apart_from_the_users_naming_the_sidekick()
         "expanded, the Sidekick's Answer reads as any other: {text}"
     );
     assert!(
-        text.contains("│ Answered by Sidekick · Tidy the listing"),
+        text.contains("│ Answered by sidekick · Tidy the listing"),
         "and still names the Sidekick: {text}"
     );
 }
@@ -959,7 +959,7 @@ fn pressing_the_sidekick_that_answered_opens_its_session_and_the_questionnaire_s
     );
 
     assert_eq!(
-        press_text(&mut application, 80, 24, "Answered by Sidekick"),
+        press_text(&mut application, 80, 24, "Answered by sidekick"),
         ApplicationTransition::ViewAndAttachSession(SessionReference::new(
             Outlook::Local,
             sidekick,
@@ -981,7 +981,7 @@ fn pressing_the_sidekick_that_answered_opens_its_session_and_the_questionnaire_s
         "pressing the Questionnaire's row shows its Questions and Answer: {text}"
     );
     assert_eq!(
-        press_text(&mut application, 80, 24, "Answered by Sidekick"),
+        press_text(&mut application, 80, 24, "Answered by sidekick"),
         ApplicationTransition::ViewAndAttachSession(SessionReference::new(
             Outlook::Local,
             sidekick,
@@ -1002,13 +1002,13 @@ fn a_sidekick_that_answered_and_is_gone_is_still_named_but_offers_no_way_in() {
 
     let text = rendered_application_rows_at(&application, 80, 24).join("\n");
     assert!(
-        text.contains("│ Answered by Sidekick · Tidy the listing"),
-        "the Answer still names the Sidekick by the Title it answered under: {text}"
+        text.contains("│ Answered by sidekick · Tidy the listing"),
+        "the answer still names the sidekick by the title it answered under: {text}"
     );
     assert_eq!(
-        press_text(&mut application, 80, 24, "Answered by Sidekick"),
+        press_text(&mut application, 80, 24, "Answered by sidekick"),
         ApplicationTransition::Continue,
-        "but leads nowhere, since there is no Session left to open"
+        "but leads nowhere, since there is no session left to open"
     );
 }
 
@@ -1020,8 +1020,8 @@ fn a_sidekick_known_by_no_title_that_answered_is_still_named_a_sidekick() {
         answered_by_a_sidekick(workspace.path(), SessionId::new(), "  "),
     );
     let text = rendered_application_rows_at(&application, 80, 24).join("\n");
-    assert!(text.contains("│ Answered by a Sidekick"), "{text}");
-    assert!(!text.contains("Answered by Sidekick ·"), "{text}");
+    assert!(text.contains("│ Answered by a sidekick"), "{text}");
+    assert!(!text.contains("Answered by sidekick ·"), "{text}");
 }
 
 fn invoke_semantic(application: &mut Application, command: SemanticCommandId) {
@@ -1050,15 +1050,15 @@ fn what_a_sidekick_on_a_peer_sent_or_answered_names_the_peer_and_leads_nowhere()
     );
     let text = rendered_application_rows_at(&application, 80, 22).join("\n");
     assert!(
-        text.contains("│ Sent by a Sidekick on laptop"),
-        "a Peer's Sidekick's Message names the Peer: {text}"
+        text.contains("│ Sent by a sidekick on laptop"),
+        "a peer's sidekick's message names the peer: {text}"
     );
     assert!(
         text.contains("│ Cover the empty input as well.") && !text.contains("┃ Cover the empty"),
         "and is drawn apart from the user's own: {text}"
     );
     assert_eq!(
-        press_text(&mut application, 80, 22, "Sent by a Sidekick on laptop"),
+        press_text(&mut application, 80, 22, "Sent by a sidekick on laptop"),
         ApplicationTransition::Continue,
         "with no way in"
     );
@@ -1070,11 +1070,11 @@ fn what_a_sidekick_on_a_peer_sent_or_answered_names_the_peer_and_leads_nowhere()
     let rows = rendered_application_rows_at(&application, 80, 24);
     assert!(
         rows.iter()
-            .any(|row| row.contains("│ Answered by a Sidekick on laptop")),
-        "a Peer's Sidekick's Answer names the Peer beneath it: {rows:#?}"
+            .any(|row| row.contains("│ Answered by a sidekick on laptop")),
+        "a peer's sidekick's answer names the peer beneath it: {rows:#?}"
     );
     assert_eq!(
-        press_text(&mut application, 80, 24, "Answered by a Sidekick on laptop"),
+        press_text(&mut application, 80, 24, "Answered by a sidekick on laptop"),
         ApplicationTransition::Continue,
         "with no way in"
     );
@@ -1082,11 +1082,11 @@ fn what_a_sidekick_on_a_peer_sent_or_answered_names_the_peer_and_leads_nowhere()
     let mut application = attached(workspace.path(), queued_by(workspace.path(), on_laptop));
     let text = rendered_application_rows_at(&application, 100, 24).join("\n");
     assert!(
-        text.contains("A Sidekick on laptop: Then write the changelog entry."),
-        "a queued Prompt names the Peer's Sidekick that sent it: {text}"
+        text.contains("A sidekick on laptop: Then write the changelog entry."),
+        "a queued prompt names the peer's sidekick that sent it: {text}"
     );
     assert_eq!(
-        press_text(&mut application, 100, 24, "A Sidekick on laptop"),
+        press_text(&mut application, 100, 24, "A sidekick on laptop"),
         ApplicationTransition::Continue,
         "and leads nowhere"
     );

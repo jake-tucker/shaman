@@ -105,7 +105,7 @@ impl CompletionMode {
     ) -> Self {
         let (mut matches, presentations, message) = match catalog.map(|catalog| &catalog.status) {
             None | Some(SkillCatalogStatus::Loading) => {
-                (Vec::new(), Vec::new(), Some("Loading Skills…".to_owned()))
+                (Vec::new(), Vec::new(), Some("Loading skills…".to_owned()))
             }
             Some(SkillCatalogStatus::Fresh { warning }) => (
                 catalog.map_or_else(Vec::new, |catalog| skill_matches(&trigger.query, catalog)),
@@ -115,7 +115,7 @@ impl CompletionMode {
             Some(SkillCatalogStatus::Refreshing) => (
                 Vec::new(),
                 catalog.map_or_else(Vec::new, |catalog| skill_matches(&trigger.query, catalog)),
-                Some("Refreshing Skills…".to_owned()),
+                Some("Refreshing skills…".to_owned()),
             ),
             Some(SkillCatalogStatus::Stale { message }) => (
                 Vec::new(),

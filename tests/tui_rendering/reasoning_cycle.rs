@@ -89,7 +89,7 @@ fn warm_model_catalog(application: &mut Application, model: ModelDescriptor) {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker to warm the catalog")
+        .expect("open model picker to warm the catalog")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -106,13 +106,13 @@ fn warm_model_catalog(application: &mut Application, model: ModelDescriptor) {
                 }],
             },
         })
-        .expect("cache the Model catalog");
+        .expect("cache the model catalog");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Esc,
             KeyModifiers::NONE,
         )))
-        .expect("close the warmed Model picker");
+        .expect("close the warmed model picker");
 }
 
 fn press_reasoning_cycle(application: &mut Application) -> ApplicationTransition {
@@ -160,8 +160,8 @@ fn ctrl_t_dispatches_one_semantic_reasoning_cycle_without_a_slash_name() {
     let mut application = Application::default();
     type_terminal_text(&mut application, "/");
     let autocomplete = rendered_application_rows_at(&application, 100, 40).join("\n");
-    assert!(autocomplete.contains("/options  Configure Model"));
-    assert!(!autocomplete.contains("Cycle Reasoning Effort"));
+    assert!(autocomplete.contains("/options  Configure model"));
+    assert!(!autocomplete.contains("Cycle reasoning effort"));
 }
 
 #[test]
@@ -235,7 +235,7 @@ fn reasoning_cycle_reports_unavailable_effort_without_mutation() {
         ApplicationTransition::Continue
     );
     let rows = reasoning_summary(&single);
-    assert!(rows.contains("Cycling GPT has no alternate Reasoning Effort choice"));
+    assert!(rows.contains("Cycling GPT has no alternate reasoning effort choice"));
     assert!(
         !rows.contains("codex · Cycling GPT · Medium · Off"),
         "no selection is staged"
@@ -249,7 +249,7 @@ fn reasoning_cycle_reports_unavailable_effort_without_mutation() {
         press_reasoning_cycle(&mut without),
         ApplicationTransition::Continue
     );
-    assert!(reasoning_summary(&without).contains("Cycling GPT has no Reasoning Effort option"));
+    assert!(reasoning_summary(&without).contains("Cycling GPT has no reasoning effort option"));
 }
 
 #[test]
@@ -260,13 +260,13 @@ fn reasoning_cycle_without_a_cached_catalog_requests_models_and_reports() {
         .handle_event(ApplicationEvent::SessionAttached(
             selected_session_snapshot(SessionId::new(), workspace.path(), cycling_selection("low")),
         ))
-        .expect("attach selected Session");
+        .expect("attach selected session");
 
     assert!(matches!(
         press_reasoning_cycle(&mut application),
         ApplicationTransition::ListModels(_)
     ));
-    assert!(reasoning_summary(&application).contains("No concrete Model is loaded yet"));
+    assert!(reasoning_summary(&application).contains("No concrete model is loaded yet"));
     // Nothing is pending, so Session navigation stays available.
     assert!(matches!(
         application
@@ -287,7 +287,7 @@ fn rapid_reasoning_cycles_coalesce_to_one_serialized_latest_selection() {
         .handle_event(ApplicationEvent::SessionAttached(
             selected_session_snapshot(session_id, workspace.path(), cycling_selection("low")),
         ))
-        .expect("attach selected Session");
+        .expect("attach selected session");
     warm_model_catalog(
         &mut application,
         cycling_model(cycling_effort_ladder(), "medium"),
@@ -321,7 +321,7 @@ fn rapid_reasoning_cycles_coalesce_to_one_serialized_latest_selection() {
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("block Prompt submission while selections settle"),
+            .expect("block prompt submission while selections settle"),
         ApplicationTransition::Continue
     );
     assert_eq!(
@@ -329,7 +329,7 @@ fn rapid_reasoning_cycles_coalesce_to_one_serialized_latest_selection() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 suru::tui::SemanticCommandId::SessionList,
             )))
-            .expect("block Session navigation while selections settle"),
+            .expect("block session navigation while selections settle"),
         ApplicationTransition::Continue
     );
 
@@ -387,7 +387,7 @@ fn stale_selection_results_cannot_overwrite_newer_intent_or_roll_back() {
         .handle_event(ApplicationEvent::SessionAttached(
             selected_session_snapshot(session_id, workspace.path(), cycling_selection("low")),
         ))
-        .expect("attach selected Session");
+        .expect("attach selected session");
     warm_model_catalog(
         &mut application,
         cycling_model(cycling_effort_ladder(), "medium"),
@@ -490,7 +490,7 @@ fn authoritative_updates_slide_beneath_the_optimistic_overlay_until_settled() {
         .handle_event(ApplicationEvent::SessionAttached(
             selected_session_snapshot(session_id, workspace.path(), cycling_selection("low")),
         ))
-        .expect("attach selected Session");
+        .expect("attach selected session");
     warm_model_catalog(
         &mut application,
         cycling_model(cycling_effort_ladder(), "medium"),

@@ -32,13 +32,13 @@ pub(super) fn render(
     let primary = theme.text.primary;
     let total = compactions.total();
     if total == 0 {
-        let note = nothing(room, "No Compactions", range);
+        let note = nothing(room, "No compactions", range);
         buffer.set_string(area.x, area.y, note, subdued);
         return;
     }
     let counted = match total {
-        1 => "1 Compaction".to_owned(),
-        total => format!("{} Compactions", grouped_count(total)),
+        1 => "1 compaction".to_owned(),
+        total => format!("{} compactions", grouped_count(total)),
     };
     let failed = grouped_count(
         compactions.automatic.failed + compactions.manual.failed + compactions.scheduled.failed,
@@ -80,7 +80,7 @@ pub(super) fn render(
             fitting(
                 room,
                 [
-                    "No Compaction recorded what it freed".to_owned(),
+                    "No compaction recorded what it freed".to_owned(),
                     "No record of what it freed".to_owned(),
                 ],
             ),

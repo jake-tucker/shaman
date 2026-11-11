@@ -95,7 +95,7 @@ fn now() -> u64 {
         .expect("read the clock")
         .as_millis()
         .try_into()
-        .expect("the clock fits a Session timestamp")
+        .expect("the clock fits a session timestamp")
 }
 
 fn minutes_ago(minutes: u64) -> u64 {
@@ -121,7 +121,7 @@ fn edit(
     change: impl FnOnce(&mut suru::protocol::SessionSummary),
 ) -> SessionListItem {
     let SessionListItem::Readable(mut summary) = session else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     change(&mut summary);
     SessionListItem::Readable(summary)
@@ -252,12 +252,12 @@ fn sidebar_under(
     let mut application = connected_application(workspace);
     let ApplicationTransition::ListSessions(request) = deliver_settings(&mut application, settings)
     else {
-        panic!("a Sidebar coming into view asks for its Sessions");
+        panic!("a sidebar coming into view asks for its sessions");
     };
     assert_eq!(request.surface(), SessionListSurface::Sidebar);
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     application
 }
 
@@ -291,7 +291,7 @@ fn slot_of(application: &Application, title: &str) -> String {
     let at = lines
         .iter()
         .position(|line| line.contains(title))
-        .unwrap_or_else(|| panic!("the Sidebar drew no row titled {title:?}: {lines:?}"));
+        .unwrap_or_else(|| panic!("the sidebar drew no row titled {title:?}: {lines:?}"));
     lines[at - 1].clone()
 }
 
@@ -302,7 +302,7 @@ fn stands_settled(application: &Application, title: &str) -> bool {
     let at = lines
         .iter()
         .position(|line| line.contains(title))
-        .unwrap_or_else(|| panic!("the Sidebar drew no row titled {title:?}: {lines:?}"));
+        .unwrap_or_else(|| panic!("the sidebar drew no row titled {title:?}: {lines:?}"));
     lines
         .iter()
         .position(|line| line.starts_with("Settled"))
@@ -352,10 +352,10 @@ fn open_session(application: &mut Application, workspace: &Path, session_id: Ses
         .handle_event(ApplicationEvent::SessionAttached(failed_session_snapshot(
             session_id,
             PromptId::new(),
-            "Initial Prompt",
+            "Initial prompt",
             workspace,
         )))
-        .expect("open a Session in the main view");
+        .expect("open a session in the main view");
 }
 
 #[test]
@@ -382,34 +382,34 @@ fn subsessions_are_listed_like_any_session_until_the_reader_hides_them() {
     assert!(listed_in_sidebar(&application, "Fixing the parser"));
     assert!(
         !slot_of(&application, "Sidekick at work").contains("Working"),
-        "with the Setting off nothing rolls up: {:?}",
+        "with the setting off nothing rolls up: {:?}",
         slot_of(&application, "Sidekick at work")
     );
 
     deliver_settings(&mut application, hiding(true));
     assert!(
         !listed_in_sidebar(&application, "Fixing the parser"),
-        "the Setting takes the Subsession off the Sidebar the moment it lands: {:?}",
+        "the setting takes the subsession off the sidebar the moment it lands: {:?}",
         sidebar_lines(&application)
     );
     assert!(
         slot_of(&application, "Sidekick at work").ends_with("Working 5m"),
-        "and its Sidekick's row carries its Standing: {:?}",
+        "and its sidekick's row carries its standing: {:?}",
         slot_of(&application, "Sidekick at work")
     );
     assert!(
         listed_in_sidebar(&application, "Acted on only"),
-        "a Session a Sidekick only acted on is never hidden"
+        "a session a sidekick only acted on is never hidden"
     );
     assert!(
         slot_of(&application, "Acted on only").ends_with("Working 9m"),
-        "and it keeps its Standing as its own"
+        "and it keeps its standing as its own"
     );
 
     deliver_settings(&mut application, hiding(false));
     assert!(
         listed_in_sidebar(&application, "Fixing the parser"),
-        "turning it off lists the Subsession again at once"
+        "turning it off lists the subsession again at once"
     );
     assert!(!slot_of(&application, "Sidekick at work").contains("Working"));
 }
@@ -422,10 +422,10 @@ fn a_sidekicks_row_carries_the_highest_standing_among_itself_and_the_subsessions
     let idle: Reading = |session| session;
     let cases: [(&str, Reading, Reading, &str); 8] = [
         (
-            "an owed Intervention",
+            "an owed intervention",
             idle,
             owing_an_answer,
-            "Needs Intervention",
+            "Needs intervention",
         ),
         (
             "work",
@@ -440,7 +440,7 @@ fn a_sidekicks_row_carries_the_highest_standing_among_itself_and_the_subsessions
             "Failed",
         ),
         (
-            "a Watch",
+            "a watch",
             idle,
             |session| monitoring(session, minutes_ago(7)),
             "Monitoring 7m",
@@ -452,22 +452,22 @@ fn a_sidekicks_row_carries_the_highest_standing_among_itself_and_the_subsessions
             "Done",
         ),
         (
-            "an owed Intervention over the Sidekick's own work",
+            "an owed intervention over the sidekick's own work",
             |session| working(session, minutes_ago(2)),
             owing_an_answer,
-            "Needs Intervention",
+            "Needs intervention",
         ),
         (
-            "work over the Sidekick's own failure",
+            "work over the sidekick's own failure",
             |session| settled_as(session, TurnStatus::Failed),
             |session| working(session, minutes_ago(5)),
             "Working 5m",
         ),
         (
-            "the Sidekick's own Intervention over an outcome",
+            "the sidekick's own intervention over an outcome",
             owing_an_answer,
             |session| settled_as(session, TurnStatus::Completed),
-            "Needs Intervention",
+            "Needs intervention",
         ),
     ];
     for (case, sidekicks, subsessions, slot) in cases {
@@ -485,11 +485,11 @@ fn a_sidekicks_row_carries_the_highest_standing_among_itself_and_the_subsessions
 
         assert!(
             !listed_in_sidebar(&application, "Fixing the parser"),
-            "{case}: the Subsession is hidden"
+            "{case}: the subsession is hidden"
         );
         assert!(
             slot_of(&application, "Sidekick at work").ends_with(slot),
-            "{case}: the Sidekick's row reads {slot:?}, not {:?}",
+            "{case}: the sidekick's row reads {slot:?}, not {:?}",
             slot_of(&application, "Sidekick at work")
         );
     }
@@ -503,7 +503,7 @@ fn a_subsession_whose_sidekicks_session_is_gone_is_listed_regardless() {
     let orphan = begun_by(
         listed(
             SessionId::new(),
-            "Begun by a deleted Sidekick",
+            "Begun by a deleted sidekick",
             &repository(root),
             4,
         ),
@@ -538,12 +538,12 @@ fn a_subsession_whose_sidekicks_session_is_gone_is_listed_regardless() {
     );
 
     assert!(
-        listed_in_sidebar(&application, "Begun by a deleted Sidekick"),
-        "nothing else would lead to a Subsession whose Sidekick's Session is gone"
+        listed_in_sidebar(&application, "Begun by a deleted sidekick"),
+        "nothing else would lead to a subsession whose sidekick's session is gone"
     );
     assert!(
         listed_in_sidebar(&application, "Begun by an unreadable one"),
-        "nor to one whose Sidekick's Session cannot be opened"
+        "nor to one whose sidekick's session cannot be opened"
     );
     assert!(!listed_in_sidebar(&application, "Fixing the parser"));
 
@@ -553,15 +553,15 @@ fn a_subsession_whose_sidekicks_session_is_gone_is_listed_regardless() {
                 session_id: sidekick.session,
             },
         )))
-        .expect("take the Sidekick's Session's deletion");
+        .expect("take the sidekick's session's deletion");
     assert!(
         listed_in_sidebar(&application, "Fixing the parser"),
-        "deleting the Sidekick's Session lists its Subsession again: {:?}",
+        "deleting the sidekick's session lists its subsession again: {:?}",
         sidebar_lines(&application)
     );
     assert!(
         slot_of(&application, "Fixing the parser").ends_with("Working 5m"),
-        "with its Standing its own again"
+        "with its standing its own again"
     );
 }
 
@@ -584,12 +584,12 @@ fn the_open_session_highlight_stands_on_the_sidekicks_row_while_its_subsession_i
     assert_eq!(
         open_sidebar_text(&application),
         "Sidekick at work",
-        "the hidden Subsession's highlight stands on the row that carries it"
+        "the hidden subsession's highlight stands on the row that carries it"
     );
     enter_sidebar(&mut application);
     assert!(
         focused_sidebar_text(&application).contains("Sidekick at work"),
-        "entering the Sidebar begins row focus on that row: {:?}",
+        "entering the sidebar begins row focus on that row: {:?}",
         focused_sidebar_text(&application)
     );
 
@@ -597,7 +597,7 @@ fn the_open_session_highlight_stands_on_the_sidekicks_row_while_its_subsession_i
     assert_eq!(
         open_sidebar_text(&application),
         "Fixing the parser",
-        "listed, the Subsession's own row carries its highlight"
+        "listed, the subsession's own row carries its highlight"
     );
 }
 
@@ -628,13 +628,13 @@ fn a_subagent_of_a_hidden_subsession_highlights_its_sidekicks_row() {
     snapshot.session.parent = Some(sidekick.subsession);
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("open the Subsession's Subagent");
+        .expect("open the subsession's subagent");
     application
         .handle_event(ApplicationEvent::SubagentTree {
             through: SessionReference::new(Outlook::Local, subagent),
             event: SubagentTreeEvent::Snapshot(sidekicks_tree(&sidekick, subagent, root)),
         })
-        .expect("take the Sidekick's tree");
+        .expect("take the sidekick's tree");
 
     assert_eq!(open_sidebar_text(&application), "Sidekick at work");
 }
@@ -713,12 +713,12 @@ fn a_search_never_finds_a_subsession_the_reader_hides() {
 
     assert!(
         !listed_in_sidebar(&application, "Fixing the parser"),
-        "a hidden Subsession is no result, however well its Title matches: {:?}",
+        "a hidden subsession is no result, however well its title matches: {:?}",
         sidebar_lines(&application)
     );
     assert!(
         !listed_in_sidebar(&application, "Sidekick at work"),
-        "and its Sidekick's row is found by its own Title alone"
+        "and its sidekick's row is found by its own title alone"
     );
     assert!(listed_in_sidebar(&application, "Parser benchmarks"));
 
@@ -727,7 +727,7 @@ fn a_search_never_finds_a_subsession_the_reader_hides() {
     type_terminal_text(&mut listing, "parser");
     assert!(
         listed_in_sidebar(&listing, "Fixing the parser"),
-        "listed, the Subsession is found like any other Session"
+        "listed, the subsession is found like any other session"
     );
 }
 
@@ -740,17 +740,17 @@ fn a_settled_subsession_still_speaks_on_its_sidekicks_row() {
     let idle: Reading = |session| session;
     let cases: [(&str, Reading, Reading, &str); 7] = [
         (
-            "a Questionnaire",
+            "a questionnaire",
             idle,
             owing_an_answer,
-            "Needs Intervention",
+            "Needs intervention",
         ),
-        ("an Approval", idle, owing_a_decision, "Needs Intervention"),
+        ("an approval", idle, owing_a_decision, "Needs intervention"),
         (
-            "an Approval over the Sidekick's own work",
+            "an approval over the sidekick's own work",
             |session| working(session, minutes_ago(2)),
             owing_a_decision,
-            "Needs Intervention",
+            "Needs intervention",
         ),
         (
             "work",
@@ -765,7 +765,7 @@ fn a_settled_subsession_still_speaks_on_its_sidekicks_row() {
             "Failed",
         ),
         (
-            "a Watch",
+            "a watch",
             idle,
             |session| monitoring(session, minutes_ago(7)),
             "Monitoring 7m",
@@ -792,7 +792,7 @@ fn a_settled_subsession_still_speaks_on_its_sidekicks_row() {
 
         assert!(
             slot_of(&application, "Sidekick at work").ends_with(slot),
-            "{case} a settled Subsession owes reads {slot:?}, not {:?}",
+            "{case} a settled subsession owes reads {slot:?}, not {:?}",
             slot_of(&application, "Sidekick at work")
         );
         assert!(
@@ -800,7 +800,7 @@ fn a_settled_subsession_still_speaks_on_its_sidekicks_row() {
                 && !sidebar_lines(&application)
                     .iter()
                     .any(|line| line.starts_with("Settled")),
-            "{case}: hidden, the Subsession stands on no shelf: {:?}",
+            "{case}: hidden, the subsession stands on no shelf: {:?}",
             sidebar_lines(&application)
         );
     }
@@ -824,8 +824,8 @@ fn a_settled_sidekicks_row_stays_active_while_a_subsession_it_hides_has_somethin
             |session| monitoring(session, minutes_ago(7)),
             "Monitoring 7m",
         ),
-        ("owing an answer", owing_an_answer, "Needs Intervention"),
-        ("owing a Decision", owing_a_decision, "Needs Intervention"),
+        ("owing an answer", owing_an_answer, "Needs intervention"),
+        ("owing a decision", owing_a_decision, "Needs intervention"),
         (
             "with a failure unseen",
             |session| settled_as(session, TurnStatus::Failed),
@@ -864,7 +864,7 @@ fn a_settled_sidekicks_row_stays_active_while_a_subsession_it_hides_has_somethin
 
             assert!(
                 !stands_settled(&application, "Sidekick at work"),
-                "a Sidekick's row {settling} stands active while its Subsession is {case}: {:?}",
+                "a sidekick's row {settling} stands active while its subsession is {case}: {:?}",
                 sidebar_lines(&application)
             );
             assert!(
@@ -874,7 +874,7 @@ fn a_settled_sidekicks_row_stays_active_while_a_subsession_it_hides_has_somethin
             );
             assert!(
                 menu_on(&mut application, "Sidekick at work").contains("Unsettle"),
-                "{settling}, {case}: the Session itself is still settled, so its menu offers \
+                "{settling}, {case}: the session itself is still settled, so its menu offers \
                  to bring it back"
             );
         }
@@ -895,7 +895,7 @@ fn a_settled_sidekicks_row_stays_active_while_a_subsession_it_hides_has_somethin
         );
         assert!(
             stands_settled(&quiet, "Sidekick at work"),
-            "{settling}, with nothing its Subsessions have to say, the row settles: {:?}",
+            "{settling}, with nothing its subsessions have to say, the row settles: {:?}",
             sidebar_lines(&quiet)
         );
     }
@@ -985,10 +985,10 @@ fn opening_a_hidden_subsession_clears_its_outcome_from_its_sidekicks_row() {
         .handle_event(ApplicationEvent::SessionAttached(
             sidekick_with_its_subsession_row(&sidekick, &sidekick_workspace(root)),
         ))
-        .expect("open the Sidekick's Session");
+        .expect("open the sidekick's session");
     assert!(
         slot_of(&application, "Sidekick at work").ends_with("Done"),
-        "the Subsession is still unseen: {:?}",
+        "the subsession is still unseen: {:?}",
         slot_of(&application, "Sidekick at work")
     );
 
@@ -998,12 +998,12 @@ fn opening_a_hidden_subsession_clears_its_outcome_from_its_sidekicks_row() {
             Outlook::Local,
             sidekick.subsession
         )),
-        "the row leads into the Subsession, reporting it Viewed as it opens"
+        "the row leads into the subsession, reporting it viewed as it opens"
     );
     open_session(&mut application, &repository(root), sidekick.subsession);
     assert!(
         !slot_of(&application, "Sidekick at work").contains("Done"),
-        "opened, the Subsession reads as Viewed: {:?}",
+        "opened, the subsession reads as viewed: {:?}",
         slot_of(&application, "Sidekick at work")
     );
 
@@ -1011,7 +1011,7 @@ fn opening_a_hidden_subsession_clears_its_outcome_from_its_sidekicks_row() {
         settled_as(sidekick.began(root), TurnStatus::Completed),
         now(),
     ) else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     application
         .handle_event(ApplicationEvent::Managed(
@@ -1020,7 +1020,7 @@ fn opening_a_hidden_subsession_clears_its_outcome_from_its_sidekicks_row() {
                 inputs: subsession.standing_inputs,
             }),
         ))
-        .expect("take the Server's Viewed moment");
+        .expect("take the server's viewed moment");
     open_session(
         &mut application,
         &sidekick_workspace(root),
@@ -1028,7 +1028,7 @@ fn opening_a_hidden_subsession_clears_its_outcome_from_its_sidekicks_row() {
     );
     assert!(
         !slot_of(&application, "Sidekick at work").contains("Done"),
-        "once Viewed, the outcome is gone from the row whichever Session is open: {:?}",
+        "once viewed, the outcome is gone from the row whichever session is open: {:?}",
         slot_of(&application, "Sidekick at work")
     );
 }
@@ -1052,11 +1052,11 @@ fn armed_sidebar(
     let ApplicationTransition::ListSessions(request) =
         deliver_settings(&mut application, hiding(true))
     else {
-        panic!("a Sidebar coming into view asks for its Sessions");
+        panic!("a sidebar coming into view asks for its sessions");
     };
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     (application, elapsed)
 }
 
@@ -1102,7 +1102,7 @@ fn subsession_owing_both(sidekick: &Sidekick, workspace: &Path) -> suru::protoco
         approval: pending, ..
     } = &approval
     else {
-        unreachable!("an Approval Activity carries an Approval")
+        unreachable!("an approval activity carries an approval")
     };
     snapshot.pending_approvals.push(pending.id);
     snapshot.pending_approvals_revision = snapshot.revision;
@@ -1140,28 +1140,28 @@ fn a_hidden_subsessions_interventions_present_only_in_the_subsession() {
         sidekick.session,
     );
 
-    assert!(slot_of(&application, "Sidekick at work").ends_with("Needs Intervention"));
+    assert!(slot_of(&application, "Sidekick at work").ends_with("Needs intervention"));
     let sidekicks = screen(&application);
     assert!(
-        !sidekicks.contains("Approval · Choose Decision")
+        !sidekicks.contains("Approval · Choose decision")
             && !sidekicks.contains("Which grammar should the parser follow?"),
-        "nothing the Subsession owes presents itself in its Sidekick's Session: {sidekicks}"
+        "nothing the subsession owes presents itself in its sidekick's session: {sidekicks}"
     );
     type_terminal_text(&mut application, "carry on");
     assert!(
         screen(&application).contains("carry on"),
-        "and the keys stay with the Sidekick's composer: {}",
+        "and the keys stay with the sidekick's composer: {}",
         screen(&application)
     );
 
     let mut owing = subsession_owing_both(&sidekick, &repository(root));
     application
         .handle_event(ApplicationEvent::SessionAttached(owing.clone()))
-        .expect("open the Subsession");
+        .expect("open the subsession");
     let inside = screen(&application);
     assert!(
-        inside.contains("Approval · Choose Decision") && inside.contains("parser.example.test"),
-        "the Subsession's Approval presents itself in its own Session: {inside}"
+        inside.contains("Approval · Choose decision") && inside.contains("parser.example.test"),
+        "the subsession's approval presents itself in its own session: {inside}"
     );
 
     clock.fetch_add(
@@ -1183,10 +1183,10 @@ fn a_hidden_subsessions_interventions_present_only_in_the_subsession() {
     }
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(owing)))
-        .expect("take the decided Approval");
+        .expect("take the decided approval");
     assert!(
         screen(&application).contains("Which grammar should the parser follow?"),
-        "and its Questionnaire follows: {}",
+        "and its questionnaire follows: {}",
         screen(&application)
     );
 
@@ -1198,7 +1198,7 @@ fn a_hidden_subsessions_interventions_present_only_in_the_subsession() {
     let back = screen(&application);
     assert!(
         !back.contains("Which grammar should the parser follow?"),
-        "back in the Sidekick's Session, the Questionnaire stays with the Subsession: {back}"
+        "back in the sidekick's session, the questionnaire stays with the subsession: {back}"
     );
 }
 
@@ -1220,7 +1220,7 @@ fn choose_workspace(application: &mut Application, label: &str) {
             modifiers: KeyModifiers::NONE,
         },
     )
-    .expect("choose the Workspace");
+    .expect("choose the workspace");
 }
 
 /// The selector offers every Workspace there are Sessions in, a Workspace
@@ -1281,7 +1281,7 @@ fn a_narrowed_sidebar_keeps_the_sidekicks_row_for_the_subsessions_it_hides_there
             listed(SessionId::new(), "Repository work", &repository(root), 1),
         ],
     );
-    assert!(slot_of(&application, "Sidekick at work").ends_with("Needs Intervention"));
+    assert!(slot_of(&application, "Sidekick at work").ends_with("Needs intervention"));
 
     choose_workspace(&mut application, "repository");
     assert!(listed_in_sidebar(&application, "Repository work"));
@@ -1293,7 +1293,7 @@ fn a_narrowed_sidebar_keeps_the_sidekicks_row_for_the_subsessions_it_hides_there
     );
     assert!(
         slot_of(&application, "Sidekick at work").ends_with("Done"),
-        "the row speaks for the Subsession it hides here alone: {:?}",
+        "the row speaks for the subsession it hides here alone: {:?}",
         slot_of(&application, "Sidekick at work")
     );
 
@@ -1303,7 +1303,7 @@ fn a_narrowed_sidebar_keeps_the_sidekicks_row_for_the_subsessions_it_hides_there
     assert_eq!(
         open_sidebar_text(&application),
         "",
-        "a Subsession hidden elsewhere is not one this Workspace's row answers for"
+        "a subsession hidden elsewhere is not one this workspace's row answers for"
     );
 
     let rows = rendered_application_rows_at(&application, SIDEBAR_WIDE, TALL);
@@ -1318,12 +1318,12 @@ fn a_narrowed_sidebar_keeps_the_sidekicks_row_for_the_subsessions_it_hides_there
                 modifiers: KeyModifiers::NONE,
             },
         )
-        .expect("press the Sidekick's row"),
+        .expect("press the sidekick's row"),
         ApplicationTransition::ViewAndAttachSession(SessionReference::new(
             Outlook::Local,
             sidekick.session
         )),
-        "the row is the way into the Sidekick's Session, and through it to the Subsession"
+        "the row is the way into the sidekick's session, and through it to the subsession"
     );
 }
 
@@ -1348,7 +1348,7 @@ fn the_live_work_tick_arms_only_where_a_row_draws_live_work() {
             working(sidekick.began(root), minutes_ago(5)),
         ],
     );
-    assert!(slot_of(&quiet, "Sidekick at work").ends_with("Needs Intervention"));
+    assert!(slot_of(&quiet, "Sidekick at work").ends_with("Needs intervention"));
     assert!(
         !quiet.wants_spinner(),
         "nothing the row draws rises, so nothing wakes the client"
@@ -1365,7 +1365,7 @@ fn the_live_work_tick_arms_only_where_a_row_draws_live_work() {
     assert!(slot_of(&live, "Sidekick at work").ends_with("Working 5m"));
     assert!(
         live.wants_spinner(),
-        "the hidden Subsession's Working rises on its Sidekick's row"
+        "the hidden subsession's working rises on its sidekick's row"
     );
 }
 
@@ -1403,7 +1403,7 @@ fn hiding_the_subsession_the_keys_are_on_moves_them_to_its_sidekicks_row_in_view
     deliver_settings(&mut application, hiding(true));
     assert!(
         focused_sidebar_text(&application).contains("Sidekick at work"),
-        "the keys stand on the row carrying the Subsession, in view: {:?}",
+        "the keys stand on the row carrying the subsession, in view: {:?}",
         sidebar_lines(&application)
     );
 }
@@ -1440,16 +1440,16 @@ fn everywhere_a_subsession_is_hidden_by_its_sidekick_on_its_own_server() {
             ..EffectiveSettings::default()
         },
     ) else {
-        panic!("an Everywhere Sidebar starts by discovering its paired Remotes");
+        panic!("an Everywhere sidebar starts by discovering its paired remotes");
     };
     let ApplicationTransition::ReconcileCatalogOrigins { requests, .. } = application
         .handle_event(ApplicationEvent::EverywhereRemotesListed {
             request: discovery,
             remotes: vec![remote("studio")],
         })
-        .expect("take the paired Remotes")
+        .expect("take the paired remotes")
     else {
-        panic!("Everywhere asks every Origin for its Sessions");
+        panic!("Everywhere asks every origin for its sessions");
     };
     let local = Sidekick::new();
     let studio = Sidekick::new();
@@ -1459,40 +1459,40 @@ fn everywhere_a_subsession_is_hidden_by_its_sidekick_on_its_own_server() {
             Outlook::Local => vec![local.own(root), local.began(root)],
             Outlook::Remote(name) if name == "studio" => vec![
                 edit(studio.own(&studio_root), |summary| {
-                    summary.title = "Studio Sidekick".to_owned();
+                    summary.title = "Studio sidekick".to_owned();
                 }),
                 edit(
                     working(studio.began(&studio_root), minutes_ago(5)),
                     |summary| {
-                        summary.title = "Studio Subsession".to_owned();
+                        summary.title = "Studio subsession".to_owned();
                     },
                 ),
                 begun_by(
-                    listed(SessionId::new(), "Named across Servers", &studio_root, 4),
+                    listed(SessionId::new(), "Named across servers", &studio_root, 4),
                     local.session,
                 ),
             ],
-            other => panic!("unexpected listing Origin: {other:?}"),
+            other => panic!("unexpected listing origin: {other:?}"),
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("take one Origin's listing");
+            .expect("take one origin's listing");
     }
 
     assert!(!listed_in_sidebar(&application, "Fixing the parser"));
     assert!(
-        !listed_in_sidebar(&application, "Studio Subsession"),
-        "a Remote's Subsession is hidden too: {:?}",
+        !listed_in_sidebar(&application, "Studio subsession"),
+        "a remote's subsession is hidden too: {:?}",
         sidebar_lines(&application)
     );
     assert!(
-        slot_of(&application, "Studio Sidekick").ends_with("Working 5m"),
-        "and its own Sidekick's row there carries its Standing: {:?}",
-        slot_of(&application, "Studio Sidekick")
+        slot_of(&application, "Studio sidekick").ends_with("Working 5m"),
+        "and its own sidekick's row there carries its standing: {:?}",
+        slot_of(&application, "Studio sidekick")
     );
     assert!(
-        listed_in_sidebar(&application, "Named across Servers"),
-        "a Sidekick's Session on another Server leads to nothing on this one"
+        listed_in_sidebar(&application, "Named across servers"),
+        "a sidekick's session on another server leads to nothing on this one"
     );
 }
 
@@ -1520,16 +1520,16 @@ fn everywhere_a_subsession_begun_on_a_remote_from_here_is_carried_by_its_sidekic
             ..EffectiveSettings::default()
         },
     ) else {
-        panic!("an Everywhere Sidebar starts by discovering its paired Remotes");
+        panic!("an Everywhere sidebar starts by discovering its paired remotes");
     };
     let ApplicationTransition::ReconcileCatalogOrigins { requests, .. } = application
         .handle_event(ApplicationEvent::EverywhereRemotesListed {
             request: discovery,
             remotes: vec![remote("studio")],
         })
-        .expect("take the paired Remotes")
+        .expect("take the paired remotes")
     else {
-        panic!("Everywhere asks every Origin for its Sessions");
+        panic!("Everywhere asks every origin for its sessions");
     };
     let local = Sidekick::new();
     let begun_here = SessionId::new();
@@ -1559,11 +1559,11 @@ fn everywhere_a_subsession_begun_on_a_remote_from_here_is_carried_by_its_sidekic
                     "desktop",
                 ),
             ],
-            other => panic!("unexpected listing Origin: {other:?}"),
+            other => panic!("unexpected listing origin: {other:?}"),
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("take one Origin's listing");
+            .expect("take one origin's listing");
     }
     assert!(
         listed_in_sidebar(&application, "Begun from here"),
@@ -1583,20 +1583,20 @@ fn everywhere_a_subsession_begun_on_a_remote_from_here_is_carried_by_its_sidekic
                 },
             ),
         ))
-        .expect("hear the Sidekick began a Session on the Remote");
+        .expect("hear the sidekick began a session on the remote");
     assert!(
         !listed_in_sidebar(&application, "Begun from here"),
-        "a Remote's Subsession begun from here is hidden Everywhere: {:?}",
+        "a remote's subsession begun from here is hidden Everywhere: {:?}",
         sidebar_lines(&application)
     );
     assert!(
         slot_of(&application, "Sidekick at work").ends_with("Working 5m"),
-        "and its Sidekick's row here carries its Standing: {:?}",
+        "and its sidekick's row here carries its standing: {:?}",
         slot_of(&application, "Sidekick at work")
     );
     assert!(
         listed_in_sidebar(&application, "Begun from elsewhere"),
-        "a Subsession a Sidekick on another Server began leads to nothing here"
+        "a subsession a sidekick on another server began leads to nothing here"
     );
 
     application
@@ -1605,10 +1605,10 @@ fn everywhere_a_subsession_begun_on_a_remote_from_here_is_carried_by_its_sidekic
                 session_id: local.session,
             },
         )))
-        .expect("hear the Sidekick's Session was deleted");
+        .expect("hear the sidekick's session was deleted");
     assert!(
         listed_in_sidebar(&application, "Begun from here"),
-        "once its Sidekick's Session is gone it is listed again: {:?}",
+        "once its sidekick's session is gone it is listed again: {:?}",
         sidebar_lines(&application)
     );
 }
@@ -1638,9 +1638,9 @@ fn open_picker(application: &mut Application) -> SessionListRequest {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionList,
         )))
-        .expect("open the Session picker")
+        .expect("open the session picker")
     else {
-        panic!("the Session picker asks for its Sessions");
+        panic!("the session picker asks for its sessions");
     };
     request
 }
@@ -1651,7 +1651,7 @@ fn widen_picker(application: &mut Application) -> ApplicationTransition {
             KeyCode::Char('a'),
             KeyModifiers::CONTROL,
         )))
-        .expect("widen the Session picker")
+        .expect("widen the session picker")
 }
 
 fn answer(
@@ -1661,7 +1661,7 @@ fn answer(
 ) {
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("answer the Session picker");
+        .expect("answer the session picker");
 }
 
 fn picker_screen(application: &Application) -> String {
@@ -1697,25 +1697,25 @@ fn the_session_picker_leaves_out_hidden_subsessions_at_every_scope() {
     assert_eq!(
         current.scope(),
         &SessionListScope::AllWorkspaces,
-        "whether a Subsession here is hidden turns on a Sidekick's Session rooted elsewhere, \
-         so the picker asks for the whole Outlook"
+        "whether a subsession here is hidden turns on a sidekick's session rooted elsewhere, \
+         so the picker asks for the whole outlook"
     );
     answer(&mut application, current, picker_listing(root, &sidekick));
     let screen = picker_screen(&application);
-    assert!(screen.contains("Current Workspace"), "{screen}");
+    assert!(screen.contains("Current workspace"), "{screen}");
     assert!(
         !screen.contains("Fixing the parser"),
-        "the Subsession here is hidden: {screen}"
+        "the subsession here is hidden: {screen}"
     );
     assert!(screen.contains("Own work here"), "{screen}");
     assert!(screen.contains("Orphaned here"), "{screen}");
     assert!(
         !screen.contains("Own work elsewhere"),
-        "the picker narrows to the current Workspace itself: {screen}"
+        "the picker narrows to the current workspace itself: {screen}"
     );
     assert!(
         picker_row(&screen, "Sidekick at work").contains("1 pending questions"),
-        "keeping the Sidekick's row for the Subsession it hides here: {screen}"
+        "keeping the sidekick's row for the subsession it hides here: {screen}"
     );
 
     let ApplicationTransition::ListSessions(all) = widen_picker(&mut application) else {
@@ -1723,32 +1723,32 @@ fn the_session_picker_leaves_out_hidden_subsessions_at_every_scope() {
     };
     answer(&mut application, all, picker_listing(root, &sidekick));
     let screen = picker_screen(&application);
-    assert!(screen.contains("All Workspaces"), "{screen}");
+    assert!(screen.contains("All workspaces"), "{screen}");
     assert!(!screen.contains("Fixing the parser"), "{screen}");
     let sidekicks_row = screen
         .lines()
         .find(|line| line.contains("Sidekick at work"))
-        .unwrap_or_else(|| panic!("the Sidekick's row is listed: {screen}"));
+        .unwrap_or_else(|| panic!("the sidekick's row is listed: {screen}"));
     assert!(
         sidekicks_row.contains("1 pending questions") && sidekicks_row.contains("active"),
-        "and carries what its hidden Subsession owes: {sidekicks_row}"
+        "and carries what its hidden subsession owes: {sidekicks_row}"
     );
     assert!(screen.contains("Own work elsewhere"), "{screen}");
 
     let ApplicationTransition::ListEverywhereRemotes(discovery) = widen_picker(&mut application)
     else {
-        panic!("Everywhere first discovers its Origins");
+        panic!("Everywhere first discovers its origins");
     };
     let ApplicationTransition::ReconcileCatalogOrigins { mut requests, .. } = application
         .handle_event(ApplicationEvent::EverywhereRemotesListed {
             request: discovery,
             remotes: Vec::new(),
         })
-        .expect("discover no Remotes")
+        .expect("discover no remotes")
     else {
-        panic!("Everywhere asks every Origin there is");
+        panic!("Everywhere asks every origin there is");
     };
-    let everywhere = requests.pop().expect("this Server is always one Origin");
+    let everywhere = requests.pop().expect("this server is always one origin");
     assert!(requests.is_empty(), "and the only one: {requests:?}");
     answer(
         &mut application,
@@ -1763,8 +1763,8 @@ fn the_session_picker_leaves_out_hidden_subsessions_at_every_scope() {
     type_terminal_text(&mut application, "parser");
     let screen = picker_screen(&application);
     assert!(
-        !screen.contains("Fixing the parser") && screen.contains("No Sessions found"),
-        "a search never finds a hidden Subsession: {screen}"
+        !screen.contains("Fixing the parser") && screen.contains("No sessions found"),
+        "a search never finds a hidden subsession: {screen}"
     );
 }
 
@@ -1786,16 +1786,16 @@ fn everywhere_the_session_picker_leaves_out_a_subsession_begun_on_a_remote_from_
     answer(&mut application, all, Vec::new());
     let ApplicationTransition::ListEverywhereRemotes(discovery) = widen_picker(&mut application)
     else {
-        panic!("Everywhere first discovers its Origins");
+        panic!("Everywhere first discovers its origins");
     };
     let ApplicationTransition::ReconcileCatalogOrigins { requests, .. } = application
         .handle_event(ApplicationEvent::EverywhereRemotesListed {
             request: discovery,
             remotes: vec![remote("studio")],
         })
-        .expect("discover the Remote")
+        .expect("discover the remote")
     else {
-        panic!("Everywhere asks every Origin");
+        panic!("Everywhere asks every origin");
     };
     for request in requests {
         let sessions = match request.outlook() {
@@ -1822,16 +1822,16 @@ fn everywhere_the_session_picker_leaves_out_a_subsession_begun_on_a_remote_from_
     assert!(screen.contains("Everywhere"), "{screen}");
     assert!(
         !screen.contains("Begun from here"),
-        "the Remote's Subsession begun from here is left out: {screen}"
+        "the remote's subsession begun from here is left out: {screen}"
     );
     assert!(
         picker_row(&screen, "Sidekick at work").contains("1 pending questions"),
-        "and its Sidekick's row carries what it owes: {screen}"
+        "and its sidekick's row carries what it owes: {screen}"
     );
     type_terminal_text(&mut application, "Begun");
     let screen = picker_screen(&application);
     assert!(
-        !screen.contains("Begun from here") && screen.contains("No Sessions found"),
+        !screen.contains("Begun from here") && screen.contains("No sessions found"),
         "a search never finds it: {screen}"
     );
 }
@@ -1847,7 +1847,7 @@ fn the_session_picker_lists_subsessions_until_the_reader_hides_them() {
     assert_eq!(
         current.scope(),
         &SessionListScope::CurrentWorkspace(root.to_owned().into()),
-        "with nothing hidden the server narrows to the current Workspace"
+        "with nothing hidden the server narrows to the current workspace"
     );
     let listing = picker_listing(root, &sidekick)
         .into_iter()
@@ -1874,7 +1874,7 @@ fn the_session_picker_lists_subsessions_until_the_reader_hides_them() {
             ..EffectiveSettings::default()
         },
     ) else {
-        panic!("hiding Subsessions while the picker is open asks for the whole Outlook");
+        panic!("hiding subsessions while the picker is open asks for the whole outlook");
     };
     assert_eq!(again.scope(), &SessionListScope::AllWorkspaces);
     answer(&mut application, again, picker_listing(root, &sidekick));
@@ -1923,11 +1923,11 @@ fn the_pickers_current_workspace_keeps_the_sidekicks_row_for_the_subsessions_it_
     let row = picker_row(&screen, "Sidekick at work");
     assert!(
         row.contains("1 pending questions") && row.contains("active"),
-        "the row carries what the Subsession hidden here owes: {row}"
+        "the row carries what the subsession hidden here owes: {row}"
     );
     assert!(
-        !row.contains("pending Approvals"),
-        "and nothing of its own Session, rooted elsewhere: {row}"
+        !row.contains("pending approvals"),
+        "and nothing of its own session, rooted elsewhere: {row}"
     );
 
     type_terminal_text(&mut application, "Sidekick");
@@ -1937,7 +1937,7 @@ fn the_pickers_current_workspace_keeps_the_sidekicks_row_for_the_subsessions_it_
             Outlook::Local,
             sidekick.session
         )),
-        "the row is the way into the Sidekick's Session"
+        "the row is the way into the sidekick's session"
     );
 }
 
@@ -2010,12 +2010,12 @@ fn hiding_the_selected_subsession_moves_the_pickers_selection_to_its_sidekicks_r
             },
         ),
         ApplicationTransition::Continue,
-        "every Workspace is listed already, so nothing is asked again"
+        "every workspace is listed already, so nothing is asked again"
     );
     let screen = picker_screen(&application);
     assert!(
         picker_row(&screen, "Sidekick at work").contains('›'),
-        "the selection stands on the row carrying the Subsession, in view: {screen}"
+        "the selection stands on the row carrying the subsession, in view: {screen}"
     );
     assert_eq!(
         choose_selected(&mut application),
@@ -2034,7 +2034,7 @@ fn look_at_studio(application: &mut Application, workspace: &Path) -> Vec<Sessio
     press(application, KeyCode::Enter, KeyModifiers::NONE);
     application
         .handle_event(ApplicationEvent::RemotesListed(vec![remote("studio")]))
-        .expect("list the paired Remotes");
+        .expect("list the paired remotes");
     application
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
@@ -2044,17 +2044,17 @@ fn look_at_studio(application: &mut Application, workspace: &Path) -> Vec<Sessio
                 unreachable: None,
             }),
         })
-        .expect("probe the Remote");
+        .expect("probe the remote");
     press(application, KeyCode::Down, KeyModifiers::NONE);
     let turned = application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("turn toward the Remote");
+        .expect("turn toward the remote");
     assert!(
         matches!(turned, ApplicationTransition::TurnOutlook { .. }),
-        "choosing the Remote turns the Outlook: {turned:?}"
+        "choosing the remote turns the outlook: {turned:?}"
     );
     // Turning resolves the Remote's own working directory, numbered among
     // this client's resolutions; only the one it awaits is taken.
@@ -2067,7 +2067,7 @@ fn look_at_studio(application: &mut Application, workspace: &Path) -> Vec<Sessio
                 request_id,
                 result: Ok(ResolvedWorkspace::directory(workspace.to_owned())),
             })
-            .expect("take the Remote's working directory");
+            .expect("take the remote's working directory");
         asked.extend(listings_in(transition));
     }
     asked.extend(listings_in(application.take_session_listing_transition()));
@@ -2140,7 +2140,7 @@ fn the_session_picker_hides_a_remotes_subsessions_by_its_own_sidekick() {
     );
 
     let ApplicationTransition::ListSessions(all) = widen_picker(&mut application) else {
-        panic!("widening asks the Remote again");
+        panic!("widening asks the remote again");
     };
     assert_eq!(all.outlook(), &Outlook::Remote("studio".to_owned()));
     answer(
@@ -2161,16 +2161,16 @@ fn the_session_picker_hides_a_remotes_subsessions_by_its_own_sidekick() {
 
     let ApplicationTransition::ListEverywhereRemotes(discovery) = widen_picker(&mut application)
     else {
-        panic!("Everywhere first discovers its Origins");
+        panic!("Everywhere first discovers its origins");
     };
     let ApplicationTransition::ReconcileCatalogOrigins { requests, .. } = application
         .handle_event(ApplicationEvent::EverywhereRemotesListed {
             request: discovery,
             remotes: vec![remote("studio")],
         })
-        .expect("discover the Remote")
+        .expect("discover the remote")
     else {
-        panic!("Everywhere asks every Origin");
+        panic!("Everywhere asks every origin");
     };
     assert_eq!(requests.len(), 2);
     for request in requests {
@@ -2183,18 +2183,18 @@ fn the_session_picker_hides_a_remotes_subsessions_by_its_own_sidekick() {
     let screen = picker_screen(&application);
     assert!(
         !screen.contains("Fixing the parser") && !screen.contains("Chore"),
-        "each Server's Subsessions are hidden by the Sidekick there: {screen}"
+        "each server's subsessions are hidden by the sidekick there: {screen}"
     );
     assert!(
         screen.contains("Across"),
-        "and a Sidekick's Session on another Server leads to nothing: {screen}"
+        "and a sidekick's session on another server leads to nothing: {screen}"
     );
     assert!(
         screen.contains("Sidekick at work")
             && screen
                 .lines()
                 .any(|line| line.contains("[studio]") && line.contains("1 pending questions")),
-        "each Server's Sidekick carries what its own hidden Subsession owes: {screen}"
+        "each server's sidekick carries what its own hidden subsession owes: {screen}"
     );
 }
 
@@ -2269,7 +2269,7 @@ fn under_a_remotes_outlook_the_sidekick_here_carries_a_subsession_begun_from_her
         asked
             .iter()
             .any(|request| request.outlook() == &Outlook::Local),
-        "the Sidebar asks this client's own Server beside the Remote: {asked:?}"
+        "the sidebar asks this client's own server beside the remote: {asked:?}"
     );
     let there = vec![
         begun_from_here(begun, &studio_root),
@@ -2280,12 +2280,12 @@ fn under_a_remotes_outlook_the_sidekick_here_carries_a_subsession_begun_from_her
     assert!(
         !listed_in_sidebar(&application, "Begun from here")
             && listed_in_sidebar(&application, "Studio work"),
-        "the Subsession is hidden among the Remote's Sessions: {:?}",
+        "the subsession is hidden among the remote's sessions: {:?}",
         sidebar_lines(&application)
     );
     assert!(
         slot_of(&application, "Sidekick at work").ends_with("Working 5m"),
-        "the Sidekick's row here stands for it, saying its Standing: {:?}",
+        "the sidekick's row here stands for it, saying its standing: {:?}",
         sidebar_lines(&application)
     );
     let opened = press_text(&mut application, "Sidekick at work");
@@ -2295,7 +2295,7 @@ fn under_a_remotes_outlook_the_sidekick_here_carries_a_subsession_begun_from_her
             ApplicationTransition::TurnOutlookAndViewAndAttach { session, .. }
                 if *session == SessionReference::new(Outlook::Local, local.session)
         ),
-        "and opening it turns back to open the Sidekick's Session here: {opened:?}"
+        "and opening it turns back to open the sidekick's session here: {opened:?}"
     );
 }
 
@@ -2333,7 +2333,7 @@ fn under_a_remotes_outlook_the_picker_carries_a_subsession_begun_from_here() {
     );
     assert!(
         picker_row(&screen, "Sidekick at work").contains("1 pending questions"),
-        "the Sidekick's row here carries what the hidden Subsession owes: {screen}"
+        "the sidekick's row here carries what the hidden subsession owes: {screen}"
     );
 }
 
@@ -2360,16 +2360,16 @@ fn everywhere_a_subsession_of_an_unreachable_remote_is_not_carried_by_a_row_here
             ..EffectiveSettings::default()
         },
     ) else {
-        panic!("an Everywhere Sidebar starts by discovering its paired Remotes");
+        panic!("an Everywhere sidebar starts by discovering its paired remotes");
     };
     let ApplicationTransition::ReconcileCatalogOrigins { requests, .. } = application
         .handle_event(ApplicationEvent::EverywhereRemotesListed {
             request: discovery,
             remotes: vec![remote("studio")],
         })
-        .expect("take the paired Remotes")
+        .expect("take the paired remotes")
     else {
-        panic!("Everywhere asks every Origin for its Sessions");
+        panic!("Everywhere asks every origin for its sessions");
     };
     let local = Sidekick::new();
     let begun = SessionId::new();
@@ -2395,12 +2395,12 @@ fn everywhere_a_subsession_of_an_unreachable_remote_is_not_carried_by_a_row_here
     );
     assert!(
         listed_in_sidebar(&application, "Begun from here"),
-        "it stands as its unreachable Remote's own row: {:?}",
+        "it stands as its unreachable remote's own row: {:?}",
         sidebar_lines(&application)
     );
     assert!(
         !slot_of(&application, "Sidekick at work").contains("Working"),
-        "and the Sidekick's row here gives nothing it last said as current: {:?}",
+        "and the sidekick's row here gives nothing it last said as current: {:?}",
         sidebar_lines(&application)
     );
 
@@ -2412,7 +2412,7 @@ fn everywhere_a_subsession_of_an_unreachable_remote_is_not_carried_by_a_row_here
                 outlook: Outlook::Remote("studio".to_owned()),
                 event: ManagedEvent::RemoteRecovered,
             })
-            .expect("hear the Remote answers again"),
+            .expect("hear the remote answers again"),
     );
     assert!(
         listed_in_sidebar(&application, "Begun from here")
@@ -2435,7 +2435,7 @@ fn everywhere_a_subsession_of_an_unreachable_remote_is_not_carried_by_a_row_here
     }
     assert!(
         !listed_in_sidebar(&application, "Begun from here")
-            && slot_of(&application, "Sidekick at work").contains("Needs Intervention"),
+            && slot_of(&application, "Sidekick at work").contains("Needs intervention"),
         "read afresh, it is carried again, by what it holds now: {:?}",
         sidebar_lines(&application)
     );
@@ -2468,7 +2468,7 @@ fn under_a_remotes_outlook_a_sidekick_deleted_here_hides_nothing_more() {
                 session_id: local.session,
             },
         )))
-        .expect("hear the Sidekick's Session here was deleted");
+        .expect("hear the sidekick's session here was deleted");
     assert!(
         listed_in_sidebar(&application, "Begun from here")
             && !listed_in_sidebar(&application, "Sidekick at work"),
@@ -2496,16 +2496,16 @@ fn a_picker_alone_everywhere_hears_a_remote_stop_answering() {
     answer(&mut application, all, Vec::new());
     let ApplicationTransition::ListEverywhereRemotes(discovery) = widen_picker(&mut application)
     else {
-        panic!("Everywhere first discovers its Origins");
+        panic!("Everywhere first discovers its origins");
     };
     let ApplicationTransition::ReconcileCatalogOrigins { requests, .. } = application
         .handle_event(ApplicationEvent::EverywhereRemotesListed {
             request: discovery,
             remotes: vec![remote("studio")],
         })
-        .expect("discover the Remote")
+        .expect("discover the remote")
     else {
-        panic!("Everywhere asks every Origin");
+        panic!("Everywhere asks every origin");
     };
     answer_each(
         &mut application,
@@ -2517,7 +2517,7 @@ fn a_picker_alone_everywhere_hears_a_remote_stop_answering() {
     assert!(
         !screen.contains("[studio]")
             && picker_row(&screen, "Sidekick at work").contains("[active]"),
-        "the Sidekick here carries the Subsession it began there: {screen}"
+        "the sidekick here carries the subsession it began there: {screen}"
     );
 
     crate::tui_rendering::support::studio_stops_answering(
@@ -2529,6 +2529,6 @@ fn a_picker_alone_everywhere_hears_a_remote_stop_answering() {
     assert!(
         screen.contains("[studio]")
             && !picker_row(&screen, "Sidekick at work").contains("[active]"),
-        "it stands as its unreachable Remote's own row, carried by nothing here: {screen}"
+        "it stands as its unreachable remote's own row, carried by nothing here: {screen}"
     );
 }

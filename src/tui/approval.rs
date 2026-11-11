@@ -18,7 +18,7 @@ use ratatui::{
 
 const DECISIONS: [(Decision, &str); 4] = [
     (Decision::Accept, "Accept once"),
-    (Decision::AcceptForSession, "Accept for Session"),
+    (Decision::AcceptForSession, "Accept for session"),
     (Decision::Decline, "Decline"),
     (Decision::DeclineAndInterrupt, "Decline and Interrupt"),
 ];
@@ -240,9 +240,9 @@ impl ApprovalPanel {
         let title = if self.submitting || *outcome == ApprovalOutcome::Submitting {
             " Approval · Submitting "
         } else if *outcome == ApprovalOutcome::SubmissionRejected {
-            " Approval · Decision not delivered; retry "
+            " Approval · decision not delivered; retry "
         } else {
-            " Approval · Choose Decision "
+            " Approval · Choose decision "
         };
         let block = Block::default().borders(Borders::ALL).title(title);
         let inner = block.inner(area);
@@ -305,7 +305,7 @@ pub(super) fn key(event: &Event) -> Option<CommandId> {
 pub(super) fn decision_text(decision: Decision) -> &'static str {
     match decision {
         Decision::Accept => "Accepted once",
-        Decision::AcceptForSession => "Accepted for Session",
+        Decision::AcceptForSession => "Accepted for session",
         Decision::Decline => "Declined",
         Decision::DeclineAndInterrupt => "Declined and interrupted",
     }
@@ -334,14 +334,14 @@ pub(super) fn outcome_text(
         (ApprovalOutcome::Decided, Some(decision)) => decision_text(decision).into(),
         (ApprovalOutcome::Decided, None) => "Decided".into(),
         (ApprovalOutcome::Withdrawn, _) => {
-            "Withdrawn; Provider no longer requests this action".into()
+            "Withdrawn; provider no longer requests this action".into()
         }
-        (ApprovalOutcome::TurnEnded, _) => "Turn ended before a Decision".into(),
+        (ApprovalOutcome::TurnEnded, _) => "Turn ended before a decision".into(),
         (ApprovalOutcome::Unavailable, _) => {
-            "Unavailable; previous Provider request is no longer live".into()
+            "Unavailable; previous provider request is no longer live".into()
         }
         (ApprovalOutcome::DeliveryUncertain, _) => {
-            "Delivery uncertain; Decision will not be resent".into()
+            "Delivery uncertain; decision will not be resent".into()
         }
     }
 }
@@ -350,13 +350,13 @@ pub(super) fn subject_summary(subject: &ApprovalSubject) -> String {
     match subject {
         ApprovalSubject::Command { command, .. } => compact_subject("Command", Some(command)),
         ApprovalSubject::FileChange { paths, .. } => paths.first().map_or_else(
-            || compact_subject("File Change", None),
-            |path| compact_subject("File Change", Some(&path.to_string_lossy())),
+            || compact_subject("File change", None),
+            |path| compact_subject("File change", Some(&path.to_string_lossy())),
         ),
         ApprovalSubject::Read { path } => compact_subject("Read", Some(&path.to_string_lossy())),
         ApprovalSubject::Network { host_or_url } => compact_subject("Network", Some(host_or_url)),
         ApprovalSubject::PermissionGrant { .. } => compact_subject("Permission Grant", None),
-        ApprovalSubject::OtherTool { name, .. } => compact_subject("Other Tool", Some(name)),
+        ApprovalSubject::OtherTool { name, .. } => compact_subject("Other tool", Some(name)),
     }
 }
 
@@ -434,7 +434,7 @@ pub(super) fn detail_lines(
             for (index, path) in paths.iter().enumerate() {
                 lines.push(format!(
                     "{}: {}",
-                    if index == 0 { "File Change" } else { "Path" },
+                    if index == 0 { "File change" } else { "Path" },
                     path.display()
                 ));
             }
@@ -450,14 +450,14 @@ pub(super) fn detail_lines(
             push_json(&mut lines, "Permission Grant", profile);
         }
         ApprovalSubject::OtherTool { name, input } => {
-            lines.push(format!("Other Tool: {name}"));
+            lines.push(format!("Other tool: {name}"));
             push_json(&mut lines, "Input", input);
         }
     }
     if tool_activity_id.is_some() {
         let name = match &approval.subject {
             ApprovalSubject::Command { .. } => "Command",
-            ApprovalSubject::FileChange { .. } => "File Change",
+            ApprovalSubject::FileChange { .. } => "File change",
             _ => "Tool",
         };
         lines.push(format!("Tool row: {name}"));

@@ -908,7 +908,7 @@ async fn suru_identity_store_chooses_where_a_launched_server_keeps_its_key() {
         servers.state_dir().join("suru.jsonc"),
         r#"{ "serving": { "enabled": true, "port": 0, "bindAddress": "127.0.0.1" } }"#,
     )
-    .expect("write a Serving Config Document");
+    .expect("write a serving config document");
     let refused = run_server_cli_with_env(
         &servers,
         channel,
@@ -957,7 +957,7 @@ async fn suru_identity_store_chooses_where_a_launched_server_keeps_its_key() {
         }
     })
     .await
-    .expect("the Server Logs that SURU_IDENTITY_STORE chose the file");
+    .expect("the server logs that SURU_IDENTITY_STORE chose the file");
 
     let stopped = run_server_cli(&servers, channel, "stop").await;
     assert!(
@@ -2977,7 +2977,7 @@ async fn managed_client_hydrates_catalog_before_connected_and_settings() {
         timeout(Duration::from_millis(20), client.next())
             .await
             .is_err(),
-        "Connected and Settings wait for the catalog snapshot body"
+        "Connected and settings wait for the catalog snapshot body"
     );
     fixture.catalog_handshake.body_ready.send_replace(true);
     assert!(matches!(
@@ -3453,7 +3453,7 @@ fn fixture_model_catalog_event() -> Event {
         .json_data(ModelCatalog {
             providers: Vec::new(),
         })
-        .expect("serialize fixture Model Catalog")
+        .expect("serialize fixture model catalog")
 }
 
 /// The Server's Relays, which follow its Model Catalog on every connect: a
@@ -3466,7 +3466,7 @@ fn fixture_relays_event() -> Event {
             revision: 1,
             relays: Vec::new(),
         })
-        .expect("serialize fixture Relays")
+        .expect("serialize fixture relays")
 }
 
 /// How the Server's Serving listener stands, which follows its Relays on
@@ -3475,7 +3475,7 @@ fn fixture_serving_listener_event() -> Event {
     Event::default()
         .event(suru::protocol::SERVING_LISTENER_EVENT)
         .json_data(suru::protocol::ListenerState::Off)
-        .expect("serialize fixture Serving listener state")
+        .expect("serialize fixture serving listener state")
 }
 
 /// Whether the Server has been onboarded, which follows how its Serving
@@ -3730,7 +3730,7 @@ fn empty_catalog_snapshot() -> impl futures_util::Stream<Item = Result<Event, In
                 .event(SESSION_CATALOG_SNAPSHOT_EVENT)
                 .id(snapshot.revision.0.to_string())
                 .json_data(snapshot)
-                .expect("serialize empty Session catalog snapshot"),
+                .expect("serialize empty session catalog snapshot"),
         )
     })
 }
@@ -3836,14 +3836,14 @@ async fn suru_config_dir_steers_a_real_server_and_config_problems_reach_the_log(
             "mysteryKnob": 1
         }"#,
     )
-    .expect("write Config Document");
+    .expect("write config document");
     let channel = "config-env-test";
     let mut process = server_cli(&servers, channel, "start");
     process.env("SURU_CONFIG_DIR", config_dir.path());
     let started = settle_server_cli(process, servers.state_dir(), channel, "start").await;
     assert!(
         started.status.success(),
-        "server start failed despite the imperfect Config Document: {}",
+        "server start failed despite the imperfect config document: {}",
         String::from_utf8_lossy(&started.stderr)
     );
 
@@ -3901,10 +3901,10 @@ async fn suru_config_dir_steers_a_real_server_and_config_problems_reach_the_log(
         }
     })
     .await
-    .expect("the server Log names the ignored key");
+    .expect("the server log names the ignored key");
     assert!(
         log_contents.contains("configuration problem"),
-        "the Log carries the configuration diagnostic: {log_contents}"
+        "the log carries the configuration diagnostic: {log_contents}"
     );
 }
 
@@ -3913,14 +3913,14 @@ async fn a_syntax_broken_config_document_reaches_the_log_and_the_server_still_st
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let servers = DetachedServers::new();
     std::fs::write(config_dir.path().join("suru.jsonc"), r#"{ "transcript": "#)
-        .expect("write broken Config Document");
+        .expect("write broken config document");
     let channel = "config-broken-log-test";
     let mut process = server_cli(&servers, channel, "start");
     process.env("SURU_CONFIG_DIR", config_dir.path());
     let started = settle_server_cli(process, servers.state_dir(), channel, "start").await;
     assert!(
         started.status.success(),
-        "a broken Config Document must never prevent startup: {}",
+        "a broken config document must never prevent startup: {}",
         String::from_utf8_lossy(&started.stderr)
     );
 
@@ -3942,9 +3942,9 @@ async fn a_syntax_broken_config_document_reaches_the_log_and_the_server_still_st
         }
     })
     .await
-    .expect("the server Log reports the broken Config Document");
+    .expect("the server log reports the broken config document");
     assert!(
         log_contents.contains("ERROR") && log_contents.contains("not valid JSONC"),
-        "the Log states the file was ignored and why: {log_contents}"
+        "the log states the file was ignored and why: {log_contents}"
     );
 }

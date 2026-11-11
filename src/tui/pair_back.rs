@@ -40,7 +40,7 @@ impl OfferFix {
     /// What the keys say it does.
     pub(super) fn label(&self) -> &'static str {
         match self {
-            Self::TurnServingOn => "turn Serving on",
+            Self::TurnServingOn => "turn serving on",
             Self::AtRelay { action, .. } => action.label(),
         }
     }
@@ -59,16 +59,16 @@ impl OfferFix {
 }
 
 /// What turning Serving on opens, said before its key is taken.
-const SERVING_OPENS: &str = "Turning Serving on has this machine accept the Servers paired with it";
+const SERVING_OPENS: &str = "Turning serving on has this machine accept the servers paired with it";
 
 /// What is said where the listener listens on a loopback address, which other
 /// machines cannot reach, and nothing else could be offered.
-const LOOPBACK_ONLY: &str = "This machine has no way to offer: its Serving listener is bound to \
-                             loopback, which other machines cannot reach, and it Serves through \
-                             no Relay";
+const LOOPBACK_ONLY: &str = "This machine has no way to offer: its serving listener is bound to \
+                             loopback, which other machines cannot reach, and it serves through \
+                             no relay";
 
 /// What the option's row says of it withheld, where that fits the row.
-const NOT_SERVING: &str = "not Serving";
+const NOT_SERVING: &str = "not serving";
 const NO_WAY_TO_OFFER: &str = "no way to offer";
 const ALREADY_REACHES: &str = "already reaches here";
 
@@ -79,7 +79,7 @@ pub(super) const TOO_SMALL: &str =
 
 /// What the option says of itself with the keys on it, where it can be chosen.
 pub(super) const WHAT_IT_DOES: &str = "It lets that machine run commands here, once its user \
-                                       accepts. Every address and Relay this machine has is \
+                                       accepts. Every address and relay this machine has is \
                                        offered then, rather than those /serve would let you pick";
 
 /// How the option to pair back stands on Configure Remote.
@@ -110,7 +110,7 @@ impl PairBackOption {
         if !serving {
             return Self::Withheld {
                 brief: NOT_SERVING,
-                why: "This machine is not Serving, so it has no way to offer".to_owned(),
+                why: "This machine is not serving, so it has no way to offer".to_owned(),
                 fix: Some(OfferFix::TurnServingOn),
             };
         }
@@ -378,7 +378,7 @@ impl Accepting {
             return None;
         }
         if known.iter().any(|known| known == &name) {
-            self.error = Some(format!("A Remote named `{name}` already exists"));
+            self.error = Some(format!("A remote named `{name}` already exists"));
             return None;
         }
         self.asked = true;
@@ -430,19 +430,19 @@ fn failure_said(why: RedemptionFailure, peer: &str) -> String {
     match why {
         RedemptionFailure::NotReached => format!("no way {peer} offers answered"),
         RedemptionFailure::RelayLoginNeeded => {
-            format!("{peer} offers only a Relay this machine is not logged in at; see /relay")
+            format!("{peer} offers only a relay this machine is not logged in at; see /relay")
         }
         RedemptionFailure::RelayAccountsDiffer => {
-            format!("a Relay {peer} offers holds the two machines under different Accounts")
+            format!("a relay {peer} offers holds the two machines under different accounts")
         }
         RedemptionFailure::RelayFull => {
-            format!("a Relay {peer} offers carries no more for this Account just now")
+            format!("a relay {peer} offers carries no more for this account just now")
         }
         RedemptionFailure::WrongKey => {
             format!("what answered did not prove the key held for {peer}")
         }
         RedemptionFailure::NameTaken => {
-            "a Remote goes by that name now; press Enter to give it another".to_owned()
+            "a remote goes by that name now; press Enter to give it another".to_owned()
         }
         RedemptionFailure::Malformed => format!("{peer} sent nothing this machine could read"),
         RedemptionFailure::TooManyWays => {
@@ -458,7 +458,7 @@ pub(super) fn held_detail(offer: &HeldOffer) -> Vec<String> {
     let peer = said_name(&offer.peer);
     let Some(answer) = &offer.answer else {
         return vec![format!(
-            "Accepting lets this machine reach {peer} as a Remote. It gives {peer} nothing here \
+            "Accepting lets this machine reach {peer} as a remote. It gives {peer} nothing here \
              it does not already have"
         )];
     };
@@ -468,8 +468,8 @@ pub(super) fn held_detail(offer: &HeldOffer) -> Vec<String> {
         said_name(&answer.name)
     );
     let held_up = answer.held_up.as_ref().map(|why| match why {
-        OfferHeldUp::ServingOff => format!("{peer} is not Serving, so it has no way to offer yet"),
-        OfferHeldUp::NoWay => format!("{peer} Serves, and has no way to offer yet"),
+        OfferHeldUp::ServingOff => format!("{peer} is not serving, so it has no way to offer yet"),
+        OfferHeldUp::NoWay => format!("{peer} serves, and has no way to offer yet"),
         OfferHeldUp::RedemptionFailed { why } => {
             format!(
                 "The last try failed, and is tried again by itself: {}",
@@ -495,7 +495,7 @@ pub(super) fn made_detail(offer: &MadeOffer, now: SessionTimestamp) -> Vec<Strin
         format!("Offered {made} to let {remote} reach this machine; it stands until answered");
     let held_up = offer.held_up.as_ref().map(|why| match why {
         OfferHeldUp::ServingOff => format!(
-            "{remote} accepted. This machine is not Serving, so nothing is issued; /serve turns \
+            "{remote} accepted. This machine is not serving, so nothing is issued; /serve turns \
              it on, and it then pairs by itself"
         ),
         OfferHeldUp::NoWay => format!(

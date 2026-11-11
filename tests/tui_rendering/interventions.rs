@@ -63,7 +63,7 @@ fn add_pending_approval(snapshot: &mut SessionSnapshot, turn_id: TurnId, host: &
         None,
     );
     let Activity::Approval { approval, .. } = &activity else {
-        unreachable!("an Approval Activity carries an Approval")
+        unreachable!("an approval activity carries an approval")
     };
     let id = approval.id;
     snapshot.pending_approvals.push(id);
@@ -76,7 +76,7 @@ fn deliver(app: &mut Application, snapshot: &SessionSnapshot) {
     app.handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
         snapshot.clone(),
     )))
-    .expect("deliver a Session snapshot");
+    .expect("deliver a session snapshot");
 }
 
 fn screen(app: &Application) -> String {
@@ -93,12 +93,12 @@ fn pending_approval_presents_itself_with_nothing_chosen_and_takes_no_key_while_a
 
     let presented = screen(&app);
     assert!(
-        presented.contains("Approval · Choose Decision"),
-        "the Approval presents itself without a key: {presented}"
+        presented.contains("Approval · Choose decision"),
+        "the approval presents itself without a key: {presented}"
     );
     assert!(
         !presented.contains("> 1. Accept once"),
-        "a self-presented Approval opens with no Decision chosen: {presented}"
+        "a self-presented approval opens with no decision chosen: {presented}"
     );
 
     clock.advance(ARMING / 2);
@@ -112,7 +112,7 @@ fn pending_approval_presents_itself_with_nothing_chosen_and_takes_no_key_while_a
     );
     let arming = screen(&app);
     assert!(
-        !arming.contains("> 1. Accept once") && !arming.contains("> 2. Accept for Session"),
+        !arming.contains("> 1. Accept once") && !arming.contains("> 2. Accept for session"),
         "keys inside the arming window are ignored: {arming}"
     );
 
@@ -121,7 +121,7 @@ fn pending_approval_presents_itself_with_nothing_chosen_and_takes_no_key_while_a
     let chosen = screen(&app);
     assert!(
         chosen.contains("> 1. Accept once"),
-        "the first Decision is chosen once the panel is armed: {chosen}"
+        "the first decision is chosen once the panel is armed: {chosen}"
     );
     assert!(matches!(
         key(&mut app, KeyCode::Enter),
@@ -141,7 +141,7 @@ fn pending_questionnaire_presents_itself_and_swallows_printable_keys_while_armin
     let presented = screen(&app);
     assert!(
         presented.contains("Choose the execution target"),
-        "the Questionnaire presents itself without a key: {presented}"
+        "the questionnaire presents itself without a key: {presented}"
     );
 
     clock.advance(ARMING / 2);
@@ -156,7 +156,7 @@ fn pending_questionnaire_presents_itself_and_swallows_printable_keys_while_armin
     type_terminal_text(&mut app, "staging");
     assert!(
         screen(&app).contains("staging"),
-        "the Answer takes keys once the panel is armed: {}",
+        "the answer takes keys once the panel is armed: {}",
         screen(&app)
     );
 }
@@ -171,8 +171,8 @@ fn the_older_intervention_presents_first_and_the_next_follows_it() {
     deliver(&mut app, &snapshot);
 
     assert!(
-        screen(&app).contains("Approval · Choose Decision"),
-        "the older Intervention presents first: {}",
+        screen(&app).contains("Approval · Choose decision"),
+        "the older intervention presents first: {}",
         screen(&app)
     );
 
@@ -186,7 +186,7 @@ fn the_older_intervention_presents_first_and_the_next_follows_it() {
         .activities
         .iter()
         .position(|activity| matches!(activity, Activity::Approval { .. }))
-        .expect("the Approval activity is recorded");
+        .expect("the approval activity is recorded");
     if let Activity::Approval {
         outcome, decision, ..
     } = &mut snapshot.activities[decided]
@@ -199,7 +199,7 @@ fn the_older_intervention_presents_first_and_the_next_follows_it() {
     let chained = screen(&app);
     assert!(
         chained.contains("Choose the execution target"),
-        "the next Intervention presents once the first settles: {chained}"
+        "the next intervention presents once the first settles: {chained}"
     );
     type_terminal_text(&mut app, "guarded");
     assert!(
@@ -219,16 +219,16 @@ fn an_overlay_holds_the_presentation_until_it_closes() {
     deliver(&mut app, &snapshot);
 
     assert!(
-        !screen(&app).contains("Approval · Choose Decision"),
+        !screen(&app).contains("Approval · Choose decision"),
         "an overlay keeps the keys: {}",
         screen(&app)
     );
 
     app.handle_event(ApplicationEvent::Command(CommandId::CloseThemePicker))
-        .expect("close the Theme picker");
+        .expect("close the theme picker");
     assert!(
-        screen(&app).contains("Approval · Choose Decision"),
-        "the Approval presents once the overlay closes: {}",
+        screen(&app).contains("Approval · Choose decision"),
+        "the approval presents once the overlay closes: {}",
         screen(&app)
     );
 }
@@ -247,7 +247,7 @@ fn escape_dismisses_every_pending_intervention_until_a_new_one_arrives() {
     key(&mut app, KeyCode::Esc);
     let dismissed = screen(&app);
     assert!(
-        !dismissed.contains("Approval · Choose Decision")
+        !dismissed.contains("Approval · Choose decision")
             && !dismissed.contains("Choose the execution target"),
         "Esc dismisses everything pending at that moment: {dismissed}"
     );
@@ -257,7 +257,7 @@ fn escape_dismisses_every_pending_intervention_until_a_new_one_arrives() {
     );
     assert!(
         dismissed.contains("Ctrl+Y"),
-        "the Intervention notice still says how to return: {dismissed}"
+        "the intervention notice still says how to return: {dismissed}"
     );
 
     // A dismissed Intervention is reopened by asking for it, with today's
@@ -280,7 +280,7 @@ fn escape_dismisses_every_pending_intervention_until_a_new_one_arrives() {
     key(&mut app, KeyCode::Esc);
     assert!(
         screen(&app).contains("Submitting"),
-        "Esc leaves a Decision in flight standing: {}",
+        "Esc leaves a decision in flight standing: {}",
         screen(&app)
     );
     snapshot.revision.0 += 1;
@@ -302,7 +302,7 @@ fn escape_dismisses_every_pending_intervention_until_a_new_one_arrives() {
     deliver(&mut app, &snapshot);
     key(&mut app, KeyCode::Esc);
     assert!(
-        !screen(&app).contains("Approval · Choose Decision"),
+        !screen(&app).contains("Approval · Choose decision"),
         "nothing is left standing once everything is dismissed again: {}",
         screen(&app)
     );
@@ -340,8 +340,8 @@ fn a_subagents_intervention_marks_the_parent_and_presents_in_its_own_session() {
 
     let rendered = screen(&app);
     assert!(
-        !rendered.contains("Approval · Choose Decision"),
-        "a Subagent's Intervention only marks the listing: {rendered}"
+        !rendered.contains("Approval · Choose decision"),
+        "a subagent's intervention only marks the listing: {rendered}"
     );
     assert!(
         rendered.contains("kept draft"),
@@ -356,12 +356,12 @@ fn a_subagents_intervention_marks_the_parent_and_presents_in_its_own_session() {
     child.subagent_interventions.clear();
     add_pending_approval(&mut child, turn_id, "https://child.example.test");
     app.handle_event(ApplicationEvent::SessionAttached(child))
-        .expect("open the Subagent's Session");
+        .expect("open the subagent's session");
 
     let inside = screen(&app);
     assert!(
-        inside.contains("Approval · Choose Decision") && inside.contains("child.example.test"),
-        "the Subagent's own Intervention presents in its own Session: {inside}"
+        inside.contains("Approval · Choose decision") && inside.contains("child.example.test"),
+        "the subagent's own intervention presents in its own session: {inside}"
     );
 }
 
@@ -388,7 +388,7 @@ fn arming_drops_only_the_keys_the_panel_itself_would_take() {
             KeyModifiers::NONE
         ))),
         Some(CommandId::ScrollTranscriptPageUp),
-        "reading the Transcript is not the panel's key to take"
+        "reading the transcript is not the panel's key to take"
     );
     assert_eq!(
         app.command_for_terminal_input(Event::Mouse(MouseEvent {
@@ -401,14 +401,14 @@ fn arming_drops_only_the_keys_the_panel_itself_would_take() {
             position: Position::new(4, 4),
             direction: ScrollDirection::Up,
         }),
-        "the wheel goes on reading the Transcript while the panel arms"
+        "the wheel goes on reading the transcript while the panel arms"
     );
 
     // Esc means the same inside the window as outside it.
     key(&mut app, KeyCode::Esc);
     let dismissed = screen(&app);
     assert!(
-        !dismissed.contains("Approval · Choose Decision") && dismissed.contains("Ctrl+Y"),
+        !dismissed.contains("Approval · Choose decision") && dismissed.contains("Ctrl+Y"),
         "Esc dismisses from inside the arming window: {dismissed}"
     );
 }
@@ -428,7 +428,7 @@ fn escape_leaves_a_decision_in_flight_alone_until_the_server_settles_it() {
     let submitting = screen(&app);
     assert!(
         submitting.contains("Submitting"),
-        "the Decision is in flight: {submitting}"
+        "the decision is in flight: {submitting}"
     );
 
     // Esc changes nothing at all: the panel stays, nothing is dismissed, and
@@ -437,12 +437,12 @@ fn escape_leaves_a_decision_in_flight_alone_until_the_server_settles_it() {
     assert_eq!(
         screen(&app),
         submitting,
-        "Esc leaves a Decision in flight exactly as it was"
+        "Esc leaves a decision in flight exactly as it was"
     );
     assert_eq!(
         key(&mut app, KeyCode::Char('3')),
         ApplicationTransition::Continue,
-        "a second Decision is never delivered"
+        "a second decision is never delivered"
     );
     assert_eq!(screen(&app), submitting);
 
@@ -465,8 +465,8 @@ fn escape_leaves_a_decision_in_flight_alone_until_the_server_settles_it() {
     }
     deliver(&mut app, &snapshot);
     assert!(
-        !screen(&app).contains("Approval · Choose Decision"),
-        "the settled Approval reconciles the panel closed: {}",
+        !screen(&app).contains("Approval · Choose decision"),
+        "the settled approval reconciles the panel closed: {}",
         screen(&app)
     );
 }

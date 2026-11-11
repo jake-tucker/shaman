@@ -106,7 +106,7 @@ impl Step {
         match self {
             Self::Providers => "Providers",
             Self::Derivation => "Derivation",
-            Self::Roots => "Workspace Roots",
+            Self::Roots => "Workspace roots",
             Self::Icons => "Icons",
         }
     }
@@ -582,9 +582,9 @@ impl ProvidersStep {
             .iter()
             .all(|standing| matches!(standing, Standing::Disabled))
         {
-            Some("Next is locked: enable at least one Provider.")
+            Some("Next is locked: enable at least one provider.")
         } else {
-            Some("Next is locked: no enabled Provider is available.")
+            Some("Next is locked: no enabled provider is available.")
         }
     }
 
@@ -682,7 +682,7 @@ impl ProvidersStep {
             .then_some(("Saving your changes…", theme.text.subdued));
         let recheck = match recheck {
             Recheck::Idle => None,
-            Recheck::Awaiting { .. } => Some(("Re-checking every Provider…", theme.text.subdued)),
+            Recheck::Awaiting { .. } => Some(("Re-checking every provider…", theme.text.subdued)),
             Recheck::Failed(failure) => Some((failure.as_str(), theme.feedback.error)),
         };
         Self::lock(server)
@@ -1214,7 +1214,7 @@ impl RootsStep {
                                         repository directly inside one under /workspace. Sidekicks \
                                         will clone new repos here.";
 
-    const NOTE: &'static str = "None is fine: add Roots whenever you like in /settings, \
+    const NOTE: &'static str = "None is fine: add roots whenever you like in /settings, \
                                 under Source Control.";
 
     /// The keys this step teaches before the ones every step shares.
@@ -1508,7 +1508,7 @@ impl IconsAnswer {
 impl IconsStep {
     const INTRODUCTION: &'static str = "How does this terminal draw the row below?";
 
-    const NOTE: &'static str = "To get Icons, install a Nerd Font and select it in your terminal, \
+    const NOTE: &'static str = "To get icons, install a Nerd Font and select it in your terminal, \
                                 then turn on Show icons in /settings.";
 
     /// The keys this step teaches before the ones every step shares.
@@ -1944,7 +1944,7 @@ impl Onboarding {
             return None;
         }
         self.recheck = failure.map_or(Recheck::Idle, |error| {
-            Recheck::Failed(format!("Could not re-check the Providers: {error}"))
+            Recheck::Failed(format!("Could not re-check the providers: {error}"))
         });
         Some(pushes)
     }

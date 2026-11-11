@@ -50,27 +50,27 @@ fn open_through_the_picker(
     let ApplicationTransition::ListSessions(request) =
         invoke(application, SemanticCommandId::SessionList)
     else {
-        panic!("the Session picker asks for a listing");
+        panic!("the session picker asks for a listing");
     };
     application
         .handle_event(ApplicationEvent::SessionsListed {
             request,
             sessions: vec![crate::tui_rendering::support::listed_session(
                 target,
-                "Another Session",
+                "Another session",
                 workspace,
                 1,
                 1,
             )],
         })
-        .expect("list the Sessions");
+        .expect("list the sessions");
     assert_eq!(
         key(application, KeyCode::Enter),
         ApplicationTransition::ViewAndAttachSession(SessionReference::new(Outlook::Local, target))
     );
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("hydrate the Session opened");
+        .expect("hydrate the session opened");
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn a_draft_with_an_attachment_is_intact_after_opening_another_session_and_return
     let ApplicationTransition::AdmitPrompt { session, request } =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the draft is admitted into its Session");
+        panic!("the draft is admitted into its session");
     };
     assert_eq!(session.session_id, original);
     assert_eq!(request.prompt.text, "See [Image 1] ");
@@ -123,7 +123,7 @@ fn a_rejected_admission_restores_the_whole_draft_and_resubmits_its_attachments()
     let ApplicationTransition::AdmitPrompt { session, request } =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the draft is admitted into its Session");
+        panic!("the draft is admitted into its session");
     };
     assert!(
         !rendered_application_rows(&application)
@@ -191,7 +191,7 @@ fn send_a_prompt_with_an_image(application: &mut Application, workspace: &std::p
     paste_image(application, "wide", wide());
     let ApplicationTransition::CreateSession(request) = submit(application, CommandId::SubmitSteer)
     else {
-        panic!("the Landing's Prompt begins a Session");
+        panic!("the landing's prompt begins a session");
     };
     let mut created = crate::tui_rendering::provisional_session::created_session_snapshot(
         SessionId::new(),
@@ -202,7 +202,7 @@ fn send_a_prompt_with_an_image(application: &mut Application, workspace: &std::p
     created.attachments = vec![wide()];
     application
         .handle_event(ApplicationEvent::SessionCreated(created))
-        .expect("take the created Session");
+        .expect("take the created session");
 }
 
 /// Presses Up in an empty composer, recalling the latest Prompt, and answers
@@ -218,7 +218,7 @@ fn recall(application: &mut Application) -> AttachmentCheckId {
             assert_eq!(attachments, vec![AttachmentId::new("wide-hash")]);
             check
         }
-        other => panic!("recalling an Attachment asks whether it is still stored, not {other:?}"),
+        other => panic!("recalling an attachment asks whether it is still stored, not {other:?}"),
     }
 }
 
@@ -273,7 +273,7 @@ fn history_recalls_a_sent_prompt_with_its_attachments_and_resending_sends_them_a
     let ApplicationTransition::AdmitPrompt { request, .. } =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the recalled Prompt is admitted into the Session");
+        panic!("the recalled prompt is admitted into the session");
     };
     assert_eq!(request.prompt.text, "See [Image 1] [Image 2] ");
     assert_eq!(
@@ -300,9 +300,9 @@ fn a_recalled_prompt_whose_attachment_was_swept_keeps_its_label_as_plain_text() 
     let rows = rendered_application_rows(&application);
     let notice = rows
         .iter()
-        .find(|row| row.contains("Image 1 is no longer on the Server; its label stays as text"))
-        .unwrap_or_else(|| panic!("a Notice names the missing image: {rows:#?}"));
-    assert!(notice.contains("see the Log"), "{notice}");
+        .find(|row| row.contains("Image 1 is no longer on the server; its label stays as text"))
+        .unwrap_or_else(|| panic!("a notice names the missing image: {rows:#?}"));
+    assert!(notice.contains("see the log"), "{notice}");
     let draft = draft_rows(&application).join("\n");
     assert!(draft.contains("See [Image 1]"), "{draft}");
     assert!(
@@ -316,7 +316,7 @@ fn a_recalled_prompt_whose_attachment_was_swept_keeps_its_label_as_plain_text() 
     assert!(
         !rendered_application_rows(&application)
             .join("\n")
-            .contains("no longer on the Server")
+            .contains("no longer on the server")
     );
     let ApplicationTransition::AdmitPrompt { request, .. } =
         submit(&mut application, CommandId::SubmitSteer)
@@ -359,7 +359,7 @@ fn a_check_answered_after_its_label_was_edited_away_or_that_failed_changes_nothi
     );
     assert_eq!(rendered_application_rows(&application), before);
     assert!(
-        !before.join("\n").contains("no longer on the Server"),
+        !before.join("\n").contains("no longer on the server"),
         "{before:#?}"
     );
 }
@@ -370,7 +370,7 @@ fn stands_bound(application: &Application, line: &str) -> bool {
     let rows = rendered_application_rows(application).join("\n");
     label_is_accented(application, "[Image 1]")
         && rows.contains(line)
-        && !rows.contains("no longer on the Server")
+        && !rows.contains("no longer on the server")
 }
 
 #[test]
@@ -412,7 +412,7 @@ fn a_check_answered_once_the_recall_was_sent_leaves_a_fresh_paste_of_the_image_b
     let ApplicationTransition::AdmitPrompt { request, .. } =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the recalled Prompt is admitted");
+        panic!("the recalled prompt is admitted");
     };
     assert_eq!(
         request.prompt.attachments,
@@ -438,7 +438,7 @@ fn landing_with_an_image_in_its_draft_and_its_history(application: &mut Applicat
     paste_image(application, "wide", wide());
     let ApplicationTransition::CreateSession(request) = submit(application, CommandId::SubmitSteer)
     else {
-        panic!("the Landing's Prompt begins a Session");
+        panic!("the landing's prompt begins a session");
     };
     invoke(application, SemanticCommandId::SessionNew);
     type_terminal_text(application, "Newer ");
@@ -449,7 +449,7 @@ fn landing_with_an_image_in_its_draft_and_its_history(application: &mut Applicat
             code: None,
             error: "Provider unavailable".to_owned(),
         })
-        .expect("refuse the Session");
+        .expect("refuse the session");
     let rows = draft_rows(application).join("\n");
     assert!(rows.contains("Old [Image 1]"), "{rows}");
 }
@@ -468,7 +468,7 @@ fn turning_the_outlook_leaves_the_landings_history_and_set_aside_draft_unbound_t
     let ApplicationTransition::CheckAttachments { attachments, .. } =
         key(&mut application, KeyCode::Up)
     else {
-        panic!("the recall asks after its Attachment");
+        panic!("the recall asks after its attachment");
     };
     assert_eq!(attachments, vec![AttachmentId::new("tall-hash")]);
 
@@ -477,7 +477,7 @@ fn turning_the_outlook_leaves_the_landings_history_and_set_aside_draft_unbound_t
     turn_toward_studio(&mut application);
     let rows = rendered_application_rows(&application).join("\n");
     assert!(
-        rows.contains("! Image 1 is on another Server; its label stays as text"),
+        rows.contains("! Image 1 is on another server; its label stays as text"),
         "{rows}"
     );
     assert!(rows.contains("Newer [Image 1]"), "{rows}");
@@ -504,7 +504,7 @@ fn turning_the_outlook_leaves_the_landings_history_and_set_aside_draft_unbound_t
     let ApplicationTransition::CreateSession(request) =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the Landing's Prompt begins a Session on the Remote");
+        panic!("the landing's prompt begins a session on the remote");
     };
     assert_eq!(request.prompt.text, "Newer [Image 1] ");
     assert!(request.prompt.attachments.is_empty());
@@ -524,9 +524,9 @@ fn turning_the_outlook_leaves_a_landing_drafts_attachments_behind_as_plain_text(
     let rows = rendered_application_rows(&application);
     let notice = rows
         .iter()
-        .find(|row| row.contains("Image 1 is on another Server; its label stays as text"))
-        .unwrap_or_else(|| panic!("a Notice names the image left behind: {rows:#?}"));
-    assert!(notice.contains("see the Log"), "{notice}");
+        .find(|row| row.contains("Image 1 is on another server; its label stays as text"))
+        .unwrap_or_else(|| panic!("a notice names the image left behind: {rows:#?}"));
+    assert!(notice.contains("see the log"), "{notice}");
     let joined = rows.join("\n");
     assert!(joined.contains("See [Image 1]"), "{joined}");
     assert!(!joined.contains(LINE), "{joined}");
@@ -535,7 +535,7 @@ fn turning_the_outlook_leaves_a_landing_drafts_attachments_behind_as_plain_text(
     let ApplicationTransition::CreateSession(request) =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the Landing's Prompt begins a Session on the Remote");
+        panic!("the landing's prompt begins a session on the remote");
     };
     assert_eq!(request.prompt.text, "See [Image 1] ");
     assert!(request.prompt.attachments.is_empty());
@@ -550,7 +550,7 @@ fn a_refused_prompt_the_outlook_turn_hands_back_to_the_landing_leaves_its_attach
     let ApplicationTransition::CreateSession(request) =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the Landing's Prompt begins a Session");
+        panic!("the landing's prompt begins a session");
     };
     application
         .handle_event(ApplicationEvent::SessionCreationFailed {
@@ -558,14 +558,14 @@ fn a_refused_prompt_the_outlook_turn_hands_back_to_the_landing_leaves_its_attach
             code: None,
             error: "Provider unavailable".to_owned(),
         })
-        .expect("refuse the Session");
+        .expect("refuse the session");
 
     // Turning away abandons the failed Provisional Session, whose Prompt
     // comes back to the Landing with its label as text.
     turn_toward_studio(&mut application);
     let rows = rendered_application_rows(&application).join("\n");
     assert!(
-        rows.contains("Image 1 is on another Server; its label stays as text"),
+        rows.contains("Image 1 is on another server; its label stays as text"),
         "{rows}"
     );
     assert!(rows.contains("See [Image 1]"), "{rows}");
@@ -573,7 +573,7 @@ fn a_refused_prompt_the_outlook_turn_hands_back_to_the_landing_leaves_its_attach
     let ApplicationTransition::CreateSession(request) =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the Landing's Prompt begins a Session on the Remote");
+        panic!("the landing's prompt begins a session on the remote");
     };
     assert_eq!(request.prompt.text, "See [Image 1] ");
     assert!(request.prompt.attachments.is_empty());
@@ -606,7 +606,7 @@ fn a_paste_still_uploading_when_the_outlook_turns_is_not_labelled_into_the_landi
     let ApplicationTransition::CreateSession(request) =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the Landing's Prompt begins a Session on the Remote");
+        panic!("the landing's prompt begins a session on the remote");
     };
     assert!(request.prompt.attachments.is_empty());
 }
@@ -624,13 +624,13 @@ fn turn_toward_studio(application: &mut Application) {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
                 ways: vec![suru::protocol::Way::Direct(
-                    "10.0.0.8:7777".parse().expect("parse the Remote address"),
+                    "10.0.0.8:7777".parse().expect("parse the remote address"),
                 )],
                 status: suru::protocol::RemoteStatus::Available,
                 icon: None,
             },
         ]))
-        .expect("list the paired Remotes");
+        .expect("list the paired remotes");
     application
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
@@ -640,11 +640,11 @@ fn turn_toward_studio(application: &mut Application) {
                 unreachable: None,
             }),
         })
-        .expect("probe the Remote");
+        .expect("probe the remote");
     key(application, KeyCode::Down);
     let ApplicationTransition::TurnOutlook { outlook, .. } = key(application, KeyCode::Enter)
     else {
-        panic!("choosing the Remote turns the Outlook");
+        panic!("choosing the remote turns the outlook");
     };
     assert_eq!(outlook, Outlook::Remote("studio".to_owned()));
 }
@@ -685,11 +685,11 @@ fn an_upload_landing_once_the_landing_draft_became_a_session_labels_it_or_is_dro
                 SessionTimestamp::now(),
             ),
         ))
-        .expect("take the created Session");
+        .expect("take the created session");
     let ApplicationTransition::AdmitPrompt { request, .. } =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the next Prompt is admitted into the Session");
+        panic!("the next prompt is admitted into the session");
     };
     assert_eq!(request.prompt.text, "[Image 1] ");
     assert_eq!(
@@ -724,7 +724,7 @@ fn an_upload_landing_once_the_landing_draft_became_a_session_labels_it_or_is_dro
                     SessionTimestamp::now(),
                 ),
             ))
-            .expect("take the created Session");
+            .expect("take the created session");
         let before = rendered_application_rows(&application);
         let answer = if failed {
             ApplicationEvent::AttachmentUploadFailed {

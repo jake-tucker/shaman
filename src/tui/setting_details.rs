@@ -533,8 +533,8 @@ impl SettingAccount {
     /// Where the Setting applies, and what a Sidekick may do with it.
     fn draw_reach<'a>(&'a self, drawn: &mut DrawnPane<'a>, width: u16, theme: &Theme) {
         let applies = match self.descriptor.scope {
-            SettingScope::Client => "in every Client",
-            SettingScope::Server => "on the Server",
+            SettingScope::Client => "in every client",
+            SettingScope::Server => "on the server",
         };
         draw_fact(drawn, APPLIES, applies, width, theme);
         draw_fact(drawn, SIDEKICKS, &self.sidekicks, width, theme);

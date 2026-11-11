@@ -205,7 +205,7 @@ fn columns(whole: &UsageMetricsAggregate, before: Option<&UsageMetricsAggregate>
         )
     });
     let subagents = (whole.subagent_sessions > 0).then(|| {
-        let subagents = counted(whole.subagent_sessions, "Subagent", "Subagents");
+        let subagents = counted(whole.subagent_sessions, "subagent", "subagents");
         (subagents.clone(), subagents)
     });
     let ended = |interrupted: &str| {
@@ -241,7 +241,7 @@ fn columns(whole: &UsageMetricsAggregate, before: Option<&UsageMetricsAggregate>
             detail: subagents,
         },
         Column {
-            figure: counted(whole.turns, "Turn", "Turns"),
+            figure: counted(whole.turns, "turn", "turns"),
             compared: change(turns),
             detail: ended,
         },

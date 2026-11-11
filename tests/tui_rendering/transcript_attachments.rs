@@ -63,7 +63,7 @@ fn bound(descriptor: &AttachmentDescriptor, text: &str, label: &str) -> Attachme
 }
 
 fn review_skill(text: &str) -> SkillInvocation {
-    let start = text.find("$review").expect("the Skill stands in the text");
+    let start = text.find("$review").expect("the skill stands in the text");
     SkillInvocation {
         skill_id: SkillId::new("review"),
         name: "review".to_owned(),
@@ -91,7 +91,7 @@ fn session_with_message(
         .messages
         .iter_mut()
         .find(|message| message.role == MessageRole::User)
-        .expect("the fixture carries a user Message");
+        .expect("the fixture carries a user message");
     message.content = text.to_owned();
     message.skill_invocations = skill_invocations;
     message.attachments = attachments;
@@ -101,7 +101,7 @@ fn session_with_message(
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             snapshot.clone(),
         )))
-        .expect("deliver the Session's snapshot");
+        .expect("deliver the session's snapshot");
     snapshot
 }
 
@@ -119,7 +119,7 @@ fn update(
                 changes,
             },
         )))
-        .expect("apply the Session update");
+        .expect("apply the session update");
 }
 
 /// The rows of the user Message block whose first row reads `first`: every
@@ -129,7 +129,7 @@ fn message_block(buffer: &Buffer, first: &str) -> (u16, Vec<String>) {
     let start = rows
         .iter()
         .position(|row| row.contains(&format!("┃ {first}")))
-        .unwrap_or_else(|| panic!("the Message is drawn: {rows:#?}"));
+        .unwrap_or_else(|| panic!("the message is drawn: {rows:#?}"));
     let gutter = rows[start]
         .find('┃')
         .expect("the block opens with its gutter");
@@ -180,7 +180,7 @@ fn a_message_without_attachments_renders_as_it_always_has() {
     assert_eq!(rows[usize::from(start) + block.len()].trim(), "");
     assert_eq!(
         rows[usize::from(start) + block.len() + 1].trim(),
-        "Error: No Agent is selected"
+        "Error: No agent is selected"
     );
 }
 
@@ -211,7 +211,7 @@ fn a_user_messages_attachments_are_listed_dimmed_beneath_its_text_inside_the_gut
             " ┃ Image 2 · GIF · 320×200 ·",
             " ┃ 4.5 KiB",
         ],
-        "one line per Attachment in label order, wrapped to the text's width: {:#?}",
+        "one line per attachment in label order, wrapped to the text's width: {:#?}",
         buffer_rows(&buffer)
     );
     assert_eq!(
@@ -230,7 +230,7 @@ fn a_user_messages_attachments_are_listed_dimmed_beneath_its_text_inside_the_gut
         assert_eq!(
             styles_of(&buffer, row, label),
             vec![skill[0]; label.len()],
-            "{label} is accented as the Skill Invocation is"
+            "{label} is accented as the skill invocation is"
         );
     }
 
@@ -293,7 +293,7 @@ fn a_label_reads_alone_until_the_session_describes_its_attachment() {
             " ┃ Image 1 · PNG · 1280×720 ·",
             " ┃ 312 KiB",
         ],
-        "the Message re-renders once its Attachment is described"
+        "the message re-renders once its attachment is described"
     );
 
     // Described again, as a client may be told, nothing moves.
@@ -379,7 +379,7 @@ fn drawn_from(snapshot: SessionSnapshot, first: &str) -> Vec<String> {
     let mut application = Application::new(workspace_dir().path(), Default::default());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach the Session");
+        .expect("attach the session");
     message_block(
         &rendered_application_buffer(&application, WIDTH, HEIGHT),
         first,
@@ -394,7 +394,7 @@ async fn settled(client: &ManagedClient, session_id: SessionId) -> SessionSnapsh
             let snapshot = client
                 .read_session(session_id)
                 .await
-                .expect("read the Session");
+                .expect("read the session");
             if snapshot.session.working_since.is_none() {
                 return snapshot;
             }
@@ -402,7 +402,7 @@ async fn settled(client: &ManagedClient, session_id: SessionId) -> SessionSnapsh
         }
     })
     .await
-    .expect("the Session settles")
+    .expect("the session settles")
 }
 
 #[tokio::test]
@@ -451,7 +451,7 @@ async fn every_client_draws_the_same_rows_from_the_snapshot_even_after_a_restart
             },
         })
         .await
-        .expect("create the Session")
+        .expect("create the session")
         .session
         .id;
     let expected = vec![
@@ -477,7 +477,7 @@ async fn every_client_draws_the_same_rows_from_the_snapshot_even_after_a_restart
     let restored = reconnected
         .read_session(session_id)
         .await
-        .expect("read the restored Session");
+        .expect("read the restored session");
     assert_eq!(drawn_from(restored, "Compare"), second);
 
     drop(reconnected);

@@ -67,7 +67,7 @@ use super::{
 /// answer passed over. Nothing came back for it, which is Suru's problem to
 /// report rather than a condition of the Provider — and reporting it is what
 /// ends the read, because a row may not wait for an answer already given.
-const UNANSWERED_PROVIDER: &str = "the Model catalog answered for no such Provider";
+const UNANSWERED_PROVIDER: &str = "the model catalog answered for no such provider";
 
 /// Stands in for a value the effective settings hold but the Setting can
 /// neither name nor spell, so a row says what it knows rather than claiming a
@@ -1353,7 +1353,7 @@ mod tests {
     fn editing(panel: &SettingsPanel) -> &'static str {
         panel
             .selected_descriptor()
-            .expect("an open panel always has a Setting an edit would act on")
+            .expect("an open panel always has a setting an edit would act on")
             .key
     }
 
@@ -1370,7 +1370,7 @@ mod tests {
             keys.push(editing(&panel));
             let further = panel
                 .provider_focus(&EffectiveSettings::default(), &[])
-                .expect("every row of the Providers tab is a Provider")
+                .expect("every row of the providers tab is a provider")
                 .settings
                 .len();
             let _ = panel.open_row();
@@ -1390,7 +1390,7 @@ mod tests {
             assert_eq!(
                 keys.iter().filter(|key| **key == descriptor.key).count(),
                 1,
-                "{} is not reached exactly once from the Providers tab: {keys:?}",
+                "{} is not reached exactly once from the providers tab: {keys:?}",
                 descriptor.key
             );
         }
@@ -1430,13 +1430,13 @@ mod tests {
         assert_eq!(
             editing(&panel),
             "provider.codex.sandboxMode",
-            "walking off the first wraps to the last of the Provider's own"
+            "walking off the first wraps to the last of the provider's own"
         );
         panel.select_next();
         assert_eq!(
             editing(&panel),
             "provider.codex.reasoningSummary",
-            "and off the last back to the first, never onto another Provider"
+            "and off the last back to the first, never onto another provider"
         );
         panel.select_next();
 
@@ -1445,7 +1445,7 @@ mod tests {
         assert_eq!(
             editing(&panel),
             "provider.codex.enabled",
-            "stepping out lands on the Provider stepped in from"
+            "stepping out lands on the provider stepped in from"
         );
         assert_eq!(
             panel
@@ -1453,7 +1453,7 @@ mod tests {
                 .and_then(|focus| focus.picked)
                 .map(|descriptor| descriptor.key),
             Some("provider.codex.approvalPolicy"),
-            "with the Setting left still picked out"
+            "with the setting left still picked out"
         );
         let _ = panel.open_row();
         assert_eq!(
@@ -1483,7 +1483,7 @@ mod tests {
         assert_eq!(
             editing(&panel),
             "provider.codex.reasoningSummary",
-            "and coming back to the first Provider starts it afresh too"
+            "and coming back to the first provider starts it afresh too"
         );
     }
 
@@ -1499,7 +1499,7 @@ mod tests {
         assert_eq!(
             panel.keys(),
             PanelKeys::Rows,
-            "coming back meets the list of Providers"
+            "coming back meets the list of providers"
         );
 
         let _ = panel.open_row();
@@ -1507,7 +1507,7 @@ mod tests {
         assert_eq!(
             panel.keys(),
             PanelKeys::ProviderSettings,
-            "asking again for the tab in view re-reads the Providers and keeps the keys"
+            "asking again for the tab in view re-reads the providers and keeps the keys"
         );
 
         panel.close();
@@ -1580,13 +1580,13 @@ mod tests {
         assert_eq!(
             editing(&panel),
             "provider.copilot.permissions",
-            "pointing at another Provider starts its Settings afresh"
+            "pointing at another provider starts its settings afresh"
         );
         let _ = panel.focus_at(10, 3, &settings);
         assert_eq!(
             panel.keys(),
             PanelKeys::Rows,
-            "pointing at the Provider already focused takes the keys back to the list"
+            "pointing at the provider already focused takes the keys back to the list"
         );
     }
 
@@ -1613,9 +1613,9 @@ mod tests {
                 descriptor.key,
                 descriptor.group,
                 if configures_a_provider {
-                    "a Provider"
+                    "a provider"
                 } else {
-                    "no Provider"
+                    "no provider"
                 }
             );
         }

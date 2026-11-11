@@ -278,7 +278,7 @@ fn a_press_finds_the_title_where_it_moved_off_center() {
             transition,
             ApplicationTransition::AskTitleProposalOffer { .. }
         ),
-        "the moved Title stays the way into renaming: {transition:?}"
+        "the moved title stays the way into renaming: {transition:?}"
     );
 }
 
@@ -303,7 +303,7 @@ fn branch_name_stands_across_from_the_workspace_name_in_the_session_header() {
     assert!(row.trim_end().ends_with("feature/header-context"), "{row}");
     assert!(
         !row.contains(workspace.path().to_string_lossy().as_ref()),
-        "the header names the Workspace without showing its full path: {row}"
+        "the header names the workspace without showing its full path: {row}"
     );
     let narrow = header(&application, 40);
     assert!(
@@ -370,14 +370,14 @@ fn the_session_header_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph
     let plain_row = header(&application, 240);
     assert!(
         !plain_row.contains('\u{ea83}') && !plain_row.contains('\u{e7a8}'),
-        "no Icon is drawn while the reader keeps Icons off: {plain_row}"
+        "no icon is drawn while the reader keeps icons off: {plain_row}"
     );
 
     enable_icons(&mut application);
     let folder_row = header(&application, 240);
     assert!(
         folder_row.contains('\u{ea83}'),
-        "the folder glyph stands while the Workspace has no derived Icon: {folder_row}"
+        "the folder glyph stands while the workspace has no derived icon: {folder_row}"
     );
 
     snapshot.session.workspace.icon = Some("dev-rust".to_owned());
@@ -385,14 +385,14 @@ fn the_session_header_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph
     let iconed_row = header(&application, 240);
     assert!(
         iconed_row.contains('\u{e7a8}') && !iconed_row.contains('\u{ea83}'),
-        "the Workspace's own Icon replaces the folder glyph: {iconed_row}"
+        "the workspace's own icon replaces the folder glyph: {iconed_row}"
     );
 
     settings(&mut application);
     let off_row = header(&application, 240);
     assert!(
         !off_row.contains('\u{e7a8}') && !off_row.contains('\u{ea83}'),
-        "turning Icons off draws neither the derived Icon nor the folder glyph: {off_row}"
+        "turning icons off draws neither the derived icon nor the folder glyph: {off_row}"
     );
 }
 
@@ -538,14 +538,14 @@ fn session_icon_follows_the_setting_and_unknown_names_draw_nothing() {
     let hidden = header(&application, 200);
     assert!(
         !hidden.contains(MD_BUG) && hidden.contains("Alpha"),
-        "an Icon is drawn only once the reader asks for one: {hidden}"
+        "an icon is drawn only once the reader asks for one: {hidden}"
     );
 
     enable_icons(&mut application);
     let shown = header(&application, 200);
     assert!(
         shown.contains(&format!("{MD_BUG} Alpha")),
-        "the Icon leads the Title by one space: {shown}"
+        "the icon leads the title by one space: {shown}"
     );
 
     // An Icon Catalog name no longer carried draws as no Icon at all, while
@@ -555,7 +555,7 @@ fn session_icon_follows_the_setting_and_unknown_names_draw_nothing() {
     let unknown = header(&application, 200);
     assert!(
         !unknown.contains(MD_BUG) && unknown.contains("Alpha"),
-        "an unresolved Icon name draws nothing: {unknown}"
+        "an unresolved icon name draws nothing: {unknown}"
     );
 
     // A Title with no Icon at all reads exactly as before Icons existed.
@@ -564,7 +564,7 @@ fn session_icon_follows_the_setting_and_unknown_names_draw_nothing() {
     let none = header(&application, 200);
     assert!(
         !none.contains(MD_BUG) && none.contains("Alpha"),
-        "a Session with no Icon draws none: {none}"
+        "a session with no icon draws none: {none}"
     );
 }
 

@@ -97,12 +97,12 @@ impl Thumbnail {
         cell_size: CellSize,
         protocol: GraphicsProtocol,
     ) -> anyhow::Result<Self> {
-        let format = image::guess_format(bytes).context("recognize the Attachment's format")?;
+        let format = image::guess_format(bytes).context("recognize the attachment's format")?;
         if !PREVIEWED_FORMATS.contains(&format) {
-            bail!("an Attachment stored as {format:?} is not previewed");
+            bail!("an attachment stored as {format:?} is not previewed");
         }
         let image =
-            image::load_from_memory_with_format(bytes, format).context("decode the Attachment")?;
+            image::load_from_memory_with_format(bytes, format).context("decode the attachment")?;
         Self::from_image(image, cell_size, protocol)
     }
 

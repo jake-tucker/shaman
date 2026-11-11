@@ -30,12 +30,12 @@ const COVERS: &str = "\
 What this covers on macOS:
 - A login at this Mac's screen, automatic login included.
 - Not a Mac that has rebooted and that nobody has logged in to, nor a login over SSH alone: \
-those stay Unreachable. The Server's identity key is in the login keychain, which that login \
-unlocks, so a Mac waits for it, and a Server that cannot read its key fails Serving \
+those stay unreachable. The server's identity key is in the login keychain, which that login \
+unlocks, so a Mac waits for it, and a server that cannot read its key fails serving \
 where you can see it rather than making a new one.
 - macOS may list this under Login Items & Extensions in System Settings. Turned off there, it \
 does not run.
-- To macOS's privacy checks, a Server started this way may count as its own program rather than \
+- To macOS's privacy checks, a server started this way may count as its own program rather than \
 as part of your terminal. Work in Documents, Desktop or Downloads may raise a consent prompt that \
 waits for someone at the screen.";
 

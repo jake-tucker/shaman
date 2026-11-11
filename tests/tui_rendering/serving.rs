@@ -28,7 +28,7 @@ fn press_with(
 ) -> ApplicationTransition {
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(code, modifiers)))
-        .expect("handle Serving overlay key")
+        .expect("handle serving overlay key")
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn serving_shows_a_fresh_copyable_invite_and_removes_enrolled_peers() {
     type_terminal_text(&mut application, "/serve");
     let ApplicationTransition::BeginServing { request } = press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve has the Server prepare Serving");
+        panic!("/serve has the server prepare serving");
     };
     application
         .handle_event(ApplicationEvent::ServingPrepared {
@@ -54,11 +54,11 @@ fn serving_shows_a_fresh_copyable_invite_and_removes_enrolled_peers() {
                 7777,
             )))],
         })
-        .expect("load Serving candidates");
+        .expect("load serving candidates");
     let ApplicationTransition::IssueInvite { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter issues an Invite");
+        panic!("Enter issues an invite");
     };
 
     let invite = "suru-v1-example".to_owned();
@@ -80,16 +80,16 @@ fn serving_shows_a_fresh_copyable_invite_and_removes_enrolled_peers() {
                 name: "laptop".to_owned(),
             }],
         })
-        .expect("show fresh Invite and Peers");
+        .expect("show fresh invite and peers");
 
     let management = rendered_application_rows(&application).join("\n");
-    assert!(management.contains("Fresh Invite"));
+    assert!(management.contains("Fresh invite"));
     assert!(management.contains(&invite));
-    assert!(management.contains("Enrolled Peers"));
+    assert!(management.contains("Enrolled peers"));
     let laptop = management
         .lines()
         .position(|row| row.contains("laptop") && !row.contains("fingerprint"))
-        .expect("a Peer is listed by the name it gave itself");
+        .expect("a peer is listed by the name it gave itself");
     assert!(
         management
             .lines()
@@ -133,7 +133,7 @@ fn serving_shows_a_fresh_copyable_invite_and_removes_enrolled_peers() {
     );
     application
         .handle_event(ApplicationEvent::PeerRemoved("peer-laptop".to_owned()))
-        .expect("remove Peer from the overlay");
+        .expect("remove peer from the overlay");
     assert!(
         !rendered_application_rows(&application)
             .join("\n")
@@ -162,16 +162,16 @@ fn serve_asks_for_serving_again_where_its_listener_has_failed() {
     type_terminal_text(&mut application, "/serve");
     let ApplicationTransition::BeginServing { request } = press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve has the Server try Serving again where its listener has failed");
+        panic!("/serve has the server try serving again where its listener has failed");
     };
-    let still = "this Server's identity key is kept in the platform credential store, which did \
+    let still = "this server's identity key is kept in the platform credential store, which did \
                  not answer";
     application
         .handle_event(ApplicationEvent::ServingPreparationFailed {
             request,
             error: still.to_owned(),
         })
-        .expect("say why Serving still cannot start");
+        .expect("say why serving still cannot start");
     let picker = rendered_application_rows(&application).join(" ");
     assert!(
         picker.contains("platform credential store"),
@@ -193,7 +193,7 @@ fn serve_enables_serving_and_invites_only_the_selected_candidate_ways() {
     assert_eq!(SemanticCommandId::ServeOpen.as_str(), "serve.open");
     let ApplicationTransition::BeginServing { request } = press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve has the Server turn Serving on");
+        panic!("/serve has the server turn serving on");
     };
 
     settings.serving.enabled = true;
@@ -210,12 +210,12 @@ fn serve_enables_serving_and_invites_only_the_selected_candidate_ways() {
                 Way::Direct(SocketAddr::from((Ipv4Addr::new(192, 168, 1, 24), 7443))),
             ],
         })
-        .expect("load Serving candidates");
+        .expect("load serving candidates");
     // The Server tells its Clients where the listener Serving opened listens.
     deliver_listener(&mut application, open_at(7443));
 
     let ways = rendered_application_rows(&application).join("\n");
-    assert!(ways.contains("Choose Invite addresses"));
+    assert!(ways.contains("Choose invite addresses"));
     assert!(ways.contains("[x] 10.0.0.8:7443"));
     assert!(ways.contains("[x] 192.168.1.24:7443"));
 
@@ -226,7 +226,7 @@ fn serve_enables_serving_and_invites_only_the_selected_candidate_ways() {
     let ApplicationTransition::IssueInvite { issuance, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter issues an Invite");
+        panic!("Enter issues an invite");
     };
     assert_eq!(
         issuance,
@@ -251,7 +251,7 @@ fn serve_lists_scroll_to_keep_the_focused_candidate_and_peer_fully_visible() {
     let ApplicationTransition::BeginServing { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve prepares Serving");
+        panic!("/serve prepares serving");
     };
 
     let candidates = (1..=20)
@@ -275,7 +275,7 @@ fn serve_lists_scroll_to_keep_the_focused_candidate_and_peer_fully_visible() {
     let ApplicationTransition::IssueInvite { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter issues an Invite");
+        panic!("Enter issues an invite");
     };
 
     let peers = (0..10)
@@ -300,20 +300,20 @@ fn serve_lists_scroll_to_keep_the_focused_candidate_and_peer_fully_visible() {
             },
             peers,
         })
-        .expect("show more Peers than one frame holds");
+        .expect("show more peers than one frame holds");
     for _ in 1..10 {
         press(&mut application, KeyCode::Down);
     }
     let rows = rendered_application_rows_at(&application, 60, 24);
     let invite_start = rows
         .iter()
-        .position(|row| row.contains("Fresh Invite"))
+        .position(|row| row.contains("Fresh invite"))
         .expect("Invite heading is visible")
         + 1;
     let invite_end = rows
         .iter()
-        .position(|row| row.contains("Enrolled Peers"))
-        .expect("Peer heading follows the complete Invite");
+        .position(|row| row.contains("Enrolled peers"))
+        .expect("Peer heading follows the complete invite");
     let selectable_invite = rows[invite_start..invite_end]
         .iter()
         .map(|row| row.trim().trim_matches('│').trim())
@@ -322,11 +322,11 @@ fn serve_lists_scroll_to_keep_the_focused_candidate_and_peer_fully_visible() {
     assert!(
         rows.iter()
             .any(|row| row.contains("09") && row.contains(&"f".repeat(50))),
-        "the focused Peer's first wrapped row should be visible: {rows:#?}"
+        "the focused peer's first wrapped row should be visible: {rows:#?}"
     );
     assert!(
         rows.iter().any(|row| row.contains(&"f".repeat(10))),
-        "the focused Peer's wrapped suffix should remain visible: {rows:#?}"
+        "the focused peer's wrapped suffix should remain visible: {rows:#?}"
     );
     assert!(
         rows.iter().any(|row| row.contains("machine-9")),
@@ -352,7 +352,7 @@ fn showing_a_code_beside(code: &str, serial: u64, peers: Vec<Peer>) -> Applicati
     let ApplicationTransition::BeginServing { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve prepares Serving");
+        panic!("/serve prepares serving");
     };
     application
         .handle_event(ApplicationEvent::ServingPrepared {
@@ -363,11 +363,11 @@ fn showing_a_code_beside(code: &str, serial: u64, peers: Vec<Peer>) -> Applicati
                 7777,
             )))],
         })
-        .expect("load Serving candidates");
+        .expect("load serving candidates");
     let ApplicationTransition::IssueInvite { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter issues an Invite");
+        panic!("Enter issues an invite");
     };
     application
         .handle_event(ApplicationEvent::InviteIssued {
@@ -383,7 +383,7 @@ fn showing_a_code_beside(code: &str, serial: u64, peers: Vec<Peer>) -> Applicati
             },
             peers,
         })
-        .expect("show the Invite");
+        .expect("show the invite");
     told_code(&mut application, serial, ShortCodeState::Live);
     application
 }
@@ -457,7 +457,7 @@ fn a_wrong_code_tried_is_told_where_it_is_shown_and_one_key_gets_a_new_one() {
     assert!(text.contains("H4RW-9TNB"), "{text}");
     assert!(
         text.contains("suru-v1-long-string"),
-        "the same Invite: {text}"
+        "the same invite: {text}"
     );
     assert!(!text.contains("wrong code was tried"), "{text}");
 }
@@ -482,12 +482,12 @@ fn a_code_delivered_expired_or_replaced_says_so_in_place_of_the_code() {
     let mut application = showing_a_code("K7QF-2MXP", 1);
     told_code(&mut application, 1, ShortCodeState::Ended);
     let text = rendered_application_rows(&application).join("\n");
-    assert!(text.contains("ended with its Invite"), "{text}");
+    assert!(text.contains("ended with its invite"), "{text}");
     assert!(!text.contains("K7QF-2MXP"), "{text}");
     assert_eq!(
         press(&mut application, KeyCode::Char('n')),
         ApplicationTransition::Continue,
-        "no new code is had for an Invite that has ended"
+        "no new code is had for an invite that has ended"
     );
 
     // Another Client issued an Invite since.
@@ -499,7 +499,7 @@ fn a_code_delivered_expired_or_replaced_says_so_in_place_of_the_code() {
     assert_eq!(
         press(&mut application, KeyCode::Char('n')),
         ApplicationTransition::Continue,
-        "a new code would be for that Invite, which this reader was not shown"
+        "a new code would be for that invite, which this reader was not shown"
     );
 }
 
@@ -512,7 +512,7 @@ fn a_code_whose_invite_was_redeemed_says_so_rather_than_that_it_ended() {
     told_code(&mut application, 1, ShortCodeState::Spent);
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("was redeemed"), "{text}");
-    assert!(!text.contains("ended with its Invite"), "{text}");
+    assert!(!text.contains("ended with its invite"), "{text}");
     assert_eq!(
         press(&mut application, KeyCode::Char('n')),
         ApplicationTransition::Continue
@@ -568,7 +568,7 @@ fn reopening_serve_with_an_invite_standing_says_enter_replaces_it() {
     let ApplicationTransition::BeginServing { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve prepares Serving");
+        panic!("/serve prepares serving");
     };
     application
         .handle_event(ApplicationEvent::ServingPrepared {
@@ -579,7 +579,7 @@ fn reopening_serve_with_an_invite_standing_says_enter_replaces_it() {
                 7777,
             )))],
         })
-        .expect("load Serving candidates");
+        .expect("load serving candidates");
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("still stands"), "{text}");
 
@@ -612,7 +612,7 @@ fn a_new_code_refused_says_why_where_the_code_is_shown() {
     application
         .handle_event(ApplicationEvent::ShortCodeIssuanceFailed {
             request,
-            error: "the Invite this code came with has ended".to_owned(),
+            error: "the invite this code came with has ended".to_owned(),
         })
         .expect("say why");
     let text = rendered_application_rows(&application).join("\n");
@@ -629,7 +629,7 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
     let text = rendered_application_rows(&application).join("\n");
     assert!(
         text.contains("A wrong code was tried"),
-        "a Notice, with no overlay open: {text}"
+        "a notice, with no overlay open: {text}"
     );
     assert!(text.contains("/serve for a new one"), "{text}");
 
@@ -637,7 +637,7 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
     let ApplicationTransition::BeginServing { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve prepares Serving");
+        panic!("/serve prepares serving");
     };
     application
         .handle_event(ApplicationEvent::ServingPrepared {
@@ -648,7 +648,7 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
                 7777,
             )))],
         })
-        .expect("load Serving candidates");
+        .expect("load serving candidates");
     let text = rendered_application_rows(&application).join("\n");
     assert!(
         text.contains("A wrong code was tried on the last short code"),
@@ -656,14 +656,14 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
     );
     let wide = rendered_application_rows_at(&application, 120, 30).join("\n");
     assert!(
-        wide.contains("a new one offering a Relay"),
-        "since with no Relay ticked it would not: {wide}"
+        wide.contains("a new one offering a relay"),
+        "since with no relay ticked it would not: {wide}"
     );
 
     let ApplicationTransition::IssueInvite { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter issues an Invite");
+        panic!("Enter issues an invite");
     };
     application
         .handle_event(ApplicationEvent::InviteIssued {
@@ -679,7 +679,7 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
             },
             peers: Vec::new(),
         })
-        .expect("show the Invite");
+        .expect("show the invite");
     told_code(&mut application, 2, ShortCodeState::Live);
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("H4RW-9TNB"), "{text}");
@@ -698,7 +698,7 @@ fn showing_a_direct_invite(serial: u64) -> Application {
     type_terminal_text(&mut application, "/serve");
     let ApplicationTransition::BeginServing { request } = press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve has the Server prepare Serving");
+        panic!("/serve has the server prepare serving");
     };
     let way = Way::Direct(SocketAddr::from((Ipv4Addr::new(10, 0, 0, 8), 7777)));
     application
@@ -707,11 +707,11 @@ fn showing_a_direct_invite(serial: u64) -> Application {
             settings: None,
             candidates: vec![way.clone()],
         })
-        .expect("load Serving candidates");
+        .expect("load serving candidates");
     let ApplicationTransition::IssueInvite { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter issues an Invite");
+        panic!("Enter issues an invite");
     };
     application
         .handle_event(ApplicationEvent::InviteIssued {
@@ -724,7 +724,7 @@ fn showing_a_direct_invite(serial: u64) -> Application {
             },
             peers: Vec::new(),
         })
-        .expect("show the Invite");
+        .expect("show the invite");
     application
 }
 
@@ -733,7 +733,7 @@ fn told_invite(application: &mut Application, serial: u64, state: InviteState) {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::InviteStanding(
             InviteStanding { serial, state },
         )))
-        .expect("take how the Invite stands");
+        .expect("take how the invite stands");
 }
 
 /// However an Invite on screen comes to end, by whichever surface, it is shown no
@@ -744,7 +744,7 @@ fn an_invite_that_ended_is_said_to_and_can_be_neither_read_nor_copied() {
         (
             8,
             InviteState::Standing,
-            "A newer Invite has replaced this one",
+            "A newer invite has replaced this one",
         ),
         (7, InviteState::Expired, "It expired unredeemed"),
         (7, InviteState::Spent, "It has been redeemed"),
@@ -752,18 +752,18 @@ fn an_invite_that_ended_is_said_to_and_can_be_neither_read_nor_copied() {
     ] {
         let mut application = showing_a_direct_invite(7);
         let shown = rendered_application_rows(&application).join("\n");
-        assert!(shown.contains("Fresh Invite"), "{shown}");
+        assert!(shown.contains("Fresh invite"), "{shown}");
         assert!(shown.contains("suru-v1-direct-string"), "{shown}");
-        assert!(shown.contains("Ctrl+C copy Invite"), "{shown}");
+        assert!(shown.contains("Ctrl+C copy invite"), "{shown}");
 
         told_invite(&mut application, serial, state);
         let shown = rendered_application_rows(&application).join(" ");
-        assert!(!shown.contains("Fresh Invite"), "{state:?}: {shown}");
+        assert!(!shown.contains("Fresh invite"), "{state:?}: {shown}");
         assert!(!shown.contains("suru-v1-direct-string"), "{shown}");
-        assert!(shown.contains("This Invite no longer works"), "{shown}");
+        assert!(shown.contains("This invite no longer works"), "{shown}");
         assert!(shown.contains(why), "{shown}");
         assert!(shown.contains("/serve"), "how to get another: {shown}");
-        assert!(!shown.contains("Ctrl+C copy Invite"), "{shown}");
+        assert!(!shown.contains("Ctrl+C copy invite"), "{shown}");
         assert_eq!(
             press_with(&mut application, KeyCode::Char('c'), KeyModifiers::CONTROL),
             ApplicationTransition::Continue,
@@ -800,7 +800,7 @@ fn an_invite_said_to_have_ended_before_it_was_shown_is_shown_ended() {
     type_terminal_text(&mut application, "/serve");
     let ApplicationTransition::BeginServing { request } = press(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve has the Server prepare Serving");
+        panic!("/serve has the server prepare serving");
     };
     let way = Way::Direct(SocketAddr::from((Ipv4Addr::new(10, 0, 0, 8), 7777)));
     application
@@ -809,11 +809,11 @@ fn an_invite_said_to_have_ended_before_it_was_shown_is_shown_ended() {
             settings: None,
             candidates: vec![way.clone()],
         })
-        .expect("load Serving candidates");
+        .expect("load serving candidates");
     let ApplicationTransition::IssueInvite { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter issues an Invite");
+        panic!("Enter issues an invite");
     };
     application
         .handle_event(ApplicationEvent::InviteIssued {
@@ -826,9 +826,9 @@ fn an_invite_said_to_have_ended_before_it_was_shown_is_shown_ended() {
             },
             peers: Vec::new(),
         })
-        .expect("show the Invite");
+        .expect("show the invite");
     let shown = rendered_application_rows(&application).join(" ");
-    assert!(shown.contains("This Invite no longer works"), "{shown}");
+    assert!(shown.contains("This invite no longer works"), "{shown}");
     assert!(!shown.contains("suru-v1-direct-string"), "{shown}");
 }
 
@@ -844,7 +844,7 @@ fn reopening_serve_says_an_invite_with_no_code_stands() {
         let ApplicationTransition::BeginServing { request } =
             press(&mut application, KeyCode::Enter)
         else {
-            panic!("/serve has the Server prepare Serving");
+            panic!("/serve has the server prepare serving");
         };
         application
             .handle_event(ApplicationEvent::ServingPrepared {
@@ -855,12 +855,12 @@ fn reopening_serve_says_an_invite_with_no_code_stands() {
                     7777,
                 )))],
             })
-            .expect("load Serving candidates");
+            .expect("load serving candidates");
         rendered_application_rows(&application).join(" ")
     };
     let shown = reopened(InviteState::Standing);
     assert!(
-        shown.contains("The Invite issued last still stands"),
+        shown.contains("The invite issued last still stands"),
         "{shown}"
     );
     let shown = reopened(InviteState::Spent);
@@ -876,7 +876,7 @@ fn a_code_goes_with_its_invite_however_the_news_arrives() {
     let shown = rendered_application_rows(&application).join(" ");
     assert!(!shown.contains("K7QF-2MXP"), "{shown}");
     assert!(!shown.contains("suru-v1-long-string"), "{shown}");
-    assert!(shown.contains("This Invite no longer works"), "{shown}");
+    assert!(shown.contains("This invite no longer works"), "{shown}");
     assert_eq!(
         press(&mut application, KeyCode::Char('c')),
         ApplicationTransition::Continue,
@@ -885,7 +885,7 @@ fn a_code_goes_with_its_invite_however_the_news_arrives() {
     assert_eq!(
         press(&mut application, KeyCode::Char('n')),
         ApplicationTransition::Continue,
-        "no new code for an Invite that has ended"
+        "no new code for an invite that has ended"
     );
 }
 

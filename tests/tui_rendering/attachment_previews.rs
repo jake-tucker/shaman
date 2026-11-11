@@ -172,7 +172,7 @@ fn session_in_with_message(
         .messages
         .iter_mut()
         .find(|message| message.role == MessageRole::User)
-        .expect("the fixture carries a user Message");
+        .expect("the fixture carries a user message");
     message.content = text.to_owned();
     message.attachments = attachments;
     snapshot.attachments = described.to_vec();
@@ -181,7 +181,7 @@ fn session_in_with_message(
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             snapshot.clone(),
         )))
-        .expect("deliver the Session's snapshot");
+        .expect("deliver the session's snapshot");
     snapshot
 }
 
@@ -865,16 +865,16 @@ fn a_reply_to_a_fetch_since_replaced_never_lands_in_its_place() {
     let other = failed_session_snapshot(
         SessionId::new(),
         suru::protocol::PromptId::new(),
-        "Another Session",
+        "Another session",
         workspace.path(),
     );
     application
         .handle_event(ApplicationEvent::SessionAttached(other))
-        .expect("open another Session");
+        .expect("open another session");
     rendered_application_frame(&application, WIDTH, HEIGHT);
     application
         .handle_event(ApplicationEvent::SessionAttached(first))
-        .expect("return to the first Session");
+        .expect("return to the first session");
     rendered_application_frame(&application, WIDTH, HEIGHT);
     let fresh = take_fetches(&mut application);
     assert_eq!(fresh[0].attachment_id, stale[0].attachment_id);
@@ -957,12 +957,12 @@ fn switching_sessions_drops_the_thumbnails_held() {
     let other = failed_session_snapshot(
         SessionId::new(),
         suru::protocol::PromptId::new(),
-        "Another Session",
+        "Another session",
         workspace.path(),
     );
     application
         .handle_event(ApplicationEvent::SessionAttached(other))
-        .expect("open another Session");
+        .expect("open another session");
     rendered_application_frame(&application, WIDTH, HEIGHT);
     assert_eq!(
         application.take_attachment_fetch(),
@@ -971,11 +971,11 @@ fn switching_sessions_drops_the_thumbnails_held() {
 
     application
         .handle_event(ApplicationEvent::SessionAttached(first))
-        .expect("return to the first Session");
+        .expect("return to the first session");
     let returned = rendered_application_frame(&application, WIDTH, HEIGHT);
     assert!(
         draws_no_image(&returned),
-        "the thumbnails went with the Session they were held for"
+        "the thumbnails went with the session they were held for"
     );
     assert_eq!(
         answer_fetches(&mut application),
@@ -1001,17 +1001,17 @@ fn a_fetch_asked_for_a_session_left_is_waited_on_no_longer() {
     let other = failed_session_snapshot(
         SessionId::new(),
         suru::protocol::PromptId::new(),
-        "Another Session",
+        "Another session",
         workspace.path(),
     );
     application
         .handle_event(ApplicationEvent::SessionAttached(other))
-        .expect("open another Session");
+        .expect("open another session");
     assert!(
         asked
             .iter()
             .all(|fetch| !application.awaits_thumbnail(fetch.request)),
-        "the run loop aborts the fetches of the Session left"
+        "the run loop aborts the fetches of the session left"
     );
 }
 
@@ -1025,7 +1025,7 @@ fn a_drafts_thumbnails_stand_through_the_session_its_prompt_begins() {
     let ApplicationTransition::CreateSession(request) =
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE)
     else {
-        panic!("the Landing's Prompt begins a Session");
+        panic!("the landing's prompt begins a session");
     };
 
     // The Provisional Session draws its Prompt with the draft's thumbnail.
@@ -1054,7 +1054,7 @@ fn a_drafts_thumbnails_stand_through_the_session_its_prompt_begins() {
     created.attachments = vec![screenshot()];
     application
         .handle_event(ApplicationEvent::SessionCreated(created))
-        .expect("take the created Session");
+        .expect("take the created session");
     let arrived = rendered_application_frame(&application, WIDTH, HEIGHT);
     let (start, _) = message_block(&arrived, "What is [Image 1]");
     assert_eq!(
@@ -1082,7 +1082,7 @@ fn turning_the_outlook_drops_the_landings_thumbnails() {
     let turned = rendered_application_frame(&application, WIDTH, HEIGHT);
     assert!(
         draws_no_image(&turned),
-        "the Landing of another Outlook holds none of this one's thumbnails: {:#?}",
+        "the landing of another outlook holds none of this one's thumbnails: {:#?}",
         readable_rows(&turned)
     );
     // The image was pasted to the Server turned away from, so the draft's
@@ -1093,7 +1093,7 @@ fn turning_the_outlook_drops_the_landings_thumbnails() {
     );
     let rows = readable_rows(&turned).join("\n");
     assert!(rows.contains("Look at [Image 1]"), "{rows}");
-    assert!(rows.contains("Image 1 is on another Server"), "{rows}");
+    assert!(rows.contains("Image 1 is on another server"), "{rows}");
 }
 
 #[test]
@@ -1227,13 +1227,13 @@ fn turn_to_studio(application: &mut Application) {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
                 ways: vec![suru::protocol::Way::Direct(
-                    "10.0.0.8:7777".parse().expect("parse the Remote address"),
+                    "10.0.0.8:7777".parse().expect("parse the remote address"),
                 )],
                 status: suru::protocol::RemoteStatus::Available,
                 icon: None,
             },
         ]))
-        .expect("list the paired Remotes");
+        .expect("list the paired remotes");
     application
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
@@ -1243,7 +1243,7 @@ fn turn_to_studio(application: &mut Application) {
                 unreachable: None,
             }),
         })
-        .expect("probe the Remote");
+        .expect("probe the remote");
     press(application, KeyCode::Down, KeyModifiers::NONE);
     press(application, KeyCode::Enter, KeyModifiers::NONE);
 }

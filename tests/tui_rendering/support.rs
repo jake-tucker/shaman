@@ -71,9 +71,9 @@ pub fn workspace_listing(
 /// A Workspace directory for a rendering test, held canonical per
 /// [`WorkspaceDir`]. It lives as long as the binding, the way a tempdir does.
 pub fn workspace_dir() -> WorkspaceDir {
-    let directory = tempfile::tempdir().expect("create Workspace");
+    let directory = tempfile::tempdir().expect("create workspace");
     let canonical =
-        suru::paths::canonical(directory.path()).expect("canonicalize the Workspace fixture");
+        suru::paths::canonical(directory.path()).expect("canonicalize the workspace fixture");
     WorkspaceDir {
         _directory: directory,
         canonical,
@@ -335,7 +335,7 @@ pub fn deliver_listener(application: &mut Application, state: suru::protocol::Li
         .handle_event(ApplicationEvent::Managed(ManagedEvent::ServingListener(
             state,
         )))
-        .expect("receive how the Serving listener stands");
+        .expect("receive how the serving listener stands");
 }
 
 /// A Serving listener listening at `port` of every address.
@@ -405,7 +405,7 @@ pub fn press_new_session(application: &mut Application) -> ApplicationTransition
             modifiers: KeyModifiers::NONE,
         },
     )
-    .expect("press the new-Session affordance")
+    .expect("press the new-session affordance")
 }
 
 /// The Workspace resolution `transition` asks of a Server, if it asks one:
@@ -469,7 +469,7 @@ pub fn answer_workspace_resolution(
             request_id,
             result,
         })
-        .expect("deliver the Server's Workspace resolution")
+        .expect("deliver the server's workspace resolution")
 }
 
 pub fn enter_session(
@@ -478,14 +478,14 @@ pub fn enter_session(
 ) -> (SessionId, SessionSnapshot) {
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
-            "Initial Prompt".to_owned(),
+            "Initial prompt".to_owned(),
         )))
-        .expect("type initial Prompt");
+        .expect("type initial prompt");
     let ApplicationTransition::CreateSession(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit initial Prompt")
+        .expect("submit initial prompt")
     else {
-        panic!("landing submission should create a Session");
+        panic!("landing submission should create a session");
     };
     let session_id = SessionId::new();
     let snapshot = failed_session_snapshot(
@@ -498,7 +498,7 @@ pub fn enter_session(
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             snapshot.clone(),
         )))
-        .expect("enter created Session");
+        .expect("enter created session");
     (session_id, snapshot)
 }
 
@@ -558,7 +558,7 @@ pub fn enter_active_session(
         .push(TranscriptItem::Message { message_id });
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot.clone()))
-        .expect("attach active Session");
+        .expect("attach active session");
     (session_id, snapshot, turn_id)
 }
 
@@ -848,7 +848,7 @@ impl FailedTurnFixture {
             activity: Activity::Error {
                 id: ActivityId::new(),
                 turn_id,
-                text: "No Agent is selected".to_owned(),
+                text: "No agent is selected".to_owned(),
             },
         }
     }
@@ -1033,13 +1033,13 @@ pub fn application_looking_at_studio() -> Application {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
                 ways: vec![suru::protocol::Way::Direct(
-                    "10.0.0.8:7777".parse().expect("parse the Remote address"),
+                    "10.0.0.8:7777".parse().expect("parse the remote address"),
                 )],
                 status: suru::protocol::RemoteStatus::Available,
                 icon: None,
             },
         ]))
-        .expect("list the paired Remotes");
+        .expect("list the paired remotes");
     application
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
@@ -1049,7 +1049,7 @@ pub fn application_looking_at_studio() -> Application {
                 unreachable: None,
             }),
         })
-        .expect("probe the Remote");
+        .expect("probe the remote");
     key(&mut application, KeyCode::Down);
     key(&mut application, KeyCode::Enter);
     application
@@ -1081,7 +1081,7 @@ pub fn studio_stops_answering_because(
                 unreachable,
             }),
         })
-        .expect("take the Remote's recovery");
+        .expect("take the remote's recovery");
 }
 
 /// The grace period for one Origin's loss runs out, which is what lets the

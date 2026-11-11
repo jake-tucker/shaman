@@ -29,10 +29,10 @@ fn covers() -> String {
 What this covers on Linux:
 - This user's first login, whether at a screen or over SSH.
 - Not a machine that has rebooted and that nobody has logged in to, and at the last logout the \
-Server is ended outright, as a crash would. To run with no session at all, run `loginctl enable-linger {user}`, which needs no \
+server is ended outright, as a crash would. To run with no session at all, run `loginctl enable-linger {user}`, which needs no \
 reinstalling.
-- A Server whose identity key is in a keyring that nothing has unlocked, as with no desktop \
-login, fails Serving where you can see it rather than making a new one."
+- A server whose identity key is in a keyring that nothing has unlocked, as with no desktop \
+login, fails serving where you can see it rather than making a new one."
     )
 }
 
@@ -78,7 +78,7 @@ fn unit(keep: &KeepCommand) -> String {
     format!(
         "\
 [Unit]
-Description=Suru Keeper: starts this Channel's Server at login, and restarts it if it crashes
+Description=Suru keeper: starts this channel's server at login, and restarts it if it crashes
 
 [Service]
 Type=simple
@@ -133,7 +133,7 @@ impl ServiceManager for UserUnit {
         // nothing left behind.
         if let Some(unanswered) = unanswered(&self.systemctl(["daemon-reload"])) {
             bail!(
-                "could not register a Login start: this machine has no systemd user instance to \
+                "could not register a login start: this machine has no systemd user instance to \
                  register it with ({unanswered}). Nothing was registered. In a container or under \
                  another init system, have what starts things there run `suru server start`."
             );

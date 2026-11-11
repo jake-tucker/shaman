@@ -510,7 +510,7 @@ mod tests {
         assert_eq!(
             widths(78, None, Some(32)),
             (None, share(24, 24)),
-            "a hidden Sidebar leaves its columns to the right column"
+            "a hidden sidebar leaves its columns to the right column"
         );
     }
 
@@ -598,7 +598,7 @@ mod tests {
         assert_eq!(
             right.width_at_held_edge(Position::new(10, 0)),
             Some(44),
-            "the main view's floor beside the Sidebar"
+            "the main view's floor beside the sidebar"
         );
         assert!(right.release_edge());
         assert_eq!(right.width_at_held_edge(Position::new(90, 0)), None);

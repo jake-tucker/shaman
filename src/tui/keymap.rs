@@ -1916,7 +1916,7 @@ mod tests {
                 Some(CommandId::InvokeSemantic(
                     SemanticCommandId::SettingsProviderLeave
                 )),
-                "{code:?} on a Provider's own Settings"
+                "{code:?} on a provider's own settings"
             );
         }
         assert_eq!(
@@ -1932,7 +1932,7 @@ mod tests {
             assert_eq!(
                 settings_command(code, PanelKeys::ProviderSettings),
                 Some(CommandId::InvokeSemantic(command)),
-                "{code:?} on a Provider's own Settings"
+                "{code:?} on a provider's own settings"
             );
         }
 

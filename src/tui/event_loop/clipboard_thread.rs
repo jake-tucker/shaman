@@ -81,10 +81,10 @@ where
                 Ok(thread) => self.worker = Some(Worker { pending, thread }),
                 Err(error) => {
                     if self.failure_reported {
-                        tracing::debug!(%error, "could not start native Clipboard thread");
+                        tracing::debug!(%error, "could not start native clipboard thread");
                     } else {
                         self.failure_reported = true;
-                        tracing::warn!(%error, "could not start native Clipboard thread");
+                        tracing::warn!(%error, "could not start native clipboard thread");
                     }
                     completed(false);
                     return;
@@ -122,7 +122,7 @@ impl<F> ClipboardThread<F> {
         while !worker.thread.is_finished() {
             let remaining = self.exit_timeout.saturating_sub(began.elapsed());
             if remaining.is_zero() {
-                tracing::debug!("native Clipboard thread exceeded its exit timeout");
+                tracing::debug!("native clipboard thread exceeded its exit timeout");
                 return false;
             }
             thread::sleep(remaining.min(Duration::from_millis(1)));

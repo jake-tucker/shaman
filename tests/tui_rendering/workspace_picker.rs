@@ -59,9 +59,9 @@ fn the_workspace_command_opens_a_picker_loading_its_servers_workspaces() {
     let picker = rendered_application_rows(&application).join("\n");
     assert!(picker.contains("Workspaces"));
     assert!(
-        picker.contains("Loading Workspaces"),
+        picker.contains("Loading workspaces"),
         "the listing the picker draws its rows from is still on its way, and \
-         an empty box would read as no Workspaces at all"
+         an empty box would read as no workspaces at all"
     );
 }
 
@@ -73,7 +73,7 @@ fn the_project_synonym_finds_the_command_while_the_completion_names_only_workspa
     type_terminal_text(&mut application, "/project");
 
     let rows = rendered_application_rows(&application);
-    let offered = &rows[rendered_row(&rows, "Switch Workspace")];
+    let offered = &rows[rendered_row(&rows, "Switch workspace")];
     assert!(
         offered.contains("/workspace"),
         "the alias matches, and the row it matches names the command Suru calls it: {rows:?}"
@@ -142,16 +142,16 @@ fn the_current_workspace_stands_first_and_the_rest_as_the_server_lists_them() {
     assert_eq!(
         rows.len(),
         3,
-        "one row per Workspace the Server lists: {rows:?}"
+        "one row per workspace the server lists: {rows:?}"
     );
     assert!(rows[0].contains("here"), "{rows:?}");
     assert!(
         rows[0].contains("[current]"),
-        "the Workspace the client works in stands first and says so: {rows:?}"
+        "the workspace the client works in stands first and says so: {rows:?}"
     );
     assert!(
         rows[1].contains("atlas"),
-        "then the Workspace whose newest Session is newest: {rows:?}"
+        "then the workspace whose newest session is newest: {rows:?}"
     );
     assert!(rows[2].contains("ledger"), "{rows:?}");
 }
@@ -197,17 +197,17 @@ fn a_workspace_whose_sessions_are_all_gone_is_offered_while_the_sidebar_shows_no
     let rows = picker_rows(&application);
     assert!(
         rows.iter().any(|row| row.contains("archive")),
-        "the Workspace no Session works in is offered: {rows:?}"
+        "the workspace no session works in is offered: {rows:?}"
     );
     press(&mut application, KeyCode::Esc);
     let frame = rendered_application_rows_at(&application, SIDEBAR_WIDE, 20);
     assert!(
         drawn_in_sidebar(&frame, "Chart the atlas"),
-        "the Sidebar groups the Sessions it lists: {frame:?}"
+        "the sidebar groups the sessions it lists: {frame:?}"
     );
     assert!(
         !drawn_in_sidebar(&frame, "archive"),
-        "and shows nothing of a Workspace no Session works in: {frame:?}"
+        "and shows nothing of a workspace no session works in: {frame:?}"
     );
 }
 
@@ -230,7 +230,7 @@ fn a_repository_discovered_within_a_root_is_offered_and_opens_the_landing_in_it(
     let row = rows
         .iter()
         .find(|row| row.contains("atlas"))
-        .unwrap_or_else(|| panic!("the discovered Repository is offered: {rows:?}"));
+        .unwrap_or_else(|| panic!("the discovered repository is offered: {rows:?}"));
     assert!(
         row.contains("atlas · ") && row.ends_with(&format!("{}atlas", std::path::MAIN_SEPARATOR)),
         "it is named, its path spelled beside it: {rows:?}"
@@ -241,12 +241,12 @@ fn a_repository_discovered_within_a_root_is_offered_and_opens_the_landing_in_it(
     let transition = choose_unanswered(&mut application);
     let ApplicationTransition::DetachSessionAndResolveWorkspace { request, .. } = &transition
     else {
-        panic!("choosing the discovered Repository opens the Landing in it, not {transition:?}");
+        panic!("choosing the discovered repository opens the landing in it, not {transition:?}");
     };
     assert_eq!(request.path, atlas);
     assert_eq!(request.workspace_id.as_ref(), Some(&discovered.id));
     let Some((outlook, surface, request_id, _)) = workspace_resolution(&transition) else {
-        unreachable!("a Workspace Picker choice is a resolution");
+        unreachable!("a workspace picker choice is a resolution");
     };
     let mut resolved = ResolvedWorkspace::directory(atlas.clone());
     resolved.workspace = discovered;
@@ -257,21 +257,21 @@ fn a_repository_discovered_within_a_root_is_offered_and_opens_the_landing_in_it(
             request_id,
             result: Ok(resolved),
         })
-        .expect("deliver the Server's resolution of the discovered Repository");
+        .expect("deliver the server's resolution of the discovered repository");
 
     assert!(
         landing_location(&application).ends_with("atlas"),
-        "the Landing stands in the discovered Repository: {}",
+        "the landing stands in the discovered repository: {}",
         landing_location(&application)
     );
     let frame = rendered_application_rows_at(&application, SIDEBAR_WIDE, 20);
     assert!(
         drawn_in_sidebar(&frame, "Tend the garden"),
-        "the Sidebar groups the Sessions it lists: {frame:?}"
+        "the sidebar groups the sessions it lists: {frame:?}"
     );
     assert!(
         !drawn_in_sidebar(&frame, "atlas"),
-        "and shows nothing of a Workspace no Session works in: {frame:?}"
+        "and shows nothing of a workspace no session works in: {frame:?}"
     );
 }
 
@@ -301,13 +301,13 @@ fn an_unavailable_workspace_is_marked_in_its_row() {
     assert_eq!(marked.len(), 1, "one row is marked: {rows:?}");
     assert!(
         marked[0].contains("atlas"),
-        "the unavailable Workspace's row is marked: {rows:?}"
+        "the unavailable workspace's row is marked: {rows:?}"
     );
     let narrow = picker_rows_at(&application, 44, 15);
     let atlas_row = narrow
         .iter()
         .find(|row| row.contains("atlas"))
-        .unwrap_or_else(|| panic!("the unavailable Workspace is offered: {narrow:?}"));
+        .unwrap_or_else(|| panic!("the unavailable workspace is offered: {narrow:?}"));
     assert!(
         atlas_row.contains("atlas !"),
         "a narrow row marks it by a sign: {narrow:?}"
@@ -334,18 +334,18 @@ fn choosing_an_unavailable_workspace_is_refused_saying_why() {
     assert_eq!(
         choose_unanswered(&mut application),
         ApplicationTransition::Continue,
-        "choosing it asks the Server nothing"
+        "choosing it asks the server nothing"
     );
 
     let frame = rendered_application_rows_at(&application, 100, 20).join("\n");
     assert!(
         frame.contains("Error: its parent cannot be read, so atlas"),
-        "the picker says why, naming the Workspace: {frame}"
+        "the picker says why, naming the workspace: {frame}"
     );
     assert_eq!(
         selected_row(&application),
         "atlas",
-        "the picker stays open on the Workspace the reader chose: {frame}"
+        "the picker stays open on the workspace the reader chose: {frame}"
     );
     assert_eq!(
         session_picker_scope(&mut application),
@@ -377,7 +377,7 @@ fn a_long_name_never_hides_the_unavailable_mark() {
         let row = rows
             .iter()
             .find(|row| row.contains("an-uncommonly"))
-            .unwrap_or_else(|| panic!("the long-named Workspace is offered: {rows:?}"));
+            .unwrap_or_else(|| panic!("the long-named workspace is offered: {rows:?}"));
         assert!(
             row.contains(mark),
             "a row {width} columns wide keeps the mark, the name giving way to it: {rows:?}"
@@ -464,7 +464,7 @@ fn a_row_names_the_workspace_and_spells_its_path_beside_it() {
     assert_eq!(named.len(), 2, "{rows:?}");
     assert!(
         named[0].contains(one.to_string_lossy().as_ref()),
-        "two Workspaces named alike are told apart by the path beside the name: {rows:?}"
+        "two workspaces named alike are told apart by the path beside the name: {rows:?}"
     );
     assert!(
         named[1].contains(two.to_string_lossy().as_ref()),
@@ -491,12 +491,12 @@ fn the_sidekick_workspace_is_not_offered_where_the_reader_is_not_in_it() {
     let rows = picker_rows(&application);
     assert!(
         !rows.iter().any(|row| row.contains("Sidekick")),
-        "the Sidekick Workspace is not offered: {rows:?}"
+        "the sidekick workspace is not offered: {rows:?}"
     );
     assert_eq!(rows.len(), 2, "{rows:?}");
     assert!(
         rows[1].contains(other.to_string_lossy().as_ref()),
-        "every other Workspace is still offered: {rows:?}"
+        "every other workspace is still offered: {rows:?}"
     );
 }
 
@@ -515,7 +515,7 @@ fn searching_for_sidekick_does_not_offer_the_sidekick_workspace() {
     let rows = picker_rows(&application);
     assert!(
         !rows.iter().any(|row| row.contains("Sidekick")),
-        "the Sidekick Workspace is not offered: {rows:?}"
+        "the sidekick workspace is not offered: {rows:?}"
     );
 }
 
@@ -540,7 +540,7 @@ fn the_sidekick_workspace_stands_first_by_name_alone_where_the_reader_is_in_it()
     assert_eq!(rows[0], "› Sidekick · [current]", "{rows:?}");
     assert!(
         rows[1].contains(other.to_string_lossy().as_ref()),
-        "every other Workspace still spells its path: {rows:?}"
+        "every other workspace still spells its path: {rows:?}"
     );
 }
 
@@ -569,7 +569,7 @@ fn a_row_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
         !rows
             .iter()
             .any(|row| row.contains('\u{ea83}') || row.contains('\u{e7a8}')),
-        "no Icon is drawn while the reader keeps Icons off: {rows:?}"
+        "no icon is drawn while the reader keeps icons off: {rows:?}"
     );
 
     let mut settings = EffectiveSettings::default();
@@ -583,7 +583,7 @@ fn a_row_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
         .expect("the iconed row is offered");
     assert!(
         iconed_row.contains('\u{e7a8}'),
-        "the Workspace's own derived Icon replaces the folder glyph: {rows:?}"
+        "the workspace's own derived icon replaces the folder glyph: {rows:?}"
     );
     let plain_row = rows
         .iter()
@@ -591,7 +591,7 @@ fn a_row_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
         .expect("the plain row is offered");
     assert!(
         plain_row.contains('\u{ea83}'),
-        "the folder glyph stands in for a Workspace with no derived Icon: {rows:?}"
+        "the folder glyph stands in for a workspace with no derived icon: {rows:?}"
     );
 }
 
@@ -609,7 +609,7 @@ fn two_spellings_of_one_directory_make_one_row() {
     assert_eq!(
         rows.len(),
         1,
-        "the launch spelling and the Session's rooting are one Workspace: {rows:?}"
+        "the launch spelling and the session's rooting are one workspace: {rows:?}"
     );
     assert!(rows[0].contains("[current]"), "{rows:?}");
 }
@@ -688,7 +688,7 @@ fn escape_closes_the_picker_leaving_everything_as_it_was() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "an unsent draft".to_owned(),
         )))
-        .expect("type a Landing draft");
+        .expect("type a landing draft");
 
     open_picker_with(&mut application, vec![registered(&ledger)]);
     press(&mut application, KeyCode::Down);
@@ -699,7 +699,7 @@ fn escape_closes_the_picker_leaving_everything_as_it_was() {
                 KeyCode::Esc,
                 KeyModifiers::NONE,
             )))
-            .expect("close the Workspace Picker"),
+            .expect("close the workspace picker"),
         ApplicationTransition::Continue,
         "backing out of the picker asks the server for nothing"
     );
@@ -709,7 +709,7 @@ fn escape_closes_the_picker_leaving_everything_as_it_was() {
     assert!(!landing.contains("ledger"), "the picker is gone: {landing}");
     assert!(
         landing.contains(here.to_string_lossy().as_ref()),
-        "the Workspace the client works in is where it was: {landing}"
+        "the workspace the client works in is where it was: {landing}"
     );
     assert!(landing.contains("an unsent draft"), "{landing}");
 }
@@ -729,10 +729,10 @@ fn a_narrow_row_gives_up_the_head_of_the_path_rather_than_the_path() {
     let row = rows
         .iter()
         .find(|row| row.contains("ledger"))
-        .unwrap_or_else(|| panic!("no row names the Workspace: {rows:?}"));
+        .unwrap_or_else(|| panic!("no row names the workspace: {rows:?}"));
     assert!(
         row.contains(Path::new("work").join("ledger").to_string_lossy().as_ref()),
-        "the row still spells where the Workspace stands: {rows:?}"
+        "the row still spells where the workspace stands: {rows:?}"
     );
 }
 
@@ -747,7 +747,7 @@ fn a_refused_listing_is_reported_in_the_picker() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceList,
             )))
-            .expect("open the Workspace Picker"),
+            .expect("open the workspace picker"),
     );
 
     application
@@ -755,13 +755,13 @@ fn a_refused_listing_is_reported_in_the_picker() {
             request,
             error: "the server is unreachable".to_owned(),
         })
-        .expect("refuse the Workspace Picker's listing");
+        .expect("refuse the workspace picker's listing");
 
     let picker = rendered_application_rows(&application).join("\n");
     assert!(picker.contains("Workspaces"), "the picker stands: {picker}");
     assert!(picker.contains("the server is unreachable"), "{picker}");
     assert!(
-        !picker.contains("Loading Workspaces"),
+        !picker.contains("Loading workspaces"),
         "the wait is over, refused: {picker}"
     );
 }
@@ -812,7 +812,7 @@ fn a_left_press_on_a_row_chooses_it_exactly_as_enter_does() {
         assert_eq!(
             rendered_application_rows_at(&pointed, frame.0, frame.1),
             rendered_application_rows_at(&keyed, frame.0, frame.1),
-            "{frame:?}: and the same Landing stands in the picker's place"
+            "{frame:?}: and the same landing stands in the picker's place"
         );
 
         answer_workspace_resolution(&mut keyed, entered);
@@ -820,7 +820,7 @@ fn a_left_press_on_a_row_chooses_it_exactly_as_enter_does() {
         assert_eq!(
             rendered_application_rows_at(&pointed, frame.0, frame.1),
             rendered_application_rows_at(&keyed, frame.0, frame.1),
-            "{frame:?}: and the same Landing once the Server has answered"
+            "{frame:?}: and the same landing once the server has answered"
         );
     }
 }
@@ -902,7 +902,7 @@ fn a_left_press_on_a_row_waits_out_a_pending_agent_selection_as_enter_does() {
         assert_eq!(
             entered,
             ApplicationTransition::Continue,
-            "{frame:?}: Enter waits for the Agent Selection"
+            "{frame:?}: Enter waits for the agent selection"
         );
         assert_eq!(pressed, entered, "{frame:?}: and so does the press");
         assert_eq!(
@@ -953,7 +953,7 @@ fn a_left_press_on_a_row_is_refused_for_an_unreachable_remote_as_enter_is() {
             lines
                 .iter()
                 .any(|line| line.contains("studio is unreachable")),
-            "{frame:?}: the refusal is said inside the picker, which covers the Landing: {lines:?}"
+            "{frame:?}: the refusal is said inside the picker, which covers the landing: {lines:?}"
         );
         press(&mut pointed, KeyCode::Esc);
         let refused = rendered_application_rows_at(&pointed, frame.0, frame.1).join("\n");
@@ -1031,8 +1031,8 @@ fn enter_closes_the_picker_and_lands_in_the_workspace_chosen_before_its_server_a
         choose_unanswered(&mut application)
     else {
         panic!(
-            "moving Workspace opens the Landing, which is the client letting go of whatever \
-             it was on or on its way to, and asks the Server to resolve the Workspace chosen"
+            "moving workspace opens the landing, which is the client letting go of whatever \
+             it was on or on its way to, and asks the server to resolve the workspace chosen"
         );
     };
     assert_eq!(request.path, atlas);
@@ -1048,13 +1048,13 @@ fn enter_closes_the_picker_and_lands_in_the_workspace_chosen_before_its_server_a
     );
     assert!(
         landing.contains("Type a prompt"),
-        "the Landing stands in its place: {landing}"
+        "the landing stands in its place: {landing}"
     );
     // The Landing's line is only as wide as its composer, so a long temporary
     // path gives up its front: the Workspace is known by the end it keeps.
     assert!(
         landing_location(&application).ends_with(&format!("atlas · {SPINNER}")),
-        "and it stands in the Workspace the reader chose before the Server has answered: \
+        "and it stands in the workspace the reader chose before the server has answered: \
          {landing}"
     );
 }
@@ -1075,22 +1075,22 @@ fn a_prompt_written_before_the_server_answers_waits_for_it() {
     press(&mut application, KeyCode::Down);
     let resolution = choose_unanswered(&mut application);
 
-    type_terminal_text(&mut application, "Initial Prompt");
+    type_terminal_text(&mut application, "Initial prompt");
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("submit before the Server answers"),
+            .expect("submit before the server answers"),
         ApplicationTransition::Continue,
-        "no Session begins, in the Workspace left behind or in one not yet resolved"
+        "no session begins, in the workspace left behind or in one not yet resolved"
     );
     let waiting = rendered_application_rows_at(&application, 120, 20).join("\n");
     assert!(
-        waiting.contains("Initial Prompt"),
+        waiting.contains("Initial prompt"),
         "the draft stands where the reader wrote it: {waiting}"
     );
     assert!(
-        waiting.contains("atlas is still resolving; this waits until its Server answers"),
-        "and the Landing says why Enter began nothing, as work waiting on a Remote does: \
+        waiting.contains("atlas is still resolving; this waits until its server answers"),
+        "and the landing says why Enter began nothing, as work waiting on a remote does: \
          {waiting}"
     );
 
@@ -1102,16 +1102,16 @@ fn a_prompt_written_before_the_server_answers_waits_for_it() {
     let answered = rendered_application_rows_at(&application, 120, 20).join("\n");
     assert!(
         !answered.contains("still resolving"),
-        "what the Landing was waiting on has arrived, so it no longer says so: {answered}"
+        "what the landing was waiting on has arrived, so it no longer says so: {answered}"
     );
     let ApplicationTransition::CreateSession(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit once the Server has answered")
+        .expect("submit once the server has answered")
     else {
-        panic!("a Landing submission creates a Session once its Workspace is resolved");
+        panic!("a landing submission creates a session once its workspace is resolved");
     };
     assert_eq!(request.execution_directory.path, atlas);
-    assert_eq!(request.prompt.text, "Initial Prompt");
+    assert_eq!(request.prompt.text, "Initial prompt");
 }
 
 /// While its Server works the chosen Workspace out, the Landing says so where
@@ -1132,18 +1132,18 @@ fn a_workspace_still_resolving_turns_a_spinner_where_its_checkout_state_will_sta
     let waiting = landing_location(&application);
     assert!(
         waiting.ends_with(&format!("atlas · {SPINNER}")),
-        "the Landing names the Workspace chosen and that its reading is on its way: {waiting}"
+        "the landing names the workspace chosen and that its reading is on its way: {waiting}"
     );
     assert!(
         application.wants_spinner(),
-        "a Spinner on screen keeps the presentation tick armed"
+        "a spinner on screen keeps the presentation tick armed"
     );
 
     answer_workspace_resolution(&mut application, resolution);
     let answered = landing_location(&application);
     assert!(
         answered.ends_with("atlas") && !answered.contains(SPINNER),
-        "the answer takes the Spinner's place: {answered}"
+        "the answer takes the spinner's place: {answered}"
     );
     assert!(
         !application.wants_spinner(),
@@ -1168,7 +1168,7 @@ fn the_answer_fills_in_the_landing_beneath_the_draft_written_while_it_waited() {
     assert_eq!(
         session_picker_scope(&mut application),
         SessionListScope::CurrentWorkspace(here.clone().into()),
-        "nothing but the Landing's naming moves before the Server answers"
+        "nothing but the landing's naming moves before the server answers"
     );
     press(&mut application, KeyCode::Esc);
     type_terminal_text(&mut application, "half a thought");
@@ -1176,13 +1176,13 @@ fn the_answer_fills_in_the_landing_beneath_the_draft_written_while_it_waited() {
     assert_eq!(
         answer_workspace_resolution(&mut application, resolution),
         ApplicationTransition::Continue,
-        "the Landing is already open, so the answer has no Session to let go of"
+        "the landing is already open, so the answer has no session to let go of"
     );
 
     let landing = rendered_application_rows_at(&application, 120, 20).join("\n");
     assert!(
         landing.contains("half a thought"),
-        "the draft written while the Landing waited survives its answer: {landing}"
+        "the draft written while the landing waited survives its answer: {landing}"
     );
     assert!(
         landing_location(&application).ends_with("atlas"),
@@ -1191,7 +1191,7 @@ fn the_answer_fills_in_the_landing_beneath_the_draft_written_while_it_waited() {
     assert_eq!(
         session_picker_scope(&mut application),
         SessionListScope::CurrentWorkspace(atlas.into()),
-        "and current-Workspace scope has come to mean the Workspace chosen"
+        "and current-workspace scope has come to mean the workspace chosen"
     );
 }
 
@@ -1226,8 +1226,8 @@ fn a_workspace_whose_directory_is_gone_is_refused_on_its_landing_and_moves_nothi
 
     let frame = rendered_application_rows_at(&application, 120, 20).join("\n");
     assert!(
-        frame.contains("Could not open the gone Workspace: No directory there"),
-        "the refusal stands on the Landing the reader is on: {frame}"
+        frame.contains("Could not open the gone workspace: No directory there"),
+        "the refusal stands on the landing the reader is on: {frame}"
     );
     assert!(
         !frame.contains("Workspaces"),
@@ -1236,12 +1236,12 @@ fn a_workspace_whose_directory_is_gone_is_refused_on_its_landing_and_moves_nothi
     assert!(frame.contains("Keep this draft"), "{frame}");
     assert!(
         landing_location(&application).ends_with("here"),
-        "the Landing names the Workspace the client still works in: {frame}"
+        "the landing names the workspace the client still works in: {frame}"
     );
     assert_eq!(
         session_picker_scope(&mut application),
         SessionListScope::CurrentWorkspace(here.into()),
-        "current-Workspace scope did not follow the refused path"
+        "current-workspace scope did not follow the refused path"
     );
     press(&mut application, KeyCode::Esc);
 
@@ -1271,7 +1271,7 @@ fn a_workspace_whose_directory_is_gone_is_refused_on_its_landing_and_moves_nothi
 fn a_workspace_replaced_by_a_file_is_refused_without_moving_any_scope() {
     let here = workspace_dir();
     let file = here.path().join("old-work");
-    std::fs::write(&file, "not a directory").expect("replace the old Workspace with a file");
+    std::fs::write(&file, "not a directory").expect("replace the old workspace with a file");
     let mut application = application_choosing_skills(here.path());
     load_skills(&mut application, here.path(), "review");
     show_sidebar(&mut application, Vec::new());
@@ -1284,7 +1284,7 @@ fn a_workspace_replaced_by_a_file_is_refused_without_moving_any_scope() {
     let refusal = rendered_application_rows_at(&application, SIDEBAR_WIDE, 20).join("\n");
     assert!(
         refusal.contains("Not a directory"),
-        "the Landing says why the choice was refused: {refusal}"
+        "the landing says why the choice was refused: {refusal}"
     );
 
     type_terminal_text(&mut application, "$rev");
@@ -1292,17 +1292,17 @@ fn a_workspace_replaced_by_a_file_is_refused_without_moving_any_scope() {
     let unchanged_frame = unchanged.join("\n");
     assert!(
         unchanged_frame.contains("$review"),
-        "the Skill Catalog still answers for the Workspace the reader is in: {unchanged_frame}"
+        "the skill catalog still answers for the workspace the reader is in: {unchanged_frame}"
     );
     assert_eq!(
         selector_label(&unchanged),
-        "▸ All Workspaces",
-        "the Sidebar's chosen scope was untouched"
+        "▸ All workspaces",
+        "the sidebar's chosen scope was untouched"
     );
     assert_eq!(
         session_picker_scope(&mut application),
         SessionListScope::CurrentWorkspace((here.path().to_owned()).into()),
-        "current-Workspace scope did not follow the refused path"
+        "current-workspace scope did not follow the refused path"
     );
 }
 
@@ -1330,7 +1330,7 @@ fn a_newer_choice_supersedes_a_workspace_still_resolving() {
     let second = choose_unanswered(&mut application);
     assert!(
         landing_location(&application).ends_with(&format!("ledger · {SPINNER}")),
-        "the Landing names the Workspace chosen last"
+        "the landing names the workspace chosen last"
     );
 
     assert_eq!(
@@ -1339,7 +1339,7 @@ fn a_newer_choice_supersedes_a_workspace_still_resolving() {
     );
     assert!(
         landing_location(&application).ends_with(&format!("ledger · {SPINNER}")),
-        "the superseded answer does not pull the Landing back to the earlier choice, \
+        "the superseded answer does not pull the landing back to the earlier choice, \
          which is still waiting on its own"
     );
     assert_eq!(
@@ -1377,12 +1377,12 @@ fn a_fresh_landing_lets_go_of_a_workspace_still_resolving() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::SessionNew,
             )))
-            .expect("go to a fresh Landing instead"),
+            .expect("go to a fresh landing instead"),
         ApplicationTransition::DetachSession
     );
     assert!(
         landing_location(&application).ends_with("here"),
-        "the fresh Landing stands in the Workspace the client still works in"
+        "the fresh landing stands in the workspace the client still works in"
     );
     type_terminal_text(&mut application, "a different thought");
 
@@ -1418,12 +1418,12 @@ fn a_late_refusal_for_a_workspace_let_go_of_moves_nothing() {
     let resolution = choose_unanswered(&mut application);
     let (outlook, surface, request_id, _) =
         crate::tui_rendering::support::workspace_resolution(&resolution)
-            .expect("choosing a Workspace asks its Server to resolve it");
+            .expect("choosing a workspace asks its server to resolve it");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionNew,
         )))
-        .expect("go to a fresh Landing instead");
+        .expect("go to a fresh landing instead");
     type_terminal_text(&mut application, "a different thought");
     let before = rendered_application_rows_at(&application, 120, 20);
 
@@ -1447,7 +1447,7 @@ fn a_late_refusal_for_a_workspace_let_go_of_moves_nothing() {
     );
     assert_eq!(
         after, before,
-        "the fresh Landing and its draft stand exactly as they were"
+        "the fresh landing and its draft stand exactly as they were"
     );
     assert_eq!(
         session_picker_scope(&mut application),
@@ -1476,9 +1476,9 @@ fn a_workspace_asked_for_elsewhere_supersedes_one_still_resolving() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionSidekick,
         )))
-        .expect("ask for the Sidekick while the chosen Workspace resolves")
+        .expect("ask for the sidekick while the chosen workspace resolves")
     else {
-        panic!("/sidekick asks its Server for the Sidekick Workspace");
+        panic!("/sidekick asks its server for the sidekick workspace");
     };
     application
         .handle_event(ApplicationEvent::WorkspaceResolved {
@@ -1489,22 +1489,22 @@ fn a_workspace_asked_for_elsewhere_supersedes_one_still_resolving() {
                 sidekick.clone(),
             )),
         })
-        .expect("answer the Sidekick Workspace");
+        .expect("answer the sidekick workspace");
     assert_eq!(
         answer_workspace_resolution(&mut application, resolution),
         ApplicationTransition::Continue
     );
 
-    type_terminal_text(&mut application, "Initial Prompt");
+    type_terminal_text(&mut application, "Initial prompt");
     let ApplicationTransition::CreateSession(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit the initial Prompt")
+        .expect("submit the initial prompt")
     else {
-        panic!("a Landing submission creates a Session");
+        panic!("a landing submission creates a session");
     };
     assert_eq!(
         request.execution_directory.path, sidekick,
-        "the late answer to the picker did not move the reader off the Workspace asked for since"
+        "the late answer to the picker did not move the reader off the workspace asked for since"
     );
 }
 
@@ -1523,14 +1523,14 @@ fn the_workspace_the_reader_chose_roots_the_sessions_they_make_next() {
 
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
-            "Initial Prompt".to_owned(),
+            "Initial prompt".to_owned(),
         )))
-        .expect("type an initial Prompt");
+        .expect("type an initial prompt");
     let ApplicationTransition::CreateSession(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit the initial Prompt")
+        .expect("submit the initial prompt")
     else {
-        panic!("a Landing submission creates a Session");
+        panic!("a landing submission creates a session");
     };
     assert_eq!(request.execution_directory.path, atlas);
 }
@@ -1551,7 +1551,7 @@ fn the_skill_catalog_answers_for_the_workspace_the_reader_chose() {
         rendered_application_rows(&application)
             .join("\n")
             .contains("$review"),
-        "the Workspace the client launched in answers for its own Skills"
+        "the workspace the client launched in answers for its own skills"
     );
 
     open_picker_with(&mut application, vec![registered(&atlas)]);
@@ -1563,7 +1563,7 @@ fn the_skill_catalog_answers_for_the_workspace_the_reader_chose() {
         !rendered_application_rows(&application)
             .join("\n")
             .contains("$review"),
-        "the catalog the client held answers for a Workspace the reader has left"
+        "the catalog the client held answers for a workspace the reader has left"
     );
 
     load_skills(&mut application, &atlas, "revise");
@@ -1571,7 +1571,7 @@ fn the_skill_catalog_answers_for_the_workspace_the_reader_chose() {
         rendered_application_rows(&application)
             .join("\n")
             .contains("$revise"),
-        "and the Skill Catalog the client now asks for is the picked Workspace's"
+        "and the skill catalog the client now asks for is the picked workspace's"
     );
 }
 
@@ -1591,7 +1591,7 @@ fn the_session_pickers_current_workspace_scope_comes_to_mean_the_chosen_workspac
     assert_eq!(
         session_picker_scope(&mut application),
         SessionListScope::CurrentWorkspace((atlas).into()),
-        "the picker's current-Workspace scope means the Workspace the reader chose"
+        "the picker's current-workspace scope means the workspace the reader chose"
     );
 }
 
@@ -1622,12 +1622,12 @@ fn the_sidebars_chosen_scope_is_left_where_the_reader_put_it() {
     let rows = rendered_application_rows_at(&application, SIDEBAR_WIDE, 20);
     assert_eq!(
         selector_label(&rows),
-        "▸ All Workspaces",
-        "the switch left the Sidebar answering for the whole body of work: {rows:?}"
+        "▸ All workspaces",
+        "the switch left the sidebar answering for the whole body of work: {rows:?}"
     );
     assert!(
         drawn_in_sidebar(&rows, "Work where I am"),
-        "including the Sessions of the Workspace the reader left: {rows:?}"
+        "including the sessions of the workspace the reader left: {rows:?}"
     );
     assert!(drawn_in_sidebar(&rows, "Work elsewhere"), "{rows:?}");
 }
@@ -1654,7 +1654,7 @@ fn an_open_session_is_left_working_and_listed_and_nothing_is_asked() {
             choose(&mut application),
             ApplicationTransition::DetachSessionAndResolveWorkspace { .. }
         ),
-        "the client stops watching the Session; the Turn is neither interrupted \
+        "the client stops watching the session; the turn is neither interrupted \
          nor confirmed away"
     );
 
@@ -1662,11 +1662,11 @@ fn an_open_session_is_left_working_and_listed_and_nothing_is_asked() {
     let frame = rows.join("\n");
     assert!(
         frame.contains("Type a prompt"),
-        "the Landing stands where the Session was, with nothing asked in between: {frame}"
+        "the landing stands where the session was, with nothing asked in between: {frame}"
     );
     assert!(
         drawn_in_sidebar(&rows, "Long-running work"),
-        "the Session the reader left is still listed: {rows:?}"
+        "the session the reader left is still listed: {rows:?}"
     );
     assert!(
         sidebar_text(&rows).contains("Working"),
@@ -1688,7 +1688,7 @@ fn choosing_the_workspace_the_client_is_already_in_opens_the_landing() {
     assert_eq!(
         selected_row(&application),
         "here",
-        "the picker opens on the Workspace the reader is in"
+        "the picker opens on the workspace the reader is in"
     );
 
     assert!(
@@ -1696,7 +1696,7 @@ fn choosing_the_workspace_the_client_is_already_in_opens_the_landing() {
             choose(&mut application),
             ApplicationTransition::DetachSessionAndResolveWorkspace { .. }
         ),
-        "opening the Landing is the client leaving whatever it was on"
+        "opening the landing is the client leaving whatever it was on"
     );
 
     let landing = rendered_application_rows_at(&application, 120, 20).join("\n");
@@ -1707,7 +1707,7 @@ fn choosing_the_workspace_the_client_is_already_in_opens_the_landing() {
     assert!(landing.contains("Type a prompt"), "{landing}");
     assert!(
         landing.contains(here.to_string_lossy().as_ref()),
-        "and the Workspace is where it was: {landing}"
+        "and the workspace is where it was: {landing}"
     );
 }
 
@@ -1722,12 +1722,12 @@ fn enter_while_the_listing_is_on_its_way_chooses_nothing() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::WorkspaceList,
         )))
-        .expect("open the Workspace Picker");
+        .expect("open the workspace picker");
 
     assert_eq!(choose(&mut application), ApplicationTransition::Continue);
 
     let picker = rendered_application_rows(&application).join("\n");
-    assert!(picker.contains("Loading Workspaces"), "{picker}");
+    assert!(picker.contains("Loading workspaces"), "{picker}");
 }
 
 /// Typing narrows the picker the way it narrows the session picker: the
@@ -1745,7 +1745,7 @@ fn typing_narrows_the_rows_by_fuzzy_name_match() {
     assert_eq!(
         rows.len(),
         1,
-        "only the Workspace carrying it stands: {rows:?}"
+        "only the workspace carrying it stands: {rows:?}"
     );
     assert!(
         rows[0].contains("engine"),
@@ -1768,11 +1768,11 @@ fn the_rows_a_query_leaves_keep_the_picker_s_order() {
     assert_eq!(rows.len(), 3, "{rows:?}");
     assert!(
         rows[0].contains("here") && rows[0].contains("[current]"),
-        "the Workspace the client works in still stands first: {rows:?}"
+        "the workspace the client works in still stands first: {rows:?}"
     );
     assert!(
         rows[1].contains("engine"),
-        "then the Workspace whose newest Session is newest: {rows:?}"
+        "then the workspace whose newest session is newest: {rows:?}"
     );
     assert!(rows[2].contains("ledger"), "{rows:?}");
 }
@@ -1793,7 +1793,7 @@ fn a_query_is_read_against_the_name_rather_than_the_path() {
     let rows = picker_rows(&application);
     assert_eq!(
         rows,
-        vec!["No Workspaces found"],
+        vec!["No workspaces found"],
         "the head of the path is not part of the name: {rows:?}"
     );
 }
@@ -1822,7 +1822,7 @@ fn backspace_widens_the_rows_and_giving_the_query_up_restores_them_all() {
     assert_eq!(
         restored.len(),
         4,
-        "and giving the query up puts every Workspace back: {restored:?}"
+        "and giving the query up puts every workspace back: {restored:?}"
     );
     assert!(
         restored[0].contains("here") && restored[3].contains("ledger"),
@@ -1840,7 +1840,7 @@ fn a_query_no_workspace_carries_says_so() {
     type_terminal_text(&mut application, "qqq");
 
     let picker = rendered_application_rows(&application).join("\n");
-    assert!(picker.contains("No Workspaces found"), "{picker}");
+    assert!(picker.contains("No workspaces found"), "{picker}");
     assert!(picker.contains("Search: qqq"), "{picker}");
     assert!(
         !picker.contains("engine"),
@@ -1863,7 +1863,7 @@ fn the_reader_is_left_on_a_workspace_the_query_still_offers() {
     assert_eq!(
         selected_row(&application),
         "atlas",
-        "the Workspace they were on is gone, so the first row that stands takes them"
+        "the workspace they were on is gone, so the first row that stands takes them"
     );
 
     backspace(&mut application);
@@ -1883,7 +1883,7 @@ fn a_paste_goes_into_the_query_whole() {
 
     application
         .handle_terminal_event(InputEvent::Paste("ledger".to_owned()))
-        .expect("paste into the Workspace Picker");
+        .expect("paste into the workspace picker");
 
     assert_eq!(picker_query(&application), "ledger");
     let rows = picker_rows(&application);
@@ -1904,10 +1904,10 @@ fn opening_the_picker_again_starts_from_no_query() {
 
     assert_eq!(picker_query(&application), "");
     let rows = picker_rows(&application);
-    assert_eq!(rows.len(), 4, "every Workspace is on offer again: {rows:?}");
+    assert_eq!(rows.len(), 4, "every workspace is on offer again: {rows:?}");
     assert!(
         rows[0].contains("here") && rows[0].contains("[current]"),
-        "and the reader is back on the Workspace they work in: {rows:?}"
+        "and the reader is back on the workspace they work in: {rows:?}"
     );
 }
 
@@ -1949,7 +1949,7 @@ fn enter_on_a_query_no_workspace_carries_chooses_nothing() {
 
     let picker = rendered_application_rows(&application).join("\n");
     assert!(
-        picker.contains("No Workspaces found"),
+        picker.contains("No workspaces found"),
         "the picker stands on the query that emptied it: {picker}"
     );
     assert!(
@@ -1979,7 +1979,7 @@ fn the_browse_row_stands_first_above_the_workspace_rows() {
     );
     assert!(
         lines[1].contains("here") && lines[1].contains("[current]"),
-        "the current Workspace stands first beneath it: {lines:?}"
+        "the current workspace stands first beneath it: {lines:?}"
     );
     assert!(lines[2].contains("ledger"), "{lines:?}");
 }
@@ -1995,7 +1995,7 @@ fn the_picker_opens_on_the_current_workspace_rather_than_the_browse_row() {
 
     assert_eq!(selected_row(&application), "here");
     let (_, _, _, request) = workspace_resolution(&choose_unanswered(&mut application))
-        .expect("Enter chooses the Workspace the reader is on");
+        .expect("Enter chooses the workspace the reader is on");
     assert_eq!(request.path, here);
 }
 
@@ -2014,12 +2014,12 @@ fn a_query_hides_the_browse_row_and_clearing_it_brings_it_back() {
     let narrowed = picker_lines(&application);
     assert!(
         !narrowed.iter().any(|line| line.contains(BROWSE_ROW)),
-        "a query leaves only Workspaces: {narrowed:?}"
+        "a query leaves only workspaces: {narrowed:?}"
     );
     assert_eq!(
         selected_row(&application),
         "here",
-        "the reader is put on the first Workspace the query leaves"
+        "the reader is put on the first workspace the query leaves"
     );
     press(&mut application, KeyCode::Down);
     assert_eq!(selected_row(&application), "engine");
@@ -2034,7 +2034,7 @@ fn a_query_hides_the_browse_row_and_clearing_it_brings_it_back() {
     assert_eq!(
         selected_row(&application),
         "engine",
-        "and the reader stays on the Workspace they were on"
+        "and the reader stays on the workspace they were on"
     );
 }
 
@@ -2057,7 +2057,7 @@ fn enter_on_the_browse_row_opens_the_directory_browser_at_the_execution_director
             path: here.clone(),
             base: Some(here),
         },
-        "the browser is rooted at the Landing's Execution Directory, and reads from it"
+        "the browser is rooted at the landing's execution directory, and reads from it"
     );
     assert_eq!(
         overlays_drawn(&application),
@@ -2081,7 +2081,7 @@ fn ctrl_o_opens_the_directory_browser_with_or_without_a_query() {
 
         assert_eq!(
             request.path, here,
-            "{query:?}: rooted at the Landing's Execution Directory"
+            "{query:?}: rooted at the landing's execution directory"
         );
         assert_eq!(
             overlays_drawn(&application),
@@ -2134,7 +2134,7 @@ fn escape_from_a_browser_opened_from_the_picker_returns_to_the_picker_as_it_was(
             )))
             .expect("back out of the browser"),
         ApplicationTransition::Continue,
-        "going back to the picker asks the Server for nothing"
+        "going back to the picker asks the server for nothing"
     );
 
     assert_eq!(
@@ -2182,10 +2182,10 @@ fn a_choice_in_a_browser_opened_from_the_picker_closes_both() {
             choice,
             ApplicationTransition::DetachSessionAndResolveWorkspace { .. }
         ),
-        "choosing opens the Landing and asks the Server where it is: {choice:?}"
+        "choosing opens the landing and asks the server where it is: {choice:?}"
     );
     let (_, surface, _, request) =
-        workspace_resolution(&choice).expect("choosing asks for a Workspace resolution");
+        workspace_resolution(&choice).expect("choosing asks for a workspace resolution");
     assert_eq!(surface, WorkspaceResolutionSurface::WorkspacePicker);
     assert_eq!(request.path, alpha);
     assert_eq!(
@@ -2293,7 +2293,7 @@ fn the_browse_row_has_no_menu_and_no_description_to_edit() {
     assert_eq!(
         rendered_application_rows(&application),
         before,
-        "no Description editor opens"
+        "no description editor opens"
     );
 }
 
@@ -2354,7 +2354,7 @@ fn opening_the_browser_from_the_picker_is_refused_for_an_unreachable_remote() {
         let landing = rendered_application_rows_at(&application, 120, 20).join("\n");
         assert!(
             landing.contains("studio is unreachable"),
-            "{way}: the Landing goes on saying it: {landing}"
+            "{way}: the landing goes on saying it: {landing}"
         );
     }
 }
@@ -2378,18 +2378,18 @@ fn the_picker_opens_at_once_on_the_listing_its_server_pushed() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceList,
             )))
-            .expect("open the Workspace Picker"),
+            .expect("open the workspace picker"),
     );
 
     let drawn = rendered_application_rows(&application).join("\n");
     assert!(
-        !drawn.contains("Loading Workspaces"),
-        "nothing is loading where the Server's listing is in hand: {drawn}"
+        !drawn.contains("Loading workspaces"),
+        "nothing is loading where the server's listing is in hand: {drawn}"
     );
     let rows = picker_rows(&application);
     assert!(
         rows.len() == 2 && rows[0].contains("here") && rows[1].contains("atlas"),
-        "the picker draws the listing the Server pushed: {rows:?}"
+        "the picker draws the listing the server pushed: {rows:?}"
     );
     assert_eq!(selected_row(&application), "here");
 }
@@ -2413,7 +2413,7 @@ fn an_answer_replaces_the_rows_in_place_keeping_the_selection_and_the_query() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceList,
             )))
-            .expect("open the Workspace Picker"),
+            .expect("open the workspace picker"),
     );
     type_terminal_text(&mut application, "l");
     press(&mut application, KeyCode::Down);
@@ -2433,7 +2433,7 @@ fn an_answer_replaces_the_rows_in_place_keeping_the_selection_and_the_query() {
     assert_eq!(
         selected_row(&application),
         "ledger",
-        "the reader stays on the Workspace they were on"
+        "the reader stays on the workspace they were on"
     );
     let rows = picker_rows(&application);
     assert!(
@@ -2461,8 +2461,8 @@ fn a_push_replaces_an_open_pickers_rows_in_place() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Loading Workspaces"),
-        "the picker loads while nothing has been heard from its Server"
+            .contains("Loading workspaces"),
+        "the picker loads while nothing has been heard from its server"
     );
 
     hear_listing(&mut application, vec![registered(&atlas)]);
@@ -2476,7 +2476,7 @@ fn a_push_replaces_an_open_pickers_rows_in_place() {
     assert_eq!(
         selected_row(&application),
         "atlas",
-        "a push leaves the reader on the Workspace they were on"
+        "a push leaves the reader on the workspace they were on"
     );
     assert!(
         picker_rows(&application)
@@ -2519,7 +2519,7 @@ fn an_answer_older_than_a_listing_pushed_since_lands_nowhere() {
     assert!(
         !rendered_application_rows(&application)
             .join("\n")
-            .contains("Loading Workspaces")
+            .contains("Loading workspaces")
     );
 }
 
@@ -2621,7 +2621,7 @@ fn an_answer_to_an_opening_moved_past_lands_nowhere_beside_the_pushes() {
                 .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                     SemanticCommandId::WorkspaceList,
                 )))
-                .expect("open the Workspace Picker"),
+                .expect("open the workspace picker"),
         )
     };
     let earlier = open(&mut application);
@@ -2678,7 +2678,7 @@ fn a_remotes_listing_is_kept_for_the_picker_turned_toward_it() {
                 ]))]),
             ),
         })
-        .expect("hear the local Server's listing");
+        .expect("hear the local server's listing");
     application
         .handle_event(ApplicationEvent::OriginCatalog {
             outlook: Outlook::Remote("studio".to_owned()),
@@ -2686,14 +2686,14 @@ fn a_remotes_listing_is_kept_for_the_picker_turned_toward_it() {
                 crate::tui_rendering::support::workspace_listing(vec![registered(&studio_work)]),
             ),
         })
-        .expect("hear the Remote's listing");
+        .expect("hear the remote's listing");
 
     let request = expect_workspace_listing(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceList,
             )))
-            .expect("open the Workspace Picker"),
+            .expect("open the workspace picker"),
     );
 
     assert_eq!(request.outlook(), &Outlook::Remote("studio".to_owned()));
@@ -2701,7 +2701,7 @@ fn a_remotes_listing_is_kept_for_the_picker_turned_toward_it() {
     assert!(
         rows.iter().any(|row| row.contains("work"))
             && !rows.iter().any(|row| row.contains("notes")),
-        "the picker turned toward the Remote opens on the Remote's listing alone: {rows:?}"
+        "the picker turned toward the remote opens on the remote's listing alone: {rows:?}"
     );
 }
 
@@ -2720,7 +2720,7 @@ fn hear(application: &mut Application, listing: WorkspaceListing) {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::WorkspaceListing(
             listing,
         )))
-        .expect("hear the Server's Workspace listing");
+        .expect("hear the server's workspace listing");
 }
 
 /// The run of a Server the race tests hear from.
@@ -2743,7 +2743,7 @@ fn open_picker(application: &mut Application) -> WorkspaceListRequest {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceList,
             )))
-            .expect("open the Workspace Picker"),
+            .expect("open the workspace picker"),
     )
 }
 
@@ -2751,7 +2751,7 @@ fn open_picker(application: &mut Application) -> WorkspaceListRequest {
 fn answer(application: &mut Application, request: WorkspaceListRequest, listing: WorkspaceListing) {
     application
         .handle_event(ApplicationEvent::WorkspacesListed { request, listing })
-        .expect("answer the Workspace Picker");
+        .expect("answer the workspace picker");
 }
 
 /// The Workspaces the narrowing tests narrow: the client works in `here`, and
@@ -2805,8 +2805,8 @@ fn workspace(components: &[&str]) -> PathBuf {
 /// directories because choosing re-reads the path at that moment.
 fn workspace_in(root: &Path, name: &str) -> PathBuf {
     let workspace = root.join(name);
-    std::fs::create_dir(&workspace).expect("create the Workspace fixture");
-    suru::paths::canonical(workspace).expect("canonicalize the Workspace fixture")
+    std::fs::create_dir(&workspace).expect("create the workspace fixture");
+    suru::paths::canonical(workspace).expect("canonicalize the workspace fixture")
 }
 
 /// A listed Session rooted at the Workspace named, last active when the test
@@ -2854,7 +2854,7 @@ fn name_sidekick_workspace(application: &mut Application, directory: &Path) {
                 suru::protocol::WorkspacePaths::default().with_sidekick_workspace(directory),
             ),
         )))
-        .expect("connect to a Server naming its Sidekick Workspace");
+        .expect("connect to a server naming its sidekick workspace");
 }
 
 /// Opens the Workspace Picker, its Server answering with `workspaces` in the
@@ -2865,19 +2865,19 @@ fn open_picker_with(application: &mut Application, workspaces: Vec<Workspace>) {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceList,
             )))
-            .expect("open the Workspace Picker"),
+            .expect("open the workspace picker"),
     );
     application
         .handle_event(ApplicationEvent::WorkspacesListed {
             request,
             listing: crate::tui_rendering::support::workspace_listing(workspaces),
         })
-        .expect("hydrate the Workspace Picker");
+        .expect("hydrate the workspace picker");
 }
 
 fn expect_workspace_listing(transition: ApplicationTransition) -> WorkspaceListRequest {
     let ApplicationTransition::ListWorkspaces(request) = transition else {
-        panic!("opening the Workspace Picker asks for the Server's Workspaces, not {transition:?}");
+        panic!("opening the workspace picker asks for the server's workspaces, not {transition:?}");
     };
     request
 }
@@ -2889,9 +2889,9 @@ fn session_picker_scope(application: &mut Application) -> SessionListScope {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionList,
         )))
-        .expect("open the Session Picker")
+        .expect("open the session picker")
     else {
-        panic!("opening the Session Picker asks for its Sessions");
+        panic!("opening the session picker asks for its sessions");
     };
     assert_eq!(request.surface(), SessionListSurface::SessionPicker);
     request.scope().clone()
@@ -2916,7 +2916,7 @@ fn press_row(
             modifiers: KeyModifiers::NONE,
         },
     )
-    .expect("press over the Workspace Picker")
+    .expect("press over the workspace picker")
 }
 
 /// An Application with a Session open in `workspace` whose Agent Selection is
@@ -2937,14 +2937,14 @@ fn application_awaiting_agent_selection(workspace: &Path) -> Application {
                 },
             ),
         ))
-        .expect("attach a Session");
+        .expect("attach a session");
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::ModelList,
         )))
-        .expect("open the Model picker")
+        .expect("open the model picker")
     else {
-        panic!("the Model picker asks for its catalog");
+        panic!("the model picker asks for its catalog");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed {
@@ -2957,14 +2957,14 @@ fn application_awaiting_agent_selection(workspace: &Path) -> Application {
                         model_descriptor(
                             "codex",
                             "old",
-                            "Old Model",
+                            "Old model",
                             true,
                             ModelAvailability::Available,
                         ),
                         model_descriptor(
                             "codex",
                             "new",
-                            "New Model",
+                            "New model",
                             false,
                             ModelAvailability::Available,
                         ),
@@ -2973,16 +2973,16 @@ fn application_awaiting_agent_selection(workspace: &Path) -> Application {
                 }],
             },
         })
-        .expect("load the Model catalog");
-    type_terminal_text(&mut application, "New Model");
+        .expect("load the model catalog");
+    type_terminal_text(&mut application, "New model");
     let ApplicationTransition::UpdateAgentSelection { .. } = application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("choose the Model")
+        .expect("choose the model")
     else {
-        panic!("choosing a Model for the open Session updates its Agent Selection");
+        panic!("choosing a model for the open session updates its agent selection");
     };
     application
 }
@@ -2990,7 +2990,7 @@ fn application_awaiting_agent_selection(workspace: &Path) -> Application {
 fn press(application: &mut Application, code: KeyCode) {
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(code, KeyModifiers::NONE)))
-        .expect("drive the Workspace Picker");
+        .expect("drive the workspace picker");
 }
 
 /// The picker's Workspace rows, taken from the frame between the search line
@@ -3053,7 +3053,7 @@ fn selected_row(application: &Application) -> String {
         .trim_start_matches(['›', ' '])
         .split(' ')
         .next()
-        .expect("a marked row names a Workspace")
+        .expect("a marked row names a workspace")
         .to_owned()
 }
 
@@ -3070,7 +3070,7 @@ fn selected_row_at(application: &Application, size: (u16, u16)) -> String {
         .trim_start_matches(['›', ' '])
         .split(' ')
         .next()
-        .expect("a marked row names a Workspace")
+        .expect("a marked row names a workspace")
         .to_owned()
 }
 
@@ -3090,7 +3090,7 @@ fn choose_unanswered(application: &mut Application) -> ApplicationTransition {
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("choose the Workspace the reader is on")
+        .expect("choose the workspace the reader is on")
 }
 
 /// Ctrl+O, which opens the Directory Browser from anywhere in the picker.
@@ -3113,7 +3113,7 @@ fn expect_directory_listing(
         ..
     } = transition
     else {
-        panic!("the browser asks the Server for a directory's children, not {transition:?}");
+        panic!("the browser asks the server for a directory's children, not {transition:?}");
     };
     (listing_id, request)
 }
@@ -3124,7 +3124,7 @@ fn overlays_drawn(application: &Application) -> (bool, bool) {
     let frame = rendered_application_rows(application).join("\n");
     (
         frame.contains(" Workspaces "),
-        frame.contains(" Directory Browser "),
+        frame.contains(" Directory browser "),
     )
 }
 
@@ -3151,7 +3151,7 @@ fn landing_in_subdirectory(workspace: &Path, subdirectory: &Path) -> Application
                 ..ResolvedWorkspace::directory(workspace.to_owned())
             }),
         })
-        .expect("resolve the Landing into a subdirectory of its Workspace");
+        .expect("resolve the landing into a subdirectory of its workspace");
     application
 }
 
@@ -3165,7 +3165,7 @@ fn landing_location(application: &Application) -> String {
     let composer_bottom = screen
         .iter()
         .position(|row| row.contains('└'))
-        .unwrap_or_else(|| panic!("the Landing draws its composer: {screen:#?}"));
+        .unwrap_or_else(|| panic!("the landing draws its composer: {screen:#?}"));
     screen[composer_bottom + 1].trim().to_owned()
 }
 
@@ -3179,9 +3179,9 @@ fn working(title: &str, session_id: SessionId, workspace: &Path) -> SessionListI
         .expect("read the clock")
         .as_millis()
         .try_into()
-        .expect("the clock fits a Session timestamp");
+        .expect("the clock fits a session timestamp");
     let SessionListItem::Readable(mut summary) = rooted(title, workspace, now) else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     summary.session.id = session_id;
     summary.session.status = SessionStatus::Active;
@@ -3203,7 +3203,7 @@ fn application_choosing_skills(workspace: &Path) -> Application {
                 },
             )),
         )))
-        .expect("connect a client with an Agent chosen");
+        .expect("connect a client with an agent chosen");
     application
 }
 
@@ -3236,7 +3236,7 @@ fn load_skills(application: &mut Application, workspace: &Path, skill: &str) {
                 status: SkillCatalogStatus::Fresh { warning: None },
             },
         })
-        .expect("load the Skill Catalog");
+        .expect("load the skill catalog");
 }
 
 /// The Sidebar on screen and answered with `sessions`, which is what it takes
@@ -3256,12 +3256,12 @@ fn show_sidebar(application: &mut Application, sessions: Vec<SessionListItem>) {
         },
     );
     let ApplicationTransition::ListSessions(request) = transition else {
-        panic!("a Sidebar coming into view asks for its Sessions, not {transition:?}");
+        panic!("a sidebar coming into view asks for its sessions, not {transition:?}");
     };
     assert_eq!(request.surface(), SessionListSurface::Sidebar);
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
 }
 
 fn sidebar_text(rows: &[String]) -> String {
@@ -3344,17 +3344,17 @@ fn an_open_sessions_execution_context_is_independent_of_grouping_and_landing() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionNew,
         )))
-        .expect("leave the Session for the Landing");
-    type_terminal_text(&mut application, "Initial Prompt");
+        .expect("leave the session for the landing");
+    type_terminal_text(&mut application, "Initial prompt");
     let ApplicationTransition::CreateSession(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit the initial Prompt")
+        .expect("submit the initial prompt")
     else {
-        panic!("a Landing submission creates a Session");
+        panic!("a landing submission creates a session");
     };
     assert_eq!(
         request.execution_directory.path, landing,
-        "the Landing kept its own Execution Directory while the open Session worked in another"
+        "the landing kept its own execution directory while the open session worked in another"
     );
 }
 
@@ -3407,7 +3407,7 @@ fn repository_rows_deduplicate_by_metadata_identity_and_preserve_execution_conte
         )))
         .unwrap()
     else {
-        panic!("launch context resolves on the owning Server")
+        panic!("launch context resolves on the owning server")
     };
     assert_eq!(request.path, execution);
     application
@@ -3433,7 +3433,7 @@ fn repository_rows_deduplicate_by_metadata_identity_and_preserve_execution_conte
     press(&mut application, KeyCode::Esc);
     open_picker_with(&mut application, vec![known.clone()]);
     let rows = picker_rows_at(&application, 140, 18);
-    assert_eq!(rows.len(), 1, "known and unknown main are one Repository");
+    assert_eq!(rows.len(), 1, "known and unknown main are one repository");
     assert!(rows[0].contains("[current]"));
     let ApplicationTransition::DetachSessionAndResolveWorkspace { request, .. } = application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
@@ -3442,7 +3442,7 @@ fn repository_rows_deduplicate_by_metadata_identity_and_preserve_execution_conte
         )))
         .unwrap()
     else {
-        panic!("selection resolves on the owning Server")
+        panic!("selection resolves on the owning server")
     };
     assert_eq!(request.workspace_id, Some(unknown.id));
     assert_eq!(request.path, main);
@@ -3564,10 +3564,10 @@ fn a_long_workspace_path_gives_up_its_front_to_what_the_landing_asks() {
     let line = rendered_application_rows_at(&application, 160, 25)
         .into_iter()
         .find(|row| row.contains("repository.git"))
-        .expect("the Landing names the Repository");
+        .expect("the landing names the repository");
     assert!(line.contains("…"), "the path gives up its front: {line}");
     assert!(
-        line.contains("repository.git · Choose a working copy to start a Session"),
+        line.contains("repository.git · Choose a working copy to start a session"),
         "the path keeps its end, and what to do comes whole after it: {line}"
     );
 }
@@ -3614,6 +3614,6 @@ fn the_pointer_walks_the_rows_and_a_rows_menu_as_the_arrows_do() {
     );
     assert!(
         !drawn.contains("Choose icon"),
-        "rather than the Icon the menu opened on: {drawn}"
+        "rather than the icon the menu opened on: {drawn}"
     );
 }

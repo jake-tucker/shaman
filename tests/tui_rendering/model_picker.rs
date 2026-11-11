@@ -40,7 +40,7 @@ fn provider_icons_decorate_agent_summaries_on_the_landing_and_in_sessions() {
         let model = model_descriptor(
             provider,
             "fixture-model",
-            "Fixture Model",
+            "Fixture model",
             true,
             ModelAvailability::Available,
         );
@@ -59,29 +59,29 @@ fn provider_icons_decorate_agent_summaries_on_the_landing_and_in_sessions() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 suru::tui::SemanticCommandId::ModelList,
             )))
-            .expect("open the landing Model picker")
+            .expect("open the landing model picker")
         else {
-            panic!("the Model picker should request a catalog")
+            panic!("the model picker should request a catalog")
         };
         landing
             .handle_event(ApplicationEvent::ModelsListed {
                 request,
                 catalog: catalog(),
             })
-            .expect("list the Provider's Model");
+            .expect("list the provider's model");
         assert!(matches!(
             landing
                 .handle_terminal_event(InputEvent::Key(KeyEvent::new(
                     KeyCode::Enter,
                     KeyModifiers::NONE,
                 )))
-                .expect("select the Provider's Model"),
+                .expect("select the provider's model"),
             ApplicationTransition::ConfirmLandingAgentSelection(_)
         ));
         let landing_frame = rendered_application_rows_at(&landing, 100, 16).join("\n");
         assert!(
-            landing_frame.contains(&format!("{icon} {display_name} · Fixture Model")),
-            "the Landing summary identifies {display_name}: {landing_frame}"
+            landing_frame.contains(&format!("{icon} {display_name} · Fixture model")),
+            "the landing summary identifies {display_name}: {landing_frame}"
         );
 
         let selection = AgentSelection {
@@ -95,16 +95,16 @@ fn provider_icons_decorate_agent_summaries_on_the_landing_and_in_sessions() {
             .handle_event(ApplicationEvent::Managed(ManagedEvent::ModelCatalog(
                 catalog(),
             )))
-            .expect("cache the Provider's Model catalog");
+            .expect("cache the provider's model catalog");
         session
             .handle_event(ApplicationEvent::SessionAttached(
                 selected_session_snapshot(SessionId::new(), workspace.path(), selection),
             ))
-            .expect("attach the selected Session");
+            .expect("attach the selected session");
         let session_frame = rendered_application_rows_at(&session, 100, 16).join("\n");
         assert!(
-            session_frame.contains(&format!("{icon} {display_name} · Fixture Model")),
-            "the Session composer summary identifies {display_name}: {session_frame}"
+            session_frame.contains(&format!("{icon} {display_name} · Fixture model")),
+            "the session composer summary identifies {display_name}: {session_frame}"
         );
     }
 }
@@ -130,14 +130,14 @@ fn remote_session_names_follow_its_pushed_catalog_without_opening_models() {
         ))
         .unwrap();
 
-    for name in ["Remembered Model", "Renamed Model"] {
+    for name in ["Remembered model", "Renamed model"] {
         application
             .handle_event(ApplicationEvent::OriginCatalog {
                 outlook: Outlook::Remote("studio".into()),
                 event: ManagedEvent::ModelCatalog(ModelCatalog {
                     providers: vec![ProviderModelCatalog {
                         provider: ProviderId::new("fixture-provider"),
-                        display_name: "Remote Provider".into(),
+                        display_name: "Remote provider".into(),
                         models: vec![model_descriptor(
                             "fixture-provider",
                             "native-id",
@@ -155,11 +155,11 @@ fn remote_session_names_follow_its_pushed_catalog_without_opening_models() {
                 ModelCatalog {
                     providers: vec![ProviderModelCatalog {
                         provider: ProviderId::new("fixture-provider"),
-                        display_name: "Local Provider".into(),
+                        display_name: "Local provider".into(),
                         models: vec![model_descriptor(
                             "fixture-provider",
                             "native-id",
-                            "Local Model",
+                            "Local model",
                             true,
                             ModelAvailability::Available,
                         )],
@@ -170,7 +170,7 @@ fn remote_session_names_follow_its_pushed_catalog_without_opening_models() {
             .unwrap();
         let rendered = rendered_application_rows_at(&application, 100, 16).join("\n");
         assert!(
-            rendered.contains(&format!("Remote Provider · {name}")),
+            rendered.contains(&format!("Remote provider · {name}")),
             "{rendered}"
         );
     }
@@ -189,7 +189,7 @@ fn restored_selection_label_takes_the_name_its_catalog_gives_it() {
         .handle_event(ApplicationEvent::SessionAttached(
             selected_session_snapshot(SessionId::new(), workspace.path(), selection),
         ))
-        .expect("restore the selected Session before listing Models");
+        .expect("restore the selected session before listing models");
 
     let before = rendered_application_rows_at(&application, 100, 16).join("\n");
     assert!(before.contains("fixture-provider · model-native-id"));
@@ -198,9 +198,9 @@ fn restored_selection_label_takes_the_name_its_catalog_gives_it() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
-        panic!("opening the Model picker should request the catalog");
+        panic!("opening the model picker should request the catalog");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed {
@@ -208,11 +208,11 @@ fn restored_selection_label_takes_the_name_its_catalog_gives_it() {
             catalog: ModelCatalog {
                 providers: vec![ProviderModelCatalog {
                     provider: ProviderId::new("fixture-provider"),
-                    display_name: "Fixture Provider".to_owned(),
+                    display_name: "Fixture provider".to_owned(),
                     models: vec![model_descriptor(
                         "fixture-provider",
                         "model-native-id",
-                        "Friendly Model Name",
+                        "Friendly model Name",
                         true,
                         ModelAvailability::Available,
                     )],
@@ -220,18 +220,18 @@ fn restored_selection_label_takes_the_name_its_catalog_gives_it() {
                 }],
             },
         })
-        .expect("load matching Model catalog");
+        .expect("load matching model catalog");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Esc,
             KeyModifiers::NONE,
         )))
-        .expect("close Model picker without changing the selection");
+        .expect("close model picker without changing the selection");
 
     let after = rendered_application_rows_at(&application, 100, 16).join("\n");
     assert!(
-        after.contains("Friendly Model Name"),
-        "the catalog names the restored Model as soon as it is heard: {after}"
+        after.contains("Friendly model Name"),
+        "the catalog names the restored model as soon as it is heard: {after}"
     );
     assert!(!after.contains("fixture-provider · model-native-id"));
 }
@@ -249,20 +249,20 @@ fn reselected_model_adopts_catalog_presentation_after_an_interval_without_an_age
         .handle_event(ApplicationEvent::SessionAttached(
             selected_session_snapshot(SessionId::new(), workspace.path(), selection.clone()),
         ))
-        .expect("attach the selected Session before listing Models");
+        .expect("attach the selected session before listing models");
     application
         .handle_event(ApplicationEvent::SessionAttached(
             navigable_session_snapshot(SessionId::new(), workspace.path(), 0),
         ))
-        .expect("attach a Session without an Agent Selection");
+        .expect("attach a session without an agent selection");
 
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
-        panic!("opening the Model picker should request the catalog");
+        panic!("opening the model picker should request the catalog");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed {
@@ -270,11 +270,11 @@ fn reselected_model_adopts_catalog_presentation_after_an_interval_without_an_age
             catalog: ModelCatalog {
                 providers: vec![ProviderModelCatalog {
                     provider: ProviderId::new("fixture-provider"),
-                    display_name: "Fixture Provider".to_owned(),
+                    display_name: "Fixture provider".to_owned(),
                     models: vec![model_descriptor(
                         "fixture-provider",
                         "model-native-id",
-                        "Friendly Model Name",
+                        "Friendly model Name",
                         true,
                         ModelAvailability::Available,
                     )],
@@ -282,21 +282,21 @@ fn reselected_model_adopts_catalog_presentation_after_an_interval_without_an_age
                 }],
             },
         })
-        .expect("load matching Model catalog");
+        .expect("load matching model catalog");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Esc,
             KeyModifiers::NONE,
         )))
-        .expect("close Model picker before selecting the Model again");
+        .expect("close model picker before selecting the model again");
     application
         .handle_event(ApplicationEvent::SessionAttached(
             selected_session_snapshot(SessionId::new(), workspace.path(), selection),
         ))
-        .expect("attach a newly selected Session after the catalog arrives");
+        .expect("attach a newly selected session after the catalog arrives");
 
     let rendered = rendered_application_rows_at(&application, 100, 16).join("\n");
-    assert!(rendered.contains("Fixture Provider · Friendly Model Name"));
+    assert!(rendered.contains("Fixture provider · Friendly model Name"));
 }
 
 #[test]
@@ -306,7 +306,7 @@ fn model_picker_hands_off_to_ordered_options_and_applies_complete_landing_select
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -321,7 +321,7 @@ fn model_picker_hands_off_to_ordered_options_and_applies_complete_landing_select
         ModelOptionDescriptor {
             id: ModelOptionId::new("reasoning_effort"),
             label: "Reasoning".to_owned(),
-            description: Some("Depth used to solve the Prompt".to_owned()),
+            description: Some("Depth used to solve the prompt".to_owned()),
             role: ModelOptionRole::ReasoningEffort,
             kind: ModelOptionKind::Select {
                 choices: vec![
@@ -361,7 +361,7 @@ fn model_picker_hands_off_to_ordered_options_and_applies_complete_landing_select
                 }],
             },
         })
-        .expect("load configurable Model");
+        .expect("load configurable model");
 
     assert_eq!(
         application
@@ -369,11 +369,11 @@ fn model_picker_hands_off_to_ordered_options_and_applies_complete_landing_select
                 KeyCode::Enter,
                 KeyModifiers::NONE,
             )))
-            .expect("select configurable Model"),
+            .expect("select configurable model"),
         ApplicationTransition::Continue
     );
     let options = rendered_application_rows(&application);
-    assert!(options.join("\n").contains("Model Options"));
+    assert!(options.join("\n").contains("Model options"));
     assert!(options.join("\n").contains("Configurable GPT"));
     assert!(options.join("\n").contains("Configurable GPT · Codex"));
     assert!(rendered_row(&options, "Reasoning") < rendered_row(&options, "Fast"));
@@ -382,7 +382,7 @@ fn model_picker_hands_off_to_ordered_options_and_applies_complete_landing_select
     assert!(
         options
             .join("\n")
-            .contains("Depth used to solve the Prompt")
+            .contains("Depth used to solve the prompt")
     );
 
     application
@@ -390,7 +390,7 @@ fn model_picker_hands_off_to_ordered_options_and_applies_complete_landing_select
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("open Reasoning choices");
+        .expect("open reasoning choices");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
@@ -444,13 +444,13 @@ fn model_picker_hands_off_to_ordered_options_and_applies_complete_landing_select
         )))
         .expect("apply complete options")
     else {
-        panic!("landing options should confirm the complete Agent Selection");
+        panic!("landing options should confirm the complete agent selection");
     };
     assert_eq!(confirmed.model, ModelId::new("gpt-configurable"));
     assert!(
         !rendered_application_rows(&application)
             .join("\n")
-            .contains("Model Options")
+            .contains("Model options")
     );
 
     type_terminal_text(&mut application, "Create with options");
@@ -458,7 +458,7 @@ fn model_picker_hands_off_to_ordered_options_and_applies_complete_landing_select
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit landing selection")
     else {
-        panic!("landing Prompt should create a Session");
+        panic!("landing prompt should create a session");
     };
     assert_eq!(
         request.agent_selection,
@@ -488,14 +488,14 @@ fn landing_model_picker_groups_sorts_focuses_and_searches_models() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Loading Models")
+            .contains("Loading models")
     );
 
     application
@@ -536,7 +536,7 @@ fn landing_model_picker_groups_sorts_focuses_and_searches_models() {
                             model_descriptor(
                                 "alpha",
                                 "alpha-native-identifier-that-must-remain-visible",
-                                "An exceptionally long Model display name that would consume the entire picker row",
+                                "An exceptionally long model display name that would consume the entire picker row",
                                 false,
                                 ModelAvailability::Unavailable,
                             ),
@@ -546,7 +546,7 @@ fn landing_model_picker_groups_sorts_focuses_and_searches_models() {
                 ],
             },
         })
-        .expect("load cached Model catalog");
+        .expect("load cached model catalog");
 
     let rows = rendered_application_rows(&application);
     assert!(heading_row(&rows, "alpha") < heading_row(&rows, "zeta"));
@@ -554,7 +554,7 @@ fn landing_model_picker_groups_sorts_focuses_and_searches_models() {
     let default = rows
         .iter()
         .find(|row| row.contains("alpha-default"))
-        .expect("render Provider default Model");
+        .expect("render provider default model");
     assert!(default.contains("default"));
     assert!(default.contains('›'));
     assert!(
@@ -566,7 +566,7 @@ fn landing_model_picker_groups_sorts_focuses_and_searches_models() {
     let long = rows
         .iter()
         .find(|row| row.contains("An exceptionally"))
-        .expect("render long Model row");
+        .expect("render long model row");
     assert!(long.contains("alpha-native"));
     assert!(long.contains("unavailable"));
 
@@ -591,7 +591,7 @@ fn landing_model_picker_groups_sorts_focuses_and_searches_models() {
     ));
     let reopened = rendered_application_rows(&application).join("\n");
     assert!(reopened.contains("Alpha Pro"));
-    assert!(!reopened.contains("Loading Models"));
+    assert!(!reopened.contains("Loading models"));
 }
 
 #[test]
@@ -601,7 +601,7 @@ fn open_model_picker_merges_refreshes_stably_and_isolates_provider_failures() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -642,7 +642,7 @@ fn open_model_picker_merges_refreshes_stably_and_isolates_provider_failures() {
                 ],
             },
         })
-        .expect("show cached Models");
+        .expect("show cached models");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Up,
@@ -687,13 +687,13 @@ fn open_model_picker_merges_refreshes_stably_and_isolates_provider_failures() {
                 ],
             },
         })
-        .expect("merge refreshed Models");
+        .expect("merge refreshed models");
 
     let rows = rendered_application_rows(&application);
     let removed = rows
         .iter()
         .find(|row| row.contains("Alpha Pro"))
-        .expect("keep removed Model in place");
+        .expect("keep removed model in place");
     assert!(removed.contains("unavailable"));
     assert!(removed.contains('›'));
     assert!(rendered_row(&rows, "Alpha Pro") < rendered_row(&rows, "Default renamed"));
@@ -709,7 +709,7 @@ fn open_model_picker_merges_refreshes_stably_and_isolates_provider_failures() {
                 KeyCode::Down,
                 KeyModifiers::NONE,
             )))
-            .expect("navigate to Provider retry");
+            .expect("navigate to provider retry");
     }
     assert!(matches!(
         application
@@ -717,7 +717,7 @@ fn open_model_picker_merges_refreshes_stably_and_isolates_provider_failures() {
                 KeyCode::Enter,
                 KeyModifiers::NONE,
             )))
-            .expect("retry failed Provider"),
+            .expect("retry failed provider"),
         ApplicationTransition::ListModels(_)
     ));
     application
@@ -746,7 +746,7 @@ fn model_picker_refresh_failure_preserves_the_visible_selection() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -777,19 +777,19 @@ fn model_picker_refresh_failure_preserves_the_visible_selection() {
                 }],
             },
         })
-        .expect("show cached Models");
+        .expect("show cached models");
     application
         .handle_event(ApplicationEvent::ModelListingFailed {
             request,
             error: "refresh timed out".to_owned(),
         })
-        .expect("show stale cached Models");
+        .expect("show stale cached models");
 
     let rows = rendered_application_rows(&application);
     assert!(
         rows.iter()
             .find(|row| row.contains("Default"))
-            .expect("keep the selected cached Model")
+            .expect("keep the selected cached model")
             .contains('›')
     );
     assert!(rows.join("\n").contains("refresh timed out"));
@@ -808,19 +808,19 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
     let mut application = Application::new(workspace.path(), Default::default());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot.clone()))
-        .expect("attach selected Session");
+        .expect("attach selected session");
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Session Model picker")
+        .expect("open session model picker")
     else {
         panic!("Model picker should request the catalog");
     };
     let mut new_model = model_descriptor(
         "codex",
         "new",
-        "New Model",
+        "New model",
         false,
         ModelAvailability::Available,
     );
@@ -867,7 +867,7 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
                         models: vec![model_descriptor(
                             "other",
                             "foreign",
-                            "Foreign Model",
+                            "Foreign model",
                             true,
                             ModelAvailability::Available,
                         )],
@@ -880,7 +880,7 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
                             model_descriptor(
                                 "codex",
                                 "old",
-                                "Old Model",
+                                "Old model",
                                 true,
                                 ModelAvailability::Available,
                             ),
@@ -891,13 +891,13 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
                 ],
             },
         })
-        .expect("load Session-scoped catalog");
+        .expect("load session-scoped catalog");
     let picker = rendered_application_rows(&application).join("\n");
     assert!(
-        !picker.contains("Session Provider"),
-        "the list scoped to the Session's Provider needs no line saying so"
+        !picker.contains("Session provider"),
+        "the list scoped to the session's provider needs no line saying so"
     );
-    assert!(!picker.contains("Foreign Model"));
+    assert!(!picker.contains("Foreign model"));
     assert!(
         picker.contains("Enter select · Esc close"),
         "the footer names choosing a row once, however the row is chosen"
@@ -905,25 +905,25 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
     assert!(
         picker
             .lines()
-            .find(|row| row.contains("Old Model"))
-            .expect("render current Model")
+            .find(|row| row.contains("Old model"))
+            .expect("render current model")
             .contains("current")
     );
     let tiny_picker = rendered_application_rows_at(&application, 28, 5).join("\n");
-    assert!(tiny_picker.contains("Old Model"));
+    assert!(tiny_picker.contains("Old model"));
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Up,
             KeyModifiers::NONE,
         )))
-        .expect("focus New Model");
+        .expect("focus New model");
     assert_eq!(
         application
             .handle_terminal_event(InputEvent::Key(KeyEvent::new(
                 KeyCode::Enter,
                 KeyModifiers::NONE,
             )))
-            .expect("select configurable New Model"),
+            .expect("select configurable New model"),
         ApplicationTransition::Continue
     );
     let tiny_options = rendered_application_rows_at(&application, 28, 5).join("\n");
@@ -936,9 +936,9 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
             KeyCode::Enter,
             KeyModifiers::CONTROL,
         )))
-        .expect("apply New Model defaults")
+        .expect("apply New model defaults")
     else {
-        panic!("applying a Session Model's options should update Agent Selection");
+        panic!("applying a session model's options should update agent selection");
     };
     assert_eq!(updated_session.origin, suru::protocol::Outlook::Local);
     assert_eq!(updated_session.session_id, session_id);
@@ -961,21 +961,21 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Codex · New Model · High · On")
+            .contains("Codex · New model · High · On")
     );
     assert!(matches!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 suru::tui::SemanticCommandId::ModelList,
             )))
-            .expect("reopen picker around optimistic Model"),
+            .expect("reopen picker around optimistic model"),
         ApplicationTransition::ListModels(_)
     ));
     let optimistic_picker = rendered_application_rows(&application);
     let optimistic = optimistic_picker
         .iter()
-        .find(|row| row.contains("New Model"))
-        .expect("render optimistic Model row");
+        .find(|row| row.contains("New model"))
+        .expect("render optimistic model row");
     assert!(optimistic.contains("current"));
     assert!(optimistic.contains('›'));
     assert_eq!(
@@ -992,13 +992,13 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
             KeyCode::Esc,
             KeyModifiers::NONE,
         )))
-        .expect("close optimistic Model picker");
+        .expect("close optimistic model picker");
 
     type_terminal_text(&mut application, "must wait");
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("block Prompt during optimistic selection"),
+            .expect("block prompt during optimistic selection"),
         ApplicationTransition::Continue
     );
     assert_eq!(
@@ -1038,14 +1038,14 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
         .expect("reject optimistic selection");
     let rolled_back = rendered_application_rows(&application).join("\n");
     assert!(
-        rolled_back.contains("Old Model"),
+        rolled_back.contains("Old model"),
         "the footer returns to the authoritative selection: {rolled_back}"
     );
     assert!(rolled_back.contains("Model rejected"));
     assert!(matches!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("unblock Prompt after selection rejection"),
+            .expect("unblock prompt after selection rejection"),
         ApplicationTransition::AdmitPrompt { .. }
     ));
 }
@@ -1058,7 +1058,7 @@ fn landing_model_selection_and_new_session_inherit_complete_agent_selection() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open landing Model picker")
+        .expect("open landing model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -1096,14 +1096,14 @@ fn landing_model_selection_and_new_session_inherit_complete_agent_selection() {
                 }],
             },
         })
-        .expect("load landing Models");
+        .expect("load landing models");
     assert_eq!(
         application
             .handle_terminal_event(InputEvent::Key(KeyEvent::new(
                 KeyCode::Enter,
                 KeyModifiers::NONE,
             )))
-            .expect("select landing Model"),
+            .expect("select landing model"),
         ApplicationTransition::Continue
     );
     let ApplicationTransition::ConfirmLandingAgentSelection(confirmed) = application
@@ -1111,9 +1111,9 @@ fn landing_model_selection_and_new_session_inherit_complete_agent_selection() {
             KeyCode::Enter,
             KeyModifiers::CONTROL,
         )))
-        .expect("apply landing Model options")
+        .expect("apply landing model options")
     else {
-        panic!("landing options should confirm the complete Agent Selection");
+        panic!("landing options should confirm the complete agent selection");
     };
     assert_eq!(confirmed.model, ModelId::new("gpt-native"));
     assert_eq!(confirmed.options.len(), 1);
@@ -1127,13 +1127,13 @@ fn landing_model_selection_and_new_session_inherit_complete_agent_selection() {
     type_terminal_text(&mut application, "Create with selection");
     let ApplicationTransition::CreateSession(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit selected landing Model")
+        .expect("submit selected landing model")
     else {
-        panic!("landing Prompt should create a Session");
+        panic!("landing prompt should create a session");
     };
     let selected = request
         .agent_selection
-        .expect("landing selection is sent during Session creation");
+        .expect("landing selection is sent during session creation");
     assert_eq!(selected.model, ModelId::new("gpt-native"));
     assert_eq!(selected.options.len(), 1);
 
@@ -1152,7 +1152,7 @@ fn landing_model_selection_and_new_session_inherit_complete_agent_selection() {
         .handle_event(ApplicationEvent::SessionAttached(
             selected_session_snapshot(SessionId::new(), workspace.path(), inherited.clone()),
         ))
-        .expect("attach Session before /new");
+        .expect("attach session before /new");
     assert_eq!(
         attached
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
@@ -1164,9 +1164,9 @@ fn landing_model_selection_and_new_session_inherit_complete_agent_selection() {
     type_terminal_text(&mut attached, "Inherited work");
     let ApplicationTransition::CreateSession(request) = attached
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("create inherited Session")
+        .expect("create inherited session")
     else {
-        panic!("/new landing Prompt should create a Session");
+        panic!("/new landing prompt should create a session");
     };
     assert_eq!(request.agent_selection, Some(inherited));
 }
@@ -1195,7 +1195,7 @@ fn open_model_picker_refocuses_on_an_authoritative_multi_client_update() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open observer Model picker")
+        .expect("open observer model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -1207,14 +1207,14 @@ fn open_model_picker_refocuses_on_an_authoritative_multi_client_update() {
                 model_descriptor(
                     "codex",
                     "old",
-                    "Old Model",
+                    "Old model",
                     true,
                     ModelAvailability::Available,
                 ),
                 model_descriptor(
                     "codex",
                     "new",
-                    "New Model",
+                    "New model",
                     false,
                     ModelAvailability::Available,
                 ),
@@ -1232,7 +1232,7 @@ fn open_model_picker_refocuses_on_an_authoritative_multi_client_update() {
                     models: vec![model_descriptor(
                         "codex",
                         "new",
-                        "New Model",
+                        "New model",
                         true,
                         ModelAvailability::Available,
                     )],
@@ -1240,12 +1240,12 @@ fn open_model_picker_refocuses_on_an_authoritative_multi_client_update() {
                 }],
             },
         })
-        .expect("load cache without the authoritative Model");
+        .expect("load cache without the authoritative model");
     assert!(
         rendered_application_rows(&observer)
             .iter()
-            .find(|row| row.contains("New Model"))
-            .expect("focus fallback Model")
+            .find(|row| row.contains("New model"))
+            .expect("focus fallback model")
             .contains('›')
     );
     observer
@@ -1253,12 +1253,12 @@ fn open_model_picker_refocuses_on_an_authoritative_multi_client_update() {
             request: request.clone(),
             catalog: catalog.clone(),
         })
-        .expect("merge a newly available authoritative Model");
+        .expect("merge a newly available authoritative model");
     assert!(
         rendered_application_rows(&observer)
             .iter()
-            .find(|row| row.contains("Old Model"))
-            .expect("render newly available authoritative Model")
+            .find(|row| row.contains("Old model"))
+            .expect("render newly available authoritative model")
             .contains('›')
     );
     observer
@@ -1266,7 +1266,7 @@ fn open_model_picker_refocuses_on_an_authoritative_multi_client_update() {
             KeyCode::Up,
             KeyModifiers::NONE,
         )))
-        .expect("move away from current Model before refresh");
+        .expect("move away from current model before refresh");
     observer
         .handle_event(ApplicationEvent::ModelsRefreshed { request, catalog })
         .expect("merge refresh without moving the cursor");
@@ -1274,15 +1274,15 @@ fn open_model_picker_refocuses_on_an_authoritative_multi_client_update() {
     assert!(
         refreshed
             .iter()
-            .find(|row| row.contains("New Model"))
-            .expect("render manually focused Model")
+            .find(|row| row.contains("New model"))
+            .expect("render manually focused model")
             .contains('›')
     );
     assert!(
         refreshed
             .iter()
-            .find(|row| row.contains("Old Model"))
-            .expect("render authoritative Model")
+            .find(|row| row.contains("Old model"))
+            .expect("render authoritative model")
             .contains("current")
     );
 
@@ -1298,15 +1298,15 @@ fn open_model_picker_refocuses_on_an_authoritative_multi_client_update() {
     let rows = rendered_application_rows(&observer);
     let new_row = rows
         .iter()
-        .find(|row| row.contains("New Model"))
-        .expect("render remotely selected Model");
+        .find(|row| row.contains("New model"))
+        .expect("render remotely selected model");
     assert!(new_row.contains("current"));
     assert!(new_row.contains('›'));
     assert!(
         !rows
             .iter()
-            .find(|row| row.contains("Old Model"))
-            .expect("keep old Model available")
+            .find(|row| row.contains("Old model"))
+            .expect("keep old model available")
             .contains('›')
     );
 }
@@ -1318,7 +1318,7 @@ fn model_picker_shows_an_unavailable_provider_with_its_reason_and_refuses_select
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -1344,7 +1344,7 @@ fn model_picker_shows_an_unavailable_provider_with_its_reason_and_refuses_select
                 }],
             },
         })
-        .expect("load an unavailable Provider");
+        .expect("load an unavailable provider");
 
     let rows = rendered_application_rows(&application);
     let screen = rows.join("\n");
@@ -1354,14 +1354,14 @@ fn model_picker_shows_an_unavailable_provider_with_its_reason_and_refuses_select
     );
     assert!(
         screen.contains("could not launch Codex app-server"),
-        "the picker keeps the Provider's own account of the condition, got {screen}"
+        "the picker keeps the provider's own account of the condition, got {screen}"
     );
     assert!(
         rows.iter()
             .find(|row| row.contains("GPT Fixture"))
-            .expect("the unavailable Provider keeps its place with its Models")
+            .expect("the unavailable provider keeps its place with its models")
             .contains("unavailable"),
-        "no Model of an unavailable Provider may be selected, got {screen}"
+        "no model of an unavailable provider may be selected, got {screen}"
     );
 
     assert_eq!(
@@ -1370,17 +1370,17 @@ fn model_picker_shows_an_unavailable_provider_with_its_reason_and_refuses_select
                 KeyCode::Enter,
                 KeyModifiers::NONE,
             )))
-            .expect("attempt to select an unavailable Model"),
+            .expect("attempt to select an unavailable model"),
         ApplicationTransition::Continue
     );
     let refused = rendered_application_rows(&application).join("\n");
     assert!(
-        !refused.contains("Model Options"),
-        "selecting an unavailable Model does nothing, got {refused}"
+        !refused.contains("Model options"),
+        "selecting an unavailable model does nothing, got {refused}"
     );
     assert!(
         refused.contains("Retry codex: not installed"),
-        "the picker stays open on the unavailable Provider, got {refused}"
+        "the picker stays open on the unavailable provider, got {refused}"
     );
 
     // The user installs the CLI; the picker's own refresh clears the condition
@@ -1403,18 +1403,18 @@ fn model_picker_shows_an_unavailable_provider_with_its_reason_and_refuses_select
                 }],
             },
         })
-        .expect("merge the repaired Provider");
+        .expect("merge the repaired provider");
     let repaired = rendered_application_rows(&application);
     assert!(
         !repaired.join("\n").contains("not installed"),
-        "a fixed Provider drops its reason, got {}",
+        "a fixed provider drops its reason, got {}",
         repaired.join("\n")
     );
     assert!(
         !repaired
             .iter()
             .find(|row| row.contains("GPT Fixture"))
-            .expect("the repaired Provider keeps its Models")
+            .expect("the repaired provider keeps its models")
             .contains("unavailable")
     );
     assert!(
@@ -1424,11 +1424,11 @@ fn model_picker_shows_an_unavailable_provider_with_its_reason_and_refuses_select
                     KeyCode::Enter,
                     KeyModifiers::NONE,
                 )))
-                .expect("select the repaired Model"),
+                .expect("select the repaired model"),
             ApplicationTransition::ConfirmLandingAgentSelection(selection)
                 if selection.model == ModelId::new("gpt-fixture")
         ),
-        "the Model a fixed Provider serves is selectable again"
+        "the model a fixed provider serves is selectable again"
     );
 }
 
@@ -1443,7 +1443,7 @@ fn model_picker_draws_no_row_at_all_for_a_provider_the_user_turned_off() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -1483,20 +1483,20 @@ fn model_picker_draws_no_row_at_all_for_a_provider_the_user_turned_off() {
                 ],
             },
         })
-        .expect("load a catalog holding a disabled Provider");
+        .expect("load a catalog holding a disabled provider");
 
     let screen = rendered_application_rows(&application).join("\n");
     assert!(
         !screen.contains("codex"),
-        "a disabled Provider leaves the list outright, got {screen}"
+        "a disabled provider leaves the list outright, got {screen}"
     );
     assert!(
         screen.contains("Retry copilot: not installed"),
-        "an unavailable Provider still keeps its place with its retry row, got {screen}"
+        "an unavailable provider still keeps its place with its retry row, got {screen}"
     );
     assert!(
         screen.contains("Other Default"),
-        "the Providers the user kept are unaffected, got {screen}"
+        "the providers the user kept are unaffected, got {screen}"
     );
 
     // The user turns it back on; its Models arrive with the next listing and
@@ -1519,20 +1519,20 @@ fn model_picker_draws_no_row_at_all_for_a_provider_the_user_turned_off() {
                 }],
             },
         })
-        .expect("merge the re-enabled Provider");
+        .expect("merge the re-enabled provider");
     let rows = rendered_application_rows(&application);
     assert!(
         has_heading(&rows, "codex"),
-        "the Provider returns to the list the moment it is enabled, got {}",
+        "the provider returns to the list the moment it is enabled, got {}",
         rows.join("\n")
     );
     assert!(
         !rows
             .iter()
             .find(|row| row.contains("GPT Fixture"))
-            .expect("the re-enabled Provider brings its Models")
+            .expect("the re-enabled provider brings its models")
             .contains("unavailable"),
-        "its Models are selectable again"
+        "its models are selectable again"
     );
 }
 
@@ -1543,7 +1543,7 @@ fn model_picker_keeps_an_unavailable_provider_with_no_models_in_the_list() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -1577,28 +1577,28 @@ fn model_picker_keeps_an_unavailable_provider_with_no_models_in_the_list() {
                 ],
             },
         })
-        .expect("load a Provider that served nothing");
+        .expect("load a provider that served nothing");
 
     let rows = rendered_application_rows(&application);
     let screen = rows.join("\n");
     assert!(
         has_heading(&rows, "codex"),
-        "a Provider with no Models still keeps its place, got {screen}"
+        "a provider with no models still keeps its place, got {screen}"
     );
     assert!(
         screen.contains("Retry codex: not installed"),
-        "its reason stands in for the Models it has none of, got {screen}"
+        "its reason stands in for the models it has none of, got {screen}"
     );
     assert!(
         heading_row(&rows, "codex") < rendered_row(&rows, "Retry codex"),
-        "the reason sits under its own Provider, got {screen}"
+        "the reason sits under its own provider, got {screen}"
     );
     assert!(
         rendered_row(&rows, "Retry codex") < heading_row(&rows, "other"),
-        "the available Provider follows rather than absorbing the reason, got {screen}"
+        "the available provider follows rather than absorbing the reason, got {screen}"
     );
     assert!(
-        !screen.contains("No Models found"),
+        !screen.contains("No models found"),
         "the list is not empty, got {screen}"
     );
 }
@@ -1616,7 +1616,7 @@ fn model_picker_names_what_fixes_an_unavailable_provider_beneath_its_retry_row()
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -1650,7 +1650,7 @@ fn model_picker_names_what_fixes_an_unavailable_provider_beneath_its_retry_row()
                 ],
             },
         })
-        .expect("load two unavailable Providers");
+        .expect("load two unavailable providers");
 
     let rows = rendered_application_rows(&application);
     let screen = rows.join("\n");
@@ -1684,7 +1684,7 @@ fn picker_over_three_uninstalled_providers() -> Application {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -1723,7 +1723,7 @@ fn picker_over_three_uninstalled_providers() -> Application {
                 ],
             },
         })
-        .expect("load three uninstalled Providers");
+        .expect("load three uninstalled providers");
     application
 }
 
@@ -1801,7 +1801,7 @@ fn model_picker_shows_provider_display_names_from_the_catalog() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -1889,7 +1889,7 @@ fn drawn_models(application: &Application) -> (Vec<String>, String) {
         .iter()
         .find(|row| row.contains('›'))
         .and_then(model)
-        .expect("row focus stands on a drawn Model");
+        .expect("row focus stands on a drawn model");
     (drawn, focused)
 }
 
@@ -1899,7 +1899,7 @@ fn open_on_thirty_models() -> Application {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
@@ -1933,7 +1933,7 @@ fn open_on_thirty_models() -> Application {
 fn ordinal(model: &str) -> usize {
     model["Model ".len()..]
         .parse()
-        .expect("a Model of the list")
+        .expect("a model of the list")
 }
 
 #[test]
@@ -1966,7 +1966,7 @@ fn model_picker_keeps_two_models_below_focus_as_the_keys_walk_down() {
         assert_eq!(
             focused,
             drawn[drawn.len() - 3],
-            "keeping two Models below focus in view: {drawn:?}"
+            "keeping two models below focus in view: {drawn:?}"
         );
     }
 }
@@ -1981,7 +1981,7 @@ fn model_picker_walking_back_up_from_its_foot_leaves_the_list_standing() {
     assert_eq!(
         paged[paged.len() - 3],
         "Model 20",
-        "a page of the keys keeps the same two Models below focus: {paged:?}"
+        "a page of the keys keeps the same two models below focus: {paged:?}"
     );
     for _ in 20..29 {
         key(&mut application, KeyCode::Down);
@@ -2006,7 +2006,7 @@ fn model_picker_walking_back_up_from_its_foot_leaves_the_list_standing() {
     assert_eq!(
         drawn[1..],
         foot[..foot.len() - 1],
-        "and only then moves a Model"
+        "and only then moves a model"
     );
     assert_eq!(focused, drawn[2]);
 }
@@ -2120,13 +2120,13 @@ fn picker_on(catalog: ModelCatalog) -> Application {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker")
+        .expect("open model picker")
     else {
         panic!("Model picker should request the catalog");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed { request, catalog })
-        .expect("list Models");
+        .expect("list models");
     let focus = rendered_application_rows_at(&application, 140, 30)
         .into_iter()
         .find(|row| row.contains('›'))
@@ -2193,7 +2193,7 @@ fn a_wide_model_picker_details_the_focused_model_beside_the_list() {
     );
     assert!(
         !list.contains("luna-fixture"),
-        "the pane names the Model's identifier, so its row need not: {list:?}"
+        "the pane names the model's identifier, so its row need not: {list:?}"
     );
 
     key(&mut application, KeyCode::Down);
@@ -2271,7 +2271,7 @@ fn a_narrow_model_picker_summarises_the_focused_model_beneath_the_list() {
         rule.map(|rule| rows[rule + 1..rule + 3].join("\n"))
     };
 
-    let luna = strip(&application).expect("a Model with details has a strip");
+    let luna = strip(&application).expect("a model with details has a strip");
     assert!(
         luna.contains("luna-fixture · Lightweight · Low price"),
         "{luna}"
@@ -2282,7 +2282,7 @@ fn a_narrow_model_picker_summarises_the_focused_model_beneath_the_list() {
     );
 
     key(&mut application, KeyCode::Down);
-    let quiet = strip(&application).expect("a Model with details has a strip");
+    let quiet = strip(&application).expect("a model with details has a strip");
     assert!(
         quiet.contains("quiet-fixture · Lightweight · Low price"),
         "{quiet}"
@@ -2293,7 +2293,7 @@ fn a_narrow_model_picker_summarises_the_focused_model_beneath_the_list() {
     );
 
     key(&mut application, KeyCode::Down);
-    let terra = strip(&application).expect("a Model with details has a strip");
+    let terra = strip(&application).expect("a model with details has a strip");
     assert!(
         terra.contains("terra-fixture · Versatile · Very high price"),
         "{terra}"
@@ -2301,7 +2301,7 @@ fn a_narrow_model_picker_summarises_the_focused_model_beneath_the_list() {
 
     key(&mut application, KeyCode::Down);
     let opus = strip(&application).expect(
-        "the strip holds its place while a listed Model has details, so the list holds still",
+        "the strip holds its place while a listed model has details, so the list holds still",
     );
     assert!(
         opus.contains("opus-fixture · Most capable for complex work"),
@@ -2336,7 +2336,7 @@ fn a_model_whose_provider_publishes_no_details_is_described_by_its_options() {
     let effort = pane
         .iter()
         .find(|row| row.contains("Reasoning effort"))
-        .unwrap_or_else(|| panic!("the pane says what each Option offers:\n{text}"))
+        .unwrap_or_else(|| panic!("the pane says what each option offers:\n{text}"))
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
@@ -2373,7 +2373,7 @@ fn pointing_at_a_model_moves_row_focus_onto_it_and_nothing_else_does() {
     let heading = cell_of_row(&application, |row| is_heading(row, "alpha"));
     assert!(
         !point_at(&mut application, heading),
-        "a Provider's heading is not there to point at"
+        "a provider's heading is not there to point at"
     );
     assert!(
         !point_at(&mut application, (0, 0)),
@@ -2436,6 +2436,6 @@ fn pressing_a_model_chooses_it_as_enter_does() {
     );
     assert!(
         rows.contains("Model 07"),
-        "the Landing reads the choice: {rows}"
+        "the landing reads the choice: {rows}"
     );
 }

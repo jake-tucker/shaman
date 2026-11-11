@@ -46,7 +46,7 @@ fn open_theme_picker(application: &mut Application) -> ApplicationTransition {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::ThemeList,
         )))
-        .expect("open Theme picker")
+        .expect("open theme picker")
 }
 
 /// Keeps Theme preview assertions on the full main-view canvas after a
@@ -60,7 +60,7 @@ fn hide_sidebar_as_view_state(application: &mut Application) {
                 .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                     SemanticCommandId::SidebarToggle,
                 )))
-                .expect("hide the Sidebar without changing effective Settings"),
+                .expect("hide the sidebar without changing effective settings"),
             ApplicationTransition::Continue
         );
     }
@@ -96,7 +96,7 @@ fn press(
 ) -> ApplicationTransition {
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(code, modifiers)))
-        .expect("handle Theme picker key")
+        .expect("handle theme picker key")
 }
 
 fn preview_aura(application: &mut Application) {
@@ -165,7 +165,7 @@ fn a_user_theme_is_tagged_previewed_and_pinned_by_its_basename() {
         themes.join("reader.json"),
         include_str!("../../src/theme/assets/aura.json"),
     )
-    .expect("write user Theme");
+    .expect("write user theme");
     let mut application = Application::new(workspace.path(), TerminalFacts::unprobed(true))
         .with_config_root(config_root.path());
     deliver_settings(&mut application, EffectiveSettings::default());
@@ -201,7 +201,7 @@ fn a_user_theme_shadows_a_built_in_with_the_same_basename() {
         themes.join("catppuccin.json"),
         include_str!("../../src/theme/assets/aura.json"),
     )
-    .expect("write shadowing user Theme");
+    .expect("write shadowing user theme");
     let mut application = Application::new(workspace.path(), TerminalFacts::unprobed(true))
         .with_config_root(config_root.path());
     deliver_settings(&mut application, EffectiveSettings::default());
@@ -229,16 +229,16 @@ fn rejected_user_theme_files_are_noticed_without_blocking_the_directory() {
     let themes = config_root.path().join("themes");
     fs::create_dir(&themes).expect("create themes directory");
     let aura = include_str!("../../src/theme/assets/aura.json");
-    fs::write(themes.join("aad-valid.json"), aura).expect("write valid user Theme");
-    fs::write(themes.join("aaa-broken.json"), "{").expect("write broken user Theme");
+    fs::write(themes.join("aad-valid.json"), aura).expect("write valid user theme");
+    fs::write(themes.join("aaa-broken.json"), "{").expect("write broken user theme");
     let mut unresolved: serde_json::Value = serde_json::from_str(aura).expect("parse fixture");
     unresolved["theme"]["primary"] = json!("does-not-exist");
     fs::write(themes.join("aab-unresolved.json"), unresolved.to_string())
-        .expect("write unresolved user Theme");
+        .expect("write unresolved user theme");
     let mut version_two: serde_json::Value = serde_json::from_str(aura).expect("parse fixture");
     version_two["version"] = json!(2);
     fs::write(themes.join("aac-future.json"), version_two.to_string())
-        .expect("write future user Theme");
+        .expect("write future user theme");
     let mut application = Application::new(workspace.path(), TerminalFacts::unprobed(true))
         .with_config_root(config_root.path());
     deliver_settings(
@@ -293,7 +293,7 @@ fn a_user_file_cannot_replace_the_terminal_derived_system_theme() {
         themes.join("system.json"),
         include_str!("../../src/theme/assets/aura.json"),
     )
-    .expect("write reserved user Theme");
+    .expect("write reserved user theme");
     let mut application = Application::new(workspace.path(), TerminalFacts::unprobed(true))
         .with_config_root(config_root.path());
     deliver_settings(
@@ -355,7 +355,7 @@ fn opening_the_picker_finds_a_new_file_and_restores_its_fallen_back_pin() {
         themes.join("restored.json"),
         include_str!("../../src/theme/assets/aura.json"),
     )
-    .expect("restore pinned user Theme");
+    .expect("restore pinned user theme");
     open_theme_picker(&mut application);
 
     let picker = rendered_application_rows(&application).join("\n");
@@ -374,14 +374,14 @@ fn a_remote_outlook_keeps_reading_the_clients_config_root() {
         local_themes.join("local-reader.json"),
         include_str!("../../src/theme/assets/aura.json"),
     )
-    .expect("write local user Theme");
+    .expect("write local user theme");
     let other_themes = workspace.path().join("themes");
     fs::create_dir(&other_themes).expect("create unrelated themes directory");
     fs::write(
         other_themes.join("remote-reader.json"),
         include_str!("../../src/theme/assets/ayu.json"),
     )
-    .expect("write unrelated Theme");
+    .expect("write unrelated theme");
     let mut application = Application::new(workspace.path(), TerminalFacts::unprobed(true))
         .with_config_root(config_root.path());
     deliver_settings(&mut application, EffectiveSettings::default());
@@ -398,7 +398,7 @@ fn a_remote_outlook_keeps_reading_the_clients_config_root() {
             status: RemoteStatus::Available,
             icon: None,
         }]))
-        .expect("list Remotes");
+        .expect("list remotes");
     application
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
@@ -408,7 +408,7 @@ fn a_remote_outlook_keeps_reading_the_clients_config_root() {
                 unreachable: None,
             }),
         })
-        .expect("probe Remote");
+        .expect("probe remote");
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
     assert!(matches!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
@@ -439,7 +439,7 @@ fn a_remote_outlook_keeps_reading_the_clients_config_root() {
         );
     }
     let remote = rendered_application_rows(&application).join("\n");
-    assert!(remote.contains("No Themes found"), "{remote}");
+    assert!(remote.contains("No themes found"), "{remote}");
 }
 
 #[test]
@@ -519,7 +519,7 @@ fn pointing_at_a_theme_previews_it_as_the_keys_would() {
     let aura = theme_row(&application, "aura");
     assert!(
         point_at(&mut application, aura),
-        "moving onto another Theme changes the frame"
+        "moving onto another theme changes the frame"
     );
     assert_eq!(
         rendered_application_buffer(&application, 80, 15)
@@ -527,7 +527,7 @@ fn pointing_at_a_theme_previews_it_as_the_keys_would() {
             .unwrap()
             .bg,
         Color::Rgb(15, 15, 15),
-        "the Theme under the pointer is previewed"
+        "the theme under the pointer is previewed"
     );
     assert!(
         !point_at(&mut application, (aura.0 + 1, aura.1)),
@@ -663,7 +663,7 @@ fn escape_restores_the_opening_theme_after_another_client_changes_the_pin() {
             .unwrap()
             .bg,
         Color::Rgb(30, 30, 46),
-        "a later authoritative snapshot can move the Client on"
+        "a later authoritative snapshot can move the client on"
     );
 }
 
@@ -686,7 +686,7 @@ fn reopening_before_the_snapshot_keeps_the_confirmed_preview_as_the_opening_them
             .unwrap()
             .bg,
         Color::Rgb(15, 15, 15),
-        "the held aura preview remains the Theme in force until its snapshot"
+        "the held aura preview remains the theme in force until its snapshot"
     );
 }
 
@@ -733,7 +733,7 @@ fn enter_cannot_confirm_a_theme_filtered_out_of_the_list() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("No Themes found")
+            .contains("No themes found")
     );
 
     assert_eq!(
@@ -761,11 +761,11 @@ fn a_snapshot_repaints_an_open_view_and_its_overlay_in_the_named_theme() {
     assert_eq!(session.cell((0, 0)).unwrap().bg, Color::Rgb(24, 24, 37));
     assert_eq!(
         session
-            .cell(text_position(&session, "Initial Prompt"))
+            .cell(text_position(&session, "Initial prompt"))
             .unwrap()
             .bg,
         Color::Rgb(24, 24, 37),
-        "Transcript cells use the Theme's elevated background"
+        "Transcript cells use the theme's elevated background"
     );
     assert_eq!(
         session
@@ -773,7 +773,7 @@ fn a_snapshot_repaints_an_open_view_and_its_overlay_in_the_named_theme() {
             .unwrap()
             .bg,
         Color::Rgb(30, 30, 46),
-        "composer cells keep the Theme background"
+        "composer cells keep the theme background"
     );
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
@@ -792,7 +792,7 @@ fn a_snapshot_repaints_an_open_view_and_its_overlay_in_the_named_theme() {
             KeyCode::Right,
             KeyModifiers::NONE,
         )))
-        .expect("pass Providers");
+        .expect("pass providers");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Right,
@@ -808,12 +808,12 @@ fn a_snapshot_repaints_an_open_view_and_its_overlay_in_the_named_theme() {
     assert_eq!(
         after.cell(theme_row).unwrap().fg,
         Color::Rgb(30, 30, 46),
-        "the focused row's text takes the Theme's selected list item colour"
+        "the focused row's text takes the theme's selected list item colour"
     );
     assert_eq!(
         after.cell(theme_row).unwrap().bg,
         Color::Rgb(137, 180, 250),
-        "over a block in the Theme's primary colour, not the crust the panel is already painted"
+        "over a block in the theme's primary colour, not the crust the panel is already painted"
     );
     let settings_title = text_position(&after, "Settings");
     assert_eq!(
@@ -840,7 +840,7 @@ fn a_panel_title_reads_where_the_themes_border_melts_into_the_panel() {
     assert_eq!(
         title_cell.fg,
         Color::Rgb(248, 248, 242),
-        "the title takes the Theme's text colour"
+        "the title takes the theme's text colour"
     );
     let rule = autocomplete.cell((title.0 + 12, title.1)).unwrap();
     assert_eq!(rule.symbol(), "─");
@@ -865,10 +865,10 @@ fn the_pending_panels_title_reads_in_the_themes_text_colour() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "Queued for later".to_owned(),
         )))
-        .expect("type a queued Prompt");
+        .expect("type a queued prompt");
     application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitQueue))
-        .expect("dock the queued Prompt");
+        .expect("dock the queued prompt");
 
     let buffer = rendered_application_buffer(&application, 100, 20);
     assert_eq!(
@@ -896,7 +896,7 @@ fn a_named_theme_paints_ordinary_text_with_its_own_foreground() {
             .unwrap()
             .fg,
         Color::Rgb(137, 180, 250),
-        "the Landing logo keeps the primary accent"
+        "the landing logo keeps the primary accent"
     );
     assert_eq!(
         landing
@@ -1224,7 +1224,7 @@ fn a_named_theme_follows_the_terminals_truecolor_capability() {
         indexed.content().iter().all(|cell| {
             !matches!(cell.fg, Color::Rgb(_, _, _)) && !matches!(cell.bg, Color::Rgb(_, _, _))
         }),
-        "a terminal without truecolor receives no RGB Theme colors"
+        "a terminal without truecolor receives no RGB theme colors"
     );
     assert_eq!(
         indexed
@@ -1316,7 +1316,7 @@ fn a_missing_theme_falls_back_to_system_and_notices_the_preserved_pin_in_an_open
             KeyCode::Char('a'),
             KeyModifiers::NONE,
         ))),
-        "input coalesced before the repaint cannot dismiss an unseen Notice"
+        "input coalesced before the repaint cannot dismiss an unseen notice"
     );
 
     let rows = rendered_application_rows(&application);
@@ -1328,7 +1328,7 @@ fn a_missing_theme_falls_back_to_system_and_notices_the_preserved_pin_in_an_open
     assert_eq!(
         rows[0].matches("gone-away").count(),
         1,
-        "a repeated snapshot keeps one Notice for the unresolved pin"
+        "a repeated snapshot keeps one notice for the unresolved pin"
     );
     let buffer = rendered_application_buffer(&application, 80, 15);
     assert!(

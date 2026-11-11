@@ -62,7 +62,7 @@ fn choosing_a_remote_names_it_beside_the_workspace_on_landing_and_in_the_session
     );
 
     let landing = rendered_application_rows(&application).join("\n");
-    assert!(!landing.contains("Paired Remotes"));
+    assert!(!landing.contains("Paired remotes"));
     assert!(landing.contains("studio · ."), "{landing}");
     assert!(!landing.contains("Outlook "), "{landing}");
     let rows = landing.lines().collect::<Vec<_>>();
@@ -117,7 +117,7 @@ fn choosing_a_remote_names_it_beside_the_workspace_on_landing_and_in_the_session
         )))
         .unwrap()
     else {
-        panic!("opening the Model picker asks the Remote for its Models");
+        panic!("opening the model picker asks the remote for its models");
     };
     assert_eq!(request.outlook(), &Outlook::Remote("studio".to_owned()));
 }
@@ -188,7 +188,7 @@ fn a_revoked_remote_returns_to_the_local_landing_with_the_session_composer_recov
                 outlook: Outlook::Remote("studio".to_owned()),
                 event: ManagedEvent::RemoteFailed {
                     status: RemoteStatus::Revoked,
-                    message: "Remote revoked this Pairing".to_owned(),
+                    message: "Remote revoked this pairing".to_owned(),
                 },
             })
             .unwrap(),
@@ -200,13 +200,13 @@ fn a_revoked_remote_returns_to_the_local_landing_with_the_session_composer_recov
 
     let landing = rendered_application_rows(&application).join("\n");
     assert!(landing.contains("words worth keeping"));
-    assert!(landing.contains("Remote revoked this Pairing"));
+    assert!(landing.contains("Remote revoked this pairing"));
     assert!(!landing.contains("studio ·"));
 }
 
 #[test]
 fn choosing_local_again_restores_the_local_outlook_and_workspace() {
-    let local_workspace = std::env::current_dir().expect("read local Workspace");
+    let local_workspace = std::env::current_dir().expect("read local workspace");
     let mut application = Application::new(&local_workspace, Default::default());
     type_terminal_text(&mut application, "/connect");
     press(&mut application, KeyCode::Enter);
@@ -274,7 +274,7 @@ fn choosing_local_again_restores_the_local_outlook_and_workspace() {
         )))
         .unwrap()
     else {
-        panic!("the local picker asks the local Server for its Sessions");
+        panic!("the local picker asks the local server for its sessions");
     };
     assert_eq!(request.outlook(), &Outlook::Local);
     assert_eq!(
@@ -296,11 +296,11 @@ fn a_pushed_catalog_names_the_landing_model_without_opening_the_picker() {
             ready_health(fixture_instance_id(), 42_424)
                 .with_landing_agent_selection(Some(selection)),
         )))
-        .expect("restore the local Landing selection");
+        .expect("restore the local landing selection");
     let before = rendered_application_rows_at(&application, 100, 16).join("\n");
     assert!(
         before.contains("native-model-id"),
-        "with no catalog the Model goes by its wire identifier: {before}"
+        "with no catalog the model goes by its wire identifier: {before}"
     );
 
     application
@@ -308,11 +308,11 @@ fn a_pushed_catalog_names_the_landing_model_without_opening_the_picker() {
             ModelCatalog {
                 providers: vec![ProviderModelCatalog {
                     provider: ProviderId::new("generic-provider"),
-                    display_name: "Generic Provider".to_owned(),
+                    display_name: "Generic provider".to_owned(),
                     models: vec![model_descriptor(
                         "generic-provider",
                         "native-model-id",
-                        "Friendly Model",
+                        "Friendly model",
                         true,
                         ModelAvailability::Available,
                     )],
@@ -320,12 +320,12 @@ fn a_pushed_catalog_names_the_landing_model_without_opening_the_picker() {
                 }],
             },
         )))
-        .expect("take in the pushed Model Catalog");
+        .expect("take in the pushed model catalog");
 
     let after = rendered_application_rows_at(&application, 100, 16).join("\n");
     assert!(
-        after.contains("Friendly Model"),
-        "the pushed catalog names the Model in the header: {after}"
+        after.contains("Friendly model"),
+        "the pushed catalog names the model in the header: {after}"
     );
     assert!(!after.contains("native-model-id"));
 }
@@ -343,14 +343,14 @@ fn a_model_is_called_what_the_latest_catalog_calls_it_across_outlook_turns() {
             ready_health(fixture_instance_id(), 42_424)
                 .with_landing_agent_selection(Some(selection)),
         )))
-        .expect("restore the local Landing selection");
+        .expect("restore the local landing selection");
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::ModelList,
         )))
-        .expect("open the local Model picker")
+        .expect("open the local model picker")
     else {
-        panic!("opening the Model picker should request the catalog");
+        panic!("opening the model picker should request the catalog");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed {
@@ -358,11 +358,11 @@ fn a_model_is_called_what_the_latest_catalog_calls_it_across_outlook_turns() {
             catalog: ModelCatalog {
                 providers: vec![ProviderModelCatalog {
                     provider: ProviderId::new("generic-provider"),
-                    display_name: "Generic Provider".to_owned(),
+                    display_name: "Generic provider".to_owned(),
                     models: vec![model_descriptor(
                         "generic-provider",
                         "native-model-id",
-                        "Friendly Model",
+                        "Friendly model",
                         true,
                         ModelAvailability::Available,
                     )],
@@ -370,7 +370,7 @@ fn a_model_is_called_what_the_latest_catalog_calls_it_across_outlook_turns() {
                 }],
             },
         })
-        .expect("load the local Model catalog");
+        .expect("load the local model catalog");
     press(&mut application, KeyCode::Esc);
 
     turn_to_studio(&mut application);
@@ -399,8 +399,8 @@ fn a_model_is_called_what_the_latest_catalog_calls_it_across_outlook_turns() {
 
     let local_again = rendered_application_rows_at(&application, 100, 16).join("\n");
     assert!(
-        local_again.contains("Friendly Model"),
-        "returning to the Outlook keeps the name its catalog gave the Model: {local_again}"
+        local_again.contains("Friendly model"),
+        "returning to the outlook keeps the name its catalog gave the model: {local_again}"
     );
     assert!(!local_again.contains("native-model-id"));
 }
@@ -423,12 +423,12 @@ fn choosing_the_current_outlook_only_closes_the_picker() {
     assert_eq!(
         press(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "selecting Local while already local must not detach the current Session stream"
+        "selecting Local while already local must not detach the current session stream"
     );
     assert!(
         !rendered_application_rows(&application)
             .join("\n")
-            .contains("Paired Remotes")
+            .contains("Paired remotes")
     );
 }
 
@@ -493,7 +493,7 @@ fn a_remote_catalog_change_refreshes_the_remote_sidebar() {
         )))
         .unwrap()
     else {
-        panic!("revealing the Remote Sidebar asks for its Sessions");
+        panic!("revealing the remote sidebar asks for its sessions");
     };
     assert_eq!(initial.outlook(), &Outlook::Remote("studio".to_owned()));
     application
@@ -512,7 +512,7 @@ fn a_remote_catalog_change_refreshes_the_remote_sidebar() {
         })
         .unwrap()
     else {
-        panic!("a Remote catalog change refreshes its visible Sidebar");
+        panic!("a remote catalog change refreshes its visible sidebar");
     };
     assert_eq!(refresh.outlook(), &Outlook::Remote("studio".to_owned()));
 }
@@ -530,7 +530,7 @@ fn a_fresh_landing_lets_go_of_a_remote_workspace_still_resolving() {
         )))
         .unwrap()
     else {
-        panic!("opening the Workspace picker asks its Server for its Workspaces");
+        panic!("opening the workspace picker asks its server for its workspaces");
     };
     let remote_only = std::path::PathBuf::from("remote-only-workspace");
     application
@@ -548,7 +548,7 @@ fn a_fresh_landing_lets_go_of_a_remote_workspace_still_resolving() {
         ..
     } = press(&mut application, KeyCode::Enter)
     else {
-        panic!("choosing a Workspace asks its Server to resolve it");
+        panic!("choosing a workspace asks its server to resolve it");
     };
     assert_eq!(
         application
@@ -578,7 +578,7 @@ fn a_fresh_landing_lets_go_of_a_remote_workspace_still_resolving() {
         )))
         .unwrap()
     else {
-        panic!("opening the Session picker asks for Sessions");
+        panic!("opening the session picker asks for sessions");
     };
     assert_ne!(
         request.scope(),
@@ -619,7 +619,7 @@ fn a_remote_session_row_carries_its_origin_into_its_attach() {
         )))
         .unwrap()
     else {
-        panic!("opening the picker asks the Remote for its Sessions");
+        panic!("opening the picker asks the remote for its sessions");
     };
     assert_eq!(request.outlook(), &Outlook::Remote("studio".to_owned()));
     let session_id = SessionId::new();
@@ -700,7 +700,7 @@ fn a_remote_workspace_pick_is_validated_by_that_remote() {
         )))
         .unwrap()
     else {
-        panic!("opening the Workspace picker asks the Remote for its Workspaces");
+        panic!("opening the workspace picker asks the remote for its workspaces");
     };
     let remote_only = std::env::current_dir()
         .expect("read fixture root")
@@ -865,7 +865,7 @@ fn paired_remote_picker_shows_each_pairing_status() {
     application
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "offline".to_owned(),
-            result: Err("could not reach Remote".to_owned()),
+            result: Err("could not reach remote".to_owned()),
         })
         .unwrap();
 
@@ -873,7 +873,7 @@ fn paired_remote_picker_shows_each_pairing_status() {
     assert!(picker.contains("studio  Available"));
     assert!(picker.contains("old  Protocol v27 mismatch"));
     assert!(picker.contains("revoked  Revoked"));
-    assert!(picker.contains("offline  Unavailable · could not reach Remote"));
+    assert!(picker.contains("offline  Unavailable · could not reach remote"));
 }
 
 /// Rendered rows at `width` as one run of prose, each trimmed of what frames
@@ -918,7 +918,7 @@ fn a_remote_its_relay_joins_nothing_more_for_names_the_cap_on_its_row_and_says_w
         let row = rows
             .iter()
             .find(|row| row.contains("workstation"))
-            .unwrap_or_else(|| panic!("list the Remote: {rows:?}"));
+            .unwrap_or_else(|| panic!("list the remote: {rows:?}"));
         if width >= 64 {
             assert!(
                 row.contains("workstation  Unavailable · Relay cap reached: 256 joined"),
@@ -930,11 +930,11 @@ fn a_remote_its_relay_joins_nothing_more_for_names_the_cap_on_its_row_and_says_w
         let picker = prose_at(&application, width);
         assert!(
             picker.contains(
-                "Your Account has reached the Relay's cap of 256 connections joined at once at \
+                "Your account has reached the relay's cap of 256 connections joined at once at \
                  https://relay.company.example, so it joins no more until one ends; ask the \
-                 Relay's operator to raise the cap if that is too few"
+                 relay's operator to raise the cap if that is too few"
             ),
-            "the selected Remote says why in full at {width} columns: {picker}"
+            "the selected remote says why in full at {width} columns: {picker}"
         );
         assert!(
             width < 80 || picker.contains("↑↓ choose · a pair another · x remove · Esc close"),
@@ -977,11 +977,11 @@ fn a_remote_its_relay_joins_under_another_account_says_so_on_its_row_and_why_ben
         let row = rows
             .iter()
             .find(|row| row.contains("workstation"))
-            .unwrap_or_else(|| panic!("list the Remote: {rows:?}"));
+            .unwrap_or_else(|| panic!("list the remote: {rows:?}"));
         if width >= 64 {
             assert!(
                 row.contains("workstation  Unavailable · Accounts differ at"),
-                "the row says the Accounts differ before anything else: {rows:?}"
+                "the row says the accounts differ before anything else: {rows:?}"
             );
         }
 
@@ -989,12 +989,12 @@ fn a_remote_its_relay_joins_under_another_account_says_so_on_its_row_and_why_ben
         let picker = prose_at(&application, width);
         assert!(
             picker.contains(
-                "Accounts differ at the Relay at https://relay.company.example: this Server is \
-                 logged in there as octocat (github) and the Remote under another Account, and a \
-                 Relay joins only Servers logged in under the same one, so log this Server in \
-                 there as the user the Remote is logged in as, or pair the two directly"
+                "Accounts differ at the relay at https://relay.company.example: this server is \
+                 logged in there as octocat (github) and the remote under another account, and a \
+                 relay joins only servers logged in under the same one, so log this server in \
+                 there as the user the remote is logged in as, or pair the two directly"
             ),
-            "the selected Remote says why in full at {width} columns: {picker}"
+            "the selected remote says why in full at {width} columns: {picker}"
         );
     }
 }
@@ -1040,7 +1040,7 @@ fn the_selected_remote_lists_its_relays_whole_saying_which_this_server_uses() {
                     ],
                 },
             )))
-            .expect("take the pushed Relays");
+            .expect("take the pushed relays");
         open_connect(&mut application);
         application
             .handle_event(ApplicationEvent::RemotesListed(vec![Remote {
@@ -1068,7 +1068,7 @@ fn the_selected_remote_lists_its_relays_whole_saying_which_this_server_uses() {
             .unwrap();
         assert!(
             !run_together_at(&application, width).contains(company),
-            "nothing is said of a Remote's Relays until it is chosen"
+            "nothing is said of a remote's relays until it is chosen"
         );
 
         press(&mut application, KeyCode::Down);
@@ -1088,23 +1088,23 @@ fn the_selected_remote_lists_its_relays_whole_saying_which_this_server_uses() {
         assert!(
             rows.iter()
                 .any(|row| row.contains("workstation  Available")),
-            "the Remote stays in the list: {rows:?}"
+            "the remote stays in the list: {rows:?}"
         );
         assert!(
             width < 80
                 || rows
                     .iter()
                     .any(|row| row.contains("https://relay.company.example · logged in")),
-            "how this Server stands at a Relay is said beside it where that fits: {rows:?}"
+            "how this server stands at a relay is said beside it where that fits: {rows:?}"
         );
     }
 }
 
 #[test]
 fn a_redemption_refused_says_all_of_why_however_narrow_the_overlay() {
-    let refusal = "this Server's Account has reached the cap of 256 connections joined at once \
-                   that the Relay at https://relay.company.example sets for each Account, so it \
-                   joins no more until one ends; if that is too few, ask the Relay's operator to \
+    let refusal = "this server's account has reached the cap of 256 connections joined at once \
+                   that the relay at https://relay.company.example sets for each account, so it \
+                   joins no more until one ends; if that is too few, ask the relay's operator to \
                    raise the cap";
     for width in [80, 48] {
         let (mut application, request) = redemption_in_flight();
@@ -1116,7 +1116,7 @@ fn a_redemption_refused_says_all_of_why_however_narrow_the_overlay() {
             })
             .unwrap();
         let details = prose_at(&application, width);
-        assert!(details.contains("Configure Remote"), "{details}");
+        assert!(details.contains("Configure remote"), "{details}");
         assert!(
             details.contains(refusal),
             "the refusal is wrapped whole at {width} columns: {details}"
@@ -1150,7 +1150,7 @@ fn pairing_another_remote_refuses_a_duplicate_prefilled_name_in_the_draft() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Paste Invite")
+            .contains("Paste invite")
     );
     application
         .handle_terminal_event(InputEvent::Paste("suru-v1-another".to_owned()))
@@ -1177,7 +1177,7 @@ fn pairing_another_remote_refuses_a_duplicate_prefilled_name_in_the_draft() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("A Remote named `studio` already exists")
+            .contains("A remote named `studio` already exists")
     );
 }
 
@@ -1185,7 +1185,7 @@ fn pairing_another_remote_refuses_a_duplicate_prefilled_name_in_the_draft() {
 fn previewing(transition: ApplicationTransition) -> ConnectRequest {
     match transition {
         ApplicationTransition::PreviewInvite { request, .. } => request,
-        other => panic!("expected an Invite previewed, got {other:?}"),
+        other => panic!("expected an invite previewed, got {other:?}"),
     }
 }
 
@@ -1193,7 +1193,7 @@ fn previewing(transition: ApplicationTransition) -> ConnectRequest {
 fn redemption(transition: ApplicationTransition) -> RedeemInviteRequest {
     match transition {
         ApplicationTransition::RedeemInvite { redemption, .. } => redemption,
-        other => panic!("expected the Invite redeemed, got {other:?}"),
+        other => panic!("expected the invite redeemed, got {other:?}"),
     }
 }
 
@@ -1260,7 +1260,7 @@ fn removal_in_flight() -> Application {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Removing Remote…")
+            .contains("Removing remote…")
     );
     application
 }
@@ -1305,7 +1305,7 @@ fn an_invite_copied_across_wrapped_rows_is_inspected_whole() {
     let ApplicationTransition::PreviewInvite { invite, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter inspects the Invite pasted");
+        panic!("Enter inspects the invite pasted");
     };
     assert_eq!(invite, "suru-v1-examplewrapped");
 }
@@ -1348,7 +1348,7 @@ fn every_invite_refusal_is_precise_and_visible_on_the_step_that_failed() {
             })
             .unwrap();
         let details = rendered_application_rows(&application).join("\n");
-        assert!(details.contains("Configure Remote"));
+        assert!(details.contains("Configure remote"));
         assert!(details.contains(error));
     }
 }
@@ -1370,7 +1370,7 @@ fn successful_redemption_opens_the_paired_remote_picker() {
         .unwrap();
 
     let picker = rendered_application_rows(&application).join("\n");
-    assert!(picker.contains("Paired Remotes"));
+    assert!(picker.contains("Paired remotes"));
     assert!(picker.contains("studio  Available"));
 }
 
@@ -1436,13 +1436,13 @@ fn pasted_invite_shows_its_fingerprint_before_pairing_can_advance() {
     assert_eq!(
         application
             .handle_terminal_event(InputEvent::Paste("suru-v1-example".to_owned()))
-            .expect("paste Invite"),
+            .expect("paste invite"),
         ApplicationTransition::Continue
     );
     let ApplicationTransition::PreviewInvite { request, invite } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter inspects the Invite pasted");
+        panic!("Enter inspects the invite pasted");
     };
     assert_eq!(invite, "suru-v1-example");
     application
@@ -1456,10 +1456,10 @@ fn pasted_invite_shows_its_fingerprint_before_pairing_can_advance() {
                 reaches_here: false,
             },
         })
-        .expect("show Invite fingerprint");
+        .expect("show invite fingerprint");
 
     let confirmation = rendered_application_rows(&application).join("\n");
-    assert!(confirmation.contains("Confirm Serving Server"));
+    assert!(confirmation.contains("Confirm serving server"));
     assert!(confirmation.contains(&"0123456789abcdef".repeat(4)));
     assert!(confirmation.contains("Enter trust"));
     assert!(!confirmation.contains("Remote name"));
@@ -1534,7 +1534,7 @@ fn connect_is_semantic_and_an_empty_remote_listing_still_opens_the_picker() {
     type_terminal_text(&mut application, "/connect");
     let completion = rendered_application_rows(&application).join("\n");
     assert!(completion.contains("/connect"));
-    assert!(completion.contains("Choose a Remote"));
+    assert!(completion.contains("Choose a remote"));
     assert_eq!(SemanticCommandId::ConnectOpen.as_str(), "connect.open");
     assert_eq!(
         press(&mut application, KeyCode::Enter),
@@ -1543,12 +1543,12 @@ fn connect_is_semantic_and_an_empty_remote_listing_still_opens_the_picker() {
 
     application
         .handle_event(ApplicationEvent::RemotesListed(Vec::new()))
-        .expect("open the Remote picker for an empty Remote listing");
+        .expect("open the remote picker for an empty remote listing");
 
     let picker = rendered_application_rows(&application).join("\n");
-    assert!(picker.contains("Paired Remotes"), "{picker}");
+    assert!(picker.contains("Paired remotes"), "{picker}");
     assert!(picker.contains("Local"), "{picker}");
-    assert!(!picker.contains("Paste Invite"), "{picker}");
+    assert!(!picker.contains("Paste invite"), "{picker}");
     assert!(picker.contains("a pair another"), "{picker}");
 }
 
@@ -1575,7 +1575,7 @@ fn pair_opens_invite_entry_without_waiting_for_the_remote_listing() {
     type_terminal_text(&mut application, "/pair");
     let completion = rendered_application_rows(&application).join("\n");
     assert!(completion.contains("/pair"), "{completion}");
-    assert!(completion.contains("Pair with a Remote"), "{completion}");
+    assert!(completion.contains("Pair with a remote"), "{completion}");
     assert_eq!(SemanticCommandId::PairOpen.as_str(), "pair.open");
     assert!(matches!(
         press(&mut application, KeyCode::Enter),
@@ -1583,18 +1583,18 @@ fn pair_opens_invite_entry_without_waiting_for_the_remote_listing() {
     ));
 
     let entry = rendered_application_rows(&application).join("\n");
-    assert!(entry.contains("Paste Invite"), "{entry}");
+    assert!(entry.contains("Paste invite"), "{entry}");
     assert!(entry.contains("Enter inspect"), "{entry}");
 
     // The listing lands behind the Invite entry, for the duplicate-name
     // refusal and so a successful redemption has a picker to land on.
     application
         .handle_event(ApplicationEvent::RemotesListed(vec![studio_remote()]))
-        .expect("take the background Remote listing");
+        .expect("take the background remote listing");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Paste Invite")
+            .contains("Paste invite")
     );
     assert_eq!(
         press(&mut application, KeyCode::Esc),
@@ -1603,7 +1603,7 @@ fn pair_opens_invite_entry_without_waiting_for_the_remote_listing() {
     assert!(
         !rendered_application_rows(&application)
             .join("\n")
-            .contains("Paste Invite")
+            .contains("Paste invite")
     );
 }
 
@@ -1626,7 +1626,7 @@ fn removing_a_remote_takes_two_presses_and_says_the_remote_answered() {
         .expect("settle the removal");
 
     let settled = rendered_application_rows(&application).join("\n");
-    assert!(settled.contains("Paired Remotes"), "{settled}");
+    assert!(settled.contains("Paired remotes"), "{settled}");
     assert!(!settled.contains("studio  Available"), "{settled}");
     assert!(settled.contains("Removed studio"), "{settled}");
 
@@ -1747,7 +1747,7 @@ fn removing_the_remote_the_outlook_is_turned_toward_turns_back_to_local() {
                     acknowledged: true,
                 }),
             })
-            .expect("settle the removal of the current Outlook"),
+            .expect("settle the removal of the current outlook"),
         ApplicationTransition::TurnOutlook {
             outlook: Outlook::Local,
             catalog_origins: HashSet::new(),

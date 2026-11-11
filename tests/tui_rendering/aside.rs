@@ -149,7 +149,7 @@ fn open(
     snapshot.session.parent = parent;
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("open a Session");
+        .expect("open a session");
 }
 
 fn deliver_tree(application: &mut Application, through: SessionId, event: SubagentTreeEvent) {
@@ -163,7 +163,7 @@ fn deliver_tree_through(
 ) {
     application
         .handle_event(ApplicationEvent::SubagentTree { through, event })
-        .expect("take a Subagent tree event");
+        .expect("take a subagent tree event");
 }
 
 /// The Aside's own content columns of each rendered row: past its rule and
@@ -191,7 +191,7 @@ fn aside_row_position(application: &Application, needle: &str) -> (u16, u16) {
     let row = rows
         .iter()
         .position(|row| row.contains(needle))
-        .unwrap_or_else(|| panic!("the Aside draws {needle:?}: {rows:#?}"));
+        .unwrap_or_else(|| panic!("the aside draws {needle:?}: {rows:#?}"));
     (
         WIDTH - ASIDE_WIDTH + 4,
         u16::try_from(row).expect("row fits"),
@@ -208,7 +208,7 @@ fn click(application: &mut Application, (column, row): (u16, u16)) -> Applicatio
             modifiers: KeyModifiers::NONE,
         },
     )
-    .expect("click the Aside")
+    .expect("click the aside")
 }
 
 fn press_leader_chord(application: &mut Application, key: char) {
@@ -243,20 +243,20 @@ fn the_aside_stands_beside_an_open_session_and_is_absent_on_the_landing() {
     let landing = rendered_application_rows_at(&application, WIDTH, HEIGHT).join("\n");
     assert!(
         !landing.contains("Subagents"),
-        "nothing is open on the Landing, so the Aside is absent: {landing}"
+        "nothing is open on the landing, so the aside is absent: {landing}"
     );
 
     enter_session(&mut application, workspace.path());
     let rows = aside_rows(&application, WIDTH);
     assert_eq!(
         rows[0], "Subagents",
-        "an open Session has the Aside beside it, headed by its one Section: {rows:#?}"
+        "an open session has the aside beside it, headed by its one section: {rows:#?}"
     );
     let frame = rendered_application_rows_at(&application, WIDTH, HEIGHT);
     assert_eq!(
         frame[0].chars().nth(usize::from(WIDTH - ASIDE_WIDTH)),
         Some('│'),
-        "the Aside's rule stands down its left, facing the main view"
+        "the aside's rule stands down its left, facing the main view"
     );
 }
 
@@ -280,9 +280,9 @@ fn entries_run_depth_first_over_two_lines_with_guides_marker_title_name_and_a_fi
             "└ ✓ Weigh the options",
             "    Plan",
         ],
-        "the top-level Session heads the tree over two lines, its own Marker and Title and \
-         then its Provider, Model and time, its rule running down to what it spawned; each \
-         Subagent follows its spawner, the branch still working ahead of the settled one, over two lines, its Marker and Title first and its name and time \
+        "the top-level session heads the tree over two lines, its own marker and title and \
+         then its provider, model and time, its rule running down to what it spawned; each \
+         subagent follows its spawner, the branch still working ahead of the settled one, over two lines, its marker and title first and its name and time \
          beneath, the guides running on through the second line to the entries it \
          spawned; and a settle with no known duration leaves the time blank: {rows:#?}"
     );
@@ -309,7 +309,7 @@ fn the_header_counts_the_working_subagents_at_every_depth_in_the_working_colour(
     let rows = aside_rows(&application, WIDTH);
     assert_eq!(
         rows[0], "Subagents 3 (1 active)",
-        "the nested working Subagent is counted beside the total: {rows:#?}"
+        "the nested working subagent is counted beside the total: {rows:#?}"
     );
     let marker_row = rows
         .iter()
@@ -318,7 +318,7 @@ fn the_header_counts_the_working_subagents_at_every_depth_in_the_working_colour(
     assert_eq!(
         aside_colour(&application, 0, "(1 active)"),
         aside_colour(&application, marker_row, "⠋"),
-        "the working count wears the working Marker's colour"
+        "the working count wears the working marker's colour"
     );
 
     change(
@@ -348,7 +348,7 @@ fn the_title_has_the_first_line_and_the_name_and_time_the_second() {
     let mut snapshot = tree.snapshot();
     snapshot.subagents.truncate(1);
     snapshot.subagents[0].name = "Cartographer".to_owned();
-    snapshot.subagents[0].title = "Chart every Provider seam the orchestration crosses".to_owned();
+    snapshot.subagents[0].title = "Chart every provider seam the orchestration crosses".to_owned();
     deliver_tree(
         &mut application,
         tree.top,
@@ -359,10 +359,10 @@ fn the_title_has_the_first_line_and_the_name_and_time_the_second() {
     assert_eq!(
         rows[3..5],
         [
-            "└ ✓ Chart every Provider seam the or…",
+            "└ ✓ Chart every provider seam the or…",
             "    Cartographer                  12s",
         ],
-        "the Title has the whole of its line, and the name stands whole beneath it \
+        "the title has the whole of its line, and the name stands whole beneath it \
          beside the time: {rows:#?}"
     );
 }
@@ -394,8 +394,8 @@ fn a_subagents_confirmed_model_follows_its_name_and_an_unconfirmed_one_is_left_u
             "└ × Weigh the options",
             "    Plan · opus · Failed",
         ],
-        "the Model the Provider confirmed follows the name, before any outcome word, and \
-         a Subagent whose Model is not yet known says its name alone: {rows:#?}"
+        "the model the provider confirmed follows the name, before any outcome word, and \
+         a subagent whose model is not yet known says its name alone: {rows:#?}"
     );
 }
 
@@ -423,7 +423,7 @@ fn a_model_confirmed_after_the_snapshot_updates_its_entry_in_place() {
     assert_eq!(
         aside_rows(&application, WIDTH),
         expected,
-        "the confirmed Model joins the entry's second line where it stands, and nothing \
+        "the confirmed model joins the entry's second line where it stands, and nothing \
          else moves"
     );
 }
@@ -449,7 +449,7 @@ fn a_new_agent_selection_renames_the_top_level_entrys_model_in_place() {
     assert_eq!(
         aside_rows(&application, WIDTH),
         expected,
-        "the Model the new Agent Selection names takes the old one's place, and nothing \
+        "the model the new agent selection names takes the old one's place, and nothing \
          else moves"
     );
 }
@@ -476,7 +476,7 @@ fn a_top_level_session_that_has_not_worked_wears_no_marker_and_no_time() {
             "│ Claude · opus",
             "├ ✓ Map the provider seams"
         ],
-        "its Title stands where the Marker would, its Selection still named beneath it"
+        "its title stands where the marker would, its selection still named beneath it"
     );
 }
 
@@ -497,7 +497,7 @@ fn a_brokered_subagents_entry_shows_the_model_its_provider_confirmed_and_its_out
         ..
     } = &mut parent.activities[0]
     else {
-        unreachable!("the fixture's row is a Subagent's")
+        unreachable!("the fixture's row is a subagent's")
     };
     *name = "Scout".to_owned();
     *description = "Survey the Claude seam".to_owned();
@@ -505,7 +505,7 @@ fn a_brokered_subagents_entry_shows_the_model_its_provider_confirmed_and_its_out
     let top = parent.session.id;
     application
         .handle_event(ApplicationEvent::SessionAttached(parent))
-        .expect("open the delegating Session");
+        .expect("open the delegating session");
     deliver_tree(
         &mut application,
         top,
@@ -548,7 +548,7 @@ fn a_brokered_subagents_entry_shows_the_model_its_provider_confirmed_and_its_out
     assert_eq!(
         entry_lines(&application, "Scout"),
         ["└ ⠋ Survey the Claude seam", "    Scout"],
-        "until its Provider confirms a Model, the entry says its name alone"
+        "until its provider confirms a model, the entry says its name alone"
     );
 
     change(
@@ -562,7 +562,7 @@ fn a_brokered_subagents_entry_shows_the_model_its_provider_confirmed_and_its_out
     assert_eq!(
         entry_lines(&application, "Scout"),
         ["└ ⠋ Survey the Claude seam", "    Scout · gpt-5"],
-        "the Model its own Provider confirmed follows its name"
+        "the model its own provider confirmed follows its name"
     );
 
     change(
@@ -582,7 +582,7 @@ fn a_brokered_subagents_entry_shows_the_model_its_provider_confirmed_and_its_out
             "└ × Survey the Claude seam",
             "    Scout · gpt-5 · Failed         3s"
         ],
-        "once settled it wears its outcome, named after the Model, and its final time"
+        "once settled it wears its outcome, named after the model, and its final time"
     );
 }
 
@@ -608,12 +608,12 @@ fn at_the_launch_width_the_name_is_left_out_before_the_model_is_cut() {
     assert_eq!(
         detail_line("Cartographer", Some("claude-haiku-4")),
         "    Cartographer · claude-haiku-4 12s",
-        "a name and Model that just fit beside the time are both drawn whole"
+        "a name and model that just fit beside the time are both drawn whole"
     );
     assert_eq!(
         detail_line("Cartographer", Some("claude-sonnet-4-5-20250929")),
         "    claude-sonnet-4-5-20250929    12s",
-        "where both do not fit, the name is left out and the Model stands whole"
+        "where both do not fit, the name is left out and the model stands whole"
     );
     assert_eq!(
         detail_line(
@@ -621,12 +621,12 @@ fn at_the_launch_width_the_name_is_left_out_before_the_model_is_cut() {
             Some("claude-sonnet-4-5-with-an-astronomically-long-suffix")
         ),
         "    claude-sonnet-4-5-with-an-as… 12s",
-        "a Model too long for the line alone gives way to the time"
+        "a model too long for the line alone gives way to the time"
     );
     assert_eq!(
         detail_line("Cartographer-of-every-provider-seam", None),
         "    Cartographer-of-every-provid… 12s",
-        "with no Model known, a name too long for the line gives way to the time as ever"
+        "with no model known, a name too long for the line gives way to the time as ever"
     );
 }
 
@@ -653,7 +653,7 @@ fn a_session_with_no_subagents_lists_only_its_own_entry() {
             "  Claude · opus                 1m 5s",
             ""
         ],
-        "with nothing beneath it, no rule runs down from its Marker"
+        "with nothing beneath it, no rule runs down from its marker"
     );
 }
 
@@ -666,7 +666,7 @@ fn the_open_entry_is_highlighted_by_its_title_alone() {
         let rows = aside_rows(application, WIDTH);
         let offset = rows[usize::from(row)]
             .find(needle)
-            .expect("the entry draws its Title");
+            .expect("the entry draws its title");
         let offset = rows[usize::from(row)][..offset].chars().count();
         let buffer = rendered_application_buffer(application, WIDTH, HEIGHT);
         buffer[(column - 2 + u16::try_from(offset).expect("fits"), row)].clone()
@@ -691,7 +691,7 @@ fn the_open_entry_is_highlighted_by_its_title_alone() {
     assert_eq!(
         title_cell(&application, "Weigh the options").fg,
         PANDA.open_title,
-        "the highlight moves with the open Session"
+        "the highlight moves with the open session"
     );
     assert_ne!(
         title_cell(&application, "Map every seam").fg,
@@ -702,7 +702,7 @@ fn the_open_entry_is_highlighted_by_its_title_alone() {
     assert_ne!(
         buffer[(column - 2, row)].bg,
         PANDA.open_title,
-        "the highlight repaints nothing but the Title"
+        "the highlight repaints nothing but the title"
     );
 }
 
@@ -790,7 +790,7 @@ fn clicking_an_entry_attaches_its_session_and_the_open_entry_does_nothing() {
     assert_eq!(
         click(&mut application, review),
         ApplicationTransition::AttachSession(local(tree.review)),
-        "a nested Subagent's entry opens its Session through the ordinary attach route"
+        "a nested subagent's entry opens its session through the ordinary attach route"
     );
 }
 
@@ -814,7 +814,7 @@ fn from_a_nested_subagent_the_top_level_entry_attaches_the_top_level_session() {
     assert_eq!(
         click(&mut application, review),
         ApplicationTransition::Continue,
-        "the open entry is the nested Subagent now"
+        "the open entry is the nested subagent now"
     );
 }
 
@@ -833,7 +833,7 @@ fn switching_within_a_tree_keeps_the_section_and_another_tree_does_not_borrow_it
     assert_eq!(
         aside_rows(&application, WIDTH)[..5],
         before[..5],
-        "moving to a Session of the same tree leaves the Section standing"
+        "moving to a session of the same tree leaves the section standing"
     );
 
     // A change still arriving through the subscription the tree came from is
@@ -842,12 +842,12 @@ fn switching_within_a_tree_keeps_the_section_and_another_tree_does_not_borrow_it
         &mut application,
         tree.top,
         SubagentTreeEvent::Changed(SubagentTreeChange::TopLevelRetitled {
-            title: "Map every Provider seam".to_owned(),
+            title: "Map every provider seam".to_owned(),
         }),
     );
     assert_eq!(
         aside_rows(&application, WIDTH)[1],
-        "✓ Map every Provider seam"
+        "✓ Map every provider seam"
     );
 
     let elsewhere = SessionId::new();
@@ -856,7 +856,7 @@ fn switching_within_a_tree_keeps_the_section_and_another_tree_does_not_borrow_it
     assert_eq!(
         rows[..2],
         ["Subagents", ""],
-        "another tree's Session is not answered with this tree: {rows:#?}"
+        "another tree's session is not answered with this tree: {rows:#?}"
     );
     deliver_tree(
         &mut application,
@@ -883,7 +883,7 @@ fn ctrl_x_a_and_slash_aside_follow_the_three_way_rule() {
     press_leader_chord(&mut application, 'a');
     assert!(
         aside_text(&application).contains("Subagents"),
-        "a shown Aside without the keys stays shown"
+        "a shown aside without the keys stays shown"
     );
     assert_ne!(rule(&application), resting, "and takes the keys");
     type_terminal_text(&mut application, "zq");
@@ -891,19 +891,19 @@ fn ctrl_x_a_and_slash_aside_follow_the_three_way_rule() {
         !rendered_application_rows_at(&application, WIDTH, HEIGHT)
             .join("\n")
             .contains("zq"),
-        "text typed while the Aside holds the keys reaches no composer"
+        "text typed while the aside holds the keys reaches no composer"
     );
 
     press_leader_chord(&mut application, 'a');
     assert!(
         !aside_text(&application).contains("Subagents"),
-        "an Aside holding the keys hides"
+        "an aside holding the keys hides"
     );
 
     press_leader_chord(&mut application, 'a');
     assert!(
         aside_text(&application).contains("Subagents"),
-        "a hidden Aside shows"
+        "a hidden aside shows"
     );
     assert_ne!(rule(&application), resting, "and takes the keys with it");
 
@@ -912,7 +912,7 @@ fn ctrl_x_a_and_slash_aside_follow_the_three_way_rule() {
     assert_eq!(
         rule(&application),
         resting,
-        "Esc hands the keys back and leaves the Aside shown"
+        "Esc hands the keys back and leaves the aside shown"
     );
 
     type_terminal_text(&mut application, "/aside");
@@ -921,7 +921,7 @@ fn ctrl_x_a_and_slash_aside_follow_the_three_way_rule() {
     assert_ne!(
         rule(&application),
         resting,
-        "/aside takes the keys for a shown Aside, as Ctrl+X A does"
+        "/aside takes the keys for a shown aside, as Ctrl+X A does"
     );
     assert_eq!(
         invoke(&mut application, SemanticCommandId::AsideToggle),
@@ -949,7 +949,7 @@ fn the_aside_and_the_sidebar_never_both_hold_the_keys() {
     assert_ne!(
         aside_rule(&application),
         resting,
-        "the Aside takes the keys"
+        "the aside takes the keys"
     );
 
     // Ctrl+B from inside the Aside hands them to the Sidebar.
@@ -962,7 +962,7 @@ fn the_aside_and_the_sidebar_never_both_hold_the_keys() {
     assert_eq!(
         aside_rule(&application),
         resting,
-        "the Sidebar taking the keys takes them from the Aside"
+        "the sidebar taking the keys takes them from the aside"
     );
 
     // Ctrl+X A from inside the Sidebar takes them back.
@@ -973,7 +973,7 @@ fn the_aside_and_the_sidebar_never_both_hold_the_keys() {
         !rendered_application_rows_at(&application, width, HEIGHT)
             .join("\n")
             .contains("zq"),
-        "the Sidebar let the keys go: typing searches nothing there"
+        "the sidebar let the keys go: typing searches nothing there"
     );
 }
 
@@ -995,14 +995,14 @@ fn pressing_the_transcript_hands_the_asides_keys_to_the_composer() {
     assert_ne!(
         aside_rule(&application),
         resting,
-        "the Aside takes the keys"
+        "the aside takes the keys"
     );
 
     click(&mut application, (width / 2, 2));
     assert_eq!(
         aside_rule(&application),
         resting,
-        "the press takes the keys from the Aside"
+        "the press takes the keys from the aside"
     );
     type_terminal_text(&mut application, "zq");
     assert!(
@@ -1027,19 +1027,19 @@ fn the_aside_is_squeezed_out_before_the_sidebar() {
     let squeezed = rendered_application_rows_at(&application, 117, HEIGHT);
     assert!(
         !squeezed.join("\n").contains("Subagents"),
-        "a terminal too narrow for all three drops the Aside first"
+        "a terminal too narrow for all three drops the aside first"
     );
     assert_eq!(
         squeezed[0].chars().nth(39),
         Some('│'),
-        "and keeps the Sidebar at its width"
+        "and keeps the sidebar at its width"
     );
 
     assert!(
         rendered_application_rows_at(&application, 134, HEIGHT)
             .join("\n")
             .contains("Subagents"),
-        "growing the terminal brings the Aside back"
+        "growing the terminal brings the aside back"
     );
 }
 
@@ -1094,7 +1094,7 @@ fn the_edge_drags_and_a_double_click_resets_the_width() {
     assert_eq!(
         rule_column(&application),
         Some(usize::from(WIDTH - ASIDE_WIDTH)),
-        "a double-click on the edge returns the Aside to its launch width"
+        "a double-click on the edge returns the aside to its launch width"
     );
 
     invoke(
@@ -1153,14 +1153,14 @@ fn the_subagent_picker_and_esc_to_parent_are_unchanged_beside_the_aside() {
     assert_eq!(
         key(&mut application, KeyCode::Enter),
         ApplicationTransition::AttachSession(local(child)),
-        "Down still docks the Subagent Picker and Enter opens its entry"
+        "Down still docks the subagent picker and Enter opens its entry"
     );
 
     open(&mut application, workspace.path(), child, Some(parent_id));
     assert_eq!(
         key(&mut application, KeyCode::Esc),
         ApplicationTransition::ViewAndAttachSession(local(parent_id)),
-        "Esc in a Subagent's Session still returns to its parent"
+        "Esc in a subagent's session still returns to its parent"
     );
 }
 
@@ -1173,7 +1173,7 @@ fn on_the_landing_the_toggle_only_shows_and_hides() {
     enter_session(&mut application, workspace.path());
     assert!(
         !aside_text(&application).contains("Subagents"),
-        "on the Landing the act hid the Aside the Settings showed"
+        "on the landing the act hid the aside the settings showed"
     );
 
     let mut application = client(workspace.path());
@@ -1192,14 +1192,14 @@ fn on_the_landing_the_toggle_only_shows_and_hides() {
         rendered_application_rows_at(&application, WIDTH, HEIGHT)
             .join("\n")
             .contains("zq"),
-        "no claim on the keys was left behind to take them once a Session opened"
+        "no claim on the keys was left behind to take them once a session opened"
     );
     press_leader_chord(&mut application, 'a');
     assert!(aside_text(&application).contains("Subagents"));
     assert_ne!(
         rendered_application_buffer(&application, WIDTH, HEIGHT)[(WIDTH - ASIDE_WIDTH, 0)].fg,
         resting,
-        "beside a Session the act takes the keys as the three-way rule says"
+        "beside a session the act takes the keys as the three-way rule says"
     );
 }
 
@@ -1224,13 +1224,13 @@ fn in_a_subagents_session_the_leader_reaches_the_aside_and_nothing_else() {
                 .handle_terminal_event(InputEvent::Key(key))
                 .expect("press Ctrl+X M"),
             ApplicationTransition::Continue,
-            "the Model Picker is not offered in a Session that is read, never prompted"
+            "the model picker is not offered in a session that is read, never prompted"
         );
     }
     assert_eq!(
         rendered_application_rows_at(&application, WIDTH, HEIGHT),
         before,
-        "Ctrl+X M changes nothing in a Subagent's Session"
+        "Ctrl+X M changes nothing in a subagent's session"
     );
     assert_eq!(
         key(&mut application, KeyCode::Esc),
@@ -1248,7 +1248,7 @@ fn in_a_subagents_session_the_leader_reaches_the_aside_and_nothing_else() {
     press_leader_chord(&mut application, 'a');
     assert!(
         !aside_text(&application).contains("Subagents"),
-        "Ctrl+X A takes the keys and then hides the Aside from inside it"
+        "Ctrl+X A takes the keys and then hides the aside from inside it"
     );
 }
 
@@ -1345,7 +1345,7 @@ fn a_fast_arrival_never_flashes_loading_and_moving_within_the_tree_never_blanks(
     assert_eq!(
         aside_rows(&application, WIDTH)[..5],
         arrived[..5],
-        "moving to another Session of the tree neither blanks nor loads it"
+        "moving to another session of the tree neither blanks nor loads it"
     );
 }
 
@@ -1365,17 +1365,17 @@ fn a_tree_that_cannot_be_read_says_so_until_a_session_of_it_is_opened_again() {
     assert_eq!(
         rows[1..4],
         [
-            "Error: Could not load Subagents:",
+            "Error: Could not load subagents:",
             "Session does not exist on this server",
             "instance",
         ],
-        "the Section says why it has no tree: {rows:#?}"
+        "the section says why it has no tree: {rows:#?}"
     );
     let buffer = rendered_application_buffer(&application, WIDTH, HEIGHT);
     assert_eq!(
         buffer[(WIDTH - ASIDE_WIDTH + 2, 1)].fg,
         PANDA.error,
-        "in the Theme's error colour"
+        "in the theme's error colour"
     );
     advance(&now, 400);
     assert_eq!(
@@ -1419,7 +1419,7 @@ fn a_tree_lost_while_in_hand_is_retried_from_any_session_of_it() {
     deliver_tree(
         &mut application,
         tree.top,
-        SubagentTreeEvent::Failed("Remote revoked this Pairing".to_owned()),
+        SubagentTreeEvent::Failed("Remote revoked this pairing".to_owned()),
     );
     assert!(aside_text(&application).contains("Error: Could not load"));
 
@@ -1431,7 +1431,7 @@ fn a_tree_lost_while_in_hand_is_retried_from_any_session_of_it() {
     );
     assert!(
         !aside_text(&application).contains("Error"),
-        "opening a Session of the lost tree asks for it again"
+        "opening a session of the lost tree asks for it again"
     );
     deliver_tree(
         &mut application,
@@ -1480,7 +1480,7 @@ fn an_unreachable_remote_leaves_the_last_tree_standing() {
     snapshot.session.parent = None;
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("open the Remote Session");
+        .expect("open the remote session");
     let studio = Outlook::Remote("studio".to_owned());
     deliver_tree_through(
         &mut application,
@@ -1499,7 +1499,7 @@ fn an_unreachable_remote_leaves_the_last_tree_standing() {
     let rows = aside_rows(&application, WIDTH);
     assert!(
         rows[..5] == before[..5],
-        "the tree the Remote last gave stands while it is Unreachable: {rows:#?}"
+        "the tree the remote last gave stands while it is unreachable: {rows:#?}"
     );
 }
 
@@ -1549,14 +1549,14 @@ fn an_aside_the_setting_hides_is_absent_until_the_reader_asks_for_it() {
     assert_eq!(
         aside_rule_column(&application, WIDTH),
         None,
-        "the first frame honours the initial-visibility Setting"
+        "the first frame honours the initial-visibility setting"
     );
 
     invoke(&mut application, SemanticCommandId::AsideToggle);
     assert_eq!(
         aside_rule_column(&application, WIDTH),
         Some(usize::from(WIDTH - 32)),
-        "the toggle overrides the Setting for this run"
+        "the toggle overrides the setting for this run"
     );
 }
 
@@ -1574,7 +1574,7 @@ fn the_setting_reveals_the_aside_without_taking_the_keys() {
         rendered_application_rows_at(&application, WIDTH, HEIGHT)
             .join("\n")
             .contains("zq"),
-        "a reader who has not touched the Aside is still typing into the composer"
+        "a reader who has not touched the aside is still typing into the composer"
     );
 }
 
@@ -1594,7 +1594,7 @@ fn a_later_settings_snapshot_leaves_the_readers_own_choice_alone() {
     assert_eq!(
         aside_rule_column(&hidden_by_the_reader, WIDTH),
         None,
-        "another Setting's edit does not reopen an Aside the reader hid"
+        "another setting's edit does not reopen an aside the reader hid"
     );
 
     let mut shown_by_the_reader = launched_with(
@@ -1609,7 +1609,7 @@ fn a_later_settings_snapshot_leaves_the_readers_own_choice_alone() {
     assert_eq!(
         aside_rule_column(&shown_by_the_reader, WIDTH),
         Some(usize::from(WIDTH - 32)),
-        "nor does it put away an Aside the reader showed"
+        "nor does it put away an aside the reader showed"
     );
 }
 
@@ -1620,7 +1620,7 @@ fn the_launch_setting_chooses_the_aside_width_clamped_by_both_floors() {
     assert_eq!(
         aside_rule_column(&application, WIDTH),
         Some(usize::from(WIDTH - 40)),
-        "the Aside begins at the configured width"
+        "the aside begins at the configured width"
     );
 
     let wide = launched_with(workspace.path(), aside_settings(AsideVisibility::Shown, 60));
@@ -1632,7 +1632,7 @@ fn the_launch_setting_chooses_the_aside_width_clamped_by_both_floors() {
     assert_eq!(
         aside_rule_column(&wide, 78),
         Some(54),
-        "the Aside keeps its 24-column floor"
+        "the aside keeps its 24-column floor"
     );
     assert_eq!(
         aside_rule_column(&wide, 140),
@@ -1657,7 +1657,7 @@ fn a_changed_launch_setting_moves_nothing_but_the_width_a_reset_returns_to() {
     assert_eq!(
         aside_rule_column(&application, WIDTH),
         Some(usize::from(WIDTH - 50)),
-        "a reset returns to the launch width Setting currently delivered"
+        "a reset returns to the launch width setting currently delivered"
     );
 }
 
@@ -1675,7 +1675,7 @@ fn session_clocked_client(
     let now = std::sync::Arc::new(std::sync::Mutex::new(CLOCK_START));
     let clock = std::sync::Arc::clone(&now);
     let mut application = connected_application(workspace).with_session_clock(move || {
-        SessionTimestamp(*clock.lock().expect("read the Session clock"))
+        SessionTimestamp(*clock.lock().expect("read the session clock"))
     });
     let mut settings = EffectiveSettings::default();
     settings.sidebar.initial_visibility = SidebarVisibility::Hidden;
@@ -1684,7 +1684,7 @@ fn session_clocked_client(
 }
 
 fn advance_session_clock(now: &std::sync::Mutex<u64>, milliseconds: u64) {
-    *now.lock().expect("advance the Session clock") += milliseconds;
+    *now.lock().expect("advance the session clock") += milliseconds;
 }
 
 /// A moment `milliseconds` before the fixture's clock starts.
@@ -1697,7 +1697,7 @@ fn aside_row(application: &Application, needle: &str) -> String {
     let rows = aside_rows(application, WIDTH);
     rows.iter()
         .find(|row| row.contains(needle))
-        .unwrap_or_else(|| panic!("the Aside draws {needle:?}: {rows:#?}"))
+        .unwrap_or_else(|| panic!("the aside draws {needle:?}: {rows:#?}"))
         .clone()
 }
 
@@ -1708,13 +1708,13 @@ fn entry_lines(application: &Application, name: &str) -> [String; 2] {
     let detail = rows
         .iter()
         .position(|row| row.contains(name))
-        .unwrap_or_else(|| panic!("the Aside draws {name:?}: {rows:#?}"));
+        .unwrap_or_else(|| panic!("the aside draws {name:?}: {rows:#?}"));
     [rows[detail - 1].clone(), rows[detail].clone()]
 }
 
 /// The colour "Needs Intervention" is drawn in on the Aside row at `row`.
 fn needs_intervention_colour(application: &Application, row: usize) -> Option<Color> {
-    aside_colour(application, row, "Needs Intervention")
+    aside_colour(application, row, "Needs intervention")
 }
 
 fn change(application: &mut Application, through: SessionId, change: SubagentTreeChange) {
@@ -1749,7 +1749,7 @@ fn a_working_entry_ticks_from_when_its_work_began_and_stands_at_its_final_durati
     advance_session_clock(&now, 78_000);
     assert!(
         aside_row(&application, "Review").ends_with(" 1m"),
-        "read the way the Sidebar reads a Working duration: {:?}",
+        "read the way the sidebar reads a working duration: {:?}",
         aside_row(&application, "Review")
     );
 
@@ -1777,7 +1777,7 @@ fn a_working_entry_ticks_from_when_its_work_began_and_stands_at_its_final_durati
     );
     assert!(
         !application.wants_spinner(),
-        "nothing in the Aside is live any more"
+        "nothing in the aside is live any more"
     );
 }
 
@@ -1826,7 +1826,7 @@ fn a_settled_entry_working_again_counts_up_from_its_earlier_turns_and_stands_at_
     assert!(
         resumed[0].starts_with("├ ⠋ ") && resumed[1].ends_with(" 12s"),
         "working again, the entry moves back ahead of its settled sibling, wears the \
-         Working Marker, and counts up from its earlier Turns' time: {resumed:?}"
+         working marker, and counts up from its earlier turns' time: {resumed:?}"
     );
     assert!(
         application.wants_spinner(),
@@ -1860,7 +1860,7 @@ fn a_settled_entry_working_again_counts_up_from_its_earlier_turns_and_stands_at_
             "  │ Explore · Failed           1m 17s"
         ],
         "settled again, it falls back behind its newer sibling and wears the latest \
-         Turn's outcome over all its Turns' time"
+         turn's outcome over all its turns' time"
     );
     advance_session_clock(&now, 60_000);
     assert_eq!(
@@ -1890,7 +1890,7 @@ fn a_settled_entry_whose_end_went_unlearned_leaves_its_time_blank() {
     assert_eq!(
         entry_lines(&application, "Review"),
         ["  └ × Check the mapped seams", "      Review · Failed"],
-        "no time stands beside it, the Marker saying enough"
+        "no time stands beside it, the marker saying enough"
     );
 }
 
@@ -1922,12 +1922,12 @@ fn the_top_level_entry_wears_its_own_marker_and_time_beneath_its_title() {
     assert_eq!(
         rows[1..3],
         ["⠋ Map every seam", "│ Claude · opus                   42s"],
-        "a working top-level Session wears the Working Marker, and beneath it the time \
-         its Turns have worked, counted up from its earlier ones: {rows:#?}"
+        "a working top-level session wears the working marker, and beneath it the time \
+         its turns have worked, counted up from its earlier ones: {rows:#?}"
     );
     assert!(
         application.wants_spinner(),
-        "its Marker spins and its time rises"
+        "its marker spins and its time rises"
     );
     advance_session_clock(&now, 3_000);
     assert_eq!(
@@ -1949,7 +1949,7 @@ fn the_top_level_entry_wears_its_own_marker_and_time_beneath_its_title() {
     assert_eq!(
         aside_rows(&application, WIDTH)[1..3],
         ["✓ Map every seam", "│ Claude · opus                   45s"],
-        "once its Turn settles it wears its outcome and its time stands"
+        "once its turn settles it wears its outcome and its time stands"
     );
     assert!(!application.wants_spinner());
 
@@ -1987,7 +1987,7 @@ fn the_top_level_entry_wears_its_own_marker_and_time_beneath_its_title() {
     );
     assert!(
         aside_row(&application, "Check the mapped seams").starts_with("│ └ ⠋ "),
-        "the Subagent that works wears the Working Marker"
+        "the subagent that works wears the working marker"
     );
     assert!(application.wants_spinner());
 }
@@ -2017,24 +2017,24 @@ fn a_monitoring_subagent_and_the_top_level_monitoring_through_it_say_so_in_their
     let explore = entry_lines(&application, "Explore");
     assert!(
         explore[0].starts_with("└ ✓ ") && explore[1].ends_with(" monitoring"),
-        "the settled Marker stays, and monitoring stands in its time's place: {explore:?}"
+        "the settled marker stays, and monitoring stands in its time's place: {explore:?}"
     );
     assert!(
         !aside_row(&application, "Plan").contains("monitoring"),
-        "only the Subagent whose Session is Monitoring says so"
+        "only the subagent whose session is monitoring says so"
     );
     let rows = aside_rows(&application, WIDTH);
     assert_eq!(
         rows[1..3],
         ["✓ Map every seam", "│ Claude · opus            monitoring"],
         "the settled top-level entry keeps its outcome and says monitoring where its \
-         time would stand, as a Subagent's does: {rows:#?}"
+         time would stand, as a subagent's does: {rows:#?}"
     );
     advance_session_clock(&now, 5_000);
     assert_eq!(
         aside_rows(&application, WIDTH)[2],
         "│ Claude · opus            monitoring",
-        "nothing of it ticks while it only Monitors"
+        "nothing of it ticks while it only monitors"
     );
     assert!(
         !application.wants_spinner(),
@@ -2065,7 +2065,7 @@ fn a_monitoring_subagent_and_the_top_level_monitoring_through_it_say_so_in_their
     );
     assert!(
         aside_row(&application, "Explore").ends_with(" 12s"),
-        "once its Watches settle the entry stands at its time again"
+        "once its watches settle the entry stands at its time again"
     );
     assert_eq!(
         aside_rows(&application, WIDTH)[1..3],
@@ -2097,8 +2097,8 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
 
     let rows = aside_rows(&application, WIDTH);
     assert!(
-        rows[5].starts_with("│ └ ⠋ ") && rows[6] == "│     Reviewer of… Needs Intervention",
-        "the nested Subagent whose own Session waits says so in its time's place, its \
+        rows[5].starts_with("│ └ ⠋ ") && rows[6] == "│     Reviewer of… Needs intervention",
+        "the nested subagent whose own session waits says so in its time's place, its \
          name giving way: {rows:#?}"
     );
     assert_eq!(
@@ -2107,7 +2107,7 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
     );
     assert!(
         rows[4].ends_with(" 12s") && rows[2].ends_with(" 30s"),
-        "while neither its spawner nor the top-level Session repeats it: {rows:#?}"
+        "while neither its spawner nor the top-level session repeats it: {rows:#?}"
     );
 
     change(
@@ -2123,7 +2123,7 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
         answered[6].contains("Review") && answered[6].ends_with(" 5s"),
         "answered, the entry has its time back: {answered:#?}"
     );
-    assert!(!answered.join("\n").contains("Needs Intervention"));
+    assert!(!answered.join("\n").contains("Needs intervention"));
 
     change(
         &mut application,
@@ -2137,9 +2137,9 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
     assert!(
         asked[1].starts_with("⠋ ")
             && asked[2].starts_with("│ Claude · opus")
-            && asked[2].ends_with(" Needs Intervention"),
-        "the top-level entry says so too, in its time's place beneath its Title, where \
-         the Intervention is its own: {asked:#?}"
+            && asked[2].ends_with(" Needs intervention"),
+        "the top-level entry says so too, in its time's place beneath its title, where \
+         the intervention is its own: {asked:#?}"
     );
     assert_eq!(
         needs_intervention_colour(&application, 2),
@@ -2148,7 +2148,7 @@ fn needs_intervention_stands_in_the_warning_colour_on_the_owning_entry_only() {
     assert_eq!(
         asked
             .iter()
-            .filter(|row| row.contains("Needs Intervention"))
+            .filter(|row| row.contains("Needs intervention"))
             .count(),
         1,
         "and it is the only entry that does"
@@ -2219,7 +2219,7 @@ fn row_focus_begins_on_the_open_entry_and_walks_with_the_arrows_and_ctrl_p_n() {
     assert_eq!(
         focused_aside_rows(&application),
         ["│ └ ⠋ Check the mapped seams", "│     Review"],
-        "focus begins on the open Session's entry, and paints both its lines"
+        "focus begins on the open session's entry, and paints both its lines"
     );
 
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
@@ -2253,7 +2253,7 @@ fn enter_opens_the_focused_entry_and_does_nothing_on_the_open_one() {
     assert_eq!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::Continue,
-        "the open Session's own entry opens nothing"
+        "the open session's own entry opens nothing"
     );
     press(&mut application, KeyCode::Down, KeyModifiers::NONE);
     assert_eq!(
@@ -2388,7 +2388,7 @@ fn focus_is_painted_only_while_the_aside_holds_the_keys() {
     let (mut application, _) = tree_open_at_top(workspace.path());
     assert!(
         focused_aside_rows(&application).is_empty(),
-        "an Aside without the keys paints no focus"
+        "an aside without the keys paints no focus"
     );
 
     invoke(&mut application, SemanticCommandId::AsideToggle);
@@ -2403,19 +2403,19 @@ fn focus_is_painted_only_while_the_aside_holds_the_keys() {
     invoke(&mut application, SemanticCommandId::SidebarToggle);
     assert!(
         focused_aside_rows_at(&application, all_three).is_empty(),
-        "the Sidebar taking the keys takes them, and the paint, from the Aside"
+        "the sidebar taking the keys takes them, and the paint, from the aside"
     );
     invoke(&mut application, SemanticCommandId::AsideToggle);
     assert_eq!(
         focused_aside_rows_at(&application, all_three),
         ["✓ Map every seam", "│ Claude · opus                 1m 5s"],
-        "and the Aside takes them back"
+        "and the aside takes them back"
     );
 
     invoke(&mut application, SemanticCommandId::SettingsOpen);
     assert!(
         focused_aside_rows_at(&application, all_three).is_empty(),
-        "an overlay outranks the Aside, so its focus is not painted beneath it"
+        "an overlay outranks the aside, so its focus is not painted beneath it"
     );
 }
 
@@ -2561,7 +2561,7 @@ fn wheel(application: &mut Application, kind: MouseEventKind) {
             row: 5,
             modifiers: KeyModifiers::NONE,
         }))
-        .expect("wheel over the Aside");
+        .expect("wheel over the aside");
 }
 
 #[test]

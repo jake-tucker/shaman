@@ -3747,13 +3747,13 @@ fn authored_heading(verb: &str, author: &Author) -> String {
         Author::Sidekick { title, .. } => {
             let title = one_line(title);
             if title.is_empty() {
-                format!("{verb} by a Sidekick")
+                format!("{verb} by a sidekick")
             } else {
-                format!("{verb} by Sidekick · {title}")
+                format!("{verb} by sidekick · {title}")
             }
         }
         Author::PeerSidekick { peer, .. } => {
-            format!("{verb} by a Sidekick on {}", one_line(peer))
+            format!("{verb} by a sidekick on {}", one_line(peer))
         }
     }
 }
@@ -3769,7 +3769,7 @@ fn delegation_sender(delegator: &Delegator, parent: Option<SessionId>) -> String
         (Some(name), true) => format!("{name} (parent)"),
         (Some(name), false) => name.to_owned(),
         (None, true) => "parent".to_owned(),
-        (None, false) => "the top-level Agent".to_owned(),
+        (None, false) => "the top-level agent".to_owned(),
     }
 }
 
@@ -3885,9 +3885,9 @@ fn render_activity_with_model_names(
                             crate::protocol::QuestionnaireOutcome::SubmissionRejected =>
                                 "Answer not delivered; review and retry",
                             crate::protocol::QuestionnaireOutcome::DeliveryUncertain =>
-                                "Delivery uncertain; Answer will not be resent",
+                                "Delivery uncertain; answer will not be resent",
                             crate::protocol::QuestionnaireOutcome::Unavailable =>
-                                "Unavailable; previous Provider request is no longer live",
+                                "Unavailable; previous provider request is no longer live",
                             crate::protocol::QuestionnaireOutcome::Pending => "Pending",
                             crate::protocol::QuestionnaireOutcome::Submitting => "Submitting",
                             crate::protocol::QuestionnaireOutcome::Answered => "Answered",
@@ -4420,7 +4420,7 @@ fn render_reasoning_group(
     if !live {
         let header_line = lines
             .last_mut()
-            .expect("a Reasoning Group always projects a header line");
+            .expect("a reasoning group always projects a header line");
         header_line.spans.push(StyledSpan::text(" · ", style));
         header_line.spans.push(StyledSpan::text(
             format!("{} steps", members.len()),
@@ -5456,7 +5456,7 @@ fn push_reasoning_activity(
     if hidden > 0 {
         let header_line = lines
             .last_mut()
-            .expect("a Reasoning Activity always projects a header line");
+            .expect("a reasoning activity always projects a header line");
         header_line.spans.push(StyledSpan::chrome(" · ", style));
         header_line.spans.push(StyledSpan::chrome(
             fold_marker_text(hidden, "lines"),
@@ -5578,7 +5578,7 @@ fn push_move_activity(
 
     let (marker, style) = subagent_marker(status, theme);
     let text = match status {
-        ActivityStatus::Active => format!("Moving from {from} to {to} once the Session settles"),
+        ActivityStatus::Active => format!("Moving from {from} to {to} once the session settles"),
         ActivityStatus::Completed => format!("Moved from {from} to {to}"),
         ActivityStatus::Failed => match error {
             Some(error) => format!("Move from {from} to {to} failed: {error}"),
@@ -5706,7 +5706,7 @@ fn push_compaction_activity(
     }
     let header_line = lines
         .last_mut()
-        .expect("a Compaction always projects its row");
+        .expect("a compaction always projects its row");
     header_line.spans.push(StyledSpan::chrome(" · ", style));
     header_line.spans.push(StyledSpan::chrome(
         fold_marker_text(hidden, "lines"),
@@ -6022,7 +6022,7 @@ fn push_message_block(
             }
         }
         push_message_block_row(lines, segments, row.width, available_width, block);
-        let projected = lines.last_mut().expect("the Message row was just pushed");
+        let projected = lines.last_mut().expect("the message row was just pushed");
         projected.continuation = row.start > 0 && content.as_bytes()[row.start - 1] != b'\n';
         if projected.continuation {
             projected.omitted_prefix = content[previous_end..row.start].to_owned();
@@ -6130,7 +6130,7 @@ fn push_route_row(
     let header_line = projection
         .lines
         .last_mut()
-        .expect("a Route's decision always projects its sentence");
+        .expect("a route's decision always projects its sentence");
     header_line.spans.push(StyledSpan::chrome(" · ", style));
     header_line.spans.push(StyledSpan::chrome(
         fold_marker_text(hidden, "lines"),
@@ -7108,7 +7108,7 @@ mod tests {
 
         assert!(
             expanded_rows > folded_rows,
-            "the Fold state is a rendering input, so flipping it alone must rebuild the view: \
+            "the fold state is a rendering input, so flipping it alone must rebuild the view: \
              {folded_rows} rows folded, {expanded_rows} rows expanded"
         );
     }
@@ -7151,7 +7151,7 @@ mod tests {
 
         assert!(
             !groups.is_collapsed(expanded_by_hand) && !groups.is_collapsed(untouched),
-            "the expanded posture opens every Group, whatever the reader flipped before"
+            "the expanded posture opens every group, whatever the reader flipped before"
         );
 
         groups.collapse(untouched);
@@ -7335,7 +7335,7 @@ mod tests {
                 .spans
                 .iter()
                 .all(|span| span.style.fg == theme.text.subdued.fg),
-            "an expanded Reasoning body reads as subdued prose: {:?}",
+            "an expanded reasoning body reads as subdued prose: {:?}",
             lines[1]
         );
     }
@@ -7374,7 +7374,7 @@ mod tests {
         assert_eq!(
             projected_text(marker),
             "  [Message truncated]",
-            "a capped Message ends with a marker that names a Message"
+            "a capped message ends with a marker that names a message"
         );
         assert!(
             line_style(marker).add_modifier.contains(Modifier::ITALIC),
@@ -7428,7 +7428,7 @@ mod tests {
         };
         assert!(
             !line_style(marker).add_modifier.contains(Modifier::ITALIC),
-            "output the Provider sent keeps the style of command output: {marker:?}"
+            "output the provider sent keeps the style of command output: {marker:?}"
         );
         assert_eq!(projected_text(marker), "      [output truncated]");
     }
@@ -7469,7 +7469,7 @@ mod tests {
         };
         assert!(
             !line_style(marker).add_modifier.contains(Modifier::ITALIC),
-            "content the Provider sent renders as Markdown: {marker:?}"
+            "content the provider sent renders as Markdown: {marker:?}"
         );
     }
 
@@ -7797,7 +7797,7 @@ mod tests {
             (folded, peeking, expanded),
             (1, 1, 1),
             "each step a reader clicks through must leave the header on the row they clicked, \
-             directly under the compact Activity above it"
+             directly under the compact activity above it"
         );
     }
 
@@ -7805,7 +7805,7 @@ mod tests {
     fn an_error_takes_air_even_between_compact_activities() {
         let snapshot = transcript_snapshot(vec![
             Entry::Activity(status("Preparing the workspace")),
-            Entry::Activity(error("the Provider dropped the Turn")),
+            Entry::Activity(error("the provider dropped the turn")),
             Entry::Activity(status("Done")),
         ]);
 
@@ -7820,7 +7820,7 @@ mod tests {
             [
                 "  Preparing the workspace",
                 "",
-                "  Error: the Provider dropped the Turn",
+                "  Error: the provider dropped the turn",
                 "",
                 "  Done",
             ]
@@ -7999,7 +7999,7 @@ mod tests {
         assert_eq!(
             rows,
             ["┃ run the tests", "", "  ✓ Worked", "", "  All green.",],
-            "a settled Turn reads as question, marker, answer"
+            "a settled turn reads as question, marker, answer"
         );
     }
 
@@ -8106,7 +8106,7 @@ mod tests {
                 provider: crate::protocol::ProviderId::new("copilot"),
                 from: Some(crate::protocol::ModelId::new("gpt-sol")),
                 to: crate::protocol::ModelId::new("gpt-luna"),
-                reason: Some("the Model declined the request".to_owned()),
+                reason: Some("the model declined the request".to_owned()),
             },
         }));
         entries.extend(hidden_work());
@@ -8126,7 +8126,7 @@ mod tests {
             [
                 "┃ run the tests",
                 "  ✓ Worked",
-                "  Copilot rerouted from gpt-sol to gpt-luna: the Model declined the request",
+                "  Copilot rerouted from gpt-sol to gpt-luna: the model declined the request",
                 "  All green.",
             ]
         );
@@ -8298,7 +8298,7 @@ mod tests {
         assert_ne!(
             message_fingerprint(&standing, &no_attachments()),
             message_fingerprint(&passed_over, &no_attachments()),
-            "a Transcript already drawn draws it again"
+            "a transcript already drawn draws it again"
         );
     }
 
@@ -8374,7 +8374,7 @@ mod tests {
                 "",
                 "  Late findings.",
             ],
-            "a Continuation reads as marker and answer, with no user Message before it"
+            "a continuation reads as marker and answer, with no user message before it"
         );
     }
 
@@ -8410,7 +8410,7 @@ mod tests {
             assert_eq!(
                 rows,
                 ["┃ run the tests", "", marker],
-                "the marker states how long a {status:?} Turn worked"
+                "the marker states how long a {status:?} turn worked"
             );
         }
     }
@@ -8487,12 +8487,12 @@ mod tests {
                 rows[2],
                 format!("  ✓ Worked for {humanized}"),
                 "a marker humanizes its duration the way every other duration in the \
-                 Transcript is humanized"
+                 transcript is humanized"
             );
             assert_eq!(
                 humanized,
                 super::humanized_duration(duration_ms),
-                "and it is the Transcript's own formatter that says so"
+                "and it is the transcript's own formatter that says so"
             );
         }
     }
@@ -8518,7 +8518,7 @@ mod tests {
             assert_eq!(
                 rows,
                 ["┃ run the tests", "", "  ✓ Worked"],
-                "a Turn missing its {missing} has no duration to state"
+                "a turn missing its {missing} has no duration to state"
             );
         }
     }
@@ -8531,7 +8531,7 @@ mod tests {
         stamp_turn_durations(&mut snapshot, 83_000);
         let started_at = snapshot.turns[0]
             .started_at
-            .expect("a timed Turn carries a start");
+            .expect("a timed turn carries a start");
         snapshot.turns[0].settled_at = Some(SessionTimestamp(started_at.0 - 1));
 
         let rows = projected_rows(
@@ -8567,7 +8567,7 @@ mod tests {
             assert_eq!(
                 rows,
                 ["┃ run the tests", "", marker],
-                "the marker states the outcome of a {status:?} Turn"
+                "the marker states the outcome of a {status:?} turn"
             );
         }
     }
@@ -8576,7 +8576,7 @@ mod tests {
     fn a_failed_turns_terminal_error_stays_outside_its_fold() {
         let mut entries = vec![Entry::Message(user_message("run the tests"))];
         entries.extend(hidden_work());
-        entries.push(Entry::Activity(error("the Provider disconnected")));
+        entries.push(Entry::Activity(error("the provider disconnected")));
         let (snapshot, _) = turn_snapshot(vec![(TurnStatus::Failed, entries)]);
 
         let rows = projected_rows(
@@ -8592,9 +8592,9 @@ mod tests {
                 "",
                 "  × Failed",
                 "",
-                "  Error: the Provider disconnected",
+                "  Error: the provider disconnected",
             ],
-            "the Error a Turn ended on is its outcome, so a fold never hides it"
+            "the Error a turn ended on is its outcome, so a fold never hides it"
         );
     }
 
@@ -8625,7 +8625,7 @@ mod tests {
         let mut entries = vec![Entry::Message(user_message("run the tests"))];
         entries.extend(hidden_work());
         entries.extend([
-            Entry::Activity(error("the Provider disconnected")),
+            Entry::Activity(error("the provider disconnected")),
             Entry::Message(agent_message("I lost the connection.")),
         ]);
         let (snapshot, _) = turn_snapshot(vec![(TurnStatus::Failed, entries)]);
@@ -8643,11 +8643,11 @@ mod tests {
                 "",
                 "  × Failed",
                 "",
-                "  Error: the Provider disconnected",
+                "  Error: the provider disconnected",
                 "",
                 "  I lost the connection.",
             ],
-            "the Error a Turn failed on is its outcome whatever the Provider said afterwards"
+            "the Error a turn failed on is its outcome whatever the provider said afterwards"
         );
     }
 
@@ -8709,7 +8709,7 @@ mod tests {
                 "  Preparing the workspace",
                 "  ✓ cargo test",
             ],
-            "the Turn a reader is watching keeps every entry it has produced"
+            "the turn a reader is watching keeps every entry it has produced"
         );
     }
 
@@ -8782,7 +8782,7 @@ mod tests {
                 "  Migration done.",
             ],
             "everything the marker disclosed sits in its member gutter — the interim \
-             Message included — while the answer outside the fold keeps its own"
+             message included — while the answer outside the fold keeps its own"
         );
     }
 
@@ -8822,7 +8822,7 @@ mod tests {
                 "",
                 "  Tidied.",
             ],
-            "a Turn Fold opens onto the Groups and Folds the reader left behind it, each \
+            "a turn fold opens onto the groups and folds the reader left behind it, each \
              drawn in the member gutter of the marker it folds back into"
         );
     }
@@ -8866,7 +8866,7 @@ mod tests {
                 "",
                 "  Shipped.",
             ],
-            "Turn Folds are per-Turn state, so opening one leaves its neighbours folded"
+            "Turn folds are per-turn state, so opening one leaves its neighbours folded"
         );
     }
 
@@ -8889,7 +8889,7 @@ mod tests {
 
         assert!(
             expanded_rows > folded_rows,
-            "the Turn Fold state is a rendering input, so flipping it alone must rebuild the \
+            "the turn fold state is a rendering input, so flipping it alone must rebuild the \
              view: {folded_rows} rows folded, {expanded_rows} rows expanded"
         );
     }
@@ -8936,7 +8936,7 @@ mod tests {
 
         assert!(
             turns.is_folded(opened_by_hand),
-            "under the folded posture, moving on folds the Turn the reader opened"
+            "under the folded posture, moving on folds the turn the reader opened"
         );
 
         let folded_by_hand = TurnId::new();
@@ -8948,7 +8948,7 @@ mod tests {
 
         assert!(
             turns.is_folded(folded_by_hand),
-            "compressing past work never opens a Turn: under the expanded posture the only \
+            "compressing past work never opens a turn: under the expanded posture the only \
              flips the reader can have taken are foldings, and those stand"
         );
     }
@@ -8966,7 +8966,7 @@ mod tests {
 
         assert!(
             !turns.is_folded(expanded_by_hand) && !turns.is_folded(untouched),
-            "the expanded posture opens every Turn, whatever the reader flipped before"
+            "the expanded posture opens every turn, whatever the reader flipped before"
         );
 
         turns.toggle(untouched);
@@ -8974,7 +8974,7 @@ mod tests {
         turns.toggle_posture();
         assert!(
             turns.is_folded(expanded_by_hand) && turns.is_folded(untouched),
-            "flipping back folds every Turn again"
+            "flipping back folds every turn again"
         );
     }
 
@@ -9001,12 +9001,12 @@ mod tests {
 
         assert!(
             folded.hides_content && !expanded.hides_content,
-            "the marker holds the Turn's work back folded and heads it expanded: \
+            "the marker holds the turn's work back folded and heads it expanded: \
              {folded:?} then {expanded:?}"
         );
         assert_eq!(
             folded.row, expanded.row,
-            "expanding reveals the Turn's entries at the marker's position, so the row the \
+            "expanding reveals the turn's entries at the marker's position, so the row the \
              reader clicked never moves under them"
         );
     }
@@ -9021,14 +9021,14 @@ mod tests {
 
         assert!(
             !turns.is_folded(clicked) && turns.is_folded(untouched),
-            "a toggle answers for the one Turn it names"
+            "a toggle answers for the one turn it names"
         );
 
         turns.toggle(clicked);
 
         assert!(
             turns.is_folded(clicked),
-            "toggling the same Turn again folds it back"
+            "toggling the same turn again folds it back"
         );
     }
 
@@ -9039,7 +9039,7 @@ mod tests {
             .iter()
             .copied()
             .find(|start| start.key == UnitKey::TurnFold(turn_id))
-            .expect("a settled Turn with hidden work projects its marker")
+            .expect("a settled turn with hidden work projects its marker")
     }
 
     /// Projects a Transcript and hands back the view, for the tests that read
@@ -9297,10 +9297,10 @@ mod tests {
             .message_starts()
             .iter()
             .find(|start| start.message_id == spoke_id)
-            .expect("the agent Message anchors the scroll position");
+            .expect("the agent message anchors the scroll position");
         assert_eq!(
             start.row, 2,
-            "scrolling to a Message lands on the Message, not on the blank above it"
+            "scrolling to a message lands on the message, not on the blank above it"
         );
     }
 
@@ -9388,10 +9388,10 @@ mod tests {
         let width = 24;
         let view = projected_view_at(&cache, &snapshot, width);
         let rows = view.window(0, view.row_count()).rows;
-        assert!(rows.len() > 2, "the Message wraps: {rows:?}");
+        assert!(rows.len() > 2, "the message wraps: {rows:?}");
         let line = view
             .projected_line(0)
-            .expect("the Message projects a line")
+            .expect("the message projects a line")
             .written_text();
 
         for (row, drawn) in rows.iter().enumerate() {
@@ -9401,7 +9401,7 @@ mod tests {
             let start = view.position_at(row, indent).expect("a drawn row resolves");
             assert_eq!(
                 start.line, 0,
-                "every row of the Message belongs to its one line"
+                "every row of the message belongs to its one line"
             );
             assert!(
                 line[start.offset..].starts_with(shown),
@@ -9434,7 +9434,7 @@ mod tests {
         let view = projected_view_at(&cache, &snapshot, 40);
         let text = view
             .projected_line(0)
-            .expect("the Message projects a line")
+            .expect("the message projects a line")
             .written_text();
         let first = text.find('\u{5b57}').expect("the line holds the character");
         assert_eq!(
@@ -9444,7 +9444,7 @@ mod tests {
                 view.position_at(0, 4).expect("resolves").offset,
             ),
             (first, first, first + '\u{5b57}'.len_utf8()),
-            "the Message's indent takes two columns, then each wide character two"
+            "the message's indent takes two columns, then each wide character two"
         );
     }
 
@@ -9481,7 +9481,7 @@ mod tests {
         assert_eq!(
             view.position_at(3, 0),
             None,
-            "a row past the Transcript resolves to nothing"
+            "a row past the transcript resolves to nothing"
         );
         assert!(view.projected_line(3).is_none());
     }
@@ -9495,7 +9495,7 @@ mod tests {
         let view = projected_view_at(&cache, &snapshot, width);
         assert!(
             view.row_count() > MAX_TRANSCRIPT_SOURCE_LINE_ROWS,
-            "the Message wraps past the cap"
+            "the message wraps past the cap"
         );
 
         let opening = view.position_at(0, 2).expect("the first row resolves");
@@ -9568,7 +9568,7 @@ mod tests {
                 (false, "cargo build"),
                 (true, " (exit 101)")
             ],
-            "the Marker and the exit suffix decorate the command"
+            "the marker and the exit suffix decorate the command"
         );
         assert_eq!(
             span_marks(&lines[1]),
@@ -9642,7 +9642,7 @@ mod tests {
             assert_eq!(
                 span_marks(&lines[1])[..2],
                 [(true, "│ "), (false, "Map the seams.")],
-                "the Delegation's bar is chrome and what it asked is text"
+                "the delegation's bar is chrome and what it asked is text"
             );
             projected_text(&lines[0]).trim_end().to_owned()
         };
@@ -9658,8 +9658,8 @@ mod tests {
         );
         assert_eq!(
             heading(sibling, None),
-            "│ Delegated by the top-level Agent",
-            "an unnamed sender that is not the parent can only be a top-level Session's Agent"
+            "│ Delegated by the top-level agent",
+            "an unnamed sender that is not the parent can only be a top-level session's agent"
         );
     }
 
@@ -9707,7 +9707,7 @@ mod tests {
         assert_eq!(
             span_marks(&lines[0]),
             [(true, "┃ "), (false, "hello there"), (true, "       ")],
-            "a user Message's bar and the air at its right edge are chrome"
+            "a user message's bar and the air at its right edge are chrome"
         );
 
         let mut lines = Vec::new();
@@ -9728,7 +9728,7 @@ mod tests {
         assert_eq!(
             span_marks(&lines[2]),
             [(true, "  "), (true, "rust")],
-            "a Code Block's language label names the fence rather than the code"
+            "a code block's language label names the fence rather than the code"
         );
         assert!(
             lines[3].spans.iter().skip(1).all(|span| !span.chrome)
@@ -9832,7 +9832,7 @@ mod tests {
             ..
         } = &mut running
         else {
-            unreachable!("the command helper builds a Command Activity");
+            unreachable!("the command helper builds a command activity");
         };
         *status = ActivityStatus::Active;
         *exit_status = None;
@@ -9867,7 +9867,7 @@ mod tests {
         let past_it = view.window(view.row_count().saturating_sub(1), 1);
         assert!(
             past_it.spinner_rows.is_empty(),
-            "a window opening past the Marker records nothing to patch"
+            "a window opening past the marker records nothing to patch"
         );
     }
 
@@ -10057,13 +10057,13 @@ mod tests {
         assert_eq!(
             window.spinner_rows.len(),
             4,
-            "each of the four visible folded file rows repeats the Activity Spinner"
+            "each of the four visible folded file rows repeats the activity spinner"
         );
         for spinner_line in window.spinner_rows {
             let row = rendered_text(&window.rows[spinner_line]);
             assert!(
                 row.contains(super::spinner::MARKER) && row.contains("Creating src/file"),
-                "every recorded row carries the repeated live Marker and action: {row}"
+                "every recorded row carries the repeated live marker and action: {row}"
             );
         }
     }
@@ -10094,7 +10094,7 @@ mod tests {
                 std::path::Path::new(""),
             );
 
-            assert_eq!(lines.len(), 1, "one File Change stays one source line");
+            assert_eq!(lines.len(), 1, "one file change stays one source line");
             let row = projected_text(&lines[0]);
             assert!(
                 row.width() <= usize::from(width),
@@ -10102,12 +10102,12 @@ mod tests {
             );
             assert!(
                 row.contains('×'),
-                "truncation never consumes the Activity Marker at width {width}: {row}"
+                "truncation never consumes the activity marker at width {width}: {row}"
             );
             if width > 1 {
                 assert!(
                     row.ends_with('…'),
-                    "a clipped File Change reports the missing tail at width {width}: {row}"
+                    "a clipped file change reports the missing tail at width {width}: {row}"
                 );
             }
         }
@@ -10574,7 +10574,7 @@ mod tests {
                 before_tokens: None,
                 after_tokens: None,
                 error: None,
-                summary: Some("What the Agent keeps.\n\n- a\n- b".repeat(100)),
+                summary: Some("What the agent keeps.\n\n- a\n- b".repeat(100)),
                 summary_truncated: false,
             },
         ];
@@ -10591,7 +10591,7 @@ mod tests {
                     project_activity(activity, FoldStep::Expanded, 80, false);
                 }),
                 0,
-                "the opened Fold does project it, so the count above means something: \
+                "the opened fold does project it, so the count above means something: \
                  {activity:?}"
             );
         }
@@ -10614,7 +10614,7 @@ mod tests {
                 before_tokens: None,
                 after_tokens: None,
                 error: None,
-                summary: Some("What the Agent keeps.\n\n- a\n- b".to_owned()),
+                summary: Some("What the agent keeps.\n\n- a\n- b".to_owned()),
                 summary_truncated: false,
             },
             route_row(RouteDecision::Verdict {
@@ -10631,7 +10631,7 @@ mod tests {
                         folded = project_activity(activity, FoldStep::Folded, 80, hyperlinks).0;
                     }),
                     0,
-                    "a folded row counts its lines without a copy Document: {activity:?}"
+                    "a folded row counts its lines without a copy document: {activity:?}"
                 );
                 assert!(
                     projected_text(&folded[0]).ends_with("lines"),
@@ -10642,7 +10642,7 @@ mod tests {
                         project_activity(activity, FoldStep::Expanded, 80, hyperlinks);
                     }),
                     1,
-                    "the opened Fold paints its prose with the one Document a copy reads: \
+                    "the opened fold paints its prose with the one document a copy reads: \
                      {activity:?}"
                 );
             }

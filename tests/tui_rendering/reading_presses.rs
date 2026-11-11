@@ -89,9 +89,9 @@ fn warm_catalog(application: &mut Application) {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::ModelList,
         )))
-        .expect("open the Model picker to warm the catalog")
+        .expect("open the model picker to warm the catalog")
     else {
-        panic!("the Model picker asks for the catalog");
+        panic!("the model picker asks for the catalog");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed {
@@ -105,13 +105,13 @@ fn warm_catalog(application: &mut Application) {
                 }],
             },
         })
-        .expect("cache the Model catalog");
+        .expect("cache the model catalog");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Esc,
             KeyModifiers::NONE,
         )))
-        .expect("close the warmed Model picker");
+        .expect("close the warmed model picker");
 }
 
 /// The cell `needle` begins at on the lowest row of the frame that draws it,
@@ -173,7 +173,7 @@ fn invoke(application: &mut Application, command: SemanticCommandId) -> Applicat
 fn picker_is_drawn(application: &Application) -> bool {
     rendered_application_rows_at(application, SIZE.0, SIZE.1)
         .iter()
-        .any(|row| row.contains("Choose Icon"))
+        .any(|row| row.contains("Choose icon"))
 }
 
 /// The Landing with the one-Model catalog cached and an Agent Selection
@@ -192,7 +192,7 @@ fn landing() -> Application {
             transition,
             ApplicationTransition::ConfirmLandingAgentSelection(_)
         ),
-        "cycling chooses an Agent Selection on the Landing"
+        "cycling chooses an agent selection on the landing"
     );
     application
 }
@@ -206,7 +206,7 @@ fn the_landing_footers_agent_selection_leads_into_models_and_options() {
     let rows = rendered_application_rows_at(&footer, SIZE.0, SIZE.1).join("\n");
     assert!(
         rows.contains("Codex · Pressable GPT · Extra High"),
-        "the footer names the Agent Selection: {rows}"
+        "the footer names the agent selection: {rows}"
     );
 
     for (reading, command) in [
@@ -244,7 +244,7 @@ fn open_session(workspace: &std::path::Path) -> Application {
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             selected_session_snapshot(session_id, workspace, selection()),
         )))
-        .expect("show the Session with its Agent Selection");
+        .expect("show the session with its agent selection");
     application
 }
 
@@ -257,7 +257,7 @@ fn the_session_footers_agent_selection_leads_into_models_and_options() {
         rendered_application_rows_at(&open_session(workspace.path()), SIZE.0, SIZE.1).join("\n");
     assert!(
         rows.contains("Codex · Pressable GPT · Extra High"),
-        "the footer names the Session's Agent Selection: {rows}"
+        "the footer names the session's agent selection: {rows}"
     );
 
     for (reading, command) in [
@@ -288,7 +288,7 @@ fn remote_session(workspace: &std::path::Path) -> Application {
             reference: SessionReference::new(Outlook::Remote("studio".to_owned()), session_id),
             snapshot,
         })
-        .expect("open the Remote's Session");
+        .expect("open the remote's session");
     application
 }
 
@@ -316,7 +316,7 @@ fn the_remotes_icon_in_the_session_header_chooses_the_remotes_icon() {
     press_at(&mut application, cell);
     assert!(
         picker_is_drawn(&application),
-        "a press on the Remote's Icon opens the Icon Picker"
+        "a press on the remote's icon opens the icon picker"
     );
     for character in "md-bug".chars() {
         application
@@ -331,9 +331,9 @@ fn the_remotes_icon_in_the_session_header_chooses_the_remotes_icon() {
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("choose the Icon")
+        .expect("choose the icon")
     else {
-        panic!("choosing over a Remote asks to set its Icon");
+        panic!("choosing over a remote asks to set its icon");
     };
     assert_eq!(name, "studio");
     assert_eq!(icon, "md-bug");
@@ -341,14 +341,14 @@ fn the_remotes_icon_in_the_session_header_chooses_the_remotes_icon() {
 
     application
         .handle_event(ApplicationEvent::RemoteIconSet { name, icon })
-        .expect("the Server keeps the Icon");
+        .expect("the server keeps the icon");
     let header = rendered_application_rows_at(&application, SIZE.0, SIZE.1)
         .into_iter()
         .find(|row| row.contains("studio"))
-        .expect("the header names the Remote");
+        .expect("the header names the remote");
     assert!(
         header.contains(&format!("{BUG} studio")),
-        "the Remote is drawn beside its chosen Icon: {header}"
+        "the remote is drawn beside its chosen icon: {header}"
     );
     assert!(!header.contains(MONITOR), "{header}");
 }
@@ -368,7 +368,7 @@ fn a_listing_of_the_remotes_says_which_icon_each_is_drawn_beside() {
                 icon: Some("md-bug".to_owned()),
             },
         ]))
-        .expect("learn the Remotes");
+        .expect("learn the remotes");
     let rows = rendered_application_rows_at(&application, SIZE.0, SIZE.1).join("\n");
     assert!(rows.contains(&format!("{BUG} studio")), "{rows}");
 }
@@ -383,16 +383,16 @@ fn the_workspaces_icon_in_the_session_header_chooses_the_workspaces_icon() {
     press_at(&mut application, cell);
     assert!(
         picker_is_drawn(&application),
-        "a press on the Workspace's Icon opens the Icon Picker"
+        "a press on the workspace's icon opens the icon picker"
     );
     let ApplicationTransition::SetWorkspaceIcon { origin, .. } = application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("choose the Icon")
+        .expect("choose the icon")
     else {
-        panic!("choosing over a Workspace asks to set its Icon");
+        panic!("choosing over a workspace asks to set its icon");
     };
     assert_eq!(origin, Outlook::Remote("studio".to_owned()));
 }
@@ -413,7 +413,7 @@ fn without_icons_the_header_offers_no_icon_picker() {
                 reference: SessionReference::new(Outlook::Remote("studio".to_owned()), session_id),
                 snapshot,
             })
-            .expect("open the Remote's Session");
+            .expect("open the remote's session");
         application
     };
     let rows = rendered_application_rows_at(&open(), SIZE.0, SIZE.1).join("\n");

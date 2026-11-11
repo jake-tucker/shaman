@@ -87,7 +87,7 @@ impl BoundSkill {
         SkillIssue {
             span: span.clone(),
             message: format!(
-                "Skill `${}` is stale; edit or choose the Skill again before submitting",
+                "Skill `${}` is stale; edit or choose the skill again before submitting",
                 self.name
             ),
         }
@@ -100,7 +100,7 @@ impl BoundSkill {
         SkillIssue {
             span: span.clone(),
             message: format!(
-                "{carried}: waiting for the Skill Catalog of this Session's new directory"
+                "{carried}: waiting for the skill catalog of this session's new directory"
             ),
         }
     }
@@ -111,7 +111,7 @@ impl BoundSkill {
         SkillIssue {
             span: span.clone(),
             message: format!(
-                "{carried}: this directory's Skills could not be read; Enter retries, or edit them"
+                "{carried}: this directory's skills could not be read; Enter retries, or edit them"
             ),
         }
     }
@@ -193,7 +193,7 @@ impl TextBindings {
                 let written = text.get(span.clone()).unwrap_or("$Skill");
                 issues.push(SkillIssue {
                     message: format!(
-                        "There are multiple Skills named `{}`; choose a scoped result from autocomplete",
+                        "There are multiple skills named `{}`; choose a scoped result from autocomplete",
                         written.trim_start_matches('$')
                     ),
                     span,
@@ -215,7 +215,7 @@ impl TextBindings {
                 issues.push(SkillIssue {
                     span: span.clone(),
                     message: format!(
-                        "This Provider supports at most {limit} distinct Skill{} per Prompt",
+                        "This provider supports at most {limit} distinct skill{} per prompt",
                         if limit == 1 { "" } else { "s" }
                     ),
                 });
@@ -269,7 +269,7 @@ impl TextBindings {
         }
         // The names lead, as the composer's error line keeps one row.
         let message = format!(
-            "Skills {}. This Session Moved; edit or choose them again",
+            "Skills {}. This session moved; edit or choose them again",
             unmatched.as_markers()
         );
         spans

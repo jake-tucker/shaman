@@ -406,7 +406,7 @@ fn pin(
         SidekickAccess::ReadAndChange => {}
         SidekickAccess::ReadOnly { why } => {
             return Err(ToolRefusal::new(format!(
-                "`{key}` is a Setting a Sidekick may read but not change, since {why}, so it was \
+                "`{key}` is a setting a sidekick may read but not change, since {why}, so it was \
                  left as it is; tell the user, who may change it in Suru's settings panel."
             )));
         }
@@ -709,7 +709,7 @@ mod tests {
                         assert_eq!(
                             pin(found, value),
                             Err(ToolRefusal::new(format!(
-                                "`{}` is a Setting a Sidekick may read but not change, since \
+                                "`{}` is a setting a sidekick may read but not change, since \
                                  {why}, so it was left as it is; tell the user, who may change \
                                  it in Suru's settings panel.",
                                 descriptor.key

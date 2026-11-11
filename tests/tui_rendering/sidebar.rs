@@ -60,7 +60,7 @@ fn the_sidebar_stands_beside_the_landing_and_the_main_view_takes_what_is_left() 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         sidebar_is_drawn(&rows),
-        "the Sidebar takes its default 40-column left column, divided down the frame: {rows:?}"
+        "the sidebar takes its default 40-column left column, divided down the frame: {rows:?}"
     );
     let landing = rendered_row(&rows, "Type a prompt");
     assert!(
@@ -68,7 +68,7 @@ fn the_sidebar_stands_beside_the_landing_and_the_main_view_takes_what_is_left() 
             .find("Type a prompt")
             .expect("the composer is drawn")
             > 39,
-        "the Landing lays itself out in the columns the Sidebar left: {:?}",
+        "the landing lays itself out in the columns the sidebar left: {:?}",
         rows[landing]
     );
 }
@@ -83,12 +83,12 @@ fn the_sidebar_stands_beside_an_open_session_too() {
     let composer = rendered_row(&rows, "┌");
     assert!(
         rows[composer].find('┌').expect("the composer is drawn") > 39,
-        "an open Session lays itself out in the columns the Sidebar left: {:?}",
+        "an open session lays itself out in the columns the sidebar left: {:?}",
         rows[composer]
     );
     assert!(
         sidebar_is_drawn(&rows),
-        "the Sidebar stands beside a Session as it does beside the Landing: {rows:?}"
+        "the sidebar stands beside a session as it does beside the landing: {rows:?}"
     );
 }
 
@@ -110,16 +110,16 @@ fn an_active_row_is_three_lines_of_workspace_time_and_title() {
     let workspace_line = sidebar_column(&rows[first]);
     assert!(
         workspace_line.starts_with("suru"),
-        "the row leads with the Workspace the work is in: {workspace_line:?}"
+        "the row leads with the workspace the work is in: {workspace_line:?}"
     );
     assert!(
         workspace_line.ends_with("5m"),
-        "the right slot carries the compact time since the Session moved: {workspace_line:?}"
+        "the right slot carries the compact time since the session moved: {workspace_line:?}"
     );
     let title_line = sidebar_column(&rows[first + 1]);
     assert_eq!(
         title_line, "Sidebar shell",
-        "the second line carries the Title: {title_line:?}"
+        "the second line carries the title: {title_line:?}"
     );
     assert_eq!(
         sidebar_column(&rows[first + 2]),
@@ -275,13 +275,13 @@ fn sidebar_search_matches_the_words_of_a_title_and_never_the_icon_beside_it() {
                 KeyCode::Backspace,
                 KeyModifiers::NONE,
             )))
-            .expect("clear the Sidebar search");
+            .expect("clear the sidebar search");
     }
     type_terminal_text(&mut application, "md-bug");
     let by_icon_name = rendered_application_rows_at(&application, WIDE, 20).join("\n");
     assert!(
         !by_icon_name.contains("Rocket telemetry parsed"),
-        "an Icon Catalog name is carried beside a Title and is never matched against: {by_icon_name}"
+        "an icon catalog name is carried beside a title and is never matched against: {by_icon_name}"
     );
 }
 
@@ -357,7 +357,7 @@ fn a_working_active_row_draws_an_info_rail_and_an_idle_row_draws_none() {
     assert_standing_rail(&buffer, working_title, PANDA.info, PANDA.panel);
     let idle_title = u16::try_from(rendered_row(&rows, "Waiting quietly")).expect("screen row");
     for row in idle_title - 1..=idle_title + 1 {
-        assert_ne!(buffer.cell((0, row)).expect("idle Rail cell").symbol(), "▎");
+        assert_ne!(buffer.cell((0, row)).expect("idle rail cell").symbol(), "▎");
     }
 }
 
@@ -378,7 +378,7 @@ fn the_right_slot_says_monitoring_and_how_long_with_an_info_rail_while_a_watch_i
     let slot = sidebar_column(&rows[title - 1]);
     assert!(
         slot.ends_with("Monitoring 3m"),
-        "the right slot says the Session is waiting and how long it has been: {slot:?}"
+        "the right slot says the session is waiting and how long it has been: {slot:?}"
     );
     assert_standing_rail(
         &buffer,
@@ -406,7 +406,7 @@ fn a_monitoring_rail_holds_steady_while_a_working_rail_shimmers() {
     );
     assert!(
         application.wants_spinner(),
-        "a Monitoring duration has to be seen rising, so it arms the tick"
+        "a monitoring duration has to be seen rising, so it arms the tick"
     );
     let before = rendered_application_buffer(&application, WIDE, 20);
     let rows = crate::tui_rendering::support::buffer_rows(&before);
@@ -424,14 +424,14 @@ fn a_monitoring_rail_holds_steady_while_a_working_rail_shimmers() {
     assert_ne!(
         after.cell((0, working_row)).expect("Rail cell").style(),
         before.cell((0, working_row)).expect("Rail cell").style(),
-        "a Working Rail shimmers while its Agent works"
+        "a working rail shimmers while its agent works"
     );
     assert_standing_rail(&after, waiting, PANDA.info, PANDA.panel);
     for row in waiting - 1..=waiting + 1 {
         assert_eq!(
             after.cell((0, row)).expect("Rail cell").style(),
             before.cell((0, row)).expect("Rail cell").style(),
-            "a Monitoring Session's Agent is waiting, so its Rail holds steady"
+            "a monitoring session's agent is waiting, so its rail holds steady"
         );
     }
 }
@@ -478,7 +478,7 @@ fn failed_stands_ahead_of_monitoring_and_monitoring_ahead_of_done() {
     assert_standing_rail(&buffer, waiting, PANDA.info, PANDA.panel);
     assert!(
         sidebar_column(&rows[usize::from(waiting - 1)]).ends_with("Monitoring 30s"),
-        "a Session still waiting on a Watch is not Done"
+        "a session still waiting on a watch is not Done"
     );
     let done = u16::try_from(rendered_row(&rows, "Finished quietly")).expect("screen row");
     assert_standing_rail(&buffer, done, PANDA.success, PANDA.panel);
@@ -523,7 +523,7 @@ fn a_failed_session_still_monitoring_reads_monitoring_once_viewed() {
         let slot = sidebar_column(&rows[usize::from(row - 1)]);
         assert!(
             slot.ends_with("Monitoring 30s"),
-            "{title:?}: once the failure is Viewed the Session reads the waiting it is still \
+            "{title:?}: once the failure is viewed the session reads the waiting it is still \
              doing: {slot:?}"
         );
     }
@@ -564,7 +564,7 @@ fn latest_turn_outcomes_draw_failed_and_done_but_leave_interrupted_quiet() {
     let stopped = u16::try_from(rendered_row(&rows, "Stopped work")).expect("screen row");
     for row in stopped - 1..=stopped + 1 {
         assert_ne!(
-            buffer.cell((0, row)).expect("stopped Rail cell").symbol(),
+            buffer.cell((0, row)).expect("stopped rail cell").symbol(),
             "▎"
         );
     }
@@ -601,7 +601,7 @@ fn failed_and_done_draw_only_when_the_latest_turn_settled_after_viewed() {
     let cleared = u16::try_from(rendered_row(&rows, "Already viewed")).expect("screen row");
     for row in cleared - 1..=cleared + 1 {
         assert_ne!(
-            buffer.cell((0, row)).expect("cleared Rail cell").symbol(),
+            buffer.cell((0, row)).expect("cleared rail cell").symbol(),
             "▎"
         );
     }
@@ -629,7 +629,7 @@ fn an_open_session_never_draws_an_outcome_while_viewed_catches_up() {
     assert!(standing_rail_rows(&application).is_empty());
     assert!(
         !sidebar_column(&rows[rendered_row(&rows, "Watched settle") - 1]).contains("Failed"),
-        "the main view itself means this Client has Viewed the outcome"
+        "the main view itself means this client has viewed the outcome"
     );
 }
 
@@ -670,7 +670,7 @@ fn a_catalog_outcome_changes_the_row_in_place_and_new_work_takes_precedence() {
         let title = rendered_row(&rows, "Work elsewhere");
         assert!(
             sidebar_column(&rows[title - 1]).contains("Working"),
-            "a new Turn's Working reading stands ahead of the previous {word} outcome"
+            "a new turn's working reading stands ahead of the previous {word} outcome"
         );
     }
 }
@@ -710,14 +710,14 @@ fn a_catalog_viewed_change_clears_another_clients_outcome_in_place() {
                 },
             }),
         ))
-        .expect("take the Viewed moment another Client reported");
+        .expect("take the viewed moment another client reported");
 
     assert!(matches!(transition, ApplicationTransition::ListSessions(_)));
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(standing_rail_rows(&application).is_empty());
     assert!(
         !sidebar_column(&rows[rendered_row(&rows, "Shared result") - 1]).contains("Done"),
-        "the streamed Viewed moment clears the word before the listing round trip"
+        "the streamed viewed moment clears the word before the listing round trip"
     );
 }
 
@@ -781,7 +781,7 @@ fn the_right_slot_falls_back_to_the_compact_time_once_the_turn_settles() {
     let slot = sidebar_column(&rows[row - 1]);
     assert!(
         slot.ends_with("5m") && !slot.contains("Working"),
-        "a Session with nothing running reads the compact time again: {slot:?}"
+        "a session with nothing running reads the compact time again: {slot:?}"
     );
 }
 
@@ -846,7 +846,7 @@ fn a_turn_reported_on_the_catalog_stream_moves_the_working_label() {
     let row = rendered_row(&rows, "Quiet work");
     assert!(
         !sidebar_column(&rows[row - 1]).contains("Working"),
-        "a Session with nothing running reads the compact time: {rows:?}"
+        "a session with nothing running reads the compact time: {rows:?}"
     );
 
     work_elsewhere(
@@ -859,7 +859,7 @@ fn a_turn_reported_on_the_catalog_stream_moves_the_working_label() {
     let slot = sidebar_column(&rows[rendered_row(&rows, "Quiet work") - 1]);
     assert!(
         slot.ends_with("Working 1m"),
-        "the Turn the stream reported starting reads as live work: {slot:?}"
+        "the turn the stream reported starting reads as live work: {slot:?}"
     );
 
     work_elsewhere(&mut application, session_id, None);
@@ -868,7 +868,7 @@ fn a_turn_reported_on_the_catalog_stream_moves_the_working_label() {
     let slot = sidebar_column(&rows[rendered_row(&rows, "Quiet work") - 1]);
     assert!(
         !slot.contains("Working"),
-        "and the Turn settling clears the label without waiting for a listing: {slot:?}"
+        "and the turn settling clears the label without waiting for a listing: {slot:?}"
     );
 }
 
@@ -901,7 +901,7 @@ fn a_monitoring_change_reported_on_the_catalog_stream_moves_the_label() {
     let slot = sidebar_column(&rows[title - 1]);
     assert!(
         slot.ends_with("Monitoring 1m"),
-        "the Session the stream reported waiting on a Watch reads Monitoring: {slot:?}"
+        "the session the stream reported waiting on a watch reads monitoring: {slot:?}"
     );
     assert_eq!(standing_rail_rows(&application).len(), 3);
 
@@ -911,7 +911,7 @@ fn a_monitoring_change_reported_on_the_catalog_stream_moves_the_label() {
     let slot = sidebar_column(&rows[rendered_row(&rows, "Quiet work") - 1]);
     assert!(
         !slot.contains("Monitoring"),
-        "and the Watch settling clears the label without waiting for a listing: {slot:?}"
+        "and the watch settling clears the label without waiting for a listing: {slot:?}"
     );
     assert!(standing_rail_rows(&application).is_empty());
 }
@@ -947,17 +947,17 @@ fn ctrl_b_hides_the_sidebar_and_shows_it_again_without_touching_the_setting() {
     assert_eq!(
         press_toggle(&mut application),
         ApplicationTransition::Continue,
-        "reaching the Sidebar the Setting showed asks the server for nothing"
+        "reaching the sidebar the setting showed asks the server for nothing"
     );
     assert_eq!(
         press_toggle(&mut application),
         ApplicationTransition::Continue,
-        "hiding the Sidebar asks the server for nothing, least of all a Setting edit"
+        "hiding the sidebar asks the server for nothing, least of all a setting edit"
     );
     let hidden = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         !hidden.iter().any(|row| row.contains("Listed work")),
-        "the Sidebar is off the frame"
+        "the sidebar is off the frame"
     );
     assert!(
         !sidebar_is_drawn(&hidden),
@@ -970,12 +970,12 @@ fn ctrl_b_hides_the_sidebar_and_shows_it_again_without_touching_the_setting() {
             request,
             sessions: vec![listed("Listed work", workspace.path(), 1, now())],
         })
-        .expect("hydrate the reopened Sidebar");
+        .expect("hydrate the reopened sidebar");
     assert!(
         rendered_application_rows_at(&application, WIDE, 20)
             .iter()
             .any(|row| row.contains("Listed work")),
-        "showing the Sidebar again lists Sessions afresh"
+        "showing the sidebar again lists sessions afresh"
     );
 }
 
@@ -996,11 +996,11 @@ fn ctrl_b_shows_a_hidden_sidebar_and_gives_it_the_keys() {
             request,
             sessions: vec![listed("Listed work", workspace.path(), 1, now())],
         })
-        .expect("hydrate the Sidebar the toggle showed");
+        .expect("hydrate the sidebar the toggle showed");
     type_terminal_text(&mut application, "zz");
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
-    assert!(sidebar_is_drawn(&rows), "the Sidebar is shown: {rows:?}");
+    assert!(sidebar_is_drawn(&rows), "the sidebar is shown: {rows:?}");
     assert!(
         drawn_in_sidebar(&rows, "Search: zz"),
         "and what the reader types next goes to it: {rows:?}"
@@ -1023,14 +1023,14 @@ fn ctrl_b_gives_a_sidebar_shown_without_the_keys_the_keys_and_leaves_it_shown() 
     assert_eq!(
         press_toggle(&mut application),
         ApplicationTransition::Continue,
-        "reaching a Sidebar already on screen asks the server for nothing"
+        "reaching a sidebar already on screen asks the server for nothing"
     );
     type_terminal_text(&mut application, "zz");
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         sidebar_is_drawn(&rows),
-        "the Sidebar the reader reached stays on screen: {rows:?}"
+        "the sidebar the reader reached stays on screen: {rows:?}"
     );
     assert!(
         drawn_in_sidebar(&rows, "Search: zz"),
@@ -1055,14 +1055,14 @@ fn ctrl_b_hides_a_sidebar_holding_the_keys_and_hands_them_back() {
     assert_eq!(
         press_toggle(&mut application),
         ApplicationTransition::Continue,
-        "hiding the Sidebar asks the server for nothing"
+        "hiding the sidebar asks the server for nothing"
     );
     type_terminal_text(&mut application, "zz");
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         !sidebar_is_drawn(&rows),
-        "the second press hides the Sidebar the first reached: {rows:?}"
+        "the second press hides the sidebar the first reached: {rows:?}"
     );
     assert!(
         rows.iter().any(|row| row.contains("zz")),
@@ -1081,18 +1081,18 @@ fn a_sidebar_the_setting_reveals_leaves_the_keys_with_the_composer() {
     type_terminal_text(&mut application, "zz");
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
-    assert!(sidebar_is_drawn(&rows), "the Setting shows the Sidebar");
+    assert!(sidebar_is_drawn(&rows), "the setting shows the sidebar");
     assert!(
         !drawn_in_sidebar(&rows, "Search: zz"),
         "without giving it the keys: {rows:?}"
     );
     assert!(
         main_view(&application).contains("zz"),
-        "a reader who has not touched the Sidebar is typing their first Prompt"
+        "a reader who has not touched the sidebar is typing their first prompt"
     );
     assert!(
         selected_sidebar_text(&application).is_empty(),
-        "and no row focus is painted in a Sidebar without the keys"
+        "and no row focus is painted in a sidebar without the keys"
     );
 }
 
@@ -1116,7 +1116,7 @@ fn the_slash_command_toggles_the_same_sidebar_the_keybinding_does() {
         rendered_application_rows_at(&application, WIDE, 20)
             .iter()
             .any(|row| row.contains("Listed work")),
-        "the slash command leaves a Sidebar on screen standing, as the keybinding does"
+        "the slash command leaves a sidebar on screen standing, as the keybinding does"
     );
     assert!(
         !selected_sidebar_text(&application).is_empty(),
@@ -1125,7 +1125,7 @@ fn the_slash_command_toggles_the_same_sidebar_the_keybinding_does() {
     press_toggle(&mut application);
     assert!(
         !sidebar_is_drawn(&rendered_application_rows_at(&application, WIDE, 20)),
-        "so the keybinding's next press hides the Sidebar the slash command reached"
+        "so the keybinding's next press hides the sidebar the slash command reached"
     );
 }
 
@@ -1137,17 +1137,17 @@ fn a_sidebar_the_setting_hides_is_absent_until_the_reader_asks_for_it() {
     assert_eq!(
         deliver_initial_visibility(&mut application, SidebarVisibility::Hidden),
         ApplicationTransition::Continue,
-        "a Sidebar nobody can see asks for no Sessions"
+        "a sidebar nobody can see asks for no sessions"
     );
     assert!(
         !sidebar_is_drawn(&rendered_application_rows_at(&application, WIDE, 20)),
-        "the first frame honors the initial-visibility Setting"
+        "the first frame honors the initial-visibility setting"
     );
 
     expect_sidebar_listing(press_toggle(&mut application));
     assert!(
         sidebar_is_drawn(&rendered_application_rows_at(&application, WIDE, 20)),
-        "the toggle overrides the initial-visibility Setting for this run"
+        "the toggle overrides the initial-visibility setting for this run"
     );
 }
 
@@ -1161,7 +1161,7 @@ fn a_later_settings_snapshot_leaves_the_readers_own_choice_alone() {
 
     assert!(
         !sidebar_is_drawn(&rendered_application_rows_at(&application, WIDE, 20)),
-        "some other Setting's edit does not reopen a Sidebar the reader closed"
+        "some other setting's edit does not reopen a sidebar the reader closed"
     );
 }
 
@@ -1176,7 +1176,7 @@ fn a_terminal_too_narrow_for_both_keeps_the_main_view_and_forgets_nothing() {
     let squeezed = rendered_application_rows_at(&application, 77, 20);
     assert!(
         !squeezed.iter().any(|row| row.contains("Listed work")),
-        "a terminal too narrow for the Sidebar plus a usable main view keeps the main view"
+        "a terminal too narrow for the sidebar plus a usable main view keeps the main view"
     );
     assert!(
         squeezed.iter().any(|row| row.contains("Type a prompt")),
@@ -1186,7 +1186,7 @@ fn a_terminal_too_narrow_for_both_keeps_the_main_view_and_forgets_nothing() {
     let widened = rendered_application_rows_at(&application, 78, 20);
     assert!(
         widened.iter().any(|row| row.contains("Listed work")),
-        "the Sidebar comes back the moment there is room, the reader's choice intact"
+        "the sidebar comes back the moment there is room, the reader's choice intact"
     );
 }
 
@@ -1204,7 +1204,7 @@ fn the_launch_setting_chooses_the_sidebar_width_and_the_main_view_takes_the_rest
             .find("Type a prompt")
             .expect("draw the composer")
             >= 40,
-        "the Landing is laid out in the sixty columns the Sidebar leaves: {rows:?}"
+        "the landing is laid out in the sixty columns the sidebar leaves: {rows:?}"
     );
 }
 
@@ -1222,7 +1222,7 @@ fn a_narrow_frame_clamps_the_drawn_width_at_both_floors_and_growth_restores_the_
     assert_eq!(
         sidebar_divider_column(&rendered_application_rows_at(&application, 78, 20)),
         Some(23),
-        "the Sidebar keeps its 24-column floor"
+        "the sidebar keeps its 24-column floor"
     );
     assert_eq!(
         sidebar_divider_column(&rendered_application_rows_at(&application, 114, 20)),
@@ -1295,12 +1295,12 @@ fn the_session_content_column_recenters_inside_the_width_the_sidebar_leaves() {
     assert_eq!(
         composer_columns(&narrower_rows),
         (45, 114),
-        "the capped Content Column centers within the padded 76-column main view"
+        "the capped content column centers within the padded 76-column main view"
     );
     assert_eq!(
         composer_columns(&wider_rows),
         (62, 117),
-        "a wider Sidebar narrows and recenters the Content Column in the main view that remains"
+        "a wider sidebar narrows and recenters the content column in the main view that remains"
     );
 }
 
@@ -1475,7 +1475,7 @@ fn a_session_deleted_elsewhere_leaves_the_sidebar_it_was_listed_in() {
                 listed_as(SessionId::new(), "Still here", workspace.path(), 1),
             ],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
 
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SessionDeleted(
@@ -1488,11 +1488,11 @@ fn a_session_deleted_elsewhere_leaves_the_sidebar_it_was_listed_in() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         !rows.iter().any(|row| row.contains("Deleted elsewhere")),
-        "a Session another client deleted leaves the Sidebar listing it"
+        "a session another client deleted leaves the sidebar listing it"
     );
     assert!(
         rows.iter().any(|row| row.contains("Still here")),
-        "the Sessions that survive stay listed"
+        "the sessions that survive stay listed"
     );
 }
 
@@ -1508,7 +1508,7 @@ fn an_overlay_opens_over_the_main_view_and_never_over_the_sidebar() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionList,
         )))
-        .expect("open the Session picker");
+        .expect("open the session picker");
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
@@ -1517,11 +1517,11 @@ fn an_overlay_opens_over_the_main_view_and_never_over_the_sidebar() {
     );
     assert!(
         sidebar_is_drawn(&rows),
-        "an overlay is centered on the main view and leaves the Sidebar standing: {rows:?}"
+        "an overlay is centered on the main view and leaves the sidebar standing: {rows:?}"
     );
     assert!(
         rows.iter().any(|row| row.contains("Listed work")),
-        "the Sidebar's own rows are still readable beside the overlay"
+        "the sidebar's own rows are still readable beside the overlay"
     );
 }
 
@@ -1551,7 +1551,7 @@ fn every_edge_grab_column_holds_focus_paint_until_release_without_opening_a_row(
         assert_eq!(
             held[(39, row)].fg,
             PANDA.primary,
-            "grab column {column} paints the edge in the Theme focus color"
+            "grab column {column} paints the edge in the theme focus color"
         );
 
         assert_eq!(
@@ -1561,7 +1561,7 @@ fn every_edge_grab_column_holds_focus_paint_until_release_without_opening_a_row(
                 (column, row),
             ),
             ApplicationTransition::Continue,
-            "release is neither a row click nor a Selection copy"
+            "release is neither a row click nor a selection copy"
         );
         let released = rendered_application_buffer(&application, WIDE, PRESS_HEIGHT);
         assert_eq!(released[(39, row)].fg, PANDA.element);
@@ -1569,7 +1569,7 @@ fn every_edge_grab_column_holds_focus_paint_until_release_without_opening_a_row(
             crate::tui_rendering::support::buffer_rows(&released)
                 .iter()
                 .any(|line| line.contains("Type a prompt")),
-            "even the grab over a row leaves the Landing open"
+            "even the grab over a row leaves the landing open"
         );
     }
 }
@@ -1689,7 +1689,7 @@ fn edge_dragging_stops_at_the_sidebar_and_current_main_view_floors() {
     assert_eq!(
         sidebar_divider_column(&crate::tui_rendering::support::buffer_rows(&at_maximum)),
         Some(45),
-        "a 46-column Sidebar leaves the current 100-column frame's 54-column main floor"
+        "a 46-column sidebar leaves the current 100-column frame's 54-column main floor"
     );
     assert_eq!(at_maximum[(45, 0)].fg, PANDA.primary);
     assert_eq!(
@@ -1759,8 +1759,8 @@ fn transcript_and_composer_drags_that_cross_the_edge_never_resize_it() {
     );
     enter_session(&mut transcript, workspace.path());
     let transcript_buffer = rendered_application_buffer(&transcript, WIDE, PRESS_HEIGHT);
-    let prompt = text_position(&transcript_buffer, "Initial Prompt");
-    assert!(prompt.0 > 40, "the Selection begins past the grab zone");
+    let prompt = text_position(&transcript_buffer, "Initial prompt");
+    assert!(prompt.0 > 40, "the selection begins past the grab zone");
     mouse(
         &mut transcript,
         MouseEventKind::Down(MouseButton::Left),
@@ -1972,7 +1972,7 @@ fn edge_double_click_uses_the_sidebar_width_setting_delivered_mid_session() {
     assert_eq!(
         drawn_sidebar_width(&application, WIDE),
         Some(45),
-        "the gesture invokes reset against the Setting as it currently stands"
+        "the gesture invokes reset against the setting as it currently stands"
     );
 }
 
@@ -2091,7 +2091,7 @@ fn cells_beyond_the_grab_zone_keep_their_existing_pointer_behavior() {
     );
     enter_session(&mut application, workspace.path());
     let buffer = rendered_application_buffer(&application, WIDE, PRESS_HEIGHT);
-    let prompt = text_position(&buffer, "Initial Prompt");
+    let prompt = text_position(&buffer, "Initial prompt");
 
     mouse(
         &mut application,
@@ -2107,7 +2107,7 @@ fn cells_beyond_the_grab_zone_keep_their_existing_pointer_behavior() {
         rendered_application_buffer(&application, WIDE, PRESS_HEIGHT)
             .cell(prompt)
             .is_some_and(|cell| cell.modifier.contains(Modifier::REVERSED)),
-        "the first column past the three-column grab zone starts a Text Selection"
+        "the first column past the three-column grab zone starts a text selection"
     );
     assert!(matches!(
         mouse(
@@ -2134,7 +2134,7 @@ fn cells_beyond_the_grab_zone_keep_their_existing_pointer_behavior() {
             (37, blank_sidebar_row),
         ),
         ApplicationTransition::Continue,
-        "one column beyond the grab zone inside the Sidebar remains inert"
+        "one column beyond the grab zone inside the sidebar remains inert"
     );
 }
 
@@ -2149,7 +2149,7 @@ fn overlays_keep_edge_presses_and_never_show_held_paint() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SettingsOpen,
         )))
-        .expect("open Settings");
+        .expect("open settings");
     rendered_application_buffer(&settings, WIDE, PRESS_HEIGHT);
     mouse(
         &mut settings,
@@ -2187,7 +2187,7 @@ fn overlays_keep_edge_presses_and_never_show_held_paint() {
     assert_eq!(
         rendered_application_buffer(&menu, WIDE, PRESS_HEIGHT)[(39, 0)].fg,
         PANDA.element,
-        "the Sidebar context menu retains pointer ownership"
+        "the sidebar context menu retains pointer ownership"
     );
     mouse(&mut menu, MouseEventKind::Up(MouseButton::Left), (39, 0));
     assert!(!menu_is_drawn(&menu), "the context menu handles the click");
@@ -2217,12 +2217,12 @@ fn overlays_keep_edge_presses_and_never_show_held_paint() {
     };
     subagents
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session with a working Subagent");
+        .expect("attach a session with a working subagent");
     subagents
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SubagentBrowse,
         )))
-        .expect("open the Subagent picker");
+        .expect("open the subagent picker");
     let picker = rendered_application_buffer(&subagents, WIDE, PRESS_HEIGHT);
     assert!(
         crate::tui_rendering::support::buffer_rows(&picker)
@@ -2237,7 +2237,7 @@ fn overlays_keep_edge_presses_and_never_show_held_paint() {
     assert_eq!(
         rendered_application_buffer(&subagents, WIDE, PRESS_HEIGHT)[(39, 0)].fg,
         PANDA.element,
-        "the Subagent picker retains pointer ownership"
+        "the subagent picker retains pointer ownership"
     );
     mouse(
         &mut subagents,
@@ -2252,7 +2252,7 @@ fn overlays_keep_edge_presses_and_never_show_held_paint() {
         ))
         .join("\n")
         .contains("Subagents"),
-        "the Subagent picker handles the outside click by dismissing itself"
+        "the subagent picker handles the outside click by dismissing itself"
     );
 }
 
@@ -2276,7 +2276,7 @@ fn hidden_and_squeezed_sidebars_leave_no_edge_grab_geometry() {
             request,
             sessions: Vec::new(),
         })
-        .expect("hydrate the shown Sidebar");
+        .expect("hydrate the shown sidebar");
     assert_eq!(
         rendered_application_buffer(&hidden, WIDE, PRESS_HEIGHT)[(39, 0)].fg,
         PANDA.border,
@@ -2337,7 +2337,7 @@ fn icon_listed(
 ) -> SessionListItem {
     let SessionListItem::Readable(summary) = listed(title, workspace, created_at, updated_at)
     else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     SessionListItem::Readable(Box::new(SessionSummary {
         icon: Some(icon.to_owned()),
@@ -2401,7 +2401,7 @@ fn sidebar_hydrated(
     let request = expect_sidebar_listing(deliver_settings(&mut application, settings));
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     application
 }
 
@@ -2446,7 +2446,7 @@ fn reopen_the_sidebar(application: &mut Application) -> suru::tui::SessionListRe
             return expect_sidebar_listing(transition);
         }
     }
-    panic!("three presses of the toggle reach, hide, and show any Sidebar on screen");
+    panic!("three presses of the toggle reach, hide, and show any sidebar on screen");
 }
 
 /// Hides a Sidebar standing on screen without the keys, as the
@@ -2478,7 +2478,7 @@ fn expect_workspace_picker_listing(
 ) -> suru::tui::WorkspaceListRequest {
     let ApplicationTransition::ListWorkspaces(request) = transition else {
         panic!(
-            "opening the Workspace Picker asks the Server for its Workspaces, not {transition:?}"
+            "opening the workspace picker asks the server for its workspaces, not {transition:?}"
         );
     };
     request
@@ -2486,13 +2486,13 @@ fn expect_workspace_picker_listing(
 
 fn expect_sidebar_listing(transition: ApplicationTransition) -> suru::tui::SessionListRequest {
     let ApplicationTransition::ListSessions(request) = transition else {
-        panic!("a Sidebar coming into view asks for its Sessions, not {transition:?}");
+        panic!("a sidebar coming into view asks for its sessions, not {transition:?}");
     };
     assert_eq!(request.surface(), SessionListSurface::Sidebar);
     assert_eq!(
         request.scope(),
         &SessionListScope::AllWorkspaces,
-        "the Sidebar opens on the reader's whole body of work"
+        "the sidebar opens on the reader's whole body of work"
     );
     request
 }
@@ -2525,7 +2525,7 @@ fn invoke_sidebar_width(
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             command,
         )))
-        .expect("invoke a semantic Sidebar width command")
+        .expect("invoke a semantic sidebar width command")
 }
 
 fn answer_sidebar_reveal(application: &mut Application) {
@@ -2538,7 +2538,7 @@ fn answer_sidebar_reveal(application: &mut Application) {
             request,
             sessions: Vec::new(),
         })
-        .expect("answer the Sidebar listing after showing it again");
+        .expect("answer the sidebar listing after showing it again");
 }
 
 fn composer_columns(rows: &[String]) -> (usize, usize) {
@@ -2597,7 +2597,7 @@ fn now() -> u64 {
         .expect("read the clock")
         .as_millis()
         .try_into()
-        .expect("the clock fits a Session timestamp")
+        .expect("the clock fits a session timestamp")
 }
 
 fn seconds_ago(seconds: u64) -> u64 {
@@ -2623,7 +2623,7 @@ fn the_sidebar_survives_every_terminal_the_frame_will_draw() {
         workspace.path(),
         vec![
             listed(
-                "A Title long enough to run past the Sidebar's own columns",
+                "A title long enough to run past the sidebar's own columns",
                 &workspace.path().join("suru"),
                 3,
                 days_ago(400),
@@ -2632,7 +2632,7 @@ fn the_sidebar_survives_every_terminal_the_frame_will_draw() {
             // takes, so it is what the narrowest drawn column is tried with.
             working(
                 listed(
-                    "A working Title long enough to run past them as well",
+                    "A working title long enough to run past them as well",
                     &workspace.path().join("a-workspace-named-at-length"),
                     2,
                     now(),
@@ -2640,14 +2640,14 @@ fn the_sidebar_survives_every_terminal_the_frame_will_draw() {
                 days_ago(400),
             ),
             settled(
-                "A settled Title long enough to run past them too",
+                "A settled title long enough to run past them too",
                 &workspace.path().join("suru"),
                 1,
                 days_ago(400),
                 days_ago(399),
             ),
             unreadable_from(
-                "An unreadable Title long enough to crowd its own marker out",
+                "An unreadable title long enough to crowd its own marker out",
                 workspace.path(),
                 4,
             ),
@@ -2675,7 +2675,7 @@ fn the_initial_visibility_setting_shows_the_sidebar_without_taking_the_keys() {
         rendered_application_rows_at(&application, WIDE, 20)
             .iter()
             .any(|row| row.contains("hello")),
-        "a Sidebar the reader never opened leaves them typing where they were"
+        "a sidebar the reader never opened leaves them typing where they were"
     );
 }
 
@@ -2692,11 +2692,11 @@ fn opening_the_sidebar_takes_the_keys_from_the_composer() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         rows.iter().any(|row| row.contains("Type a prompt")),
-        "the Sidebar the reader opened has the keys, so nothing reaches the composer: {rows:?}"
+        "the sidebar the reader opened has the keys, so nothing reaches the composer: {rows:?}"
     );
     assert!(
         drawn_in_sidebar(&rows, "Search: listed"),
-        "what they type goes to the Sidebar's own search box: {rows:?}"
+        "what they type goes to the sidebar's own search box: {rows:?}"
     );
     assert!(
         selected_sidebar_text(&application).contains(ALL_WORKSPACES),
@@ -2718,7 +2718,7 @@ fn the_arrows_move_the_selection_and_wrap_past_the_ends() {
 
     assert!(
         selected_sidebar_text(&application).contains(ALL_WORKSPACES),
-        "an opened Sidebar with no Session open starts on the Workspace selector"
+        "an opened sidebar with no session open starts on the workspace selector"
     );
 
     step_onto_the_list(&mut application);
@@ -2808,7 +2808,7 @@ fn enter_attaches_the_selected_session_in_place() {
             suru::protocol::Outlook::Local,
             wanted,
         )),
-        "Enter attaches the Session the reader has selected"
+        "Enter attaches the session the reader has selected"
     );
 }
 
@@ -2835,9 +2835,9 @@ fn leaving_for_the_landing_while_a_session_is_opening_reports_the_client_letting
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::SessionNew,
             )))
-            .expect("open the Landing while a Session is opening"),
+            .expect("open the landing while a session is opening"),
         ApplicationTransition::DetachSession,
-        "the Landing is the reader leaving the Session the client was opening"
+        "the landing is the reader leaving the session the client was opening"
     );
 }
 
@@ -2850,10 +2850,10 @@ fn moving_workspace_while_a_session_is_opening_reports_the_client_letting_go() {
     let here = root.path().join("here");
     let atlas = root.path().join("atlas");
     for workspace in [&here, &atlas] {
-        std::fs::create_dir(workspace).expect("create the Workspace fixture");
+        std::fs::create_dir(workspace).expect("create the workspace fixture");
     }
-    let here = suru::paths::canonical(&here).expect("canonicalize the Workspace fixture");
-    let atlas = suru::paths::canonical(&atlas).expect("canonicalize the Workspace fixture");
+    let here = suru::paths::canonical(&here).expect("canonicalize the workspace fixture");
+    let atlas = suru::paths::canonical(&atlas).expect("canonicalize the workspace fixture");
     let wanted = SessionId::new();
     let mut application =
         sidebar_focused(&here, vec![listed_as(wanted, "The work wanted", &here, 1)]);
@@ -2868,7 +2868,7 @@ fn moving_workspace_while_a_session_is_opening_reports_the_client_letting_go() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceList,
             )))
-            .expect("open the Workspace Picker"),
+            .expect("open the workspace picker"),
     );
     application
         .handle_event(ApplicationEvent::WorkspacesListed {
@@ -2877,7 +2877,7 @@ fn moving_workspace_while_a_session_is_opening_reports_the_client_letting_go() {
                 atlas.clone(),
             )]),
         })
-        .expect("hydrate the Workspace Picker");
+        .expect("hydrate the workspace picker");
     press_sidebar_key(&mut application, KeyCode::Down);
 
     let chosen = press_sidebar_key(&mut application, KeyCode::Enter);
@@ -2886,8 +2886,8 @@ fn moving_workspace_while_a_session_is_opening_reports_the_client_letting_go() {
             chosen,
             ApplicationTransition::DetachSessionAndResolveWorkspace { .. }
         ),
-        "moving Workspace leaves the Session the client was opening behind with it, \
-         before the Workspace chosen is resolved: {chosen:?}"
+        "moving workspace leaves the session the client was opening behind with it, \
+         before the workspace chosen is resolved: {chosen:?}"
     );
 }
 
@@ -2905,10 +2905,10 @@ fn the_attached_session_hands_the_keys_back_to_the_composer() {
         .handle_event(ApplicationEvent::SessionAttached(failed_session_snapshot(
             wanted,
             PromptId::new(),
-            "Initial Prompt",
+            "Initial prompt",
             workspace.path(),
         )))
-        .expect("attach the selected Session");
+        .expect("attach the selected session");
 
     type_terminal_text(&mut application, "hello");
     let rows = rendered_application_rows_at(&application, WIDE, 20);
@@ -2918,7 +2918,7 @@ fn the_attached_session_hands_the_keys_back_to_the_composer() {
     );
     assert!(
         sidebar_is_drawn(&rows),
-        "the Sidebar stays beside the Session it just opened"
+        "the sidebar stays beside the session it just opened"
     );
 }
 
@@ -2943,7 +2943,7 @@ fn esc_hands_the_keys_back_without_hiding_the_sidebar() {
     );
     assert!(
         rows.iter().any(|row| row.contains("Listed work")) && sidebar_is_drawn(&rows),
-        "the Sidebar stays standing, only without the keys: {rows:?}"
+        "the sidebar stays standing, only without the keys: {rows:?}"
     );
     assert!(
         selected_sidebar_text(&application).is_empty(),
@@ -2980,7 +2980,7 @@ fn pressing_the_main_view_hands_the_keys_back_without_hiding_the_sidebar() {
     );
     assert!(
         rows.iter().any(|row| row.contains("Listed work")) && sidebar_is_drawn(&rows),
-        "the Sidebar stays standing, only without the keys: {rows:?}"
+        "the sidebar stays standing, only without the keys: {rows:?}"
     );
     assert!(
         selected_sidebar_text(&application).is_empty(),
@@ -3019,7 +3019,7 @@ fn pressing_the_search_box_gives_the_sidebar_the_keys() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         rows.iter().any(|row| row.contains("Search: Other work")) && sidebar_is_drawn(&rows),
-        "a second press neither hides the Sidebar nor gives up the search: {rows:?}"
+        "a second press neither hides the sidebar nor gives up the search: {rows:?}"
     );
 }
 
@@ -3036,14 +3036,14 @@ fn the_toggle_closes_the_sidebar_from_inside_it() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         !sidebar_is_drawn(&rows),
-        "the toggle closes the Sidebar from within it as readily as from the composer: {rows:?}"
+        "the toggle closes the sidebar from within it as readily as from the composer: {rows:?}"
     );
     type_terminal_text(&mut application, "hello");
     assert!(
         rendered_application_rows_at(&application, WIDE, 20)
             .iter()
             .any(|row| row.contains("hello")),
-        "a closed Sidebar holds no keys"
+        "a closed sidebar holds no keys"
     );
 }
 
@@ -3064,7 +3064,7 @@ fn an_open_overlay_hides_the_sidebars_row_focus_and_giving_the_keys_back_restore
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionList,
         )))
-        .expect("open the Session picker")
+        .expect("open the session picker")
     else {
         panic!("opening the picker asks for its own listing");
     };
@@ -3091,7 +3091,7 @@ fn an_open_overlay_hides_the_sidebars_row_focus_and_giving_the_keys_back_restore
 
     assert!(
         selected_sidebar_text(&application).contains("Nearest work"),
-        "the keys coming back bring the Sidebar's row focus back exactly where it was"
+        "the keys coming back bring the sidebar's row focus back exactly where it was"
     );
 }
 
@@ -3111,7 +3111,7 @@ fn unreadable_as(
 ) -> SessionListItem {
     let SessionListItem::Unreadable(mut summary) = unreadable_from(title, workspace, created_at)
     else {
-        unreachable!("the fixture builds an unreadable Session");
+        unreachable!("the fixture builds an unreadable session");
     };
     summary.id = session_id;
     SessionListItem::Unreadable(summary)
@@ -3195,12 +3195,12 @@ fn an_unreadable_row_is_marked_and_subdued() {
     let marked = sidebar_column(&rows[rendered_row(&rows, "Unreadable work")]);
     assert!(
         marked.contains("Unreadable work [unreadable]"),
-        "the marker follows the Title: {marked:?}"
+        "the marker follows the title: {marked:?}"
     );
     let buffer = rendered_application_buffer(&application, WIDE, 20);
     let (column, row) = text_position(&buffer, "Unreadable work");
     assert_eq!(
-        buffer.cell((column, row)).expect("the Title is drawn").fg,
+        buffer.cell((column, row)).expect("the title is drawn").fg,
         PANDA.muted,
         "the row is subdued rather than drawn like work the reader could open"
     );
@@ -3208,10 +3208,10 @@ fn an_unreadable_row_is_marked_and_subdued() {
     assert_eq!(
         buffer
             .cell((column, row))
-            .expect("the readable Title is drawn")
+            .expect("the readable title is drawn")
             .fg,
         PANDA.text,
-        "a readable row keeps its ordinary Title style"
+        "a readable row keeps its ordinary title style"
     );
 }
 
@@ -3234,25 +3234,25 @@ fn seeding_passes_over_an_open_session_that_arrives_unreadable() {
                 listed("Readable work", workspace.path(), 1, now()),
             ],
         })
-        .expect("hydrate the Sidebar beside the open Session");
+        .expect("hydrate the sidebar beside the open session");
 
     let marked = selected_sidebar_text(&application);
     assert!(
         !marked.contains("Broken work"),
-        "the keys never start on the damaged open Session: its row is one the arrows cannot \
+        "the keys never start on the damaged open session: its row is one the arrows cannot \
          leave and Enter cannot act on: {marked:?}"
     );
     assert!(
         marked.contains(ALL_WORKSPACES),
-        "so they start where they start whenever the open Session has no openable row — on the \
-         Workspace selector: {marked:?}"
+        "so they start where they start whenever the open session has no openable row — on the \
+         workspace selector: {marked:?}"
     );
     let buffer = rendered_application_buffer(&application, WIDE, 20);
     let (column, row) = text_position(&buffer, "Broken work");
     assert_eq!(
         buffer
             .cell((column, row))
-            .expect("unreadable open Title")
+            .expect("unreadable open title")
             .fg,
         PANDA.muted,
         "the damaged open row stays subdued rather than disguising its unreadable state"
@@ -3268,7 +3268,7 @@ fn truncation_takes_the_title_before_it_takes_the_unreadable_marker() {
     let application = sidebar_showing(
         workspace.path(),
         vec![unreadable(
-            "A Title long enough to run past the Sidebar's own columns",
+            "A title long enough to run past the sidebar's own columns",
             workspace.path(),
         )],
     );
@@ -3281,7 +3281,7 @@ fn truncation_takes_the_title_before_it_takes_the_unreadable_marker() {
     );
     assert!(
         marked.contains('…'),
-        "it is the Title that gave up the columns: {marked:?}"
+        "it is the title that gave up the columns: {marked:?}"
     );
 }
 
@@ -3296,7 +3296,7 @@ fn a_session_suru_cannot_read_is_not_attached() {
     assert_eq!(
         press_sidebar_key(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "there is nothing to attach to in a Session Suru could not read"
+        "there is nothing to attach to in a session Suru could not read"
     );
 }
 
@@ -3315,7 +3315,7 @@ fn a_terminal_too_narrow_to_draw_the_sidebar_leaves_the_keys_with_the_composer()
         rendered_application_rows_at(&application, 77, 20)
             .iter()
             .any(|row| row.contains("hello")),
-        "a Sidebar the frame cannot spare the columns for cannot hold the keys either"
+        "a sidebar the frame cannot spare the columns for cannot hold the keys either"
     );
 }
 
@@ -3335,7 +3335,7 @@ fn a_paste_goes_to_the_search_box_rather_than_the_composer() {
 
     application
         .handle_terminal_event(InputEvent::Paste("Listed".to_owned()))
-        .expect("paste while the Sidebar has the keys");
+        .expect("paste while the sidebar has the keys");
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
@@ -3368,14 +3368,14 @@ fn the_keys_after_the_toggle_reach_the_sidebar_before_the_next_frame() {
                 listed("Older", workspace.path(), 1, now()),
             ],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
 
     step_onto_the_list(&mut application);
     press_sidebar_key(&mut application, KeyCode::Down);
 
     assert!(
         selected_sidebar_text(&application).contains("Older"),
-        "a run of keys the terminal delivered together reaches the Sidebar the first of them \
+        "a run of keys the terminal delivered together reaches the sidebar the first of them \
          opened, without waiting for a frame to be drawn between them"
     );
 }
@@ -3429,14 +3429,14 @@ fn sidebar_focused(workspace: &Path, sessions: Vec<SessionListItem>) -> Applicat
     let request = expect_sidebar_listing(press_toggle(&mut application));
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     application
 }
 
 fn press_sidebar_key(application: &mut Application, code: KeyCode) -> ApplicationTransition {
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(code, KeyModifiers::NONE)))
-        .expect("press a Sidebar key")
+        .expect("press a sidebar key")
 }
 
 /// Steps row focus from where opening the Sidebar with no Session open leaves
@@ -3488,7 +3488,7 @@ fn standing_rail_rows(application: &Application) -> Vec<u16> {
 
 fn assert_standing_rail(buffer: &Buffer, title_row: u16, foreground: Color, background: Color) {
     for row in title_row - 1..=title_row + 1 {
-        let rail = buffer.cell((0, row)).expect("Standing Rail cell");
+        let rail = buffer.cell((0, row)).expect("Standing rail cell");
         assert_eq!(rail.symbol(), "▎");
         assert_eq!(rail.fg, foreground);
         assert_eq!(rail.bg, background);
@@ -3502,10 +3502,10 @@ fn open_session(application: &mut Application, workspace: &Path, session_id: Ses
         .handle_event(ApplicationEvent::SessionAttached(failed_session_snapshot(
             session_id,
             PromptId::new(),
-            "Initial Prompt",
+            "Initial prompt",
             workspace,
         )))
-        .expect("open a Session in the main view");
+        .expect("open a session in the main view");
 }
 
 /// Puts a Subagent's Session in the main view: a child of `parent`, which the
@@ -3520,7 +3520,7 @@ fn open_subagent_session(application: &mut Application, workspace: &Path, parent
     snapshot.session.parent = Some(parent);
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("open a Subagent's Session in the main view");
+        .expect("open a subagent's session in the main view");
 }
 
 /// Opens the Sidebar afresh the way the reader does — the toggle, which takes
@@ -3529,7 +3529,7 @@ fn enter_the_sidebar(application: &mut Application, sessions: Vec<SessionListIte
     let request = reopen_the_sidebar(application);
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("hydrate the Sidebar the reader opened");
+        .expect("hydrate the sidebar the reader opened");
 }
 
 // The Sidebar's two states, kept apart: the persistent accent Title on the
@@ -3550,7 +3550,7 @@ fn the_open_session_draws_only_its_title_in_the_accent_style() {
     let (title_column, title_row) = text_position(&buffer, "The work open");
     let title = buffer
         .cell((title_column, title_row))
-        .expect("open Title cell");
+        .expect("open title cell");
     assert_eq!(title.fg, PANDA.open_title);
     assert_eq!(title.bg, PANDA.panel);
     assert!(
@@ -3580,7 +3580,7 @@ fn the_landing_highlights_no_session_row() {
     );
     assert!(
         open_sidebar_text(&application).is_empty(),
-        "no Session is open on the Landing, so no row stands for one"
+        "no session is open on the landing, so no row stands for one"
     );
     assert!(
         standing_rail_rows(&application).is_empty(),
@@ -3602,7 +3602,7 @@ fn the_open_session_title_is_accented_whoever_holds_the_keys() {
     let highlighted = open_sidebar_text(&application);
     assert!(
         highlighted.contains("The work open"),
-        "the open Session's Title is accented while the reader writes into it: {highlighted:?}"
+        "the open session's title is accented while the reader writes into it: {highlighted:?}"
     );
     assert!(
         !highlighted.contains("Other work"),
@@ -3613,11 +3613,11 @@ fn the_open_session_title_is_accented_whoever_holds_the_keys() {
 
     assert!(
         standing_rail_rows(&application).is_empty(),
-        "an idle open Session has no Standing Rail"
+        "an idle open session has no standing rail"
     );
     assert!(
         selected_sidebar_text(&application).contains("The work open"),
-        "which is also where entering the Sidebar puts row focus"
+        "which is also where entering the sidebar puts row focus"
     );
 }
 
@@ -3642,12 +3642,12 @@ fn a_working_row_that_is_open_and_focused_keeps_all_three_readings() {
     );
     assert!(
         open_sidebar_text(&application).contains("The work open"),
-        "the open Title keeps its accent foreground over the focus block"
+        "the open title keeps its accent foreground over the focus block"
     );
     assert_eq!(
         standing_rail_rows(&application),
         vec![title - 1, title, title + 1],
-        "and Working keeps its Rail down the row's left, so none of the three states is hidden"
+        "and working keeps its rail down the row's left, so none of the three states is hidden"
     );
     let buffer = rendered_application_buffer(&application, WIDE, 20);
     assert_standing_rail(&buffer, title, PANDA.info, PANDA.primary);
@@ -3702,22 +3702,22 @@ fn a_rail_whose_colour_is_the_focus_block_takes_the_blocks_text_colour_instead()
     assert_standing_rail(&buffer, focused_title, Color::Rgb(20, 20, 20), Color::Cyan);
     let title = buffer
         .cell(text_position(&buffer, "The work focused"))
-        .expect("the focused open Title");
+        .expect("the focused open title");
     assert_eq!(
         (title.fg, title.bg),
         (Color::Rgb(20, 20, 20), Color::Cyan),
-        "and the open Title, whose accent is that same cyan, keeps the block's text colour too"
+        "and the open title, whose accent is that same cyan, keeps the block's text colour too"
     );
     let beside = buffer
         .cell((0, beside_title))
-        .expect("the unfocused Working row's Rail cell");
+        .expect("the unfocused working row's rail cell");
     assert_eq!(beside.symbol(), "▎");
     assert_eq!(
         beside.fg,
         Color::Cyan,
-        "the row without the keys keeps its Rail in the info colour"
+        "the row without the keys keeps its rail in the info colour"
     );
-    assert_ne!(beside.bg, Color::Cyan, "over the Sidebar's own surface");
+    assert_ne!(beside.bg, Color::Cyan, "over the sidebar's own surface");
 }
 
 #[test]
@@ -3750,7 +3750,7 @@ fn the_arrows_move_row_focus_without_changing_the_open_session() {
     assert_eq!(
         standing_rail_rows(&application),
         vec![title - 1, title, title + 1],
-        "and leave the open Working Session's Rail exactly where it was"
+        "and leave the open working session's rail exactly where it was"
     );
     assert!(
         open_sidebar_text(&application).contains("The work open"),
@@ -3770,14 +3770,14 @@ fn enter_on_the_open_session_hands_the_keys_back_without_opening_it_again() {
     assert_eq!(
         press_sidebar_key(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "the reader is already in this Session, so nothing is attached again"
+        "the reader is already in this session, so nothing is attached again"
     );
 
     type_terminal_text(&mut application, "hello");
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         rows.iter().any(|row| row.contains("hello")),
-        "Enter hands the keys to the open Session's composer: {rows:?}"
+        "Enter hands the keys to the open session's composer: {rows:?}"
     );
     assert!(
         selected_sidebar_text(&application).is_empty(),
@@ -3785,7 +3785,7 @@ fn enter_on_the_open_session_hands_the_keys_back_without_opening_it_again() {
     );
     assert!(
         open_sidebar_text(&application).contains("The work open"),
-        "while the open highlight stays, because the Session is still the one on show"
+        "while the open highlight stays, because the session is still the one on show"
     );
 }
 
@@ -3808,7 +3808,7 @@ fn a_query_that_leaves_the_open_session_out_highlights_nothing() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         !drawn_in_sidebar(&rows, "The work open"),
-        "the results are the reader's query rather than the Sidebar's indicator: {rows:?}"
+        "the results are the reader's query rather than the sidebar's indicator: {rows:?}"
     );
     assert!(
         open_sidebar_text(&application).is_empty(),
@@ -3816,7 +3816,7 @@ fn a_query_that_leaves_the_open_session_out_highlights_nothing() {
     );
     assert!(
         standing_rail_rows(&application).is_empty(),
-        "and no result stands in for the Session that is open"
+        "and no result stands in for the session that is open"
     );
 }
 
@@ -3846,7 +3846,7 @@ fn a_workspace_scope_that_leaves_the_open_session_out_highlights_nothing() {
     );
     assert!(
         open_sidebar_text(&application).is_empty(),
-        "and the Workspace's own rows are not highlighted in its place"
+        "and the workspace's own rows are not highlighted in its place"
     );
 }
 
@@ -3859,7 +3859,7 @@ fn a_settled_open_session_below_the_shelf_cap_highlights_nothing() {
     let open = SessionId::new();
     let mut sessions = set_aside_shelf(workspace.path(), 12);
     let SessionListItem::Readable(deepest) = &mut sessions[11] else {
-        unreachable!("the fixture builds readable Sessions");
+        unreachable!("the fixture builds readable sessions");
     };
     deepest.session.id = open;
     let mut application = sidebar_showing(workspace.path(), sessions);
@@ -3877,7 +3877,7 @@ fn a_settled_open_session_below_the_shelf_cap_highlights_nothing() {
     );
     assert!(
         open_sidebar_text(&application).is_empty(),
-        "with no row for the open Session, nothing is highlighted"
+        "with no row for the open session, nothing is highlighted"
     );
 }
 
@@ -3904,7 +3904,7 @@ fn an_open_subagent_session_highlights_nothing_until_its_tree_arrives() {
     );
     assert!(
         open_sidebar_text(&application).is_empty(),
-        "but it is no stand-in for the Subagent Session that is open"
+        "but it is no stand-in for the subagent session that is open"
     );
     assert!(standing_rail_rows(&application).is_empty());
 
@@ -3912,8 +3912,8 @@ fn an_open_subagent_session_highlights_nothing_until_its_tree_arrives() {
 
     assert!(
         selected_sidebar_text(&application).contains(ALL_WORKSPACES),
-        "and entering the Sidebar starts the keys on the Workspace selector rather than \
-         inventing a selected Session"
+        "and entering the sidebar starts the keys on the workspace selector rather than \
+         inventing a selected session"
     );
 }
 
@@ -3975,7 +3975,7 @@ fn a_settled_session_stands_below_the_divider_as_one_slim_line() {
     let divider = sidebar_divider(&rows);
     assert!(
         rendered_row(&rows, "Active work") < divider,
-        "the Sessions still in flight stand above the divider: {rows:?}"
+        "the sessions still in flight stand above the divider: {rows:?}"
     );
     let shelf = rendered_row(&rows, "Wrapped up");
     assert_eq!(
@@ -3986,7 +3986,7 @@ fn a_settled_session_stands_below_the_divider_as_one_slim_line() {
     let row = sidebar_column(&rows[shelf]);
     assert!(
         row.starts_with("Wrapped up"),
-        "a settled row leads with the Title: {row:?}"
+        "a settled row leads with the title: {row:?}"
     );
     assert!(
         row.ends_with("5m"),
@@ -3995,7 +3995,7 @@ fn a_settled_session_stands_below_the_divider_as_one_slim_line() {
     assert_eq!(
         rendered_row(&rows, "Wrapped up earlier"),
         shelf + 1,
-        "a settled Session takes one slim line, so the next one is the line below it: {rows:?}"
+        "a settled session takes one slim line, so the next one is the line below it: {rows:?}"
     );
 }
 
@@ -4018,7 +4018,7 @@ fn a_settled_row_draws_its_icon_leading_the_title() {
     let row = sidebar_column(&rows[shelf]);
     assert!(
         row.starts_with(&format!("{MD_BUG} Wrapped up")),
-        "a settled row leads with the Icon and then the Title: {row:?}"
+        "a settled row leads with the icon and then the title: {row:?}"
     );
 
     let hidden = sidebar_showing(
@@ -4032,7 +4032,7 @@ fn a_settled_row_draws_its_icon_leading_the_title() {
     let row = sidebar_column(&rows[rendered_row(&rows, "Wrapped up")]);
     assert!(
         row.starts_with("Wrapped up") && !row.contains(MD_BUG),
-        "a settled row carries no Icon until the reader asks for one: {row:?}"
+        "a settled row carries no icon until the reader asks for one: {row:?}"
     );
 }
 
@@ -4096,7 +4096,7 @@ fn a_session_settled_elsewhere_moves_shelves_and_comes_back_when_it_is_unsettled
                 listed_as(SessionId::new(), "Work still going", workspace.path(), 1),
             ],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     assert!(
         sidebar_divider_row(&rendered_application_rows_at(&application, WIDE, 20)).is_none(),
         "a reader with nothing set aside is shown no shelf to set it on"
@@ -4108,11 +4108,11 @@ fn a_session_settled_elsewhere_moves_shelves_and_comes_back_when_it_is_unsettled
     let divider = sidebar_divider(&rows);
     assert!(
         rendered_row(&rows, "Work still going") < divider,
-        "the Session still in flight keeps its place above the divider: {rows:?}"
+        "the session still in flight keeps its place above the divider: {rows:?}"
     );
     assert!(
         divider < rendered_row(&rows, "Work set aside"),
-        "the settled Session moves onto the shelf below it: {rows:?}"
+        "the settled session moves onto the shelf below it: {rows:?}"
     );
 
     settle_elsewhere(&mut application, set_aside, None);
@@ -4124,7 +4124,7 @@ fn a_session_settled_elsewhere_moves_shelves_and_comes_back_when_it_is_unsettled
     );
     assert!(
         rendered_row(&rows, "Work set aside") < rendered_row(&rows, "Work still going"),
-        "and the Session comes back to the place its creation order gives it: {rows:?}"
+        "and the session comes back to the place its creation order gives it: {rows:?}"
     );
 }
 
@@ -4147,7 +4147,7 @@ fn a_listing_refreshed_with_a_settled_marker_moves_the_session_onto_the_shelf() 
     let mut application = sidebar_showing(workspace.path(), listing(false));
     assert!(
         sidebar_divider_row(&rendered_application_rows_at(&application, WIDE, 20)).is_none(),
-        "the Session opens on the active list, where an unmarked Session belongs"
+        "the session opens on the active list, where an unmarked session belongs"
     );
 
     // Hiding and showing the Sidebar is what asks the server afresh, so this
@@ -4164,11 +4164,11 @@ fn a_listing_refreshed_with_a_settled_marker_moves_the_session_onto_the_shelf() 
     let divider = sidebar_divider(&rows);
     assert!(
         divider < rendered_row(&rows, "Work in question"),
-        "a listing carrying the marker puts the Session on the settled shelf: {rows:?}"
+        "a listing carrying the marker puts the session on the settled shelf: {rows:?}"
     );
     assert!(
         rendered_row(&rows, "Steady work") < divider,
-        "and leaves the Session it does not mark on the active list: {rows:?}"
+        "and leaves the session it does not mark on the active list: {rows:?}"
     );
 }
 
@@ -4188,7 +4188,7 @@ fn a_never_prompted_session_lists_as_active() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         rendered_row(&rows, "Never prompted") < sidebar_divider(&rows),
-        "the Session a reader just made is never hidden on the settled shelf: {rows:?}"
+        "the session a reader just made is never hidden on the settled shelf: {rows:?}"
     );
 }
 
@@ -4209,7 +4209,7 @@ fn a_session_left_alone_past_the_threshold_settles_itself() {
     let divider = sidebar_divider(&rows);
     assert!(
         divider < rendered_row(&rows, "Left alone"),
-        "a Session past the three-day default settles on its own: {rows:?}"
+        "a session past the three-day default settles on its own: {rows:?}"
     );
     assert!(
         rendered_row(&rows, "Still warm") < divider,
@@ -4256,7 +4256,7 @@ fn turning_auto_settle_off_leaves_only_what_the_reader_settled_on_the_shelf() {
     );
     assert!(
         divider < rendered_row(&rows, "Set aside"),
-        "and the marker the reader set stands whatever the Setting says: {rows:?}"
+        "and the marker the reader set stands whatever the setting says: {rows:?}"
     );
 }
 
@@ -4333,7 +4333,7 @@ fn moving_the_auto_settle_settings_reclassifies_the_sidebar_in_place() {
     );
     assert!(
         rows.iter().any(|row| row.contains("Left alone")),
-        "and leaves the Session standing on the active list: {rows:?}"
+        "and leaves the session standing on the active list: {rows:?}"
     );
 }
 
@@ -4422,7 +4422,7 @@ fn a_monitoring_session_left_alone_past_the_threshold_stays_active_until_its_wat
             monitoring(
                 listed_at(
                     watching,
-                    "Waiting on a Watch",
+                    "Waiting on a watch",
                     workspace.path(),
                     days_ago(5),
                 ),
@@ -4435,8 +4435,8 @@ fn a_monitoring_session_left_alone_past_the_threshold_stays_active_until_its_wat
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     let divider = sidebar_divider(&rows);
     assert!(
-        rendered_row(&rows, "Waiting on a Watch") < divider,
-        "a Session Monitoring past the three-day default stays with the active Sessions: {rows:?}"
+        rendered_row(&rows, "Waiting on a watch") < divider,
+        "a session monitoring past the three-day default stays with the active sessions: {rows:?}"
     );
     assert!(
         divider < rendered_row(&rows, "Left alone"),
@@ -4447,8 +4447,8 @@ fn a_monitoring_session_left_alone_past_the_threshold_stays_active_until_its_wat
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
-        sidebar_divider(&rows) < rendered_row(&rows, "Waiting on a Watch"),
-        "the Watch settling leaves the idle to settle it as usual: {rows:?}"
+        sidebar_divider(&rows) < rendered_row(&rows, "Waiting on a watch"),
+        "the watch settling leaves the idle to settle it as usual: {rows:?}"
     );
 }
 
@@ -4462,7 +4462,7 @@ fn a_working_session_whose_last_activity_is_past_the_threshold_stays_active() {
         workspace.path(),
         vec![
             working(
-                listed("Long silent Turn", workspace.path(), 1, days_ago(5)),
+                listed("Long silent turn", workspace.path(), 1, days_ago(5)),
                 days_ago(5),
             ),
             listed("Left alone", workspace.path(), 2, days_ago(5)),
@@ -4472,8 +4472,8 @@ fn a_working_session_whose_last_activity_is_past_the_threshold_stays_active() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     let divider = sidebar_divider(&rows);
     assert!(
-        rendered_row(&rows, "Long silent Turn") < divider,
-        "a Session still Working stays with the active Sessions: {rows:?}"
+        rendered_row(&rows, "Long silent turn") < divider,
+        "a session still working stays with the active sessions: {rows:?}"
     );
     assert!(
         divider < rendered_row(&rows, "Left alone"),
@@ -4624,7 +4624,7 @@ fn a_sidebar_asking_for_its_sessions_afresh_opens_the_shelf_on_its_first_rows() 
             request,
             sessions: set_aside_shelf(workspace.path(), 12),
         })
-        .expect("hydrate the Sidebar it asked for afresh");
+        .expect("hydrate the sidebar it asked for afresh");
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
@@ -4672,7 +4672,7 @@ fn work_elsewhere(
                 working_since,
             }),
         ))
-        .expect("take the Turn the catalog stream reported")
+        .expect("take the turn the catalog stream reported")
 }
 
 /// A Watch starting or settling in some client's Session, arriving on the
@@ -4689,7 +4689,7 @@ fn monitor_elsewhere(
                 monitoring_since,
             }),
         ))
-        .expect("take the Monitoring the catalog stream reported")
+        .expect("take the monitoring the catalog stream reported")
 }
 
 fn standing_elsewhere(
@@ -4718,7 +4718,7 @@ fn standing_elsewhere(
                 },
             }),
         ))
-        .expect("take the Turn outcome the catalog stream reported")
+        .expect("take the turn outcome the catalog stream reported")
 }
 
 /// A settlement another client made, arriving on the session-catalog stream,
@@ -4760,7 +4760,7 @@ fn listed_at(
     updated_at: u64,
 ) -> SessionListItem {
     let SessionListItem::Readable(mut summary) = listed(title, workspace, 1, updated_at) else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     summary.session.id = session_id;
     SessionListItem::Readable(summary)
@@ -4787,7 +4787,7 @@ fn settled(
 /// Settled, which is what a listing reports of a Session running work now.
 fn working(session: SessionListItem, working_since: u64) -> SessionListItem {
     let SessionListItem::Readable(mut summary) = session else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     summary.session.status = SessionStatus::Active;
     summary.session.working_since = Some(SessionTimestamp(working_since));
@@ -4798,7 +4798,7 @@ fn working(session: SessionListItem, working_since: u64) -> SessionListItem {
 /// `monitoring_since`, which is what a listing reports of a Session Monitoring.
 fn monitoring(session: SessionListItem, monitoring_since: u64) -> SessionListItem {
     let SessionListItem::Readable(mut summary) = session else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     summary.session.monitoring_since = Some(SessionTimestamp(monitoring_since));
     SessionListItem::Readable(summary)
@@ -4806,7 +4806,7 @@ fn monitoring(session: SessionListItem, monitoring_since: u64) -> SessionListIte
 
 fn latest_turn(session: SessionListItem, status: TurnStatus, settled_at: u64) -> SessionListItem {
     let SessionListItem::Readable(mut summary) = session else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     summary.standing_inputs = SessionStandingInputs {
         pending_questionnaires: Vec::new(),
@@ -4827,7 +4827,7 @@ fn latest_turn(session: SessionListItem, status: TurnStatus, settled_at: u64) ->
 
 fn viewed(session: SessionListItem, viewed_at: u64) -> SessionListItem {
     let SessionListItem::Readable(mut summary) = session else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     summary.standing_inputs.viewed_at = Some(SessionTimestamp(viewed_at));
     SessionListItem::Readable(summary)
@@ -4836,7 +4836,7 @@ fn viewed(session: SessionListItem, viewed_at: u64) -> SessionListItem {
 /// A listed Session as a listing that carries its settled marker reports it.
 fn set_aside(session: SessionListItem, settled_at: u64) -> SessionListItem {
     let SessionListItem::Readable(mut summary) = session else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     summary.settled_at = Some(SessionTimestamp(settled_at));
     SessionListItem::Readable(summary)
@@ -4882,11 +4882,11 @@ fn typing_narrows_the_sidebar_by_title_whatever_case_either_is_in() {
     );
     assert!(
         drawn_in_sidebar(&rows, "Sidebar shell"),
-        "a Title carrying the query stands however either is cased: {rows:?}"
+        "a title carrying the query stands however either is cased: {rows:?}"
     );
     assert!(
         !drawn_in_sidebar(&rows, "Codex runtime"),
-        "and a Title that does not carry it steps aside: {rows:?}"
+        "and a title that does not carry it steps aside: {rows:?}"
     );
 }
 
@@ -4906,7 +4906,7 @@ fn the_query_has_to_run_whole_through_the_title() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         !drawn_in_sidebar(&rows, "Sidebar shell"),
-        "letters scattered through the Title are not the query running through it: {rows:?}"
+        "letters scattered through the title are not the query running through it: {rows:?}"
     );
 }
 
@@ -4979,11 +4979,11 @@ fn a_query_nothing_carries_says_so_rather_than_drawing_an_empty_column() {
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
-        drawn_in_sidebar(&rows, "No Sessions match"),
+        drawn_in_sidebar(&rows, "No sessions match"),
         "an empty result says why the column is empty: {rows:?}"
     );
     assert!(
-        !drawn_in_sidebar(&rows, "No Sessions yet"),
+        !drawn_in_sidebar(&rows, "No sessions yet"),
         "which is not the same as having no work at all: {rows:?}"
     );
 }
@@ -5048,7 +5048,7 @@ fn esc_clears_the_query_and_keeps_the_keys_in_the_sidebar() {
     );
     assert!(
         !selected_sidebar_text(&application).is_empty(),
-        "the reader is still driving the Sidebar: they cleared a query, not the surface"
+        "the reader is still driving the sidebar: they cleared a query, not the surface"
     );
 
     press_sidebar_key(&mut application, KeyCode::Esc);
@@ -5145,7 +5145,7 @@ fn a_sidebar_coming_back_into_view_opens_on_the_whole_list_again() {
     let request = reopen_the_sidebar(&mut application);
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("hydrate the Sidebar it asked for afresh");
+        .expect("hydrate the sidebar it asked for afresh");
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert_eq!(
@@ -5193,7 +5193,7 @@ fn a_result_retitled_elsewhere_out_of_the_query_takes_the_reader_with_it() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         !drawn_in_sidebar(&rows, "Renamed away"),
-        "a Title the query no longer carries leaves the results: {rows:?}"
+        "a title the query no longer carries leaves the results: {rows:?}"
     );
     assert!(
         selected_sidebar_text(&application).contains("Match kept"),
@@ -5243,7 +5243,7 @@ fn a_refused_listing_says_so_rather_than_blaming_the_query() {
         "the refusal stands under the search box: {rows:?}"
     );
     assert!(
-        !drawn_in_sidebar(&rows, "No Sessions match"),
+        !drawn_in_sidebar(&rows, "No sessions match"),
         "and nothing under it blames the reader's query for a list that never arrived: {rows:?}"
     );
 }
@@ -5356,7 +5356,7 @@ fn a_left_press_on_a_row_attaches_the_session_it_stands_on() {
             suru::protocol::Outlook::Local,
             wanted,
         )),
-        "the press opens the Session under it, keys or no keys"
+        "the press opens the session under it, keys or no keys"
     );
 }
 
@@ -5433,7 +5433,7 @@ fn a_left_press_off_the_rows_attaches_nothing() {
     assert_eq!(
         press_at(&mut application, MouseButton::Left, SIDEBAR_CELL, 0),
         ApplicationTransition::Continue,
-        "the search box stands for no Session"
+        "the search box stands for no session"
     );
     assert_eq!(
         press_line(&mut application, MouseButton::Left, "Settled ─"),
@@ -5444,7 +5444,7 @@ fn a_left_press_off_the_rows_attaches_nothing() {
     assert_eq!(
         press_at(&mut application, MouseButton::Left, 60, row),
         ApplicationTransition::Continue,
-        "and a press out in the main view is none of the Sidebar's business"
+        "and a press out in the main view is none of the sidebar's business"
     );
 }
 
@@ -5460,7 +5460,7 @@ fn a_press_resolves_against_the_frame_in_force_rather_than_the_one_before_it() {
     let squeezed = rendered_application_rows_at(&application, 77, 20);
     assert!(
         !squeezed.iter().any(|drawn| drawn.contains("Wanted work")),
-        "the frame in force is one too narrow for the Sidebar: {squeezed:?}"
+        "the frame in force is one too narrow for the sidebar: {squeezed:?}"
     );
     assert_eq!(
         press_at(&mut application, MouseButton::Left, SIDEBAR_CELL, row),
@@ -5598,7 +5598,7 @@ fn the_menu_sets_the_row_it_stands_on_aside() {
             session: suru::protocol::SessionReference::new(suru::protocol::Outlook::Local, wanted,),
             settled: true,
         },
-        "the menu acts on the Session it was opened on rather than the one that is open"
+        "the menu acts on the session it was opened on rather than the one that is open"
     );
     assert!(
         !menu_is_drawn(&application),
@@ -5663,7 +5663,7 @@ fn the_menu_asks_again_before_it_deletes() {
             suru::protocol::Outlook::Local,
             wanted,
         )),
-        "and the second press acts on the Session the menu stands on"
+        "and the second press acts on the session the menu stands on"
     );
     assert!(
         !menu_is_drawn(&application),
@@ -5685,7 +5685,7 @@ fn a_press_outside_the_menu_puts_it_away_and_nothing_more() {
     assert_eq!(
         press_at(&mut application, MouseButton::Left, SIDEBAR_CELL, row),
         ApplicationTransition::Continue,
-        "the press that dismisses a menu opens no Session"
+        "the press that dismisses a menu opens no session"
     );
     assert!(!menu_is_drawn(&application), "the menu is put away");
 }
@@ -5747,7 +5747,7 @@ fn a_terminal_too_narrow_for_the_sidebar_draws_no_menu_and_holds_no_keys() {
     let squeezed = rendered_application_rows_at(&application, 77, PRESS_HEIGHT);
     assert!(
         !squeezed.iter().any(|row| row.contains("Delete")),
-        "no menu stands over a main view the Sidebar was squeezed off: {squeezed:?}"
+        "no menu stands over a main view the sidebar was squeezed off: {squeezed:?}"
     );
 
     type_terminal_text(&mut application, "not-a-menu-key");
@@ -5788,7 +5788,7 @@ fn a_right_press_inside_the_menu_leaves_it_where_it_is() {
 
 /// The words for every Workspace on the Outlook, below Everywhere and above
 /// the individual Workspace entries.
-const ALL_WORKSPACES: &str = "All Workspaces";
+const ALL_WORKSPACES: &str = "All workspaces";
 const EVERYWHERE: &str = "Everywhere";
 
 fn remote(name: &str, status: RemoteStatus) -> Remote {
@@ -5810,7 +5810,7 @@ fn choose_everywhere(application: &mut Application, remotes: Vec<Remote>) -> Eve
     let ApplicationTransition::ListEverywhereRemotes(request_id) =
         choose_workspace(application, EVERYWHERE)
     else {
-        panic!("choosing Everywhere should first ask which Remotes are paired");
+        panic!("choosing Everywhere should first ask which remotes are paired");
     };
     let ApplicationTransition::ReconcileCatalogOrigins {
         catalog_origins,
@@ -5820,9 +5820,9 @@ fn choose_everywhere(application: &mut Application, remotes: Vec<Remote>) -> Eve
             request: request_id,
             remotes,
         })
-        .expect("take the paired Remotes into the Everywhere listing")
+        .expect("take the paired remotes into the Everywhere listing")
     else {
-        panic!("the paired Remote list should yield one listing request per Origin");
+        panic!("the paired remote list should yield one listing request per origin");
     };
     EverywhereListing {
         catalog_origins,
@@ -5849,15 +5849,15 @@ fn everywhere_with_studio(
         let sessions = match request.outlook() {
             Outlook::Local => local_sessions
                 .take()
-                .expect("Everywhere asks the local Origin once"),
+                .expect("Everywhere asks the local origin once"),
             Outlook::Remote(name) if name == "studio" => {
                 studio_sessions.take().expect("Everywhere asks studio once")
             }
-            other => panic!("unexpected listing Origin: {other:?}"),
+            other => panic!("unexpected listing origin: {other:?}"),
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("take one Origin's listing into Everywhere");
+            .expect("take one origin's listing into Everywhere");
     }
     (application, catalog_origins)
 }
@@ -5907,7 +5907,7 @@ fn the_selector_lists_everywhere_then_all_workspaces_then_the_outlooks_workspace
             "notes".to_owned(),
             "suru".to_owned(),
         ],
-        "every Workspace the reader has work in, and the one they are standing in"
+        "every workspace the reader has work in, and the one they are standing in"
     );
 }
 
@@ -5945,8 +5945,8 @@ fn selector_entries_draw_their_workspaces_own_icon_or_the_folder_glyph() {
             "\u{ea83} notes".to_owned(),
             "\u{e7a8} suru".to_owned(),
         ],
-        "Everywhere and AllWorkspaces draw no Icon; a Workspace scope draws its \
-         own Icon or falls back to the folder glyph"
+        "Everywhere and AllWorkspaces draw no icon; a workspace scope draws its \
+         own icon or falls back to the folder glyph"
     );
 }
 
@@ -5981,7 +5981,7 @@ fn everywhere_asks_each_non_terminal_origin_and_merges_both_shelves_by_reported_
             Outlook::Remote("studio".to_owned()),
             Outlook::Remote("sleeping".to_owned()),
         ]),
-        "terminal Remotes are not asked, while an unavailable Pairing may answer again"
+        "terminal remotes are not asked, while an unavailable pairing may answer again"
     );
     assert_eq!(
         catalog_origins,
@@ -5989,7 +5989,7 @@ fn everywhere_asks_each_non_terminal_origin_and_merges_both_shelves_by_reported_
             Outlook::Remote("studio".to_owned()),
             Outlook::Remote("sleeping".to_owned()),
         ]),
-        "Everywhere watches every paired, non-terminal Remote"
+        "Everywhere watches every paired, non-terminal remote"
     );
     assert!(requests.iter().all(|request| {
         request.surface() == SessionListSurface::Sidebar
@@ -6024,11 +6024,11 @@ fn everywhere_asks_each_non_terminal_origin_and_merges_both_shelves_by_reported_
                 ),
             ],
             Outlook::Remote(name) if name == "sleeping" => Vec::new(),
-            other => panic!("unexpected listing Origin: {other:?}"),
+            other => panic!("unexpected listing origin: {other:?}"),
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("take one Origin's listing into the merged Sidebar");
+            .expect("take one origin's listing into the merged sidebar");
     }
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
@@ -6052,7 +6052,7 @@ fn everywhere_prefixes_foreign_workspaces_independently_of_title_truncation() {
         let sessions = match request.outlook() {
             Outlook::Local => vec![listed("Local work", workspace.path(), 2, now())],
             Outlook::Remote(_) => vec![listed(
-                "A foreign Title long enough that the Sidebar must truncate it",
+                "A foreign title long enough that the sidebar must truncate it",
                 &workspace.path().join("remote"),
                 1,
                 now(),
@@ -6060,23 +6060,23 @@ fn everywhere_prefixes_foreign_workspaces_independently_of_title_truncation() {
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("take the Origin listing");
+            .expect("take the origin listing");
     }
 
     let buffer = rendered_application_buffer(&application, WIDE, 20);
     let rows = crate::tui_rendering::support::buffer_rows(&buffer);
     let local = sidebar_column(&rows[rendered_row(&rows, "Local work")]);
-    assert_eq!(local, "Local work", "local rows carry no Origin tag");
-    let title_row = rendered_row(&rows, "A foreign Title");
+    assert_eq!(local, "Local work", "local rows carry no origin tag");
+    let title_row = rendered_row(&rows, "A foreign title");
     let foreign = sidebar_column(&rows[title_row]);
     assert!(!foreign.contains("[studio]") && !foreign.contains("truncate it"));
     let location = sidebar_column(&rows[title_row - 1]);
     assert!(location.starts_with("studio · remote"), "{location:?}");
     let (column, row) = text_position(&buffer, "studio · remote");
     assert_eq!(
-        buffer.cell((column, row)).expect("the Remote is drawn").fg,
+        buffer.cell((column, row)).expect("the remote is drawn").fg,
         PANDA.muted,
-        "the Remote shares the Workspace's subdued style"
+        "the remote shares the workspace's subdued style"
     );
 }
 
@@ -6111,7 +6111,7 @@ fn opening_a_foreign_row_keeps_the_pickers_everywhere_streams() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::SessionList,
         )))
-        .expect("open the Session picker");
+        .expect("open the session picker");
     let picker_ctrl_a = |application: &mut Application| {
         application
             .handle_terminal_event(InputEvent::Key(KeyEvent::new(
@@ -6123,7 +6123,7 @@ fn opening_a_foreign_row_keeps_the_pickers_everywhere_streams() {
     picker_ctrl_a(&mut application);
     let ApplicationTransition::ListEverywhereRemotes(discovery) = picker_ctrl_a(&mut application)
     else {
-        panic!("the picker's Everywhere first discovers its Origins");
+        panic!("the picker's Everywhere first discovers its origins");
     };
     application
         .handle_event(ApplicationEvent::EverywhereRemotesListed {
@@ -6133,7 +6133,7 @@ fn opening_a_foreign_row_keeps_the_pickers_everywhere_streams() {
                 remote("laptop", RemoteStatus::Available),
             ],
         })
-        .expect("the picker takes both Remotes as Origins");
+        .expect("the picker takes both remotes as origins");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Esc,
@@ -6196,7 +6196,7 @@ fn enter_on_a_foreign_row_turns_then_opens_it_without_disturbing_everywhere() {
             session: SessionReference::new(Outlook::Remote("studio".to_owned()), foreign),
             catalog_origins,
         },
-        "the Outlook turn and attach are one ordered client transition"
+        "the outlook turn and attach are one ordered client transition"
     );
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
@@ -6205,7 +6205,7 @@ fn enter_on_a_foreign_row_turns_then_opens_it_without_disturbing_everywhere() {
     assert!(drawn_in_sidebar(&rows, "Studio work"));
     assert!(
         open_sidebar_text(&application).contains("Studio work"),
-        "the open Title accent lands on the foreign row without repainting its Origin tag"
+        "the open title accent lands on the foreign row without repainting its origin tag"
     );
     let reference = SessionReference::new(Outlook::Remote("studio".to_owned()), foreign);
     application
@@ -6218,11 +6218,11 @@ fn enter_on_a_foreign_row_turns_then_opens_it_without_disturbing_everywhere() {
                 &foreign_workspace,
             ),
         })
-        .expect("hydrate the foreign Session");
+        .expect("hydrate the foreign session");
     let session = rendered_application_rows_at(&application, WIDE, 20).join("\n");
     assert!(
         session.contains("studio ·"),
-        "the hydrated Session's header names the Remote: {session:?}"
+        "the hydrated session's header names the remote: {session:?}"
     );
     assert!(!session.contains("Suru"), "{session}");
 }
@@ -6273,9 +6273,9 @@ fn a_pointer_turn_uses_the_sessions_workspace_then_remembers_it_for_that_outlook
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionList,
         )))
-        .expect("open the Session picker")
+        .expect("open the session picker")
     else {
-        panic!("the Session picker observes the Workspace adopted from the foreign row");
+        panic!("the session picker observes the workspace adopted from the foreign row");
     };
     assert_eq!(
         request.scope(),
@@ -6283,7 +6283,7 @@ fn a_pointer_turn_uses_the_sessions_workspace_then_remembers_it_for_that_outlook
     );
     application
         .handle_event(ApplicationEvent::Command(CommandId::CloseSessionPicker))
-        .expect("close the Session picker");
+        .expect("close the session picker");
 
     assert_eq!(
         press_line(&mut application, MouseButton::Left, "Local work"),
@@ -6303,14 +6303,14 @@ fn a_pointer_turn_uses_the_sessions_workspace_then_remembers_it_for_that_outlook
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionList,
         )))
-        .expect("open the Session picker after returning to studio")
+        .expect("open the session picker after returning to studio")
     else {
-        panic!("the Session picker observes the remembered studio Workspace");
+        panic!("the session picker observes the remembered studio workspace");
     };
     assert_eq!(
         request.scope(),
         &SessionListScope::CurrentWorkspace((first_workspace).into()),
-        "returning to an Outlook keeps its remembered Workspace instead of adopting another row's"
+        "returning to an outlook keeps its remembered workspace instead of adopting another row's"
     );
 }
 
@@ -6344,11 +6344,11 @@ fn a_transient_remote_drop_dims_only_its_rows_and_marks_it_unreachable() {
                 2,
                 now(),
             )],
-            other => panic!("unexpected listing Origin: {other:?}"),
+            other => panic!("unexpected listing origin: {other:?}"),
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("take the Origin listing");
+            .expect("take the origin listing");
     }
 
     assert_eq!(
@@ -6361,9 +6361,9 @@ fn a_transient_remote_drop_dims_only_its_rows_and_marks_it_unreachable() {
                     unreachable: None,
                 }),
             })
-            .expect("take the transient Remote drop"),
+            .expect("take the transient remote drop"),
         ApplicationTransition::Continue,
-        "reachability changes presentation without disturbing another Origin's listing"
+        "reachability changes presentation without disturbing another origin's listing"
     );
 
     let buffer = rendered_application_buffer(&application, WIDE, 20);
@@ -6377,14 +6377,14 @@ fn a_transient_remote_drop_dims_only_its_rows_and_marks_it_unreachable() {
     assert_eq!(
         buffer.cell(studio).expect("draw the Studio row").fg,
         PANDA.muted,
-        "cached rows from the dropped Remote are dimmed"
+        "cached rows from the dropped remote are dimmed"
     );
     assert_standing_rail(&buffer, studio.1, PANDA.info, PANDA.panel);
     let laptop = text_position(&buffer, "Laptop work");
     assert_eq!(
         buffer.cell(laptop).expect("draw the Laptop row").fg,
         PANDA.text,
-        "another Remote's rows are untouched"
+        "another remote's rows are untouched"
     );
 }
 
@@ -6408,7 +6408,7 @@ fn enter_on_an_unreachable_remote_restarts_its_stream_and_listing_now() {
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("take the Origin listing");
+            .expect("take the origin listing");
     }
     application
         .handle_event(ApplicationEvent::OriginCatalog {
@@ -6419,7 +6419,7 @@ fn enter_on_an_unreachable_remote_restarts_its_stream_and_listing_now() {
                 unreachable: None,
             }),
         })
-        .expect("take the transient Remote drop");
+        .expect("take the transient remote drop");
 
     step_onto_the_list(&mut application);
     press_sidebar_key(&mut application, KeyCode::Down);
@@ -6431,7 +6431,7 @@ fn enter_on_an_unreachable_remote_restarts_its_stream_and_listing_now() {
     let ApplicationTransition::RetryCatalogOrigin(request) =
         press_sidebar_key(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter should retry the unreachable Remote immediately");
+        panic!("Enter should retry the unreachable remote immediately");
     };
     assert_eq!(request.outlook(), &Outlook::Remote("studio".to_owned()));
     assert_eq!(request.surface(), SessionListSurface::Sidebar);
@@ -6452,7 +6452,7 @@ fn an_unreachable_remotes_context_menu_retries_it_now() {
                 request,
                 sessions: Vec::new(),
             })
-            .expect("take the Origin listing");
+            .expect("take the origin listing");
     }
     application
         .handle_event(ApplicationEvent::OriginCatalog {
@@ -6463,7 +6463,7 @@ fn an_unreachable_remotes_context_menu_retries_it_now() {
                 unreachable: None,
             }),
         })
-        .expect("take the transient Remote drop");
+        .expect("take the transient remote drop");
 
     let anchor = open_menu_on(&mut application, "studio [unreachable]");
     let rows = rendered_application_rows_at(&application, WIDE, PRESS_HEIGHT);
@@ -6475,7 +6475,7 @@ fn an_unreachable_remotes_context_menu_retries_it_now() {
     let ApplicationTransition::RetryCatalogOrigin(request) =
         press_menu_item(&mut application, anchor, 0)
     else {
-        panic!("the menu should retry the unreachable Remote immediately");
+        panic!("the menu should retry the unreachable remote immediately");
     };
     assert_eq!(request.outlook(), &Outlook::Remote("studio".to_owned()));
 }
@@ -6509,7 +6509,7 @@ fn everywhere_with_a_remote_unreachable_for(
                 request,
                 sessions: Vec::new(),
             })
-            .expect("take the Origin listing");
+            .expect("take the origin listing");
     }
     application
         .handle_event(ApplicationEvent::OriginCatalog {
@@ -6520,7 +6520,7 @@ fn everywhere_with_a_remote_unreachable_for(
                 unreachable: Some(reason),
             }),
         })
-        .expect("take the Remote out of reach");
+        .expect("take the remote out of reach");
     application
 }
 
@@ -6550,13 +6550,13 @@ fn an_unreachable_remotes_row_says_a_login_is_needed_and_its_offer_leads_to_it()
     let pressed = press_menu_item(&mut application, anchor, 0);
     assert!(
         matches!(pressed, ApplicationTransition::ListRelays(_)),
-        "the menu leads to the Relay list, to log in there: {pressed:?}"
+        "the menu leads to the relay list, to log in there: {pressed:?}"
     );
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::RelayClose,
         )))
-        .expect("close the Relay list");
+        .expect("close the relay list");
 
     step_onto_the_list(&mut application);
     press_sidebar_key(&mut application, KeyCode::Down);
@@ -6643,7 +6643,7 @@ fn an_unreachable_row_whose_relay_accounts_differ_offers_to_try_again_however_na
             press_menu_item(&mut application, anchor, 0),
             ApplicationTransition::RetryCatalogOrigin(_)
         ),
-        "the menu tries the Remote again"
+        "the menu tries the remote again"
     );
 }
 
@@ -6715,7 +6715,7 @@ fn a_fresh_remote_snapshot_clears_its_unreachable_presentation() {
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("take the Origin listing");
+            .expect("take the origin listing");
     }
     let remote = Outlook::Remote("studio".to_owned());
     application
@@ -6727,7 +6727,7 @@ fn a_fresh_remote_snapshot_clears_its_unreachable_presentation() {
                 unreachable: None,
             }),
         })
-        .expect("take the transient Remote drop");
+        .expect("take the transient remote drop");
     let _ = open_menu_on(&mut application, "studio [unreachable]");
 
     assert!(matches!(
@@ -6741,7 +6741,7 @@ fn a_fresh_remote_snapshot_clears_its_unreachable_presentation() {
                     checkout_states: Vec::new(),
                 }),
             })
-            .expect("take the fresh Remote snapshot"),
+            .expect("take the fresh remote snapshot"),
         ApplicationTransition::ListSessions(_)
     ));
 
@@ -6749,7 +6749,7 @@ fn a_fresh_remote_snapshot_clears_its_unreachable_presentation() {
     let rows = crate::tui_rendering::support::buffer_rows(&buffer);
     assert!(
         !rows.iter().any(|row| row.contains("[unreachable]")),
-        "the fresh snapshot removes the Remote's unreachable row: {rows:?}"
+        "the fresh snapshot removes the remote's unreachable row: {rows:?}"
     );
     assert!(
         !rows.iter().any(|row| row.contains("Try again now")),
@@ -6761,7 +6761,7 @@ fn a_fresh_remote_snapshot_clears_its_unreachable_presentation() {
             .expect("draw the recovered row")
             .fg,
         PANDA.muted,
-        "the fresh snapshot stops subduing the Remote's rows"
+        "the fresh snapshot stops subduing the remote's rows"
     );
 }
 
@@ -6851,11 +6851,11 @@ fn a_terminal_background_remote_failure_removes_only_that_origin() {
                 1,
                 now(),
             )],
-            other => panic!("unexpected listing Origin: {other:?}"),
+            other => panic!("unexpected listing origin: {other:?}"),
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("take the Origin listing");
+            .expect("take the origin listing");
     }
     let failed = Outlook::Remote("studio".to_owned());
     application
@@ -6877,12 +6877,12 @@ fn a_terminal_background_remote_failure_removes_only_that_origin() {
             outlook: failed,
             event: ManagedEvent::RemoteFailed {
                 status: RemoteStatus::Revoked,
-                message: "Studio revoked this Pairing".to_owned(),
+                message: "Studio revoked this pairing".to_owned(),
             },
         })
-        .expect("take the terminal Remote failure")
+        .expect("take the terminal remote failure")
     else {
-        panic!("a terminal Remote failure should release its catalog interest");
+        panic!("a terminal remote failure should release its catalog interest");
     };
     assert!(requests.is_empty());
     assert_eq!(
@@ -6896,7 +6896,7 @@ fn a_terminal_background_remote_failure_removes_only_that_origin() {
     assert!(!rows.iter().any(|row| row.contains("[unreachable]")));
     assert!(
         !rows.iter().any(|row| row.contains("Studio revoked")),
-        "a background failure does not put an error in the current Outlook: {rows:?}"
+        "a background failure does not put an error in the current outlook: {rows:?}"
     );
 }
 
@@ -6931,7 +6931,7 @@ fn everywhere_searches_one_flat_tagged_list_then_a_workspace_returns_to_the_outl
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("take the Origin listing");
+            .expect("take the origin listing");
     }
 
     type_terminal_text(&mut application, "matching");
@@ -6957,7 +6957,7 @@ fn everywhere_searches_one_flat_tagged_list_then_a_workspace_returns_to_the_outl
             ALL_WORKSPACES.to_owned(),
             workspace_name(workspace.path()),
         ],
-        "the selector never offers a foreign Workspace"
+        "the selector never offers a foreign workspace"
     );
     assert_eq!(
         choose_workspace(&mut application, &workspace_name(workspace.path())),
@@ -6965,7 +6965,7 @@ fn everywhere_searches_one_flat_tagged_list_then_a_workspace_returns_to_the_outl
             catalog_origins: std::collections::HashSet::new(),
             requests: Vec::new(),
         },
-        "narrowing uses the Outlook listing already in hand and watches the local Outlook alone"
+        "narrowing uses the outlook listing already in hand and watches the local outlook alone"
     );
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(drawn_in_sidebar(&rows, "Matching local"));
@@ -7004,7 +7004,7 @@ fn reopening_everywhere_refreshes_the_remote_set_and_every_origin_listing() {
         })
         .expect("keep the hidden Everywhere listing live")
     else {
-        panic!("hiding the Sidebar must not release or stop its Everywhere catalog interests");
+        panic!("hiding the sidebar must not release or stop its Everywhere catalog interests");
     };
     assert_eq!(
         hidden_refresh.outlook(),
@@ -7012,7 +7012,7 @@ fn reopening_everywhere_refreshes_the_remote_set_and_every_origin_listing() {
     );
     let ApplicationTransition::ListEverywhereRemotes(request_id) = press_toggle(&mut application)
     else {
-        panic!("the Sidebar's ordinary reveal path starts Everywhere afresh");
+        panic!("the sidebar's ordinary reveal path starts Everywhere afresh");
     };
     let ApplicationTransition::ReconcileCatalogOrigins {
         catalog_origins,
@@ -7022,9 +7022,9 @@ fn reopening_everywhere_refreshes_the_remote_set_and_every_origin_listing() {
             request: request_id,
             remotes: vec![remote("studio", RemoteStatus::Available)],
         })
-        .expect("refresh the paired Remote set")
+        .expect("refresh the paired remote set")
     else {
-        panic!("the refreshed Remote set should yield fresh Origin listings");
+        panic!("the refreshed remote set should yield fresh origin listings");
     };
     assert_eq!(
         catalog_origins,
@@ -7061,14 +7061,14 @@ fn a_remote_catalog_change_catches_up_only_its_origin_while_everywhere_is_chosen
                 session_id: SessionId::new(),
             }),
         })
-        .expect("take a catalog change from a background Remote")
+        .expect("take a catalog change from a background remote")
     else {
-        panic!("a Remote catalog change should re-ask only that Origin");
+        panic!("a remote catalog change should re-ask only that origin");
     };
     assert_eq!(
         request.outlook(),
         &Outlook::Remote("studio".to_owned()),
-        "the unrelated local Origin is undisturbed"
+        "the unrelated local origin is undisturbed"
     );
 }
 
@@ -7091,7 +7091,7 @@ fn a_remote_catalog_change_updates_only_that_origins_rows() {
                 request,
                 sessions: vec![listed_as(shared_id, title, workspace.path(), 1)],
             })
-            .expect("load the same Origin-local identity from both Servers");
+            .expect("load the same origin-local identity from both servers");
     }
 
     let transition = application
@@ -7103,7 +7103,7 @@ fn a_remote_catalog_change_updates_only_that_origins_rows() {
                 icon: None,
             }),
         })
-        .expect("take the Remote retitle");
+        .expect("take the remote retitle");
 
     assert!(matches!(transition, ApplicationTransition::ListSessions(_)));
     let rows = rendered_application_rows_at(&application, WIDE, 20);
@@ -7131,7 +7131,7 @@ fn a_remote_turn_outcome_lights_that_outlooks_row_in_place() {
                 request,
                 sessions: vec![listed_as(shared_id, title, workspace.path(), 1)],
             })
-            .expect("load both Origin-local rows");
+            .expect("load both origin-local rows");
     }
 
     let transition = application
@@ -7155,10 +7155,10 @@ fn a_remote_turn_outcome_lights_that_outlooks_row_in_place() {
                 },
             }),
         })
-        .expect("take the Remote Turn outcome");
+        .expect("take the remote turn outcome");
 
     let ApplicationTransition::ListSessions(request) = transition else {
-        panic!("the Remote outcome catches up its Origin");
+        panic!("the remote outcome catches up its origin");
     };
     assert_eq!(request.outlook(), &Outlook::Remote("studio".to_owned()));
     let buffer = rendered_application_buffer(&application, WIDE, 20);
@@ -7168,7 +7168,7 @@ fn a_remote_turn_outcome_lights_that_outlooks_row_in_place() {
     assert!(sidebar_column(&rows[usize::from(remote - 1)]).ends_with("Failed"));
     let local = u16::try_from(rendered_row(&rows, "Local work")).expect("screen row");
     assert_ne!(
-        buffer.cell((0, local)).expect("local Rail cell").symbol(),
+        buffer.cell((0, local)).expect("local rail cell").symbol(),
         "▎"
     );
 }
@@ -7180,13 +7180,13 @@ fn a_superseded_everywhere_discovery_cannot_replace_the_newer_remote_set() {
     let ApplicationTransition::ListEverywhereRemotes(first) =
         choose_workspace(&mut application, EVERYWHERE)
     else {
-        panic!("the first Everywhere choice starts Remote discovery");
+        panic!("the first Everywhere choice starts remote discovery");
     };
     choose_workspace(&mut application, ALL_WORKSPACES);
     let ApplicationTransition::ListEverywhereRemotes(second) =
         choose_workspace(&mut application, EVERYWHERE)
     else {
-        panic!("choosing Everywhere again starts fresh Remote discovery");
+        panic!("choosing Everywhere again starts fresh remote discovery");
     };
     assert_ne!(first, second);
 
@@ -7232,8 +7232,8 @@ fn the_selector_lists_one_entry_for_the_launch_workspace_however_it_was_spelled(
             ALL_WORKSPACES.to_owned(),
             workspace_name(workspace.path()),
         ],
-        "the Workspace the client runs in and the one the server lists its \
-         Sessions under are the same entry"
+        "the workspace the client runs in and the one the server lists its \
+         sessions under are the same entry"
     );
 }
 
@@ -7246,10 +7246,10 @@ fn the_selector_lists_one_entry_for_the_launch_workspace_however_it_was_spelled(
 fn a_client_launched_through_a_symlink_narrows_to_the_workspace_the_server_reports() {
     let root = tempfile::tempdir().expect("create fixture root");
     let real = root.path().join("real");
-    std::fs::create_dir(&real).expect("create the Workspace directory");
+    std::fs::create_dir(&real).expect("create the workspace directory");
     let link = root.path().join("link");
-    std::os::unix::fs::symlink(&real, &link).expect("reach the Workspace through a symlink");
-    let canonical = suru::paths::canonical(&real).expect("canonicalize the Workspace fixture");
+    std::os::unix::fs::symlink(&real, &link).expect("reach the workspace through a symlink");
+    let canonical = suru::paths::canonical(&real).expect("canonicalize the workspace fixture");
 
     let application = sidebar_scoped(
         &link,
@@ -7260,13 +7260,13 @@ fn a_client_launched_through_a_symlink_narrows_to_the_workspace_the_server_repor
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         drawn_in_sidebar(&rows, "Rooted here"),
-        "narrowing to the current Workspace holds the work the server rooted \
+        "narrowing to the current workspace holds the work the server rooted \
          at the directory the symlink reaches: {rows:?}"
     );
     assert_eq!(
         selector_label(&rows),
         format!("▸ {}", workspace_name(&canonical)),
-        "and the selector names the Workspace by the server's reading: {rows:?}"
+        "and the selector names the workspace by the server's reading: {rows:?}"
     );
 }
 
@@ -7282,16 +7282,16 @@ fn choosing_a_workspace_narrows_both_shelves() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         drawn_in_sidebar(&rows, "Notes work") && drawn_in_sidebar(&rows, "Notes history"),
-        "both shelves go on listing the Workspace the reader narrowed to: {rows:?}"
+        "both shelves go on listing the workspace the reader narrowed to: {rows:?}"
     );
     assert!(
         !drawn_in_sidebar(&rows, "Suru work") && !drawn_in_sidebar(&rows, "Suru history"),
-        "and neither lists the Workspace they narrowed away from: {rows:?}"
+        "and neither lists the workspace they narrowed away from: {rows:?}"
     );
     assert_eq!(
         selector_label(&rows),
         "▸ notes",
-        "the selector says which Workspace the list is answering for: {rows:?}"
+        "the selector says which workspace the list is answering for: {rows:?}"
     );
 }
 
@@ -7348,7 +7348,7 @@ fn the_initial_scope_setting_narrows_the_sidebar_a_tui_launches_with() {
     assert_eq!(
         selector_label(&rows),
         format!("▸ {}", workspace_name(workspace.path())),
-        "the Sidebar launches narrowed to the Workspace the client runs in: {rows:?}"
+        "the sidebar launches narrowed to the workspace the client runs in: {rows:?}"
     );
     assert!(
         !drawn_in_sidebar(&rows, "Notes work") && !drawn_in_sidebar(&rows, "Suru work"),
@@ -7368,16 +7368,16 @@ fn an_everywhere_initial_scope_launches_into_the_merged_listing() {
             ..SidebarSettings::default()
         },
     ) else {
-        panic!("an Everywhere Sidebar starts by discovering its paired Remotes");
+        panic!("an Everywhere sidebar starts by discovering its paired remotes");
     };
     let ApplicationTransition::ReconcileCatalogOrigins { requests, .. } = application
         .handle_event(ApplicationEvent::EverywhereRemotesListed {
             request: request_id,
             remotes: vec![remote("studio", RemoteStatus::Available)],
         })
-        .expect("take the paired Remotes into the starting listing")
+        .expect("take the paired remotes into the starting listing")
     else {
-        panic!("the starting scope should ask every Origin for its Sessions");
+        panic!("the starting scope should ask every origin for its sessions");
     };
 
     for request in requests {
@@ -7389,11 +7389,11 @@ fn an_everywhere_initial_scope_launches_into_the_merged_listing() {
                 1,
                 minutes_ago(1),
             )],
-            other => panic!("unexpected listing Origin: {other:?}"),
+            other => panic!("unexpected listing origin: {other:?}"),
         };
         application
             .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-            .expect("take one Origin's listing into the starting Sidebar");
+            .expect("take one origin's listing into the starting sidebar");
     }
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
@@ -7416,7 +7416,7 @@ fn a_scope_the_reader_chose_is_ephemeral_and_survives_a_later_snapshot() {
     assert_eq!(
         choose_workspace(&mut application, "notes"),
         ApplicationTransition::Continue,
-        "moving the selector edits no Config Document"
+        "moving the selector edits no config document"
     );
     deliver_sidebar_settings(
         &mut application,
@@ -7483,7 +7483,7 @@ fn a_move_within_the_narrowed_workspace_leaves_an_open_selector_open() {
             request,
             sessions: vec![listed("The work", workspace.path(), 1, now())],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     press_line(&mut application, MouseButton::Left, "▸ ");
     let opened = selector_entries(&application);
     assert!(!opened.is_empty(), "the entries stand open");
@@ -7502,7 +7502,7 @@ fn a_move_within_the_narrowed_workspace_leaves_an_open_selector_open() {
                 }],
             }),
         ))
-        .expect("hear the Session Move");
+        .expect("hear the session move");
 
     assert_eq!(selector_entries(&application), opened);
 }
@@ -7589,7 +7589,7 @@ fn a_session_suru_cannot_place_stands_however_narrow_the_scope() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         drawn_in_sidebar(&rows, "Unplaceable work"),
-        "a Session with no Workspace to read stands wherever the listing does: {rows:?}"
+        "a session with no workspace to read stands wherever the listing does: {rows:?}"
     );
     assert!(
         !drawn_in_sidebar(&rows, "Suru work"),
@@ -7614,7 +7614,7 @@ fn sidebar_scoped(
     ));
     application
         .handle_event(ApplicationEvent::SessionsListed { request, sessions })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     application
 }
 
@@ -7677,7 +7677,7 @@ fn selector_entries(application: &Application) -> Vec<String> {
 fn workspace_name(workspace: &Path) -> String {
     workspace
         .file_name()
-        .expect("the fixture's Workspace has a name")
+        .expect("the fixture's workspace has a name")
         .to_string_lossy()
         .into_owned()
 }
@@ -7720,14 +7720,14 @@ fn pressing_the_new_session_affordance_opens_the_landing_as_new_does() {
     let mut asked = reading_one(workspace.path(), open, sessions);
     assert!(
         main_view(&pressed).contains(ALREADY_ON_SCREEN),
-        "a Session is open in the main view to begin with"
+        "a session is open in the main view to begin with"
     );
 
     let by_command = asked
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionNew,
         )))
-        .expect("open the Landing by `/new`");
+        .expect("open the landing by `/new`");
     assert_eq!(by_command, ApplicationTransition::DetachSession);
     assert_eq!(
         press_new_session(&mut pressed),
@@ -7738,12 +7738,12 @@ fn pressing_the_new_session_affordance_opens_the_landing_as_new_does() {
     let main = main_view(&pressed);
     assert!(
         !main.contains(ALREADY_ON_SCREEN),
-        "the Session left behind is no longer drawn: {main}"
+        "the session left behind is no longer drawn: {main}"
     );
     assert_eq!(
         main,
         main_view(&asked),
-        "the Landing the press opened is the one `/new` opens"
+        "the landing the press opened is the one `/new` opens"
     );
 }
 
@@ -7775,14 +7775,14 @@ fn enter_on_the_new_session_affordance_opens_the_landing_and_hands_its_composer_
     let main = main_view(&application);
     assert!(
         !main.contains(ALREADY_ON_SCREEN),
-        "the Landing stands where the Session was: {main}"
+        "the landing stands where the session was: {main}"
     );
 
     type_terminal_text(&mut application, "Begin");
     let main = main_view(&application);
     assert!(
         main.contains("Begin"),
-        "what the reader types next is a Prompt in the Landing's composer: {main}"
+        "what the reader types next is a prompt in the landing's composer: {main}"
     );
     assert!(
         selected_sidebar_text(&application).is_empty(),
@@ -7813,7 +7813,7 @@ fn no_path_entry_opens_from_the_sidebar_by_any_key_or_press() {
         assert_eq!(
             transition,
             ApplicationTransition::DetachSession,
-            "{gesture} on the affordance opens the Landing and resolves no path"
+            "{gesture} on the affordance opens the landing and resolves no path"
         );
         type_terminal_text(&mut application, "notes");
 
@@ -7828,7 +7828,7 @@ fn no_path_entry_opens_from_the_sidebar_by_any_key_or_press() {
         );
         assert!(
             main_view(&application).contains("notes"),
-            "after {gesture} what the reader typed is a Prompt in the composer: {rows:?}"
+            "after {gesture} what the reader typed is a prompt in the composer: {rows:?}"
         );
     }
 }
@@ -7843,7 +7843,7 @@ fn driving_the_sidebar_of_an_unreachable_studio() -> Application {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::SidebarToggle,
             )))
-            .expect("reveal the Sidebar"),
+            .expect("reveal the sidebar"),
     );
     let studio = crate::tui_rendering::support::named_workspace_path("studio");
     application
@@ -7854,7 +7854,7 @@ fn driving_the_sidebar_of_an_unreachable_studio() -> Application {
                 listed("Studio notes", &studio, 1, now()),
             ],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     studio_stops_answering(&mut application, 1, Duration::from_secs(5));
     application
 }
@@ -7872,7 +7872,7 @@ fn assert_refused_as_unreachable(application: &Application) {
     let screen = rendered_application_rows_at(application, WIDE, 20).join("\n");
     assert!(
         screen.contains("studio is unreachable"),
-        "the refusal names the Remote where the reader can see it: {screen}"
+        "the refusal names the remote where the reader can see it: {screen}"
     );
 }
 
@@ -7886,7 +7886,7 @@ fn the_new_session_affordance_is_refused_like_new_while_the_outlook_is_unreachab
     assert_eq!(
         press_new_session(&mut application),
         ApplicationTransition::Continue,
-        "nothing is begun on a Remote that does not answer"
+        "nothing is begun on a remote that does not answer"
     );
     assert_refused_as_unreachable(&application);
 }
@@ -7924,7 +7924,7 @@ fn a_refused_press_on_the_new_session_affordance_leaves_the_sidebar_as_it_stood(
     assert_eq!(
         sidebar_as_it_stands(&application),
         before,
-        "the refused press moved nothing in the Sidebar"
+        "the refused press moved nothing in the sidebar"
     );
 }
 
@@ -7951,14 +7951,14 @@ fn a_refused_enter_on_the_new_session_affordance_leaves_the_sidebar_as_it_stood(
     assert_eq!(
         sidebar_as_it_stands(&application),
         before,
-        "the refused Enter moved nothing in the Sidebar"
+        "the refused Enter moved nothing in the sidebar"
     );
     type_terminal_text(&mut application, " work");
     assert!(
         sidebar_rows(&application)
             .iter()
             .any(|row| row.contains("Search: Studio work")),
-        "and the keys are still the Sidebar's"
+        "and the keys are still the sidebar's"
     );
 }
 
@@ -7969,7 +7969,7 @@ fn a_refused_enter_on_the_new_session_affordance_leaves_the_sidebar_as_it_stood(
 fn the_workspace_the_reader_moved_to_stands_among_the_selectors_entries() {
     let workspace = workspace_dir();
     let notes = workspace.path().join("notes");
-    std::fs::create_dir(&notes).expect("create the Workspace the reader moves to");
+    std::fs::create_dir(&notes).expect("create the workspace the reader moves to");
     let mut application = sidebar_showing(
         workspace.path(),
         vec![listed(
@@ -7985,7 +7985,7 @@ fn the_workspace_the_reader_moved_to_stands_among_the_selectors_entries() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceList,
             )))
-            .expect("open the Workspace Picker"),
+            .expect("open the workspace picker"),
     );
     application
         .handle_event(ApplicationEvent::WorkspacesListed {
@@ -7994,7 +7994,7 @@ fn the_workspace_the_reader_moved_to_stands_among_the_selectors_entries() {
                 notes.clone(),
             )]),
         })
-        .expect("hydrate the Workspace Picker");
+        .expect("hydrate the workspace picker");
     press_sidebar_key(&mut application, KeyCode::Down);
     let chosen = press_sidebar_key(&mut application, KeyCode::Enter);
     answer_workspace_resolution(&mut application, chosen);
@@ -8008,7 +8008,7 @@ fn the_workspace_the_reader_moved_to_stands_among_the_selectors_entries() {
             "notes".to_owned(),
             "suru".to_owned(),
         ],
-        "the Workspace the reader moved to is where the client now runs, and the \
+        "the workspace the reader moved to is where the client now runs, and the \
          one it ran in before has no work to keep it on the list"
     );
 }
@@ -8034,13 +8034,13 @@ fn every_catalog_change_asks_the_sidebar_for_the_listing_again() {
 
     for (ordinal, (what, change)) in [
         (
-            "a Session made",
+            "a session made",
             ManagedEvent::SessionCreated(SessionCreated {
                 session_id: SessionId::new(),
             }),
         ),
         (
-            "a Session retitled",
+            "a session retitled",
             ManagedEvent::SessionTitleChanged(SessionTitleChanged {
                 session_id: listed_session,
                 title: "Retitled work".to_owned(),
@@ -8048,14 +8048,14 @@ fn every_catalog_change_asks_the_sidebar_for_the_listing_again() {
             }),
         ),
         (
-            "a Session set aside",
+            "a session set aside",
             ManagedEvent::SessionSettlementChanged(SessionSettlementChanged {
                 session_id: listed_session,
                 settled_at: Some(SessionTimestamp(now())),
             }),
         ),
         (
-            "a Session brought back",
+            "a session brought back",
             ManagedEvent::SessionSettlementChanged(SessionSettlementChanged {
                 session_id: listed_session,
                 settled_at: None,
@@ -8071,7 +8071,7 @@ fn every_catalog_change_asks_the_sidebar_for_the_listing_again() {
             }),
         ),
         (
-            "a Session deleted",
+            "a session deleted",
             ManagedEvent::SessionDeleted(SessionDeleted {
                 session_id: listed_session,
             }),
@@ -8084,12 +8084,12 @@ fn every_catalog_change_asks_the_sidebar_for_the_listing_again() {
             .handle_event(ApplicationEvent::Managed(change))
             .expect("take the catalog change");
         let ApplicationTransition::ListSessions(request) = transition else {
-            panic!("{what} asks the Sidebar for its listing again, not {transition:?}");
+            panic!("{what} asks the sidebar for its listing again, not {transition:?}");
         };
         assert_eq!(
             request.surface(),
             SessionListSurface::Sidebar,
-            "the listing {what} asks for is the Sidebar's own"
+            "the listing {what} asks for is the sidebar's own"
         );
 
         let caught_up = format!("Caught up {ordinal}");
@@ -8098,12 +8098,12 @@ fn every_catalog_change_asks_the_sidebar_for_the_listing_again() {
                 request,
                 sessions: vec![listed_as(listed_session, &caught_up, workspace.path(), 1)],
             })
-            .expect("adopt the listing the Sidebar caught up with");
+            .expect("adopt the listing the sidebar caught up with");
 
         let rows = rendered_application_rows_at(&application, WIDE, 20);
         assert!(
             drawn_in_sidebar(&rows, &caught_up),
-            "the listing {what} asked for reaches the rows the Sidebar draws: {rows:?}"
+            "the listing {what} asked for reaches the rows the sidebar draws: {rows:?}"
         );
     }
 }
@@ -8131,12 +8131,12 @@ fn a_session_made_elsewhere_arrives_in_the_sidebar() {
                 standing,
             ],
         })
-        .expect("adopt the listing the Sidebar caught up with");
+        .expect("adopt the listing the sidebar caught up with");
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         drawn_in_sidebar(&rows, "Work made elsewhere"),
-        "a Session another client made is drawn from the listing the Sidebar asked for: {rows:?}"
+        "a session another client made is drawn from the listing the sidebar asked for: {rows:?}"
     );
     assert!(
         drawn_in_sidebar(&rows, "Work already listed"),
@@ -8176,7 +8176,7 @@ fn a_reconnection_brings_the_sidebar_the_work_it_missed() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         !drawn_in_sidebar(&rows, "Work taken away"),
-        "a Session the reconciliation does not name leaves the Sidebar at once: {rows:?}"
+        "a session the reconciliation does not name leaves the sidebar at once: {rows:?}"
     );
 
     application
@@ -8215,7 +8215,7 @@ fn a_session_unsettled_elsewhere_comes_back_when_the_catch_up_lands() {
     let request = expect_sidebar_listing(settle_elsewhere(&mut application, set_apart, None));
     assert!(
         sidebar_divider_row(&rendered_application_rows_at(&application, WIDE, 20)).is_some(),
-        "the listing in hand still says the work has sat for a month, so the Sidebar goes on \
+        "the listing in hand still says the work has sat for a month, so the sidebar goes on \
          settling it of its own accord"
     );
 
@@ -8229,7 +8229,7 @@ fn a_session_unsettled_elsewhere_comes_back_when_the_catch_up_lands() {
                 now(),
             )],
         })
-        .expect("adopt the listing the Sidebar caught up with");
+        .expect("adopt the listing the sidebar caught up with");
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
@@ -8271,11 +8271,11 @@ fn a_catch_up_leaves_the_reader_on_the_row_they_were_on() {
             request,
             sessions: listing(Some(made)),
         })
-        .expect("adopt the listing the Sidebar caught up with");
+        .expect("adopt the listing the sidebar caught up with");
 
     assert!(
         selected_sidebar_text(&application).contains("Older work"),
-        "a listing arriving underneath the reader leaves them on the Session they were on"
+        "a listing arriving underneath the reader leaves them on the session they were on"
     );
 }
 
@@ -8301,7 +8301,7 @@ fn a_catch_up_leaves_the_settled_shelf_as_deep_as_the_reader_walked_it() {
             request,
             sessions: set_aside_shelf(workspace.path(), 12),
         })
-        .expect("adopt the listing the Sidebar caught up with");
+        .expect("adopt the listing the sidebar caught up with");
 
     assert!(
         drawn_in_sidebar(
@@ -8329,7 +8329,7 @@ fn a_catch_up_leaves_a_menu_the_reader_opened_standing() {
             request,
             sessions: two_listed(workspace.path(), wanted),
         })
-        .expect("adopt the listing the Sidebar caught up with");
+        .expect("adopt the listing the sidebar caught up with");
 
     assert!(
         menu_is_drawn(&application),
@@ -8348,7 +8348,7 @@ fn a_catch_up_leaves_a_menu_the_reader_opened_standing() {
                 1,
             )],
         })
-        .expect("adopt the listing the Sidebar caught up with");
+        .expect("adopt the listing the sidebar caught up with");
 
     assert!(
         !menu_is_drawn(&application),
@@ -8376,7 +8376,7 @@ fn a_sidebar_the_reader_closed_asks_for_nothing() {
     assert_eq!(
         create_elsewhere(&mut application, made),
         ApplicationTransition::Continue,
-        "a Sidebar nobody is looking at asks for no listing"
+        "a sidebar nobody is looking at asks for no listing"
     );
 
     let request = expect_sidebar_listing(press_toggle(&mut application));
@@ -8385,7 +8385,7 @@ fn a_sidebar_the_reader_closed_asks_for_nothing() {
             request,
             sessions: vec![listed_as(made, "Work made elsewhere", workspace.path(), 2)],
         })
-        .expect("hydrate the Sidebar the reader opened");
+        .expect("hydrate the sidebar the reader opened");
 
     assert!(
         drawn_in_sidebar(
@@ -8430,7 +8430,7 @@ fn a_catch_up_answering_with_the_listing_already_drawn_costs_no_frame() {
             request,
             sessions: caught_up,
         })
-        .expect("adopt the listing the Sidebar caught up with");
+        .expect("adopt the listing the sidebar caught up with");
 
     assert_eq!(
         rendered_application_rows_at(&application, WIDE, 20),
@@ -8458,7 +8458,7 @@ fn a_stale_listing_reply_lands_nowhere_and_costs_no_frame() {
 
     assert!(
         !application.listing_moves_the_frame(&superseded, &stale),
-        "a reply to a listing the Sidebar has moved past lands nowhere"
+        "a reply to a listing the sidebar has moved past lands nowhere"
     );
     assert!(
         !application.awaits_listing(&superseded),
@@ -8484,14 +8484,14 @@ fn a_stale_listing_reply_lands_nowhere_and_costs_no_frame() {
     ];
     assert!(
         application.listing_moves_the_frame(&current, &fresh),
-        "while the reply the Sidebar is waiting for carries work it is not drawing"
+        "while the reply the sidebar is waiting for carries work it is not drawing"
     );
     application
         .handle_event(ApplicationEvent::SessionsListed {
             request: current,
             sessions: fresh,
         })
-        .expect("adopt the listing the Sidebar awaits");
+        .expect("adopt the listing the sidebar awaits");
     assert!(
         drawn_in_sidebar(
             &rendered_application_rows_at(&application, WIDE, 20),
@@ -8508,7 +8508,7 @@ fn create_elsewhere(application: &mut Application, session_id: SessionId) -> App
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SessionCreated(
             SessionCreated { session_id },
         )))
-        .expect("take the Session another client made")
+        .expect("take the session another client made")
 }
 
 // Opening a Session from the Sidebar is optimistic. The reader is carried
@@ -8562,7 +8562,7 @@ fn reading_one(workspace: &Path, open: SessionId, sessions: Vec<SessionListItem>
             ALREADY_ON_SCREEN,
             workspace,
         )))
-        .expect("open a Session in the main view");
+        .expect("open a session in the main view");
     application
 }
 
@@ -8588,7 +8588,7 @@ fn open_the_focused_row(application: &mut Application) -> SessionId {
     let ApplicationTransition::ViewAndAttachSession(target) =
         press_sidebar_key(application, KeyCode::Enter)
     else {
-        panic!("Enter on a readable row opens the Session it stands for");
+        panic!("Enter on a readable row opens the session it stands for");
     };
     target.session_id
 }
@@ -8641,7 +8641,7 @@ fn fail_opening_session(application: &mut Application, target: SessionId, error:
             reference: local_session(target),
             error: error.to_owned(),
         })
-        .expect("fail the optimistic Session attach");
+        .expect("fail the optimistic session attach");
 }
 
 #[test]
@@ -8660,11 +8660,11 @@ fn opening_a_session_carries_the_reader_into_it_before_its_snapshot_lands() {
     let highlighted = open_sidebar_text(&application);
     assert!(
         highlighted.contains(WANTED),
-        "the target is the open Session from this frame, snapshot or no snapshot: {highlighted:?}"
+        "the target is the open session from this frame, snapshot or no snapshot: {highlighted:?}"
     );
     assert!(
         !highlighted.contains("The work being read"),
-        "and the Session left behind is no longer open: {highlighted:?}"
+        "and the session left behind is no longer open: {highlighted:?}"
     );
 }
 
@@ -8678,7 +8678,7 @@ fn opening_a_sidebar_session_yields_a_viewed_request_with_its_attach() {
     assert_eq!(
         press_sidebar_key(&mut application, KeyCode::Enter),
         ApplicationTransition::ViewAndAttachSession(local_session(target)),
-        "optimistic opening reports Viewed as it begins the attach"
+        "optimistic opening reports viewed as it begins the attach"
     );
 }
 
@@ -8701,9 +8701,9 @@ fn a_turn_settling_in_the_open_root_session_yields_a_viewed_request() {
                     }],
                 },
             )))
-            .expect("settle the open Session's Turn"),
+            .expect("settle the open session's turn"),
         ApplicationTransition::ViewSession(local_session(session_id)),
-        "the Session on screen is reported Viewed when its Turn Settles"
+        "the session on screen is reported viewed when its turn settles"
     );
 }
 
@@ -8721,9 +8721,9 @@ fn hydrating_an_open_root_session_yields_a_viewed_request_after_the_opening_race
                 "Already settled while opening",
                 workspace.path(),
             )))
-            .expect("hydrate the root Session after opening"),
+            .expect("hydrate the root session after opening"),
         ApplicationTransition::ViewSession(local_session(session_id)),
-        "hydration reports Viewed again so a settle racing the first request cannot light the rail"
+        "hydration reports viewed again so a settle racing the first request cannot light the rail"
     );
 }
 
@@ -8757,7 +8757,7 @@ fn a_turn_settling_for_the_session_left_behind_yields_no_viewed_request() {
             request,
             sessions: vec![listed_as(target, WANTED, workspace.path(), 1)],
         })
-        .expect("hydrate the Sidebar beside the open Session");
+        .expect("hydrate the sidebar beside the open session");
     step_onto_the_list(&mut application);
     open_the_focused_row(&mut application);
 
@@ -8774,7 +8774,7 @@ fn a_turn_settling_for_the_session_left_behind_yields_no_viewed_request() {
                     }],
                 },
             )))
-            .expect("settle the Session left behind"),
+            .expect("settle the session left behind"),
         ApplicationTransition::Continue,
         "an event from the old subscription is not a view of the optimistic target"
     );
@@ -8871,7 +8871,7 @@ fn attach_failure_immediately_keeps_the_target_shell_and_draws_a_transcript_erro
     fail_opening_session(
         &mut application,
         target,
-        "the remote transport refused to attach because the Session disappeared",
+        "the remote transport refused to attach because the session disappeared",
     );
     type_terminal_text(&mut application, " and remains focused");
 
@@ -8879,11 +8879,11 @@ fn attach_failure_immediately_keeps_the_target_shell_and_draws_a_transcript_erro
     let rows = main_view_rows(&application);
     let screen = rows.join("\n");
     assert!(
-        screen.contains("Error: Could not load Session: the remote transport"),
-        "the failed shell immediately uses the Transcript error language: {screen}"
+        screen.contains("Error: Could not load session: the remote transport"),
+        "the failed shell immediately uses the transcript error language: {screen}"
     );
     assert!(
-        screen.contains("refused to attach because the Session disappeared"),
+        screen.contains("refused to attach because the session disappeared"),
         "the attach detail wraps instead of being truncated: {screen}"
     );
     assert_eq!(
@@ -8892,7 +8892,7 @@ fn attach_failure_immediately_keeps_the_target_shell_and_draws_a_transcript_erro
             .expect("read the failure label")
             .fg,
         PANDA.error,
-        "the client-local failure uses the Transcript error style"
+        "the client-local failure uses the transcript error style"
     );
     let composer_row = composer_top_row(&application);
     let error_row = rows
@@ -8901,7 +8901,7 @@ fn attach_failure_immediately_keeps_the_target_shell_and_draws_a_transcript_erro
         .expect("draw the failure in the main view");
     assert!(
         error_row + 1 < composer_row,
-        "the error keeps Transcript spacing above the composer: {rows:?}"
+        "the error keeps transcript spacing above the composer: {rows:?}"
     );
     assert!(
         screen.contains("draft kept through failure and remains focused"),
@@ -8921,7 +8921,7 @@ fn attach_failure_immediately_keeps_the_target_shell_and_draws_a_transcript_erro
             )))
             .expect("try a snapshot-dependent command in the failed shell"),
         ApplicationTransition::Continue,
-        "other Session commands remain disabled without a snapshot"
+        "other session commands remain disabled without a snapshot"
     );
     assert!(
         open_sidebar_text(&application).contains(WANTED),
@@ -8931,7 +8931,7 @@ fn attach_failure_immediately_keeps_the_target_shell_and_draws_a_transcript_erro
         !rendered_application_rows_at(&application, WIDE, 20)
             .iter()
             .any(|row| sidebar_column(row).contains("remote transport")),
-        "the client-local attach error does not become a Sidebar listing error"
+        "the client-local attach error does not become a sidebar listing error"
     );
     assert!(
         !screen.contains("Loading"),
@@ -8969,7 +8969,7 @@ fn enter_on_the_failed_open_row_retries_with_a_fresh_quiet_window() {
 
     let main = main_view(&application);
     assert!(
-        !main.contains("Could not load Session"),
+        !main.contains("Could not load session"),
         "retry clears the client-local error immediately: {main}"
     );
     assert!(
@@ -9008,8 +9008,8 @@ fn enter_on_the_failed_open_row_retries_with_a_fresh_quiet_window() {
         "hydration leaves its target-keyed draft in place: {hydrated}"
     );
     assert!(
-        !hydrated.contains("Could not load Session"),
-        "the client-local error never enters hydrated Session history: {hydrated}"
+        !hydrated.contains("Could not load session"),
+        "the client-local error never enters hydrated session history: {hydrated}"
     );
 }
 
@@ -9035,7 +9035,7 @@ fn a_pointer_press_on_the_failed_open_row_retries_without_taking_keyboard_focus(
         "pressing the failed target row retries its attach"
     );
     assert!(
-        !main_view(&application).contains("Could not load Session"),
+        !main_view(&application).contains("Could not load session"),
         "pointer retry clears the failure immediately"
     );
     assert_eq!(
@@ -9070,7 +9070,7 @@ fn failure_after_loading_replaces_it_with_the_transcript_error() {
         "failure replaces Loading: {failed}"
     );
     assert!(
-        failed.contains("Error: Could not load Session: connection closed"),
+        failed.contains("Error: Could not load session: connection closed"),
         "failure takes its place immediately: {failed}"
     );
     assert_eq!(application.opening_loading_wakeup(), None);
@@ -9098,7 +9098,7 @@ fn a_failed_shell_stays_open_when_its_sidebar_row_disappears() {
     );
     let main = main_view(&application);
     assert!(
-        main.contains("Error: Could not load Session: Session was deleted"),
+        main.contains("Error: Could not load session: Session was deleted"),
         "the failed route remains open without a retry row: {main}"
     );
     assert!(
@@ -9129,7 +9129,7 @@ fn shutdown_stops_loading_before_the_final_frame() {
                     reason: ShutdownReason::Manual,
                 },
             )))
-            .expect("stop the server while a Session loads"),
+            .expect("stop the server while a session loads"),
         ApplicationTransition::Exit
     );
 
@@ -9190,7 +9190,7 @@ fn loading_shimmers_and_requests_ticks_only_while_drawn() {
         .collect::<Vec<_>>();
     assert_ne!(
         loading_after, loading_before,
-        "Loading advances with the Working Indicator shimmer cadence"
+        "Loading advances with the working indicator shimmer cadence"
     );
 
     application
@@ -9212,7 +9212,7 @@ fn opening_a_session_takes_away_what_the_last_one_put_on_screen() {
     let mut application = reading_one_and_listing_another(workspace.path(), open, target);
     assert!(
         main_view(&application).contains(ALREADY_ON_SCREEN),
-        "the Session being read is on screen to begin with"
+        "the session being read is on screen to begin with"
     );
     step_onto_the_wanted_row(&mut application);
     open_the_focused_row(&mut application);
@@ -9220,12 +9220,12 @@ fn opening_a_session_takes_away_what_the_last_one_put_on_screen() {
     let main = main_view(&application);
     assert!(
         !main.contains(ALREADY_ON_SCREEN),
-        "the Transcript of the Session left behind is still drawn under the target: {main}"
+        "the transcript of the session left behind is still drawn under the target: {main}"
     );
     assert!(!main.contains("Workspace"), "and so is its header: {main}");
     assert!(
         !main.contains("Agent"),
-        "and the footer it read its Agent and usage off: {main}"
+        "and the footer it read its agent and usage off: {main}"
     );
 }
 
@@ -9247,11 +9247,11 @@ fn the_shell_a_session_opens_into_fabricates_nothing_from_its_listing_row() {
     );
     assert!(
         !main.contains(WANTED),
-        "the listing's Title is drawn as though it were the Session's own: {main}"
+        "the listing's title is drawn as though it were the session's own: {main}"
     );
     assert!(
         !main.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"),
-        "and a Session being opened is not the Landing: {main}"
+        "and a session being opened is not the landing: {main}"
     );
 }
 
@@ -9268,7 +9268,7 @@ fn the_target_composer_takes_the_keys_the_moment_the_session_opens() {
     let main = main_view(&application);
     assert!(
         main.contains("drafting ahead"),
-        "the reader can write into the Session they just opened: {main}"
+        "the reader can write into the session they just opened: {main}"
     );
     assert!(
         selected_sidebar_text(&application).is_empty(),
@@ -9301,7 +9301,7 @@ fn each_session_keeps_its_own_draft_through_an_optimistic_switch() {
 
     assert!(
         !main_view(&application).contains("written for the first"),
-        "the draft of the Session left behind followed the reader into the target"
+        "the draft of the session left behind followed the reader into the target"
     );
     type_terminal_text(&mut application, "written for the second");
     assert!(
@@ -9319,7 +9319,7 @@ fn each_session_keeps_its_own_draft_through_an_optimistic_switch() {
     let main = main_view(&application);
     assert!(
         main.contains("written for the first"),
-        "and the Session opened again opens on the draft left under it: {main}"
+        "and the session opened again opens on the draft left under it: {main}"
     );
     assert!(
         !main.contains("written for the second"),
@@ -9362,7 +9362,7 @@ fn opening_a_second_session_while_the_first_loads_supersedes_it() {
     let highlighted = open_sidebar_text(&application);
     assert!(
         highlighted.contains("The newest work"),
-        "the newest choice is the open Session: {highlighted:?}"
+        "the newest choice is the open session: {highlighted:?}"
     );
     assert!(
         !highlighted.contains(WANTED),
@@ -9370,7 +9370,7 @@ fn opening_a_second_session_while_the_first_loads_supersedes_it() {
     );
     assert!(
         !main_view(&application).contains("written for the first target"),
-        "nor does its draft follow the reader into the Session they opened instead"
+        "nor does its draft follow the reader into the session they opened instead"
     );
     advance_opening_clock(&now, Duration::from_millis(1));
     assert!(
@@ -9400,17 +9400,17 @@ fn opening_the_landing_while_a_session_loads_leaves_the_shell_behind() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::SessionNew,
             )))
-            .expect("open the Landing while a Session is loading"),
+            .expect("open the landing while a session is loading"),
         ApplicationTransition::DetachSession,
-        "the client lets go of the Session it was opening"
+        "the client lets go of the session it was opening"
     );
     assert!(
         main_view(&application).contains("Type a prompt"),
-        "and the reader is on the Landing"
+        "and the reader is on the landing"
     );
     assert!(
         open_sidebar_text(&application).is_empty(),
-        "which highlights no Session at all"
+        "which highlights no session at all"
     );
 }
 
@@ -9428,9 +9428,9 @@ fn a_prompt_cannot_be_delivered_before_the_session_arrives() {
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("submit into a Session that has not arrived"),
+            .expect("submit into a session that has not arrived"),
         ApplicationTransition::Continue,
-        "a Prompt cannot race a Session that has not loaded"
+        "a prompt cannot race a session that has not loaded"
     );
     assert!(
         main_view(&application).contains("asked too early"),
@@ -9454,12 +9454,12 @@ fn the_session_arriving_hydrates_the_shell_without_taking_the_draft() {
             "The work that arrived",
             workspace.path(),
         )))
-        .expect("the Session the reader opened arrives");
+        .expect("the session the reader opened arrives");
 
     let main = main_view(&application);
     assert!(
         main.contains("The work that arrived"),
-        "the shell adopts the Session it was opened for: {main}"
+        "the shell adopts the session it was opened for: {main}"
     );
     assert!(
         main.contains("written while it loaded"),
@@ -9473,10 +9473,10 @@ fn the_session_arriving_hydrates_the_shell_without_taking_the_draft() {
         matches!(
             application
                 .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-                .expect("submit into the Session that arrived"),
+                .expect("submit into the session that arrived"),
             ApplicationTransition::AdmitPrompt { session, .. } if session.session_id == target
         ),
-        "and delivery answers again, to the Session the reader is in"
+        "and delivery answers again, to the session the reader is in"
     );
 }
 
@@ -9504,7 +9504,7 @@ fn hydration_before_the_threshold_never_flashes_loading() {
     advance_opening_clock(&now, Duration::from_millis(1));
 
     let main = main_view(&application);
-    assert!(main.contains("The fast work"), "the Session has hydrated");
+    assert!(main.contains("The fast work"), "the session has hydrated");
     assert!(
         !main.contains("Loading"),
         "hydration before the threshold causes no loading flash"
@@ -9532,9 +9532,9 @@ fn a_session_dependent_command_is_inert_before_the_session_arrives() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::SessionSettle,
             )))
-            .expect("set aside a Session that has not arrived"),
+            .expect("set aside a session that has not arrived"),
         ApplicationTransition::Continue,
-        "there is no Session to set aside, and the one left behind is not it"
+        "there is no session to set aside, and the one left behind is not it"
     );
 
     application
@@ -9544,7 +9544,7 @@ fn a_session_dependent_command_is_inert_before_the_session_arrives() {
             "The work that arrived",
             workspace.path(),
         )))
-        .expect("the Session the reader opened arrives");
+        .expect("the session the reader opened arrives");
 
     assert!(
         matches!(
@@ -9552,11 +9552,11 @@ fn a_session_dependent_command_is_inert_before_the_session_arrives() {
                 .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                     SemanticCommandId::SessionSettle,
                 )))
-                .expect("set aside the Session that arrived"),
+                .expect("set aside the session that arrived"),
             ApplicationTransition::SettleSession { session, settled: true }
                 if session.session_id == target
         ),
-        "and the command answers again once there is a Session to act on"
+        "and the command answers again once there is a session to act on"
     );
 }
 
@@ -9579,12 +9579,12 @@ fn the_session_arriving_leaves_the_composer_where_the_draft_was_written() {
             "The work that arrived",
             workspace.path(),
         )))
-        .expect("the Session the reader opened arrives");
+        .expect("the session the reader opened arrives");
 
     assert_eq!(
         composer_top_row(&application),
         opened_on,
-        "the composer jumped a line as the Session landed under it"
+        "the composer jumped a line as the session landed under it"
     );
 }
 
@@ -9606,7 +9606,7 @@ fn a_press_opens_a_session_the_way_enter_does_and_raises_no_row_focus() {
             suru::protocol::Outlook::Local,
             target,
         )),
-        "the press opens the Session under it"
+        "the press opens the session under it"
     );
     assert!(
         open_sidebar_text(&application).contains(WANTED),
@@ -9614,7 +9614,7 @@ fn a_press_opens_a_session_the_way_enter_does_and_raises_no_row_focus() {
     );
     assert!(
         !main_view(&application).contains(ALREADY_ON_SCREEN),
-        "taking away what the Session left behind had on screen"
+        "taking away what the session left behind had on screen"
     );
     assert!(
         selected_sidebar_text(&application).is_empty(),
@@ -9638,7 +9638,7 @@ fn the_session_left_behind_is_never_drawn_under_the_one_being_opened() {
             request,
             sessions: vec![listed_as(target, WANTED, workspace.path(), 1)],
         })
-        .expect("hydrate the Sidebar beside the open Session");
+        .expect("hydrate the sidebar beside the open session");
     // The open Session has no row in this listing, so opening the Sidebar
     // starts the keys on the Workspace selector rather than on a Session.
     step_onto_the_list(&mut application);
@@ -9665,12 +9665,12 @@ fn the_session_left_behind_is_never_drawn_under_the_one_being_opened() {
                 }],
             },
         )))
-        .expect("the Session left behind keeps sending while another is opening");
+        .expect("the session left behind keeps sending while another is opening");
 
     let main = main_view(&application);
     assert!(
         !main.contains("Still answering the reader"),
-        "the Session left behind is drawn under the Session being opened: {main}"
+        "the session left behind is drawn under the session being opened: {main}"
     );
 }
 
@@ -9688,14 +9688,14 @@ fn pending_questionnaires_mark_both_session_listings_and_clear_when_unavailable(
     summary.standing_inputs.pending_questionnaires_revision = SessionRevision(3);
     let mut app = sidebar_showing(workspace.path(), vec![row.clone()]);
     let screen = rendered_application_rows_at(&app, WIDE, 25).join("\n");
-    assert!(screen.contains("Needs Intervention"), "{screen}");
+    assert!(screen.contains("Needs intervention"), "{screen}");
     let ApplicationTransition::ListSessions(request) = app
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SessionList,
         )))
         .unwrap()
     else {
-        panic!("list Sessions")
+        panic!("list sessions")
     };
     app.handle_event(ApplicationEvent::SessionsListed {
         request,
@@ -9717,7 +9717,7 @@ fn pending_questionnaires_mark_both_session_listings_and_clear_when_unavailable(
     .unwrap();
     let screen = rendered_application_rows_at(&app, WIDE, 25).join("\n");
     assert!(
-        !screen.contains("Needs Intervention") && !screen.contains("pending questions"),
+        !screen.contains("Needs intervention") && !screen.contains("pending questions"),
         "{screen}"
     );
 }
@@ -9746,7 +9746,7 @@ fn a_pending_approval_marks_the_sidebar_as_needing_intervention() {
     let stale = row.clone();
     let mut app = sidebar_showing(workspace.path(), vec![row]);
     let screen = rendered_application_rows_at(&app, WIDE, 25).join("\n");
-    assert!(screen.contains("Needs Intervention"), "{screen}");
+    assert!(screen.contains("Needs intervention"), "{screen}");
 
     let transition = app
         .handle_event(ApplicationEvent::Managed(
@@ -9768,10 +9768,10 @@ fn a_pending_approval_marks_the_sidebar_as_needing_intervention() {
         ))
         .unwrap();
     let screen = rendered_application_rows_at(&app, WIDE, 25).join("\n");
-    assert!(!screen.contains("Needs Intervention"), "{screen}");
+    assert!(!screen.contains("Needs intervention"), "{screen}");
 
     let ApplicationTransition::ListSessions(request) = transition else {
-        panic!("catalog event catches up the Sidebar listing")
+        panic!("catalog event catches up the sidebar listing")
     };
     app.handle_event(ApplicationEvent::SessionsListed {
         request,
@@ -9780,8 +9780,8 @@ fn a_pending_approval_marks_the_sidebar_as_needing_intervention() {
     .unwrap();
     let screen = rendered_application_rows_at(&app, WIDE, 25).join("\n");
     assert!(
-        !screen.contains("Needs Intervention") && !screen.contains("pending Approvals"),
-        "stale catalog reply restored settled child Approval: {screen}"
+        !screen.contains("Needs intervention") && !screen.contains("pending approvals"),
+        "stale catalog reply restored settled child approval: {screen}"
     );
 }
 
@@ -9794,7 +9794,7 @@ fn sidebar_selection_copies_painted_titles_with_ellipsis_and_excludes_rails() {
         vec![
             listed_as(
                 SessionId::new(),
-                "A title far too long to fit in the Sidebar column",
+                "A title far too long to fit in the sidebar column",
                 workspace.path(),
                 1,
             ),
@@ -10117,7 +10117,7 @@ fn an_active_row_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
     assert!(
         !sidebar_column(&rows[title - 1]).contains('\u{ea83}')
             && !sidebar_column(&rows[title - 1]).contains('\u{e7a8}'),
-        "no Icon is drawn while the reader keeps Icons off: {rows:?}"
+        "no icon is drawn while the reader keeps icons off: {rows:?}"
     );
 
     let mut settings = EffectiveSettings::default();
@@ -10127,7 +10127,7 @@ fn an_active_row_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
     let title = rendered_row(&rows, "Iconed work");
     assert!(
         sidebar_column(&rows[title - 1]).starts_with("\u{e7a8} suru"),
-        "the Workspace's own derived Icon replaces the folder glyph: {rows:?}"
+        "the workspace's own derived icon replaces the folder glyph: {rows:?}"
     );
 
     let SessionListItem::Readable(mut summary) = listed("Unknown work", &path, now(), now()) else {
@@ -10142,7 +10142,7 @@ fn an_active_row_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
     let title = rendered_row(&rows, "Unknown work");
     assert!(
         sidebar_column(&rows[title - 1]).starts_with("\u{ea83} suru"),
-        "the folder glyph stands in for a Workspace with no derived Icon: {rows:?}"
+        "the folder glyph stands in for a workspace with no derived icon: {rows:?}"
     );
 }
 
@@ -10172,7 +10172,7 @@ fn a_remote_workspaces_own_icon_survives_its_listing_into_the_sidebar() {
     let title = rendered_row(&rows, "Remote work");
     assert!(
         sidebar_column(&rows[title - 1]).contains("\u{e7a8} suru"),
-        "a Remote's own derived Workspace Icon reaches the merged Sidebar unstripped: {rows:?}"
+        "a remote's own derived workspace icon reaches the merged sidebar unstripped: {rows:?}"
     );
 }
 
@@ -10236,7 +10236,7 @@ fn open_long_session(application: &mut Application, workspace: &Path) {
                 8,
             ),
         ))
-        .expect("open a Session with a long Transcript");
+        .expect("open a session with a long transcript");
 }
 
 /// One step of the wheel at one cell, with the frame drawn first because the
@@ -10284,7 +10284,7 @@ fn the_wheel_over_the_sidebar_moves_its_list_and_never_the_transcript() {
     let wheeled = sidebar_rows(&application);
     assert!(
         !drawn_in_sidebar(&wheeled, "Row 1") && drawn_in_sidebar(&wheeled, "Row 2"),
-        "the wheel over the Sidebar moves its list: {wheeled:?}"
+        "the wheel over the sidebar moves its list: {wheeled:?}"
     );
     assert_eq!(
         wheeled[..2],
@@ -10294,7 +10294,7 @@ fn the_wheel_over_the_sidebar_moves_its_list_and_never_the_transcript() {
     assert_eq!(
         main_view(&application),
         main_before,
-        "and the Transcript beside it does not move at all"
+        "and the transcript beside it does not move at all"
     );
 
     wheel_at(
@@ -10307,12 +10307,12 @@ fn the_wheel_over_the_sidebar_moves_its_list_and_never_the_transcript() {
     assert_ne!(
         main_view(&application),
         main_before,
-        "the wheel over the main view moves the Transcript"
+        "the wheel over the main view moves the transcript"
     );
     assert_eq!(
         sidebar_rows(&application),
         wheeled,
-        "and leaves the Sidebar's list where the wheel left it"
+        "and leaves the sidebar's list where the wheel left it"
     );
 
     let reading = main_view(&application);
@@ -10320,18 +10320,18 @@ fn the_wheel_over_the_sidebar_moves_its_list_and_never_the_transcript() {
     assert_eq!(
         sidebar_rows(&application),
         sidebar_before,
-        "the wheel back up over the Sidebar undoes the step down exactly"
+        "the wheel back up over the sidebar undoes the step down exactly"
     );
     assert_eq!(
         main_view(&application),
         reading,
-        "without taking the Transcript any further up"
+        "without taking the transcript any further up"
     );
 
     type_terminal_text(&mut application, "hello");
     assert!(
         main_view(&application).contains("hello"),
-        "wheeling over the Sidebar never took the keys from the composer"
+        "wheeling over the sidebar never took the keys from the composer"
     );
 }
 
@@ -10347,7 +10347,7 @@ fn the_wheel_answers_to_the_pointer_while_the_sidebar_has_the_keys() {
             request,
             sessions: eight_listed(workspace.path()),
         })
-        .expect("hydrate the Sidebar the reader opened");
+        .expect("hydrate the sidebar the reader opened");
     assert!(selected_sidebar_text(&application).contains(ALL_WORKSPACES));
     let sidebar_before = sidebar_rows(&application);
     let main_before = main_view(&application);
@@ -10362,12 +10362,12 @@ fn the_wheel_answers_to_the_pointer_while_the_sidebar_has_the_keys() {
     let wheeled = sidebar_rows(&application);
     assert_ne!(
         wheeled, sidebar_before,
-        "the wheel moves the Sidebar's list"
+        "the wheel moves the sidebar's list"
     );
     assert_eq!(
         main_view(&application),
         main_before,
-        "and never the Transcript"
+        "and never the transcript"
     );
     assert!(
         selected_sidebar_text(&application).contains(ALL_WORKSPACES),
@@ -10384,7 +10384,7 @@ fn the_wheel_answers_to_the_pointer_while_the_sidebar_has_the_keys() {
     assert_ne!(
         main_view(&application),
         main_before,
-        "the Transcript is still the reader's to wheel through while the Sidebar has the keys"
+        "the transcript is still the reader's to wheel through while the sidebar has the keys"
     );
     assert_eq!(sidebar_rows(&application), wheeled);
 
@@ -10394,7 +10394,7 @@ fn the_wheel_answers_to_the_pointer_while_the_sidebar_has_the_keys() {
             &rendered_application_rows_at(&application, WIDE, 20),
             "Search: row"
         ),
-        "the keys are still the Sidebar's"
+        "the keys are still the sidebar's"
     );
 }
 
@@ -10433,7 +10433,7 @@ fn the_wheel_leaves_the_rows_under_a_menu_alone_but_still_reads_the_transcript()
     assert_ne!(
         main_view(&application),
         main_before,
-        "the wheel over the main view goes on moving the Transcript"
+        "the wheel over the main view goes on moving the transcript"
     );
     assert!(menu_is_drawn(&application), "and leaves the menu standing");
 }
@@ -10530,7 +10530,7 @@ fn open_subagent(
     snapshot.session.parent = Some(parent);
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("open a Subagent's Session in the main view");
+        .expect("open a subagent's session in the main view");
 }
 
 /// The per-tree subscription asked through `through` delivering the family's
@@ -10571,13 +10571,13 @@ fn a_subagent_session_open_directly_or_nested_highlights_its_top_level_row() {
     assert_eq!(
         open_sidebar_text(&application),
         "The delegating work",
-        "the top-level Session's row carries the highlight while its Subagent is open, \
-         the Aside hidden or not"
+        "the top-level session's row carries the highlight while its subagent is open, \
+         the aside hidden or not"
     );
     assert_eq!(
         standing_rail_rows(&application),
         rail_of(&application, "The delegating work"),
-        "with its Working Rail intact"
+        "with its working rail intact"
     );
     assert!(
         drawn_in_sidebar(
@@ -10596,13 +10596,13 @@ fn a_subagent_session_open_directly_or_nested_highlights_its_top_level_row() {
     assert_eq!(
         open_sidebar_text(&application),
         "The delegating work",
-        "a Subagent nested deeper answers for the same top-level row"
+        "a subagent nested deeper answers for the same top-level row"
     );
 
     press_toggle(&mut application);
     assert!(
         selected_sidebar_text(&application).contains("The delegating work"),
-        "entering the Sidebar begins row focus on that row"
+        "entering the sidebar begins row focus on that row"
     );
 }
 
@@ -10650,8 +10650,8 @@ fn a_subsession_open_within_its_sidekicks_tree_highlights_its_own_row() {
     assert_eq!(
         open_sidebar_text(&application),
         "Work it began",
-        "a Subsession is a top-level Session of its own, so its own row is highlighted, \
-         not its Sidekick's"
+        "a subsession is a top-level session of its own, so its own row is highlighted, \
+         not its sidekick's"
     );
 }
 
@@ -10681,7 +10681,7 @@ fn returning_to_the_top_level_session_keeps_its_row_highlighted() {
     assert_eq!(
         open_sidebar_text(&application),
         "The delegating work",
-        "the row the Subagent's Session highlighted is the one its top-level Session does"
+        "the row the subagent's session highlighted is the one its top-level session does"
     );
 }
 
@@ -10730,7 +10730,7 @@ fn a_top_level_session_scoped_out_leaves_its_subagent_nothing_highlighted() {
     assert!(!drawn_in_sidebar(&rows, "Rooted apart"), "{rows:?}");
     assert!(
         open_sidebar_text(&application).is_empty(),
-        "and the Workspace's own rows are not highlighted in its place"
+        "and the workspace's own rows are not highlighted in its place"
     );
 }
 
@@ -10786,7 +10786,7 @@ fn the_landing_after_opening_a_remote_row_names_its_branch() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::SessionNew,
         )))
-        .expect("open the Landing");
+        .expect("open the landing");
 
     // Read past the Sidebar, whose row names the branch whatever the Landing says.
     let rows = rendered_application_rows_at(&application, WIDE, 20);
@@ -10794,7 +10794,7 @@ fn the_landing_after_opening_a_remote_row_names_its_branch() {
         .iter()
         .map(|row| row.chars().skip(40).collect::<String>())
         .find(|row| row.contains("studio · "))
-        .expect("the Landing names the Remote it stands on");
+        .expect("the landing names the remote it stands on");
     assert!(landing.contains("studio-branch"), "{}", rows.join("\n"));
 }
 
@@ -10831,7 +10831,7 @@ fn an_active_row_with_room_for_only_its_first_line_still_shows_that_line_at_the_
     );
     assert!(
         !rows.iter().any(|row| row.contains("Row 3")),
-        "the cut row's Title stands beyond the foot: {rows:#?}"
+        "the cut row's title stands beyond the foot: {rows:#?}"
     );
 }
 

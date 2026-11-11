@@ -31,7 +31,7 @@ fn enter_idle_session(
     snapshot.session.context_fill = fill;
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach the idle Session");
+        .expect("attach the idle session");
     session_id
 }
 
@@ -46,7 +46,7 @@ fn ask(application: &mut Application, session_id: SessionId) -> Uuid {
             assert_eq!(session, SessionReference::new(Outlook::Local, session_id));
             request_id
         }
-        other => panic!("`/context` asks the open Session's Provider, not {other:?}"),
+        other => panic!("`/context` asks the open session's provider, not {other:?}"),
     }
 }
 
@@ -57,7 +57,7 @@ fn answer(
 ) {
     application
         .handle_event(ApplicationEvent::ContextBreakdownRead { request_id, result })
-        .expect("deliver the Context Breakdown");
+        .expect("deliver the context breakdown");
 }
 
 fn item(label: &str, tokens: u64) -> ContextItem {
@@ -131,7 +131,7 @@ fn slash_context_shows_what_fills_the_open_sessions_context() {
 
     let request_id = ask(&mut application, session_id);
     assert!(
-        screen(&application).contains("Asking the Provider"),
+        screen(&application).contains("Asking the provider"),
         "{}",
         screen(&application)
     );
@@ -260,12 +260,12 @@ fn opening_another_session_closes_the_overlay_and_drops_the_answer_it_awaited() 
     let other = failed_session_snapshot(
         SessionId::new(),
         PromptId::new(),
-        "Another Session",
+        "Another session",
         workspace.path(),
     );
     application
         .handle_event(ApplicationEvent::SessionAttached(other))
-        .expect("attach another Session");
+        .expect("attach another session");
     assert!(
         !screen(&application).contains(" Context "),
         "{}",
@@ -275,7 +275,7 @@ fn opening_another_session_closes_the_overlay_and_drops_the_answer_it_awaited() 
     answer(&mut application, request_id, Ok(breakdown()));
     assert!(
         !screen(&application).contains("System prompt"),
-        "the first Session's breakdown is not drawn over the second: {}",
+        "the first session's breakdown is not drawn over the second: {}",
         screen(&application)
     );
 }
@@ -317,11 +317,11 @@ fn a_failed_request_says_why_and_escape_closes_the_overlay() {
         &mut application,
         request_id,
         Err(ContextBreakdownRefusal::Failed(
-            "Claude is not running for this Session".to_owned(),
+            "Claude is not running for this session".to_owned(),
         )),
     );
     assert!(
-        screen(&application).contains("Claude is not running for this Session"),
+        screen(&application).contains("Claude is not running for this session"),
         "{}",
         screen(&application)
     );
@@ -384,7 +384,7 @@ fn the_landing_has_no_session_to_ask() {
     );
     let shown = rendered_application_rows(&application).join("\n");
     assert!(
-        shown.contains("Open a Session to see what fills its context"),
+        shown.contains("Open a session to see what fills its context"),
         "{shown}"
     );
 }

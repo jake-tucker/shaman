@@ -38,7 +38,7 @@ pub(super) fn rows(approvals: &ApprovalInsights, room: usize) -> u16 {
 /// interrupted their Turn, on one line.
 fn together(approvals: &ApprovalInsights) -> String {
     format!(
-        "{} for the Session · {} also interrupted the Turn",
+        "{} for the session · {} also interrupted the turn",
         grouped_count(approvals.accepted_for_session),
         grouped_count(approvals.declined_and_interrupted),
     )
@@ -56,7 +56,7 @@ pub(super) fn render(
     let subdued = theme.text.subdued;
     let primary = theme.text.primary;
     if approvals.asked == 0 {
-        let note = nothing(room, "No Approvals asked", range);
+        let note = nothing(room, "No approvals asked", range);
         buffer.set_string(area.x, area.y, note, subdued);
         return;
     }
@@ -85,15 +85,15 @@ pub(super) fn render(
         return;
     }
     let for_session = format!(
-        "{} for the Session",
+        "{} for the session",
         grouped_count(approvals.accepted_for_session)
     );
     let interrupted = grouped_count(approvals.declined_and_interrupted);
     let interrupted = fitting(
         room,
         [
-            format!("{interrupted} also interrupted the Turn"),
-            format!("{interrupted} interrupted the Turn"),
+            format!("{interrupted} also interrupted the turn"),
+            format!("{interrupted} interrupted the turn"),
         ],
     );
     let for_session = truncate_to_width(&for_session, room);

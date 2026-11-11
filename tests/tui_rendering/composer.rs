@@ -32,7 +32,7 @@ fn session_composer_footer_uses_persisted_context_and_cost_across_all_turn_outco
     let mut snapshot = failed_session_snapshot(
         SessionId::new(),
         PromptId::new(),
-        "Measure the whole Session",
+        "Measure the whole session",
         workspace.path(),
     );
     snapshot.turns[0].usage = Some(Usage {
@@ -74,12 +74,12 @@ fn session_composer_footer_uses_persisted_context_and_cost_across_all_turn_outco
     let mut current_client = connected_application(workspace.path());
     current_client
         .handle_event(ApplicationEvent::SessionAttached(snapshot.clone()))
-        .expect("open the measured Session");
+        .expect("open the measured session");
     let current_screen = rendered_application_rows(&current_client).join("\n");
     let mut reloaded_client = Application::new(workspace.path(), Default::default());
     reloaded_client
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("restore the persisted Session in a fresh client");
+        .expect("restore the persisted session in a fresh client");
     let reloaded_screen = rendered_application_rows(&reloaded_client).join("\n");
 
     for (client, screen) in [
@@ -88,7 +88,7 @@ fn session_composer_footer_uses_persisted_context_and_cost_across_all_turn_outco
     ] {
         assert!(
             screen.contains("12.4K (6%) · $0.83"),
-            "the {client} client totals failed and interrupted Turns from the snapshot: {screen}"
+            "the {client} client totals failed and interrupted turns from the snapshot: {screen}"
         );
         assert!(
             !screen.contains("188K"),
@@ -96,7 +96,7 @@ fn session_composer_footer_uses_persisted_context_and_cost_across_all_turn_outco
         );
         assert!(
             !screen.contains("7.25"),
-            "the Provider-native premium-request meter has no footer surface: {screen}"
+            "the provider-native premium-request meter has no footer surface: {screen}"
         );
     }
 }
@@ -142,17 +142,17 @@ fn session_composer_footer_updates_with_active_turn_usage_and_hides_unknown_cost
                 ],
             },
         )))
-        .expect("record active Turn Usage");
+        .expect("record active turn usage");
 
     let updated = rendered_application_rows(&application).join("\n");
     assert!(
         updated.contains("12.4K (6%)"),
-        "the footer updates from the shared Session projection: {updated}"
+        "the footer updates from the shared session projection: {updated}"
     );
     assert!(!updated.contains("12.2K"));
     assert!(
         !updated.contains("$0.00"),
-        "unknown Cost is absent rather than fabricated as zero: {updated}"
+        "unknown cost is absent rather than fabricated as zero: {updated}"
     );
 }
 
@@ -189,11 +189,11 @@ fn session_composer_footer_retains_own_context_when_subagent_cost_rolls_up() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot.clone()))
-        .expect("open the delegating Session");
+        .expect("open the delegating session");
     let before = rendered_application_rows(&application).join("\n");
     assert!(
         before.contains("1K (10%) · $0.31") && !before.contains("($0.31)"),
-        "the footer starts on what the Session itself consumed, stated once: {before}"
+        "the footer starts on what the session itself consumed, stated once: {before}"
     );
 
     application
@@ -218,16 +218,16 @@ fn session_composer_footer_retains_own_context_when_subagent_cost_rolls_up() {
                 ],
             },
         )))
-        .expect("roll the Subagent subtree up into the Session");
+        .expect("roll the subagent subtree up into the session");
 
     let after = rendered_application_rows(&application).join("\n");
     assert!(
         after.contains("1K (10%) · $0.31 ($0.43)"),
-        "delegated work joins the tree Cost, bracketed after the Session's own: {after}"
+        "delegated work joins the tree cost, bracketed after the session's own: {after}"
     );
     assert!(
         !after.contains("80K"),
-        "a Subagent's cache traffic is left out of the blended total too: {after}"
+        "a subagent's cache traffic is left out of the blended total too: {after}"
     );
 }
 
@@ -248,7 +248,7 @@ fn composer_cursor_tracks_empty_unicode_and_multiline_input() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "a🙂β\nsecond".to_owned(),
         )))
-        .expect("type multiline Unicode Prompt");
+        .expect("type multiline Unicode prompt");
     let multiline = rendered_application_buffer(&application, 80, 15);
     let second = text_position(&multiline, "second");
     assert_eq!(
@@ -317,13 +317,13 @@ fn skill_completion_replaces_only_the_query_binds_it_and_keeps_the_prompt_open()
                 status: SkillCatalogStatus::Fresh { warning: None },
             },
         })
-        .expect("load Skill Catalog");
+        .expect("load skill catalog");
 
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "Please $rev".to_owned(),
         )))
-        .expect("type a Skill query");
+        .expect("type a skill query");
     let completion = rendered_application_rows(&application).join("\n");
     assert!(completion.contains(" Skills "));
     assert!(completion.contains("$review"));
@@ -334,7 +334,7 @@ fn skill_completion_replaces_only_the_query_binds_it_and_keeps_the_prompt_open()
             .handle_event(ApplicationEvent::Command(
                 CommandId::ConfirmSelectedCompletion,
             ))
-            .expect("confirm Skill completion"),
+            .expect("confirm skill completion"),
         ApplicationTransition::Continue,
         "Skill confirmation edits without submitting"
     );
@@ -342,12 +342,12 @@ fn skill_completion_replaces_only_the_query_binds_it_and_keeps_the_prompt_open()
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "improve this".to_owned(),
         )))
-        .expect("finish the Prompt");
+        .expect("finish the prompt");
     let ApplicationTransition::CreateSession(created) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit Prompt")
+        .expect("submit prompt")
     else {
-        panic!("Skill Prompt should create a Session");
+        panic!("Skill prompt should create a session");
     };
     assert_eq!(created.prompt.text, "Please $review improve this");
     assert_eq!(created.prompt.skill_invocations.len(), 1);
@@ -383,14 +383,14 @@ fn exact_typed_and_pasted_skill_markers_bind_without_completion_and_keep_punctua
         !rendered_application_rows(&application)
             .join("\n")
             .contains(" Skills "),
-        "paste must not open Skill completion"
+        "paste must not open skill completion"
     );
 
     let ApplicationTransition::CreateSession(created) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit manually bound Skills")
+        .expect("submit manually bound skills")
     else {
-        panic!("exact markers should produce a bound Prompt");
+        panic!("exact markers should produce a bound prompt");
     };
     assert_eq!(created.prompt.text, "Use $review, then $REVIEW.\"");
     assert_eq!(created.prompt.skill_invocations.len(), 2);
@@ -429,7 +429,7 @@ fn continued_typing_recomputes_manual_markers_before_final_resolution() {
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit a longer unknown token")
     else {
-        panic!("longer unknown token remains an ordinary Prompt");
+        panic!("longer unknown token remains an ordinary prompt");
     };
     assert!(created.prompt.skill_invocations.is_empty());
 
@@ -439,7 +439,7 @@ fn continued_typing_recomputes_manual_markers_before_final_resolution() {
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit the longest marker")
     else {
-        panic!("longest marker creates a Skill-bearing Prompt");
+        panic!("longest marker creates a skill-bearing prompt");
     };
     assert_eq!(created.prompt.skill_invocations.len(), 1);
     assert_eq!(created.prompt.skill_invocations[0].skill_id, lint_rust.id);
@@ -473,7 +473,7 @@ fn continued_typing_recomputes_manual_markers_before_final_resolution() {
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("resolve only the exact Unicode marker")
     else {
-        panic!("Unicode marker creates a Skill-bearing Prompt");
+        panic!("Unicode marker creates a skill-bearing prompt");
     };
     assert_eq!(created.prompt.skill_invocations.len(), 1);
     assert_eq!(created.prompt.skill_invocations[0].skill_id, unicode.id);
@@ -504,7 +504,7 @@ fn skill_completion_follows_the_active_token_and_escape_dismisses_until_it_ends(
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "first line\n($rev".to_owned(),
         )))
-        .expect("type a multiline Skill query after punctuation");
+        .expect("type a multiline skill query after punctuation");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
@@ -512,7 +512,7 @@ fn skill_completion_follows_the_active_token_and_escape_dismisses_until_it_ends(
     );
     application
         .handle_event(ApplicationEvent::Command(CommandId::DismissCompletion))
-        .expect("dismiss the active Skill token");
+        .expect("dismiss the active skill token");
     application
         .handle_event(ApplicationEvent::Command(CommandId::PasteText(
             "i".to_owned(),
@@ -533,7 +533,7 @@ fn skill_completion_follows_the_active_token_and_escape_dismisses_until_it_ends(
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             " $rev".to_owned(),
         )))
-        .expect("begin another Skill token");
+        .expect("begin another skill token");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
@@ -554,7 +554,7 @@ fn skill_completion_follows_the_active_token_and_escape_dismisses_until_it_ends(
             !rendered_application_rows(&application)
                 .join("\n")
                 .contains(" Skills "),
-            "{literal:?} is not a Skill query"
+            "{literal:?} is not a skill query"
         );
     }
 }
@@ -593,7 +593,7 @@ fn unicode_equivalent_skill_names_are_ambiguous() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("multiple Skills named")
+            .contains("multiple skills named")
     );
 }
 
@@ -650,12 +650,12 @@ fn longest_exact_marker_is_accented_while_ambiguous_input_is_rejected_in_place()
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("reject ambiguous Prompt"),
+            .expect("reject ambiguous prompt"),
         ApplicationTransition::Continue
     );
     let rejected = rendered_application_rows(&application).join("\n");
     assert!(rejected.contains("Run $lint.rs, then $review"));
-    assert!(rejected.contains("multiple Skills named `review`"));
+    assert!(rejected.contains("multiple skills named `review`"));
 }
 
 #[test]
@@ -671,7 +671,7 @@ fn skill_bindings_follow_outside_edits_and_same_named_replacements_stay_stale() 
         .handle_event(ApplicationEvent::Command(CommandId::PasteText(
             "Use $review now".to_owned(),
         )))
-        .expect("paste a bound Prompt");
+        .expect("paste a bound prompt");
     for _ in 0.."Use $review now".chars().count() {
         edited
             .handle_event(ApplicationEvent::Command(CommandId::MoveCursorLeft))
@@ -696,7 +696,7 @@ fn skill_bindings_follow_outside_edits_and_same_named_replacements_stay_stale() 
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit rebased binding")
     else {
-        panic!("outside edits preserve a valid Skill Prompt");
+        panic!("outside edits preserve a valid skill prompt");
     };
     assert_eq!(created.prompt.text, ">Use $review now!");
     assert_eq!(created.prompt.skill_invocations.len(), 1);
@@ -708,7 +708,7 @@ fn skill_bindings_follow_outside_edits_and_same_named_replacements_stay_stale() 
         .handle_event(ApplicationEvent::Command(CommandId::PasteText(
             "$review keep this draft".to_owned(),
         )))
-        .expect("paste a bound Prompt");
+        .expect("paste a bound prompt");
     let request = SkillCatalogRequest {
         provider: ProviderId::new("codex"),
         execution_directory: suru::protocol::ExecutionDirectory {
@@ -802,7 +802,7 @@ fn skill_completion_details_the_selected_skill_beside_the_list_and_copies_it_as_
             KeyCode::Down,
             KeyModifiers::NONE,
         )))
-        .expect("select the next Skill");
+        .expect("select the next skill");
     let moved = rendered_application_rows_at(&application, 120, 30).join("\n");
     assert!(moved.contains("Test the change"));
     assert!(!moved.contains("Review the current"));
@@ -816,7 +816,7 @@ fn skill_completion_details_the_selected_skill_beside_the_list_and_copies_it_as_
 
 #[test]
 fn a_catalog_warning_spans_the_split_skill_completion_beneath_the_list_and_pane() {
-    const WARNING: &str = "Some Skills failed to load: review/SKILL.md has no description";
+    const WARNING: &str = "Some skills failed to load: review/SKILL.md has no description";
     let workspace = workspace_dir();
     let mut application = Application::new(workspace.path(), Default::default());
     application
@@ -855,7 +855,7 @@ fn a_catalog_warning_spans_the_split_skill_completion_beneath_the_list_and_pane(
                 },
             },
         })
-        .expect("load Skill Catalog");
+        .expect("load skill catalog");
     type_terminal_text(&mut application, "$");
 
     let buffer = rendered_application_buffer(&application, 120, 30);
@@ -890,12 +890,12 @@ fn provider_limit_disables_new_choices_and_rejects_manual_over_limit_input() {
         .handle_event(ApplicationEvent::Command(CommandId::PasteText(
             "$review ".to_owned(),
         )))
-        .expect("paste the first distinct Skill");
+        .expect("paste the first distinct skill");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "$tes".to_owned(),
         )))
-        .expect("query another distinct Skill");
+        .expect("query another distinct skill");
     let limited = rendered_application_rows(&application).join("\n");
     assert!(limited.contains("$test"));
     assert!(limited.contains("limit reached"));
@@ -923,13 +923,13 @@ fn provider_limit_disables_new_choices_and_rejects_manual_over_limit_input() {
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("reject over-limit Prompt atomically"),
+            .expect("reject over-limit prompt atomically"),
         ApplicationTransition::Continue
     );
     let rejected = rendered_application_rows(&application).join("\n");
     assert!(rejected.contains("$review $test"));
     assert!(
-        rejected.contains("supports at most 1 distinct Skill"),
+        rejected.contains("supports at most 1 distinct skill"),
         "{rejected}"
     );
 }
@@ -954,12 +954,12 @@ fn repeated_skill_markers_keep_first_appearance_order_in_the_prompt() {
         .handle_event(ApplicationEvent::Command(CommandId::PasteText(
             "$beta then $alpha and $beta".to_owned(),
         )))
-        .expect("paste repeated Skills");
+        .expect("paste repeated skills");
     let ApplicationTransition::CreateSession(created) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit repeated Skills")
+        .expect("submit repeated skills")
     else {
-        panic!("valid repeated Skills create a Session");
+        panic!("valid repeated skills create a session");
     };
     assert_eq!(
         created
@@ -986,12 +986,12 @@ fn history_restoration_resolves_exact_skills_without_opening_completion() {
         .handle_event(ApplicationEvent::Command(CommandId::PasteText(
             "$review".to_owned(),
         )))
-        .expect("paste the first Prompt");
+        .expect("paste the first prompt");
     let ApplicationTransition::CreateSession(created) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit the first Prompt")
+        .expect("submit the first prompt")
     else {
-        panic!("first Prompt creates a Session");
+        panic!("first prompt creates a session");
     };
     let mut snapshot = failed_session_snapshot(
         SessionId::new(),
@@ -1006,10 +1006,10 @@ fn history_restoration_resolves_exact_skills_without_opening_completion() {
     });
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
-        .expect("enter the created Session");
+        .expect("enter the created session");
     application
         .handle_event(ApplicationEvent::Command(CommandId::HistoryPrevious))
-        .expect("restore the prior Prompt");
+        .expect("restore the prior prompt");
     let restored = rendered_application_rows(&application).join("\n");
     assert!(restored.contains("$review"));
     assert!(
@@ -1018,9 +1018,9 @@ fn history_restoration_resolves_exact_skills_without_opening_completion() {
     );
     let ApplicationTransition::AdmitPrompt { request, .. } = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("resubmit restored Prompt")
+        .expect("resubmit restored prompt")
     else {
-        panic!("restored Prompt is admitted to the Session");
+        panic!("restored prompt is admitted to the session");
     };
     assert_eq!(request.prompt.skill_invocations.len(), 1);
     assert_eq!(request.prompt.skill_invocations[0].skill_id, review.id);
@@ -1059,7 +1059,7 @@ fn intersecting_a_binding_invalidates_it_and_unknown_dollar_tokens_stay_literal(
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit literal dollar text")
     else {
-        panic!("unknown and invalidated markers remain an ordinary Prompt");
+        panic!("unknown and invalidated markers remain an ordinary prompt");
     };
     assert_eq!(created.prompt.text, "$unknown and $revie");
     assert!(created.prompt.skill_invocations.is_empty());
@@ -1076,14 +1076,14 @@ fn rejected_admission_restores_the_complete_skill_bearing_draft() {
     let (workspace, mut application) = application_with_skills(vec![review.clone()], None);
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
-            "Initial Prompt".to_owned(),
+            "Initial prompt".to_owned(),
         )))
-        .expect("type the first Prompt");
+        .expect("type the first prompt");
     let ApplicationTransition::CreateSession(initial) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit the first Prompt")
+        .expect("submit the first prompt")
     else {
-        panic!("first Prompt creates a Session");
+        panic!("first prompt creates a session");
     };
     let mut snapshot = failed_session_snapshot(
         SessionId::new(),
@@ -1094,18 +1094,18 @@ fn rejected_admission_restores_the_complete_skill_bearing_draft() {
     snapshot.session.agent_selection = initial.agent_selection;
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
-        .expect("enter the created Session");
+        .expect("enter the created session");
 
     application
         .handle_event(ApplicationEvent::Command(CommandId::PasteText(
             "$review preserve every marker".to_owned(),
         )))
-        .expect("paste a Skill-bearing Prompt");
+        .expect("paste a skill-bearing prompt");
     let ApplicationTransition::AdmitPrompt { session, request } = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit Skill-bearing Prompt")
+        .expect("submit skill-bearing prompt")
     else {
-        panic!("Session Prompt begins admission");
+        panic!("Session prompt begins admission");
     };
     application
         .handle_event(ApplicationEvent::PromptAdmissionFailed {
@@ -1121,9 +1121,9 @@ fn rejected_admission_restores_the_complete_skill_bearing_draft() {
     );
     let ApplicationTransition::AdmitPrompt { request: retry, .. } = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("retry the restored Prompt")
+        .expect("retry the restored prompt")
     else {
-        panic!("restored Prompt remains recoverable");
+        panic!("restored prompt remains recoverable");
     };
     assert_eq!(retry.prompt.id, request.prompt.id);
     assert_eq!(retry.prompt.text, request.prompt.text);
@@ -1155,10 +1155,10 @@ fn skill_completion_shows_live_catalog_states_and_retries_failed_discovery() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "$".to_owned(),
         )))
-        .expect("type a Skill marker while prefetch is pending");
+        .expect("type a skill marker while prefetch is pending");
     let loading = rendered_application_rows(&application).join("\n");
     assert!(loading.contains(" Skills "));
-    assert!(loading.contains("Loading Skills"));
+    assert!(loading.contains("Loading skills"));
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::ClearOrExit))
@@ -1188,13 +1188,13 @@ fn skill_completion_shows_live_catalog_states_and_retries_failed_discovery() {
                 },
             },
         })
-        .expect("load stale Skill Catalog");
+        .expect("load stale skill catalog");
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InsertText(
                 "$".to_owned(),
             )))
-            .expect("typing a Skill marker retries stale discovery"),
+            .expect("typing a skill marker retries stale discovery"),
         ApplicationTransition::RefreshSkills(request.clone())
     );
     let stale = rendered_application_rows(&application).join("\n");
@@ -1237,14 +1237,14 @@ fn skill_completion_shows_live_catalog_states_and_retries_failed_discovery() {
                     supported_deliveries: vec![SkillPromptDelivery::Initial],
                 },
                 status: SkillCatalogStatus::Fresh {
-                    warning: Some("1 invalid Skill was skipped".to_owned()),
+                    warning: Some("1 invalid skill was skipped".to_owned()),
                 },
             },
         })
-        .expect("load partial Skill Catalog");
+        .expect("load partial skill catalog");
     let partial = rendered_application_rows(&application).join("\n");
     assert!(partial.contains("$review"));
-    assert!(partial.contains("1 invalid Skill was skipped"));
+    assert!(partial.contains("1 invalid skill was skipped"));
 }
 
 #[test]
@@ -1254,7 +1254,7 @@ fn composer_text_keeps_a_column_of_air_inside_the_prompt_border() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "zebra".to_owned(),
         )))
-        .expect("type a short Prompt");
+        .expect("type a short prompt");
     let buffer = rendered_application_buffer(&application, 80, 30);
     let rows = buffer_rows(&buffer);
     let block = prompt_block(&rows);
@@ -1276,7 +1276,7 @@ fn composer_text_keeps_a_column_of_air_inside_the_prompt_border() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "y".repeat(200),
         )))
-        .expect("type a Prompt wider than the composer");
+        .expect("type a prompt wider than the composer");
     let filled_buffer = rendered_application_buffer(&filled, 80, 30);
     let filled_rows = buffer_rows(&filled_buffer);
     let first = text_position(&filled_buffer, "yyyy").1;
@@ -1299,14 +1299,14 @@ fn composer_text_keeps_a_column_of_air_inside_the_prompt_border() {
 fn composer_moves_whole_words_to_the_next_row_and_splits_only_oversized_ones() {
     let prompt = concat!(
         "Suru wraps the composer by whole words so that no ordinary word ",
-        "is ever cut across two rendered rows of the Prompt block"
+        "is ever cut across two rendered rows of the prompt block"
     );
     let mut application = Application::default();
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             prompt.to_owned(),
         )))
-        .expect("type a Prompt that outgrows one row");
+        .expect("type a prompt that outgrows one row");
     let buffer = rendered_application_buffer(&application, 80, 30);
     let rows = buffer_rows(&buffer);
     let block = prompt_block(&rows);
@@ -1325,7 +1325,7 @@ fn composer_moves_whole_words_to_the_next_row_and_splits_only_oversized_ones() {
         .collect::<Vec<_>>();
     assert!(
         content.len() > 1,
-        "the Prompt is long enough to wrap: {content:?}"
+        "the prompt is long enough to wrap: {content:?}"
     );
     for word in prompt.split_whitespace() {
         assert!(
@@ -1390,7 +1390,7 @@ fn composer_cursor_wraps_at_the_right_edge_and_remains_visible_when_scrolled() {
                 .collect::<Vec<_>>()
                 .join("\n"),
         )))
-        .expect("type a Prompt taller than the composer cap");
+        .expect("type a prompt taller than the composer cap");
     let scrolled_buffer = rendered_application_buffer(&scrolled, 80, 30);
     let final_line = text_position(&scrolled_buffer, "line20");
     assert_eq!(
@@ -1428,7 +1428,7 @@ fn semantic_bindings_preserve_multiline_unicode_input_and_clear_before_exit() {
             .handle_event(ApplicationEvent::Command(
                 command_for_terminal_event(event).expect("map multiline editor input"),
             ))
-            .expect("edit multiline Prompt");
+            .expect("edit multiline prompt");
     }
     let screen = rendered_application_rows(&application).join("\n");
     assert!(screen.contains("a"));
@@ -1486,7 +1486,7 @@ fn composer_grows_to_one_third_of_the_terminal_then_scrolls_internally() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "one line".to_owned(),
         )))
-        .expect("type short Prompt");
+        .expect("type short prompt");
     let one_line_rows = rendered_application_rows_at(&one_line, 80, 30);
     assert_eq!(prompt_block_height(&one_line_rows), 3);
 
@@ -1495,7 +1495,7 @@ fn composer_grows_to_one_third_of_the_terminal_then_scrolls_internally() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "one\ntwo\nthree\nfour".to_owned(),
         )))
-        .expect("type multiline Prompt");
+        .expect("type multiline prompt");
     let four_line_rows = rendered_application_rows_at(&four_lines, 80, 30);
     assert_eq!(prompt_block_height(&four_line_rows), 6);
 
@@ -1506,7 +1506,7 @@ fn composer_grows_to_one_third_of_the_terminal_then_scrolls_internally() {
             .collect::<Vec<_>>()
             .join("\n"),
     )))
-    .expect("type long Prompt");
+    .expect("type long prompt");
     let long_rows = rendered_application_rows_at(&long, 80, 30);
     let long_screen = long_rows.join("\n");
     assert_eq!(prompt_block_height(&long_rows), 12);
@@ -1585,7 +1585,7 @@ fn multiline_history_is_boundary_aware_and_session_drafts_keep_their_cursor() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Initial Prompt")
+            .contains("Initial prompt")
     );
     application
         .handle_event(ApplicationEvent::Command(CommandId::HistoryNext))
@@ -1598,44 +1598,44 @@ fn multiline_history_is_boundary_aware_and_session_drafts_keep_their_cursor() {
 
     application
         .handle_event(ApplicationEvent::Command(CommandId::ClearOrExit))
-        .expect("clear first Session draft");
+        .expect("clear first session draft");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "ac".to_owned(),
         )))
-        .expect("type first Session draft");
+        .expect("type first session draft");
     application
         .handle_event(ApplicationEvent::Command(CommandId::MoveCursorLeft))
-        .expect("place first Session cursor between characters");
+        .expect("place first session cursor between characters");
 
     let second_session = SessionId::new();
     let second_snapshot = failed_session_snapshot(
         second_session,
         PromptId::new(),
-        "Second Session Prompt",
+        "Second session prompt",
         workspace.path(),
     );
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             second_snapshot,
         )))
-        .expect("switch to second Session");
+        .expect("switch to second session");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "second draft".to_owned(),
         )))
-        .expect("type second Session draft");
+        .expect("type second session draft");
 
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             first_snapshot,
         )))
-        .expect("switch back to first Session");
+        .expect("switch back to first session");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "b".to_owned(),
         )))
-        .expect("insert at restored first Session cursor");
+        .expect("insert at restored first session cursor");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
@@ -1647,11 +1647,11 @@ fn multiline_history_is_boundary_aware_and_session_drafts_keep_their_cursor() {
             failed_session_snapshot(
                 second_session,
                 PromptId::new(),
-                "Second Session Prompt",
+                "Second session prompt",
                 workspace.path(),
             ),
         )))
-        .expect("return to second Session");
+        .expect("return to second session");
     let second_screen = rendered_application_rows(&application).join("\n");
     assert!(second_screen.contains("second draft"));
     assert!(!second_screen.contains("abc"));
@@ -1683,13 +1683,13 @@ fn vertical_navigation_follows_painted_rows_and_preserves_display_column() {
     assert_eq!(
         rendered_application_cursor_at(&application, 28, 30),
         Position::new(short.0 + 4, short.1),
-        "a short Row clamps the caret to its end"
+        "a short row clamps the caret to its end"
     );
     composer_selection_key(&mut application, KeyCode::Up, KeyModifiers::NONE);
     assert_eq!(
         rendered_application_cursor_at(&application, 28, 30),
         Position::new(first.0 + 21, first.1),
-        "the original display column survives the short Row"
+        "the original display column survives the short row"
     );
     composer_selection_key(&mut application, KeyCode::Down, KeyModifiers::NONE);
     composer_selection_key(&mut application, KeyCode::Down, KeyModifiers::NONE);
@@ -1793,15 +1793,15 @@ fn history_waits_until_the_caret_reaches_the_first_painted_row() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Initial Prompt"),
-        "Up on the first painted Row browses history immediately"
+            .contains("Initial prompt"),
+        "Up on the first painted row browses history immediately"
     );
     composer_selection_key(&mut application, KeyCode::Down, KeyModifiers::NONE);
     assert!(
         rendered_application_rows(&application)
             .join("\n")
             .contains("abcdefghijklmnopqrstuvwxyz"),
-        "Down on history's last painted Row restores the wrapped scratch draft"
+        "Down on history's last painted row restores the wrapped scratch draft"
     );
 }
 
@@ -1889,7 +1889,7 @@ pub(crate) fn application_with_skills(
                 status: SkillCatalogStatus::Fresh { warning: None },
             },
         })
-        .expect("load Skill Catalog");
+        .expect("load skill catalog");
     (workspace, application)
 }
 
@@ -1952,9 +1952,9 @@ fn composer_clicks_resolve_unicode_and_blank_cells_to_insertion_boundaries() {
         type_terminal_text(&mut application, "!");
         let ApplicationTransition::CreateSession(request) = application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("submit the edited Prompt")
+            .expect("submit the edited prompt")
         else {
-            panic!("the edited Prompt should begin a Session");
+            panic!("the edited prompt should begin a session");
         };
         assert_eq!(request.prompt.text, expected, "click in {text:?}");
     }
@@ -2178,7 +2178,7 @@ fn clicking_blank_space_after_a_wide_hard_wrap_preserves_the_insertion_offset() 
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .unwrap()
     else {
-        panic!("submit the edited Prompt");
+        panic!("submit the edited prompt");
     };
     assert_eq!(request.prompt.text, format!("{prefix}🙂!🙂🙂"));
 }
@@ -2316,7 +2316,7 @@ fn composer_line_edges_resolve_through_application_and_stay_on_the_written_line(
                 KeyCode::Left,
                 KeyModifiers::NONE,
             )))
-            .expect("move into the middle Line");
+            .expect("move into the middle line");
     }
 
     for (code, modifiers, command) in [
@@ -2347,7 +2347,7 @@ fn composer_line_edges_resolve_through_application_and_stay_on_the_written_line(
     for (code, column) in [(KeyCode::Home, 0), (KeyCode::End, 29), (KeyCode::Home, 0)] {
         application
             .handle_terminal_event(InputEvent::Key(KeyEvent::new(code, KeyModifiers::NONE)))
-            .expect("move to the written Line edge");
+            .expect("move to the written line edge");
         assert_eq!(
             rendered_application_cursor_at(&application, 80, 30),
             Position::new(middle.0 + column, middle.1),
@@ -2368,7 +2368,7 @@ fn composer_line_edges_resolve_through_application_and_stay_on_the_written_line(
             KeyCode::Home,
             KeyModifiers::NONE,
         )))
-        .expect("return to the written Line start");
+        .expect("return to the written line start");
     assert_eq!(
         rendered_application_cursor_at(&application, 28, 30),
         Position::new(start.0, start.1)
@@ -2379,7 +2379,7 @@ fn composer_line_edges_resolve_through_application_and_stay_on_the_written_line(
             KeyCode::Char('b'),
             KeyModifiers::CONTROL,
         )))
-        .expect("give the Sidebar the keys");
+        .expect("give the sidebar the keys");
     for code in [KeyCode::Home, KeyCode::End] {
         assert_eq!(
             application.command_for_terminal_input(InputEvent::Key(KeyEvent::new(
@@ -2497,7 +2497,7 @@ fn composer_selection_clears_on_submit_and_session_switch() {
     let second = failed_session_snapshot(
         SessionId::new(),
         PromptId::new(),
-        "Another Session",
+        "Another session",
         workspace.path(),
     );
     application
@@ -2524,7 +2524,7 @@ fn composer_and_transcript_marks_replace_each_other_in_both_directions() {
     enter_session(&mut application, workspace.path());
     type_terminal_text(&mut application, "marked draft");
     let buffer = rendered_application_buffer(&application, 100, 32);
-    let transcript = text_position(&buffer, "Initial Prompt");
+    let transcript = text_position(&buffer, "Initial prompt");
     let composer = text_position(&buffer, "marked draft");
     for (start, end, marked, cleared) in [
         (
@@ -2801,7 +2801,7 @@ fn deleting_half_a_bound_skill_drops_its_binding_and_rebases_the_following_skill
         )))
         .unwrap()
     else {
-        panic!("submit the remaining ordinary text and Skill");
+        panic!("submit the remaining ordinary text and skill");
     };
     assert_eq!(request.prompt.text, "iew $review");
     assert_eq!(request.prompt.skill_invocations.len(), 1);
@@ -2949,7 +2949,7 @@ fn keyboard_selection_extends_by_painted_rows_and_to_draft_edges_without_history
     let ApplicationTransition::CreateSession(created) =
         composer_selection_key(&mut application, KeyCode::Enter, KeyModifiers::NONE)
     else {
-        panic!("first Prompt creates a Session");
+        panic!("first prompt creates a session");
     };
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
@@ -3067,7 +3067,7 @@ fn keyboard_selection_takes_transcript_mark_but_typing_leaves_it() {
     enter_session(&mut application, workspace.path());
     type_terminal_text(&mut application, "draft");
     let buffer = rendered_application_buffer(&application, 100, 32);
-    let transcript = text_position(&buffer, "Initial Prompt");
+    let transcript = text_position(&buffer, "Initial prompt");
     super::selection::drag(
         &mut application,
         transcript,
@@ -3213,7 +3213,7 @@ fn select_all_empty_draft_preserves_transcript_selection_and_new_selection_repla
     let mut application = connected_application(workspace.path());
     enter_session(&mut application, workspace.path());
     let buffer = rendered_application_buffer(&application, 100, 32);
-    let transcript = text_position(&buffer, "Initial Prompt");
+    let transcript = text_position(&buffer, "Initial prompt");
     super::selection::drag(
         &mut application,
         transcript,
@@ -3435,7 +3435,7 @@ fn context_fill_footer_formats_partial_zero_and_over_capacity_measurements() {
         let footer = rows.last().unwrap();
         assert!(
             !footer.contains("1M"),
-            "cumulative Usage never fills missing occupancy: {footer}"
+            "cumulative usage never fills missing occupancy: {footer}"
         );
         if let Some(expected) = expected {
             assert!(footer.contains(expected), "expected {expected}: {footer}");

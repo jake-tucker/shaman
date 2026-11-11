@@ -57,7 +57,7 @@ pub(super) fn render(
     let subdued = theme.text.subdued;
     let primary = theme.text.primary;
     if turns.completed + turns.failed + turns.interrupted == 0 {
-        let note = nothing(room, "No Turns", range);
+        let note = nothing(room, "No turns", range);
         buffer.set_string(area.x, area.y, note, subdued);
         return;
     }
@@ -77,7 +77,7 @@ pub(super) fn render(
             let note = fitting(
                 room,
                 [
-                    "No Turn recorded how long it took".to_owned(),
+                    "No turn recorded how long it took".to_owned(),
                     "No durations recorded".to_owned(),
                 ],
             );
@@ -108,8 +108,8 @@ pub(super) fn render(
 /// `count` Turns, written whole.
 pub(super) fn counted(count: u64) -> String {
     match count {
-        1 => "1 Turn".to_owned(),
-        count => format!("{} Turns", grouped_count(count)),
+        1 => "1 turn".to_owned(),
+        count => format!("{} turns", grouped_count(count)),
     }
 }
 

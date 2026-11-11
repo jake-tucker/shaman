@@ -982,13 +982,13 @@ its code reach no Log, and neither is ever an argument.
 | --- | --- |
 | 0 | It did as asked, or that already held |
 | 1 | It could not, saying why on standard error |
-| 2 | Its command line cannot be read, an address no Relay could be at among that |
-| 3 | `relay remove` removed the Relay here, but the Relay did not answer, so it may still hold a Login for this Server until its operator removes it |
-| 4 | `relay login` was refused: by you at the identity provider, or by the Relay, whose operator is the one to ask |
-| 5 | `relay login` ended with no one refusing it: it expired or the Relay stopped answering, and trying again may help |
+| 2 | Its command line cannot be read, an address no relay could be at among that |
+| 3 | `relay remove` removed the relay here, but the relay did not answer, so it may still hold a login for this server until its operator removes it |
+| 4 | `relay login` was refused: by you at the identity provider, or by the relay, whose operator is the one to ask |
+| 5 | `relay login` ended with no one refusing it: it expired or the relay stopped answering, and trying again may help |
 | 130 | `relay login` was interrupted by Ctrl+C, which leaves the login under way |
 
-SIGTERM and SIGHUP end a command by the signal, with no status of these, and leave a login under way at the Server as well.
+SIGTERM and SIGHUP end a command by the signal, with no status of these, and leave a login under way at the server as well.
 
 Status 1 covers a Server that could not be reached, a Relay that refused or could not be reached as a login began, and a
 Server that stopped while `relay login` followed it. Removing a Relay never logged in at asks nothing of it and exits 0,

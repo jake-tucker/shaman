@@ -1161,7 +1161,7 @@ impl Default for TuiState {
 
 /// How the line beneath the composer begins saying a Move is waiting, which
 /// ends in the Move's destination.
-pub(super) const MOVE_PENDING_SAID: &str = "The Session Moves once the work under way settles, to ";
+pub(super) const MOVE_PENDING_SAID: &str = "The session moves once the work under way settles, to ";
 
 /// What is said beneath the composer of a Move waiting to take the Session to
 /// `destination`. With nothing under way it applies before the Session's next
@@ -1532,7 +1532,7 @@ impl TuiState {
     /// with the client-local reason it could not hydrate.
     fn fail_opening_session(&mut self, error: String) {
         self.stop_opening_loading();
-        self.opening_error = Some(format!("Could not load Session: {error}"));
+        self.opening_error = Some(format!("Could not load session: {error}"));
     }
 
     fn turn_outlook(&mut self, outlook: Outlook) {
@@ -2045,8 +2045,8 @@ impl TuiState {
             ids.dedup();
             tracing::info!(
                 attachment_ids = ?ids,
-                "the Landing's history no longer binds Attachments on the Server \
-                 the Outlook turned away from"
+                "the landing's history no longer binds attachments on the server \
+                 the outlook turned away from"
             );
         }
         self.report_demoted_attachments(&demoted, AttachmentDemotion::LeftBehind);
@@ -2070,7 +2070,7 @@ impl TuiState {
         tracing::warn!(
             ?demotion,
             attachment_ids = ?ids,
-            "a draft's Attachment labels were demoted to plain text"
+            "a draft's attachment labels were demoted to plain text"
         );
         let names = demoted
             .iter()
@@ -2806,7 +2806,7 @@ impl TuiState {
                             .as_ref()
                             .map(|pending| pending.prompt.id)
                     {
-                        self.fail_pending_submission(prompt_id, "Worktree preparation interrupted by Server replacement; submit again to resume the same preparation".into());
+                        self.fail_pending_submission(prompt_id, "Worktree preparation interrupted by server replacement; submit again to resume the same preparation".into());
                     }
                     self.questionnaires.discard_origin(&self.outlook);
                     if let Some(reference) = self.session_reference.clone() {
@@ -2821,7 +2821,7 @@ impl TuiState {
                     self.confirmed_agent_selection = None;
                     self.session_events_blocked = true;
                     self.submission_error = Some(if self.new_worktree.is_some() {
-                        "Worktree preparation interrupted by Server replacement; submit again to resume the same preparation".to_owned()
+                        "Worktree preparation interrupted by server replacement; submit again to resume the same preparation".to_owned()
                     } else {
                         "Session ended because the shared server was replaced".to_owned()
                     });
@@ -3438,7 +3438,7 @@ impl TuiState {
                         error,
                         ..
                     } => Some(format!(
-                        "The Move to {} failed: {}",
+                        "The move to {} failed: {}",
                         super::sidebar::workspace_name(&to.execution_directory.path),
                         error.as_deref().unwrap_or("Suru could not apply it")
                     )),
@@ -3947,7 +3947,7 @@ impl TuiState {
         let session = self
             .session_reference
             .as_ref()
-            .expect("a Session projection carries its reference");
+            .expect("a session projection carries its reference");
         self.queued_agent_selection
             .as_ref()
             .filter(|(queued_session, _)| queued_session == session)
@@ -3997,7 +3997,7 @@ impl TuiState {
         let destination = ComposerKey::Session(
             self.session_reference
                 .clone()
-                .expect("a Session snapshot carries its reference"),
+                .expect("a session snapshot carries its reference"),
         );
         let pending = self
             .pending_submission
@@ -4810,7 +4810,7 @@ impl TuiState {
         let destination = ComposerKey::Session(
             self.session_reference
                 .clone()
-                .expect("a Session snapshot carries its reference"),
+                .expect("a session snapshot carries its reference"),
         );
         let reconciled = self
             .failed_submissions
@@ -5060,7 +5060,7 @@ impl TuiState {
         }
         let Some(path) = self.execution_directory.clone() else {
             self.submission_error =
-                Some("Choose a working copy before starting a Session".to_owned());
+                Some("Choose a working copy before starting a session".to_owned());
             return ApplicationTransition::Continue;
         };
         ApplicationTransition::CreateSession(CreateSessionRequest {
@@ -5283,7 +5283,7 @@ impl TuiState {
         let session = self
             .session_reference
             .as_ref()
-            .expect("a Session snapshot carries its reference")
+            .expect("a session snapshot carries its reference")
             .clone();
         let mut returned = Vec::new();
         self.withdrawing.retain(|awaited| {
@@ -5335,7 +5335,7 @@ impl TuiState {
         let session = self
             .session_reference
             .clone()
-            .expect("a Session snapshot carries its reference");
+            .expect("a session snapshot carries its reference");
         let mut returned = Vec::new();
         self.pending_steers.retain(|pending| {
             if pending.session != session {
@@ -6700,7 +6700,7 @@ impl Application {
             tracing::warn!(
                 path = %diagnostic.file.display(),
                 reason = %diagnostic.message,
-                "ignored user Theme"
+                "ignored user theme"
             );
         }
         self.theme_catalog = catalog;
@@ -7294,10 +7294,10 @@ impl Application {
                 let acknowledged = match outcome {
                     MoveOutcome::Moved { .. } => None,
                     MoveOutcome::AlreadyThere { .. } => {
-                        Some("The Session already works there.".to_owned())
+                        Some("The session already works there.".to_owned())
                     }
                     MoveOutcome::PendingCancelled { .. } => Some(
-                        "The pending Move is cancelled, and the Session stays where it works."
+                        "The pending move is cancelled, and the session stays where it works."
                             .to_owned(),
                     ),
                     // The Session's stream may have heard this Move settle
@@ -7855,7 +7855,7 @@ impl Application {
                             // Sidekick could not be reached.
                             WorkspaceResolutionSurface::Sidekick => {
                                 self.state.submission_error =
-                                    Some(format!("Could not open the Sidekick Workspace: {error}"));
+                                    Some(format!("Could not open the sidekick workspace: {error}"));
                             }
                             WorkspaceResolutionSurface::WorktreeList
                             | WorkspaceResolutionSurface::WorktreeSelection => {
@@ -7870,11 +7870,11 @@ impl Application {
                                     .state
                                     .chosen_workspace
                                     .take()
-                                    .expect("a Workspace Picker resolution names its choice");
+                                    .expect("a workspace picker resolution names its choice");
                                 let name =
                                     self.state.workspace_name(&self.state.outlook, &chosen.path);
                                 self.state.submission_error =
-                                    Some(format!("Could not open the {name} Workspace: {error}"));
+                                    Some(format!("Could not open the {name} workspace: {error}"));
                             }
                         }
                         Ok(ApplicationTransition::Continue)
@@ -7938,7 +7938,7 @@ impl Application {
                         Ok(result) if result.removed => {
                             let checkout = &result.preview.target.checkout;
                             let status = crate::protocol::ExecutionDirectoryStatus::Unavailable {
-                                reason: "Worktree removed; prompt a retained Session to recover it"
+                                reason: "Worktree removed; prompt a retained session to recover it"
                                     .into(),
                             };
                             if self.state.workspace.id == checkout.repository.workspace_id()
@@ -7983,7 +7983,7 @@ impl Application {
                                 for reading in &mut context.checkouts {
                                     if reading.association.id == result.preview.target.checkout.id {
                                         reading.revision = None;
-                                        reading.availability = crate::protocol::SourceControlAvailability::Unavailable { reason: "Worktree removed; prompt a retained Session to recover it".into() };
+                                        reading.availability = crate::protocol::SourceControlAvailability::Unavailable { reason: "Worktree removed; prompt a retained session to recover it".into() };
                                     }
                                 }
                             }
@@ -7991,10 +7991,10 @@ impl Application {
                             picker.error = Some(
                                 match result.preview.branch_outcome {
                                     crate::protocol::CheckoutBranchOutcome::Deleted => {
-                                        "Worktree removed. Branch deleted; Session histories retained"
+                                        "Worktree removed. Branch deleted; session histories retained"
                                     }
                                     crate::protocol::CheckoutBranchOutcome::Retained => {
-                                        "Worktree removed. Branch retained; Session histories retained"
+                                        "Worktree removed. Branch retained; session histories retained"
                                     }
                                 }
                                 .into(),
@@ -9180,12 +9180,12 @@ impl Application {
                 if let Some(preview) = picker.removal.clone() {
                     if preview.working_sessions != 0 {
                         picker.error =
-                            Some("A Session is Working on this Server; removal is blocked".into());
+                            Some("A session is working on this server; removal is blocked".into());
                         return ApplicationTransition::Continue;
                     }
                     if preview.pending_moves != 0 {
                         picker.error = Some(
-                            "A pending Move is bound here, so removal is blocked; cancel or \
+                            "A pending move is bound here, so removal is blocked; cancel or \
                                  replace it with /move"
                                 .into(),
                         );
@@ -9234,12 +9234,12 @@ impl Application {
                     };
                 }
                 picker.error =
-                    Some("Main checkout cannot be removed. Select a linked Worktree".into());
+                    Some("Main checkout cannot be removed. Select a linked worktree".into());
             }
             SemanticCommandId::WorktreeList => {
                 if self.state.session_reference.is_some() {
                     self.state.submission_error =
-                        Some("Start a new Session before choosing a Worktree".to_owned());
+                        Some("Start a new session before choosing a worktree".to_owned());
                     return ApplicationTransition::Continue;
                 }
                 // The Worktrees on offer are a Repository's, and the Landing
@@ -9526,7 +9526,7 @@ impl Application {
             }
             (ExecutionDirectoryStatus::Available, None) => {
                 self.state
-                    .refuse_move_choice("That Workspace names no directory to work in".to_owned());
+                    .refuse_move_choice("That workspace names no directory to work in".to_owned());
                 ApplicationTransition::Continue
             }
             (ExecutionDirectoryStatus::Available, Some(directory)) => {
@@ -9631,7 +9631,7 @@ impl Application {
                 let Some(selection) = &self.state.landing_agent_selection else {
                     self.state
                         .worktree_picker
-                        .fail("Choose an Agent first".to_owned());
+                        .fail("Choose an agent first".to_owned());
                     return ApplicationTransition::Continue;
                 };
                 if self.state.new_worktree.is_none() {
@@ -9678,7 +9678,7 @@ impl Application {
         request: ResolveWorkspaceRequest,
     ) -> ApplicationTransition {
         let ApplicationTransition::DetachSession = self.open_landing() else {
-            unreachable!("opening the Landing lets go of the Session being left");
+            unreachable!("opening the landing lets go of the session being left");
         };
         let request_id = self
             .state
@@ -10050,7 +10050,7 @@ impl Application {
                             self.state
                                 .sidebar
                                 .take_everywhere_remote_request()
-                                .expect("choosing Everywhere queues its Remote discovery"),
+                                .expect("choosing Everywhere queues its remote discovery"),
                         )
                     }
                     SidebarActivation::CatalogOriginsChanged => {
@@ -10544,7 +10544,7 @@ impl Application {
             let claim = self
                 .state
                 .release_claim()
-                .expect("the preparing provisional Session was just observed");
+                .expect("the preparing provisional session was just observed");
             if self
                 .state
                 .pending_submission
@@ -10813,7 +10813,7 @@ impl Application {
                 .state
                 .workspace_name(&self.state.outlook, &workspace.path);
             self.state.submission_error = Some(format!(
-                "{name} is still resolving; this waits until its Server answers"
+                "{name} is still resolving; this waits until its server answers"
             ));
             return ApplicationTransition::Continue;
         }
@@ -10846,7 +10846,7 @@ impl Application {
             && self.state.execution_directory.is_none()
         {
             self.state.submission_error =
-                Some("Choose a working copy before starting a Session".to_owned());
+                Some("Choose a working copy before starting a session".to_owned());
             return ApplicationTransition::Continue;
         }
         if !matches!(key, ComposerKey::Session(_))
@@ -10854,7 +10854,7 @@ impl Application {
                 &self.state.execution_status
         {
             self.state.submission_error =
-                Some(format!("Execution Directory unavailable: {reason}"));
+                Some(format!("Execution directory unavailable: {reason}"));
             return ApplicationTransition::Continue;
         }
         let prompt = self.state.composers.begin_submission(key.clone());
@@ -10892,15 +10892,15 @@ impl Application {
     /// judge, and its typed refusal is explained when it answers.
     fn compact_open_session(&mut self, instructions: Option<String>) -> ApplicationTransition {
         let Some(session) = self.state.open_session_for(
-            "This Session has not started yet, so there is nothing to compact",
-            "Open a Session to compact its context",
+            "This session has not started yet, so there is nothing to compact",
+            "Open a session to compact its context",
         ) else {
             return ApplicationTransition::Continue;
         };
         if self.state.open_subagent_parent().is_some() {
             return self
                 .state
-                .refuse("A Subagent's context is compacted only when its Provider chooses to");
+                .refuse("A subagent's context is compacted only when its provider chooses to");
         }
         let provider = self
             .state
@@ -10934,14 +10934,14 @@ impl Application {
     /// only a refusal comes back here.
     fn move_open_session(&mut self, path: Option<String>) -> ApplicationTransition {
         let Some(session) = self.state.open_session_for(
-            "This Session has not started yet, so it has nowhere to Move from",
-            "Open a Session to Move it",
+            "This session has not started yet, so it has nowhere to move from",
+            "Open a session to move it",
         ) else {
             return ApplicationTransition::Continue;
         };
         if self.state.open_session_is_sidekicks() {
             return self.state.refuse(
-                "A Sidekick's Session never Moves: the Sidekick Workspace is what makes it one",
+                "A sidekick's session never moves: the sidekick workspace is what makes it one",
             );
         }
         match path {
@@ -10966,7 +10966,7 @@ impl Application {
     fn read_move_picker(&mut self, origin: Outlook) -> ApplicationTransition {
         let Some(snapshot) = self.state.session.as_ref().map(|open| open.snapshot()) else {
             self.state.close_move_pickers();
-            return self.state.refuse("Open a Session to Move it");
+            return self.state.refuse("Open a session to move it");
         };
         let request = ResolveWorkspaceRequest {
             checkout_id: None,
@@ -10988,8 +10988,8 @@ impl Application {
     /// what fills that Session's context.
     fn read_open_session_context(&mut self) -> ApplicationTransition {
         let Some(session) = self.state.open_session_for(
-            "This Session has not started yet, so nothing fills its context",
-            "Open a Session to see what fills its context",
+            "This session has not started yet, so nothing fills its context",
+            "Open a session to see what fills its context",
         ) else {
             return ApplicationTransition::Continue;
         };
@@ -11367,7 +11367,7 @@ impl Application {
                 tracing::warn!(
                     ?check,
                     %reason,
-                    "could not check whether a recalled Prompt's Attachments are still stored; \
+                    "could not check whether a recalled prompt's attachments are still stored; \
                      their labels stay bound"
                 );
                 return;
@@ -11700,7 +11700,7 @@ impl Application {
             self.state
                 .pending_agent_selection
                 .take()
-                .expect("matching pending Agent Selection exists")
+                .expect("matching pending agent selection exists")
                 .session
         })
     }
@@ -13061,16 +13061,16 @@ impl Application {
             // tree of their own; the two commands open them on the same terms
             // and differ only in how a failure names what did not open.
             SemanticCommandId::SidekickOpen => {
-                Ok(self.open_led_session(invocation.subject, "the Sidekick's Session"))
+                Ok(self.open_led_session(invocation.subject, "the sidekick's session"))
             }
             SemanticCommandId::SubsessionOpen => {
-                Ok(self.open_led_session(invocation.subject, "the Subsession"))
+                Ok(self.open_led_session(invocation.subject, "the subsession"))
             }
             // An entry beneath a Sidekick's Session leads into a top-level
             // Session as its Transcript row would, naming it no more closely
             // than the entry does.
             SemanticCommandId::SessionOpen => {
-                Ok(self.open_led_session(invocation.subject, "the Session"))
+                Ok(self.open_led_session(invocation.subject, "the session"))
             }
             // Stopping a Subagent is interrupting its child Session, on the
             // same subject terms as opening one.
@@ -14078,7 +14078,7 @@ impl Application {
             .cached_model_for_options(current.as_ref())
         else {
             self.state.submission_error =
-                Some("No concrete Model is loaded yet; use /models to choose one".to_owned());
+                Some("No concrete model is loaded yet; use /models to choose one".to_owned());
             let request = self.state.model_picker.begin_refresh();
             return Ok(ApplicationTransition::ListModels(request));
         };
@@ -14184,7 +14184,7 @@ impl Application {
             if listing == CatalogListing::Complete {
                 self.state.pending_model_options = false;
                 self.state.submission_error =
-                    Some("No concrete Model is available; use /models to choose one".to_owned());
+                    Some("No concrete model is available; use /models to choose one".to_owned());
             }
             return;
         };
@@ -14193,7 +14193,7 @@ impl Application {
                 self.state.pending_model_options = false;
             }
             self.state.submission_error = Some(format!(
-                "{} has no configurable options; use /models to choose another Model",
+                "{} has no configurable options; use /models to choose another model",
                 model.display_name
             ));
             return;
@@ -15461,7 +15461,7 @@ pub(super) fn compaction_refusal_text(
     provider: Option<&str>,
 ) -> String {
     use crate::provider::ManualCompactionRefusal;
-    let provider = provider.unwrap_or("This Session's Provider");
+    let provider = provider.unwrap_or("This session's provider");
     match refusal {
         ManualCompactionRefusal::Unsupported => {
             format!(
@@ -15469,7 +15469,7 @@ pub(super) fn compaction_refusal_text(
             )
         }
         ManualCompactionRefusal::InstructionsUnsupported => {
-            format!("{provider} takes no instructions for a Compaction; send /compact on its own")
+            format!("{provider} takes no instructions for a compaction; send /compact on its own")
         }
     }
 }

@@ -148,10 +148,10 @@ impl Machine {
         };
         let mut command = self.sparse(env!("CARGO_BIN_EXE_suru"));
         command
-            .args(arguments.words().expect("spell the Keeper's command line"))
+            .args(arguments.words().expect("spell the keeper's command line"))
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        command.spawn().expect("run the Keeper")
+        command.spawn().expect("run the keeper")
     }
 
     fn descriptor_path(&self, channel: &str) -> PathBuf {
@@ -182,7 +182,7 @@ impl Machine {
             }
         })
         .await
-        .unwrap_or_else(|_| panic!("no Server other than {other:?} came up"))
+        .unwrap_or_else(|_| panic!("no server other than {other:?} came up"))
     }
 
     async fn responds(&self, descriptor: &RuntimeDescriptor) -> bool {
@@ -213,7 +213,7 @@ impl Machine {
             }
         })
         .await
-        .expect("the Keeper sees the Server that was started");
+        .expect("the keeper sees the server that was started");
     }
 
     /// Kills the Server `descriptor` names outright, and waits until it is gone,
@@ -223,8 +223,8 @@ impl Machine {
         let mut system = sysinfo::System::new();
         system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
         assert!(
-            system.process(pid).expect("find the Server").kill(),
-            "crash the Server"
+            system.process(pid).expect("find the server").kill(),
+            "crash the server"
         );
         timeout(PROGRESS_DEADLINE, async {
             while self.responds(descriptor).await {
@@ -232,7 +232,7 @@ impl Machine {
             }
         })
         .await
-        .expect("the crashed Server stops answering");
+        .expect("the crashed server stops answering");
     }
 }
 
@@ -469,7 +469,7 @@ async fn installing_and_uninstalling_are_each_harmless_twice_and_status_follows(
 
     let installed = machine.succeed(channel, &["install"]).await;
     assert!(
-        installed.contains(&format!("`{channel}` Channel's Server")),
+        installed.contains(&format!("`{channel}` channel's server")),
         "{installed}"
     );
     assert!(installed.contains("What this covers on "), "{installed}");
@@ -563,7 +563,7 @@ async fn a_channels_registration_leaves_another_channels_alone() {
         registered_words(machine.home.path(), gamma)
             .iter()
             .any(|word| word == gamma),
-        "the registration names its own Channel"
+        "the registration names its own channel"
     );
 }
 
@@ -576,14 +576,14 @@ async fn neither_installing_nor_uninstalling_starts_or_stops_a_server() {
     machine.succeed(channel, &["uninstall"]).await;
     assert!(
         !machine.descriptor_path(channel).exists(),
-        "installing started a Server"
+        "installing started a server"
     );
 
     machine.succeed(channel, &["start"]).await;
     let running = machine.server_other_than(channel, None).await;
     machine.succeed(channel, &["install"]).await;
     machine.succeed(channel, &["uninstall"]).await;
-    assert!(machine.responds(&running).await, "a running Server stopped");
+    assert!(machine.responds(&running).await, "a running server stopped");
     assert_eq!(
         read_runtime_descriptor(machine.descriptor_path(channel)).instance_id,
         running.instance_id
@@ -636,12 +636,12 @@ async fn a_stopped_server_stays_stopped_until_it_is_started_and_is_then_kept() {
     tokio::time::sleep(LONG_ENOUGH_TO_HAVE_ACTED).await;
     assert!(
         !machine.descriptor_path(channel).exists(),
-        "a Keeper undid a Manual stop"
+        "a keeper undid a manual stop"
     );
     assert_eq!(machine.servers.servers_running(), 0);
     assert!(
-        keeper.try_wait().expect("look at the Keeper").is_none(),
-        "the Keeper goes on looking, for the Server someone starts next"
+        keeper.try_wait().expect("look at the keeper").is_none(),
+        "the keeper goes on looking, for the server someone starts next"
     );
 
     machine.succeed(channel, &["start"]).await;
@@ -661,7 +661,7 @@ async fn a_stopped_server_stays_stopped_until_it_is_started_and_is_then_kept() {
     tokio::time::sleep(LONG_ENOUGH_TO_HAVE_ACTED).await;
     assert!(
         !machine.responds(&third).await && !machine.descriptor_path(channel).exists(),
-        "a Keeper undid the second Manual stop"
+        "a keeper undid the second manual stop"
     );
 }
 
@@ -680,7 +680,7 @@ async fn a_keeper_and_a_client_starting_together_leave_one_server() {
     assert_eq!(
         read_runtime_descriptor(machine.descriptor_path(channel)).instance_id,
         standing.instance_id,
-        "the Server that won was disturbed"
+        "the server that won was disturbed"
     );
     timeout(PROGRESS_DEADLINE, async {
         while machine.servers.servers_running() != 1 {
@@ -688,7 +688,7 @@ async fn a_keeper_and_a_client_starting_together_leave_one_server() {
         }
     })
     .await
-    .expect("only the Server that won goes on running");
+    .expect("only the server that won goes on running");
 }
 
 /// Ending a Keeper is all that uninstalling or a service manager can do to it,
@@ -701,10 +701,10 @@ async fn a_server_outlives_its_keeper() {
     let mut keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_suru")));
     let standing = machine.server_other_than(channel, None).await;
 
-    keeper.kill().await.expect("end the Keeper");
-    keeper.wait().await.expect("collect the Keeper");
+    keeper.kill().await.expect("end the keeper");
+    keeper.wait().await.expect("collect the keeper");
     tokio::time::sleep(LONG_ENOUGH_TO_HAVE_ACTED).await;
-    assert!(machine.responds(&standing).await, "the Server went with it");
+    assert!(machine.responds(&standing).await, "the server went with it");
 }
 
 /// A Keeper running as its registration is removed stops restarting anything,
@@ -720,13 +720,13 @@ async fn a_keeper_whose_registration_is_gone_restarts_nothing_and_ends() {
     machine.succeed(channel, &["uninstall"]).await;
     assert!(
         machine.responds(&standing).await,
-        "uninstalling reached the Server"
+        "uninstalling reached the server"
     );
     machine.crash(&standing).await;
     let exit = timeout(PROGRESS_DEADLINE, keeper.wait())
         .await
-        .expect("the Keeper ends")
-        .expect("collect the Keeper");
+        .expect("the keeper ends")
+        .expect("collect the keeper");
     assert!(exit.success(), "{exit:?}");
     assert_eq!(machine.servers.servers_running(), 0);
 }
@@ -749,7 +749,7 @@ async fn a_keeper_leaves_a_server_of_another_build_to_the_clients_that_replace_t
     std::fs::remove_file(&executable).expect("take the binary away");
     std::fs::write(&executable, "another build").expect("upgrade at the path");
     tokio::time::sleep(LONG_ENOUGH_TO_HAVE_ACTED).await;
-    assert!(machine.responds(&standing).await, "the Server was replaced");
+    assert!(machine.responds(&standing).await, "the server was replaced");
     assert_eq!(
         read_runtime_descriptor(machine.descriptor_path(channel)).instance_id,
         standing.instance_id,
@@ -826,7 +826,7 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
         .env("PATH", &empty)
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let _unassisted_keeper = unassisted_keeper.spawn().expect("run the Keeper");
+    let _unassisted_keeper = unassisted_keeper.spawn().expect("run the keeper");
 
     let claude_status = |channel: &'static str| {
         let machine = &machine;
@@ -857,7 +857,7 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
         claude_status(from_registration),
         claude_status(unassisted),
     );
-    assert_eq!(registration, shell, "the two Servers disagree about Claude");
+    assert_eq!(registration, shell, "the two servers disagree about Claude");
     assert!(
         !matches!(
             shell,
@@ -866,7 +866,7 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
                 ..
             }
         ),
-        "the shell's Server should find the CLI on its PATH: {shell:?}"
+        "the shell's server should find the CLI on its PATH: {shell:?}"
     );
     assert!(
         matches!(
@@ -876,7 +876,7 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
                 ..
             }
         ),
-        "with nothing carried no Provider should be found: {unaided:?}"
+        "with nothing carried no provider should be found: {unaided:?}"
     );
 }
 
@@ -898,7 +898,7 @@ async fn a_stop_after_a_crash_is_recorded_and_says_none_was_running() {
     assert!(machine.last_stop_path(channel).exists());
     assert!(
         !machine.descriptor_path(channel).exists(),
-        "a stopped Channel names no Server"
+        "a stopped channel names no server"
     );
 
     machine.succeed(channel, &["start"]).await;
@@ -925,8 +925,8 @@ async fn a_stop_racing_a_keeper_answering_a_crash_stands() {
     tokio::time::sleep(LONG_ENOUGH_TO_HAVE_ACTED * 2).await;
     assert_eq!(machine.servers.servers_running(), 0, "a stop was undone");
     assert!(
-        keeper.try_wait().expect("look at the Keeper").is_none(),
-        "the Keeper goes on looking, for the Server someone starts next"
+        keeper.try_wait().expect("look at the keeper").is_none(),
+        "the keeper goes on looking, for the server someone starts next"
     );
 
     machine.succeed(channel, &["start"]).await;
@@ -966,8 +966,8 @@ async fn a_server_launched_before_a_stop_with_no_server_there_stands_down() {
         .status();
     let status = timeout(PROGRESS_DEADLINE, launched)
         .await
-        .expect("the Server stands down at once")
-        .expect("run the Server");
+        .expect("the server stands down at once")
+        .expect("run the server");
     assert!(!status.success());
     assert!(!machine.descriptor_path(channel).exists());
 }
@@ -1031,10 +1031,10 @@ async fn a_stop_of_a_hung_server_says_so_and_records_nothing() {
     .await;
     signal(libc::SIGCONT);
 
-    let error = stopped.expect_err("a hung Server is not stopped");
+    let error = stopped.expect_err("a hung server is not stopped");
     assert!(error.to_string().contains("cannot stop"), "{error:#}");
     assert!(!machine.last_stop_path(channel).exists());
-    assert!(machine.responds(&hung).await, "the Server woke as it was");
+    assert!(machine.responds(&hung).await, "the server woke as it was");
 }
 
 /// A Server that dies each time it is launched never comes to publish anything,
@@ -1056,7 +1056,7 @@ async fn a_stop_ends_a_crash_loop() {
             launches.display()
         ),
     )
-    .expect("write a Server that crashes");
+    .expect("write a server that crashes");
     std::fs::set_permissions(&crashing, std::fs::Permissions::from_mode(0o700))
         .expect("make it runnable");
     let launch_count = || {
@@ -1071,7 +1071,7 @@ async fn a_stop_ends_a_crash_loop() {
         }
     })
     .await
-    .expect("the Keeper goes on launching");
+    .expect("the keeper goes on launching");
 
     let said = machine.succeed(channel, &["stop"]).await;
     assert!(said.contains("No Suru server was running"), "{said}");

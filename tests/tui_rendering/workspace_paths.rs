@@ -252,7 +252,7 @@ fn the_workspace_picker_offers_no_remotes_sidekick_workspace() {
         )))
         .unwrap()
     else {
-        panic!("opening the Workspace Picker asks the Remote for its Workspaces")
+        panic!("opening the workspace picker asks the remote for its workspaces")
     };
     let listed = |id, path: &str| {
         crate::tui_rendering::support::navigable_session_snapshot(id, std::path::Path::new(path), 1)
@@ -401,7 +401,7 @@ fn both_pickers_use_the_remote_home_even_without_a_remote_badge() {
                     )))
                     .unwrap()
                 else {
-                    panic!("choosing a Workspace asks its Server to resolve it")
+                    panic!("choosing a workspace asks its server to resolve it")
                 };
                 assert_eq!(request.path, std::path::Path::new(path));
                 application
@@ -418,7 +418,7 @@ fn both_pickers_use_the_remote_home_even_without_a_remote_badge() {
                     )))
                     .unwrap()
                 else {
-                    panic!("revealing the Sidebar asks for its Sessions")
+                    panic!("revealing the sidebar asks for its sessions")
                 };
                 application
                     .handle_event(ApplicationEvent::SessionsListed {
@@ -440,7 +440,7 @@ fn both_pickers_use_the_remote_home_even_without_a_remote_badge() {
                 assert!(
                     rows.iter()
                         .any(|row| crate::tui_rendering::support::sidebar_column(row) == name),
-                    "the selector offers the Workspace as {name}: {rows:?}"
+                    "the selector offers the workspace as {name}: {rows:?}"
                 );
             }
         }

@@ -567,14 +567,14 @@ impl WorkspacePicker {
     /// is `reading`, nothing has happened yet, and it says so.
     pub(super) fn footer_hint(&self, reading: bool, width: usize) -> &'static str {
         if reading {
-            return "Reading that Workspace… · Esc back";
+            return "Reading that workspace… · Esc back";
         }
         let moving = self
             .purpose
             .as_ref()
             .is_some_and(DestinationPurpose::is_move);
         let full = if moving {
-            "Enter Move · Ctrl+O browse · Ctrl+E describe · Esc back"
+            "Enter move · Ctrl+O browse · Ctrl+E describe · Esc back"
         } else {
             "Enter switch · Ctrl+O browse · Ctrl+E describe · Esc close"
         };

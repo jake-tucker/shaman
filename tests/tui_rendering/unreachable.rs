@@ -31,7 +31,7 @@ fn a_remote_that_stops_answering_never_raises_the_whole_frame_modal() {
         .handle_event(ApplicationEvent::SessionAttached(
             navigable_session_snapshot(SessionId::new(), std::path::Path::new("."), 1),
         ))
-        .expect("attach the Remote Session");
+        .expect("attach the remote session");
     type_terminal_text(&mut application, "unfinished thought");
 
     studio_stops_answering(&mut application, 3, Duration::from_secs(4));
@@ -40,7 +40,7 @@ fn a_remote_that_stops_answering_never_raises_the_whole_frame_modal() {
     let screen = rendered_application_rows(&application).join("\n");
     assert!(
         !screen.contains("Reconnecting to Suru"),
-        "only the local Server's own loss stands the whole frame down: {screen}"
+        "only the local server's own loss stands the whole frame down: {screen}"
     );
     assert!(
         screen.contains("unfinished thought"),
@@ -85,7 +85,7 @@ fn the_banner_names_the_remote_above_the_composer_and_leaves_when_it_answers() {
             outlook: studio(),
             event: ManagedEvent::RemoteRecovered,
         })
-        .expect("take the Remote answering again");
+        .expect("take the remote answering again");
     let recovered = rendered_application_rows(&application).join("\n");
     assert!(
         !recovered.contains("is unreachable"),
@@ -118,7 +118,7 @@ fn a_remote_its_relay_joins_nothing_more_for_says_which_cap_and_what_to_do_until
         .handle_event(ApplicationEvent::SessionAttached(
             navigable_session_snapshot(SessionId::new(), std::path::Path::new("."), 1),
         ))
-        .expect("attach the Remote Session");
+        .expect("attach the remote session");
     studio_stops_answering_because(
         &mut application,
         3,
@@ -141,10 +141,10 @@ fn a_remote_its_relay_joins_nothing_more_for_says_which_cap_and_what_to_do_until
         let why = prose(&rows[..banner]);
         assert!(
             why.contains(
-                "Your Account has reached the Relay's cap of 256 connections joined at once at \
+                "Your account has reached the relay's cap of 256 connections joined at once at \
                  https://relay.company.example"
-            ) && why.contains("ask the Relay's operator to raise the cap"),
-            "the cap, its limit, the Relay and what to do are said above the banner: {rows:?}"
+            ) && why.contains("ask the relay's operator to raise the cap"),
+            "the cap, its limit, the relay and what to do are said above the banner: {rows:?}"
         );
     }
     let rows = rendered_application_rows_at(&application, 80, 15);
@@ -159,7 +159,7 @@ fn a_remote_its_relay_joins_nothing_more_for_says_which_cap_and_what_to_do_until
     type_terminal_text(&mut application, "words worth keeping");
     application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("refuse the Prompt");
+        .expect("refuse the prompt");
     let screen = prose(&rendered_application_rows_at(&application, 120, 15));
     assert!(
         screen.contains("Error: studio is unreachable · Relay cap reached: 256 joined connections"),
@@ -174,7 +174,7 @@ fn a_remote_its_relay_joins_nothing_more_for_says_which_cap_and_what_to_do_until
         .iter()
         .position(|row| row.contains("studio is unreachable · retrying in 8s (attempt 4)"))
         .unwrap_or_else(|| panic!("draw the unreachable banner: {rows:?}"));
-    assert!(!prose(&rows[..=banner]).contains("Relay's cap"), "{rows:?}");
+    assert!(!prose(&rows[..=banner]).contains("relay's cap"), "{rows:?}");
     studio_stops_answering_because(
         &mut application,
         5,
@@ -186,10 +186,10 @@ fn a_remote_its_relay_joins_nothing_more_for_says_which_cap_and_what_to_do_until
             outlook: studio(),
             event: ManagedEvent::RemoteRecovered,
         })
-        .expect("take the Remote answering again");
+        .expect("take the remote answering again");
     let recovered = rendered_application_rows_at(&application, 80, 15).join("\n");
     assert!(
-        !recovered.contains("retrying in") && !recovered.contains("Relay's cap"),
+        !recovered.contains("retrying in") && !recovered.contains("relay's cap"),
         "the banner and why it stood leave together: {recovered}"
     );
 }
@@ -214,7 +214,7 @@ fn a_remote_its_relay_joins_under_another_account_says_so_and_what_to_do_until_i
         .handle_event(ApplicationEvent::SessionAttached(
             navigable_session_snapshot(SessionId::new(), std::path::Path::new("."), 1),
         ))
-        .expect("attach the Remote Session");
+        .expect("attach the remote session");
     studio_stops_answering_because(
         &mut application,
         3,
@@ -234,12 +234,12 @@ fn a_remote_its_relay_joins_under_another_account_says_so_and_what_to_do_until_i
         let why = prose(&rows[..banner]);
         assert!(
             why.contains(
-                "Accounts differ at the Relay at https://relay.company.example: this Server is \
-                 logged in there as octocat (github) and the Remote under another Account, and a \
-                 Relay joins only Servers logged in under the same one, so log this Server in \
-                 there as the user the Remote is logged in as, or pair the two directly"
+                "Accounts differ at the relay at https://relay.company.example: this server is \
+                 logged in there as octocat (github) and the remote under another account, and a \
+                 relay joins only servers logged in under the same one, so log this server in \
+                 there as the user the remote is logged in as, or pair the two directly"
             ),
-            "the Relay, the Account and what to do are said at {width} columns: {rows:?}"
+            "the relay, the account and what to do are said at {width} columns: {rows:?}"
         );
     }
     // Its offer tries again, as for any loss: no login is to be begun where
@@ -264,7 +264,7 @@ fn a_remote_its_relay_joins_under_another_account_says_so_and_what_to_do_until_i
     type_terminal_text(&mut application, "words worth keeping");
     application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("refuse the Prompt");
+        .expect("refuse the prompt");
     let screen = prose(&rendered_application_rows_at(&application, 120, 15));
     assert!(
         screen.contains(
@@ -278,10 +278,10 @@ fn a_remote_its_relay_joins_under_another_account_says_so_and_what_to_do_until_i
             outlook: studio(),
             event: ManagedEvent::RemoteRecovered,
         })
-        .expect("take the Remote answering again");
+        .expect("take the remote answering again");
     let recovered = rendered_application_rows_at(&application, 80, 15).join("\n");
     assert!(
-        !recovered.contains("retrying in") && !recovered.contains("Accounts differ at the Relay"),
+        !recovered.contains("retrying in") && !recovered.contains("Accounts differ at the relay"),
         "the banner and why it stood leave together: {recovered}"
     );
 }
@@ -341,7 +341,7 @@ fn push_relays(application: &mut Application, revision: u64, relays: Vec<Relay>)
                 relays,
             },
         )))
-        .expect("take the pushed Relays");
+        .expect("take the pushed relays");
 }
 
 #[test]
@@ -351,7 +351,7 @@ fn a_remote_out_of_reach_for_want_of_a_login_says_so_and_its_offer_leads_to_the_
         .handle_event(ApplicationEvent::SessionAttached(
             navigable_session_snapshot(SessionId::new(), std::path::Path::new("."), 1),
         ))
-        .expect("attach the Remote Session");
+        .expect("attach the remote session");
     studio_stops_answering_because(
         &mut application,
         3,
@@ -371,8 +371,8 @@ fn a_remote_out_of_reach_for_want_of_a_login_says_so_and_its_offer_leads_to_the_
         let why = prose(&rows[..banner]);
         assert!(
             why.contains(
-                "Login needed at the Relay at https://relay.company.example: it joins this \
-                 Server to nothing until this Server logs in there, so log in to try again"
+                "Login needed at the relay at https://relay.company.example: it joins this \
+                 server to nothing until this server logs in there, so log in to try again"
             ),
             "{rows:?}"
         );
@@ -392,7 +392,7 @@ fn a_remote_out_of_reach_for_want_of_a_login_says_so_and_its_offer_leads_to_the_
         )))
         .expect("take the offer by key")
     else {
-        panic!("the offer leads to the Relay list, not a retry");
+        panic!("the offer leads to the relay list, not a retry");
     };
     let transition = application
         .handle_event(ApplicationEvent::RelaysListed {
@@ -403,9 +403,9 @@ fn a_remote_out_of_reach_for_want_of_a_login_says_so_and_its_offer_leads_to_the_
                 relays: vec![company_relay(RelayState::LoginNeeded)],
             },
         })
-        .expect("list the Relays");
+        .expect("list the relays");
     let ApplicationTransition::BeginRelayLogin { address, .. } = transition else {
-        panic!("the list logs in at the Relay the Remote waits on: {transition:?}");
+        panic!("the list logs in at the relay the remote waits on: {transition:?}");
     };
     assert_eq!(address, "https://relay.company.example");
 
@@ -434,7 +434,7 @@ fn a_remote_out_of_reach_for_want_of_a_login_says_so_and_its_offer_leads_to_the_
     type_terminal_text(&mut application, "words worth keeping");
     application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("refuse the Prompt");
+        .expect("refuse the prompt");
     let screen = prose(&rendered_application_rows_at(&application, 120, 15));
     assert!(
         screen.contains(
@@ -482,7 +482,7 @@ fn a_login_the_offer_led_to_has_the_remote_tried_again_at_once_once_done() {
         )))
         .expect("take the offer")
     else {
-        panic!("the offer leads to the Relay list");
+        panic!("the offer leads to the relay list");
     };
     let ApplicationTransition::BeginRelayLogin { request, .. } = application
         .handle_event(ApplicationEvent::RelaysListed {
@@ -493,9 +493,9 @@ fn a_login_the_offer_led_to_has_the_remote_tried_again_at_once_once_done() {
                 relays: vec![company_relay(RelayState::LoginNeeded)],
             },
         })
-        .expect("list the Relays")
+        .expect("list the relays")
     else {
-        panic!("the list logs in at the Relay");
+        panic!("the list logs in at the relay");
     };
     let login = RelayLogin {
         verification_uri: "https://github.com/login/device".to_owned(),
@@ -533,7 +533,7 @@ fn a_login_the_offer_led_to_has_the_remote_tried_again_at_once_once_done() {
     // The Client hears the Login stands again as the Relays, asked for
     // afresh, are listed — or as they are pushed, whichever comes first.
     let ApplicationTransition::ListRelays(refresh) = settled else {
-        panic!("a login ended asks for the Relays afresh: {settled:?}");
+        panic!("a login ended asks for the relays afresh: {settled:?}");
     };
     application
         .handle_event(ApplicationEvent::RelaysListed {
@@ -544,10 +544,10 @@ fn a_login_the_offer_led_to_has_the_remote_tried_again_at_once_once_done() {
                 relays: vec![company_relay(RelayState::LoggedIn)],
             },
         })
-        .expect("list the Relays");
+        .expect("list the relays");
     let retries = application.take_relay_retries();
     let [ApplicationTransition::RetryCatalogOrigin(retry)] = retries.as_slice() else {
-        panic!("the Remote waiting on the Relay is tried again at once: {retries:?}");
+        panic!("the remote waiting on the relay is tried again at once: {retries:?}");
     };
     assert_eq!(retry.outlook(), &studio());
     assert!(application.take_relay_retries().is_empty(), "and once only");
@@ -595,9 +595,9 @@ fn once_its_relay_is_logged_in_at_again_the_remote_offers_to_try_again() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::RemoteRetry,
         )))
-        .expect("try the Remote again")
+        .expect("try the remote again")
     else {
-        panic!("with the Login standing again, the offer tries the Remote again at once");
+        panic!("with the login standing again, the offer tries the remote again at once");
     };
     assert_eq!(request.outlook(), &studio());
 }
@@ -617,7 +617,7 @@ fn a_relay_the_server_holds_no_entry_for_is_offered_to_be_added_and_logged_in_at
         )))
         .expect("take the offer")
     else {
-        panic!("the offer leads to the Relay list");
+        panic!("the offer leads to the relay list");
     };
     application
         .handle_event(ApplicationEvent::RelaysListed {
@@ -628,11 +628,11 @@ fn a_relay_the_server_holds_no_entry_for_is_offered_to_be_added_and_logged_in_at
                 relays: Vec::new(),
             },
         })
-        .expect("list the Relays");
+        .expect("list the relays");
     let screen = rendered_application_rows(&application).join("\n");
     assert!(
-        screen.contains("Add a Relay") && screen.contains("> https://relay.company.example"),
-        "the Relay is ready to be added, its address typed in: {screen}"
+        screen.contains("Add a relay") && screen.contains("> https://relay.company.example"),
+        "the relay is ready to be added, its address typed in: {screen}"
     );
     let added = crate::tui_rendering::support::key(&mut application, KeyCode::Enter);
     assert!(
@@ -673,7 +673,7 @@ fn a_prompt_to_an_unreachable_origin_is_refused_in_view_and_keeps_its_draft() {
         .handle_event(ApplicationEvent::SessionAttached(
             navigable_session_snapshot(SessionId::new(), std::path::Path::new("."), 1),
         ))
-        .expect("attach the Remote Session");
+        .expect("attach the remote session");
     studio_stops_answering(&mut application, 1, Duration::from_secs(5));
     type_terminal_text(&mut application, "words worth keeping");
 
@@ -681,14 +681,14 @@ fn a_prompt_to_an_unreachable_origin_is_refused_in_view_and_keeps_its_draft() {
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("refuse the Prompt"),
+            .expect("refuse the prompt"),
         ApplicationTransition::Continue,
-        "a Prompt bound for an Unreachable Origin never leaves"
+        "a prompt bound for an unreachable origin never leaves"
     );
     let screen = rendered_application_rows(&application).join("\n");
     assert!(
         screen.contains("studio") && screen.contains("unreachable"),
-        "the refusal names the Remote where the reader can see it: {screen}"
+        "the refusal names the remote where the reader can see it: {screen}"
     );
     assert!(
         screen.contains("words worth keeping"),
@@ -706,7 +706,7 @@ fn the_client_stays_live_around_an_unreachable_remote() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SidebarToggle,
         )))
-        .expect("the Sidebar stays live");
+        .expect("the sidebar stays live");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SettingsOpen,
@@ -715,13 +715,13 @@ fn the_client_stays_live_around_an_unreachable_remote() {
     let settings = rendered_application_rows(&application).join("\n");
     assert!(
         settings.contains("Settings"),
-        "the settings panel opens over an Unreachable Remote: {settings}"
+        "the settings panel opens over an unreachable remote: {settings}"
     );
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SettingsClose,
         )))
-        .expect("close Settings");
+        .expect("close settings");
 
     assert_eq!(
         application
@@ -744,13 +744,13 @@ fn exit_passes_even_under_the_local_servers_own_modal() {
                 unreachable: None,
             },
         )))
-        .expect("lose the local Server");
+        .expect("lose the local server");
     grace_elapses(&mut application, Outlook::Local);
     assert!(
         rendered_application_rows(&application)
             .join("\n")
             .contains("Reconnecting to Suru"),
-        "the local Server's own loss still stands the whole frame down"
+        "the local server's own loss still stands the whole frame down"
     );
 
     assert_eq!(
@@ -792,17 +792,17 @@ fn turning_the_outlook_away_from_an_unreachable_remote_still_works() {
                 icon: None,
             },
         ]))
-        .expect("list the paired Remotes");
+        .expect("list the paired remotes");
     let picker = rendered_application_rows(&application).join("\n");
     assert!(
         picker.contains("studio"),
-        "the Connect picker is drawn over an Unreachable Remote: {picker}"
+        "the Connect picker is drawn over an unreachable remote: {picker}"
     );
     crate::tui_rendering::support::key(&mut application, KeyCode::Up);
     let transition = crate::tui_rendering::support::key(&mut application, KeyCode::Enter);
     assert!(
         matches!(transition, ApplicationTransition::TurnOutlook { .. }),
-        "turning the Outlook back to Local is the reader's own to do: {transition:?}"
+        "turning the outlook back to Local is the reader's own to do: {transition:?}"
     );
 }
 
@@ -819,7 +819,7 @@ fn the_banners_try_again_invokes_the_command_the_sidebar_row_invokes() {
         )))
         .expect("retry by key")
     else {
-        panic!("a retry restarts the Remote's catalog stream and asks it afresh");
+        panic!("a retry restarts the remote's catalog stream and asks it afresh");
     };
     assert_eq!(request.outlook(), &studio());
 
@@ -839,7 +839,7 @@ fn the_banners_try_again_invokes_the_command_the_sidebar_row_invokes() {
         )
         .expect("retry by pointer")
     else {
-        panic!("a press on the banner's affordance retries the same Remote");
+        panic!("a press on the banner's affordance retries the same remote");
     };
     assert_eq!(clicked.outlook(), &studio());
 }
@@ -851,21 +851,21 @@ fn an_unreachable_remote_is_marked_and_dimmed_outside_everywhere() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SidebarToggle,
         )))
-        .expect("reveal the Sidebar")
+        .expect("reveal the sidebar")
     else {
-        panic!("revealing the Sidebar asks its Origin for Sessions");
+        panic!("revealing the sidebar asks its origin for sessions");
     };
     assert_eq!(
         request.scope(),
         &suru::tui::SessionListScope::AllWorkspaces,
-        "the Sidebar opens on a scope narrower than Everywhere"
+        "the sidebar opens on a scope narrower than Everywhere"
     );
     application
         .handle_event(ApplicationEvent::SessionsListed {
             request,
             sessions: vec![listed("Studio work")],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
 
     studio_stops_answering(&mut application, 1, Duration::from_secs(5));
     let buffer = crate::tui_rendering::support::rendered_application_buffer(&application, 120, 20);
@@ -878,7 +878,7 @@ fn an_unreachable_remote_is_marked_and_dimmed_outside_everywhere() {
     assert_eq!(
         buffer.cell(work).expect("draw the Studio row").fg,
         PANDA.muted,
-        "the Remote's cached rows are dimmed in every scope"
+        "the remote's cached rows are dimmed in every scope"
     );
 }
 
@@ -889,16 +889,16 @@ fn the_sidebar_still_walks_and_reads_while_its_remote_is_unreachable() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::SidebarToggle,
         )))
-        .expect("reveal the Sidebar")
+        .expect("reveal the sidebar")
     else {
-        panic!("revealing the Sidebar asks its Origin for Sessions");
+        panic!("revealing the sidebar asks its origin for sessions");
     };
     application
         .handle_event(ApplicationEvent::SessionsListed {
             request,
             sessions: vec![listed("Studio work")],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     studio_stops_answering(&mut application, 1, Duration::from_secs(5));
     grace_elapses(&mut application, studio());
 
@@ -910,7 +910,7 @@ fn the_sidebar_still_walks_and_reads_while_its_remote_is_unreachable() {
             opened,
             ApplicationTransition::ViewSession(_) | ApplicationTransition::ViewAndAttachSession(_)
         ),
-        "a Session of an Unreachable Remote may still be opened and read: {opened:?}"
+        "a session of an unreachable remote may still be opened and read: {opened:?}"
     );
 }
 
@@ -937,18 +937,18 @@ fn local_work_is_untouched_while_a_remote_is_unreachable() {
                 icon: None,
             },
         ]))
-        .expect("list the paired Remotes");
+        .expect("list the paired remotes");
     crate::tui_rendering::support::key(&mut application, KeyCode::Up);
     crate::tui_rendering::support::key(&mut application, KeyCode::Enter);
 
     type_terminal_text(&mut application, "local work begins");
     let begun = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit on the local Landing");
+        .expect("submit on the local landing");
     assert_ne!(
         begun,
         ApplicationTransition::Continue,
-        "a Remote that stopped answering blocks nothing on another Server"
+        "a remote that stopped answering blocks nothing on another server"
     );
 }
 
@@ -965,12 +965,12 @@ fn an_intervention_waits_out_of_sight_until_its_remote_answers() {
         .handle_event(ApplicationEvent::Session(
             suru::managed_client::SessionEvent::snapshot(snapshot.clone()),
         ))
-        .expect("deliver the Session snapshot");
+        .expect("deliver the session snapshot");
 
     let held = rendered_application_rows(&application).join("\n");
     assert!(
-        !held.contains("Approval · Choose Decision"),
-        "an Intervention whose Origin cannot be reached waits out of sight: {held}"
+        !held.contains("Approval · Choose decision"),
+        "an intervention whose origin cannot be reached waits out of sight: {held}"
     );
 
     application
@@ -978,11 +978,11 @@ fn an_intervention_waits_out_of_sight_until_its_remote_answers() {
             outlook: studio(),
             event: ManagedEvent::RemoteRecovered,
         })
-        .expect("take the Remote answering again");
+        .expect("take the remote answering again");
     let presented = rendered_application_rows(&application).join("\n");
     assert!(
-        presented.contains("Approval · Choose Decision"),
-        "the Intervention presents itself as soon as the Remote answers: {presented}"
+        presented.contains("Approval · Choose decision"),
+        "the intervention presents itself as soon as the remote answers: {presented}"
     );
 }
 
@@ -995,7 +995,7 @@ fn the_outlook_stays_turned_toward_a_remote_that_merely_stops_answering() {
     let landing = rendered_application_rows(&application).join("\n");
     assert!(
         landing.contains("studio · ."),
-        "a Remote that becomes Unreachable does not turn the Outlook: {landing}"
+        "a remote that becomes unreachable does not turn the outlook: {landing}"
     );
 }
 
@@ -1025,9 +1025,9 @@ fn what_reaches_into_an_unreachable_sessions_turn_is_refused_too() {
         assert_eq!(
             application
                 .handle_event(ApplicationEvent::Command(command.clone()))
-                .expect("refuse work bound for the Session's own Server"),
+                .expect("refuse work bound for the session's own server"),
             ApplicationTransition::Continue,
-            "{command:?} is asked of the Session's Server"
+            "{command:?} is asked of the session's server"
         );
         let screen = rendered_application_rows(&application).join("\n");
         assert!(
@@ -1049,12 +1049,12 @@ fn a_held_intervention_does_not_advertise_a_key_that_would_be_refused() {
         .handle_event(ApplicationEvent::Session(
             suru::managed_client::SessionEvent::snapshot(snapshot.clone()),
         ))
-        .expect("deliver the Session snapshot");
+        .expect("deliver the session snapshot");
 
     let held = rendered_application_rows(&application).join("\n");
     assert!(
         !held.contains("Ctrl+Y decide"),
-        "an Intervention waiting out of sight names no key to answer it: {held}"
+        "an intervention waiting out of sight names no key to answer it: {held}"
     );
 
     application
@@ -1062,13 +1062,13 @@ fn a_held_intervention_does_not_advertise_a_key_that_would_be_refused() {
             outlook: studio(),
             event: ManagedEvent::RemoteRecovered,
         })
-        .expect("take the Remote answering again");
+        .expect("take the remote answering again");
     // The panel presents itself rather than leaving a notice standing, which
     // is the whole of what the notice was offering.
     let answered = rendered_application_rows(&application).join("\n");
     assert!(
-        answered.contains("Approval · Choose Decision"),
-        "the Intervention presents itself once the Remote answers: {answered}"
+        answered.contains("Approval · Choose decision"),
+        "the intervention presents itself once the remote answers: {answered}"
     );
 }
 
@@ -1084,9 +1084,9 @@ fn the_banners_retry_works_with_the_sidebar_narrowed_away_from_the_remote() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::RemoteRetry,
         )))
-        .expect("retry the Remote the Outlook is turned toward")
+        .expect("retry the remote the outlook is turned toward")
     else {
-        panic!("the banner's retry does not depend on the Sidebar listing the Remote");
+        panic!("the banner's retry does not depend on the sidebar listing the remote");
     };
     assert_eq!(request.outlook(), &studio());
 
@@ -1096,7 +1096,7 @@ fn the_banners_retry_works_with_the_sidebar_narrowed_away_from_the_remote() {
             outlook: studio(),
             event: ManagedEvent::RemoteRecovered,
         })
-        .expect("take the Remote answering again");
+        .expect("take the remote answering again");
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
@@ -1123,7 +1123,7 @@ fn the_status_line_says_nothing_until_the_grace_runs_out() {
     let status = reported.last().expect("draw a status line");
     assert!(
         status.contains("studio is unreachable (attempt 2, retry in 7s)"),
-        "the status line names the Remote and its schedule: {status}"
+        "the status line names the remote and its schedule: {status}"
     );
 }
 
@@ -1141,7 +1141,7 @@ fn pend_an_approval(
         None,
     );
     let suru::protocol::Activity::Approval { approval, .. } = &activity else {
-        unreachable!("an Approval Activity carries an Approval")
+        unreachable!("an approval activity carries an approval")
     };
     snapshot.pending_approvals.push(approval.id);
     snapshot.pending_approvals_revision = snapshot.revision;
@@ -1159,13 +1159,13 @@ fn a_fatal_error_that_lowers_the_modal_is_not_overruled_by_a_later_grace() {
                 unreachable: None,
             },
         )))
-        .expect("lose the local Server");
+        .expect("lose the local server");
     grace_elapses(&mut application, Outlook::Local);
     assert!(
         rendered_application_rows(&application)
             .join("\n")
             .contains("Reconnecting to Suru"),
-        "the local Server's own loss stands the whole frame down"
+        "the local server's own loss stands the whole frame down"
     );
 
     application
@@ -1205,10 +1205,10 @@ fn a_remote_whose_pairing_ends_stops_being_merely_unreachable() {
             outlook: studio(),
             event: ManagedEvent::RemoteFailed {
                 status: suru::protocol::RemoteStatus::Revoked,
-                message: "the Pairing was ended".to_owned(),
+                message: "the pairing was ended".to_owned(),
             },
         })
-        .expect("take the ended Pairing");
+        .expect("take the ended pairing");
 
     // Pairing afresh and turning toward it must find a Remote like any other,
     // not one this Client is still holding a lost connection for.
@@ -1218,9 +1218,9 @@ fn a_remote_whose_pairing_ends_stops_being_merely_unreachable() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::ModelList,
             )))
-            .expect("ask the re-paired Remote for its Models"),
+            .expect("ask the re-paired remote for its models"),
         ApplicationTransition::Continue,
-        "a Remote whose Pairing ended is not left standing as Unreachable"
+        "a remote whose pairing ended is not left standing as unreachable"
     );
 }
 
@@ -1235,19 +1235,19 @@ fn an_open_panel_leaves_the_frame_when_its_origin_stops_answering() {
         .handle_event(ApplicationEvent::Session(
             suru::managed_client::SessionEvent::snapshot(snapshot.clone()),
         ))
-        .expect("deliver the Session snapshot");
+        .expect("deliver the session snapshot");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Approval · Choose Decision"),
-        "the panel presents itself while the Remote is answering"
+            .contains("Approval · Choose decision"),
+        "the panel presents itself while the remote is answering"
     );
 
     studio_stops_answering(&mut application, 1, Duration::from_secs(5));
     let held = rendered_application_rows(&application).join("\n");
     assert!(
-        !held.contains("Approval · Choose Decision"),
-        "a panel no key reaches and no Decision leaves does not stand: {held}"
+        !held.contains("Approval · Choose decision"),
+        "a panel no key reaches and no decision leaves does not stand: {held}"
     );
 
     // The keys the panel would have taken belong to the composer again, and
@@ -1256,7 +1256,7 @@ fn an_open_panel_leaves_the_frame_when_its_origin_stops_answering() {
     let composing = rendered_application_rows(&application).join("\n");
     assert!(composing.contains("back in the composer"), "{composing}");
     assert!(
-        !composing.contains("Approval · Choose Decision"),
+        !composing.contains("Approval · Choose decision"),
         "{composing}"
     );
 
@@ -1265,12 +1265,12 @@ fn an_open_panel_leaves_the_frame_when_its_origin_stops_answering() {
             outlook: studio(),
             event: ManagedEvent::RemoteRecovered,
         })
-        .expect("take the Remote answering again");
+        .expect("take the remote answering again");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Approval · Choose Decision"),
-        "the Intervention was hidden, not dismissed: it presents itself again"
+            .contains("Approval · Choose decision"),
+        "the intervention was hidden, not dismissed: it presents itself again"
     );
 }
 
@@ -1294,7 +1294,7 @@ fn turn_toward_studio(application: &mut Application) {
                 icon: None,
             },
         ]))
-        .expect("list the paired Remotes");
+        .expect("list the paired remotes");
     application
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
@@ -1304,7 +1304,7 @@ fn turn_toward_studio(application: &mut Application) {
                 unreachable: None,
             }),
         })
-        .expect("probe the Remote");
+        .expect("probe the remote");
     crate::tui_rendering::support::key(application, KeyCode::Down);
     let turned = crate::tui_rendering::support::key(application, KeyCode::Enter);
     assert!(
@@ -1315,7 +1315,7 @@ fn turn_toward_studio(application: &mut Application) {
                 ..
             }
         ),
-        "the fixture turns the Outlook toward studio: {turned:?}"
+        "the fixture turns the outlook toward studio: {turned:?}"
     );
 }
 
@@ -1332,9 +1332,9 @@ fn choosing_an_icon_or_a_worktree_goes_to_the_origin_and_is_refused_with_it() {
                 .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                     command
                 )))
-                .expect("refuse work bound for the Remote"),
+                .expect("refuse work bound for the remote"),
             ApplicationTransition::Continue,
-            "{command:?} is applied on the Origin"
+            "{command:?} is applied on the origin"
         );
         let screen = rendered_application_rows(&application).join("\n");
         assert!(
@@ -1352,7 +1352,7 @@ fn a_refused_semantic_command_says_so_exactly_once() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::ModelList,
         )))
-        .expect("refuse the Remote-bound command");
+        .expect("refuse the remote-bound command");
 
     let screen = rendered_application_rows_at(&application, 120, 20).join("\n");
     assert_eq!(

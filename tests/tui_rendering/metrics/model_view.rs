@@ -186,7 +186,7 @@ fn reads_anew(
     assert!(
         screen(application)
             .iter()
-            .any(|row| row.contains("Reading Usage Metrics")),
+            .any(|row| row.contains("Reading usage metrics")),
         "{expected:?}"
     );
     let chosen = match expected {
@@ -299,7 +299,7 @@ fn an_answer_for_the_view_before_never_lands_after_the_change() {
     // The Selected read, asked first, answers late.
     answer(&mut application, selected_id, Ok(report(&selected)));
     let shown = screen(&application).join("\n");
-    assert!(shown.contains("Reading Usage Metrics"), "{shown}");
+    assert!(shown.contains("Reading usage metrics"), "{shown}");
     assert!(!shown.contains("copilot · GPT-5.5"), "{shown}");
 
     answer(&mut application, actual_id, Ok(actual_report(&actual)));
@@ -481,7 +481,7 @@ fn at_eighty_columns_the_control_collapses_to_its_choice_as_the_breakdown_does()
     assert_eq!(
         model_view_control(&application, NARROW).as_deref(),
         Some("Model: ▐Selected▌"),
-        "and the Model view with it"
+        "and the model view with it"
     );
     // Wherever the breakdown stands whole, so does the Model view.
     assert_eq!(

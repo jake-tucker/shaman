@@ -110,7 +110,7 @@ fn questionnaire_panel_requires_review_then_enter_to_submit_and_preserves_both_d
     assert_eq!(
         rendered_application_rows(&app).join("\n"),
         edited,
-        "release and repeat events leave the edited Answer and panel untouched"
+        "release and repeat events leave the edited answer and panel untouched"
     );
 
     assert!(matches!(
@@ -126,7 +126,7 @@ fn questionnaire_panel_requires_review_then_enter_to_submit_and_preserves_both_d
     key(&mut app, KeyCode::Enter);
     let screen = rendered_application_rows(&app).join("\n");
     assert!(
-        screen.contains("Review Answer") && screen.contains("Use the staging machine"),
+        screen.contains("Review answer") && screen.contains("Use the staging machine"),
         "review preserves spaces and hidden draft: {screen}"
     );
     assert!(
@@ -515,7 +515,7 @@ fn batch_navigation_retains_edits_and_reviews_supported_multiple_selections_and_
     let review =
         crate::tui_rendering::support::rendered_application_rows_at(&app, 80, 28).join("\n");
     assert!(
-        review.contains("Review Answer")
+        review.contains("Review answer")
             && review.contains("Which environment?")
             && review.contains("Remote")
             && review.contains("Which checks?")
@@ -1127,7 +1127,7 @@ fn submission_reconciliation_preserves_rejected_drafts_and_disables_unconfirmed_
             id: questionnaire.id,
             session: session.clone(),
             snapshot: Some(snapshot),
-            error: Some("Provider delivery is uncertain. This Answer will not be resent.".into()),
+            error: Some("Provider delivery is uncertain. This answer will not be resent.".into()),
         })
         .unwrap();
         let screen = rendered_application_rows(&app).join("\n");

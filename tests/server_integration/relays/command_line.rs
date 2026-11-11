@@ -295,9 +295,9 @@ async fn a_headless_machine_goes_from_nothing_to_an_invite_that_redeems() {
         .succeed(&["relay", "serve-through", &address, "on"])
         .await;
     let told = said(&served_through.stderr);
-    assert!(told.contains("reachable through this Relay"), "{told}");
+    assert!(told.contains("reachable through this relay"), "{told}");
     assert!(
-        told.contains("once Serving is on"),
+        told.contains("once serving is on"),
         "Serving is not on yet: {told}"
     );
 
@@ -473,7 +473,7 @@ async fn the_listing_says_how_each_relay_stands_as_documented() {
 
     let empty = machine.succeed(&["relay", "list"]).await;
     assert_eq!(said(&empty.stdout), "", "nothing to list");
-    assert!(said(&empty.stderr).contains("holds no Relay"));
+    assert!(said(&empty.stderr).contains("holds no relay"));
     assert_eq!(
         machine.listing().await,
         json!({ "serving": false, "relays": [] })
@@ -529,7 +529,7 @@ async fn the_listing_says_how_each_relay_stands_as_documented() {
     let shown = said(&machine.succeed(&["relay", "list"]).await.stdout);
     assert!(shown.contains("Logged in as octocat"), "{shown}");
     assert!(
-        shown.contains("Serves through once Serving is on"),
+        shown.contains("Serves through once serving is on"),
         "{shown}"
     );
 
@@ -650,9 +650,9 @@ async fn a_login_that_ends_otherwise_says_how_by_its_exit_status() {
     let output = settled(unadmitted).await;
     assert_eq!(output.status.code(), Some(LOGIN_REFUSED));
     let told = said(&output.stderr);
-    assert!(told.contains("ask the Relay's operator"), "{told}");
+    assert!(told.contains("ask the relay's operator"), "{told}");
     let shown = said(&machine.succeed(&["relay", "list"]).await.stdout);
-    assert!(shown.contains("ask the Relay's operator"), "{shown}");
+    assert!(shown.contains("ask the relay's operator"), "{shown}");
 
     let unknown = machine
         .exits(FAILED, &["relay", "login", "https://elsewhere.example"])
@@ -872,21 +872,21 @@ async fn serve_through_says_what_it_does_and_may_be_run_twice() {
     assert_eq!(said(&on.stdout), "");
     let told = said(&on.stderr);
     assert!(told.contains("once it is logged in there"), "{told}");
-    assert!(told.contains("reachable through this Relay"), "{told}");
+    assert!(told.contains("reachable through this relay"), "{told}");
     assert_eq!(machine.listing().await["relays"][0]["serve_through"], true);
 
     let twice = machine
         .succeed(&["relay", "serve-through", &address, "on"])
         .await;
     assert_eq!(machine.listing().await["relays"][0]["serve_through"], true);
-    assert!(said(&twice.stderr).contains("reachable through this Relay"));
+    assert!(said(&twice.stderr).contains("reachable through this relay"));
 
     let off = machine
         .succeed(&["relay", "serve-through", &address, "off"])
         .await;
     let told = said(&off.stderr);
-    assert!(told.contains("no longer Serves through"), "{told}");
-    assert!(told.contains("Login"), "says what stays: {told}");
+    assert!(told.contains("no longer serves through"), "{told}");
+    assert!(told.contains("login"), "says what stays: {told}");
     assert_eq!(machine.listing().await["relays"][0]["serve_through"], false);
 
     machine
@@ -931,7 +931,7 @@ async fn removing_a_relay_says_what_became_of_the_login_at_it() {
         .exits(REMOVAL_UNCONFIRMED, &["relay", "remove", &address])
         .await;
     let told = said(&unconfirmed.stderr);
-    assert!(told.contains("the Relay did not answer"), "{told}");
+    assert!(told.contains("the relay did not answer"), "{told}");
     assert_eq!(machine.listing().await["relays"], json!([]));
 }
 
@@ -949,7 +949,7 @@ async fn removing_a_relay_never_logged_in_at_asks_nothing_of_it() {
         .succeed(&["relay", "remove", "http://127.0.0.1:9"])
         .await;
     let told = said(&removed.stderr);
-    assert!(told.contains("held no Login"), "{told}");
+    assert!(told.contains("held no login"), "{told}");
     assert!(!told.contains("did not answer"), "{told}");
     assert_eq!(machine.listing().await["relays"], json!([]));
 }
@@ -967,7 +967,7 @@ async fn removing_a_relay_whose_login_lapsed_still_asks_it_to_forget() {
 
     let removed = machine.succeed(&["relay", "remove", &address]).await;
     assert!(
-        said(&removed.stderr).contains("forgot this Server's Login"),
+        said(&removed.stderr).contains("forgot this server's login"),
         "{}",
         said(&removed.stderr)
     );
@@ -1023,7 +1023,7 @@ async fn an_invite_no_reader_takes_is_a_failure_and_goes_nowhere_else() {
     let output = settled(issuing).await;
     assert_eq!(output.status.code(), Some(FAILED));
     let told = said(&output.stderr);
-    assert!(told.contains("could not print the Invite"), "{told}");
+    assert!(told.contains("could not print the invite"), "{told}");
     assert!(!told.contains("suru-v"), "{told}");
 }
 
@@ -1185,7 +1185,7 @@ async fn asking_for_a_relay_the_server_cannot_offer_fails_naming_why_and_opens_n
         .await;
     assert_eq!(said(&not_held.stdout), "", "no Invite");
     let told = said(&not_held.stderr);
-    assert!(told.contains("holds no Relay at"), "{told}");
+    assert!(told.contains("holds no relay at"), "{told}");
     assert!(told.contains("relay add"), "{told}");
 
     machine.succeed(&["relay", "add", &address]).await;
@@ -1201,7 +1201,7 @@ async fn asking_for_a_relay_the_server_cannot_offer_fails_naming_why_and_opens_n
         .exits(FAILED, &["serve", "invite", "--relay", &address])
         .await;
     let told = said(&not_served_through.stderr);
-    assert!(told.contains("does not Serve through"), "{told}");
+    assert!(told.contains("does not serve through"), "{told}");
     assert!(told.contains("relay serve-through"), "{told}");
 
     let bad = machine

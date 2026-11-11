@@ -89,12 +89,12 @@ pub(super) fn render(
     let subdued = theme.text.subdued;
     let rows = match content {
         WorkspacesContent::Reading => {
-            buffer.set_string(area.x, area.y, "Reading Workspaces…", subdued);
+            buffer.set_string(area.x, area.y, "Reading workspaces…", subdued);
             return;
         }
         WorkspacesContent::Refused(refusal) => {
             let heading = match refusal {
-                MetricsReadRefusal::Refused(_) => "The Server refused the Workspace read",
+                MetricsReadRefusal::Refused(_) => "The server refused the workspace read",
                 MetricsReadRefusal::Failed(_) => "Workspaces could not be read",
             };
             let style = theme.feedback.error;

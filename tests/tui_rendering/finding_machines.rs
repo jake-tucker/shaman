@@ -69,8 +69,8 @@ fn pair_with_no_relay_points_to_one_beneath_the_invite_field() {
     let asked = open_pair(&mut application);
     relays_known(&mut application, asked, &[]);
     let rows = rendered_application_rows_at(&application, 100, 30);
-    let field = line_of(&rows, "Invite");
-    let pointer = line_of(&rows, "add a Relay");
+    let field = line_of(&rows, "Paste invite");
+    let pointer = line_of(&rows, "add a relay");
     assert!(field < pointer, "{rows:#?}");
     assert!(rows[pointer].contains("/relay"), "{rows:#?}");
     assert!(rows[pointer].contains("short code"), "{rows:#?}");
@@ -99,7 +99,7 @@ fn open_pair(application: &mut Application) -> ConnectRequest {
     };
     application
         .handle_event(ApplicationEvent::RemotesListed(Vec::new()))
-        .expect("list the Remotes");
+        .expect("list the remotes");
     asked
 }
 
@@ -109,7 +109,7 @@ fn relays_known(application: &mut Application, asked: ConnectRequest, relays: &[
             request: asked,
             relays: relays.iter().map(|relay| (*relay).to_owned()).collect(),
         })
-        .expect("take the Relays");
+        .expect("take the relays");
 }
 
 fn answered(
@@ -182,16 +182,16 @@ fn pair_opens_on_the_machines_found_each_saying_how_it_stands() {
     assert!(rows[workstation].contains("Serving"), "{rows:#?}");
     assert!(rows[build_box].contains("Remote already"), "{rows:#?}");
     assert!(
-        rows[old_laptop].contains("not Serving (run /serve there)"),
+        rows[old_laptop].contains("not serving (run /serve there)"),
         "{rows:#?}"
     );
-    let field = line_of(&rows, "Paste Invite");
+    let field = line_of(&rows, "Paste invite");
     assert!(
         old_laptop < field,
         "machines first, there being some: {rows:#?}"
     );
     assert!(
-        shown_text(&application).contains("Tab Invite"),
+        shown_text(&application).contains("Tab invite"),
         "pasting is a key away: {rows:#?}"
     );
 }
@@ -202,7 +202,7 @@ fn a_relays_machines_land_while_another_is_still_asked() {
     let asked = open_pair(&mut application);
     relays_known(&mut application, asked, &[RELAY, OTHER]);
     let rows = shown(&application);
-    assert!(rows[line_of(&rows, "Paste Invite")..].len() > 1);
+    assert!(rows[line_of(&rows, "Paste invite")..].len() > 1);
     assert!(
         row(&rows, "On relay.example.com").contains("looking…"),
         "{rows:#?}"
@@ -252,22 +252,22 @@ fn where_nothing_is_found_pasting_an_invite_is_the_first_thing_shown_and_each_re
         asked,
         "http://[::1]:8080",
         RelayMachinesAnswer::Unreachable {
-            message: "could not reach the Relay".to_owned(),
+            message: "could not reach the relay".to_owned(),
         },
     );
     let rows = shown(&application);
-    let field = line_of(&rows, "Paste Invite");
+    let field = line_of(&rows, "Paste invite");
     assert!(field < line_of(&rows, "On relay.example.com"), "{rows:#?}");
     assert!(
-        row(&rows, "On relay.example.com").contains("cannot list machines; paste an Invite"),
-        "an old Relay leaves pasting alone: {rows:#?}"
+        row(&rows, "On relay.example.com").contains("cannot list machines; paste an invite"),
+        "an old relay leaves pasting alone: {rows:#?}"
     );
     assert!(
         row(&rows, "On other.example.org").contains("login needed"),
         "{rows:#?}"
     );
     assert!(
-        row(&rows, "On http://[::1]:8080").contains("Unreachable · could not reach the Relay"),
+        row(&rows, "On http://[::1]:8080").contains("Unreachable · could not reach the relay"),
         "{rows:#?}"
     );
 
@@ -277,7 +277,7 @@ fn where_nothing_is_found_pasting_an_invite_is_the_first_thing_shown_and_each_re
             press(&mut application, KeyCode::Enter),
             ApplicationTransition::PreviewInvite { invite, .. } if invite == INVITE
         ),
-        "an old Relay leaves /pair working by paste"
+        "an old relay leaves /pair working by paste"
     );
 }
 
@@ -303,7 +303,7 @@ fn a_relay_listing_no_other_machine_says_so() {
         row(&rows, "On relay.example.com").contains("no other machines"),
         "{rows:#?}"
     );
-    assert!(line_of(&rows, "Paste Invite") < line_of(&rows, "On relay.example.com"));
+    assert!(line_of(&rows, "Paste invite") < line_of(&rows, "On relay.example.com"));
 }
 
 #[test]
@@ -321,7 +321,7 @@ fn a_relay_cutting_its_list_short_says_so_in_its_group() {
         },
     );
     assert!(
-        shown_text(&application).contains("and more this Relay did not list"),
+        shown_text(&application).contains("and more this relay did not list"),
         "{:#?}",
         shown(&application)
     );
@@ -347,7 +347,7 @@ fn an_invite_pasted_before_the_machines_land_stays_and_the_keys_stay_with_it() {
     let rows = shown(&application);
     assert!(row(&rows, INVITE).contains(INVITE), "{rows:#?}");
     assert!(
-        line_of(&rows, "Paste Invite") < line_of(&rows, "workstation"),
+        line_of(&rows, "Paste invite") < line_of(&rows, "workstation"),
         "the field stays where the reader began: {rows:#?}"
     );
     assert!(
@@ -465,7 +465,7 @@ fn looking_again_asks_afresh_and_answers_to_the_asking_before_land_nowhere() {
     let (mut application, first) = showing_the_three();
     let second = match press_with(&mut application, KeyCode::Char('r'), KeyModifiers::CONTROL) {
         ApplicationTransition::FindMachines(asked) => asked,
-        other => panic!("looking again asks the Relays, not {other:?}"),
+        other => panic!("looking again asks the relays, not {other:?}"),
     };
     assert_ne!(first, second);
     assert!(
@@ -503,7 +503,7 @@ fn looking_again_is_ignored_while_answers_are_awaited() {
     assert_eq!(
         look_again(&mut application),
         ApplicationTransition::Continue,
-        "the Relays to ask have yet to be known"
+        "the relays to ask have yet to be known"
     );
     relays_known(&mut application, asked, &[RELAY, OTHER]);
     assert!(!shown_text(&application).contains("Ctrl+R"));
@@ -514,7 +514,7 @@ fn looking_again_is_ignored_while_answers_are_awaited() {
     answered(&mut application, asked, RELAY, listed(the_three()));
     assert!(
         !shown_text(&application).contains("Ctrl+R"),
-        "one Relay has yet to answer"
+        "one relay has yet to answer"
     );
     assert_eq!(
         look_again(&mut application),
@@ -530,7 +530,7 @@ fn looking_again_is_ignored_while_answers_are_awaited() {
     assert!(shown_text(&application).contains("Ctrl+R look again"));
     let again = match look_again(&mut application) {
         ApplicationTransition::FindMachines(again) => again,
-        other => panic!("every Relay having answered, it asks again, not {other:?}"),
+        other => panic!("every relay having answered, it asks again, not {other:?}"),
     };
     assert_eq!(
         look_again(&mut application),
@@ -543,7 +543,7 @@ fn looking_again_is_ignored_while_answers_are_awaited() {
             look_again(&mut application),
             ApplicationTransition::FindMachines(_)
         ),
-        "no Relay left to wait on"
+        "no relay left to wait on"
     );
 }
 
@@ -559,7 +559,7 @@ fn choosing_a_machine_forms_no_pairing_and_says_what_to_do_there() {
     );
     let text = shown_text(&application);
     assert!(
-        text.contains("Already paired as the Remote build-box"),
+        text.contains("Already paired as the remote build-box"),
         "{text}"
     );
 
@@ -570,7 +570,7 @@ fn choosing_a_machine_forms_no_pairing_and_says_what_to_do_there() {
     );
     let text = shown_text(&application);
     assert!(text.contains("run /serve"), "{text}");
-    assert!(!text.contains("Inspecting Invite"), "{text}");
+    assert!(!text.contains("Inspecting invite"), "{text}");
 }
 
 /// A key on a row that is not the machine's is what a lying Relay can do. The
@@ -641,7 +641,7 @@ fn a_key_two_relays_list_is_one_row_naming_both() {
         "{rows:#?}"
     );
     assert!(
-        row(&rows, "On relay.example.com").contains("none but those under another Relay"),
+        row(&rows, "On relay.example.com").contains("none but those under another relay"),
         "{rows:#?}"
     );
     let text = shown_text(&application);
@@ -699,7 +699,7 @@ fn names_too_long_or_too_wide_for_the_box_are_cut_within_it_and_stay_told_apart(
     let rows = rendered_application_rows_at(&application, 60, 30);
     assert!(row(&rows, "(aaaa1111)").contains("Serving"), "{rows:#?}");
     assert!(
-        row(&rows, "(bbbb1111)").contains("not Serving"),
+        row(&rows, "(bbbb1111)").contains("not serving"),
         "{rows:#?}"
     );
     for row in &rows {
@@ -734,12 +734,12 @@ fn more_machines_than_the_box_holds_are_walked_with_focus_in_view() {
         press(&mut application, KeyCode::Down);
         let text = shown_text(&application);
         assert!(text.contains(&format!("› box-{number:02}")), "{text}");
-        assert!(text.contains("Paste Invite"), "{text}");
+        assert!(text.contains("Paste invite"), "{text}");
     }
     press(&mut application, KeyCode::Down);
     assert!(
         !shown_text(&application).contains("› "),
-        "the walk reaches the Invite field past the last"
+        "the walk reaches the invite field past the last"
     );
 }
 
@@ -753,12 +753,12 @@ fn a_remote_listing_that_fails_late_keeps_an_invite_already_pasted() {
     paste(&mut application, INVITE);
     application
         .handle_event(ApplicationEvent::RemoteListingFailed(
-            "could not list Remotes".to_owned(),
+            "could not list remotes".to_owned(),
         ))
         .expect("take the failure");
     let text = shown_text(&application);
     assert!(text.contains(INVITE), "{text}");
-    assert!(text.contains("could not list Remotes"), "{text}");
+    assert!(text.contains("could not list remotes"), "{text}");
 }
 
 /// An Invite refused by its preview puts the reader back on the field with it,
@@ -769,19 +769,19 @@ fn a_refused_preview_returns_to_the_invite_with_the_machines_beside_it() {
     paste(&mut application, INVITE);
     let request = match press(&mut application, KeyCode::Enter) {
         ApplicationTransition::PreviewInvite { request, .. } => request,
-        other => panic!("the Invite is inspected, not {other:?}"),
+        other => panic!("the invite is inspected, not {other:?}"),
     };
     application
         .handle_event(ApplicationEvent::InvitePreviewFailed {
             request,
             invite: INVITE.to_owned().into(),
-            error: "the Invite has lapsed".to_owned(),
+            error: "the invite has lapsed".to_owned(),
         })
         .expect("take the refusal");
     let rows = shown(&application);
     assert!(row(&rows, INVITE).contains(INVITE), "{rows:#?}");
     assert!(
-        row(&rows, "the Invite has lapsed").contains("lapsed"),
+        row(&rows, "the invite has lapsed").contains("lapsed"),
         "{rows:#?}"
     );
     assert!(row(&rows, "workstation").contains("Serving"), "{rows:#?}");
@@ -800,7 +800,7 @@ fn an_answer_landing_behind_an_invites_preview_moves_nothing() {
     paste(&mut application, INVITE);
     let request = match press(&mut application, KeyCode::Enter) {
         ApplicationTransition::PreviewInvite { request, .. } => request,
-        other => panic!("the Invite is inspected, not {other:?}"),
+        other => panic!("the invite is inspected, not {other:?}"),
     };
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
@@ -817,7 +817,7 @@ fn an_answer_landing_behind_an_invites_preview_moves_nothing() {
     relays_known(&mut application, asked, &[RELAY]);
     answered(&mut application, asked, RELAY, listed(the_three()));
     let text = shown_text(&application);
-    assert!(text.contains("Confirm Serving Server"), "{text}");
+    assert!(text.contains("Confirm serving server"), "{text}");
     assert!(!text.contains("old-laptop"), "{text}");
 }
 
@@ -828,7 +828,7 @@ fn pairing_another_from_the_picker_looks_for_machines_as_pair_does() {
     press(&mut application, KeyCode::Enter);
     application
         .handle_event(ApplicationEvent::RemotesListed(Vec::new()))
-        .expect("list the Remotes");
+        .expect("list the remotes");
     let asked = match press(&mut application, KeyCode::Char('a')) {
         ApplicationTransition::FindMachines(asked) => asked,
         other => panic!("Invite entry looks for machines, not {other:?}"),
@@ -847,7 +847,7 @@ fn asking_with(
     assert_eq!(
         press(application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "choosing a machine asks for its code, and nothing of any Server"
+        "choosing a machine asks for its code, and nothing of any server"
     );
     paste(application, code);
     match press(application, KeyCode::Enter) {
@@ -948,7 +948,7 @@ fn a_whole_invite_pasted_where_a_code_goes_is_taken_for_the_invite_it_is() {
     press(&mut application, KeyCode::Enter);
     paste(&mut application, "\n  suru-v1-the-long-string\n");
     let text = shown_text(&application);
-    assert!(text.contains("Paste Invite"), "{text}");
+    assert!(text.contains("Paste invite"), "{text}");
     assert!(text.contains("suru-v1-the-long-string"), "{text}");
     let ApplicationTransition::PreviewInvite { invite, .. } =
         press(&mut application, KeyCode::Enter)
@@ -962,20 +962,20 @@ fn a_whole_invite_pasted_where_a_code_goes_is_taken_for_the_invite_it_is() {
 fn a_delivered_invite_reaches_the_usual_preview_and_the_usual_redemption() {
     let (mut application, _) = showing_the_three();
     let (request, _) = asking_with(&mut application, "K7QF-2MXP");
-    assert!(shown_text(&application).contains("Asking for the Invite"));
+    assert!(shown_text(&application).contains("Asking for the invite"));
     application
         .handle_event(ApplicationEvent::ShortInviteDelivered {
             request,
             delivered: delivered_invite(),
         })
-        .expect("take the Invite");
+        .expect("take the invite");
     let text = shown_text(&application);
-    assert!(text.contains("Confirm Serving Server"), "{text}");
+    assert!(text.contains("Confirm serving server"), "{text}");
     assert!(text.contains(WORKSTATION), "{text}");
     assert_eq!(
         press(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "trusting it opens Configure Remote"
+        "trusting it opens Configure remote"
     );
     let ApplicationTransition::RedeemInvite { redemption, .. } =
         press(&mut application, KeyCode::Enter)
@@ -997,10 +997,10 @@ fn escape_at_a_delivered_invites_preview_closes_as_it_does_for_any_other() {
             request,
             delivered: delivered_invite(),
         })
-        .expect("take the Invite");
+        .expect("take the invite");
     press(&mut application, KeyCode::Esc);
     let text = shown_text(&application);
-    assert!(!text.contains("Confirm Serving Server"), "{text}");
+    assert!(!text.contains("Confirm serving server"), "{text}");
     assert!(!text.contains("suru-v1-delivered"), "{text}");
 }
 
@@ -1050,14 +1050,14 @@ fn no_code_live_says_to_issue_an_invite_there_and_takes_what_was_typed_away() {
     application
         .handle_event(ApplicationEvent::ShortInviteFailed {
             request,
-            error: "No code is live on that machine for this Relay. Issue an Invite there with \
+            error: "No code is live on that machine for this relay. Issue an invite there with \
                     /serve"
                 .to_owned(),
             code_gone: true,
         })
         .expect("take the failure");
     let text = shown_text(&application);
-    assert!(text.contains("Issue an Invite there"), "{text}");
+    assert!(text.contains("Issue an invite there"), "{text}");
     assert!(!text.contains("K7QF"), "{text}");
     assert_eq!(
         press(&mut application, KeyCode::Enter),
@@ -1074,7 +1074,7 @@ fn a_relay_that_would_not_join_them_leaves_what_was_typed() {
     application
         .handle_event(ApplicationEvent::ShortInviteFailed {
             request,
-            error: "Could not reach that machine through its Relays, so the code was not tried"
+            error: "Could not reach that machine through its relays, so the code was not tried"
                 .to_owned(),
             code_gone: false,
         })
@@ -1122,7 +1122,7 @@ fn escape_during_the_one_try_says_so_and_stays_to_show_how_it_went() {
         application.handle_event(answer).expect("take the answer");
         let text = shown_text(&application);
         if delivered {
-            assert!(text.contains("Confirm Serving Server"), "{text}");
+            assert!(text.contains("Confirm serving server"), "{text}");
         } else {
             assert!(text.contains("so it is dead"), "{text}");
         }
@@ -1140,7 +1140,7 @@ fn a_small_terminal_keeps_the_codes_field_its_refusal_and_its_keys() {
             request,
             error: "That code did not work, so it is dead. Do not type it again: get a new one \
                     from /serve there. If the other machine still shows this code as waiting, \
-                    nothing tried it there, so the Relay may be at fault"
+                    nothing tried it there, so the relay may be at fault"
                 .to_owned(),
             code_gone: true,
         })
@@ -1180,7 +1180,7 @@ fn a_whole_invite_pasted_over_what_was_begun_is_taken_for_the_invite_it_is() {
     type_terminal_text(&mut application, "k7");
     paste(&mut application, "suru-v1-the-long-string");
     let text = shown_text(&application);
-    assert!(text.contains("Paste Invite"), "{text}");
+    assert!(text.contains("Paste invite"), "{text}");
     assert!(text.contains("suru-v1-the-long-string"), "{text}");
     assert!(!text.contains("no 0, O, 1 or I"), "{text}");
 }
@@ -1192,7 +1192,7 @@ fn a_code_pasted_where_an_invite_goes_says_to_choose_its_machine() {
     assert_eq!(
         press(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "it is not inspected as an Invite"
+        "it is not inspected as an invite"
     );
     let text = shown_text(&application);
     assert!(text.contains("looks like a short code"), "{text}");

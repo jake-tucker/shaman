@@ -38,7 +38,7 @@ fn switching_to_insights_reads_the_range_s_workspaces_as_one_bucket_beside_the_i
             comparison: None,
             top_sessions: 0,
         },
-        "one bucket over the interval the insights read covers, by Workspace"
+        "one bucket over the interval the insights read covers, by workspace"
     );
     assert_ne!(reads.workspaces_request_id, reads.request_id);
 }
@@ -132,7 +132,7 @@ fn on_workspaces(
 /// of spaces closed up, and how many cells each bar fills.
 fn workspaces_panel(application: &Application) -> (Vec<String>, Vec<usize>) {
     let bar = |glyph: char| "█▏▎▍▌▋▊▉".contains(glyph);
-    panel_lines(application, "Workspaces by Cost")
+    panel_lines(application, "Workspaces by cost")
         .into_iter()
         .map(|line| {
             let cells = line.chars().filter(|glyph| bar(*glyph)).count();
@@ -163,7 +163,7 @@ fn workspaces_are_ranked_by_cost_with_a_plus_on_partial_figures_and_the_rest_fol
     );
     assert!(
         bars[..4].windows(2).all(|pair| pair[0] >= pair[1]) && bars[3] > 0,
-        "each bar as long as its Cost beside the largest: {bars:?}"
+        "each bar as long as its cost beside the largest: {bars:?}"
     );
     assert!(bars[0] >= 2 * bars[1], "{bars:?}");
     assert!(
@@ -190,7 +190,7 @@ fn the_panel_says_while_its_workspaces_are_read_and_why_they_could_not_be() {
     let reads = expect_insights_reads(ctrl(&mut application, KeyCode::Right));
     answer_insights(&mut application, reads.request_id, Ok(worked()));
 
-    assert_eq!(workspaces_panel(&application).0[0], "Reading Workspaces…");
+    assert_eq!(workspaces_panel(&application).0[0], "Reading workspaces…");
 
     answer(
         &mut application,
@@ -202,7 +202,7 @@ fn the_panel_says_while_its_workspaces_are_read_and_why_they_could_not_be() {
     assert_eq!(
         workspaces_panel(&application).0[..2],
         [
-            "The Server refused the Workspace read",
+            "The server refused the workspace read",
             "metrics are switched off"
         ]
     );
@@ -295,7 +295,7 @@ fn a_workspace_overview_would_fold_into_other_is_kept_apart_to_be_shown_alone() 
     );
     assert!(
         !screen(&application).iter().any(|row| row.contains("notes")),
-        "notes, the smallest Workspace kept, folded into Other in its stead"
+        "notes, the smallest workspace kept, folded into Other in its stead"
     );
 }
 
@@ -346,7 +346,7 @@ fn a_workspace_opened_into_a_report_without_it_is_not_shown_alone_by_a_later_one
     assert_eq!(
         dimmed(&application, ["suru", "relay-infra", "dotfiles"]),
         [Some(false); 3],
-        "the report the Workspace was opened into had none of it to show alone"
+        "the report the workspace was opened into had none of it to show alone"
     );
 }
 
@@ -392,7 +392,7 @@ fn the_panel_lists_errands_as_a_row_and_opening_it_shows_errands_alone_on_overvi
             "dotfiles $41.75+",
             "(5 more) $63.61",
         ],
-        "ranked by Cost among the Workspaces, as Overview ranks its keys"
+        "ranked by cost among the workspaces, as Overview ranks its keys"
     );
 
     let opened = invoke(
@@ -413,6 +413,6 @@ fn the_panel_lists_errands_as_a_row_and_opening_it_shows_errands_alone_on_overvi
     assert_eq!(
         dimmed(&application, ["suru", "relay-infra", "Errands", "dotfiles"]),
         [Some(true), Some(true), Some(false), Some(true)],
-        "the Errands shown alone"
+        "the errands shown alone"
     );
 }

@@ -80,7 +80,7 @@ fn open(workspace: &WorkspaceDir, snapshot: SessionSnapshot, clock: Arc<AtomicU6
         .with_session_clock(move || SessionTimestamp(clock.load(Ordering::SeqCst)));
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("open the Session");
+        .expect("open the session");
     application
 }
 
@@ -299,14 +299,14 @@ fn the_line_outlasts_interaction_and_never_holds_back_a_prompt() {
     assert_eq!(
         composer_top_line(&application).as_deref(),
         Some(PRICED),
-        "typing dismisses nothing, since the line is no Notice"
+        "typing dismisses nothing, since the line is no notice"
     );
     let transition = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("send the Prompt");
+        .expect("send the prompt");
     assert!(
         matches!(transition, ApplicationTransition::AdmitPrompt { .. }),
-        "the Prompt is sent at once, unconfirmed: {transition:?}"
+        "the prompt is sent at once, unconfirmed: {transition:?}"
     );
 }
 
@@ -338,7 +338,7 @@ fn the_line_clears_once_the_next_turn_has_written_the_cache_afresh() {
                 }],
             },
         )))
-        .expect("the next Turn's lapse arrives");
+        .expect("the next turn's lapse arrives");
     assert_eq!(
         composer_top_line(&application),
         None,
@@ -664,7 +664,7 @@ fn a_turn_that_moves_the_lapse_starts_the_countdown_afresh() {
                 }],
             },
         )))
-        .expect("the next Turn's lapse arrives");
+        .expect("the next turn's lapse arrives");
     assert_eq!(
         composer_top_line(&application),
         None,
@@ -724,7 +724,7 @@ fn a_countdown_no_frame_has_room_for_wants_no_wakeup() {
     assert_eq!(
         application.composer_top_wakeup(),
         None,
-        "a terminal too small to draw the Session wakes nothing for its line"
+        "a terminal too small to draw the session wakes nothing for its line"
     );
 }
 
@@ -751,7 +751,7 @@ fn a_selection_has_left_the_cache_where_anything_it_names_differs_from_its_write
     assert_eq!(
         changed(&snapshot, "default", "high"),
         Some(true),
-        "a Model Option the writer did not run under leaves the cache"
+        "a model option the writer did not run under leaves the cache"
     );
     assert_eq!(changed(&snapshot, "opus", "medium"), Some(true));
 
@@ -760,7 +760,7 @@ fn a_selection_has_left_the_cache_where_anything_it_names_differs_from_its_write
     assert_eq!(
         changed(&unbound, "default", "medium"),
         None,
-        "nothing is known of a writer that ran under no Agent"
+        "nothing is known of a writer that ran under no agent"
     );
     let mut unwritten = snapshot.clone();
     unwritten
@@ -772,14 +772,14 @@ fn a_selection_has_left_the_cache_where_anything_it_names_differs_from_its_write
     assert_eq!(
         changed(&unwritten, "default", "medium"),
         None,
-        "nor of a cache no Turn is known to have written"
+        "nor of a cache no turn is known to have written"
     );
     let mut unselected = snapshot;
     unselected.session.agent_selection = None;
     assert_eq!(
         unselected.selection_changed_since_cache_written(),
         None,
-        "nor of a Session selecting nothing"
+        "nor of a session selecting nothing"
     );
 }
 
@@ -866,7 +866,7 @@ fn reselect(
                 ],
             },
         )))
-        .expect("the Selection lands");
+        .expect("the selection lands");
 }
 
 #[test]
@@ -1003,7 +1003,7 @@ fn selecting_the_original_selection_again_removes_the_warning() {
     assert_eq!(
         composer_top_line(&application),
         Some(selection_changed(Some("$0.40"))),
-        "the figure is the one forecast for the Selection now standing"
+        "the figure is the one forecast for the selection now standing"
     );
 
     reselect(
@@ -1048,7 +1048,7 @@ fn a_changed_selection_replaces_the_countdown_until_the_original_is_selected_aga
     );
     assert!(
         !screen(&application).contains("lapses in"),
-        "a lapse that comes to a cache the next Prompt will not read is no news: {}",
+        "a lapse that comes to a cache the next prompt will not read is no news: {}",
         screen(&application)
     );
 
@@ -1089,7 +1089,7 @@ fn at_the_lapse_the_cold_line_takes_over_from_a_changed_selections_warning() {
     assert_eq!(
         line_at(&application, &clock, lapses_at.0).as_deref(),
         Some(PRICED),
-        "a cold Session says it is cold, priced at the Selection standing"
+        "a cold session says it is cold, priced at the selection standing"
     );
     assert_eq!(wakeup_after_a_frame(&application), None);
 }
@@ -1236,7 +1236,7 @@ fn compaction_due(
         .session
         .prompt_cache
         .as_mut()
-        .expect("the Session has a Prompt Cache")
+        .expect("the session has a prompt cache")
         .compaction_due_at = Some(due_at);
     snapshot
 }
@@ -1455,7 +1455,7 @@ fn once_the_compaction_begins_the_line_gives_way_to_the_working_indicator() {
                 ],
             },
         )))
-        .expect("the Compaction's Turn begins");
+        .expect("the compaction's turn begins");
     assert_eq!(
         composer_top_line(&application),
         None,
@@ -1464,7 +1464,7 @@ fn once_the_compaction_begins_the_line_gives_way_to_the_working_indicator() {
     );
     assert!(
         screen(&application).contains("Working"),
-        "the Working Indicator stands: {}",
+        "the working indicator stands: {}",
         screen(&application)
     );
 }
@@ -1528,7 +1528,7 @@ fn a_changed_selections_warning_stands_over_a_pending_compaction() {
         .session
         .prompt_cache
         .as_mut()
-        .expect("the Session has a Prompt Cache")
+        .expect("the session has a prompt cache")
         .compaction_due_at = Some(due);
     let application = open(
         &workspace,
@@ -1556,7 +1556,7 @@ fn a_pending_compaction_counts_down_whatever_the_penalty() {
         .session
         .prompt_cache
         .as_mut()
-        .expect("the Session has a Prompt Cache")
+        .expect("the session has a prompt cache")
         .compaction_due_at = Some(due);
     let clock = clock_at(NOW);
     let application = open(&workspace, snapshot, clock.clone());

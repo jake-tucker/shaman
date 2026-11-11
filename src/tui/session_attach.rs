@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(
             parked.stopped().await,
             attaching_b,
-            "leaving the Session behind left its attach running"
+            "leaving the session behind left its attach running"
         );
         assert_eq!(attach.settle(attaching_b), AttachOutcome::Superseded);
     }

@@ -261,7 +261,7 @@ impl WorktreePicker {
             {
                 Some(SourceControlCapability::Unsupported { reason }) => Some(reason.clone()),
                 Some(_) => None,
-                None => Some("A Repository is required".to_owned()),
+                None => Some("A repository is required".to_owned()),
             },
             WorktreeChoice::Checkout(checkout) => match &checkout.availability {
                 SourceControlAvailability::Unavailable { reason } => Some(reason.clone()),
@@ -368,12 +368,12 @@ mod tests {
         let mut picker = loaded();
         picker.move_by(1);
         let Some(WorktreeChoice::Checkout(checkout)) = picker.choice() else {
-            panic!("the first Worktree follows the New Worktree row")
+            panic!("the first worktree follows the New worktree row")
         };
         assert_eq!(checkout.association.root, root("main"));
         picker.move_by(1);
         let Some(WorktreeChoice::Checkout(checkout)) = picker.choice() else {
-            panic!("the second Worktree follows the first")
+            panic!("the second worktree follows the first")
         };
         assert_eq!(checkout.association.root, root("linked"));
         picker.move_by(1);
@@ -381,14 +381,14 @@ mod tests {
         picker.move_by(-1);
         assert_eq!(
             picker.selected, 2,
-            "moving back wraps onto the last Worktree"
+            "moving back wraps onto the last worktree"
         );
     }
 
     #[test]
     fn the_current_worktree_is_named_by_the_resolution_rather_than_by_position() {
         let picker = loaded();
-        let current = picker.current_checkout().expect("a resolved Worktree");
+        let current = picker.current_checkout().expect("a resolved worktree");
         assert_eq!(
             *current,
             picker.context.as_ref().unwrap().checkouts[1].association.id
@@ -400,7 +400,7 @@ mod tests {
         let picker = loaded();
         assert_eq!(
             picker.refusal(&WorktreeChoice::New).as_deref(),
-            Some("A Repository is required")
+            Some("A repository is required")
         );
     }
 
@@ -408,10 +408,10 @@ mod tests {
     fn a_worktree_its_server_cannot_read_is_refused_and_a_readable_one_is_not() {
         let mut picker = loaded();
         picker.move_by(1);
-        let readable = picker.choice().expect("the first Worktree");
+        let readable = picker.choice().expect("the first worktree");
         assert_eq!(picker.refusal(&readable), None);
         let WorktreeChoice::Checkout(mut checkout) = readable else {
-            panic!("the first Worktree follows the New Worktree row")
+            panic!("the first worktree follows the New worktree row")
         };
         checkout.availability = SourceControlAvailability::Unavailable {
             reason: "gone".to_owned(),

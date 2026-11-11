@@ -43,7 +43,7 @@ fn sidebar_with_one_session(workspace: &Path, session_id: SessionId, title: &str
     let ApplicationTransition::ListSessions(request) =
         deliver_settings(&mut application, sidebar_shown())
     else {
-        panic!("a Sidebar coming into view asks for its Sessions");
+        panic!("a sidebar coming into view asks for its sessions");
     };
     application
         .handle_event(ApplicationEvent::SessionsListed {
@@ -52,7 +52,7 @@ fn sidebar_with_one_session(workspace: &Path, session_id: SessionId, title: &str
                 session_id, title, workspace, 1, 1,
             )],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     application
 }
 
@@ -138,7 +138,7 @@ fn open_from_sidebar(application: &mut Application) -> (SessionReference, uuid::
         anchor + 1 + u16::try_from(index).expect("small menu index"),
     );
     let ApplicationTransition::AskTitleProposalOffer { session, opening } = transition else {
-        panic!("opening the dialog asks the Origin whether it proposes Titles: {transition:?}");
+        panic!("opening the dialog asks the origin whether it proposes titles: {transition:?}");
     };
     (session, opening)
 }
@@ -146,7 +146,7 @@ fn open_from_sidebar(application: &mut Application) -> (SessionReference, uuid::
 fn offer(application: &mut Application, opening: uuid::Uuid, offered: bool) {
     application
         .handle_event(ApplicationEvent::TitleProposalOffered { opening, offered })
-        .expect("take the Origin's offer");
+        .expect("take the origin's offer");
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn renaming_from_the_sidebar_saves_what_was_written() {
     assert!(dialog_is_drawn(&application));
     assert!(
         drawn(&application).contains("› Wanted work"),
-        "the field holds the Title it renames: {}",
+        "the field holds the title it renames: {}",
         drawn(&application)
     );
 
@@ -234,7 +234,7 @@ fn a_blank_title_is_not_sent() {
         key(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::Continue
     );
-    assert!(drawn(&application).contains("A Title cannot be blank"));
+    assert!(drawn(&application).contains("A title cannot be blank"));
 }
 
 #[test]
@@ -245,7 +245,7 @@ fn deriving_is_offered_only_where_the_origin_offers_it() {
     let (_, opening) = open_from_sidebar(&mut application);
     assert!(
         !drawn(&application).contains("Derive"),
-        "nothing is offered until the Origin says"
+        "nothing is offered until the origin says"
     );
     assert_eq!(
         key(&mut application, KeyCode::Char('g'), KeyModifiers::CONTROL),
@@ -254,7 +254,7 @@ fn deriving_is_offered_only_where_the_origin_offers_it() {
     offer(&mut application, opening, false);
     assert!(
         !drawn(&application).contains("Derive"),
-        "an Origin whose Setting derives no Title shows no way to ask for one"
+        "an origin whose setting derives no title shows no way to ask for one"
     );
 }
 
@@ -265,10 +265,10 @@ fn a_derived_proposal_fills_the_field_and_saving_keeps_it() {
         sidebar_with_one_session(workspace.path(), SessionId::new(), "Wanted work");
     let (session, opening) = open_from_sidebar(&mut application);
     offer(&mut application, opening, true);
-    assert!(drawn(&application).contains("[ Derive a Title ]"));
+    assert!(drawn(&application).contains("[ Derive a title ]"));
 
     let buffer = rendered_application_buffer(&application, WIDE, TALL);
-    let (column, row) = text_position(&buffer, "[ Derive a Title ]");
+    let (column, row) = text_position(&buffer, "[ Derive a title ]");
     let ApplicationTransition::ProposeSessionTitle {
         session: proposed_for,
         request,
@@ -277,7 +277,7 @@ fn a_derived_proposal_fills_the_field_and_saving_keeps_it() {
         panic!("pressing the button asks for a proposal");
     };
     assert_eq!(proposed_for, session);
-    assert!(drawn(&application).contains("Deriving a Title"));
+    assert!(drawn(&application).contains("Deriving a title"));
     type_text(&mut application, "lost");
     assert!(
         !drawn(&application).contains("lost"),
@@ -287,15 +287,15 @@ fn a_derived_proposal_fills_the_field_and_saving_keeps_it() {
     application
         .handle_event(ApplicationEvent::TitleProposed {
             request,
-            result: Ok("Map the Provider seam".to_owned()),
+            result: Ok("Map the provider seam".to_owned()),
         })
         .expect("take the proposal");
-    assert!(drawn(&application).contains("› Map the Provider seam"));
+    assert!(drawn(&application).contains("› Map the provider seam"));
     assert_eq!(
         key(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         ApplicationTransition::SetSessionTitle {
             session,
-            title: "Map the Provider seam".to_owned(),
+            title: "Map the provider seam".to_owned(),
         }
     );
 }
@@ -351,13 +351,13 @@ fn a_failed_proposal_says_why_and_keeps_the_text() {
     application
         .handle_event(ApplicationEvent::TitleProposed {
             request,
-            result: Err("the Provider did not answer in time".to_owned()),
+            result: Err("the provider did not answer in time".to_owned()),
         })
         .expect("take the refusal");
     let text = drawn(&application);
     assert!(text.contains("› Wanted work"), "{text}");
     assert!(
-        text.contains("Could not derive a Title: the Provider did not answer…"),
+        text.contains("Could not derive a title: the provider did not answer…"),
         "{text}"
     );
 }
@@ -394,7 +394,7 @@ fn open_session(workspace: &Path) -> (Application, SessionReference) {
     snapshot.title = "Alpha work".into();
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
-        .expect("show the titled Session");
+        .expect("show the titled session");
     (
         application,
         SessionReference::new(Outlook::Local, session_id),
@@ -507,7 +507,7 @@ fn the_dialog_wears_the_sessions_icon_while_icons_are_shown() {
     snapshot.icon = Some("md-bug".to_owned());
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
-        .expect("show the iconed Session");
+        .expect("show the iconed session");
     type_terminal_text(&mut application, "/rename");
     key(&mut application, KeyCode::Enter, KeyModifiers::NONE);
     assert!(

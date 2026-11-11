@@ -73,7 +73,7 @@ fn the_relay_list_follows_each_relays_state_as_the_server_pushes_it() {
         vec![unreachable(COMPANY), needing_login(HOME)],
     );
     assert!(
-        prose(&application).contains(&format!("{COMPANY} Unreachable · the Relay did not answer")),
+        prose(&application).contains(&format!("{COMPANY} Unreachable · the relay did not answer")),
         "{}",
         prose(&application)
     );
@@ -137,7 +137,7 @@ fn a_relay_that_needs_a_login_offers_one_and_one_merely_unreachable_does_not() {
     let keys = keys_taught(&application);
     assert!(
         !keys.contains("log in"),
-        "a Relay merely Unreachable is offered no login: {keys}"
+        "a relay merely unreachable is offered no login: {keys}"
     );
     press(&mut application, KeyCode::Down);
     assert!(!keys_taught(&application).contains("log in"));
@@ -165,7 +165,7 @@ fn a_relay_that_needs_a_login_offers_one_and_one_merely_unreachable_does_not() {
         .collect::<Vec<_>>()
         .join(" ");
     assert!(
-        narrow.contains("Enter show login · s Serve through · x remove · Esc close"),
+        narrow.contains("Enter show login · s serve through · x remove · Esc close"),
         "{narrow}"
     );
 }
@@ -188,19 +188,19 @@ fn a_notice_is_raised_once_for_each_lapse_this_client_is_given() {
         !rendered_application_rows(&application)
             .join("\n")
             .contains("Login needed"),
-        "nothing is raised before the Server gives it"
+        "nothing is raised before the server gives it"
     );
     assert_eq!(
         application.take_relay_notice_claims(),
         vec![(COMPANY.to_owned(), FIRST)],
-        "the Notice of the lapse is claimed of the Server"
+        "the notice of the lapse is claimed of the server"
     );
     answer_claim(&mut application, COMPANY, FIRST, true);
     let notice = rendered_application_rows(&application)[0].trim().to_owned();
     assert_eq!(
         notice,
         format!("! Login needed at {COMPANY} · /relay to log in"),
-        "the Notice points at where to log in, not at the Log, which holds nothing of a Relay"
+        "the notice points at where to log in, not at the log, which holds nothing of a relay"
     );
 
     // Pushed again before the Server has said otherwise, or by a second
@@ -251,7 +251,7 @@ fn a_client_that_cannot_draw_the_notice_claims_nothing_until_it_can() {
     rendered_application_rows_at(&application, 12, 4);
     assert!(
         application.take_relay_notice_claims().is_empty(),
-        "a frame too small to draw the Notice claims nothing"
+        "a frame too small to draw the notice claims nothing"
     );
 
     rendered_application_rows(&application);
@@ -294,7 +294,7 @@ fn a_lapse_pushed_after_its_relay_was_heard_logged_in_again_raises_nothing() {
     assert!(!screen.contains("Login needed"), "{screen}");
     assert!(
         application.take_relay_notice_claims().is_empty(),
-        "nothing is claimed of a lapse older than what the Client holds"
+        "nothing is claimed of a lapse older than what the client holds"
     );
 }
 
@@ -376,7 +376,7 @@ fn a_relay_notice_stands_through_a_settings_snapshot() {
                 diagnostics: Vec::new(),
             },
         )))
-        .expect("take the Settings snapshot");
+        .expect("take the settings snapshot");
     let screen = rendered_application_rows(&application).join("\n");
     assert!(
         screen.contains(&format!("Login needed at {COMPANY} · /relay to log in")),
@@ -393,7 +393,7 @@ fn a_late_answer_to_an_addition_brings_back_no_relay_removed_since() {
     type_terminal_text(&mut application, COMPANY);
     let ApplicationTransition::AddRelay { request, .. } = press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter adds the Relay typed");
+        panic!("Enter adds the relay typed");
     };
 
     // Another Client removed it before this one heard it was added.
@@ -422,7 +422,7 @@ fn a_late_answer_to_a_removal_takes_away_no_relay_added_again_since() {
     let ApplicationTransition::RemoveRelay { request, address } =
         press(&mut application, KeyCode::Char('x'))
     else {
-        panic!("a second x removes the Relay");
+        panic!("a second x removes the relay");
     };
 
     // Another Client added it again before this one heard it was removed.
@@ -453,7 +453,7 @@ fn a_relay_removed_elsewhere_while_its_login_is_shown_resolves_the_display_as_th
     let ApplicationTransition::BeginRelayLogin { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter logs in at a Relay that needs a login");
+        panic!("Enter logs in at a relay that needs a login");
     };
     let ApplicationTransition::FollowRelayLogins(follows) = application
         .handle_event(ApplicationEvent::RelayLoginBegun {
@@ -480,7 +480,7 @@ fn a_relay_removed_elsewhere_while_its_login_is_shown_resolves_the_display_as_th
             login: RelayLogin {
                 outcome: RelayLoginOutcome::Refused {
                     reason: RelayLoginRefusal::Interrupted,
-                    message: "the login was given up as its Relay was being removed".to_owned(),
+                    message: "the login was given up as its relay was being removed".to_owned(),
                 },
                 ..pending()
             },
@@ -490,7 +490,7 @@ fn a_relay_removed_elsewhere_while_its_login_is_shown_resolves_the_display_as_th
     assert!(
         !shown.contains(CODE)
             && shown.contains(&format!(
-                "The login at {COMPANY} ended: the login was given up as its Relay was being \
+                "The login at {COMPANY} ended: the login was given up as its relay was being \
                  removed"
             )),
         "{shown}"
@@ -515,7 +515,7 @@ fn a_server_started_again_is_heard_whatever_its_revisions_and_an_earlier_ones_li
     let shown = prose(&application);
     assert!(
         shown.contains(&format!("{COMPANY} Login needed")),
-        "the earlier run's listing is not taken over the Server now running: {shown}"
+        "the earlier run's listing is not taken over the server now running: {shown}"
     );
     push_from(&mut application, LATER, 2, vec![logged_in(COMPANY)]);
     assert!(
@@ -572,7 +572,7 @@ fn the_notice_leads_to_the_login_at_its_relay() {
     // A press on it dismisses the Notice and opens the list on its Relay,
     // logging in there once it is listed.
     let ApplicationTransition::ListRelays(listing) = press_at(&mut application, column, row) else {
-        panic!("a press on the Notice's pointer opens the Relay list");
+        panic!("a press on the notice's pointer opens the relay list");
     };
     assert!(
         !rendered_application_rows(&application)
@@ -591,7 +591,7 @@ fn the_notice_leads_to_the_login_at_its_relay() {
         afresh: false,
     } = transition
     else {
-        panic!("the list, landed, logs in at the Relay the Notice named: {transition:?}");
+        panic!("the list, landed, logs in at the relay the notice named: {transition:?}");
     };
     assert_eq!(address, COMPANY);
     application
@@ -625,7 +625,7 @@ fn the_login_on_display_ends_only_with_that_login_however_the_relay_is_pushed() 
     let ApplicationTransition::BeginRelayLogin { request, .. } =
         press(&mut application, KeyCode::Enter)
     else {
-        panic!("Enter logs in at a Relay that needs a login");
+        panic!("Enter logs in at a relay that needs a login");
     };
     application
         .handle_event(ApplicationEvent::RelayLoginBegun {
@@ -680,7 +680,7 @@ fn everything_else_stays_live_while_a_relay_needs_a_login_or_is_unreachable() {
         .handle_event(ApplicationEvent::SessionAttached(
             navigable_session_snapshot(SessionId::new(), std::path::Path::new("."), 1),
         ))
-        .expect("attach a Session on the Remote");
+        .expect("attach a session on the remote");
     push(
         &mut application,
         1,
@@ -704,7 +704,7 @@ fn everything_else_stays_live_while_a_relay_needs_a_login_or_is_unreachable() {
     assert!(screen.contains("unfinished thought"), "{screen}");
     assert!(
         !screen.contains("Reconnecting to Suru"),
-        "neither a Relay nor a Remote takes the Client down: {screen}"
+        "neither a relay nor a remote takes the client down: {screen}"
     );
 
     // A surface opened over the Remote's Session owns its keys, though the
@@ -723,7 +723,7 @@ fn everything_else_stays_live_while_a_relay_needs_a_login_or_is_unreachable() {
         assert_ne!(opened, closed, "Esc reaches what {open:?} opened");
         assert!(
             !closed.contains("is unreachable · login needed"),
-            "and is not taken for work bound for the Remote: {closed}"
+            "and is not taken for work bound for the remote: {closed}"
         );
     }
     for _ in 0..2 {
@@ -731,7 +731,7 @@ fn everything_else_stays_live_while_a_relay_needs_a_login_or_is_unreachable() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::SidebarToggle,
             )))
-            .expect("the Sidebar stays live");
+            .expect("the sidebar stays live");
     }
 
     // Turning the Outlook back to this machine's own Server, work begins
@@ -751,16 +751,16 @@ fn everything_else_stays_live_while_a_relay_needs_a_login_or_is_unreachable() {
                 icon: None,
             },
         ]))
-        .expect("list the paired Remotes");
+        .expect("list the paired remotes");
     press(&mut application, KeyCode::Up);
     press(&mut application, KeyCode::Enter);
     type_terminal_text(&mut application, "local work begins");
     assert_ne!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("submit on the local Landing"),
+            .expect("submit on the local landing"),
         ApplicationTransition::Continue,
-        "a Relay needing a login blocks nothing on this machine's own Server"
+        "a relay needing a login blocks nothing on this machine's own server"
     );
 
     assert_eq!(
@@ -795,7 +795,7 @@ fn given(application: &mut Application, address: &str, lapse: Uuid) {
         application
             .take_relay_notice_claims()
             .contains(&(address.to_owned(), lapse)),
-        "the Notice of {address} needing a login in {lapse} is claimed"
+        "the notice of {address} needing a login in {lapse} is claimed"
     );
     answer_claim(application, address, lapse, true);
 }
@@ -816,14 +816,14 @@ fn push_from(application: &mut Application, instance: Uuid, revision: u64, relay
                 relays,
             },
         )))
-        .expect("take the pushed Relays");
+        .expect("take the pushed relays");
 }
 
 /// Types `/relay`, answering the listing it asks for.
 fn open(application: &mut Application) -> RelayRequest {
     type_terminal_text(application, "/relay");
     let ApplicationTransition::ListRelays(request) = press(application, KeyCode::Enter) else {
-        panic!("/relay asks the Client's own Server for its Relays");
+        panic!("/relay asks the client's own server for its relays");
     };
     request
 }
@@ -853,7 +853,7 @@ fn list_from(
                 relays,
             },
         })
-        .expect("list the Relays")
+        .expect("list the relays")
 }
 
 /// Whether the list holds an entry for the Relay at `address`: a row naming
@@ -959,7 +959,7 @@ fn unreachable(address: &str) -> Relay {
         state: RelayState::Unreachable,
         unreachable: Some(RelayUnreachable {
             behind: None,
-            message: "the Relay did not answer".to_owned(),
+            message: "the relay did not answer".to_owned(),
         }),
         ..logged_in(address)
     }

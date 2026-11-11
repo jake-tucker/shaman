@@ -101,7 +101,7 @@ fn hear_moved(application: &mut Application, snapshot: &SessionSnapshot, destina
                 }],
             },
         )))
-        .expect("hear the Session Move");
+        .expect("hear the session move");
 }
 
 /// The Client asking the Session's Server to resolve where it now works, as
@@ -112,13 +112,13 @@ fn follow(application: &mut Application, destination: &Path) {
         surface, request, ..
     } = &transition
     else {
-        panic!("a Move is followed by resolving its destination, not {transition:?}");
+        panic!("a move is followed by resolving its destination, not {transition:?}");
     };
     assert_eq!(*surface, WorkspaceResolutionSurface::Move);
     assert_eq!(
         request.workspace_id,
         Some(Workspace::directory(destination.to_owned()).id),
-        "the destination's Workspace is resolved"
+        "the destination's workspace is resolved"
     );
     assert_eq!(
         request
@@ -126,7 +126,7 @@ fn follow(application: &mut Application, destination: &Path) {
             .as_ref()
             .map(|directory| directory.path.as_path()),
         Some(destination),
-        "standing where the Session works"
+        "standing where the session works"
     );
     answer_workspace_resolution(application, transition);
 }
@@ -140,20 +140,20 @@ fn slash_move_with_a_path_asks_the_open_sessions_server_to_move_it_there() {
     type_terminal_text(&mut application, "/move");
     let autocomplete = rendered_application_rows(&application).join("\n");
     assert!(autocomplete.contains("/move"), "{autocomplete}");
-    assert!(autocomplete.contains("Move Session"), "{autocomplete}");
+    assert!(autocomplete.contains("Move session"), "{autocomplete}");
 
     type_terminal_text(&mut application, " ../beta-work");
     assert_eq!(
         press_enter(&mut application),
         move_to(session_id, "../beta-work"),
-        "the path is sent as typed, for the Session's Server to read against where the Session \
+        "the path is sent as typed, for the session's server to read against where the session \
          works"
     );
     assert!(
         !rendered_application_rows(&application)
             .join("\n")
             .contains("/move"),
-        "the command spends the line it was typed on, never sending it as a Prompt"
+        "the command spends the line it was typed on, never sending it as a prompt"
     );
 }
 
@@ -169,8 +169,8 @@ fn slash_move_with_no_session_open_is_refused_on_the_landing() {
     );
     let screen = rendered_application_rows(&application).join("\n");
     assert!(
-        screen.contains("Open a Session to Move it"),
-        "the Landing explains the refusal: {screen}"
+        screen.contains("Open a session to move it"),
+        "the landing explains the refusal: {screen}"
     );
 }
 
@@ -180,9 +180,9 @@ fn slash_move_with_no_session_open_is_refused_on_the_landing() {
 #[test]
 fn a_refused_move_says_why_and_leaves_the_session_where_it_was() {
     for refusal in [
-        "No directory is at ../nowhere, so the Session stays where it is.",
-        "The Session is a Sidekick's, and the Sidekick Workspace is what makes it one, so it \
-         never Moves.",
+        "No directory is at ../nowhere, so the session stays where it is.",
+        "The session is a sidekick's, and the sidekick workspace is what makes it one, so it \
+         never moves.",
     ] {
         let directories = directories();
         let mut application = connected_application(&directories.alpha);
@@ -198,17 +198,17 @@ fn a_refused_move_says_why_and_leaves_the_session_where_it_was() {
                 session: SessionReference::new(Outlook::Local, session_id),
                 error: refusal.to_owned(),
             })
-            .expect("hear the Move refused");
+            .expect("hear the move refused");
 
         let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
         let first_clause = refusal.split(',').next().expect("a clause");
         assert!(
             screen.contains(first_clause),
-            "the refusal is said in the Server's words: {screen}"
+            "the refusal is said in the server's words: {screen}"
         );
         assert!(
             screen.contains("alpha-work") && !screen.contains("beta-work"),
-            "the Session is still shown where it works: {screen}"
+            "the session is still shown where it works: {screen}"
         );
         assert!(!screen.contains("Moving session"), "{screen}");
         assert!(!application.wants_spinner());
@@ -236,20 +236,20 @@ fn a_move_reads_as_moving_until_the_server_answers() {
     assert!(!screen.contains("to interrupt"), "{screen}");
     assert!(
         application.wants_spinner(),
-        "the indicator shimmers while the Move is in flight"
+        "the indicator shimmers while the move is in flight"
     );
 
     let SessionListItem::Readable(summary) =
         listed_session(session_id, "Moving work", &directories.beta, 1, 2)
     else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
     application
         .handle_event(ApplicationEvent::SessionMoved {
             session: SessionReference::new(Outlook::Local, session_id),
             outcome: MoveOutcome::Moved { session: *summary },
         })
-        .expect("hear the Move answered");
+        .expect("hear the move answered");
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(!screen.contains("Moving session"), "{screen}");
     assert!(!application.wants_spinner());
@@ -265,18 +265,18 @@ fn slash_move_in_a_sidekick_session_is_refused_asking_nothing() {
                 WorkspacePaths::default().with_sidekick_workspace(&directories.beta),
             ),
         )))
-        .expect("connect naming the Sidekick Workspace");
+        .expect("connect naming the sidekick workspace");
     enter_session(&mut application, &directories.beta);
 
     type_terminal_text(&mut application, "/move ../alpha-work");
     assert_eq!(
         press_enter(&mut application),
         ApplicationTransition::Continue,
-        "a Sidekick's Session never Moves, so nothing is asked of the Server"
+        "a sidekick's session never moves, so nothing is asked of the server"
     );
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(
-        screen.contains("A Sidekick's Session never Moves"),
+        screen.contains("A sidekick's session never moves"),
         "the refusal says why: {screen}"
     );
 }
@@ -292,12 +292,12 @@ fn slash_move_is_refused_while_the_sessions_server_is_unreachable() {
     assert_eq!(
         press_enter(&mut application),
         ApplicationTransition::Continue,
-        "a Move is decided by the Session's Server, which is not answering"
+        "a move is decided by the session's server, which is not answering"
     );
     let screen = rendered_application_rows(&application).join("\n");
     assert!(
         screen.contains("studio is unreachable"),
-        "the refusal names the Remote: {screen}"
+        "the refusal names the remote: {screen}"
     );
 }
 
@@ -316,7 +316,7 @@ fn a_moved_session_is_shown_where_it_now_works_and_the_current_workspace_follows
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(
         screen.contains("beta-work") && !screen.contains("alpha-work"),
-        "the Session is shown in its new Workspace: {screen}"
+        "the session is shown in its new workspace: {screen}"
     );
 
     follow(&mut application, &directories.beta);
@@ -325,7 +325,7 @@ fn a_moved_session_is_shown_where_it_now_works_and_the_current_workspace_follows
     let landing = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(
         landing.contains("beta-work") && !landing.contains("alpha-work"),
-        "the Client's current Workspace followed the Session: {landing}"
+        "the client's current workspace followed the session: {landing}"
     );
 }
 
@@ -349,22 +349,22 @@ fn the_sidebar_groups_a_moved_session_under_its_new_workspace() {
         },
     );
     let ApplicationTransition::ListSessions(request) = transition else {
-        panic!("a Sidebar coming into view asks for its Sessions, not {transition:?}");
+        panic!("a sidebar coming into view asks for its sessions, not {transition:?}");
     };
     application
         .handle_event(ApplicationEvent::SessionsListed {
             request,
             sessions: vec![listed_session(
                 session_id,
-                "The work that Moves",
+                "The work that moves",
                 &directories.alpha,
                 1,
                 1,
             )],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
     let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
-    assert!(drawn_in_sidebar(&rows, "The work that Moves"), "{rows:#?}");
+    assert!(drawn_in_sidebar(&rows, "The work that moves"), "{rows:#?}");
     assert!(selector_label(&rows).contains("alpha-work"), "{rows:#?}");
 
     hear_moved(&mut application, &snapshot, &directories.beta);
@@ -382,22 +382,22 @@ fn the_sidebar_groups_a_moved_session_under_its_new_workspace() {
             request,
             sessions: vec![listed_session(
                 session_id,
-                "The work that Moves",
+                "The work that moves",
                 &directories.beta,
                 1,
                 2,
             )],
         })
-        .expect("take the listing the Move left");
+        .expect("take the listing the move left");
 
     let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
     assert!(
-        drawn_in_sidebar(&rows, "The work that Moves"),
-        "the Session is still listed: {rows:#?}"
+        drawn_in_sidebar(&rows, "The work that moves"),
+        "the session is still listed: {rows:#?}"
     );
     assert!(
         selector_label(&rows).contains("beta-work"),
-        "under its new Workspace: {rows:#?}"
+        "under its new workspace: {rows:#?}"
     );
 }
 
@@ -416,7 +416,7 @@ fn a_session_found_moved_on_resubscribing_takes_the_current_workspace_with_it() 
     snapshot.session.workspace = Workspace::directory(directories.beta.clone());
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
-        .expect("resubscribe to the Session");
+        .expect("resubscribe to the session");
     follow(&mut application, &directories.beta);
 
     type_terminal_text(&mut application, "/new");
@@ -424,7 +424,7 @@ fn a_session_found_moved_on_resubscribing_takes_the_current_workspace_with_it() 
     let landing = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(
         landing.contains("beta-work") && !landing.contains("alpha-work"),
-        "the Client's current Workspace followed the Session: {landing}"
+        "the client's current workspace followed the session: {landing}"
     );
 }
 
@@ -437,7 +437,7 @@ fn a_session_resubscribed_where_it_stood_follows_nowhere() {
 
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
-        .expect("resubscribe to the Session");
+        .expect("resubscribe to the session");
     assert_eq!(
         application.take_move_follow(),
         ApplicationTransition::Continue
@@ -455,7 +455,7 @@ fn the_answer_to_a_move_waits_on_the_sessions_stream() {
     let SessionListItem::Readable(summary) =
         listed_session(session_id, "Moving work", &directories.beta, 1, 2)
     else {
-        unreachable!("the fixture builds a readable Session");
+        unreachable!("the fixture builds a readable session");
     };
 
     assert_eq!(
@@ -464,13 +464,13 @@ fn the_answer_to_a_move_waits_on_the_sessions_stream() {
                 session: SessionReference::new(Outlook::Local, session_id),
                 outcome: MoveOutcome::Moved { session: *summary },
             })
-            .expect("hear the Move answered"),
+            .expect("hear the move answered"),
         ApplicationTransition::Continue
     );
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(
         screen.contains("alpha-work") && !screen.contains("beta-work"),
-        "the Session stands where its stream last placed it: {screen}"
+        "the session stands where its stream last placed it: {screen}"
     );
     assert_eq!(
         application.take_move_follow(),
@@ -523,7 +523,7 @@ fn hear_recorded_move(
                 ],
             },
         )))
-        .expect("hear the Session Move");
+        .expect("hear the session move");
 }
 
 /// A Move stands in the Transcript as its own row, after the Turn before
@@ -554,18 +554,18 @@ fn a_move_is_drawn_as_its_own_row_naming_both_directories_and_their_branches() {
     );
     assert!(
         unwrapped(&rows).contains(&unwrapped(std::slice::from_ref(&row))),
-        "the Move reads {row:?}, however its directories wrap:\n{}",
+        "the move reads {row:?}, however its directories wrap:\n{}",
         rows.join("\n")
     );
     let prompt = rows
         .iter()
-        .position(|rendered| rendered.contains("Initial Prompt"))
-        .expect("the Turn before the Move is drawn");
+        .position(|rendered| rendered.contains("Initial prompt"))
+        .expect("the turn before the move is drawn");
     let moved = rows
         .iter()
         .position(|rendered| rendered.contains("Moved from"))
-        .expect("the Move is drawn");
-    assert!(prompt < moved, "the Move follows the Turn before it");
+        .expect("the move is drawn");
+    assert!(prompt < moved, "the move follows the turn before it");
 }
 
 /// A Move that could not apply says so, and why, beneath the Marker a
@@ -594,7 +594,7 @@ fn a_failed_move_says_why_it_could_not_apply() {
     );
     assert!(
         unwrapped(&rows).contains(&unwrapped(std::slice::from_ref(&row))),
-        "the failed Move reads {row:?}, however its directories wrap:\n{}",
+        "the failed move reads {row:?}, however its directories wrap:\n{}",
         rows.join("\n")
     );
 }
@@ -615,7 +615,7 @@ fn skill(id: &str, name: &str) -> SkillDescriptor {
     SkillDescriptor {
         id: SkillId::new(id),
         name: name.to_owned(),
-        description: format!("The {name} Skill"),
+        description: format!("The {name} skill"),
         scope: Some(format!("From {id}")),
     }
 }
@@ -634,7 +634,7 @@ fn viewing_session(provider: &str, directory: &Path) -> (Application, SessionSna
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             snapshot.clone(),
         )))
-        .expect("view the Session on its Provider");
+        .expect("view the session on its provider");
     (application, snapshot)
 }
 
@@ -674,7 +674,7 @@ fn deliver_catalog(
                 status,
             },
         })
-        .expect("deliver a Skill Catalog");
+        .expect("deliver a skill catalog");
 }
 
 fn offer_skills(
@@ -723,7 +723,7 @@ fn resubscribe_moved(
     moved.session.workspace = Workspace::directory(destination.to_owned());
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(moved)))
-        .expect("resubscribe to the moved Session");
+        .expect("resubscribe to the moved session");
 }
 
 fn learn_of_move(
@@ -829,7 +829,7 @@ fn a_skill_chosen_from_completion_follows_a_move_as_a_written_one_does() {
         .handle_event(ApplicationEvent::Command(
             CommandId::ConfirmSelectedCompletion,
         ))
-        .expect("choose the Skill");
+        .expect("choose the skill");
 
     hear_moved(&mut application, &snapshot, &directories.beta);
     let destination = skill("beta-review", "review");
@@ -933,13 +933,13 @@ fn an_ambiguous_skill_is_settled_by_choosing_one_from_the_destinations_completio
                 KeyCode::Backspace,
                 KeyModifiers::NONE,
             )))
-            .expect("edit the Skill's name");
+            .expect("edit the skill's name");
     }
     application
         .handle_event(ApplicationEvent::Command(
             CommandId::ConfirmSelectedCompletion,
         ))
-        .expect("choose the first Skill");
+        .expect("choose the first skill");
 
     assert_eq!(
         submitted(&mut application).prompt.skill_invocations,
@@ -972,7 +972,7 @@ fn a_draft_with_bound_skills_waits_for_the_destinations_catalog() {
         let said = blocked(&mut application);
         assert!(
             said.contains("$explain") && said.contains("$gone"),
-            "{learned:?}: every bound Skill is named: {said}"
+            "{learned:?}: every bound skill is named: {said}"
         );
         assert!(drawn(&application).contains(draft), "the draft is kept");
 
@@ -994,7 +994,7 @@ fn a_draft_with_bound_skills_waits_for_the_destinations_catalog() {
                 status,
             );
             let said = blocked(&mut application);
-            assert!(said.contains("waitingfortheSkillCatalog"), "{said}");
+            assert!(said.contains("waitingfortheskillcatalog"), "{said}");
         }
 
         let explain = skill("beta-explain", "explain");
@@ -1008,7 +1008,7 @@ fn a_draft_with_bound_skills_waits_for_the_destinations_catalog() {
         assert!(
             !unwrapped(&rendered_application_rows_at(&application, WIDE, HEIGHT))
                 .contains("waitingfortheSkillCatalog"),
-            "what the wait said gives way once the Catalog answers: {}",
+            "what the wait said gives way once the catalog answers: {}",
             drawn(&application)
         );
         assert_eq!(
@@ -1056,7 +1056,7 @@ fn a_destination_whose_skills_could_not_be_read_is_asked_again_by_enter() {
             application
                 .handle_event(ApplicationEvent::SkillListingFailed {
                     request: catalog_request("codex", directory),
-                    error: "the Server did not answer".to_owned(),
+                    error: "the server did not answer".to_owned(),
                 })
                 .expect("hear the listing fail");
         }),
@@ -1077,7 +1077,7 @@ fn a_destination_whose_skills_could_not_be_read_is_asked_again_by_enter() {
         assert_eq!(
             press_enter(&mut application),
             ApplicationTransition::RefreshSkills(catalog_request("codex", &directories.beta)),
-            "{failure}: nothing is sent, and the Catalog is asked for again"
+            "{failure}: nothing is sent, and the catalog is asked for again"
         );
         let said = unwrapped(&rendered_application_rows_at(&application, WIDE, HEIGHT));
         assert!(said.contains("$explain"), "{failure}: {said}");
@@ -1106,7 +1106,7 @@ fn a_destination_whose_skills_could_not_be_read_is_asked_again_by_enter() {
         let said = unwrapped(&rendered_application_rows_at(&application, WIDE, HEIGHT));
         assert!(
             !said.contains("waitingfor") && !said.contains("couldnotberead"),
-            "{failure}: what was said gives way once the Catalog answers: {said}"
+            "{failure}: what was said gives way once the catalog answers: {said}"
         );
         assert_eq!(
             submitted(&mut application).prompt.skill_invocations,
@@ -1265,7 +1265,7 @@ fn a_draft_on_a_session_moved_while_another_was_open_follows_on_returning() {
     elsewhere.session.id = SessionId::new();
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(elsewhere)))
-        .expect("open another Session");
+        .expect("open another session");
     resubscribe_moved(&mut application, &snapshot, &directories.beta);
 
     let destination = skill("beta-explain", "explain");
@@ -1322,7 +1322,7 @@ fn a_prompt_refused_after_the_move_comes_back_following_it() {
     let resent = submitted(&mut application);
     assert_ne!(
         resent.prompt.id, request.prompt.id,
-        "bound elsewhere, it is a Prompt of its own"
+        "bound elsewhere, it is a prompt of its own"
     );
     assert_eq!(
         resent.prompt.skill_invocations,
@@ -1391,7 +1391,7 @@ fn a_carried_draft_recovered_to_the_landing_is_judged_by_the_landings_rule() {
                 },
             )),
         )))
-        .expect("a replaced Server sends the draft to the Landing");
+        .expect("a replaced server sends the draft to the landing");
     offer_skills(
         &mut application,
         "codex",
@@ -1525,7 +1525,7 @@ fn a_prompt_withdrawn_after_the_move_follows_it_from_history() {
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             snapshot.clone(),
         )))
-        .expect("the Session is Working for the Prompt");
+        .expect("the session is working for the prompt");
     for _ in 0..2 {
         application
             .handle_terminal_event(InputEvent::Key(KeyEvent::new(
@@ -1551,7 +1551,7 @@ fn a_prompt_withdrawn_after_the_move_follows_it_from_history() {
 
     application
         .handle_event(ApplicationEvent::Command(CommandId::HistoryPrevious))
-        .expect("recall the withdrawn Prompt");
+        .expect("recall the withdrawn prompt");
     assert!(drawn(&application).contains("$explain now"));
     assert_eq!(
         submitted(&mut application).prompt.skill_invocations,
@@ -1576,7 +1576,7 @@ fn a_skill_replaced_where_the_session_still_stands_stays_stale() {
         .handle_event(ApplicationEvent::Command(
             CommandId::ConfirmSelectedCompletion,
         ))
-        .expect("choose the Skill");
+        .expect("choose the skill");
     offer_skills(
         &mut application,
         "codex",
@@ -1623,7 +1623,7 @@ fn hear_move_pending(
                 }],
             },
         )))
-        .expect("hear the Move pending");
+        .expect("hear the move pending");
     (id, from, to)
 }
 
@@ -1637,7 +1637,7 @@ fn summary_bound_for(
 ) -> SessionSummary {
     let SessionListItem::Readable(mut summary) = listed_session(session_id, title, workspace, 1, 1)
     else {
-        panic!("a listed Session is readable");
+        panic!("a listed session is readable");
     };
     summary.session.pending_move = destination.map(|destination| PendingMove {
         activity_id: ActivityId::new(),
@@ -1671,18 +1671,18 @@ fn a_pending_move_is_acknowledged_saying_when_it_applies() {
             outcome: MoveOutcome::Pending {
                 session: summary_bound_for(
                     session_id,
-                    "The work that Moves",
+                    "The work that moves",
                     &directories.alpha,
                     Some(&directories.beta),
                 ),
             },
         })
-        .expect("hear the Move pending");
+        .expect("hear the move pending");
 
     let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
     assert!(
         rows.iter().any(|row| {
-            row.contains("The Session Moves once the work under way settles, to ")
+            row.contains("The session moves once the work under way settles, to ")
                 && row.trim_end().contains("beta-work")
         }),
         "the destination keeps its end however long its path: {}",
@@ -1705,7 +1705,7 @@ fn a_pending_move_is_acknowledged_saying_when_it_applies() {
                 }],
             },
         )))
-        .expect("hear the Move settle");
+        .expect("hear the move settle");
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(!screen.contains("once the work under way"), "{screen}");
 }
@@ -1732,11 +1732,11 @@ fn the_answer_that_a_move_is_pending_says_nothing_once_it_has_settled() {
                 }],
             },
         )))
-        .expect("hear the Move settle");
+        .expect("hear the move settle");
 
     let mut answered = summary_bound_for(
         session_id,
-        "The work that Moves",
+        "The work that moves",
         &directories.alpha,
         Some(&directories.beta),
     );
@@ -1772,13 +1772,13 @@ fn the_answer_to_a_move_is_said_only_of_the_session_it_was_asked_of() {
             outcome: MoveOutcome::Pending {
                 session: summary_bound_for(
                     session_id,
-                    "The work that Moves",
+                    "The work that moves",
                     &directories.alpha,
                     Some(&directories.beta),
                 ),
             },
         })
-        .expect("hear another Session's answer");
+        .expect("hear another session's answer");
 
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(!screen.contains("once the work under way"), "{screen}");
@@ -1802,7 +1802,7 @@ fn a_move_to_where_the_session_works_says_so_and_a_cancelled_one_says_it_is_canc
         .expect("hear the answer");
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(
-        screen.contains("The Session already works there."),
+        screen.contains("The session already works there."),
         "{screen}"
     );
 
@@ -1813,7 +1813,7 @@ fn a_move_to_where_the_session_works_says_so_and_a_cancelled_one_says_it_is_canc
         })
         .expect("hear the answer");
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
-    assert!(screen.contains("The pending Move is cancelled"), "{screen}");
+    assert!(screen.contains("The pending move is cancelled"), "{screen}");
 }
 
 /// The Sidebar reads where the Session is bound off its summary, so a second
@@ -1835,19 +1835,19 @@ fn the_sidebar_labels_a_pending_destination_until_the_listing_clears_it() {
             ..EffectiveSettings::default()
         },
     ) else {
-        panic!("a Sidebar coming into view asks for its Sessions");
+        panic!("a sidebar coming into view asks for its sessions");
     };
     application
         .handle_event(ApplicationEvent::SessionsListed {
             request,
             sessions: vec![SessionListItem::Readable(Box::new(summary_bound_for(
                 session_id,
-                "The work that Moves",
+                "The work that moves",
                 &directories.alpha,
                 Some(&directories.beta),
             )))],
         })
-        .expect("hydrate the Sidebar");
+        .expect("hydrate the sidebar");
 
     let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
     assert!(drawn_in_sidebar(&rows, "→ beta-work"), "{rows:#?}");
@@ -1865,15 +1865,15 @@ fn the_sidebar_labels_a_pending_destination_until_the_listing_clears_it() {
             request,
             sessions: vec![SessionListItem::Readable(Box::new(summary_bound_for(
                 session_id,
-                "The work that Moves",
+                "The work that moves",
                 &directories.alpha,
                 None,
             )))],
         })
-        .expect("take the listing the Move left");
+        .expect("take the listing the move left");
 
     let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
-    assert!(drawn_in_sidebar(&rows, "The work that Moves"), "{rows:#?}");
+    assert!(drawn_in_sidebar(&rows, "The work that moves"), "{rows:#?}");
     assert!(!drawn_in_sidebar(&rows, "→ beta-work"), "{rows:#?}");
 }
 
@@ -1886,8 +1886,8 @@ fn a_pending_moves_row_stands_active_then_settles_where_it_stands() {
         (ActivityStatus::Completed, None, "✓ Moved from"),
         (
             ActivityStatus::Interrupted,
-            Some("a Move to elsewhere replaced it"),
-            "did not apply: a Move to elsewhere replaced it",
+            Some("a move to elsewhere replaced it"),
+            "did not apply: a move to elsewhere replaced it",
         ),
     ] {
         let mut application = connected_application(&directories.alpha);
@@ -1897,7 +1897,7 @@ fn a_pending_moves_row_stands_active_then_settles_where_it_stands() {
         let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
         assert!(
             unwrapped(&rows).contains(&unwrapped(&[format!(
-                "to {} once the Session settles",
+                "to {} once the session settles",
                 directories.beta.display()
             )])),
             "{}",
@@ -1906,7 +1906,7 @@ fn a_pending_moves_row_stands_active_then_settles_where_it_stands() {
         assert!(
             rows.iter()
                 .any(|row| row.trim_start().starts_with("⠋ Moving from")),
-            "behind a Spinner: {}",
+            "behind a spinner: {}",
             rows.join("\n")
         );
         assert!(application.wants_spinner(), "which the run loop ticks");
@@ -1925,7 +1925,7 @@ fn a_pending_moves_row_stands_active_then_settles_where_it_stands() {
                     }],
                 },
             )))
-            .expect("hear the Move settle");
+            .expect("hear the move settle");
 
         let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
         assert!(
@@ -1934,7 +1934,7 @@ fn a_pending_moves_row_stands_active_then_settles_where_it_stands() {
             rows.join("\n")
         );
         assert!(
-            !unwrapped(&rows).contains(&unwrapped(&["once the Session settles".to_owned()])),
+            !unwrapped(&rows).contains(&unwrapped(&["once the session settles".to_owned()])),
             "{}",
             rows.join("\n")
         );
@@ -1964,10 +1964,10 @@ fn a_pending_move_failing_at_settlement_is_said_beneath_the_composer() {
                 }],
             },
         )))
-        .expect("hear the Move fail");
+        .expect("hear the move fail");
 
     let rows = rendered_application_rows_at(&application, WIDE, HEIGHT);
-    let told = unwrapped(&["The Move to beta-work failed: No directory is there".to_owned()]);
+    let told = unwrapped(&["The move to beta-work failed: No directory is there".to_owned()]);
     let row = unwrapped(&[format!(
         "to {} failed: No directory is there",
         directories.beta.display()
@@ -1977,7 +1977,7 @@ fn a_pending_move_failing_at_settlement_is_said_beneath_the_composer() {
     assert_eq!(
         application.take_move_follow(),
         ApplicationTransition::Continue,
-        "the Session went nowhere"
+        "the session went nowhere"
     );
 }
 
@@ -2020,7 +2020,7 @@ fn escape_interrupts_what_a_pending_move_waits_on_with_nothing_else_running() {
         "{screen}"
     );
     let ApplicationTransition::InterruptSession { session } = press_escape(&mut application) else {
-        panic!("the second Escape asks the Server to interrupt the Session");
+        panic!("the second Escape asks the server to interrupt the session");
     };
     assert_eq!(session.session_id, session_id);
 
@@ -2038,7 +2038,7 @@ fn escape_interrupts_what_a_pending_move_waits_on_with_nothing_else_running() {
                 }],
             },
         )))
-        .expect("hear the Move settle");
+        .expect("hear the move settle");
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(!screen.contains("Waiting to move"), "{screen}");
     assert_eq!(
@@ -2081,7 +2081,7 @@ fn checkout_summary(repository: &RepositoryId, root: &Path, kind: CheckoutKind) 
         revision: Some(CheckoutRevision::Branch {
             name: root
                 .file_name()
-                .expect("a Worktree root has a name")
+                .expect("a worktree root has a name")
                 .to_string_lossy()
                 .into_owned(),
             commit: Some("1234567890abcdef".to_owned()),
@@ -2175,12 +2175,12 @@ fn stand_session_in(
     snapshot.session.execution_directory = context
         .execution_directory
         .clone()
-        .expect("a Session works in a directory");
+        .expect("a session works in a directory");
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             snapshot.clone(),
         )))
-        .expect("hear where the Session works");
+        .expect("hear where the session works");
     snapshot
 }
 
@@ -2200,7 +2200,7 @@ fn answer_with(
     result: Result<ResolvedWorkspace, String>,
 ) -> ApplicationTransition {
     let (outlook, surface, request_id, _) = workspace_resolution(transition)
-        .unwrap_or_else(|| panic!("expected a Workspace resolution, not {transition:?}"));
+        .unwrap_or_else(|| panic!("expected a workspace resolution, not {transition:?}"));
     application
         .handle_event(ApplicationEvent::WorkspaceResolved {
             outlook,
@@ -2208,7 +2208,7 @@ fn answer_with(
             request_id,
             result,
         })
-        .expect("deliver the Server's resolution")
+        .expect("deliver the server's resolution")
 }
 
 /// Opens the Move picker on `context`, as its Server answers for the Session.
@@ -2274,18 +2274,18 @@ fn open_workspace_picker(
     outlook: &Outlook,
     workspaces: Vec<Workspace>,
 ) {
-    walk_to(application, "Another Workspace…");
+    walk_to(application, "Another workspace…");
     let listing = press_enter(application);
     let ApplicationTransition::ListWorkspaces(request) = listing else {
-        panic!("the row asks for the Workspaces, not {listing:?}");
+        panic!("the row asks for the workspaces, not {listing:?}");
     };
-    assert_eq!(request.outlook(), outlook, "of the Session's Server");
+    assert_eq!(request.outlook(), outlook, "of the session's server");
     application
         .handle_event(ApplicationEvent::WorkspacesListed {
             request,
             listing: crate::tui_rendering::support::workspace_listing(workspaces),
         })
-        .expect("list the Workspaces");
+        .expect("list the workspaces");
 }
 
 /// Answers the Directory Browser's listing of `root` with child directories.
@@ -2363,7 +2363,7 @@ fn bare_slash_move_opens_the_picker_on_the_sessions_own_repository() {
     let reading = slash_move(&mut application);
 
     let (outlook, _, _, request) = workspace_resolution(&reading)
-        .unwrap_or_else(|| panic!("the picker reads the Repository, not {reading:?}"));
+        .unwrap_or_else(|| panic!("the picker reads the repository, not {reading:?}"));
     assert_eq!(outlook, Outlook::Local);
     assert_eq!(
         request.workspace_id,
@@ -2374,17 +2374,17 @@ fn bare_slash_move_opens_the_picker_on_the_sessions_own_repository() {
         Some(ExecutionDirectory {
             path: fixture.nested.clone()
         }),
-        "standing where the Session works"
+        "standing where the session works"
     );
-    assert!(screen(&application).contains("Loading Worktrees…"));
+    assert!(screen(&application).contains("Loading worktrees…"));
 
     answer_with(&mut application, &reading, Ok(fixture.at(&fixture.nested)));
     let drawn = screen(&application);
-    assert!(drawn.contains(" Move Session "), "{drawn}");
-    let new_worktree = line_of(&drawn, "› New Worktree");
+    assert!(drawn.contains(" Move session "), "{drawn}");
+    let new_worktree = line_of(&drawn, "› New worktree");
     let main = line_of(&drawn, "main · ");
     let linked = line_of(&drawn, "* linked");
-    let workspace = line_of(&drawn, "Another Workspace…");
+    let workspace = line_of(&drawn, "Another workspace…");
     let browse = line_of(&drawn, "Browse…");
     assert!(
         new_worktree < main && main < linked && linked < workspace && workspace < browse,
@@ -2392,7 +2392,7 @@ fn bare_slash_move_opens_the_picker_on_the_sessions_own_repository() {
     );
     assert!(
         !drawn.contains("Remove"),
-        "a Worktree is not removed from the Move picker: {drawn}"
+        "a worktree is not removed from the move picker: {drawn}"
     );
 }
 
@@ -2408,7 +2408,7 @@ fn choosing_another_worktree_moves_the_session_to_its_root_and_closes_the_picker
         press_enter(&mut application),
         move_there(&session, &fixture.main)
     );
-    assert!(!screen(&application).contains(" Move Session "));
+    assert!(!screen(&application).contains(" Move session "));
 }
 
 /// A mis-pick changes nothing, and is how a pending Move is taken back: the
@@ -2423,14 +2423,14 @@ fn choosing_the_current_worktree_stays_where_the_session_stands_beneath_its_root
             MoveOutcome::AlreadyThere {
                 session: summary_bound_for(SessionId::new(), "Work", &fixture.nested, None),
             },
-            "The Session already works there.",
+            "The session already works there.",
         ),
         (
             fixture.linked.clone(),
             MoveOutcome::PendingCancelled {
                 session: summary_bound_for(SessionId::new(), "Work", &fixture.linked, None),
             },
-            "The pending Move is cancelled",
+            "The pending move is cancelled",
         ),
     ] {
         let (mut application, _, session) = fixture.viewing(&standing);
@@ -2442,7 +2442,7 @@ fn choosing_the_current_worktree_stays_where_the_session_stands_beneath_its_root
             press_enter(&mut application),
             move_there(&session, &standing)
         );
-        assert!(!screen(&application).contains(" Move Session "));
+        assert!(!screen(&application).contains(" Move session "));
         application
             .handle_event(ApplicationEvent::SessionMoved { session, outcome })
             .expect("hear the answer");
@@ -2468,7 +2468,7 @@ fn the_new_worktree_row_asks_for_a_new_worktree_of_where_the_session_works() {
     );
 
     let drawn = screen(&application);
-    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert!(!drawn.contains(" Move session "), "{drawn}");
 }
 
 /// A Repository that cannot make a Worktree says so inside the picker, which
@@ -2481,9 +2481,9 @@ fn a_repository_that_cannot_make_a_worktree_refuses_the_row_inside_the_picker() 
         .workspace
         .repository
         .as_mut()
-        .expect("the fixture is a Repository");
+        .expect("the fixture is a repository");
     repository.capabilities.create_checkout = SourceControlCapability::Unsupported {
-        reason: "This Repository cannot make a Worktree".to_owned(),
+        reason: "This repository cannot make a worktree".to_owned(),
     };
     let (mut application, _, _) = fixture.viewing(&fixture.linked);
     open_move_picker(&mut application, context);
@@ -2495,11 +2495,11 @@ fn a_repository_that_cannot_make_a_worktree_refuses_the_row_inside_the_picker() 
 
     let drawn = screen(&application);
     assert!(
-        drawn.contains("This Repository cannot make a Worktree"),
+        drawn.contains("This repository cannot make a worktree"),
         "{drawn}"
     );
     assert!(
-        drawn.contains(" Move Session "),
+        drawn.contains(" Move session "),
         "the picker stands: {drawn}"
     );
 }
@@ -2511,7 +2511,7 @@ fn a_worktree_that_cannot_be_gone_to_is_refused_inside_the_picker() {
     let fixture = MoveFixture::new();
     let mut context = fixture.at(&fixture.linked);
     context.checkouts[0].availability = SourceControlAvailability::Unavailable {
-        reason: "The Worktree's disk is gone".to_owned(),
+        reason: "The worktree's disk is gone".to_owned(),
     };
     let (mut application, _, _) = fixture.viewing(&fixture.linked);
     open_move_picker(&mut application, context);
@@ -2523,9 +2523,9 @@ fn a_worktree_that_cannot_be_gone_to_is_refused_inside_the_picker() {
         ApplicationTransition::Continue
     );
     let drawn = screen(&application);
-    assert!(drawn.contains("The Worktree's disk is gone"), "{drawn}");
+    assert!(drawn.contains("The worktree's disk is gone"), "{drawn}");
     assert!(
-        drawn.contains(" Move Session "),
+        drawn.contains(" Move session "),
         "the picker stands: {drawn}"
     );
 }
@@ -2542,9 +2542,9 @@ fn a_session_outside_source_control_is_offered_only_the_two_rows() {
     );
 
     let drawn = screen(&application);
-    assert!(drawn.contains("› Another Workspace…"), "{drawn}");
+    assert!(drawn.contains("› Another workspace…"), "{drawn}");
     assert!(drawn.contains("Browse…"), "{drawn}");
-    assert!(!drawn.contains("New Worktree"), "{drawn}");
+    assert!(!drawn.contains("New worktree"), "{drawn}");
 }
 
 /// What the picker reads of the Session is the picker's alone: the Client's
@@ -2577,7 +2577,7 @@ fn opening_the_picker_on_a_session_leaves_the_clients_landing_and_draft_alone() 
     assert!(landing.contains("elsewhere"), "{landing}");
     assert!(
         !landing.contains("linked"),
-        "the Landing stays where the Client works: {landing}"
+        "the landing stays where the client works: {landing}"
     );
 }
 
@@ -2593,7 +2593,7 @@ fn another_workspace_lands_where_the_workspace_picker_would_land_a_new_session()
     invoke(&mut application, SemanticCommandId::SessionNew);
     let listing = invoke(&mut application, SemanticCommandId::WorkspaceList);
     let ApplicationTransition::ListWorkspaces(request) = listing else {
-        panic!("the Workspace Picker asks for its Workspaces, not {listing:?}");
+        panic!("the workspace picker asks for its workspaces, not {listing:?}");
     };
     application
         .handle_event(ApplicationEvent::WorkspacesListed {
@@ -2602,7 +2602,7 @@ fn another_workspace_lands_where_the_workspace_picker_would_land_a_new_session()
                 &ledger,
             )]),
         })
-        .expect("list the Workspaces");
+        .expect("list the workspaces");
     type_terminal_text(&mut application, "ledger");
     let landing = press_enter(&mut application);
     answer_with(
@@ -2630,7 +2630,7 @@ fn another_workspace_lands_where_the_workspace_picker_would_land_a_new_session()
     let resolution = press_enter(&mut application);
 
     let (_, _, _, request) = workspace_resolution(&resolution)
-        .unwrap_or_else(|| panic!("the Workspace is resolved first, not {resolution:?}"));
+        .unwrap_or_else(|| panic!("the workspace is resolved first, not {resolution:?}"));
     assert_eq!(request.workspace_id, Some(another_workspace(&ledger).id));
     assert_eq!(
         request.remembered_execution_directory,
@@ -2653,7 +2653,7 @@ fn another_workspace_lands_where_the_workspace_picker_would_land_a_new_session()
     );
     let drawn = screen(&application);
     assert!(!drawn.contains(" Workspaces "), "{drawn}");
-    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert!(!drawn.contains(" Move session "), "{drawn}");
 }
 
 /// Esc walks the chain back a step at a time, each picker as the reader left
@@ -2673,8 +2673,8 @@ fn escape_steps_back_through_the_workspace_chain() {
     let resolution = press_enter(&mut application);
     let drawn = screen(&application);
     assert!(
-        drawn.contains(" Workspaces ") && drawn.contains("Reading that Workspace…"),
-        "the picker stands while its Server answers: {drawn}"
+        drawn.contains(" Workspaces ") && drawn.contains("Reading that workspace…"),
+        "the picker stands while its server answers: {drawn}"
     );
 
     let cancelled = key(&mut application, KeyCode::Esc);
@@ -2686,9 +2686,9 @@ fn escape_steps_back_through_the_workspace_chain() {
         "{cancelled:?}"
     );
     let drawn = screen(&application);
-    assert!(drawn.contains(" Move Session "), "{drawn}");
+    assert!(drawn.contains(" Move session "), "{drawn}");
     assert!(
-        drawn.contains("› Another Workspace…"),
+        drawn.contains("› Another workspace…"),
         "the reader is back on the row they chose: {drawn}"
     );
     assert_eq!(
@@ -2698,14 +2698,14 @@ fn escape_steps_back_through_the_workspace_chain() {
             Ok(ResolvedWorkspace::directory(ledger)),
         ),
         ApplicationTransition::Continue,
-        "an answer to a choice let go of Moves nothing"
+        "an answer to a choice let go of moves nothing"
     );
 
     assert_eq!(
         key(&mut application, KeyCode::Esc),
         ApplicationTransition::Continue
     );
-    assert!(!screen(&application).contains(" Move Session "));
+    assert!(!screen(&application).contains(" Move session "));
 }
 
 /// A refused resolution says why in the picker standing over the Session, and
@@ -2766,13 +2766,13 @@ fn a_bare_repository_asks_which_worktree_and_concludes_in_a_move() {
     assert_eq!(
         answer_with(&mut application, &resolution, Ok(bare)),
         ApplicationTransition::Continue,
-        "nothing is asked of the Server until a Worktree is chosen"
+        "nothing is asked of the server until a worktree is chosen"
     );
     let drawn = screen(&application);
-    assert!(drawn.contains("Which Worktree"), "{drawn}");
-    assert!(drawn.contains("› New Worktree"), "{drawn}");
+    assert!(drawn.contains("Which worktree"), "{drawn}");
+    assert!(drawn.contains("› New worktree"), "{drawn}");
     assert!(drawn.contains("feature"), "{drawn}");
-    assert!(!drawn.contains("Another Workspace…"), "{drawn}");
+    assert!(!drawn.contains("Another workspace…"), "{drawn}");
     assert!(!drawn.contains("Remove"), "{drawn}");
 
     key(&mut application, KeyCode::Esc);
@@ -2781,10 +2781,10 @@ fn a_bare_repository_asks_which_worktree_and_concludes_in_a_move() {
     assert!(drawn.contains("bare"), "the query stands: {drawn}");
     key(&mut application, KeyCode::Esc);
     let drawn = screen(&application);
-    assert!(drawn.contains("› Another Workspace…"), "{drawn}");
+    assert!(drawn.contains("› Another workspace…"), "{drawn}");
     assert!(
         drawn.contains("* linked"),
-        "the Move picker is its own again, not the bare Repository's: {drawn}"
+        "the move picker is its own again, not the bare repository's: {drawn}"
     );
 
     let resolution = {
@@ -2800,9 +2800,9 @@ fn a_bare_repository_asks_which_worktree_and_concludes_in_a_move() {
         move_there(&session, &worktree)
     );
     let drawn = screen(&application);
-    assert!(!drawn.contains("Which Worktree"), "{drawn}");
+    assert!(!drawn.contains("Which worktree"), "{drawn}");
     assert!(!drawn.contains(" Workspaces "), "{drawn}");
-    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert!(!drawn.contains(" Move session "), "{drawn}");
 }
 
 /// The bare Repository has no directory to work in, so New Worktree there names
@@ -2822,14 +2822,14 @@ fn a_bare_repositorys_new_worktree_row_asks_for_a_worktree_of_that_repository() 
     type_terminal_text(&mut application, "bare");
     let resolution = press_enter(&mut application);
     answer_with(&mut application, &resolution, Ok(bare));
-    assert!(screen(&application).contains("› New Worktree"));
+    assert!(screen(&application).contains("› New worktree"));
 
     assert_eq!(
         press_enter(&mut application),
         move_into_new_worktree(&session, &root)
     );
     let drawn = screen(&application);
-    assert!(!drawn.contains("Which Worktree"), "{drawn}");
+    assert!(!drawn.contains("Which worktree"), "{drawn}");
     assert!(!drawn.contains(" Workspaces "), "{drawn}");
 }
 
@@ -2848,7 +2848,7 @@ fn browse_opens_the_directory_browser_where_the_session_stands_and_concludes_in_
         outlook, request, ..
     } = &listing
     else {
-        panic!("the row lists the Session's directory, not {listing:?}");
+        panic!("the row lists the session's directory, not {listing:?}");
     };
     assert_eq!(*outlook, Outlook::Local);
     assert_eq!(
@@ -2858,7 +2858,7 @@ fn browse_opens_the_directory_browser_where_the_session_stands_and_concludes_in_
             base: Some(fixture.nested.clone()),
         }
     );
-    assert!(!screen(&application).contains(" Move Session "));
+    assert!(!screen(&application).contains(" Move session "));
 
     key(&mut application, KeyCode::Esc);
     let drawn = screen(&application);
@@ -2866,7 +2866,7 @@ fn browse_opens_the_directory_browser_where_the_session_stands_and_concludes_in_
         drawn.contains("› Browse…"),
         "stepped back onto the row: {drawn}"
     );
-    assert!(drawn.contains(" Move Session "), "{drawn}");
+    assert!(drawn.contains(" Move session "), "{drawn}");
 
     let ApplicationTransition::ListDirectory { listing_id, .. } = press_enter(&mut application)
     else {
@@ -2880,7 +2880,7 @@ fn browse_opens_the_directory_browser_where_the_session_stands_and_concludes_in_
         move_there(&session, &fixture.nested.join("inner")),
     );
     let drawn = screen(&application);
-    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert!(!drawn.contains(" Move session "), "{drawn}");
     assert!(!drawn.contains("Loading"), "{drawn}");
 }
 
@@ -2897,7 +2897,7 @@ fn list_a_bare_repository(
     directory: &Path,
 ) {
     let ApplicationTransition::ListDirectory { listing_id, .. } = listing else {
-        panic!("the browser lists the Session's directory, not {listing:?}");
+        panic!("the browser lists the session's directory, not {listing:?}");
     };
     application
         .handle_event(ApplicationEvent::DirectoryListed {
@@ -2934,15 +2934,15 @@ fn browsing_to_a_bare_repository_asks_which_worktree_and_concludes_in_a_move() {
     let resolution = press_enter(&mut application);
 
     let (outlook, _, _, request) = workspace_resolution(&resolution)
-        .unwrap_or_else(|| panic!("the Repository is read first, not {resolution:?}"));
+        .unwrap_or_else(|| panic!("the repository is read first, not {resolution:?}"));
     assert_eq!(outlook, Outlook::Local);
     assert_eq!(request.path, fixture.nested.join("vault.git"));
     assert_eq!(request.base.as_ref(), Some(&fixture.nested));
     assert_eq!(request.workspace_id, None);
     let drawn = screen(&application);
     assert!(
-        drawn.contains(" Directory Browser ") && drawn.contains("Reading that Repository…"),
-        "the browser stands while its Server answers: {drawn}"
+        drawn.contains(" Directory browser ") && drawn.contains("Reading that repository…"),
+        "the browser stands while its server answers: {drawn}"
     );
 
     assert_eq!(
@@ -2950,21 +2950,21 @@ fn browsing_to_a_bare_repository_asks_which_worktree_and_concludes_in_a_move() {
         ApplicationTransition::Continue
     );
     let drawn = screen(&application);
-    assert!(drawn.contains("Which Worktree"), "{drawn}");
+    assert!(drawn.contains("Which worktree"), "{drawn}");
     assert!(drawn.contains("feature"), "{drawn}");
-    assert!(!drawn.contains(" Directory Browser "), "{drawn}");
+    assert!(!drawn.contains(" Directory browser "), "{drawn}");
 
     assert_eq!(
         key(&mut application, KeyCode::Esc),
         ApplicationTransition::Continue
     );
     let drawn = screen(&application);
-    assert!(drawn.contains(" Directory Browser "), "{drawn}");
+    assert!(drawn.contains(" Directory browser "), "{drawn}");
     assert!(
         drawn.contains("vault.git"),
         "as the reader left it: {drawn}"
     );
-    assert!(!drawn.contains("Which Worktree"), "{drawn}");
+    assert!(!drawn.contains("Which worktree"), "{drawn}");
 
     let resolution = press_enter(&mut application);
     answer_with(&mut application, &resolution, Ok(bare));
@@ -2974,9 +2974,9 @@ fn browsing_to_a_bare_repository_asks_which_worktree_and_concludes_in_a_move() {
         move_there(&session, &worktree)
     );
     let drawn = screen(&application);
-    assert!(!drawn.contains(" Directory Browser "), "{drawn}");
-    assert!(!drawn.contains("Which Worktree"), "{drawn}");
-    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert!(!drawn.contains(" Directory browser "), "{drawn}");
+    assert!(!drawn.contains("Which worktree"), "{drawn}");
+    assert!(!drawn.contains(" Move session "), "{drawn}");
 }
 
 /// Reached through the Workspace Picker, Esc walks back through every picker
@@ -2996,18 +2996,18 @@ fn a_bare_repository_browsed_to_from_the_workspace_picker_steps_back_through_eac
     list_a_bare_repository(&mut application, listing, &fixture.nested);
     let resolution = press_enter(&mut application);
     answer_with(&mut application, &resolution, Ok(bare));
-    assert!(screen(&application).contains("Which Worktree"));
+    assert!(screen(&application).contains("Which worktree"));
 
     key(&mut application, KeyCode::Esc);
     let drawn = screen(&application);
-    assert!(drawn.contains(" Directory Browser "), "{drawn}");
+    assert!(drawn.contains(" Directory browser "), "{drawn}");
     assert!(!drawn.contains(" Workspaces "), "{drawn}");
     key(&mut application, KeyCode::Esc);
     assert!(screen(&application).contains(" Workspaces "));
     key(&mut application, KeyCode::Esc);
-    assert!(screen(&application).contains(" Move Session "));
+    assert!(screen(&application).contains(" Move session "));
     key(&mut application, KeyCode::Esc);
-    assert!(!screen(&application).contains(" Move Session "));
+    assert!(!screen(&application).contains(" Move session "));
 }
 
 /// The Server's refusal of the Repository is said in the browser, and Esc
@@ -3026,22 +3026,22 @@ fn a_bare_repository_being_read_is_refused_in_the_browser_or_let_go_of_by_escape
         answer_with(
             &mut application,
             &resolution,
-            Err("The Repository cannot be read".to_owned())
+            Err("The repository cannot be read".to_owned())
         ),
         ApplicationTransition::Continue
     );
     let drawn = screen(&application);
-    assert!(drawn.contains(" Directory Browser "), "{drawn}");
-    assert!(drawn.contains("The Repository cannot be read"), "{drawn}");
+    assert!(drawn.contains(" Directory browser "), "{drawn}");
+    assert!(drawn.contains("The repository cannot be read"), "{drawn}");
 
     let resolution = press_enter(&mut application);
     key(&mut application, KeyCode::Esc);
-    assert!(screen(&application).contains(" Move Session "));
+    assert!(screen(&application).contains(" Move session "));
     assert_eq!(
         answer_with(&mut application, &resolution, Ok(bare)),
         ApplicationTransition::Continue
     );
-    assert!(!screen(&application).contains("Which Worktree"));
+    assert!(!screen(&application).contains("Which worktree"));
 }
 
 /// The Workspace Picker's own way into the browser steps back through both
@@ -3072,7 +3072,7 @@ fn browse_from_the_workspace_picker_concludes_in_a_move_and_steps_back_through_b
     key(&mut application, KeyCode::Esc);
     assert!(screen(&application).contains(" Workspaces "));
     key(&mut application, KeyCode::Esc);
-    assert!(screen(&application).contains(" Move Session "));
+    assert!(screen(&application).contains(" Move session "));
 
     open_workspace_picker(
         &mut application,
@@ -3094,7 +3094,7 @@ fn browse_from_the_workspace_picker_concludes_in_a_move_and_steps_back_through_b
     );
     let drawn = screen(&application);
     assert!(!drawn.contains(" Workspaces "), "{drawn}");
-    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert!(!drawn.contains(" Move session "), "{drawn}");
 }
 
 /// A Remote's Session is Moved on that Remote: everything the picker lists is
@@ -3109,7 +3109,7 @@ fn a_remote_sessions_picker_reads_that_remote_and_its_move_goes_there() {
     let session = SessionReference::new(studio.clone(), session_id);
 
     let reading = slash_move(&mut application);
-    let (outlook, _, _, _) = workspace_resolution(&reading).expect("the Remote is asked");
+    let (outlook, _, _, _) = workspace_resolution(&reading).expect("the remote is asked");
     assert_eq!(outlook, studio);
     answer_with(&mut application, &reading, Ok(fixture.at(&fixture.linked)));
 
@@ -3120,14 +3120,14 @@ fn a_remote_sessions_picker_reads_that_remote_and_its_move_goes_there() {
     );
     let listing = invoke(&mut application, SemanticCommandId::WorkspaceBrowse);
     let ApplicationTransition::ListDirectory { outlook, .. } = &listing else {
-        panic!("the browser lists the Remote's directories, not {listing:?}");
+        panic!("the browser lists the remote's directories, not {listing:?}");
     };
     assert_eq!(*outlook, studio);
     key(&mut application, KeyCode::Esc);
 
     type_terminal_text(&mut application, "ledger");
     let resolution = press_enter(&mut application);
-    let (outlook, _, _, _) = workspace_resolution(&resolution).expect("the Remote resolves it");
+    let (outlook, _, _, _) = workspace_resolution(&resolution).expect("the remote resolves it");
     assert_eq!(outlook, studio);
     assert_eq!(
         answer_with(
@@ -3155,7 +3155,7 @@ fn a_remote_that_stopped_answering_refuses_the_picker_and_a_choice_made_in_it() 
         ApplicationTransition::Continue
     );
     let drawn = screen(&application);
-    assert!(drawn.contains(" Move Session "), "{drawn}");
+    assert!(drawn.contains(" Move session "), "{drawn}");
     assert!(drawn.contains("studio is unreachable"), "{drawn}");
     key(&mut application, KeyCode::Esc);
 
@@ -3164,7 +3164,7 @@ fn a_remote_that_stopped_answering_refuses_the_picker_and_a_choice_made_in_it() 
         ApplicationTransition::Continue
     );
     let drawn = screen(&application);
-    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert!(!drawn.contains(" Move session "), "{drawn}");
     assert!(drawn.contains("studio is unreachable"), "{drawn}");
 }
 
@@ -3200,7 +3200,7 @@ fn a_working_session_is_moved_from_the_picker_and_told_it_is_pending() {
         .expect("hear the answer");
     let drawn = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(
-        drawn.contains("The Session Moves once the work under way settles"),
+        drawn.contains("The session moves once the work under way settles"),
         "{drawn}"
     );
 }
@@ -3221,9 +3221,9 @@ fn a_repository_the_server_could_not_read_still_offers_the_two_rows() {
 
     let drawn = screen(&application);
     assert!(drawn.contains("The directory is gone"), "{drawn}");
-    assert!(drawn.contains("› Another Workspace…"), "{drawn}");
+    assert!(drawn.contains("› Another workspace…"), "{drawn}");
     assert!(drawn.contains("Browse…"), "{drawn}");
-    assert!(!drawn.contains("New Worktree"), "{drawn}");
+    assert!(!drawn.contains("New worktree"), "{drawn}");
 }
 
 /// Leaving the Session is done with Moving it: nothing of the chain stands
@@ -3246,7 +3246,7 @@ fn leaving_the_session_lets_go_of_the_chain() {
 
     let drawn = screen(&application);
     assert!(!drawn.contains(" Workspaces "), "{drawn}");
-    assert!(!drawn.contains(" Move Session "), "{drawn}");
+    assert!(!drawn.contains(" Move session "), "{drawn}");
     assert_eq!(
         answer_with(
             &mut application,
@@ -3261,7 +3261,7 @@ fn leaving_the_session_lets_go_of_the_chain() {
     let listing = invoke(&mut application, SemanticCommandId::WorkspaceList);
     assert!(matches!(listing, ApplicationTransition::ListWorkspaces(_)));
     key(&mut application, KeyCode::Esc);
-    assert!(!screen(&application).contains(" Move Session "));
+    assert!(!screen(&application).contains(" Move session "));
 }
 
 /// The removal keys of the Landing's selector mean nothing here, where
@@ -3305,7 +3305,7 @@ fn a_session_that_moves_under_the_picker_is_read_again_keeping_the_readers_place
 
     let reading = application.take_move_picker_read();
     let (_, _, _, request) = workspace_resolution(&reading)
-        .unwrap_or_else(|| panic!("the picker reads the Session again, not {reading:?}"));
+        .unwrap_or_else(|| panic!("the picker reads the session again, not {reading:?}"));
     assert_eq!(
         request.remembered_execution_directory,
         Some(ExecutionDirectory {
@@ -3315,7 +3315,7 @@ fn a_session_that_moves_under_the_picker_is_read_again_keeping_the_readers_place
     assert_eq!(
         application.take_move_picker_read(),
         ApplicationTransition::Continue,
-        "once for each Move"
+        "once for each move"
     );
     answer_with(&mut application, &reading, Ok(fixture.at(&fixture.main)));
     let drawn = screen(&application);
@@ -3341,14 +3341,14 @@ fn a_choice_waits_for_the_fresh_rows_of_a_session_that_moved_under_the_picker() 
     let reading = application.take_move_picker_read();
 
     let drawn = screen(&application);
-    assert!(drawn.contains("Loading Worktrees…"), "{drawn}");
+    assert!(drawn.contains("Loading worktrees…"), "{drawn}");
     assert!(!drawn.contains("* linked"), "{drawn}");
     assert_eq!(
         press_enter(&mut application),
         ApplicationTransition::Continue,
         "nothing is chosen from rows that are being read again"
     );
-    assert!(screen(&application).contains(" Move Session "));
+    assert!(screen(&application).contains(" Move session "));
 
     answer_with(&mut application, &reading, Ok(fixture.at(&fixture.main)));
     let drawn = screen(&application);
@@ -3356,7 +3356,7 @@ fn a_choice_waits_for_the_fresh_rows_of_a_session_that_moved_under_the_picker() 
     assert_eq!(
         press_enter(&mut application),
         move_there(&session, &fixture.linked),
-        "the row the reader waited on goes back where the Session stood"
+        "the row the reader waited on goes back where the session stood"
     );
 }
 
@@ -3382,7 +3382,7 @@ fn a_failed_reading_of_a_session_that_moved_leaves_only_the_two_rows() {
     let drawn = screen(&application);
     assert!(drawn.contains("The directory is gone"), "{drawn}");
     assert!(!drawn.contains("linked"), "{drawn}");
-    assert!(drawn.contains("› Another Workspace…"), "{drawn}");
+    assert!(drawn.contains("› Another workspace…"), "{drawn}");
 }
 
 /// Moved out of source control, the Worktrees it stood among are no longer on
@@ -3406,8 +3406,8 @@ fn a_session_that_moves_out_of_source_control_under_the_picker_loses_the_worktre
     );
 
     let drawn = screen(&application);
-    assert!(!drawn.contains("New Worktree"), "{drawn}");
-    assert!(drawn.contains("› Another Workspace…"), "{drawn}");
+    assert!(!drawn.contains("New worktree"), "{drawn}");
+    assert!(drawn.contains("› Another workspace…"), "{drawn}");
 }
 
 /// A reading of the Session is of the Move picker, even while it stands aside
@@ -3434,14 +3434,14 @@ fn a_session_that_moves_beneath_a_question_leaves_the_question_standing() {
     answer_with(&mut application, &reading, Ok(fixture.at(&fixture.main)));
 
     let drawn = screen(&application);
-    assert!(drawn.contains("Which Worktree"), "{drawn}");
+    assert!(drawn.contains("Which worktree"), "{drawn}");
     assert!(drawn.contains("feature"), "{drawn}");
     key(&mut application, KeyCode::Esc);
     key(&mut application, KeyCode::Esc);
     let drawn = screen(&application);
-    assert!(drawn.contains(" Move Session "), "{drawn}");
+    assert!(drawn.contains(" Move session "), "{drawn}");
     assert!(drawn.contains("* main"), "{drawn}");
-    assert!(drawn.contains("› Another Workspace…"), "{drawn}");
+    assert!(drawn.contains("› Another workspace…"), "{drawn}");
 }
 
 /// A follow that has landed is later news than an Outlook answer still on its
@@ -3457,7 +3457,7 @@ fn a_late_outlook_answer_does_not_undo_a_landed_follow() {
         .expect("connect");
     assert!(
         workspace_resolution(&outlook_answer).is_some(),
-        "the Outlook's Server is asked where the Client works: {outlook_answer:?}"
+        "the outlook's server is asked where the client works: {outlook_answer:?}"
     );
     let (_, snapshot) = enter_session(&mut application, &directories.alpha);
     hear_moved(&mut application, &snapshot, &directories.beta);
@@ -3489,7 +3489,7 @@ fn a_refusal_of_a_session_since_left_says_nothing_beneath_another() {
             Outlook::Local,
             SessionId::new(),
         ))))
-        .expect("hear another Session's refusal");
+        .expect("hear another session's refusal");
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(!screen.contains("No directory is at"), "{screen}");
 
@@ -3498,7 +3498,7 @@ fn a_refusal_of_a_session_since_left_says_nothing_beneath_another() {
             Outlook::Local,
             session_id,
         ))))
-        .expect("hear this Session's refusal");
+        .expect("hear this session's refusal");
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(screen.contains("No directory is at"), "{screen}");
 }
@@ -3526,7 +3526,7 @@ fn a_move_that_waited_reads_after_what_its_turn_went_on_to_do() {
                 }],
             },
         )))
-        .expect("hear the Turn go on");
+        .expect("hear the turn go on");
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
             SessionUpdate {
@@ -3541,7 +3541,7 @@ fn a_move_that_waited_reads_after_what_its_turn_went_on_to_do() {
                 }],
             },
         )))
-        .expect("hear the Move settle");
+        .expect("hear the move settle");
 
     let rows = rendered_application_rows_at(&application, WIDE, 40);
     let at = |needle: &str| {
@@ -3569,7 +3569,7 @@ fn neither_a_press_nor_the_wheel_reaches_the_hidden_browser() {
     walk_to(&mut application, "Browse…");
     let ApplicationTransition::ListDirectory { listing_id, .. } = press_enter(&mut application)
     else {
-        panic!("the browser lists the Session's directory");
+        panic!("the browser lists the session's directory");
     };
     let child = |name: String, source_control| ChildDirectory {
         path: fixture.nested.join(&name),
@@ -3599,10 +3599,10 @@ fn neither_a_press_nor_the_wheel_reaches_the_hidden_browser() {
     let browsed = rendered_application_rows_at(&application, WIDE, HEIGHT);
     let resolution = press_enter(&mut application);
     answer_with(&mut application, &resolution, Ok(bare));
-    assert!(screen(&application).contains("Which Worktree"));
+    assert!(screen(&application).contains("Which worktree"));
     // The question's own row is inside its box, where a click stays with it.
     let buffer = rendered_application_buffer(&application, WIDE, HEIGHT);
-    let (column, row) = text_position(&buffer, "Which Worktree");
+    let (column, row) = text_position(&buffer, "Which worktree");
     assert!(
         browsed[usize::from(row)].contains("row-"),
         "the question stands where a row of the browser stood: {browsed:#?}"
@@ -3629,7 +3629,7 @@ fn neither_a_press_nor_the_wheel_reaches_the_hidden_browser() {
             }))
             .expect("turn the wheel");
     }
-    assert!(screen(&application).contains("Which Worktree"));
+    assert!(screen(&application).contains("Which worktree"));
 
     key(&mut application, KeyCode::Esc);
     assert_eq!(
@@ -3653,10 +3653,10 @@ fn the_browse_row_is_refused_as_its_command_is_while_the_server_is_unreachable()
     assert_eq!(
         press_enter(&mut application),
         ApplicationTransition::Continue,
-        "the browser reads the Server, which is not answering"
+        "the browser reads the server, which is not answering"
     );
 
     let drawn = screen(&application);
     assert!(drawn.contains("studio is unreachable"), "{drawn}");
-    assert!(!drawn.contains(" Directory Browser "), "{drawn}");
+    assert!(!drawn.contains(" Directory browser "), "{drawn}");
 }

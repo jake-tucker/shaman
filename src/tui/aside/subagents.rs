@@ -55,7 +55,7 @@ const NOT_ANSWERING: &str = "not answering";
 /// of the Subagents beneath it are shown: that there are more, and that
 /// opening the Session — read from its Remote, not from what this Section
 /// keeps of it — shows them.
-const NOT_ALL_SHOWN: &str = "open for all Subagents";
+const NOT_ALL_SHOWN: &str = "open for all subagents";
 
 /// What the entry of a Session the Sidekick's act on is not yet known to
 /// have reached says in place of its Model and time, as one whose Remote does
@@ -106,7 +106,7 @@ impl Section for SubagentsSection {
             // A tree that could not be read says so where it would stand.
             SubagentTreeView::Failed(message) => {
                 let rows = wrapped(
-                    &format!("Error: Could not load Subagents: {message}"),
+                    &format!("Error: Could not load subagents: {message}"),
                     usize::from(context.width),
                 )
                 .into_iter()
@@ -809,7 +809,7 @@ fn right_slot(
     theme: &Theme,
 ) -> Option<(String, Style)> {
     if needs_intervention {
-        Some((" Needs Intervention".to_owned(), theme.feedback.warning))
+        Some((" Needs intervention".to_owned(), theme.feedback.warning))
     } else {
         time.map(|time| (format!(" {time}"), theme.text.subdued))
     }

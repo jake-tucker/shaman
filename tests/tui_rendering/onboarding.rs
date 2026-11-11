@@ -42,7 +42,7 @@ fn unonboarded_health() -> Health {
 fn connect(application: &mut Application, health: Health) {
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Connected(health)))
-        .expect("connect to the local Server");
+        .expect("connect to the local server");
 }
 
 /// A Client attached to its own Server, which has never been onboarded and
@@ -118,7 +118,7 @@ fn a_client_offers_onboarding_over_the_landing_once_it_holds_health_and_settings
     assert!(offered.contains("Providers"), "{offered}");
     assert!(
         offered.contains("Agent unavailable"),
-        "over the Landing, whose status still shows beneath: {offered}"
+        "over the landing, whose status still shows beneath: {offered}"
     );
 
     let mut settings_first = Application::new(workspace.path(), TerminalFacts::default());
@@ -189,14 +189,14 @@ fn onboarding_offered_beneath_connect_is_withdrawn_once_a_remote_is_chosen() {
     );
     assert!(
         !onboarding_shown(&application),
-        "what was offered beneath Connect is not left over the Remote: {}",
+        "what was offered beneath Connect is not left over the remote: {}",
         screen(&application)
     );
 
     turn_outlook(&mut application, KeyCode::Up);
     assert!(
         screen(&application).contains("Step 1 of 4"),
-        "back on its own Server, the Client offers it again: {}",
+        "back on its own server, the client offers it again: {}",
         screen(&application)
     );
 }
@@ -216,13 +216,13 @@ fn a_client_viewing_a_remote_offers_no_onboarding_there() {
     deliver_settings(&mut application, EffectiveSettings::default());
     assert!(
         !onboarding_shown(&application),
-        "the Remote's Onboarding is its own Server's affair: {}",
+        "the remote's onboarding is its own server's affair: {}",
         screen(&application)
     );
     connect(&mut application, unonboarded_health());
     assert!(
         !onboarding_shown(&application),
-        "nor does a reconnect bring it over the Remote: {}",
+        "nor does a reconnect bring it over the remote: {}",
         screen(&application)
     );
 
@@ -235,7 +235,7 @@ fn a_client_viewing_a_remote_offers_no_onboarding_there() {
     );
     assert!(
         screen(&application).contains("Step 1 of 4"),
-        "back on its own Server, the Client offers it: {}",
+        "back on its own server, the client offers it: {}",
         screen(&application)
     );
 }
@@ -268,7 +268,7 @@ fn the_header_counts_the_steps_as_next_and_back_move_between_them() {
     confirm_step(&mut application);
     pass_the_derivation_step(&mut application, EffectiveSettings::default());
     let third = screen(&application);
-    assert!(third.contains("Step 3 of 4 · Workspace Roots"), "{third}");
+    assert!(third.contains("Step 3 of 4 · Workspace roots"), "{third}");
     focus_confirm(&mut application);
     assert!(screen(&application).contains("Enter Next"), "{third}");
 
@@ -335,7 +335,7 @@ fn a_stale_word_that_the_server_is_not_onboarded_does_not_reopen_what_the_reader
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Managed(ManagedEvent::Onboarded(false)))
-            .expect("hear the stream's opening word on Onboarding"),
+            .expect("hear the stream's opening word on onboarding"),
         ApplicationTransition::Continue,
         "no second mark is asked for"
     );
@@ -358,7 +358,7 @@ fn left_then_reconnected_unmarked(workspace: &Path) -> Application {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Connected(
             unonboarded_health(),
         )))
-        .expect("reconnect to a Server that says it is not onboarded");
+        .expect("reconnect to a server that says it is not onboarded");
     assert_ne!(
         reconnected,
         ApplicationTransition::MarkOnboarded,
@@ -367,7 +367,7 @@ fn left_then_reconnected_unmarked(workspace: &Path) -> Application {
     deliver_settings(&mut application, EffectiveSettings::default());
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Onboarded(false)))
-        .expect("hear the reconnected stream's opening word on Onboarding");
+        .expect("hear the reconnected stream's opening word on onboarding");
     application
 }
 
@@ -431,7 +431,7 @@ fn onboarding_owns_the_keys_while_it_is_open() {
     let landing = screen(&application);
     assert!(
         !landing.contains("hello"),
-        "nothing typed over Onboarding reaches the composer: {landing}"
+        "nothing typed over onboarding reaches the composer: {landing}"
     );
 }
 
@@ -444,7 +444,7 @@ fn hearing_the_server_was_onboarded_elsewhere_closes_the_flow() {
 
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Onboarded(true)))
-        .expect("hear that another Client onboarded the Server");
+        .expect("hear that another client onboarded the server");
     assert!(!onboarding_shown(&application), "{}", screen(&application));
     deliver_settings(&mut application, EffectiveSettings::default());
     assert!(!onboarding_shown(&application), "{}", screen(&application));
@@ -463,7 +463,7 @@ fn a_reconnect_saying_the_server_was_onboarded_meanwhile_closes_the_offered_flow
     );
     assert!(
         !onboarding_shown(&application),
-        "another Client took it while this one was away: {}",
+        "another client took it while this one was away: {}",
         screen(&application)
     );
 }
@@ -480,7 +480,7 @@ fn a_retake_the_reader_asked_for_stays_open_whatever_the_server_says() {
 
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Onboarded(true)))
-        .expect("hear that the Server has been onboarded");
+        .expect("hear that the server has been onboarded");
     connect(
         &mut application,
         ready_health(fixture_instance_id(), 42_424),
@@ -526,13 +526,13 @@ fn slash_onboarding_opens_over_an_open_session() {
     let mut application = connected_application(workspace.path());
     deliver_settings(&mut application, EffectiveSettings::default());
     enter_session(&mut application, workspace.path());
-    assert!(screen(&application).contains("Initial Prompt"));
+    assert!(screen(&application).contains("Initial prompt"));
 
     type_terminal_text(&mut application, "/onboarding");
     press(&mut application, KeyCode::Enter);
     let over_session = screen(&application);
     assert!(over_session.contains("Step 1 of 4"), "{over_session}");
-    assert!(over_session.contains("Initial Prompt"), "{over_session}");
+    assert!(over_session.contains("Initial prompt"), "{over_session}");
 }
 
 fn startup_diagnostic() -> SettingsDiagnostic {
@@ -540,7 +540,7 @@ fn startup_diagnostic() -> SettingsDiagnostic {
         severity: SettingsDiagnosticSeverity::Warning,
         file: std::path::PathBuf::from("suru.jsonc"),
         key: Some("transcript.defaultFoldPostures".to_owned()),
-        message: "ignored because it is not a known Setting".to_owned(),
+        message: "ignored because it is not a known setting".to_owned(),
     }
 }
 
@@ -563,7 +563,7 @@ fn the_launch_notice_waits_beneath_onboarding_and_is_read_once_it_closes() {
             },
         )))
         .expect("receive the settings snapshot with a startup diagnostic");
-    let notice = |application: &Application| screen(application).contains("see the Log");
+    let notice = |application: &Application| screen(application).contains("see the log");
     let offered = screen(&application);
     assert!(offered.contains("Step 1 of 4"), "{offered}");
     assert!(notice(&application), "{offered}");
@@ -572,14 +572,14 @@ fn the_launch_notice_waits_beneath_onboarding_and_is_read_once_it_closes() {
     press(&mut application, KeyCode::Left);
     assert!(
         notice(&application),
-        "keys Onboarding takes leave the Notice unread: {}",
+        "keys onboarding takes leave the notice unread: {}",
         screen(&application)
     );
     press(&mut application, KeyCode::Esc);
     assert!(!onboarding_shown(&application));
     assert!(
         notice(&application),
-        "the key that closes Onboarding leaves it standing: {}",
+        "the key that closes onboarding leaves it standing: {}",
         screen(&application)
     );
 
@@ -644,13 +644,13 @@ fn push_catalog(application: &mut Application, providers: &[(&str, ProviderCatal
         .handle_event(ApplicationEvent::Managed(ManagedEvent::ModelCatalog(
             catalog(providers),
         )))
-        .expect("hear the Model Catalog the Server pushed");
+        .expect("hear the model catalog the server pushed");
 }
 
 fn unavailable(reason: ProviderUnavailability, fix: &str) -> ProviderCatalogStatus {
     ProviderCatalogStatus::Unavailable {
         reason,
-        message: "the Provider's own account of it".to_owned(),
+        message: "the provider's own account of it".to_owned(),
         fix: fix.to_owned(),
     }
 }
@@ -751,7 +751,7 @@ fn provider_row_text(application: &Application, provider: &str) -> String {
     let row = provider_row(application, provider);
     let start = row
         .find('[')
-        .expect("a Provider row begins with its checkbox");
+        .expect("a provider row begins with its checkbox");
     row[start..].trim_end_matches(['│', ' ']).to_owned()
 }
 
@@ -786,11 +786,11 @@ fn space_writes_the_provider_under_the_cursor_through_its_enablement_at_once() {
     assert_eq!(
         toggle,
         MutatesSetting(SettingMutation::ProviderCodexEnabled { value: Some(false) }),
-        "Space turns the Provider under the cursor off"
+        "Space turns the provider under the cursor off"
     );
     assert!(
         provider_row(&application, "Codex").contains("[x] Codex"),
-        "the row waits on the Server rather than showing what the file has not taken"
+        "the row waits on the server rather than showing what the file has not taken"
     );
     settle_mutation(
         &mut application,
@@ -807,13 +807,13 @@ fn space_writes_the_provider_under_the_cursor_through_its_enablement_at_once() {
     assert_eq!(
         press(&mut application, KeyCode::Char(' ')),
         MutatesSetting(SettingMutation::ProviderCopilotEnabled { value: Some(false) }),
-        "Down moves the cursor to the next Provider"
+        "Down moves the cursor to the next provider"
     );
     press(&mut application, KeyCode::Down);
     press(&mut application, KeyCode::Down);
     assert!(
         screen(&application).contains("› Confirm"),
-        "the Confirm row stands beneath the last Provider: {}",
+        "the Confirm row stands beneath the last provider: {}",
         screen(&application)
     );
     press(&mut application, KeyCode::Down);
@@ -830,7 +830,7 @@ fn space_writes_the_provider_under_the_cursor_through_its_enablement_at_once() {
     assert_eq!(
         press(&mut application, KeyCode::Char(' ')),
         MutatesSetting(SettingMutation::ProviderCodexEnabled { value: Some(true) }),
-        "and Space turns a Provider back on"
+        "and Space turns a provider back on"
     );
     assert!(
         screen(&application).contains("Step 1 of 4"),
@@ -852,7 +852,7 @@ fn enter_toggles_the_provider_under_the_cursor_as_space_does() {
     assert_eq!(
         toggle,
         MutatesSetting(SettingMutation::ProviderCodexEnabled { value: Some(false) }),
-        "Enter turns the Provider under the cursor off"
+        "Enter turns the provider under the cursor off"
     );
     settle_mutation(
         &mut application,
@@ -875,7 +875,7 @@ fn space_or_enter_on_the_confirm_row_passes_the_providers_step() {
         let on_confirm = screen(&application);
         assert!(
             on_confirm.contains("› Confirm"),
-            "Up from the first Provider wraps to the Confirm row: {on_confirm}"
+            "Up from the first provider wraps to the Confirm row: {on_confirm}"
         );
         assert!(
             on_confirm.contains("Enter Next"),
@@ -955,7 +955,7 @@ fn each_provider_row_shows_its_catalog_status() {
         &[(
             "copilot",
             ProviderCatalogStatus::Failed {
-                message: "the Model listing timed out".to_owned(),
+                message: "the model listing timed out".to_owned(),
             },
         )],
     );
@@ -964,7 +964,7 @@ fn each_provider_row_shows_its_catalog_status() {
         "[x] Copilot · error"
     );
     assert!(
-        screen(&application).contains("the Model listing timed out"),
+        screen(&application).contains("the model listing timed out"),
         "beneath a failed read, what failed: {}",
         screen(&application)
     );
@@ -1065,12 +1065,12 @@ fn the_recheck_key_issues_the_all_providers_refresh_and_its_answer_reaches_the_r
         press(&mut application, KeyCode::Char('r'))
     else {
         panic!(
-            "r re-reads every Provider's Availability: {}",
+            "r re-reads every provider's availability: {}",
             screen(&application)
         );
     };
     assert!(
-        screen(&application).contains("Re-checking every Provider…"),
+        screen(&application).contains("Re-checking every provider…"),
         "and says so while it does: {}",
         screen(&application)
     );
@@ -1113,18 +1113,18 @@ fn a_recheck_the_server_did_not_answer_says_so_and_leaves_the_rows() {
     let ApplicationTransition::RecheckProviders { recheck } =
         press(&mut application, KeyCode::Char('r'))
     else {
-        panic!("r re-reads every Provider's Availability");
+        panic!("r re-reads every provider's availability");
     };
     application
         .handle_event(ApplicationEvent::ProvidersRechecked {
             recheck,
-            result: Err("the Server did not answer".to_owned()),
+            result: Err("the server did not answer".to_owned()),
         })
         .expect("hear that the re-check failed");
 
     let failed = screen(&application);
     assert!(
-        failed.contains("Could not re-check the Providers: the Server did not answer"),
+        failed.contains("Could not re-check the providers: the server did not answer"),
         "{failed}"
     );
     assert!(!failed.contains("Re-checking"), "{failed}");
@@ -1149,9 +1149,9 @@ fn the_recheck_reads_the_clients_own_server_over_a_remote_and_its_listing_still_
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::ModelList,
         )))
-        .expect("open the Model picker")
+        .expect("open the model picker")
     else {
-        panic!("the picker asks the Remote for its Models");
+        panic!("the picker asks the remote for its models");
     };
     assert_eq!(listing.outlook(), &Outlook::Remote("studio".to_owned()));
     press(&mut application, KeyCode::Esc);
@@ -1168,7 +1168,7 @@ fn the_recheck_reads_the_clients_own_server_over_a_remote_and_its_listing_still_
         press(&mut application, KeyCode::Char('r'))
     else {
         panic!(
-            "r re-reads the Client's own Server's Providers over a Remote: {}",
+            "r re-reads the client's own server's providers over a remote: {}",
             screen(&application)
         );
     };
@@ -1195,7 +1195,7 @@ fn the_recheck_reads_the_clients_own_server_over_a_remote_and_its_listing_still_
                     models: vec![model_descriptor(
                         "codex",
                         "studio-model",
-                        "Studio Model",
+                        "Studio model",
                         true,
                         ModelAvailability::Available,
                     )],
@@ -1203,7 +1203,7 @@ fn the_recheck_reads_the_clients_own_server_over_a_remote_and_its_listing_still_
                 }],
             },
         })
-        .expect("receive the Remote's Models");
+        .expect("receive the remote's models");
     assert_eq!(
         press(&mut application, KeyCode::Esc),
         ApplicationTransition::MarkOnboarded
@@ -1212,10 +1212,10 @@ fn the_recheck_reads_the_clients_own_server_over_a_remote_and_its_listing_still_
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::ModelList,
         )))
-        .expect("open the Model picker again");
+        .expect("open the model picker again");
     assert!(
-        screen(&application).contains("Studio Model"),
-        "the Remote's listing settled as the picker asked for it: {}",
+        screen(&application).contains("Studio model"),
+        "the remote's listing settled as the picker asked for it: {}",
         screen(&application)
     );
 }
@@ -1226,7 +1226,7 @@ fn recheck(application: &mut Application) -> uuid::Uuid {
     let ApplicationTransition::RecheckProviders { recheck } =
         press(application, KeyCode::Char('r'))
     else {
-        panic!("r re-reads every Provider's Availability");
+        panic!("r re-reads every provider's availability");
     };
     recheck
 }
@@ -1427,7 +1427,7 @@ fn a_short_screen_keeps_the_lock_line_and_keys_and_follows_the_cursor() {
     assert!(first.contains("› [x] Codex · not installed"), "{first}");
     assert!(
         !first.contains("Claude"),
-        "the last Provider is out of view to begin with: {first}"
+        "the last provider is out of view to begin with: {first}"
     );
     for kept in ["Next is locked:", "Confirm", "Enter Toggle", "Esc Leave"] {
         assert!(first.contains(kept), "{kept:?} keeps its place: {first}");
@@ -1438,7 +1438,7 @@ fn a_short_screen_keeps_the_lock_line_and_keys_and_follows_the_cursor() {
     let last = short(&application);
     assert!(
         last.contains("› [x] Claude · not installed"),
-        "the cursor brings the last Provider into view: {last}"
+        "the cursor brings the last provider into view: {last}"
     );
     assert!(
         last.contains("https://code.claude.com/docs/en/setup"),
@@ -1450,7 +1450,7 @@ fn a_short_screen_keeps_the_lock_line_and_keys_and_follows_the_cursor() {
     assert_eq!(
         press(&mut application, KeyCode::Char(' ')),
         MutatesSetting(SettingMutation::ProviderClaudeEnabled { value: Some(false) }),
-        "Space toggles the Provider on screen under the cursor"
+        "Space toggles the provider on screen under the cursor"
     );
 
     press(&mut application, KeyCode::Down);
@@ -1503,7 +1503,7 @@ fn a_narrow_screen_keeps_enter_and_leave_and_the_whole_lock_line() {
         .collect::<Vec<_>>()
         .join(" ");
     assert!(
-        explanation.contains("Next is locked: no enabled Provider is available."),
+        explanation.contains("Next is locked: no enabled provider is available."),
         "whole, over as many rows as it takes: {narrow}"
     );
 }
@@ -1525,7 +1525,7 @@ fn a_tiny_screen_acts_on_no_provider_it_does_not_draw() {
     let tiny = rendered_application_rows_at(&application, 40, 9).join("\n");
     assert!(tiny.contains("Step 1 of 4"), "{tiny}");
     assert!(
-        tiny.contains("Next is locked: no enabled") && tiny.contains("Provider is available."),
+        tiny.contains("Next is locked: no enabled") && tiny.contains("provider is available."),
         "why Next is locked is given whole: {tiny}"
     );
     assert!(
@@ -1535,7 +1535,7 @@ fn a_tiny_screen_acts_on_no_provider_it_does_not_draw() {
     assert_eq!(
         press(&mut application, KeyCode::Char(' ')),
         ApplicationTransition::Continue,
-        "Space toggles no Provider the screen does not draw"
+        "Space toggles no provider the screen does not draw"
     );
 
     let roomier = rendered_application_rows_at(&application, 40, 14).join("\n");
@@ -1663,7 +1663,7 @@ fn a_wrapped_fix_on_the_providers_step_copies_as_one_unbroken_line() {
             (tail.0 + "available.".len() as u16 - 1, tail.1)
         ),
         ApplicationTransition::CopyToClipboard(
-            "Next is locked: no enabled Provider is available.".into()
+            "Next is locked: no enabled provider is available.".into()
         ),
         "the explanation copies as one line"
     );
@@ -1677,7 +1677,7 @@ fn next_stays_locked_while_no_enabled_provider_is_available_and_unlocks_once_one
 
     let locked = screen(&application);
     assert!(
-        locked.contains("Next is locked: no enabled Provider is available"),
+        locked.contains("Next is locked: no enabled provider is available"),
         "a line under the rows says why: {locked}"
     );
     assert_eq!(
@@ -1700,7 +1700,7 @@ fn next_stays_locked_while_no_enabled_provider_is_available_and_unlocks_once_one
     press(&mut application, KeyCode::Enter);
     assert!(
         screen(&application).contains("Step 2 of 4"),
-        "one available Provider is enough: {}",
+        "one available provider is enough: {}",
         screen(&application)
     );
 }
@@ -1719,7 +1719,7 @@ fn every_fix_and_the_lock_line_are_drawn_with_no_provider_installed() {
         "https://developers.openai.com/codex/cli/",
         "install the Copilot CLI from",
         "https://code.claude.com/docs/en/setup",
-        "Next is locked: no enabled Provider is available.",
+        "Next is locked: no enabled provider is available.",
         "Esc Leave",
     ] {
         assert!(shown.contains(drawn), "{drawn:?} is drawn: {shown}");
@@ -1742,7 +1742,7 @@ fn next_stays_locked_while_every_provider_is_disabled() {
 
     let locked = screen(&application);
     assert!(
-        locked.contains("Next is locked: enable at least one Provider"),
+        locked.contains("Next is locked: enable at least one provider"),
         "{locked}"
     );
     confirm_step(&mut application);
@@ -1762,7 +1762,7 @@ fn next_stays_locked_while_every_provider_is_disabled() {
     );
     assert!(
         !screen(&application).contains("Next is locked"),
-        "an enabled Provider not found unavailable opens the way: {}",
+        "an enabled provider not found unavailable opens the way: {}",
         screen(&application)
     );
 }
@@ -1782,7 +1782,7 @@ fn an_available_provider_that_is_disabled_does_not_unlock_next() {
         ],
     );
     assert!(
-        screen(&application).contains("Next is locked: no enabled Provider is available"),
+        screen(&application).contains("Next is locked: no enabled provider is available"),
         "{}",
         screen(&application)
     );
@@ -1935,7 +1935,7 @@ fn pushed_catalog() -> ModelCatalog {
                 models: vec![model_descriptor(
                     "copilot",
                     "copilot-model",
-                    "Copilot Model",
+                    "Copilot model",
                     true,
                     ModelAvailability::Available,
                 )],
@@ -1953,7 +1953,7 @@ fn unavailable_claude() -> ProviderModelCatalog {
         models: vec![model_descriptor(
             "claude",
             "claude-model",
-            "Claude Model",
+            "Claude model",
             true,
             ModelAvailability::Available,
         )],
@@ -1970,7 +1970,7 @@ fn deliver_catalog(application: &mut Application, catalog: ModelCatalog) {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::ModelCatalog(
             catalog,
         )))
-        .expect("receive the Model Catalog the Server pushes");
+        .expect("receive the model catalog the server pushes");
 }
 
 /// Settings deriving Titles, Icons, and branch names with `errand`, and with
@@ -2054,8 +2054,8 @@ fn the_derivation_step_offers_the_providers_default_and_off_above_the_models_of_
         "nor does one that is unavailable: {shown}"
     );
     assert!(
-        !shown.contains("session"),
-        "the named value reads as the Provider's default, not the word it is spelled with: {shown}"
+        !shown.replace("Loading sessions…", "").contains("session"),
+        "the named value reads as the provider's default, not the word it is spelled with: {shown}"
     );
 }
 
@@ -2075,8 +2075,8 @@ fn the_derivation_step_follows_enablement_and_availability_as_they_change() {
     deliver_catalog(&mut application, catalog);
     let installed = screen(&application);
     assert!(
-        installed.contains("Claude") && installed.contains("Claude Model"),
-        "Claude, installed since, offers its Model: {installed}"
+        installed.contains("Claude") && installed.contains("Claude model"),
+        "Claude, installed since, offers its model: {installed}"
     );
 
     let mut settings = settings_deriving_with(DerivationErrand::FollowSession);
@@ -2087,7 +2087,7 @@ fn the_derivation_step_follows_enablement_and_availability_as_they_change() {
         !turned_off.contains("Codex") && !turned_off.contains("GPT-5"),
         "Codex, turned off on the step before, offers nothing: {turned_off}"
     );
-    assert!(turned_off.contains("Claude Model"), "{turned_off}");
+    assert!(turned_off.contains("Claude model"), "{turned_off}");
 }
 
 #[test]
@@ -2181,14 +2181,14 @@ fn a_model_with_model_options_opens_them_over_the_step_and_pins_only_what_was_ch
     assert_eq!(
         press(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "a Model with Model Options has them chosen before anything is pinned"
+        "a model with model options has them chosen before anything is pinned"
     );
     let options = screen(&application);
-    assert!(options.contains("Model Options"), "{options}");
+    assert!(options.contains("Model options"), "{options}");
     assert!(
         options.contains("Reasoning · Provider default")
             && options.contains("Speed · Provider default"),
-        "nothing is pinned yet, so every option follows the Model's default: {options}"
+        "nothing is pinned yet, so every option follows the model's default: {options}"
     );
 
     assert_eq!(
@@ -2197,7 +2197,7 @@ fn a_model_with_model_options_opens_them_over_the_step_and_pins_only_what_was_ch
     );
     let cancelled = screen(&application);
     assert!(
-        cancelled.contains("Step 2 of 4") && !cancelled.contains("Model Options"),
+        cancelled.contains("Step 2 of 4") && !cancelled.contains("Model options"),
         "cancelling the options leaves the reader on the step: {cancelled}"
     );
 
@@ -2218,7 +2218,7 @@ fn a_model_with_model_options_opens_them_over_the_step_and_pins_only_what_was_ch
                 },
             }
         ]))),
-        "the chosen Reasoning is pinned, and the untouched Speed follows the Model's default"
+        "the chosen reasoning is pinned, and the untouched Speed follows the model's default"
     );
     settle_mutation(
         &mut application,
@@ -2234,7 +2234,7 @@ fn a_model_with_model_options_opens_them_over_the_step_and_pins_only_what_was_ch
     );
     let moved_on = screen(&application);
     assert!(
-        moved_on.contains("Step 3 of 4") && !moved_on.contains("Model Options"),
+        moved_on.contains("Step 3 of 4") && !moved_on.contains("Model options"),
         "choosing the options answers the step: {moved_on}"
     );
 }
@@ -2261,7 +2261,7 @@ fn taking_onboarding_again_rests_row_focus_on_the_derivation_value_in_force() {
         let row = focused_row(&application);
         assert!(
             row.contains(focused) && row.contains("current"),
-            "{errand:?} has Row Focus and is marked as the value in force: {row}"
+            "{errand:?} has row focus and is marked as the value in force: {row}"
         );
     }
 
@@ -2288,7 +2288,7 @@ fn taking_onboarding_again_rests_row_focus_on_the_derivation_value_in_force() {
 fn retry(application: &mut Application) -> uuid::Uuid {
     let transition = press(application, KeyCode::Enter);
     let ApplicationTransition::RecheckProviders { recheck } = transition else {
-        panic!("a retry row re-reads every Provider of the Client's own Server: {transition:?}");
+        panic!("a retry row re-reads every provider of the client's own server: {transition:?}");
     };
     recheck
 }
@@ -2348,10 +2348,10 @@ fn a_warning_or_refreshing_provider_still_offers_its_models_on_the_derivation_st
     let shown = screen(&application);
     assert!(
         shown.contains("Codex") && shown.contains("GPT-5 Mini"),
-        "a Provider with a warning is usable, so its Models are offered: {shown}"
+        "a provider with a warning is usable, so its models are offered: {shown}"
     );
     assert!(
-        shown.contains("Claude · refreshing") && shown.contains("Claude Model"),
+        shown.contains("Claude · refreshing") && shown.contains("Claude model"),
         "as are those of one whose catalog is being read again: {shown}"
     );
 }
@@ -2392,7 +2392,7 @@ fn retrying_on_the_derivation_step_viewing_studio(workspace: &Path) -> Applicati
                     models: vec![model_descriptor(
                         "codex",
                         "studio-model",
-                        "Studio Model",
+                        "Studio model",
                         true,
                         ModelAvailability::Available,
                     )],
@@ -2400,7 +2400,7 @@ fn retrying_on_the_derivation_step_viewing_studio(workspace: &Path) -> Applicati
                 }],
             }),
         })
-        .expect("hear the Remote's catalog");
+        .expect("hear the remote's catalog");
 
     type_terminal_text(&mut application, "/onboarding");
     press(&mut application, KeyCode::Enter);
@@ -2408,8 +2408,8 @@ fn retrying_on_the_derivation_step_viewing_studio(workspace: &Path) -> Applicati
     let shown = screen(&application);
     assert!(shown.contains("Step 2 of 4"), "{shown}");
     assert!(
-        shown.contains("GPT-5 Mini") && !shown.contains("Studio Model"),
-        "the Models offered are the Client's own Server's, whose Setting is pinned: {shown}"
+        shown.contains("GPT-5 Mini") && !shown.contains("Studio model"),
+        "the models offered are the client's own server's, whose setting is pinned: {shown}"
     );
 
     press(&mut application, KeyCode::Down);
@@ -2432,7 +2432,7 @@ fn the_derivation_step_lists_and_retries_the_clients_own_server_while_a_remote_i
     answer_recheck(&mut application, recheck, Ok(listed));
     let relisted = screen(&application);
     assert!(
-        relisted.contains("Claude Model") && !relisted.contains("Studio Model"),
+        relisted.contains("Claude model") && !relisted.contains("Studio model"),
         "what the retry found is the step's: {relisted}"
     );
 
@@ -2466,7 +2466,7 @@ fn choosing_options_on_the_derivation_step(workspace: &Path) -> Application {
     }
     press(&mut application, KeyCode::Enter);
     assert!(
-        screen(&application).contains("Model Options"),
+        screen(&application).contains("Model options"),
         "{}",
         screen(&application)
     );
@@ -2484,10 +2484,10 @@ fn the_options_onboarding_opened_close_with_it_when_another_client_takes_it() {
 
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Onboarded(true)))
-        .expect("hear that another Client onboarded the Server");
+        .expect("hear that another client onboarded the server");
     let after = screen(&application);
     assert!(
-        !onboarding_shown(&application) && !after.contains("Model Options"),
+        !onboarding_shown(&application) && !after.contains("Model options"),
         "nothing the flow offered stands to be pinned: {after}"
     );
     assert_ne!(
@@ -2506,12 +2506,12 @@ fn the_options_onboarding_opened_close_with_it_when_it_is_left() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::OnboardingLeave,
             )))
-            .expect("leave Onboarding"),
+            .expect("leave onboarding"),
         ApplicationTransition::MarkOnboarded
     );
     let after = screen(&application);
     assert!(
-        !onboarding_shown(&application) && !after.contains("Model Options"),
+        !onboarding_shown(&application) && !after.contains("Model options"),
         "{after}"
     );
 }
@@ -2527,9 +2527,9 @@ fn applying_options_opened_elsewhere_does_not_answer_the_derivation_step() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::ModelOptions,
         )))
-        .expect("open the Agent's Model Options")
+        .expect("open the agent's model options")
     else {
-        panic!("the Agent's Model Options read the catalog first");
+        panic!("the agent's model options read the catalog first");
     };
     let mut cheap_by_default = cheap_model();
     cheap_by_default.is_default = true;
@@ -2547,7 +2547,7 @@ fn applying_options_opened_elsewhere_does_not_answer_the_derivation_step() {
         })
         .expect("receive the catalog");
     assert!(
-        screen(&application).contains("Model Options"),
+        screen(&application).contains("Model options"),
         "{}",
         screen(&application)
     );
@@ -2555,7 +2555,7 @@ fn applying_options_opened_elsewhere_does_not_answer_the_derivation_step() {
     let applied = apply_options(&mut application);
     assert!(
         !matches!(applied, ApplicationTransition::MutateSetting { .. }),
-        "the Agent's options pin nothing: {applied:?}"
+        "the agent's options pin nothing: {applied:?}"
     );
     assert!(
         screen(&application).contains("Step 2 of 4"),
@@ -2579,7 +2579,7 @@ fn options_for_a_provider_turned_off_or_found_unavailable_meanwhile_refuse_to_ap
     assert_eq!(
         apply_options(&mut application),
         ApplicationTransition::Continue,
-        "a Model of a Provider turned off cannot be pinned"
+        "a model of a provider turned off cannot be pinned"
     );
 
     deliver_settings(
@@ -2596,7 +2596,7 @@ fn options_for_a_provider_turned_off_or_found_unavailable_meanwhile_refuse_to_ap
     assert_eq!(
         apply_options(&mut application),
         ApplicationTransition::Continue,
-        "nor one of a Provider found unavailable"
+        "nor one of a provider found unavailable"
     );
 
     deliver_catalog(&mut application, pushed_catalog());
@@ -2707,7 +2707,7 @@ fn the_window_holds_while_rows_listed_above_row_focus_leave_it_in_view() {
     assert_eq!(
         held.first(),
         walked.first(),
-        "a row listed above Row Focus that leaves it in view moves no window: {held:#?}"
+        "a row listed above row focus that leaves it in view moves no window: {held:#?}"
     );
     assert!(
         held.iter().any(|row| row.starts_with("› Model 05")),
@@ -2720,7 +2720,7 @@ fn the_window_holds_while_rows_listed_above_row_focus_leave_it_in_view() {
         moved
             .last()
             .is_some_and(|row| row.starts_with("› Model 05")),
-        "rows that would push Row Focus out of view move the window only as far as keeps it \
+        "rows that would push row focus out of view move the window only as far as keeps it \
          in view: {moved:#?}"
     );
 }
@@ -2733,18 +2733,18 @@ fn a_failed_retry_of_the_clients_own_server_shows_its_retry_rows_while_a_remote_
     answer_recheck(
         &mut application,
         recheck,
-        Err("the Server did not answer".to_owned()),
+        Err("the server did not answer".to_owned()),
     );
 
     let failed = screen(&application);
     assert!(failed.contains("Step 2 of 4"), "{failed}");
     assert!(
-        failed.contains("Retry Codex: the Server did not answer")
-            && failed.contains("Retry Claude: the Server did not answer"),
-        "the failure is the Client's own Server's, retried from the step as the picker would: \
+        failed.contains("Retry Codex: the server did not answer")
+            && failed.contains("Retry Claude: the server did not answer"),
+        "the failure is the client's own server's, retried from the step as the picker would: \
          {failed}"
     );
-    assert!(!failed.contains("Studio Model"), "{failed}");
+    assert!(!failed.contains("Studio model"), "{failed}");
 }
 
 #[test]
@@ -2755,9 +2755,9 @@ fn the_agents_options_asked_for_earlier_do_not_replace_the_derivation_steps() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::ModelOptions,
         )))
-        .expect("ask for the Agent's Model Options")
+        .expect("ask for the agent's model options")
     else {
-        panic!("the Agent's Model Options read the catalog first");
+        panic!("the agent's model options read the catalog first");
     };
     deliver_settings(
         &mut application,
@@ -2794,7 +2794,7 @@ fn the_agents_options_asked_for_earlier_do_not_replace_the_derivation_steps() {
                 }],
             },
         })
-        .expect("receive the catalog the Agent's options asked for");
+        .expect("receive the catalog the agent's options asked for");
     assert!(
         screen(&application).contains("Reasoning · HIGH"),
         "the step's options, and what the reader chose in them, stand: {}",
@@ -2841,9 +2841,9 @@ fn a_retry_from_the_derivation_step_leaves_a_remote_listing_in_flight_to_settle(
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::ModelList,
         )))
-        .expect("open the Model picker")
+        .expect("open the model picker")
     else {
-        panic!("the picker asks the Remote for its Models");
+        panic!("the picker asks the remote for its models");
     };
     assert_eq!(listing.outlook(), &Outlook::Remote("studio".to_owned()));
     press(&mut application, KeyCode::Esc);
@@ -2870,7 +2870,7 @@ fn a_retry_from_the_derivation_step_leaves_a_remote_listing_in_flight_to_settle(
                     models: vec![model_descriptor(
                         "codex",
                         "studio-model",
-                        "Studio Model",
+                        "Studio model",
                         true,
                         ModelAvailability::Available,
                     )],
@@ -2878,7 +2878,7 @@ fn a_retry_from_the_derivation_step_leaves_a_remote_listing_in_flight_to_settle(
                 }],
             },
         })
-        .expect("receive the Remote's Models");
+        .expect("receive the remote's models");
     assert_eq!(
         press(&mut application, KeyCode::Esc),
         ApplicationTransition::MarkOnboarded
@@ -2887,10 +2887,10 @@ fn a_retry_from_the_derivation_step_leaves_a_remote_listing_in_flight_to_settle(
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::ModelList,
         )))
-        .expect("open the Model picker again");
+        .expect("open the model picker again");
     assert!(
-        screen(&application).contains("Studio Model"),
-        "the Remote's listing settled as the picker asked for it: {}",
+        screen(&application).contains("Studio model"),
+        "the remote's listing settled as the picker asked for it: {}",
         screen(&application)
     );
 }
@@ -2959,7 +2959,7 @@ fn retry_rows_a_failure_lists_above_row_focus_leave_it_in_view() {
         failed
             .last()
             .is_some_and(|row| row.starts_with("› Model 12")),
-        "a retry row listed above Row Focus moves the window only as far as keeps it in view: \
+        "a retry row listed above row focus moves the window only as far as keeps it in view: \
          {failed:#?}"
     );
 }
@@ -2986,7 +2986,7 @@ fn a_listing_failure_stands_through_settings_until_a_catalog_supersedes_it() {
     );
     assert!(
         !turned_off.contains("Codex"),
-        "though a Provider turned off since still leaves the list: {turned_off}"
+        "though a provider turned off since still leaves the list: {turned_off}"
     );
 
     deliver_catalog(&mut application, claude_installed());
@@ -3018,7 +3018,7 @@ fn an_unrelated_settings_snapshot_leaves_row_focus_on_a_retry_row_and_the_window
     assert_eq!(
         derivation_rows(&application),
         focused,
-        "Row Focus stays on its retry row, and the window where it stood"
+        "Row focus stays on its retry row, and the window where it stood"
     );
     assert!(
         matches!(
@@ -3047,7 +3047,7 @@ const SAMPLE_GLYPHS: [char; 10] = [
     '\u{ec6f}',
 ];
 
-const NERD_FONT_NOTE: &str = "To get Icons, install a Nerd Font and select it in your terminal, \
+const NERD_FONT_NOTE: &str = "To get icons, install a Nerd Font and select it in your terminal, \
                               then turn on Show icons in /settings.";
 
 /// Walks the flow on to its last step, drawn, the Server accepting the
@@ -3065,7 +3065,7 @@ fn on_the_icons_step_holding(application: &mut Application, settings: EffectiveS
     assert_eq!(
         confirm_step(application),
         ApplicationTransition::Continue,
-        "the Roots in force pin nothing"
+        "the roots in force pin nothing"
     );
     let shown = screen(application);
     assert!(shown.contains("Step 4 of 4 · Icons"), "{shown}");
@@ -3111,7 +3111,7 @@ fn pins_show_icons(show_icons: bool) -> MutatesSetting {
 fn request_of(transition: &ApplicationTransition) -> SettingRequest {
     match transition {
         ApplicationTransition::MutateSetting { request, .. } => *request,
-        other => panic!("a Setting mutation is asked for: {other:?}"),
+        other => panic!("a setting mutation is asked for: {other:?}"),
     }
 }
 
@@ -3138,7 +3138,7 @@ fn acknowledge(
                 diagnostics: Vec::new(),
             },
         )))
-        .expect("receive the Settings the edit left in force");
+        .expect("receive the settings the edit left in force");
     answer(application, request)
 }
 
@@ -3315,7 +3315,7 @@ fn a_retake_puts_the_current_value_under_row_focus() {
         assert_eq!(
             press(&mut application, KeyCode::Enter),
             pins_show_icons(show_icons),
-            "Finish pins the value under Row Focus"
+            "Finish pins the value under row focus"
         );
     }
 }
@@ -3380,7 +3380,7 @@ fn the_nerd_font_note_wraps_and_copies_as_one_line() {
     press(&mut application, KeyCode::Up);
 
     let buffer = rendered_application_buffer(&application, 40, 30);
-    let start = text_position(&buffer, "To get Icons,");
+    let start = text_position(&buffer, "To get icons,");
     let tail = text_position(&buffer, "/settings.");
     assert!(start.1 < tail.1, "the note wraps onto rows of its own");
     assert_eq!(
@@ -3492,7 +3492,7 @@ fn the_flow_waits_on_the_icons_step_until_the_pin_lands() {
 /// Esc leaves without it.
 #[test]
 fn a_refused_pin_keeps_the_flow_open_with_the_failure_and_finish_retries() {
-    const REFUSAL: &str = "Config Document is not editable";
+    const REFUSAL: &str = "Config document is not editable";
     let workspace = workspace_dir();
     let mut application = offered_onboarding(workspace.path());
     on_the_icons_step(&mut application);
@@ -3570,7 +3570,7 @@ fn a_refusal_of_another_edit_leaves_the_pin_saving_and_its_landing_still_finishe
         refuse(
             &mut application,
             SettingRequest::new(),
-            "Config Document is not editable"
+            "Config document is not editable"
         ),
         ApplicationTransition::Continue
     );
@@ -3628,7 +3628,7 @@ fn next_waits_on_a_toggle_the_server_has_not_answered() {
     );
     let locked = screen(&application);
     assert!(
-        locked.contains("Next is locked: enable at least one Provider."),
+        locked.contains("Next is locked: enable at least one provider."),
         "{locked}"
     );
     assert!(!locked.contains("Saving your changes…"), "{locked}");
@@ -3656,13 +3656,13 @@ fn a_refused_toggle_is_said_beneath_the_rows_and_its_row_stays_as_the_server_say
         refuse(
             &mut application,
             request_of(&toggle),
-            "Config Document is not editable"
+            "Config document is not editable"
         ),
         ApplicationTransition::Continue
     );
     let refused = screen(&application);
     assert!(
-        refused.contains("Could not turn Codex off: Config Document is not editable"),
+        refused.contains("Could not turn Codex off: Config document is not editable"),
         "{refused}"
     );
     assert!(!refused.contains("Saving your changes…"), "{refused}");
@@ -3715,12 +3715,12 @@ fn the_derivation_step_waits_on_its_pin_landing_before_it_moves_on() {
                 diagnostics: Vec::new(),
             },
         )))
-        .expect("hear the Server push the pin already in force");
+        .expect("hear the server push the pin already in force");
     answer(&mut application, SettingRequest::new());
     refuse(
         &mut application,
         SettingRequest::new(),
-        "Config Document is not editable",
+        "Config document is not editable",
     );
     let waiting = screen(&application);
     assert!(waiting.contains("Step 2 of 4"), "{waiting}");
@@ -3752,7 +3752,7 @@ fn a_refused_derivation_pin_keeps_the_step_open_with_the_failure_and_enter_retri
         refuse(
             &mut application,
             request_of(&pin),
-            "Config Document is not editable"
+            "Config document is not editable"
         ),
         ApplicationTransition::Continue,
         "nothing moves on"
@@ -3760,7 +3760,7 @@ fn a_refused_derivation_pin_keeps_the_step_open_with_the_failure_and_enter_retri
     let refused = screen(&application);
     assert!(refused.contains("Step 2 of 4"), "{refused}");
     assert!(
-        refused.contains("Could not save your answer: Config Document is not editable"),
+        refused.contains("Could not save your answer: Config document is not editable"),
         "{refused}"
     );
     assert!(!refused.contains("Saving your answer…"), "{refused}");
@@ -3813,7 +3813,7 @@ fn options_chosen_for_the_derivation_step_wait_on_their_pin_as_confirming_does()
     );
     let saving = screen(&application);
     assert!(
-        saving.contains("Step 2 of 4") && !saving.contains("Model Options"),
+        saving.contains("Step 2 of 4") && !saving.contains("Model options"),
         "{saving}"
     );
     assert!(saving.contains("Saving your answer…"), "{saving}");
@@ -3821,18 +3821,18 @@ fn options_chosen_for_the_derivation_step_wait_on_their_pin_as_confirming_does()
     refuse(
         &mut application,
         request_of(&pin),
-        "Config Document is not editable",
+        "Config document is not editable",
     );
     let refused = screen(&application);
     assert!(refused.contains("Step 2 of 4"), "{refused}");
     assert!(
-        refused.contains("Could not save your answer: Config Document is not editable"),
+        refused.contains("Could not save your answer: Config document is not editable"),
         "{refused}"
     );
 
     press(&mut application, KeyCode::Enter);
     assert!(
-        screen(&application).contains("Model Options"),
+        screen(&application).contains("Model options"),
         "Enter opens the options again: {}",
         screen(&application)
     );
@@ -3903,7 +3903,7 @@ fn toggles_answered_out_of_order_leave_next_held_on_the_settings_in_force() {
         "{locked}"
     );
     assert!(
-        locked.contains("Next is locked: enable at least one Provider."),
+        locked.contains("Next is locked: enable at least one provider."),
         "{locked}"
     );
     assert!(!locked.contains("Saving your changes…"), "{locked}");
@@ -3967,7 +3967,7 @@ fn a_retake_opened_before_the_finished_answer_shows_follows_it_once_it_does() {
     assert_eq!(
         answer(&mut application, pin),
         ApplicationTransition::MarkOnboarded,
-        "the pin landed, though its Settings have yet to be pushed"
+        "the pin landed, though its settings have yet to be pushed"
     );
 
     type_terminal_text(&mut application, "/onboarding");
@@ -4048,7 +4048,7 @@ fn the_derivation_steps_untouched_row_focus_follows_the_setting_in_force() {
     );
     assert!(
         focused_row(&application).contains("GPT-5 ·"),
-        "Row Focus the reader moved stays: {}",
+        "Row focus the reader moved stays: {}",
         focused_row(&application)
     );
 }
@@ -4113,7 +4113,7 @@ fn on_the_roots_step(workspace: &Path, settings: EffectiveSettings) -> Applicati
     confirm_step(&mut application);
     pass_the_derivation_step(&mut application, settings);
     let shown = screen(&application);
-    assert!(shown.contains("Step 3 of 4 · Workspace Roots"), "{shown}");
+    assert!(shown.contains("Step 3 of 4 · Workspace roots"), "{shown}");
     application
 }
 
@@ -4126,12 +4126,12 @@ fn expect_listing(transition: ApplicationTransition) -> (DirectoryListingId, Pat
         request,
     } = transition
     else {
-        panic!("the browser asks the Server for a directory's children, not {transition:?}");
+        panic!("the browser asks the server for a directory's children, not {transition:?}");
     };
     assert_eq!(
         outlook,
         Outlook::Local,
-        "the Server whose Roots are named is the one browsed"
+        "the server whose roots are named is the one browsed"
     );
     (listing_id, request.path)
 }
@@ -4162,7 +4162,7 @@ fn answer_listing(
                     .collect(),
             }),
         })
-        .expect("deliver the Server's listing");
+        .expect("deliver the server's listing");
 }
 
 #[test]
@@ -4171,7 +4171,7 @@ fn the_roots_step_says_what_roots_are_for_and_teaches_its_keys() {
     let mut application = on_the_roots_step(workspace.path(), EffectiveSettings::default());
     let shown = screen(&application);
     assert!(shown.contains("Directories your work lives in."), "{shown}");
-    assert!(shown.contains("› add a Root"), "{shown}");
+    assert!(shown.contains("› add a root"), "{shown}");
     assert!(shown.contains("None is fine"), "{shown}");
     assert!(shown.contains("  Confirm"), "{shown}");
     let wide = rendered_application_rows_at(&application, 140, 24).join("\n");
@@ -4346,10 +4346,10 @@ fn ctrl_d_removes_the_focused_root_and_a_paste_lands_in_the_focused_row() {
     );
     press_with(&mut application, KeyCode::Char('d'), KeyModifiers::CONTROL);
     press(&mut application, KeyCode::Down);
-    assert!(screen(&application).contains("› add a Root"));
+    assert!(screen(&application).contains("› add a root"));
     application
         .handle_terminal_event(InputEvent::Paste("~/code\n".to_owned()))
-        .expect("paste a Root");
+        .expect("paste a root");
     assert_eq!(
         confirm_step(&mut application),
         pins_roots(&[ARCHIVE_ROOT, "~/code"])
@@ -4400,7 +4400,7 @@ fn roots_step_commands_can_be_invoked_semantically() {
 fn invoke(application: &mut Application, command: CommandId) -> ApplicationTransition {
     application
         .handle_event(ApplicationEvent::Command(command))
-        .expect("invoke an Onboarding command")
+        .expect("invoke an onboarding command")
 }
 
 /// Space or Enter on the row a Root is added at browses the Client's own
@@ -4411,7 +4411,7 @@ fn invoke(application: &mut Application, command: CommandId) -> ApplicationTrans
 fn space_or_enter_on_the_add_row_browses_for_a_root_over_the_flow() {
     let workspace = workspace_dir();
     let mut application = on_the_roots_step(workspace.path(), EffectiveSettings::default());
-    assert!(screen(&application).contains("› add a Root"));
+    assert!(screen(&application).contains("› add a root"));
     let (listing_id, root) = expect_listing(press(&mut application, KeyCode::Char(' ')));
     assert_eq!(root, workspace.path());
     answer_listing(&mut application, listing_id, &root, &["projects", "notes"]);
@@ -4425,7 +4425,7 @@ fn space_or_enter_on_the_add_row_browses_for_a_root_over_the_flow() {
     assert_eq!(
         press(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "a Root chosen is a draft, and no Workspace is resolved"
+        "a root chosen is a draft, and no workspace is resolved"
     );
     let chosen = screen(&application);
     let projects = root.join("projects").display().to_string();
@@ -4458,7 +4458,7 @@ fn space_or_enter_on_the_add_row_browses_for_a_root_over_the_flow() {
     expect_listing(press(&mut application, KeyCode::Enter));
     assert!(
         screen(&application).contains("Path:"),
-        "Enter on the row a Root is added at browses as Space does: {}",
+        "Enter on the row a root is added at browses as Space does: {}",
         screen(&application)
     );
 }
@@ -4518,7 +4518,7 @@ fn the_browser_onboarding_opened_closes_with_it_when_another_client_takes_it() {
 
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Onboarded(true)))
-        .expect("hear that another Client onboarded the Server");
+        .expect("hear that another client onboarded the server");
     let after = screen(&application);
     assert!(
         !onboarding_shown(&application) && !after.contains("Path:"),
@@ -4530,7 +4530,7 @@ fn the_browser_onboarding_opened_closes_with_it_when_another_client_takes_it() {
 /// the rows, and Enter on the Confirm row sends it again.
 #[test]
 fn a_refused_roots_pin_keeps_the_step_open_with_the_failure_and_next_retries() {
-    const REFUSAL: &str = "Config Document is not editable";
+    const REFUSAL: &str = "Config document is not editable";
     let workspace = workspace_dir();
     let mut application = on_the_roots_step(workspace.path(), EffectiveSettings::default());
     type_terminal_text(&mut application, "~/code");
@@ -4595,7 +4595,7 @@ fn browsing_finds_nothing_while_the_roots_pin_is_saved() {
 /// the Roots in force passes unpinned, leaving no failure to find on return.
 #[test]
 fn passing_the_roots_step_unpinned_leaves_no_earlier_refusal_standing() {
-    const REFUSAL: &str = "Config Document is not editable";
+    const REFUSAL: &str = "Config document is not editable";
     let workspace = workspace_dir();
     let mut application = on_the_roots_step(workspace.path(), EffectiveSettings::default());
     type_terminal_text(&mut application, "~/code");
@@ -4626,7 +4626,7 @@ fn taking_onboarding_again_opens_the_roots_step_on_the_roots_in_force() {
     confirm_step(&mut application);
     pass_the_derivation_step(&mut application, settings);
     let shown = screen(&application);
-    assert!(shown.contains("Step 3 of 4 · Workspace Roots"), "{shown}");
+    assert!(shown.contains("Step 3 of 4 · Workspace roots"), "{shown}");
     assert!(shown.contains(&format!("› {WORK_ROOT}")), "{shown}");
     assert_eq!(
         confirm_step(&mut application),

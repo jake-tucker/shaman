@@ -5,7 +5,7 @@ use crate::protocol::{Relay, RelayLoginOutcome, RelayLoginRefusal, RelayState};
 
 /// What a Relay not Served through says before it is: the one thing that opens
 /// the machine to.
-pub const REACHABLE: &str = "Serving through it makes this machine reachable through this Relay";
+pub const REACHABLE: &str = "Serving through it makes this machine reachable through this relay";
 
 /// Why an Invite cannot offer a Relay.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,7 +34,7 @@ impl RelayWithheld {
     pub fn brief(self) -> &'static str {
         match self {
             Self::LoginNeeded => "login needed",
-            Self::NotServedThrough => "not Served through",
+            Self::NotServedThrough => "not served through",
         }
     }
 }
@@ -61,14 +61,14 @@ pub fn login_ended(address: &str, outcome: &RelayLoginOutcome) -> Option<LoginEn
             reason: RelayLoginRefusal::NotAdmitted,
             ..
         } => refused(format!(
-            "You are not admitted to {address}; ask the Relay's operator to admit you"
+            "You are not admitted to {address}; ask the relay's operator to admit you"
         )),
         RelayLoginOutcome::Refused {
             reason: RelayLoginRefusal::LoginsCapReached { limit },
             ..
         } => refused(format!(
-            "Your Account already has {} logged in at {address}, as many as the Relay's \
-             operator allows; remove the Relay from a Server that no longer needs it, or ask \
+            "Your account already has {} logged in at {address}, as many as the relay's \
+             operator allows; remove the relay from a server that no longer needs it, or ask \
              the operator to raise the cap",
             servers(*limit)
         )),
@@ -90,12 +90,12 @@ pub fn relay_standing(relay: &Relay) -> String {
             Some(RelayLoginOutcome::Refused {
                 reason: RelayLoginRefusal::NotAdmitted,
                 ..
-            }) => "Login needed · not admitted; ask the Relay's operator".to_owned(),
+            }) => "Login needed · not admitted; ask the relay's operator".to_owned(),
             Some(RelayLoginOutcome::Refused {
                 reason: RelayLoginRefusal::LoginsCapReached { limit },
                 ..
             }) => format!(
-                "Login needed · at the cap of {}; ask the Relay's operator",
+                "Login needed · at the cap of {}; ask the relay's operator",
                 servers(*limit)
             ),
             Some(RelayLoginOutcome::Refused { message, .. }) => {
@@ -137,8 +137,8 @@ pub fn serve_through_status(relay: &Relay, serving: bool) -> Option<String> {
 fn waits_on(relay: &Relay, serving: bool) -> Option<&'static str> {
     match (relay.state == RelayState::LoginNeeded, serving) {
         (true, true) => Some("logged in"),
-        (true, false) => Some("logged in and Serving is on"),
-        (false, false) => Some("Serving is on"),
+        (true, false) => Some("logged in and serving is on"),
+        (false, false) => Some("serving is on"),
         (false, true) => None,
     }
 }
@@ -148,24 +148,24 @@ fn waits_on(relay: &Relay, serving: bool) -> Option<&'static str> {
 pub fn serve_through_said(relay: &Relay, serving: bool, turning_on: &str) -> String {
     let address = &relay.address;
     if !relay.serve_through {
-        return format!("This Server no longer Serves through {address}");
+        return format!("This server no longer serves through {address}");
     }
     let once = match (relay.state == RelayState::LoginNeeded, serving) {
         (true, true) => " once it is logged in there".to_owned(),
         (true, false) => {
-            format!(" once it is logged in there and Serving is on; {turning_on} turns Serving on")
+            format!(" once it is logged in there and serving is on; {turning_on} turns serving on")
         }
-        (false, false) => format!(" once Serving is on; {turning_on} turns Serving on"),
+        (false, false) => format!(" once serving is on; {turning_on} turns serving on"),
         (false, true) => String::new(),
     };
-    format!("This Server Serves through {address}{once}")
+    format!("This server serves through {address}{once}")
 }
 
 /// `count` Servers, said as a reader says it.
 fn servers(count: u32) -> String {
     if count == 1 {
-        "1 Server".to_owned()
+        "1 server".to_owned()
     } else {
-        format!("{count} Servers")
+        format!("{count} servers")
     }
 }

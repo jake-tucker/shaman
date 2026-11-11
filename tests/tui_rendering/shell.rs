@@ -59,7 +59,7 @@ fn a_launch_directory_that_cannot_be_canonicalized_still_starts_on_the_path_as_g
     let landing = rendered_application_rows_at(&application, 100, 20).join("\n");
     assert!(
         !landing.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"),
-        "the client starts on the Workspace it cannot read: {landing:?}"
+        "the client starts on the workspace it cannot read: {landing:?}"
     );
     assert!(
         landing.contains(missing.to_string_lossy().as_ref()),
@@ -150,7 +150,7 @@ fn connected_application_uses_the_persisted_landing_agent_selection() {
             ready_health(fixture_instance_id(), 42_424)
                 .with_landing_agent_selection(Some(selected.clone())),
         )))
-        .expect("connect with persisted landing Agent Selection");
+        .expect("connect with persisted landing agent selection");
 
     let before_catalog = rendered_application_rows_at(&application, 100, 16).join("\n");
     assert!(before_catalog.contains("codex · gpt-remembered"));
@@ -158,9 +158,9 @@ fn connected_application_uses_the_persisted_landing_agent_selection() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open the Model picker")
+        .expect("open the model picker")
     else {
-        panic!("the Model picker should request the catalog");
+        panic!("the model picker should request the catalog");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed {
@@ -180,26 +180,26 @@ fn connected_application_uses_the_persisted_landing_agent_selection() {
                 }],
             },
         })
-        .expect("load matching Model catalog");
+        .expect("load matching model catalog");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Esc,
             KeyModifiers::NONE,
         )))
-        .expect("close the Model picker without changing the selection");
+        .expect("close the model picker without changing the selection");
     let after_catalog = rendered_application_rows_at(&application, 100, 16).join("\n");
     assert!(
         after_catalog.contains("Remembered GPT"),
-        "the catalog names the persisted Model as soon as it is heard: {after_catalog}"
+        "the catalog names the persisted model as soon as it is heard: {after_catalog}"
     );
     assert!(!after_catalog.contains("codex · gpt-remembered"));
 
-    type_terminal_text(&mut application, "Use the remembered Agent");
+    type_terminal_text(&mut application, "Use the remembered agent");
     let ApplicationTransition::CreateSession(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit with persisted landing Agent Selection")
+        .expect("submit with persisted landing agent selection")
     else {
-        panic!("landing Prompt should create a Session");
+        panic!("landing prompt should create a session");
     };
     assert_eq!(request.agent_selection, Some(selected));
 }
@@ -439,7 +439,7 @@ fn landing_centers_the_logo_and_composer_together_as_the_draft_grows() {
             let below = footer - composer_bottom - 2;
             assert!(
                 logo_top.abs_diff(below) <= 1,
-                "logo, composer, and Workspace share equal space above and below: {rows:?}"
+                "logo, composer, and workspace share equal space above and below: {rows:?}"
             );
             assert_eq!(logo_bottom - logo_top, 6);
             assert_eq!(composer_top - logo_bottom, 2, "one blank row before input");
@@ -502,7 +502,7 @@ fn landing_shell_degrades_by_priority_without_sacrificing_the_composer() {
     for content in ["Keep the composer usable", "Agent un…", "Connected"] {
         assert!(
             wide.contains(content),
-            "the Sidebar-narrowed main view omitted {content:?}"
+            "the sidebar-narrowed main view omitted {content:?}"
         );
     }
     assert!(
@@ -563,22 +563,22 @@ fn working_indicator_is_the_transient_tail_of_the_transcript() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach Working Session");
+        .expect("attach working session");
     let rows = rendered_application_rows_at(&application, 100, 16);
     let transcript_tail = rendered_row(&rows, "Provider activity");
     let indicator = rendered_row(&rows, "Working (0s • Esc to interrupt)");
     assert_eq!(
         indicator,
         transcript_tail + 2,
-        "one empty row separates the Working Indicator from the latest Transcript row"
+        "one empty row separates the working indicator from the latest transcript row"
     );
     assert!(
         rows[indicator - 1].trim().is_empty(),
-        "the Working Indicator has breathing room above it"
+        "the working indicator has breathing room above it"
     );
     assert!(
         rows[indicator + 1].trim().is_empty(),
-        "layout's Transcript margin follows the indicator"
+        "layout's transcript margin follows the indicator"
     );
     assert!(
         !rows.join("\n").contains("active"),
@@ -601,7 +601,7 @@ fn working_indicator_shimmers_only_its_state_label() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach Working Session");
+        .expect("attach working session");
 
     let before = rendered_application_buffer(&application, 100, 16);
     let (label_x, label_y) = text_position(&before, "Working");
@@ -657,7 +657,7 @@ fn a_terminal_without_truecolor_uses_the_modifier_shimmer() {
         connected_application_with_terminal_facts(workspace.path(), TerminalFacts::unprobed(false));
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach Working Session");
+        .expect("attach working session");
 
     let opening = rendered_application_buffer(&application, 100, 16);
     let (label_x, label_y) = text_position(&opening, "Working");
@@ -730,7 +730,7 @@ fn working_indicator_end_truncates_without_wrapping_on_a_narrow_terminal() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a Session waiting for Subagents");
+        .expect("attach a session waiting for subagents");
 
     let rows = rendered_application_rows_at(&application, 28, 14);
     let indicator_rows = rows
@@ -740,7 +740,7 @@ fn working_indicator_end_truncates_without_wrapping_on_a_narrow_terminal() {
     assert_eq!(
         indicator_rows.len(),
         1,
-        "the Working Indicator remains exactly one row: {rows:?}"
+        "the working indicator remains exactly one row: {rows:?}"
     );
     assert!(
         indicator_rows[0].contains('…'),
@@ -761,12 +761,12 @@ fn working_indicator_scrolls_away_with_the_transcript_tail() {
     snapshot
         .turns
         .last_mut()
-        .expect("fixture has a Turn")
+        .expect("fixture has a turn")
         .status = TurnStatus::Active;
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a long Working Session");
+        .expect("attach a long working session");
 
     let following = rendered_application_rows_at(&application, 60, 14).join("\n");
     assert!(following.contains("Working ("));
@@ -774,12 +774,12 @@ fn working_indicator_scrolls_away_with_the_transcript_tail() {
 
     application
         .handle_event(ApplicationEvent::Command(CommandId::ScrollTranscriptPageUp))
-        .expect("move into Transcript history");
+        .expect("move into transcript history");
     let history = rendered_application_rows_at(&application, 60, 14).join("\n");
     assert!(history.contains("Latest ↓"));
     assert!(
         !history.contains("Working ("),
-        "the transient indicator belongs to the Transcript tail: {history}"
+        "the transient indicator belongs to the transcript tail: {history}"
     );
 }
 
@@ -810,12 +810,12 @@ fn session_shell_degrades_metadata_before_transcript_or_composer_content() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(active_snapshot.clone()))
-        .expect("attach active Session");
+        .expect("attach active session");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "Keep the draft visible".to_owned(),
         )))
-        .expect("type a Session draft");
+        .expect("type a session draft");
 
     let wide = rendered_application_rows_at(&application, 100, 16).join("\n");
     for content in [
@@ -833,7 +833,7 @@ fn session_shell_degrades_metadata_before_transcript_or_composer_content() {
     ] {
         assert!(
             wide.contains(content),
-            "wide Session frame omitted {content:?}"
+            "wide session frame omitted {content:?}"
         );
     }
     assert!(
@@ -845,13 +845,13 @@ fn session_shell_degrades_metadata_before_transcript_or_composer_content() {
     for core in ["Keep the draft visible", "Working (", "Esc to interrupt"] {
         assert!(
             narrow.contains(core),
-            "narrow Session frame omitted {core:?}"
+            "narrow session frame omitted {core:?}"
         );
     }
     for secondary in ["Workspace", "openai", "Enter submit"] {
         assert!(
             !narrow.contains(secondary),
-            "narrow Session frame retained secondary metadata {secondary:?}"
+            "narrow session frame retained secondary metadata {secondary:?}"
         );
     }
 
@@ -863,7 +863,7 @@ fn session_shell_degrades_metadata_before_transcript_or_composer_content() {
     assert!(short.contains("Working ("));
     assert!(
         !short.contains("Connected"),
-        "an open Session's footer carries no connection status: {short}"
+        "an open session's footer carries no connection status: {short}"
     );
 
     let mut idle = Application::new(workspace.path(), Default::default());
@@ -872,7 +872,7 @@ fn session_shell_degrades_metadata_before_transcript_or_composer_content() {
     idle_snapshot.session.working_since = None;
     idle_snapshot.session.agent_selection = None;
     idle.handle_event(ApplicationEvent::SessionAttached(idle_snapshot))
-        .expect("attach unavailable-Agent Session");
+        .expect("attach unavailable-agent session");
     let idle_frame = rendered_application_rows_at(&idle, 80, 12).join("\n");
     assert!(idle_frame.contains("Agent unavailable"));
     assert!(!idle_frame.contains("Working ("));
@@ -928,15 +928,15 @@ fn reconnect_overlay_waits_for_the_grace_period_and_blocks_composer_input() {
         .handle_event(ApplicationEvent::SessionAttached(failed_session_snapshot(
             SessionId::new(),
             PromptId::new(),
-            "Keep the Session visible",
+            "Keep the session visible",
             workspace.path(),
         )))
-        .expect("attach Session");
+        .expect("attach session");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "Preserve this draft".to_owned(),
         )))
-        .expect("type Session draft");
+        .expect("type session draft");
 
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Recovering(
@@ -952,10 +952,10 @@ fn reconnect_overlay_waits_for_the_grace_period_and_blocks_composer_input() {
         !brief.contains("Recovering"),
         "the grace holds the loss back: {brief}"
     );
-    assert!(brief.contains("Keep the Session visible"));
+    assert!(brief.contains("Keep the session visible"));
     assert!(brief.contains("Preserve this draft"));
     assert!(!brief.contains("Reconnecting to Suru"));
-    assert!(!brief.contains("Your Session will resume automatically"));
+    assert!(!brief.contains("Your session will resume automatically"));
 
     application
         .handle_event(ApplicationEvent::ReconnectGraceElapsed(
@@ -964,7 +964,7 @@ fn reconnect_overlay_waits_for_the_grace_period_and_blocks_composer_input() {
         .expect("show delayed reconnect overlay");
     let prolonged = rendered_application_rows_at(&application, 80, 15).join("\n");
     assert!(prolonged.contains("Reconnecting to Suru"));
-    assert!(prolonged.contains("Your Session will resume automatically"));
+    assert!(prolonged.contains("Your session will resume automatically"));
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             " must stay blocked".to_owned(),
@@ -978,7 +978,7 @@ fn reconnect_overlay_waits_for_the_grace_period_and_blocks_composer_input() {
         .expect("reconnect to surviving server");
     let recovered = rendered_application_rows_at(&application, 80, 15).join("\n");
     assert!(!recovered.contains("Reconnecting to Suru"));
-    assert!(recovered.contains("Keep the Session visible"));
+    assert!(recovered.contains("Keep the session visible"));
     assert!(recovered.contains("Preserve this draft"));
     assert!(!recovered.contains("must stay blocked"));
 }
@@ -1042,7 +1042,7 @@ fn ended_session_subscription_requests_a_fresh_snapshot_for_reconciliation() {
     assert_eq!(
         application
             .handle_event(ApplicationEvent::SessionSubscriptionEnded)
-            .expect("handle ended Session subscription"),
+            .expect("handle ended session subscription"),
         ApplicationTransition::SubscribeSession(suru::protocol::SessionReference::new(
             suru::protocol::Outlook::Local,
             session_id,
@@ -1089,11 +1089,11 @@ async fn headless_slash_settle_sets_the_open_session_aside_on_a_real_server() {
             },
         })
         .await
-        .expect("create Session through managed client");
+        .expect("create session through managed client");
     let session_id = created.session.id;
     application
         .handle_event(ApplicationEvent::SessionCreated(created))
-        .expect("open the created Session");
+        .expect("open the created session");
 
     type_terminal_text(&mut application, "/settle");
     let ApplicationTransition::SettleSession {
@@ -1106,11 +1106,11 @@ async fn headless_slash_settle_sets_the_open_session_aside_on_a_real_server() {
         )))
         .expect("invoke the settle command")
     else {
-        panic!("/settle in an open Session should ask for that Session to be set aside");
+        panic!("/settle in an open session should ask for that session to be set aside");
     };
     assert_eq!(
         named.session_id, session_id,
-        "the command names the Session the reader is in"
+        "the command names the session the reader is in"
     );
     assert_eq!(named.origin, suru::protocol::Outlook::Local);
     assert!(
@@ -1121,22 +1121,22 @@ async fn headless_slash_settle_sets_the_open_session_aside_on_a_real_server() {
     let settled = client
         .settle_session(named.session_id, true)
         .await
-        .expect("the server accepts the Session the command named");
+        .expect("the server accepts the session the command named");
     assert!(
         settled.settled_at.is_some(),
-        "the Session the command named comes back set aside"
+        "the session the command named comes back set aside"
     );
     assert_eq!(
         client
             .list_sessions(None)
             .await
-            .expect("list Sessions")
+            .expect("list sessions")
             .into_iter()
             .find(|item| item.id() == session_id)
-            .expect("the Session remains listed")
+            .expect("the session remains listed")
             .settled_at(),
         settled.settled_at,
-        "every listing of that Session now carries the marker"
+        "every listing of that session now carries the marker"
     );
 
     server.shutdown().await.expect("stop server");

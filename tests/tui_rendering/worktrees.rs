@@ -149,7 +149,7 @@ impl Layout {
 }
 fn answer(app: &mut Application, transition: ApplicationTransition, context: ResolvedWorkspace) {
     let (outlook, surface, request_id, _) = workspace_resolution(&transition)
-        .unwrap_or_else(|| panic!("expected owning Server resolution: {transition:?}"));
+        .unwrap_or_else(|| panic!("expected owning server resolution: {transition:?}"));
     app.handle_event(ApplicationEvent::WorkspaceResolved {
         outlook,
         surface,
@@ -218,7 +218,7 @@ fn pick_other_workspace(
     let ApplicationTransition::ListWorkspaces(request) =
         command(app, SemanticCommandId::WorkspaceList)
     else {
-        panic!("list Workspace choices")
+        panic!("list workspace choices")
     };
     app.handle_event(ApplicationEvent::WorkspacesListed {
         request,
@@ -239,7 +239,7 @@ fn landing_worktree_selection_uses_root_and_cancel_ignores_late_server_response(
     let layout = Layout::new();
     let mut app = layout.app();
     let loading = command(&mut app, SemanticCommandId::WorktreeList);
-    assert!(text(&app).contains("Loading Worktrees"));
+    assert!(text(&app).contains("Loading worktrees"));
     assert!(matches!(
         key(&mut app, KeyCode::Esc),
         ApplicationTransition::CancelWorkspaceResolution(_)
@@ -254,7 +254,7 @@ fn landing_worktree_selection_uses_root_and_cancel_ignores_late_server_response(
     key(&mut app, KeyCode::Down);
     let transition = key(&mut app, KeyCode::Enter);
     let ApplicationTransition::ResolveWorkspace { request, .. } = &transition else {
-        panic!("select checkout on Server")
+        panic!("select checkout on server")
     };
     assert_eq!(
         request.checkout_id,
@@ -267,7 +267,7 @@ fn landing_worktree_selection_uses_root_and_cancel_ignores_late_server_response(
     answer(&mut app, transition, layout.at(&layout.main));
     type_terminal_text(&mut app, "Use this checkout");
     let ApplicationTransition::CreateSession(request) = key(&mut app, KeyCode::Enter) else {
-        panic!("start new Session")
+        panic!("start new session")
     };
     assert_eq!(request.execution_directory.path, layout.main);
 }
@@ -288,11 +288,11 @@ fn the_selector_leads_with_a_new_worktree_and_marks_the_current_one() {
         .take(3)
         .map(|row| row.trim().trim_start_matches('│').trim().to_owned())
         .collect::<Vec<_>>();
-    assert!(rows[0].starts_with("› New Worktree"), "{rendered}");
+    assert!(rows[0].starts_with("› New worktree"), "{rendered}");
     assert!(rows[1].starts_with("main ·"), "{rendered}");
     assert!(
         rows[2].starts_with("* detached abcdef01 ·"),
-        "the Worktree in use is marked: {rendered}"
+        "the worktree in use is marked: {rendered}"
     );
     assert!(!rows[1].contains('*'), "{rendered}");
     // Enter on the marked row is the reader saying they are staying put, so
@@ -412,7 +412,7 @@ fn landing_icons_decorate_the_location_checkout_and_pending_worktree() {
 
     choose_new(&mut app, &layout);
     let pending = text(&app);
-    assert!(pending.contains(" New Worktree on submit"), "{pending}");
+    assert!(pending.contains(" New worktree on submit"), "{pending}");
 }
 
 /// The Landing draws the current Workspace's own derived Icon in place of the
@@ -426,7 +426,7 @@ fn the_landing_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
     let plain_text = text(&plain);
     assert!(
         !plain_text.contains('\u{ea83}') && !plain_text.contains('\u{e7a8}'),
-        "no Icon is drawn while the reader keeps Icons off: {plain_text}"
+        "no icon is drawn while the reader keeps icons off: {plain_text}"
     );
 
     let mut folder_app = layout.app();
@@ -434,7 +434,7 @@ fn the_landing_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
     let folder_text = text(&folder_app);
     assert!(
         folder_text.contains('\u{ea83}'),
-        "the folder glyph stands while the Workspace has no derived Icon: {folder_text}"
+        "the folder glyph stands while the workspace has no derived icon: {folder_text}"
     );
 
     layout.context.workspace.icon = Some("dev-rust".to_owned());
@@ -443,7 +443,7 @@ fn the_landing_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
     let iconed_text = text(&iconed_app);
     assert!(
         iconed_text.contains('\u{e7a8}') && !iconed_text.contains('\u{ea83}'),
-        "the Workspace's own derived Icon replaces the folder glyph: {iconed_text}"
+        "the workspace's own derived icon replaces the folder glyph: {iconed_text}"
     );
 }
 
@@ -505,7 +505,7 @@ fn landing_remote_and_path_icons_are_measured_by_existing_truncation() {
     let narrow = rendered_application_rows_at(&app, 28, 20)
         .into_iter()
         .find(|row| row.contains("󰍹 studio"))
-        .expect("narrow Landing location row");
+        .expect("narrow landing location row");
     assert!(narrow.contains('…'), "{narrow}");
     assert_eq!(
         unicode_width::UnicodeWidthStr::width(narrow.trim()),
@@ -535,7 +535,7 @@ fn turning_to_a_remote_leaves_the_local_checkout_state_behind() {
     let remote = text(&app);
     assert!(
         !remote.contains("local-only"),
-        "the Remote's Landing says nothing of the Local Server's branch: {remote}"
+        "the remote's landing says nothing of the Local server's branch: {remote}"
     );
 }
 
@@ -627,7 +627,7 @@ fn a_subdirectory_the_server_resolves_is_where_destination_skills_are_read() {
         )))
         .unwrap()
     else {
-        panic!("refresh destination Skills")
+        panic!("refresh destination skills")
     };
     assert_eq!(request.execution_directory.path, destination);
 }
@@ -648,11 +648,11 @@ fn workspace_picker_remembers_exact_directory_and_missing_choice_without_changin
         },
     );
     let ApplicationTransition::ListSessions(request) = transition else {
-        panic!("load Sidebar")
+        panic!("load sidebar")
     };
     app.handle_event(ApplicationEvent::SessionsListed {
         request,
-        sessions: vec![summary(&layout.context, "Initial Session")],
+        sessions: vec![summary(&layout.context, "Initial session")],
     })
     .unwrap();
     let scope = selector_label(&rendered_application_rows_at(&app, 160, 30));
@@ -666,7 +666,7 @@ fn workspace_picker_remembers_exact_directory_and_missing_choice_without_changin
     let transition = pick_other_workspace(&mut app, &[layout.context.clone(), other]);
     let ApplicationTransition::DetachSessionAndResolveWorkspace { request, .. } = &transition
     else {
-        panic!("restore Workspace")
+        panic!("restore workspace")
     };
     assert_eq!(
         request
@@ -719,18 +719,18 @@ fn a_workspace_still_resolving_is_named_without_the_worktree_left_behind() {
     let location = Path::new("~").join("other");
     assert!(
         waiting.contains(&location.display().to_string()),
-        "the Landing names the Workspace chosen: {waiting}"
+        "the landing names the workspace chosen: {waiting}"
     );
     assert!(
         !waiting.contains("abcdef0") && !waiting.contains("nested"),
-        "and nothing of the Worktree left behind as though it were the chosen one's: {waiting}"
+        "and nothing of the worktree left behind as though it were the chosen one's: {waiting}"
     );
     assert_eq!(
         command(&mut app, SemanticCommandId::WorktreeList),
         ApplicationTransition::Continue,
-        "no Worktree is offered until the Server says which Repository it would be of"
+        "no worktree is offered until the server says which repository it would be of"
     );
-    assert!(!text(&app).contains("Loading Worktrees"), "{}", text(&app));
+    assert!(!text(&app).contains("Loading worktrees"), "{}", text(&app));
 
     answer(&mut app, transition, other);
     let resolved = text(&app);
@@ -765,7 +765,7 @@ const FRAMINGS: [Framing; 4] = [
         arrange: |_| {},
     },
     Framing {
-        what: "beside the Sidebar",
+        what: "beside the sidebar",
         size: (160, 30),
         arrange: show_sidebar,
     },
@@ -909,7 +909,7 @@ fn pressing_the_workspace_beneath_the_landing_composer_opens_the_workspace_picke
     for (index, cell) in cells.iter().enumerate() {
         assert!(
             !cells[..index].contains(cell),
-            "{} draws the Workspace where another framing does: {cells:?}",
+            "{} draws the workspace where another framing does: {cells:?}",
             FRAMINGS[index].what
         );
     }
@@ -959,7 +959,7 @@ fn pressing_the_pending_worktree_intent_beneath_the_landing_composer_opens_the_w
         );
         let mut app = framed(&layout, framing, pending);
 
-        let pressed = press_reading(&mut app, framing.size, "New Worktree");
+        let pressed = press_reading(&mut app, framing.size, "New worktree");
 
         assert!(
             matches!(pressed, ApplicationTransition::ResolveWorkspace { .. }),
@@ -973,7 +973,7 @@ fn pressing_the_pending_worktree_intent_beneath_the_landing_composer_opens_the_w
         );
         let drawn = rendered_application_rows_at(&app, framing.size.0, framing.size.1).join("\n");
         assert!(
-            drawn.contains("Loading Worktrees"),
+            drawn.contains("Loading worktrees"),
             "{}: {drawn}",
             framing.what
         );
@@ -995,7 +995,7 @@ fn the_landing_readings_answer_the_pointer_where_icons_are_drawn() {
     choose_new(&mut app, &layout);
 
     assert_eq!(
-        press_reading(&mut app, (160, 30), "New Worktree on submit"),
+        press_reading(&mut app, (160, 30), "New worktree on submit"),
         asked
     );
 }
@@ -1034,7 +1034,7 @@ fn a_reading_the_line_cuts_short_answers_over_what_is_left_of_it() {
     );
 
     let mut app = cut();
-    let cell = reading_cell(&app, NARROW, "New Worktree");
+    let cell = reading_cell(&app, NARROW, "New worktree");
     let worktree = command(&mut cut(), SemanticCommandId::WorktreeList);
     assert_eq!(press_at(&mut app, NARROW, (last - 1, cell.1)), worktree);
 
@@ -1075,13 +1075,13 @@ fn on_a_remote_the_remotes_name_opens_connect_and_the_workspace_after_it_the_wor
     assert_eq!(
         press_reading(&mut on_studio(), size, "studio"),
         connect,
-        "the Remote's name leads into /connect"
+        "the remote's name leads into /connect"
     );
     let separator = column + u16::try_from("studio".chars().count()).unwrap();
     assert_eq!(
         press_at(&mut on_studio(), size, (separator, row)),
         ApplicationTransition::Continue,
-        "the separator after the Remote's name takes no press"
+        "the separator after the remote's name takes no press"
     );
 }
 
@@ -1173,7 +1173,7 @@ fn pressing_the_subdirectory_beneath_the_landing_composer_opens_the_directory_br
         assert_eq!(
             (outlook, &request.path),
             (&Outlook::Local, &layout.nested),
-            "{}: the root is the subdirectory, on the Outlook's Server",
+            "{}: the root is the subdirectory, on the outlook's server",
             framing.what
         );
         assert_eq!(
@@ -1267,7 +1267,7 @@ fn pressing_the_subdirectory_is_refused_while_the_remote_is_unreachable() {
     assert_eq!(
         press_reading(&mut app, size, "nested"),
         ApplicationTransition::Continue,
-        "nothing is asked of a Remote that is not answering"
+        "nothing is asked of a remote that is not answering"
     );
 
     let drawn = rendered_application_rows_at(&app, size.0, size.1).join("\n");
@@ -1287,18 +1287,18 @@ fn the_provisional_sessions_line_takes_no_press() {
     let mut app = layout.app();
     type_terminal_text(&mut app, "Begin here");
     let ApplicationTransition::CreateSession(_) = key(&mut app, KeyCode::Enter) else {
-        panic!("the Prompt claims a Provisional Session")
+        panic!("the prompt claims a provisional session")
     };
     let size = (160, 30);
     assert!(
         text(&app).contains("Begin here"),
-        "the Provisional Session stands in the Landing's place"
+        "the provisional session stands in the landing's place"
     );
 
     for reading in [location.as_str(), "abcdef0", "nested"] {
         assert!(
             press_moves_nothing(&mut app, size, reading),
-            "{reading:?} takes no press beneath the Provisional Session"
+            "{reading:?} takes no press beneath the provisional session"
         );
     }
 }
@@ -1428,7 +1428,7 @@ fn a_new_worktree_intent_lets_no_stale_binding_through_a_moved_sessions_composer
         app.handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
             .unwrap(),
         ApplicationTransition::Continue,
-        "the binding waits on the destination's Catalog"
+        "the binding waits on the destination's catalog"
     );
 }
 
@@ -1548,7 +1548,7 @@ fn choosing_worktree_from_open_session_cannot_relocate_that_session() {
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .unwrap()
     else {
-        panic!("existing Session keeps its execution context")
+        panic!("existing session keeps its execution context")
     };
     assert_eq!(session.session_id, id);
 }
@@ -1583,18 +1583,18 @@ fn worktree_chooser_during_initial_discovery_uses_exact_launch_path_until_server
         .unwrap();
     let transition = command(&mut app, SemanticCommandId::WorktreeList);
     let ApplicationTransition::ResolveWorkspace { request, .. } = &transition else {
-        panic!("resolve launch Worktrees")
+        panic!("resolve launch worktrees")
     };
     assert!(
         request.workspace_id.is_none(),
-        "the Client's provisional path identity is not a Server Repository identity"
+        "the client's provisional path identity is not a server repository identity"
     );
     assert_eq!(request.path, layout.nested);
     answer(&mut app, transition, layout.context.clone());
     key(&mut app, KeyCode::Down);
     let selected = key(&mut app, KeyCode::Enter);
     let ApplicationTransition::ResolveWorkspace { request, .. } = &selected else {
-        panic!("select discovered Worktree")
+        panic!("select discovered worktree")
     };
     assert_eq!(
         request.workspace_id,
@@ -1604,7 +1604,7 @@ fn worktree_chooser_during_initial_discovery_uses_exact_launch_path_until_server
     answer(&mut app, initial, layout.context.clone());
     type_terminal_text(&mut app, "Use explicit choice");
     let ApplicationTransition::CreateSession(request) = key(&mut app, KeyCode::Enter) else {
-        panic!("explicit Worktree choice wins over late startup reading")
+        panic!("explicit worktree choice wins over late startup reading")
     };
     assert_eq!(request.execution_directory.path, layout.main);
 }
@@ -1673,14 +1673,14 @@ fn new_worktree_intent_is_deferred_cancelable_and_first_prompt_automatically_adm
     let layout = Layout::new();
     let mut app = layout.app();
     choose_new(&mut app, &layout);
-    assert!(text(&app).contains("New Worktree on submit"));
+    assert!(text(&app).contains("New worktree on submit"));
     assert!(!layout.main.join(".worktrees").exists());
     open(&mut app, layout.context.clone());
     // Choosing the Worktree already in use cancels the intention.
     key(&mut app, KeyCode::Down);
     key(&mut app, KeyCode::Down);
     key(&mut app, KeyCode::Enter);
-    assert!(!text(&app).contains("New Worktree on submit"));
+    assert!(!text(&app).contains("New worktree on submit"));
     choose_new(&mut app, &layout);
     type_terminal_text(&mut app, "Prepare and work");
     let ApplicationTransition::PrepareCheckout {
@@ -1705,7 +1705,7 @@ fn new_worktree_intent_is_deferred_cancelable_and_first_prompt_automatically_adm
         })
         .unwrap()
     else {
-        panic!("unbound Prompt automatically continues")
+        panic!("unbound prompt automatically continues")
     };
     assert_eq!(create.preparation_id, Some(request.id));
     assert_eq!(create.execution_directory, destination);
@@ -1729,7 +1729,7 @@ fn a_prepared_worktree_stands_in_place_of_the_pending_intent_beneath_the_claim()
     else {
         panic!("first submit prepares")
     };
-    assert!(text(&app).contains("New Worktree on submit"));
+    assert!(text(&app).contains("New worktree on submit"));
     let result = prepared(&layout, &request);
     let destination = result.preparation.destination.path.clone();
     let ApplicationTransition::CreateSession(_) = app
@@ -1740,13 +1740,13 @@ fn a_prepared_worktree_stands_in_place_of_the_pending_intent_beneath_the_claim()
         })
         .unwrap()
     else {
-        panic!("a prepared Worktree continues to creation")
+        panic!("a prepared worktree continues to creation")
     };
 
     // The Worktree has been made: the claim names where it stands, not what it
     // was going to do.
     let drawn = text(&app);
-    assert!(!drawn.contains("New Worktree on submit"), "{drawn}");
+    assert!(!drawn.contains("New worktree on submit"), "{drawn}");
     assert!(
         drawn.contains(&*destination.file_name().unwrap().to_string_lossy()),
         "{drawn}"
@@ -1777,7 +1777,7 @@ fn a_retry_asks_again_for_the_worktree_it_prepared_wherever_the_reader_has_moved
         })
         .unwrap()
     else {
-        panic!("a prepared Worktree continues to creation")
+        panic!("a prepared worktree continues to creation")
     };
     app.handle_event(ApplicationEvent::SessionCreationFailed {
         prompt_id: create.prompt.id,
@@ -1792,7 +1792,7 @@ fn a_retry_asks_again_for_the_worktree_it_prepared_wherever_the_reader_has_moved
     key(&mut app, KeyCode::Down);
     key(&mut app, KeyCode::Enter);
     let ApplicationTransition::CreateSession(retry) = key(&mut app, KeyCode::Enter) else {
-        panic!("a retry must ask for the Session, never prepare a second Worktree")
+        panic!("a retry must ask for the session, never prepare a second worktree")
     };
     assert_eq!(retry.preparation_id, Some(request.id));
     assert_eq!(retry.execution_directory, destination);
@@ -1814,7 +1814,7 @@ fn preparation_failure_preserves_draft_and_id_and_late_results_cannot_replace_de
         panic!("prepare")
     };
     let mut result = prepared(&layout, &request);
-    result.error = Some("Destination Skill discovery failed; retry".to_owned());
+    result.error = Some("Destination skill discovery failed; retry".to_owned());
     result.preparation.ready = false;
     app.handle_event(ApplicationEvent::CheckoutPrepared {
         attempt_id,
@@ -1824,9 +1824,9 @@ fn preparation_failure_preserves_draft_and_id_and_late_results_cannot_replace_de
     .unwrap();
     let failed = text(&app);
     assert_eq!(failed.matches("Retry this draft").count(), 2, "{failed}");
-    assert!(failed.contains("Could not create Session"), "{failed}");
+    assert!(failed.contains("Could not create session"), "{failed}");
     assert!(
-        failed.contains("Destination Skill discovery failed"),
+        failed.contains("Destination skill discovery failed"),
         "{failed}"
     );
     assert!(!failed.contains("Creating worktree"), "{failed}");
@@ -1896,7 +1896,7 @@ fn interrupting_preparation_restores_the_prompt_and_a_retry_ignores_the_late_res
         request: retry,
     } = key(&mut app, KeyCode::Enter)
     else {
-        panic!("the interrupted Worktree remains reusable")
+        panic!("the interrupted worktree remains reusable")
     };
     assert_eq!(retry.id, interrupted.id);
     assert_ne!(retry_prompt, interrupted_prompt);
@@ -1909,7 +1909,7 @@ fn interrupting_preparation_restores_the_prompt_and_a_retry_ignores_the_late_res
         })
         .unwrap(),
         ApplicationTransition::Continue,
-        "the old attempt cannot admit its first Prompt"
+        "the old attempt cannot admit its first prompt"
     );
     let ApplicationTransition::CreateSession(create) = app
         .handle_event(ApplicationEvent::CheckoutPrepared {
@@ -1951,7 +1951,7 @@ fn unchanged_retry_does_not_let_the_interrupted_attempt_admit_its_prompt() {
     };
     assert_eq!(
         retry_prompt_id, prompt_id,
-        "unchanged retry keeps Prompt identity"
+        "unchanged retry keeps prompt identity"
     );
     assert_eq!(retry.id, request.id);
 
@@ -2054,7 +2054,7 @@ fn current_preparation_transport_failure_stays_in_the_provisional_retry_view() {
         2,
         "{failed}"
     );
-    assert!(failed.contains("Could not create Session"), "{failed}");
+    assert!(failed.contains("Could not create session"), "{failed}");
     assert!(failed.contains("current transport failure"), "{failed}");
     assert!(!failed.contains("Creating worktree"), "{failed}");
 }
@@ -2116,7 +2116,7 @@ fn begin_in_new_worktree(app: &mut Application, layout: &Layout, prompt: &str) -
         })
         .unwrap()
     else {
-        panic!("a prepared Worktree continues to creation")
+        panic!("a prepared worktree continues to creation")
     };
     app.handle_event(ApplicationEvent::SessionCreated(
         crate::tui_rendering::provisional_session::created_session_snapshot(
@@ -2136,7 +2136,7 @@ fn submit_from_next_landing(app: &mut Application) -> CreateSessionRequest {
     command(app, SemanticCommandId::SessionNew);
     type_terminal_text(app, "The next one");
     let ApplicationTransition::CreateSession(next) = key(app, KeyCode::Enter) else {
-        panic!("the next Prompt begins a Session where the Landing stands")
+        panic!("the next prompt begins a session where the landing stands")
     };
     next
 }
@@ -2172,7 +2172,7 @@ fn leaving_failed_preparation_restores_its_prompt_and_returns_the_landing_with_i
     let layout = Layout::new();
     let mut app = layout.app();
     choose_new(&mut app, &layout);
-    type_terminal_text(&mut app, "Retry from the Landing");
+    type_terminal_text(&mut app, "Retry from the landing");
     let ApplicationTransition::PrepareCheckout {
         attempt_id,
         prompt_id,
@@ -2184,7 +2184,7 @@ fn leaving_failed_preparation_restores_its_prompt_and_returns_the_landing_with_i
     let mut result = prepared(&layout, &request);
     let retained = result.preparation.destination.clone();
     result.preparation.ready = false;
-    result.error = Some("Destination Skills unavailable".to_owned());
+    result.error = Some("Destination skills unavailable".to_owned());
     app.handle_event(ApplicationEvent::CheckoutPrepared {
         attempt_id,
         prompt_id,
@@ -2193,8 +2193,8 @@ fn leaving_failed_preparation_restores_its_prompt_and_returns_the_landing_with_i
     .unwrap();
     command(&mut app, SemanticCommandId::SessionNew);
     let landing = text(&app);
-    assert!(landing.contains("Retry from the Landing"), "{landing}");
-    assert!(landing.contains("New Worktree on submit"), "{landing}");
+    assert!(landing.contains("Retry from the landing"), "{landing}");
+    assert!(landing.contains("New worktree on submit"), "{landing}");
     assert!(landing.contains("nested"), "{landing}");
 
     let ApplicationTransition::PrepareCheckout {
@@ -2206,7 +2206,7 @@ fn leaving_failed_preparation_restores_its_prompt_and_returns_the_landing_with_i
         panic!("the restored draft prepares again")
     };
     assert_eq!(retry.id, request.id);
-    assert_eq!(retry.source, retained, "the retained Worktree is resumed");
+    assert_eq!(retry.source, retained, "the retained worktree is resumed");
     let ApplicationTransition::CreateSession(create) = app
         .handle_event(ApplicationEvent::CheckoutPrepared {
             attempt_id,
@@ -2244,12 +2244,12 @@ fn returning_to_the_workspace_resumes_where_the_new_worktree_was_asked_for() {
 
     let transition = pick_other_workspace(&mut app, &[layout.context.clone(), other]);
     let (_, _, _, request) =
-        workspace_resolution(&transition).expect("returning resolves the Workspace");
+        workspace_resolution(&transition).expect("returning resolves the workspace");
     assert_eq!(
         request
             .remembered_execution_directory
             .as_ref()
-            .expect("the Workspace remembers a directory")
+            .expect("the workspace remembers a directory")
             .path,
         layout.nested
     );
@@ -2298,7 +2298,7 @@ fn choosing_the_new_worktree_outright_makes_it_where_the_landing_stays() {
 /// Selector able to create another.
 fn refused_in_new_worktree(app: &mut Application, layout: &Layout) -> ResolvedWorkspace {
     choose_new(app, layout);
-    type_terminal_text(app, "Refused in its Worktree");
+    type_terminal_text(app, "Refused in its worktree");
     let ApplicationTransition::PrepareCheckout {
         attempt_id,
         prompt_id,
@@ -2317,7 +2317,7 @@ fn refused_in_new_worktree(app: &mut Application, layout: &Layout) -> ResolvedWo
         })
         .unwrap()
     else {
-        panic!("a prepared Worktree continues to creation")
+        panic!("a prepared worktree continues to creation")
     };
     app.handle_event(ApplicationEvent::SessionCreationFailed {
         prompt_id: create.prompt.id,
@@ -2405,7 +2405,7 @@ fn the_sidekick_opened_from_a_refused_claim_leaves_its_workspace_remembering_the
         request_id,
     } = command(&mut app, SemanticCommandId::SessionSidekick)
     else {
-        panic!("/sidekick asks its Server for the Sidekick Workspace")
+        panic!("/sidekick asks its server for the sidekick workspace")
     };
     let sidekick = layout.root.join("sidekick");
     std::fs::create_dir(&sidekick).unwrap();
@@ -2419,12 +2419,12 @@ fn the_sidekick_opened_from_a_refused_claim_leaves_its_workspace_remembering_the
 
     let transition = pick_other_workspace(&mut app, std::slice::from_ref(&layout.context));
     let (_, _, _, request) =
-        workspace_resolution(&transition).expect("returning resolves the Workspace");
+        workspace_resolution(&transition).expect("returning resolves the workspace");
     assert_eq!(
         request
             .remembered_execution_directory
             .as_ref()
-            .expect("the Workspace remembers a directory")
+            .expect("the workspace remembers a directory")
             .path,
         layout.nested
     );
@@ -2547,13 +2547,13 @@ fn managed_preparation_carries_explicit_skill_names_directly_to_destination_admi
         })
         .unwrap()
     else {
-        panic!("destination matching is automatic at the Server boundary")
+        panic!("destination matching is automatic at the server boundary")
     };
     assert_eq!(create.preparation_id, Some(request.id));
     assert_eq!(
         create.prompt.skill_invocations[0].skill_id,
         SkillId::new("source-review"),
-        "the client preserves the request; the Server owns destination rebinding"
+        "the client preserves the request; the server owns destination rebinding"
     );
 }
 
@@ -2602,7 +2602,7 @@ fn managed_preparation_carries_attachment_bindings_for_the_server_to_name_the_wo
         request,
     } = key(&mut app, KeyCode::Enter)
     else {
-        panic!("a Prompt with an image prepares its Worktree")
+        panic!("a prompt with an image prepares its worktree")
     };
     let bindings = vec![AttachmentBinding {
         attachment_id: AttachmentId::new("flicker-hash"),
@@ -2612,7 +2612,7 @@ fn managed_preparation_carries_attachment_bindings_for_the_server_to_name_the_wo
     assert_eq!(request.prompt.text, "[Image 1] fix flicker");
     assert_eq!(
         request.prompt.attachments, bindings,
-        "the Server is told which text is a label, so the Worktree is never named from it"
+        "the server is told which text is a label, so the worktree is never named from it"
     );
 
     let result = prepared(&layout, &request);
@@ -2624,7 +2624,7 @@ fn managed_preparation_carries_attachment_bindings_for_the_server_to_name_the_wo
         })
         .unwrap()
     else {
-        panic!("the prepared Worktree admits the Prompt")
+        panic!("the prepared worktree admits the prompt")
     };
     assert_eq!(create.prompt.attachments, bindings);
 }
@@ -2742,13 +2742,13 @@ fn a_lost_remote_refuses_a_removal_in_the_selector_and_escape_steps_out() {
     ));
     let refused = selector_box(&app);
     assert!(refused.contains("studio is unreachable"), "{refused}");
-    assert!(refused.contains("affected Sessions"), "{refused}");
+    assert!(refused.contains("affected sessions"), "{refused}");
 
     key(&mut app, KeyCode::Esc);
     let stepped = selector_box(&app);
-    assert!(stepped.contains("New Worktree"), "{stepped}");
+    assert!(stepped.contains("New worktree"), "{stepped}");
     assert!(!stepped.contains("studio is unreachable"), "{stepped}");
-    assert!(!stepped.contains("affected Sessions"), "{stepped}");
+    assert!(!stepped.contains("affected sessions"), "{stepped}");
 
     key(&mut app, KeyCode::Esc);
     let closed = text(&app);
@@ -2829,7 +2829,7 @@ fn linked_removal_confirmation_warns_counts_cancel_is_read_only_and_force_is_dis
     })
     .unwrap();
     let rendered = text(&app);
-    assert!(rendered.contains("3 affected Sessions"));
+    assert!(rendered.contains("3 affected sessions"));
     assert!(rendered.contains("Branch retained"), "{rendered}");
     assert!(rendered.contains("Ignored contents"));
     assert!(rendered.contains("owner lock"));
@@ -2860,7 +2860,7 @@ fn linked_removal_confirmation_warns_counts_cancel_is_read_only_and_force_is_dis
         key(&mut app, KeyCode::Esc),
         ApplicationTransition::Continue
     ));
-    assert!(!text(&app).contains("3 affected Sessions"));
+    assert!(!text(&app).contains("3 affected sessions"));
     assert!(layout.linked.exists());
 }
 #[test]
@@ -2906,7 +2906,7 @@ fn main_removal_unavailable_and_canceled_preview_response_is_ignored() {
         }),
     })
     .unwrap();
-    assert!(!text(&app).contains("affected Sessions"));
+    assert!(!text(&app).contains("affected sessions"));
 }
 
 /// A pending Move bound for the Worktree blocks its removal, and the preview
@@ -2950,11 +2950,11 @@ fn a_removal_preview_names_a_pending_move_bound_there_and_refuses_the_removal() 
 
     let rendered = text(&app);
     assert!(
-        rendered.contains("1 affected Sessions on this Server · 0 Working"),
+        rendered.contains("1 affected sessions on this server · 0 working"),
         "{rendered}"
     );
     assert!(
-        rendered.contains("A pending Move is bound here"),
+        rendered.contains("A pending move is bound here"),
         "{rendered}"
     );
     assert!(
@@ -2962,7 +2962,7 @@ fn a_removal_preview_names_a_pending_move_bound_there_and_refuses_the_removal() 
         "{rendered}"
     );
     assert!(
-        rendered.contains("A pending Move blocks removal"),
+        rendered.contains("A pending move blocks removal"),
         "{rendered}"
     );
     assert_eq!(
@@ -3038,12 +3038,12 @@ fn successful_removal_marks_selected_exact_directory_unavailable_and_keeps_it_se
     assert!(rendered.contains("unavailable"));
     assert!(rendered.contains("nested"));
     key(&mut app, KeyCode::Esc);
-    type_terminal_text(&mut app, "Do not redirect my next Session");
+    type_terminal_text(&mut app, "Do not redirect my next session");
     assert!(matches!(
         key(&mut app, KeyCode::Enter),
         ApplicationTransition::Continue
     ));
-    assert!(text(&app).contains("Execution Directory unavailable"));
+    assert!(text(&app).contains("Execution directory unavailable"));
 }
 
 #[test]
@@ -3068,7 +3068,7 @@ fn the_pointer_focuses_a_worktree_and_pressing_one_chooses_it() {
     let ApplicationTransition::ResolveWorkspace { request, .. } =
         press_at(&mut app, (160, 30), main)
     else {
-        panic!("pressing a Worktree chooses it on the Server")
+        panic!("pressing a worktree chooses it on the server")
     };
     assert_eq!(
         request.checkout_id,

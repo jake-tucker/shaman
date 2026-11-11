@@ -74,7 +74,7 @@ fn unknown_key() -> SettingsDiagnostic {
         severity: SettingsDiagnosticSeverity::Warning,
         file: config_file("suru.jsonc"),
         key: Some("transcript.defaultFoldPostures".to_owned()),
-        message: "ignored because it is not a known Setting".to_owned(),
+        message: "ignored because it is not a known setting".to_owned(),
     }
 }
 
@@ -184,19 +184,19 @@ fn a_syntax_broken_config_document_notices_the_failure_and_points_at_the_log() {
     let notice = notice_row(&landing);
     assert!(
         notice.starts_with("× "),
-        "a whole Config Document being ignored notices at error severity: {notice:?}"
+        "a whole config document being ignored notices at error severity: {notice:?}"
     );
     assert!(
         notice.contains("suru.jsonc") && notice.contains("not valid JSONC"),
-        "the Notice names the file and why it was ignored: {notice:?}"
+        "the notice names the file and why it was ignored: {notice:?}"
     );
     assert!(
-        notice.contains("see the Log"),
-        "the Notice points at the Log, where the whole diagnostic is: {notice:?}"
+        notice.contains("see the log"),
+        "the notice points at the log, where the whole diagnostic is: {notice:?}"
     );
     assert!(
         landing.join("\n").contains("Type a prompt"),
-        "the Notice sits above the Landing rather than replacing it: {landing:?}"
+        "the notice sits above the landing rather than replacing it: {landing:?}"
     );
 }
 
@@ -220,7 +220,7 @@ fn an_ignored_duplicate_config_document_notices_the_file_it_dropped() {
     );
     assert!(
         notice.contains("suru.json ignored because suru.jsonc exists and wins"),
-        "the Notice names the dropped file and what beat it: {notice:?}"
+        "the notice names the dropped file and what beat it: {notice:?}"
     );
 }
 
@@ -236,11 +236,11 @@ fn per_key_ignores_are_counted_in_the_notice_summary() {
     );
     assert!(
         notice.contains("2 keys ignored in suru.jsonc"),
-        "the Notice counts the ignored keys and names their file: {notice:?}"
+        "the notice counts the ignored keys and names their file: {notice:?}"
     );
     assert!(
-        notice.contains("see the Log"),
-        "the Log is where the key paths and reasons are: {notice:?}"
+        notice.contains("see the log"),
+        "the log is where the key paths and reasons are: {notice:?}"
     );
 }
 
@@ -309,8 +309,8 @@ fn a_summary_too_long_for_the_terminal_gives_way_before_the_pointer_at_the_log_d
     for width in [40, 60, 80] {
         let notice = notice_row(&rendered_application_rows_at(&application, width, 15));
         assert!(
-            notice.starts_with("× ") && notice.ends_with("see the Log"),
-            "at width {width} the Notice still tells the reader where to look: {notice:?}"
+            notice.starts_with("× ") && notice.ends_with("see the log"),
+            "at width {width} the notice still tells the reader where to look: {notice:?}"
         );
     }
 }
@@ -331,11 +331,11 @@ fn an_interaction_the_landing_makes_nothing_of_still_dismisses_the_notice() {
 
         application
             .handle_terminal_event(interaction.clone())
-            .expect("deliver an interaction the Landing maps to no command");
+            .expect("deliver an interaction the landing maps to no command");
 
         let dismissed = rendered_application_rows(&application).join("\n");
         assert!(
-            !dismissed.contains("see the Log"),
+            !dismissed.contains("see the log"),
             "{interaction:?} is an interaction even where it commands nothing: {dismissed}"
         );
     }
@@ -352,7 +352,7 @@ fn the_terminal_resizing_around_the_reader_leaves_the_notice_standing() {
 
     let landing = rendered_application_rows_at(&application, 100, 30).join("\n");
     assert!(
-        landing.contains("see the Log"),
+        landing.contains("see the log"),
         "a resize is the terminal's doing, not the reader's: {landing}"
     );
 }
@@ -364,13 +364,13 @@ fn a_clean_configuration_renders_no_notice() {
 
     let landing = rendered_application_rows(&application);
     assert!(
-        !landing.join("\n").contains("see the Log"),
+        !landing.join("\n").contains("see the log"),
         "a startup with nothing to report says nothing: {landing:?}"
     );
     assert_eq!(
         landing,
         rendered_application_rows(&connected_application(workspace.path())),
-        "a clean snapshot leaves the Landing exactly as it was"
+        "a clean snapshot leaves the landing exactly as it was"
     );
 }
 
@@ -379,26 +379,26 @@ fn the_next_interaction_dismisses_the_notice_for_the_rest_of_the_run() {
     let workspace = workspace_dir();
     let mut application = landing_showing(workspace.path(), vec![unreadable_document()]);
     assert!(
-        notice_row(&rendered_application_rows(&application)).contains("see the Log"),
-        "the Notice shows before the user has touched anything"
+        notice_row(&rendered_application_rows(&application)).contains("see the log"),
+        "the notice shows before the user has touched anything"
     );
 
     type_terminal_text(&mut application, "hello");
 
     let dismissed = rendered_application_rows(&application).join("\n");
     assert!(
-        !dismissed.contains("see the Log"),
-        "the reader's next interaction dismisses the Notice: {dismissed}"
+        !dismissed.contains("see the log"),
+        "the reader's next interaction dismisses the notice: {dismissed}"
     );
     assert!(
         dismissed.contains("hello"),
-        "the Notice never blocks input — the keystroke that dismissed it still typed: {dismissed}"
+        "the notice never blocks input — the keystroke that dismissed it still typed: {dismissed}"
     );
 
     deliver_snapshot(&mut application, vec![unreadable_document()]);
     let reconnected = rendered_application_rows(&application).join("\n");
     assert!(
-        !reconnected.contains("see the Log"),
-        "a Notice the reader dismissed does not come back during the run: {reconnected}"
+        !reconnected.contains("see the log"),
+        "a notice the reader dismissed does not come back during the run: {reconnected}"
     );
 }

@@ -72,11 +72,11 @@ fn local_and_descendant_intervention_notices_keep_both_actions_visible() {
     let local = rows
         .iter()
         .position(|row| row.contains("Approval pending (1) · Ctrl+Y decide"))
-        .expect("the owning Session's Approval action remains visible");
+        .expect("the owning session's approval action remains visible");
     let descendants = rows
         .iter()
         .position(|row| {
-            row.contains("1 Subagent questionnaire · 1 Approval pending · ↓ browse Subagents")
+            row.contains("1 subagent questionnaire · 1 approval pending · ↓ browse subagents")
         })
         .expect("the descendant intervention counts and browse action remain visible");
     assert_ne!(
@@ -229,14 +229,14 @@ fn every_typed_subject_renders_all_available_detail_reason_and_tool_link() {
         "Query: Approval",
         "Tool row: Command",
         "Reason: Validate the implementation",
-        "File Change: src/approval.rs",
+        "File change: src/approval.rs",
         "Path: src/tui.rs",
         "Grant root: src",
         "Read: secrets/example.txt",
         "Network: https://api.example.test/v1",
         "Permission Grant",
         "workspace-write",
-        "Other Tool: fetch_release",
+        "Other tool: fetch_release",
         "Tool row: Tool",
         "repository",
         "Fetch the release manifest",
@@ -257,8 +257,8 @@ fn decision_number_and_focus_keys_only_submit_from_an_explicitly_open_approval()
         let (mut app, id, _) = pending_application();
         let presented = rendered_application_rows_at(&app, 100, 30).join("\n");
         assert!(
-            presented.contains("Approval · Choose Decision"),
-            "the Approval presents itself: {presented}"
+            presented.contains("Approval · Choose decision"),
+            "the approval presents itself: {presented}"
         );
         key(&mut app, KeyCode::Esc);
         let arrived = rendered_application_rows_at(&app, 100, 30).join("\n");
@@ -513,12 +513,12 @@ fn approval_history_distinguishes_every_lifecycle_outcome_and_records_full_decis
         "Delivery uncertain",
         "will not be resent",
         "Accepted once",
-        "Accepted for Session",
+        "Accepted for session",
         "Declined",
         "Declined and interrupted",
-        "Withdrawn; Provider no longer",
+        "Withdrawn; provider no longer",
         "requests this action",
-        "Unavailable; previous Provider",
+        "Unavailable; previous provider",
         "request is no longer live",
     ] {
         assert!(screen.contains(expected), "missing {expected:?}:\n{screen}");
@@ -588,7 +588,7 @@ fn long_approval_detail_has_a_reversible_fold_and_a_distinct_stored_truncation_m
     );
     assert!(
         folded.contains("+33"),
-        "Fold counts every logical Command and reason Line:\n{folded}"
+        "Fold counts every logical command and reason line:\n{folded}"
     );
     assert!(
         !folded.contains(long_tail),
@@ -598,18 +598,18 @@ fn long_approval_detail_has_a_reversible_fold_and_a_distinct_stored_truncation_m
     let expanded = rendered_application_rows_at(&app, 100, 60).join("\n");
     assert!(
         expanded.contains(long_tail),
-        "expanded Fold reveals stored detail:\n{expanded}"
+        "expanded fold reveals stored detail:\n{expanded}"
     );
     assert!(
         expanded.contains("[Approval detail truncated]"),
-        "typed Truncation is distinct from the Fold marker:\n{expanded}"
+        "typed truncation is distinct from the fold marker:\n{expanded}"
     );
 
     invoke(&mut app, SemanticCommandId::ApprovalOpen);
     let panel = rendered_application_rows_at(&app, 80, 24).join("\n");
     for choice in [
         "1. Accept once",
-        "2. Accept for Session",
+        "2. Accept for session",
         "3. Decline",
         "4. Decline and Interrupt",
         "1–4 decide",
@@ -720,7 +720,7 @@ fn decisions_on_a_short_terminal_keep_the_one_the_reader_is_on_in_view() {
     assert_eq!(
         drawn_decisions(&app, 9),
         (vec![1, 2, 3], Some(1)),
-        "three rows hold the first three Decisions"
+        "three rows hold the first three decisions"
     );
 
     let mut walked = Vec::new();
@@ -735,7 +735,7 @@ fn decisions_on_a_short_terminal_keep_the_one_the_reader_is_on_in_view() {
             (vec![2, 3, 4], Some(3)),
             (vec![2, 3, 4], Some(4)),
         ],
-        "one Decision stays in view beyond the one the reader is on, and the window \
+        "one decision stays in view beyond the one the reader is on, and the window \
          stands once the last shows"
     );
 
@@ -759,7 +759,7 @@ fn decisions_on_a_short_terminal_keep_the_one_the_reader_is_on_in_view() {
         let (drawn, focused) = drawn_decisions(&app, 8);
         assert!(
             focused.is_some_and(|focused| drawn.contains(&focused)),
-            "two rows spare nothing either side, but still show the Decision the reader is \
+            "two rows spare nothing either side, but still show the decision the reader is \
              on: {drawn:?}"
         );
     }

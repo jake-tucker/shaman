@@ -265,7 +265,7 @@ impl RenameDialog {
         let draft = self.writable()?;
         let title = one_line_title(&draft.text);
         if title.is_empty() {
-            draft.error = Some("A Title cannot be blank".to_owned());
+            draft.error = Some("A title cannot be blank".to_owned());
             return None;
         }
         if let Some(error) = too_long(&title) {
@@ -307,7 +307,7 @@ impl RenameDialog {
                 draft.touched = true;
                 draft.error = None;
             }
-            Err(error) => draft.error = Some(format!("Could not derive a Title: {error}")),
+            Err(error) => draft.error = Some(format!("Could not derive a title: {error}")),
         }
     }
 
@@ -390,8 +390,8 @@ mod tests {
         );
 
         let (_, request) = dialog.derive().expect("a proposal is offered again");
-        dialog.proposal_answered(request, Ok("Map the Provider seam".to_owned()));
-        assert_eq!(dialog.view().unwrap().text, "Map the Provider seam");
+        dialog.proposal_answered(request, Ok("Map the provider seam".to_owned()));
+        assert_eq!(dialog.view().unwrap().text, "Map the provider seam");
         dialog.cancel();
         assert!(!dialog.is_open());
     }
@@ -404,7 +404,7 @@ mod tests {
         dialog.offer_answered(Uuid::new_v4(), true);
         assert!(dialog.derive().is_none(), "an answer for another opening");
         dialog.offer_answered(opening, false);
-        assert!(dialog.derive().is_none(), "the Origin offers none");
+        assert!(dialog.derive().is_none(), "the origin offers none");
         assert!(!dialog.view().unwrap().offered);
     }
 
@@ -417,7 +417,7 @@ mod tests {
         assert!(dialog.save().is_none());
         assert_eq!(
             dialog.view().unwrap().error,
-            Some("A Title cannot be blank")
+            Some("A title cannot be blank")
         );
         dialog.insert(&"x".repeat(81));
         assert!(
@@ -436,11 +436,11 @@ mod tests {
         let mut dialog = RenameDialog::default();
         let session = session();
         dialog.open(session.clone(), "Explain the seam", None, None);
-        dialog.title_changed(&session, "Map the Provider seam");
-        assert_eq!(dialog.view().unwrap().text, "Map the Provider seam");
+        dialog.title_changed(&session, "Map the provider seam");
+        assert_eq!(dialog.view().unwrap().text, "Map the provider seam");
         dialog.insert("!");
         dialog.title_changed(&session, "Something else");
-        assert_eq!(dialog.view().unwrap().text, "Map the Provider seam!");
+        assert_eq!(dialog.view().unwrap().text, "Map the provider seam!");
     }
 
     #[test]

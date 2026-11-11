@@ -62,16 +62,16 @@ fn picker_over(here: &Path, workspaces: Vec<Workspace>, show_icons: bool) -> App
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::WorkspaceList,
         )))
-        .expect("open the Workspace Picker")
+        .expect("open the workspace picker")
     else {
-        panic!("opening the Workspace Picker asks its Server for its Workspaces");
+        panic!("opening the workspace picker asks its server for its workspaces");
     };
     application
         .handle_event(ApplicationEvent::WorkspacesListed {
             request,
             listing: crate::tui_rendering::support::workspace_listing(workspaces),
         })
-        .expect("hydrate the Workspace Picker");
+        .expect("hydrate the workspace picker");
     application
 }
 
@@ -165,20 +165,20 @@ fn the_focused_row_s_description_is_drawn_beneath_the_rows() {
 
     assert!(
         !frame(&application).contains("quarterly ledger"),
-        "only the row the reader is on has its Description drawn"
+        "only the row the reader is on has its description drawn"
     );
 
     press_key(&mut application, KeyCode::Down);
     let drawn = frame(&application);
     assert!(
         drawn.contains("Where the quarterly ledger is reconciled."),
-        "the focused row's Description is drawn: {drawn}"
+        "the focused row's description is drawn: {drawn}"
     );
     let rows = rendered_application_rows_at(&application, WIDE, TALL);
     let description = rows
         .iter()
         .position(|row| row.contains("quarterly ledger"))
-        .expect("the Description is drawn");
+        .expect("the description is drawn");
     let last_row = rows
         .iter()
         .position(|row| row.contains("atlas"))
@@ -189,7 +189,7 @@ fn the_focused_row_s_description_is_drawn_beneath_the_rows() {
         .expect("the footer is drawn");
     assert!(
         last_row < description && description < footer,
-        "the Description stands beneath the rows and above the footer: {rows:#?}"
+        "the description stands beneath the rows and above the footer: {rows:#?}"
     );
 }
 
@@ -209,12 +209,12 @@ fn a_workspace_with_no_description_draws_as_readily_as_one_with() {
     assert_eq!(
         footer_of(&described),
         footer_of(&plain),
-        "moving onto a Workspace with no Description moves nothing else in the picker"
+        "moving onto a workspace with no description moves nothing else in the picker"
     );
     let plain = plain.join("\n");
     assert!(
         !plain.contains("quarterly ledger"),
-        "the Description of a row the reader left is not drawn"
+        "the description of a row the reader left is not drawn"
     );
     for name in ["here", "ledger", "atlas"] {
         assert!(plain.contains(name), "every row is still drawn: {plain}");
@@ -235,7 +235,7 @@ fn a_long_description_gives_up_its_tail_rather_than_the_rows() {
     assert!(drawn.contains("Starts plainly."), "{drawn}");
     assert!(
         !drawn.contains("Ends unseen."),
-        "a Description too long for its lines is cut: {drawn}"
+        "a description too long for its lines is cut: {drawn}"
     );
     assert!(drawn.contains('\u{2026}'), "and says so: {drawn}");
     assert!(drawn.contains("here") && drawn.contains("Esc close"));
@@ -262,7 +262,7 @@ fn a_description_the_catalog_announces_is_drawn_without_reopening_the_picker() {
 
     assert!(
         frame(&application).contains("Where the atlas is drawn."),
-        "the focused row's new Description is drawn at once"
+        "the focused row's new description is drawn at once"
     );
 }
 
@@ -271,7 +271,7 @@ fn the_footer_names_the_key_that_edits_the_description() {
     let application = described_and_plain(true);
     assert!(
         frame(&application).contains("Ctrl+E describe"),
-        "the picker says how to describe the focused Workspace"
+        "the picker says how to describe the focused workspace"
     );
 }
 
@@ -285,11 +285,11 @@ fn ctrl_e_opens_an_editor_holding_the_focused_workspace_s_description() {
     let drawn = frame(&application);
     assert!(
         drawn.contains("Describe ledger"),
-        "the editor names the Workspace it describes: {drawn}"
+        "the editor names the workspace it describes: {drawn}"
     );
     assert!(
         drawn.contains("Where the quarterly ledger is reconciled."),
-        "the editor begins from the Description the Workspace carries: {drawn}"
+        "the editor begins from the description the workspace carries: {drawn}"
     );
     assert!(
         drawn.contains("Enter save") && drawn.contains("Esc cancel"),
@@ -320,7 +320,7 @@ fn saving_asks_the_workspace_s_origin_to_set_what_the_reader_typed() {
     );
     assert!(
         frame(&application).contains("Saving"),
-        "the editor stands, holding the draft, until its Server answers"
+        "the editor stands, holding the draft, until its server answers"
     );
 
     application
@@ -328,7 +328,7 @@ fn saving_asks_the_workspace_s_origin_to_set_what_the_reader_typed() {
             origin: Outlook::Local,
             workspace_id: WorkspaceId::directory(&atlas),
         })
-        .expect("take the Server's answer");
+        .expect("take the server's answer");
     assert!(
         !editor_is_drawn(&application),
         "a landed save closes the editor"
@@ -354,7 +354,7 @@ fn a_refused_save_keeps_the_draft_and_says_why() {
             workspace_id: WorkspaceId::directory(&workspace(&["work", "atlas"])),
             error: "Remote API request failed".to_owned(),
         })
-        .expect("take the Server's refusal");
+        .expect("take the server's refusal");
 
     let drawn = frame(&application);
     assert!(editor_is_drawn(&application), "the editor stands: {drawn}");
@@ -392,7 +392,7 @@ fn a_save_that_fails_after_the_editor_was_closed_brings_the_draft_back() {
             workspace_id: WorkspaceId::directory(&workspace(&["work", "atlas"])),
             error: "Remote API request failed".to_owned(),
         })
-        .expect("take the Server's refusal");
+        .expect("take the server's refusal");
 
     let drawn = frame(&application);
     assert!(
@@ -411,7 +411,7 @@ fn the_workspace_of_a_fresh_landing_can_be_described_before_any_session() {
     press_chord(&mut application, KeyCode::Char('e'), KeyModifiers::CONTROL);
     assert!(
         frame(&application).contains("Describe fresh"),
-        "the Workspace the reader is in is offered for describing"
+        "the workspace the reader is in is offered for describing"
     );
     type_text(&mut application, "Somewhere new.");
     let transition = press_key(&mut application, KeyCode::Enter);
@@ -424,7 +424,7 @@ fn the_workspace_of_a_fresh_landing_can_be_described_before_any_session() {
             path: here.clone(),
             description: "Somewhere new.".to_owned(),
         },
-        "the save says where the Workspace is, so its Server can resolve one it has no Session in"
+        "the save says where the workspace is, so its server can resolve one it has no session in"
     );
 }
 
@@ -463,7 +463,7 @@ fn a_long_paste_is_kept_whole_and_saving_it_says_the_limit() {
     assert_eq!(
         press_key(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "a Description its Server would refuse is not sent"
+        "a description its server would refuse is not sent"
     );
     let drawn = frame(&application);
     assert!(
@@ -506,7 +506,7 @@ fn backspace_edits_the_description_and_ctrl_u_clears_it_for_derivation() {
             path: ledger.clone(),
             description: String::new(),
         },
-        "saving a cleared Description asks for it cleared, so it may be derived again"
+        "saving a cleared description asks for it cleared, so it may be derived again"
     );
 }
 
@@ -566,7 +566,7 @@ fn the_row_menu_offers_edit_description_whether_or_not_icons_are_shown() {
     let (_, _, items) = open_ledger_menu(&mut without_icons);
     assert!(
         items.iter().any(|label| label.contains("Edit description")),
-        "describing a Workspace needs no glyph: {items:?}"
+        "describing a workspace needs no glyph: {items:?}"
     );
     assert!(
         !items.iter().any(|label| label.contains("Choose icon")),
@@ -625,9 +625,9 @@ fn a_remote_workspace_s_description_is_saved_to_that_remote() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             SemanticCommandId::WorkspaceList,
         )))
-        .expect("open the Workspace Picker")
+        .expect("open the workspace picker")
     else {
-        panic!("opening the Workspace Picker asks its Outlook for its Workspaces");
+        panic!("opening the workspace picker asks its outlook for its workspaces");
     };
     let studio_work = workspace(&["studio", "mural"]);
     application
@@ -638,7 +638,7 @@ fn a_remote_workspace_s_description_is_saved_to_that_remote() {
                 None,
             )]),
         })
-        .expect("hydrate the Workspace Picker");
+        .expect("hydrate the workspace picker");
     let buffer = rendered_application_buffer(&application, WIDE, TALL);
     let (_, row) = text_position(&buffer, "mural");
     let rows = rendered_application_rows_at(&application, WIDE, TALL);
@@ -658,7 +658,7 @@ fn a_remote_workspace_s_description_is_saved_to_that_remote() {
             path: studio_work.clone(),
             description: "Painted on the studio.".to_owned(),
         },
-        "a Remote's Workspace is described at its own Origin"
+        "a remote's workspace is described at its own origin"
     );
 }
 
@@ -679,9 +679,9 @@ fn describing_a_workspace_on_an_unreachable_remote_is_refused_in_view() {
                 .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                     command
                 )))
-                .expect("refuse work bound for the Remote"),
+                .expect("refuse work bound for the remote"),
             ApplicationTransition::Continue,
-            "{command:?} is applied on the Origin"
+            "{command:?} is applied on the origin"
         );
         let screen =
             crate::tui_rendering::support::rendered_application_rows(&application).join("\n");
@@ -705,9 +705,9 @@ fn a_local_description_never_reaches_a_remote_workspace_of_the_same_identity() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::WorkspaceList,
             )))
-            .expect("open the Workspace Picker")
+            .expect("open the workspace picker")
         else {
-            panic!("opening the Workspace Picker asks its Outlook for its Workspaces");
+            panic!("opening the workspace picker asks its outlook for its workspaces");
         };
         assert_eq!(request.outlook(), &Outlook::Remote("studio".to_owned()));
         application
@@ -717,7 +717,7 @@ fn a_local_description_never_reaches_a_remote_workspace_of_the_same_identity() {
                     &shared, None,
                 )]),
             })
-            .expect("hydrate the Workspace Picker");
+            .expect("hydrate the workspace picker");
     };
     // Choosing the studio's row makes it the Workspace the Outlook is in, so
     // the shared identity is both a listed row and the current Workspace.
@@ -733,7 +733,7 @@ fn a_local_description_never_reaches_a_remote_workspace_of_the_same_identity() {
         ..
     } = press_key(&mut application, KeyCode::Enter)
     else {
-        panic!("choosing a Workspace asks its Server to resolve it");
+        panic!("choosing a workspace asks its server to resolve it");
     };
     application
         .handle_event(ApplicationEvent::WorkspaceResolved {
@@ -742,7 +742,7 @@ fn a_local_description_never_reaches_a_remote_workspace_of_the_same_identity() {
             request_id,
             result: Ok(suru::protocol::ResolvedWorkspace::directory(shared.clone())),
         })
-        .expect("land in the studio's Workspace");
+        .expect("land in the studio's workspace");
     open_on_studio(&mut application);
 
     application
@@ -758,13 +758,13 @@ fn a_local_description_never_reaches_a_remote_workspace_of_the_same_identity() {
         .expect("take this machine's catalog change");
     assert!(
         !frame(&application).contains("Kept on this machine."),
-        "this machine's Description is not the studio's: {}",
+        "this machine's description is not the studio's: {}",
         frame(&application)
     );
     press_chord(&mut application, KeyCode::Char('e'), KeyModifiers::CONTROL);
     assert!(
         !frame(&application).contains("Kept on this machine."),
-        "nor is it what the studio's Workspace is edited from"
+        "nor is it what the studio's workspace is edited from"
     );
     press_key(&mut application, KeyCode::Esc);
 
@@ -782,7 +782,7 @@ fn a_local_description_never_reaches_a_remote_workspace_of_the_same_identity() {
         .expect("take the studio's catalog change");
     assert!(
         frame(&application).contains("Kept on the studio."),
-        "the studio's own Description is drawn for its Workspace: {}",
+        "the studio's own description is drawn for its workspace: {}",
         frame(&application)
     );
 }

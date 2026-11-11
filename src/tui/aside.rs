@@ -1301,7 +1301,7 @@ impl SubagentTreeReading {
                     std::cmp::Reverse(live.contains(&node.key())),
                     std::cmp::Reverse(entry.spawn_order),
                 ),
-                TreeNode::Session(_) => unreachable!("only Subagents are gathered by spawner"),
+                TreeNode::Session(_) => unreachable!("only subagents are gathered by spawner"),
             });
         }
         let mut top = children
@@ -1376,7 +1376,7 @@ mod tests {
         assert_eq!(
             aside.tree_request(Some(&reference(child))),
             Some(reference(child)),
-            "a tree not yet in hand is asked for through the open Session"
+            "a tree not yet in hand is asked for through the open session"
         );
 
         assert!(aside.receive_tree(
@@ -1406,13 +1406,13 @@ mod tests {
         assert_eq!(
             aside.tree_request(Some(&reference(top))),
             Some(reference(child)),
-            "moving to another Session of the tree keeps the subscription it came from"
+            "moving to another session of the tree keeps the subscription it came from"
         );
         let elsewhere = SessionId::new();
         assert_eq!(
             aside.tree_request(Some(&reference(elsewhere))),
             Some(reference(elsewhere)),
-            "a Session of another tree asks afresh"
+            "a session of another tree asks afresh"
         );
         assert_eq!(
             aside.tree_request(Some(&SessionReference::new(
@@ -1423,7 +1423,7 @@ mod tests {
                 Outlook::Remote("studio".to_owned()),
                 top
             )),
-            "the same id on another Server is another tree"
+            "the same id on another server is another tree"
         );
 
         aside.toggle(true);
@@ -1431,12 +1431,12 @@ mod tests {
         assert_eq!(
             aside.tree_request(Some(&reference(top))),
             Some(reference(child)),
-            "a hidden Aside still follows the tree, which the Sidebar reads too"
+            "a hidden aside still follows the tree, which the sidebar reads too"
         );
         assert_eq!(
             aside.top_level_of(&reference(child)),
             Some(reference(top)),
-            "and names its top-level Session"
+            "and names its top-level session"
         );
     }
 
@@ -1486,14 +1486,14 @@ mod tests {
         assert_eq!(
             aside.tree_request(Some(&reference(child))),
             None,
-            "for every Session of the tree it was delivering"
+            "for every session of the tree it was delivering"
         );
 
         aside.note_opened(&reference(child));
         assert_eq!(
             aside.tree_request(Some(&reference(child))),
             Some(reference(child)),
-            "opening a Session of the tree asks for it afresh"
+            "opening a session of the tree asks for it afresh"
         );
 
         aside.receive_tree(
@@ -1506,7 +1506,7 @@ mod tests {
         assert_eq!(
             aside.tree_request(Some(&reference(child))),
             None,
-            "opening another tree's Session asks nothing of this one"
+            "opening another tree's session asks nothing of this one"
         );
     }
 
@@ -1562,7 +1562,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["│   ".to_owned(), "  │ ".to_owned(), "      ".to_owned()],
             "beneath its first line an entry carries its branch's rule on to the sibling \
-             after it, and hangs the rule its own spawns branch from where its Marker stood"
+             after it, and hangs the rule its own spawns branch from where its marker stood"
         );
     }
 

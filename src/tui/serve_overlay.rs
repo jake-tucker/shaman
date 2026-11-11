@@ -67,43 +67,43 @@ use super::{
 /// What the picker says in place of the machine's addresses while the
 /// Serving listener is off.
 pub(super) const LISTENER_OFF: &str =
-    "The Serving listener is off, so an Invite offers none of this machine's addresses";
+    "The serving listener is off, so an invite offers none of this machine's addresses";
 
 /// What the picker says in place of the machine's addresses while the
 /// Serving listener is asked to listen and does not, before why.
-pub(super) const LISTENER_FAILED: &str = "The Serving listener is not listening, so an Invite offers none of this machine's \
+pub(super) const LISTENER_FAILED: &str = "The serving listener is not listening, so an invite offers none of this machine's \
      addresses: ";
 
 /// What the picker says in place of the machine's addresses while the Serving
 /// listener listens where only this machine can reach it.
-pub(super) const LISTENER_LOOPBACK: &str = "The Serving listener listens where only this machine \
-                                            can reach it, so an Invite offers none of this \
+pub(super) const LISTENER_LOOPBACK: &str = "The serving listener listens where only this machine \
+                                            can reach it, so an invite offers none of this \
                                             machine's addresses";
 
 /// What the picker says where the Serving listener is off and no Relay can be
 /// offered either, so an Invite has no way at all to offer.
-pub(super) const NO_WAY: &str = "An Invite has no way to offer: turn the Serving listener on in \
-                                 the settings panel, or have this Server Serve through a Relay \
+pub(super) const NO_WAY: &str = "An invite has no way to offer: turn the serving listener on in \
+                                 the settings panel, or have this server serve through a relay \
                                  from here";
 
 /// What the picker says where the Serving listener is not listening and no
 /// Relay can be offered either.
-pub(super) const NO_WAY_UNTIL_LISTENING: &str = "An Invite has no way to offer until the Serving listener listens, or this Server Serves \
-     through a Relay from here";
+pub(super) const NO_WAY_UNTIL_LISTENING: &str = "An invite has no way to offer until the serving listener listens, or this server serves \
+     through a relay from here";
 
 /// What the picker says where the Serving listener listens where only this
 /// machine can reach it and no Relay can be offered either.
-pub(super) const NO_WAY_FROM_LOOPBACK: &str = "An Invite has no way to offer until the Serving listener listens where another machine can \
-     reach it, or this Server Serves through a Relay from here";
+pub(super) const NO_WAY_FROM_LOOPBACK: &str = "An invite has no way to offer until the serving listener listens where another machine can \
+     reach it, or this server serves through a relay from here";
 
 /// What the picker says where the Server holds no Relay, for the reader to
 /// begin there.
-pub(super) const NO_RELAY: &str = "This Server holds no Relay; press a to add one";
+pub(super) const NO_RELAY: &str = "This server holds no relay; press a to add one";
 
 /// What the picker says where a frame has too few Rows to say all of
 /// [`REACHABLE`] on the row the keys are on, which the key then does not act on.
-pub(super) const TOO_SMALL: &str = "This terminal is too small to show what Serving through this \
-                                    Relay does; enlarge it to Serve through it";
+pub(super) const TOO_SMALL: &str = "This terminal is too small to show what serving through this \
+                                    relay does; enlarge it to serve through it";
 
 /// What the ways an Invite may offer stand on, followed while the picker
 /// stands: how the Serving listener stands and the Client's own Server's
@@ -184,7 +184,7 @@ impl InviteEnded {
     pub(super) fn said(self) -> &'static str {
         match self {
             Self::Replaced => {
-                "A newer Invite has replaced this one. Close this with Esc; running /serve issues \
+                "A newer invite has replaced this one. Close this with Esc; running /serve issues \
                  another, which replaces that one in turn"
             }
             Self::Expired => {
@@ -195,11 +195,11 @@ impl InviteEnded {
                  issue another"
             }
             Self::Discarded => {
-                "Serving stopped, or its listener moved, which ends every Invite. Close this with \
+                "Serving stopped, or its listener moved, which ends every invite. Close this with \
                  Esc and run /serve to issue another"
             }
             Self::ServerGone => {
-                "The Server has restarted, so this Invite and its code are gone; close this and \
+                "The server has restarted, so this invite and its code are gone; close this and \
                  run /serve to issue another"
             }
         }
@@ -984,7 +984,7 @@ impl ServeOverlay {
                 attempt_failed: true,
                 renewable: true,
                 ..said(&format!(
-                    "{attempt}, so this code is dead. The Invite stays good, and a new code can \
+                    "{attempt}, so this code is dead. The invite stays good, and a new code can \
                      be had for it"
                 ))
             });
@@ -999,14 +999,14 @@ impl ServeOverlay {
             ShortCodeState::Delivered => ShownCode {
                 renewable: true,
                 ..said(
-                    "This code was used: the machine that typed it was sent the Invite, and is \
+                    "This code was used: the machine that typed it was sent the invite, and is \
                      not paired until it trusts it there",
                 )
             },
-            ShortCodeState::Spent => said("The Invite was redeemed, so this code is finished"),
+            ShortCodeState::Spent => said("The invite was redeemed, so this code is finished"),
             ShortCodeState::WrongCodeTried
             | ShortCodeState::LeftUnfinished
-            | ShortCodeState::Ended => said("This code ended with its Invite"),
+            | ShortCodeState::Ended => said("This code ended with its invite"),
         })
     }
 
@@ -1023,15 +1023,15 @@ impl ServeOverlay {
         }
         if !standing.state.invite_stands() {
             return (invite.serial > 0 && invite.state == InviteState::Standing).then(|| {
-                "The Invite issued last still stands, until Enter replaces it".to_owned()
+                "The invite issued last still stands, until Enter replaces it".to_owned()
             });
         }
         Some(match attempt_said(standing.state) {
             Some(attempt) => format!(
-                "{attempt} on the last short code, which is dead. The Invite it came with stands \
-                 until Enter replaces it; a new one offering a Relay comes with a new code"
+                "{attempt} on the last short code, which is dead. The invite it came with stands \
+                 until Enter replaces it; a new one offering a relay comes with a new code"
             ),
-            None => "The Invite issued last still stands, until Enter replaces it and its code"
+            None => "The invite issued last still stands, until Enter replaces it and its code"
                 .to_owned(),
         })
     }

@@ -23,7 +23,7 @@ use super::{
 
 /// What the selector calls every Workspace on the current Outlook, as distinct
 /// from Everywhere's wider set of Origin servers.
-const ALL_WORKSPACES: &str = "All Workspaces";
+const ALL_WORKSPACES: &str = "All workspaces";
 const EVERYWHERE: &str = "Everywhere";
 
 /// The plain folder glyph a scope entry narrowed to one Workspace draws in
@@ -2007,7 +2007,7 @@ impl Sidebar {
         let context = super::session_listing::listed_context(
             self.listed_session(&wanted)
                 .and_then(|session| session.readable())
-                .expect("a readable Sidebar Session carries its context"),
+                .expect("a readable sidebar session carries its context"),
         );
         self.listing.clear_error();
         self.attaching = Some(wanted.clone());
@@ -2338,7 +2338,7 @@ impl Sidebar {
                     outlook,
                     name: outlook
                         .remote_name()
-                        .expect("an unreachable Origin is always a Remote"),
+                        .expect("an unreachable origin is always a remote"),
                     focused: self.focus == Some(SidebarFocus::Unreachable(outlook.clone())),
                     login_needed: self.logins_needed.contains(outlook),
                 }),
@@ -3083,7 +3083,7 @@ mod tests {
         sidebar.adopt_outlook(studio);
         let request = sidebar
             .take_listing_request()
-            .expect("turning the visible Sidebar asks its new Origin");
+            .expect("turning the visible sidebar asks its new origin");
         sidebar.load(
             &request,
             vec![identified(session_id, "Remote work", 1)],
@@ -3097,10 +3097,10 @@ mod tests {
                 SidebarEntry::Row(row) => Some(row),
                 _ => None,
             })
-            .expect("the listing holds its Session row");
+            .expect("the listing holds its session row");
         assert!(
             !local_row.open,
-            "an equal Session ID from another Origin is not the open row"
+            "an equal session ID from another origin is not the open row"
         );
         let remote_entry = sidebar.entries(Some(&reference), &workspace_name);
         let remote_row = remote_entry
@@ -3109,7 +3109,7 @@ mod tests {
                 SidebarEntry::Row(row) => Some(row),
                 _ => None,
             })
-            .expect("the listing holds its Session row");
+            .expect("the listing holds its session row");
         assert!(remote_row.open && remote_row.remote.is_none());
 
         sidebar.record_geometry(
@@ -3124,7 +3124,7 @@ mod tests {
         assert_eq!(
             sidebar.activate_menu_item(),
             SidebarPress::Invoke(SemanticCommandId::SessionSettle.on_session(reference.clone())),
-            "the context menu carries the row's Origin"
+            "the context menu carries the row's origin"
         );
 
         sidebar.focus_on(SidebarTarget::Session(reference.clone()));
@@ -3133,7 +3133,7 @@ mod tests {
                 sidebar.activate(None),
                 SidebarActivation::Attach { session, .. } if session == reference
             ),
-            "row activation carries the same Origin"
+            "row activation carries the same origin"
         );
     }
 
@@ -3145,7 +3145,7 @@ mod tests {
         assert!(!sidebar.is_revealed());
         assert!(
             sidebar.take_listing_request().is_none(),
-            "a Sidebar nobody can see asks for nothing"
+            "a sidebar nobody can see asks for nothing"
         );
 
         sidebar.toggle(None);
@@ -3157,7 +3157,7 @@ mod tests {
 
         assert!(
             sidebar.is_revealed(),
-            "a later settings snapshot carries some other Setting's edit and leaves the reader's choice alone"
+            "a later settings snapshot carries some other setting's edit and leaves the reader's choice alone"
         );
     }
 
@@ -3167,7 +3167,7 @@ mod tests {
 
         assert!(
             !sidebar.is_revealed(),
-            "the initial-visibility Setting is what raises the Sidebar, so nothing is drawn before it lands"
+            "the initial-visibility setting is what raises the sidebar, so nothing is drawn before it lands"
         );
         assert!(sidebar.take_listing_request().is_none());
     }
@@ -3191,7 +3191,7 @@ mod tests {
         sidebar.adopt_settings(&settling_nothing());
         let request = sidebar
             .take_listing_request()
-            .expect("a revealed Sidebar asks for its Sessions");
+            .expect("a revealed sidebar asks for its sessions");
         sidebar.load(
             &request,
             vec![
@@ -3226,7 +3226,7 @@ mod tests {
                 "Older, still going",
                 BLANK,
             ],
-            "active Sessions have one blank line above, below, and between them"
+            "active sessions have one blank line above, below, and between them"
         );
         assert_eq!(
             drawn(&sidebar),
@@ -3240,7 +3240,7 @@ mod tests {
                 "Ended last",
                 "Ended first",
             ],
-            "the lower blank separates the active Sessions from the settled divider"
+            "the lower blank separates the active sessions from the settled divider"
         );
     }
 
@@ -3251,13 +3251,13 @@ mod tests {
 
         assert!(
             !sidebar.has_focus(),
-            "a reader who has not touched the Sidebar is typing their first Prompt"
+            "a reader who has not touched the sidebar is typing their first prompt"
         );
 
         sidebar.toggle(None);
         assert!(
             sidebar.is_revealed() && sidebar.has_focus(),
-            "reaching a Sidebar already on screen takes the keys without hiding it"
+            "reaching a sidebar already on screen takes the keys without hiding it"
         );
 
         sidebar.toggle(None);
@@ -3269,7 +3269,7 @@ mod tests {
         sidebar.toggle(None);
         assert!(
             sidebar.is_revealed() && sidebar.has_focus(),
-            "opening the Sidebar is the reader asking to drive it"
+            "opening the sidebar is the reader asking to drive it"
         );
 
         sidebar.leave();
@@ -3290,7 +3290,7 @@ mod tests {
 
         assert!(
             !sidebar.has_focus(),
-            "a Sidebar squeezed off a narrow terminal cannot act on the focus it keeps"
+            "a sidebar squeezed off a narrow terminal cannot act on the focus it keeps"
         );
 
         sidebar
@@ -3299,7 +3299,7 @@ mod tests {
 
         assert!(
             sidebar.has_focus(),
-            "widening the terminal gives the reader back the Sidebar they were driving"
+            "widening the terminal gives the reader back the sidebar they were driving"
         );
     }
 
@@ -3310,7 +3310,7 @@ mod tests {
         let listing = vec![summary("Newest", 3, 30), identified(open, "Open", 1)];
 
         sidebar.toggle(None);
-        let request = sidebar.take_listing_request().expect("ask for Sessions");
+        let request = sidebar.take_listing_request().expect("ask for sessions");
         let open = SessionReference::new(Outlook::Local, open);
         sidebar.load(&request, listing, Some(&open));
 
@@ -3371,7 +3371,7 @@ mod tests {
         assert_eq!(
             focused(&sidebar),
             Some("Survivor"),
-            "a Session deleted elsewhere lands the keys on the nearest row that is there"
+            "a session deleted elsewhere lands the keys on the nearest row that is there"
         );
     }
 
@@ -3381,7 +3381,7 @@ mod tests {
         let open = SessionId::new();
 
         sidebar.toggle(None);
-        let request = sidebar.take_listing_request().expect("ask for Sessions");
+        let request = sidebar.take_listing_request().expect("ask for sessions");
         let reference = SessionReference::new(Outlook::Local, open);
         sidebar.load(
             &request,
@@ -3395,7 +3395,7 @@ mod tests {
         );
         assert!(
             !sidebar.has_focus(),
-            "the reader is already in this Session, so Enter means only that they are done"
+            "the reader is already in this session, so Enter means only that they are done"
         );
         assert!(!sidebar.is_attaching());
     }
@@ -3413,7 +3413,7 @@ mod tests {
     fn the_settled_stand_below_the_divider_in_the_order_their_work_ended() {
         let mut sidebar = Sidebar::new(root());
         sidebar.adopt_settings(&settling_nothing());
-        let request = sidebar.take_listing_request().expect("ask for Sessions");
+        let request = sidebar.take_listing_request().expect("ask for sessions");
         sidebar.load(
             &request,
             vec![
@@ -3452,7 +3452,7 @@ mod tests {
             auto_settle: AutoSettle::Idle(1),
             ..SidebarSettings::default()
         }));
-        let request = sidebar.take_listing_request().expect("ask for Sessions");
+        let request = sidebar.take_listing_request().expect("ask for sessions");
         let a_day = AutoSettle::Idle(1)
             .idle_millis()
             .expect("a threshold in days is a threshold");
@@ -3476,7 +3476,7 @@ mod tests {
     fn a_column_windows_in_lines_because_the_two_shelves_are_not_one_height() {
         let mut sidebar = Sidebar::new(root());
         sidebar.adopt_settings(&settling_nothing());
-        let request = sidebar.take_listing_request().expect("ask for Sessions");
+        let request = sidebar.take_listing_request().expect("ask for sessions");
         sidebar.load(
             &request,
             vec![
@@ -3490,7 +3490,7 @@ mod tests {
         assert_eq!(
             drawn_within(&sidebar, 7),
             vec![BLANK, "Still going", BLANK, DIVIDER, "Ended last"],
-            "the active Session and its surrounding blanks take five lines before the divider and shelf"
+            "the active session and its surrounding blanks take five lines before the divider and shelf"
         );
         assert_eq!(
             drawn_within(&sidebar, 8),
@@ -3507,7 +3507,7 @@ mod tests {
         assert_eq!(
             drawn_within(&sidebar, 3),
             vec![BLANK, "Still going"],
-            "the leading blank fits, and the three-line Session is offered for what of it the \
+            "the leading blank fits, and the three-line session is offered for what of it the \
              last lines hold rather than left off"
         );
     }
@@ -3590,7 +3590,7 @@ mod tests {
         let deep = SessionId::new();
         let mut whole = set_aside_shelf(12);
         let SessionListItem::Readable(deepest) = &mut whole[11] else {
-            unreachable!("the fixture builds readable Sessions");
+            unreachable!("the fixture builds readable sessions");
         };
         deepest.session.id = deep;
         // The shelf as it stood when the reader put the keys on its last row:
@@ -3629,7 +3629,7 @@ mod tests {
         let deep = SessionId::new();
         let mut shelf = set_aside_shelf(12);
         let SessionListItem::Readable(deepest) = &mut shelf[11] else {
-            unreachable!("the fixture builds readable Sessions");
+            unreachable!("the fixture builds readable sessions");
         };
         deepest.session.id = deep;
 
@@ -3648,7 +3648,7 @@ mod tests {
         assert_eq!(
             focused(&sidebar),
             None,
-            "with no row for the open Session, the keys start on the selector rather than on some              other Session standing in for it"
+            "with no row for the open session, the keys start on the selector rather than on some              other session standing in for it"
         );
     }
 
@@ -3664,7 +3664,7 @@ mod tests {
         sidebar.toggle(None);
         let request = sidebar
             .take_listing_request()
-            .expect("a Sidebar coming back into view asks for its Sessions");
+            .expect("a sidebar coming back into view asks for its sessions");
         sidebar.load(&request, set_aside_shelf(12), None);
 
         assert_eq!(
@@ -3849,12 +3849,12 @@ mod tests {
         assert_eq!(
             drawn_opening_on(&sidebar, 5, &first),
             wheeled,
-            "the same Session standing open is not the anchor moving"
+            "the same session standing open is not the anchor moving"
         );
         assert_eq!(
             drawn_opening_on(&sidebar, 5, &second),
             vec![DIVIDER, "Settled 0", "Settled 1", "Settled 2", "Settled 3"],
-            "another Session opening carries its row back into view, as the keys would carry it"
+            "another session opening carries its row back into view, as the keys would carry it"
         );
     }
 
@@ -4006,7 +4006,7 @@ mod tests {
                 ScrollDirection::Down,
                 WHEEL_SCROLL_ROWS
             ),
-            "a wheel anywhere down the column is the Sidebar's, its search box included"
+            "a wheel anywhere down the column is the sidebar's, its search box included"
         );
         assert_eq!(drawn_within(&sidebar, 5)[0], "Settled 2");
         assert!(
@@ -4043,7 +4043,7 @@ mod tests {
                 ScrollDirection::Down,
                 WHEEL_SCROLL_ROWS
             ),
-            "a wheel over the Sidebar is still the Sidebar's"
+            "a wheel over the sidebar is still the sidebar's"
         );
         assert_eq!(
             drawn_within(&sidebar, 5),
@@ -4157,7 +4157,7 @@ mod tests {
         assert_eq!(
             entries.len(),
             11,
-            "Everywhere, all Workspaces, the one the client runs in, and each of the eight"
+            "Everywhere, all workspaces, the one the client runs in, and each of the eight"
         );
         assert_eq!(drawn_within(&sidebar, 4), entries[..4]);
 
@@ -4219,7 +4219,7 @@ mod tests {
 
         assert!(
             !sidebar.shows_live_work(None),
-            "a Sidebar the frame found no columns for animates nothing"
+            "a sidebar the frame found no columns for animates nothing"
         );
 
         sidebar
@@ -4239,7 +4239,7 @@ mod tests {
     fn work_a_hidden_subsession_does_ticks_on_its_sidekicks_row() {
         let sidekick = SessionId::new();
         let SessionListItem::Readable(mut subsession) = working("Begun for it", 2, 10) else {
-            unreachable!("the fixture builds a readable Session");
+            unreachable!("the fixture builds a readable session");
         };
         subsession.session.begun_by = Some(crate::protocol::Author::Sidekick {
             session_id: sidekick,
@@ -4256,7 +4256,7 @@ mod tests {
         assert_eq!(drawn(&sidebar), vec!["<blank>", "Sidekick", "<blank>"]);
         assert!(
             sidebar.shows_live_work(None),
-            "the hidden Subsession's work is drawn on its Sidekick's row"
+            "the hidden subsession's work is drawn on its sidekick's row"
         );
     }
 
@@ -4274,7 +4274,7 @@ mod tests {
 
         assert!(
             sidebar.shows_live_work(None),
-            "a Turn starting in a listed Session arms the tick its Working duration rises on"
+            "a turn starting in a listed session arms the tick its working duration rises on"
         );
 
         sidebar.set_working_origin(Outlook::Local, idle, None);
@@ -4282,7 +4282,7 @@ mod tests {
         assert!(
             !sidebar.shows_live_work(None),
             "and the last live row settling stands the tick down, so the \
-             Sidebar costs an idle TUI no wakeups again"
+             sidebar costs an idle TUI no wakeups again"
         );
     }
 
@@ -4298,7 +4298,7 @@ mod tests {
 
         assert!(
             sidebar.shows_live_work(None),
-            "a Session beginning to Monitor arms the tick its duration rises on"
+            "a session beginning to monitor arms the tick its duration rises on"
         );
 
         sidebar.set_monitoring_origin(Outlook::Local, idle, None);
@@ -4328,7 +4328,7 @@ mod tests {
         sidebar.catch_up_origin(Outlook::Local);
         sidebar
             .take_listing_request()
-            .expect("a revealed Sidebar catching up asks again")
+            .expect("a revealed sidebar catching up asks again")
     }
 
     /// A Sidebar the reader opened themselves, with the listing it asked for
@@ -4344,22 +4344,22 @@ mod tests {
         sidebar.adopt_outlook(studio.clone());
         assert!(
             sidebar.is_loading(),
-            "an Origin the reader has never visited says it is loading"
+            "an origin the reader has never visited says it is loading"
         );
         let request = sidebar
             .take_listing_request()
-            .expect("turning the visible Sidebar asks its new Origin");
+            .expect("turning the visible sidebar asks its new origin");
         sidebar.load(&request, vec![summary("Remote work", 2, 2)], None);
         assert_eq!(drawn(&sidebar), vec![BLANK, "Remote work", BLANK]);
 
         sidebar.adopt_outlook(Outlook::Local);
         let request = sidebar
             .take_listing_request()
-            .expect("turning back asks the Origin again");
+            .expect("turning back asks the origin again");
         assert_eq!(
             drawn(&sidebar),
             vec![BLANK, "Local work", BLANK],
-            "the rows held for the Origin stand while it is asked again"
+            "the rows held for the origin stand while it is asked again"
         );
         assert!(!sidebar.is_loading());
         sidebar.load(
@@ -4376,11 +4376,11 @@ mod tests {
         sidebar.refresh_after_outlook_workspace();
         let request = sidebar
             .take_listing_request()
-            .expect("the resolved Workspace asks again");
+            .expect("the resolved workspace asks again");
         assert_eq!(
             drawn(&sidebar),
             vec![BLANK, "Remote work", BLANK],
-            "the Workspace resolving does not blank the column either"
+            "the workspace resolving does not blank the column either"
         );
         sidebar.load(&request, vec![summary("Remote work", 2, 2)], None);
         assert_eq!(drawn(&sidebar), vec![BLANK, "Remote work", BLANK]);
@@ -4398,7 +4398,7 @@ mod tests {
         sidebar.toggle(None);
         let request = sidebar
             .take_listing_request()
-            .expect("a revealed Sidebar asks for its Sessions");
+            .expect("a revealed sidebar asks for its sessions");
         (sidebar, request)
     }
 
@@ -4417,7 +4417,7 @@ mod tests {
     /// test can open it or point at it.
     fn identify(sessions: &mut [SessionListItem], index: usize, session_id: SessionId) {
         let SessionListItem::Readable(listed) = &mut sessions[index] else {
-            unreachable!("the fixture builds readable Sessions");
+            unreachable!("the fixture builds readable sessions");
         };
         listed.session.id = session_id;
     }
@@ -4426,7 +4426,7 @@ mod tests {
     /// root, which is what gives the selector an entry to offer for it.
     fn rooted(title: &str, created_at: u64, directory: &str) -> SessionListItem {
         let SessionListItem::Readable(mut listed) = summary(title, created_at, created_at) else {
-            unreachable!("the fixture builds a readable Session");
+            unreachable!("the fixture builds a readable session");
         };
         let path = root().join(directory);
         listed.session.execution_directory =
@@ -4475,7 +4475,7 @@ mod tests {
 
     fn identified(session_id: SessionId, title: &str, created_at: u64) -> SessionListItem {
         let SessionListItem::Readable(mut listed) = summary(title, created_at, created_at) else {
-            unreachable!("the fixture builds a readable Session");
+            unreachable!("the fixture builds a readable session");
         };
         listed.session.id = session_id;
         SessionListItem::Readable(listed)
@@ -4489,7 +4489,7 @@ mod tests {
         settled_at: u64,
     ) -> SessionListItem {
         let SessionListItem::Readable(mut listed) = summary(title, created_at, updated_at) else {
-            unreachable!("the fixture builds a readable Session");
+            unreachable!("the fixture builds a readable session");
         };
         listed.settled_at = Some(SessionTimestamp(settled_at));
         SessionListItem::Readable(listed)
@@ -4499,7 +4499,7 @@ mod tests {
     /// what a listing reports of a Session running work now.
     fn working(title: &str, created_at: u64, updated_at: u64) -> SessionListItem {
         let SessionListItem::Readable(mut listed) = summary(title, created_at, updated_at) else {
-            unreachable!("the fixture builds a readable Session");
+            unreachable!("the fixture builds a readable session");
         };
         listed.session.status = SessionStatus::Active;
         listed.session.working_since = Some(SessionTimestamp(updated_at));

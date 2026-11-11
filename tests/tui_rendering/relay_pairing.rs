@@ -45,28 +45,28 @@ const SERVER: uuid::Uuid = uuid::Uuid::from_u128(7);
 /// What `/serve` says in place of the machine's addresses while the Serving
 /// listener is off.
 const LISTENER_OFF: &str =
-    "The Serving listener is off, so an Invite offers none of this machine's addresses";
+    "The serving listener is off, so an invite offers none of this machine's addresses";
 /// What `/serve` says where the listener is off and no Relay can be offered.
-const NO_WAY: &str = "An Invite has no way to offer: turn the Serving listener on in the \
-                      settings panel, or have this Server Serve through a Relay from here";
+const NO_WAY: &str = "An invite has no way to offer: turn the serving listener on in the \
+                      settings panel, or have this server serve through a relay from here";
 /// What `/serve` says in place of the machine's addresses where the Serving
 /// listener is asked to listen and does not, before why.
 const LISTENER_FAILED: &str =
-    "The Serving listener is not listening, so an Invite offers none of this machine's addresses:";
+    "The serving listener is not listening, so an invite offers none of this machine's addresses:";
 /// Why the Serving listener does not listen, as the Server tells it.
 const BIND_FAILURE: &str =
-    "bind Serving listener to [::]:7777: bind Serving socket: Address already in use (os error 98)";
+    "bind serving listener to [::]:7777: bind serving socket: Address already in use (os error 98)";
 /// What `/serve` says where the listener does not listen and no Relay can be
 /// offered.
-const NO_WAY_UNTIL_LISTENING: &str = "An Invite has no way to offer until the Serving listener \
-                                      listens, or this Server Serves through a Relay from here";
-const NO_LOGIN: &str = "this Server holds no Login at the Relay at https://relay.company.example; \
+const NO_WAY_UNTIL_LISTENING: &str = "An invite has no way to offer until the serving listener \
+                                      listens, or this server serves through a relay from here";
+const NO_LOGIN: &str = "this server holds no login at the relay at https://relay.company.example; \
                         log in there, then try again";
-const DIFFERENT_ACCOUNTS: &str = "this Server is logged in at the Relay at \
+const DIFFERENT_ACCOUNTS: &str = "this server is logged in at the relay at \
                                   https://relay.company.example as someone-else (github), and \
-                                  the Server it would reach there under another Account; a \
-                                  Relay joins only Servers logged in under the same one, so log \
-                                  this Server in there as the user that Server is logged in as, \
+                                  the server it would reach there under another account; a \
+                                  relay joins only servers logged in under the same one, so log \
+                                  this server in there as the user that server is logged in as, \
                                   or pair the two directly";
 
 // The Serve-through choice, in `/relay`.
@@ -86,10 +86,10 @@ fn relay_lets_the_user_choose_per_relay_whether_the_server_serves_through_it() {
     let shown = rendered_application_rows(&application).join("\n");
     assert!(
         !entry(&shown, COMPANY).contains("Serv"),
-        "a Relay is Served through only once its user chooses to: {shown}"
+        "a relay is served through only once its user chooses to: {shown}"
     );
     assert!(
-        prose(&application).contains("↑↓ choose · a add · s Serve through · x remove · Esc close"),
+        prose(&application).contains("↑↓ choose · a add · s serve through · x remove · Esc close"),
         "{}",
         prose(&application)
     );
@@ -97,8 +97,8 @@ fn relay_lets_the_user_choose_per_relay_whether_the_server_serves_through_it() {
     let request = serve_through(press(&mut application, KeyCode::Char('s')), COMPANY, true);
     let pending = rendered_application_rows(&application).join("\n");
     assert!(
-        pending.contains("Turning Serve through on…"),
-        "the choice is pending until the Server answers it: {pending}"
+        pending.contains("Turning serve through on…"),
+        "the choice is pending until the server answers it: {pending}"
     );
     let ApplicationTransition::ListRelays(refresh) = chosen(
         &mut application,
@@ -108,10 +108,10 @@ fn relay_lets_the_user_choose_per_relay_whether_the_server_serves_through_it() {
             ..logged_in(COMPANY)
         },
     ) else {
-        panic!("what the Server answered is pictured afresh");
+        panic!("what the server answered is pictured afresh");
     };
     assert!(
-        prose(&application).contains(&format!("This Server Serves through {COMPANY}")),
+        prose(&application).contains(&format!("This server serves through {COMPANY}")),
         "{}",
         prose(&application)
     );
@@ -128,7 +128,7 @@ fn relay_lets_the_user_choose_per_relay_whether_the_server_serves_through_it() {
     );
     assert!(
         prose(&application)
-            .contains("↑↓ choose · a add · s stop Serving through · x remove · Esc close"),
+            .contains("↑↓ choose · a add · s stop serving through · x remove · Esc close"),
         "{}",
         prose(&application)
     );
@@ -140,11 +140,11 @@ fn relay_lets_the_user_choose_per_relay_whether_the_server_serves_through_it() {
     let ApplicationTransition::ListRelays(refresh) =
         chosen(&mut application, request, serving_through(relay(HOME)))
     else {
-        panic!("what the Server answered is pictured afresh");
+        panic!("what the server answered is pictured afresh");
     };
     assert!(
         prose(&application).contains(&format!(
-            "This Server Serves through {HOME} once it is logged in there"
+            "This server serves through {HOME} once it is logged in there"
         )),
         "{}",
         prose(&application)
@@ -165,7 +165,7 @@ fn relay_lets_the_user_choose_per_relay_whether_the_server_serves_through_it() {
     );
     assert!(
         prose(&application).contains(
-            "↑↓ choose · a add · Enter log in · s stop Serving through · x remove · Esc close"
+            "↑↓ choose · a add · Enter log in · s stop serving through · x remove · Esc close"
         ),
         "{}",
         prose(&application)
@@ -175,7 +175,7 @@ fn relay_lets_the_user_choose_per_relay_whether_the_server_serves_through_it() {
     let request = serve_through(press(&mut application, KeyCode::Char('s')), HOME, false);
     chosen(&mut application, request, relay(HOME));
     assert!(
-        prose(&application).contains(&format!("This Server no longer Serves through {HOME}")),
+        prose(&application).contains(&format!("This server no longer serves through {HOME}")),
         "{}",
         prose(&application)
     );
@@ -198,7 +198,7 @@ fn a_serve_through_choice_while_serving_is_off_says_serving_must_be_on_too() {
     );
     let shown = rendered_application_rows(&application).join("\n");
     assert!(
-        entry(&shown, COMPANY).contains("Serves through once Serving is on"),
+        entry(&shown, COMPANY).contains("Serves through once serving is on"),
         "{shown}"
     );
 
@@ -207,7 +207,7 @@ fn a_serve_through_choice_while_serving_is_off_says_serving_must_be_on_too() {
     chosen(&mut application, request, serving_through(logged_in(HOME)));
     assert!(
         prose(&application).contains(&format!(
-            "This Server Serves through {HOME} once Serving is on; /serve turns Serving on"
+            "This server serves through {HOME} once serving is on; /serve turns serving on"
         )),
         "{}",
         prose(&application)
@@ -230,7 +230,7 @@ fn the_serve_through_choice_is_only_ever_shown_as_the_server_pictures_it() {
             ..logged_in(COMPANY)
         },
     ) else {
-        panic!("what the Server answered is pictured afresh");
+        panic!("what the server answered is pictured afresh");
     };
     // Another Client turns it off again before the listing asked for lands,
     // and the Server pushes that: the row says what the Server holds.
@@ -238,10 +238,10 @@ fn the_serve_through_choice_is_only_ever_shown_as_the_server_pictures_it() {
     let shown = rendered_application_rows(&application).join("\n");
     assert!(
         !entry(&shown, COMPANY).contains("Serving through"),
-        "nothing the list was answered is written over the Server's picture: {shown}"
+        "nothing the list was answered is written over the server's picture: {shown}"
     );
     assert!(
-        prose(&application).contains("↑↓ choose · a add · s Serve through · x remove · Esc close"),
+        prose(&application).contains("↑↓ choose · a add · s serve through · x remove · Esc close"),
         "{}",
         prose(&application)
     );
@@ -266,7 +266,7 @@ fn a_late_serve_through_answer_resolves_nothing_newer() {
     application
         .handle_event(ApplicationEvent::RelayServeThroughFailed {
             request: earlier,
-            error: "send Relay Serve-through choice".to_owned(),
+            error: "send relay serve-through choice".to_owned(),
         })
         .expect("take the late refusal");
     chosen(
@@ -276,21 +276,21 @@ fn a_late_serve_through_answer_resolves_nothing_newer() {
     );
     let shown = prose(&application);
     assert!(
-        shown.contains("Turning Serve through on…"),
+        shown.contains("Turning serve through on…"),
         "the choice made afresh still waits on its own answer: {shown}"
     );
 
     application
         .handle_event(ApplicationEvent::RelayServeThroughFailed {
             request: later,
-            error: "the Server could not store its Relays".to_owned(),
+            error: "the server could not store its relays".to_owned(),
         })
         .expect("take the refusal");
     let shown = prose(&application);
     assert!(
         shown.contains(&format!(
-            "Could not change whether this Server Serves through {COMPANY}: the Server could not \
-             store its Relays"
+            "Could not change whether this server serves through {COMPANY}: the server could not \
+             store its relays"
         )),
         "{shown}"
     );
@@ -306,7 +306,7 @@ fn the_serve_through_choice_is_a_semantic_command() {
     let ApplicationTransition::ListRelays(listing) =
         invoke(&mut application, SemanticCommandId::RelayOpen)
     else {
-        panic!("opening asks for the Relays");
+        panic!("opening asks for the relays");
     };
     list(&mut application, listing, 1, vec![logged_in(COMPANY)]);
     serve_through(
@@ -334,15 +334,15 @@ fn serve_offers_each_relay_served_through_and_logged_in_at_and_the_invite_carrie
     open_serve(&mut application, vec![direct()]);
 
     let ways = rendered_application_rows(&application).join("\n");
-    assert!(ways.contains("Choose Invite addresses"), "{ways}");
+    assert!(ways.contains("Choose invite addresses"), "{ways}");
     assert!(ways.contains("[x] 10.0.0.8:7777"), "{ways}");
     assert!(ways.contains(&format!("[x] Relay {COMPANY}")), "{ways}");
     assert!(
         ways.contains(&format!("[-] Relay {HOME} · login needed")),
-        "a Relay the Server needs a login at is shown, and why it is not offered: {ways}"
+        "a relay the server needs a login at is shown, and why it is not offered: {ways}"
     );
     assert!(
-        ways.contains(&format!("[-] Relay {OTHER} · not Served through")),
+        ways.contains(&format!("[-] Relay {OTHER} · not served through")),
         "{ways}"
     );
 
@@ -366,9 +366,9 @@ fn serve_offers_each_relay_served_through_and_logged_in_at_and_the_invite_carrie
             },
             peers: Vec::new(),
         })
-        .expect("show the fresh Invite");
+        .expect("show the fresh invite");
     let issued = rendered_application_rows(&application).join("\n");
-    assert!(issued.contains("Fresh Invite"), "{issued}");
+    assert!(issued.contains("Fresh invite"), "{issued}");
     assert!(issued.contains(INVITE), "{issued}");
 }
 
@@ -378,7 +378,7 @@ fn serve_follows_the_relays_as_the_server_pushes_them_while_the_ways_are_chosen(
     push(&mut application, 1, vec![logged_in(COMPANY)]);
     open_serve(&mut application, vec![direct()]);
     assert!(
-        prose(&application).contains(&format!("[-] Relay {COMPANY} · not Served through")),
+        prose(&application).contains(&format!("[-] Relay {COMPANY} · not served through")),
         "{}",
         prose(&application)
     );
@@ -435,7 +435,7 @@ fn serve_offers_no_address_while_the_listener_is_off_and_follows_it_as_it_turns(
     assert!(ways.contains(&format!("[x] Relay {COMPANY}")), "{ways}");
     assert!(
         !ways.contains(NO_WAY),
-        "the Relay is a way to offer: {ways}"
+        "the relay is a way to offer: {ways}"
     );
 
     // Opened while the ways are chosen, the listener offers the address.
@@ -467,17 +467,17 @@ fn serve_says_an_invite_has_no_way_to_offer_with_the_listener_off_and_no_relay_s
             shown.contains(LISTENER_OFF)
                 && shown.contains(NO_WAY)
                 && shown.contains(&format!("[-] Relay {OTHER}"))
-                && shown.contains("not Served through"),
+                && shown.contains("not served through"),
             "at {width} columns: {shown}"
         );
         assert!(
-            shown.contains("Enter issue Invite · Esc close"),
+            shown.contains("Enter issue invite · Esc close"),
             "the keys stay in the box: {shown}"
         );
         assert_eq!(
             press(&mut application, KeyCode::Enter),
             ApplicationTransition::Continue,
-            "no Invite is asked for with no way to offer"
+            "no invite is asked for with no way to offer"
         );
         assert!(prose_at(&application, width).contains(NO_WAY));
 
@@ -485,7 +485,7 @@ fn serve_says_an_invite_has_no_way_to_offer_with_the_listener_off_and_no_relay_s
         let shown = prose_at(&application, width);
         assert!(
             shown.contains(LISTENER_OFF) && shown.contains(NO_WAY),
-            "with no Relay at all, the same: {shown}"
+            "with no relay at all, the same: {shown}"
         );
 
         push(&mut application, 3, vec![serving_through(logged_in(OTHER))]);
@@ -525,7 +525,7 @@ fn serve_offers_no_address_where_the_listener_could_not_open_and_says_why() {
         );
         assert!(shown.contains(&format!("[x] Relay {COMPANY}")), "{shown}");
         assert!(
-            shown.contains("Enter issue Invite · Esc close"),
+            shown.contains("Enter issue invite · Esc close"),
             "the keys stay in the box: {shown}"
         );
         let (_, issuance) = issuance(press(&mut application, KeyCode::Enter));
@@ -604,7 +604,7 @@ fn serve_says_a_listener_only_this_machine_can_reach_offers_none_of_its_addresse
         "{shown}"
     );
     assert!(
-        shown.contains("until the Serving listener listens where another machine can reach it"),
+        shown.contains("until the serving listener listens where another machine can reach it"),
         "{shown}"
     );
 }
@@ -612,8 +612,8 @@ fn serve_says_a_listener_only_this_machine_can_reach_offers_none_of_its_addresse
 #[test]
 fn an_invite_the_server_refuses_says_why_and_keeps_the_ways_chosen() {
     let refusal = format!(
-        "an Invite offers a Relay only where this Server Serves through it and is logged in \
-         there, and the Relay at {COMPANY} is not one"
+        "an invite offers a relay only where this server serves through it and is logged in \
+         there, and the relay at {COMPANY} is not one"
     );
     for width in [80, 48] {
         let mut application = serving_application(true);
@@ -633,7 +633,7 @@ fn an_invite_the_server_refuses_says_why_and_keeps_the_ways_chosen() {
             .expect("take the refusal");
 
         let shown = prose_at(&application, width);
-        assert!(shown.contains("Choose Invite addresses"), "{shown}");
+        assert!(shown.contains("Choose invite addresses"), "{shown}");
         assert!(
             shown.contains(&refusal),
             "the refusal is wrapped whole at {width} columns: {shown}"
@@ -643,7 +643,7 @@ fn an_invite_the_server_refuses_says_why_and_keeps_the_ways_chosen() {
             "the ways stay as the reader chose them: {shown}"
         );
         assert!(
-            shown.contains("Enter issue Invite · Esc close"),
+            shown.contains("Enter issue invite · Esc close"),
             "the keys stay in the box: {shown}"
         );
     }
@@ -675,10 +675,10 @@ fn a_late_invite_lands_nowhere() {
             },
             peers: Vec::new(),
         })
-        .expect("take the late Invite");
+        .expect("take the late invite");
     let shown = prose(&application);
     assert!(!shown.contains("suru-v1-superseded"), "{shown}");
-    assert!(shown.contains("Preparing Serving…"), "{shown}");
+    assert!(shown.contains("Preparing serving…"), "{shown}");
 }
 
 // The Relay in the Invite preview.
@@ -698,7 +698,7 @@ fn the_invite_preview_shows_the_relay_it_travels_through_beside_the_fingerprint(
     );
 
     let shown = rendered_application_rows(&application).join("\n");
-    assert!(shown.contains("Confirm Serving Server"), "{shown}");
+    assert!(shown.contains("Confirm serving server"), "{shown}");
     assert!(shown.contains(FINGERPRINT), "{shown}");
     assert!(shown.contains("Reached by"), "{shown}");
     assert!(shown.contains("10.0.0.8:7777"), "{shown}");
@@ -708,11 +708,11 @@ fn the_invite_preview_shows_the_relay_it_travels_through_beside_the_fingerprint(
     );
     assert!(
         shown.contains(&format!("Relay {HOME} · login needed")),
-        "a Relay this Server holds no Login at says so before it is trusted: {shown}"
+        "a relay this server holds no login at says so before it is trusted: {shown}"
     );
     assert!(
         prose(&application).contains(
-            "To pair through a Relay that needs a login, this Server logs in there first"
+            "To pair through a relay that needs a login, this server logs in there first"
         ),
         "{}",
         prose(&application)
@@ -746,7 +746,7 @@ fn the_invite_preview_shows_the_relay_it_travels_through_beside_the_fingerprint(
         "{shown}"
     );
     assert!(
-        !prose(&application).contains("this Server logs in there first"),
+        !prose(&application).contains("this server logs in there first"),
         "{}",
         prose(&application)
     );
@@ -780,7 +780,7 @@ fn redeeming_through_a_relay_this_server_is_not_logged_in_at_logs_in_there_and_c
     let shown = prose(&application);
     for expected in [
         format!("Log in at {COMPANY}"),
-        "To pair through this Relay, this Server logs in there first".to_owned(),
+        "To pair through this relay, this server logs in there first".to_owned(),
         "Visit this address on any device".to_owned(),
         VISIT.to_owned(),
         "and enter this code".to_owned(),
@@ -812,13 +812,13 @@ fn redeeming_through_a_relay_this_server_is_not_logged_in_at_logs_in_there_and_c
         "and is carried on once only"
     );
     assert!(
-        prose(&application).contains("Pairing Remote…"),
+        prose(&application).contains("Pairing remote…"),
         "{}",
         prose(&application)
     );
     redeemed(&mut application, second);
     let picker = rendered_application_rows(&application).join("\n");
-    assert!(picker.contains("Paired Remotes"), "{picker}");
+    assert!(picker.contains("Paired remotes"), "{picker}");
     assert!(picker.contains("studio  Available"), "{picker}");
 }
 
@@ -831,11 +831,11 @@ fn a_relay_this_server_holds_no_entry_for_is_added_before_its_login_begins() {
     let ApplicationTransition::AddRelay { request, address } =
         refused_for_login(&mut application, first)
     else {
-        panic!("a Relay the Server holds no entry for is added first");
+        panic!("a relay the server holds no entry for is added first");
     };
     assert_eq!(address, COMPANY);
     assert!(
-        prose(&application).contains("Adding Relay…"),
+        prose(&application).contains("Adding relay…"),
         "{}",
         prose(&application)
     );
@@ -845,7 +845,7 @@ fn a_relay_this_server_holds_no_entry_for_is_added_before_its_login_begins() {
                 request,
                 relay: relay(COMPANY),
             })
-            .expect("take the added Relay"),
+            .expect("take the added relay"),
         COMPANY,
     );
     let follower = followed_at(begun(&mut application, beginning, pending()), COMPANY);
@@ -865,7 +865,7 @@ fn a_relay_this_server_holds_no_entry_for_is_added_before_its_login_begins() {
     );
     redeemed(&mut application, second);
     assert!(
-        prose(&application).contains("Paired Remotes"),
+        prose(&application).contains("Paired remotes"),
         "{}",
         prose(&application)
     );
@@ -879,18 +879,18 @@ fn an_addition_the_server_refuses_stops_the_redemption_there() {
     let ApplicationTransition::AddRelay { request, .. } =
         refused_for_login(&mut application, first)
     else {
-        panic!("a Relay the Server holds no entry for is added first");
+        panic!("a relay the server holds no entry for is added first");
     };
     application
         .handle_event(ApplicationEvent::RelayAdditionFailed {
             request,
-            error: "the Server could not store its Relays".to_owned(),
+            error: "the server could not store its relays".to_owned(),
         })
         .expect("take the refusal");
     let shown = prose(&application);
     assert!(
         shown.contains(&format!(
-            "Could not add the Relay at {COMPANY}: the Server could not store its Relays"
+            "Could not add the relay at {COMPANY}: the server could not store its relays"
         )),
         "{shown}"
     );
@@ -905,9 +905,9 @@ fn a_login_that_ends_without_a_login_stops_the_redemption_on_that_step_saying_wh
         (
             RelayLoginOutcome::Refused {
                 reason: RelayLoginRefusal::NotAdmitted,
-                message: "the Relay does not admit this Account".to_owned(),
+                message: "the relay does not admit this account".to_owned(),
             },
-            format!("You are not admitted to {COMPANY}; ask the Relay's operator to admit you"),
+            format!("You are not admitted to {COMPANY}; ask the relay's operator to admit you"),
         ),
         (
             RelayLoginOutcome::Refused {
@@ -915,8 +915,8 @@ fn a_login_that_ends_without_a_login_stops_the_redemption_on_that_step_saying_wh
                 message: "cap".to_owned(),
             },
             format!(
-                "Your Account already has 3 Servers logged in at {COMPANY}, as many as the \
-                 Relay's operator allows"
+                "Your account already has 3 servers logged in at {COMPANY}, as many as the \
+                 relay's operator allows"
             ),
         ),
         (
@@ -968,13 +968,13 @@ fn a_login_followed_no_further_stops_the_redemption_and_trying_again_follows_it_
     application
         .handle_event(ApplicationEvent::RelayLoginLost {
             request: follower,
-            error: "read Relay login progress".to_owned(),
+            error: "read relay login progress".to_owned(),
         })
         .expect("take the lost follower");
     let shown = prose(&application);
     assert!(
         shown.contains(&format!(
-            "Stopped following the login at {COMPANY}: read Relay login progress"
+            "Stopped following the login at {COMPANY}: read relay login progress"
         )),
         "{shown}"
     );
@@ -1000,14 +1000,14 @@ fn esc_steps_back_from_the_login_and_pairing_again_shows_the_same_login_rather_t
 
     press(&mut application, KeyCode::Esc);
     let shown = prose(&application);
-    assert!(shown.contains("Configure Remote"), "{shown}");
+    assert!(shown.contains("Configure remote"), "{shown}");
     assert!(
         shown.contains(NO_LOGIN),
         "the step it stepped back to says what is needed: {shown}"
     );
     press(&mut application, KeyCode::Esc);
     assert!(
-        !prose(&application).contains("Configure Remote"),
+        !prose(&application).contains("Configure remote"),
         "{}",
         prose(&application)
     );
@@ -1029,7 +1029,7 @@ fn esc_steps_back_from_the_login_and_pairing_again_shows_the_same_login_rather_t
     let (resumed_request, _) = resumed(&mut application);
     redeemed(&mut application, resumed_request);
     assert!(
-        prose(&application).contains("Paired Remotes"),
+        prose(&application).contains("Paired remotes"),
         "{}",
         prose(&application)
     );
@@ -1059,7 +1059,7 @@ fn a_login_under_way_that_this_client_did_not_begin_is_followed_rather_than_begu
         RelayLogin {
             outcome: RelayLoginOutcome::Refused {
                 reason: RelayLoginRefusal::Interrupted,
-                message: "the login was given up for a later one at the same Relay".to_owned(),
+                message: "the login was given up for a later one at the same relay".to_owned(),
             },
             ..pending()
         },
@@ -1112,11 +1112,11 @@ fn a_direct_way_is_tried_first_and_no_login_begins_where_one_carried_the_redempt
     assert_eq!(
         redemption.ways,
         vec![direct(), Way::Relay(COMPANY.to_owned())],
-        "the redemption is asked first, whatever the Relay needs"
+        "the redemption is asked first, whatever the relay needs"
     );
     redeemed(&mut application, request);
     assert!(
-        prose(&application).contains("Paired Remotes"),
+        prose(&application).contains("Paired remotes"),
         "{}",
         prose(&application)
     );
@@ -1132,16 +1132,16 @@ fn a_direct_way_is_tried_first_and_no_login_begins_where_one_carried_the_redempt
         application
             .handle_event(ApplicationEvent::InviteRedemptionFailed {
                 request,
-                error: "could not reach an offered address with the Invite's pinned key".to_owned(),
+                error: "could not reach an offered address with the invite's pinned key".to_owned(),
                 login_needed_at: None,
             })
             .expect("take the refusal"),
         ApplicationTransition::Continue
     );
     let shown = prose(&application);
-    assert!(shown.contains("Configure Remote"), "{shown}");
+    assert!(shown.contains("Configure remote"), "{shown}");
     assert!(
-        shown.contains("could not reach an offered address with the Invite's pinned key"),
+        shown.contains("could not reach an offered address with the invite's pinned key"),
         "{shown}"
     );
 }
@@ -1165,7 +1165,7 @@ fn a_refusal_under_different_accounts_is_said_on_the_step_that_failed_in_words_t
             })
             .expect("take the refusal");
         let shown = prose_at(&application, width);
-        assert!(shown.contains("Configure Remote"), "{shown}");
+        assert!(shown.contains("Configure remote"), "{shown}");
         assert!(
             shown.contains(DIFFERENT_ACCOUNTS),
             "the refusal is wrapped whole at {width} columns: {shown}"
@@ -1192,7 +1192,7 @@ fn late_answers_to_a_redemption_or_a_login_left_behind_move_nothing() {
         "a login begun for a step the reader left is not followed from it"
     );
     let shown = prose(&application);
-    assert!(shown.contains("Configure Remote"), "{shown}");
+    assert!(shown.contains("Configure remote"), "{shown}");
     assert!(!shown.contains(CODE), "{shown}");
 
     // A redemption the reader moved past lands nowhere.
@@ -1201,19 +1201,19 @@ fn late_answers_to_a_redemption_or_a_login_left_behind_move_nothing() {
     let (third, _) = pair(&mut application, vec![Way::Relay(COMPANY.to_owned())]);
     redeemed(&mut application, second);
     assert!(
-        prose(&application).contains("Pairing Remote…"),
+        prose(&application).contains("Pairing remote…"),
         "{}",
         prose(&application)
     );
     refused_for_login(&mut application, second);
     assert!(
-        prose(&application).contains("Pairing Remote…"),
+        prose(&application).contains("Pairing remote…"),
         "{}",
         prose(&application)
     );
     redeemed(&mut application, third);
     assert!(
-        prose(&application).contains("Paired Remotes"),
+        prose(&application).contains("Paired remotes"),
         "{}",
         prose(&application)
     );
@@ -1286,7 +1286,7 @@ fn the_invite_preview_shows_each_relays_whole_address_however_narrow() {
         // And as the Remote's ways are ordered, once it is trusted.
         press(&mut application, KeyCode::Enter);
         let shown = unbroken_at(&application, width);
-        assert!(shown.contains("Configure Remote"), "{shown}");
+        assert!(shown.contains("Configure remote"), "{shown}");
         assert!(
             shown.contains(LONG),
             "the whole address is shown at {width} columns: {shown}"
@@ -1309,7 +1309,7 @@ fn every_way_an_invite_offers_can_be_read_before_it_is_trusted() {
     let shown = prose(&application);
     assert!(
         !shown.contains(COMPANY),
-        "more ways than fit, so the Relay offered last is out of view: {shown}"
+        "more ways than fit, so the relay offered last is out of view: {shown}"
     );
     assert!(!shown.contains("… and"), "{shown}");
     assert!(
@@ -1342,7 +1342,7 @@ fn every_way_an_invite_offers_can_be_read_before_it_is_trusted() {
         ApplicationTransition::Continue
     );
     assert!(
-        prose(&application).contains("Configure Remote"),
+        prose(&application).contains("Configure remote"),
         "{}",
         prose(&application)
     );
@@ -1359,11 +1359,11 @@ fn the_relay_being_added_and_logged_in_at_is_shown_by_its_whole_address() {
     let ApplicationTransition::AddRelay { request, .. } =
         refused_for_login_at(&mut application, request, LONG)
     else {
-        panic!("a Relay the Server holds no entry for is added first");
+        panic!("a relay the server holds no entry for is added first");
     };
     let adding = unbroken_at(&application, 40);
     assert!(adding.contains(LONG), "{adding}");
-    assert!(adding.contains("Adding Relay…"), "{adding}");
+    assert!(adding.contains("Adding relay…"), "{adding}");
 
     let beginning = beginning(
         application
@@ -1371,7 +1371,7 @@ fn the_relay_being_added_and_logged_in_at_is_shown_by_its_whole_address() {
                 request,
                 relay: relay(LONG),
             })
-            .expect("take the added Relay"),
+            .expect("take the added relay"),
         LONG,
     );
     assert!(
@@ -1425,7 +1425,7 @@ fn a_login_restored_while_its_login_is_being_begun_carries_the_redemption_on_and
     );
     let shown = prose(&application);
     assert!(!shown.contains(CODE), "{shown}");
-    assert!(shown.contains("Pairing Remote…"), "{shown}");
+    assert!(shown.contains("Pairing remote…"), "{shown}");
     assert!(
         application.take_relay_retries().is_empty(),
         "carried on once"
@@ -1446,7 +1446,7 @@ fn a_login_the_server_finds_standing_as_it_is_asked_carries_the_redemption_on() 
             request,
             relay: Box::new(logged_in(COMPANY)),
         })
-        .expect("take the Login that stands")
+        .expect("take the login that stands")
     else {
         panic!("the redemption carries on");
     };
@@ -1470,9 +1470,9 @@ fn a_rows_login_shows_one_found_under_way_and_says_of_one_found_standing() {
             request,
             relay: Box::new(serving_through(logged_in(COMPANY))),
         })
-        .expect("take the Login that stands")
+        .expect("take the login that stands")
     else {
-        panic!("how the Relay stands is asked for afresh");
+        panic!("how the relay stands is asked for afresh");
     };
     list(
         &mut application,
@@ -1496,7 +1496,7 @@ fn a_login_restored_while_its_relay_is_being_added_carries_the_redemption_on() {
     let ApplicationTransition::AddRelay { request, .. } =
         refused_for_login(&mut application, first)
     else {
-        panic!("a Relay the Server holds no entry for is added first");
+        panic!("a relay the server holds no entry for is added first");
     };
     push(&mut application, 2, vec![logged_in(COMPANY)]);
     resumed(&mut application);
@@ -1507,7 +1507,7 @@ fn a_login_restored_while_its_relay_is_being_added_carries_the_redemption_on() {
                     request,
                     relay: relay(COMPANY),
                 })
-                .expect("take the added Relay"),
+                .expect("take the added relay"),
             ApplicationTransition::BeginRelayLogin { .. }
         ),
         "no login is begun for a redemption already carried on"
@@ -1670,7 +1670,7 @@ fn a_late_serving_preparation_lands_nowhere() {
     press(&mut application, KeyCode::Esc);
     prepared(&mut application, first, vec![direct()]);
     assert!(
-        !prose(&application).contains("Choose Invite addresses"),
+        !prose(&application).contains("Choose invite addresses"),
         "a closed picker stays closed: {}",
         prose(&application)
     );
@@ -1701,9 +1701,9 @@ fn a_long_refusal_on_the_remotes_details_reads_whole_with_the_keys_in_view() {
     let account = "a-thirty-nine-character-github-username";
     assert_eq!(account.len(), 39);
     let refusal = format!(
-        "this Server is logged in at the Relay at {LONG} as {account} (github), and the Server \
-         it would reach there under another Account; a Relay joins only Servers logged in \
-         under the same one, so log this Server in there as the user that Server is logged in \
+        "this server is logged in at the relay at {LONG} as {account} (github), and the server \
+         it would reach there under another account; a relay joins only servers logged in \
+         under the same one, so log this server in there as the user that server is logged in \
          as, or pair the two directly"
     );
     let mut application = Application::default();
@@ -1722,7 +1722,7 @@ fn a_long_refusal_on_the_remotes_details_reads_whole_with_the_keys_in_view() {
 
     let keys = "↑↓ move · Shift+↑↓ reorder · Tab field · Enter pair · Esc cancel";
     let shown = prose_at(&application, 40);
-    assert!(shown.contains("this Server is logged in at"), "{shown}");
+    assert!(shown.contains("this server is logged in at"), "{shown}");
     assert!(shown.contains(keys), "the keys stay in view: {shown}");
     assert!(shown.contains("PgUp/PgDn"), "and how to read on: {shown}");
     assert!(!shown.contains("or pair the two directly"), "{shown}");
@@ -1743,7 +1743,7 @@ fn a_long_refusal_on_the_remotes_details_reads_whole_with_the_keys_in_view() {
         press_with_no_frame(&mut application, KeyCode::PageUp);
     }
     assert!(
-        prose_at(&application, 40).contains("this Server is logged in at"),
+        prose_at(&application, 40).contains("this server is logged in at"),
         "{}",
         prose_at(&application, 40)
     );
@@ -1813,10 +1813,10 @@ fn a_login_done_once_the_reader_left_it_says_the_invite_now_pairs() {
     type_terminal_text(&mut application, "/pair");
     press(&mut application, KeyCode::Enter);
     let shown = prose(&application);
-    assert!(shown.contains("Paste Invite"), "{shown}");
+    assert!(shown.contains("Paste invite"), "{shown}");
     assert!(
         shown.contains(&format!(
-            "Logged in at {COMPANY}; paste the Invite again to pair through it"
+            "Logged in at {COMPANY}; paste the invite again to pair through it"
         )),
         "{shown}"
     );
@@ -1842,7 +1842,7 @@ fn relisted(
     relays: Vec<Relay>,
 ) {
     let ApplicationTransition::ListRelays(request) = transition else {
-        panic!("expected the Relays listed afresh, got {transition:?}");
+        panic!("expected the relays listed afresh, got {transition:?}");
     };
     list(application, request, revision, relays);
 }
@@ -1880,7 +1880,7 @@ fn addition(transition: ApplicationTransition, address: &str) -> RelayRequest {
             request,
             address: asked,
         } if asked == address => request,
-        other => panic!("expected the Relay at {address} added, got {other:?}"),
+        other => panic!("expected the relay at {address} added, got {other:?}"),
     }
 }
 
@@ -1888,16 +1888,16 @@ fn refused(login: RelayLogin, reason: RelayLoginRefusal) -> RelayLogin {
     RelayLogin {
         outcome: RelayLoginOutcome::Refused {
             reason,
-            message: "the Relay does not admit this Account".to_owned(),
+            message: "the relay does not admit this account".to_owned(),
         },
         ..login
     }
 }
 
 const NOT_ADMITTED: &str =
-    "You are not admitted to https://relay.company.example; ask the Relay's operator to admit you";
-const REACHABLE: &str = "Serving through it makes this machine reachable through this Relay";
-const NO_RELAY: &str = "This Server holds no Relay; press a to add one";
+    "You are not admitted to https://relay.company.example; ask the relay's operator to admit you";
+const REACHABLE: &str = "Serving through it makes this machine reachable through this relay";
+const NO_RELAY: &str = "This server holds no relay; press a to add one";
 
 #[test]
 fn space_on_a_row_needing_a_login_begins_it_in_place_and_the_row_is_offered_once_it_is_done() {
@@ -1951,7 +1951,7 @@ fn a_login_done_in_place_ticks_the_relay_and_the_next_invite_offers_it_without_r
     );
 
     let shown = prose(&application);
-    assert!(shown.contains("Choose Invite addresses"), "{shown}");
+    assert!(shown.contains("Choose invite addresses"), "{shown}");
     assert!(shown.contains(&format!("[x] Relay {COMPANY}")), "{shown}");
     assert!(
         shown.contains(&format!("Logged in at {COMPANY} as octocat")),
@@ -1961,7 +1961,7 @@ fn a_login_done_in_place_ticks_the_relay_and_the_next_invite_offers_it_without_r
     assert_eq!(
         asked.ways,
         vec![direct(), Way::Relay(COMPANY.to_owned())],
-        "the Relay put right is offered with the rest"
+        "the relay put right is offered with the rest"
     );
 }
 
@@ -1979,7 +1979,7 @@ fn relay_opened_after_a_relay_was_put_right_from_serve_is_the_list_as_ever() {
         vec![serving_through(logged_in(COMPANY))],
     );
     press(&mut application, KeyCode::Esc);
-    assert!(!prose(&application).contains("Choose Invite addresses"));
+    assert!(!prose(&application).contains("Choose invite addresses"));
 
     let request = open_relays(&mut application);
     list(
@@ -2015,7 +2015,7 @@ fn leaving_serve_during_a_login_leaves_it_under_way_and_reopening_serve_finds_it
     // Esc steps back to the picker, whose row says where the login stands.
     press(&mut application, KeyCode::Esc);
     let shown = prose(&application);
-    assert!(shown.contains("Choose Invite addresses"), "{shown}");
+    assert!(shown.contains("Choose invite addresses"), "{shown}");
     assert!(
         shown.contains(&format!("Logging in · enter {CODE}")),
         "{shown}"
@@ -2075,7 +2075,7 @@ fn a_login_left_in_serve_is_found_by_relay() {
                 relays: vec![with_login(serving_through(relay(COMPANY)), pending())],
             },
         })
-        .expect("list the Relays");
+        .expect("list the relays");
     assert_eq!(
         landed,
         ApplicationTransition::Continue,
@@ -2185,7 +2185,7 @@ fn space_on_a_row_not_served_through_turns_it_on_having_said_what_that_does() {
     let mut application = serve_on(vec![logged_in(COMPANY)]);
     let before = prose(&application);
     assert!(
-        before.contains(&format!("[-] Relay {COMPANY} · not Served through")),
+        before.contains(&format!("[-] Relay {COMPANY} · not served through")),
         "{before}"
     );
     assert!(
@@ -2196,7 +2196,7 @@ fn space_on_a_row_not_served_through_turns_it_on_having_said_what_that_does() {
 
     let request = serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
     assert!(
-        prose(&application).contains("Turning Serve through on"),
+        prose(&application).contains("Turning serve through on"),
         "{}",
         prose(&application)
     );
@@ -2216,7 +2216,7 @@ fn space_on_a_row_not_served_through_turns_it_on_having_said_what_that_does() {
     assert!(shown.contains(&format!("[x] Relay {COMPANY}")), "{shown}");
     assert!(
         !shown.contains(REACHABLE),
-        "a Relay Served through is no longer offered that: {shown}"
+        "a relay served through is no longer offered that: {shown}"
     );
     let (_, asked) = issuance(press(&mut application, KeyCode::Enter));
     assert_eq!(asked.ways, vec![direct(), Way::Relay(COMPANY.to_owned())]);
@@ -2250,13 +2250,13 @@ fn a_relay_needing_both_takes_a_key_for_the_login_and_another_to_serve_through_i
     let asked = settled(&mut application, follower, done(pending()));
     assert!(
         matches!(asked, ApplicationTransition::ListRelays(_)),
-        "the login ending asks only for the Relays afresh: {asked:?}"
+        "the login ending asks only for the relays afresh: {asked:?}"
     );
     relisted(&mut application, asked, 2, vec![logged_in(COMPANY)]);
 
     let shown = prose(&application);
     assert!(
-        shown.contains(&format!("[-] Relay {COMPANY} · not Served through"))
+        shown.contains(&format!("[-] Relay {COMPANY} · not served through"))
             && shown.contains(REACHABLE),
         "{shown}"
     );
@@ -2264,7 +2264,7 @@ fn a_relay_needing_both_takes_a_key_for_the_login_and_another_to_serve_through_i
     assert_eq!(
         asked.ways,
         vec![direct()],
-        "a login alone offers nothing through the Relay"
+        "a login alone offers nothing through the relay"
     );
 }
 
@@ -2312,7 +2312,7 @@ fn the_commands_act_only_on_a_row_that_wants_them() {
         assert_eq!(
             invoke(&mut application, command),
             ApplicationTransition::Continue,
-            "{command:?} on a Relay offered already"
+            "{command:?} on a relay offered already"
         );
     }
     // On one needing a login, Serving through is not what is wanted first.
@@ -2353,7 +2353,7 @@ fn the_serve_rows_actions_are_semantic_commands() {
 
     let mut application = serve_on(vec![serving_through(logged_in(COMPANY))]);
     invoke(&mut application, SemanticCommandId::ServeRelayAdd);
-    assert!(prose(&application).contains("Add a Relay"));
+    assert!(prose(&application).contains("Add a relay"));
 }
 
 /// A way the reader left out is theirs to have left out, until they put that
@@ -2555,7 +2555,7 @@ fn a_listing_superseded_while_the_picker_waits_does_not_end_the_wait() {
         ApplicationTransition::Continue,
         "the picker waits on the latest"
     );
-    assert!(prose(&application).contains("Updating the Relays"));
+    assert!(prose(&application).contains("Updating the relays"));
 
     relisted(
         &mut application,
@@ -2588,7 +2588,7 @@ fn a_picture_that_cannot_be_asked_for_returns_to_the_picker_saying_why() {
         })
         .expect("take the failed listing");
     let shown = prose(&application);
-    assert!(shown.contains("Choose Invite addresses"), "{shown}");
+    assert!(shown.contains("Choose invite addresses"), "{shown}");
     assert!(shown.contains("the Server stopped answering"), "{shown}");
 
     // Pushed afresh, the row is put right all the same.
@@ -2610,7 +2610,7 @@ fn esc_while_waiting_on_a_picture_steps_back_to_the_picker_as_it_stands() {
         serving_through(logged_in(COMPANY)),
     );
     press(&mut application, KeyCode::Esc);
-    assert!(prose(&application).contains("Choose Invite addresses"));
+    assert!(prose(&application).contains("Choose invite addresses"));
     relisted(
         &mut application,
         asked,
@@ -2636,11 +2636,11 @@ fn a_login_refused_says_so_on_the_row_where_the_reader_is() {
 
         let shown = prose_at(&application, width);
         assert!(
-            shown.contains("Choose Invite addresses") && shown.contains(NOT_ADMITTED),
+            shown.contains("Choose invite addresses") && shown.contains(NOT_ADMITTED),
             "at {width} columns: {shown}"
         );
         assert_eq!(
-            shown.matches("ask the Relay's operator").count(),
+            shown.matches("ask the relay's operator").count(),
             1,
             "said once, whichever told it: {shown}"
         );
@@ -2682,14 +2682,14 @@ fn a_login_that_cannot_begin_says_why_on_the_row_where_the_reader_is() {
     application
         .handle_event(ApplicationEvent::RelayLoginNotBegun {
             request,
-            error: "the Relay stopped answering".to_owned(),
+            error: "the relay stopped answering".to_owned(),
         })
         .expect("take the failure");
     let rows = boxed_rows_at(&application, 80);
     let row = rows
         .iter()
         .position(|row| row.contains(COMPANY) && row.contains("login needed"))
-        .unwrap_or_else(|| panic!("the row names the Relay: {rows:#?}"));
+        .unwrap_or_else(|| panic!("the row names the relay: {rows:#?}"));
     assert!(
         rows[row + 1].contains("Could not begin a login at"),
         "beneath the row: {rows:#?}"
@@ -2702,8 +2702,8 @@ fn a_login_that_cannot_begin_says_why_on_the_row_where_the_reader_is() {
 
 #[test]
 fn a_serve_through_refused_says_why_on_the_row_where_the_reader_is() {
-    let limit = "this Server already Serves through 8 Relays, as many as it tells the Servers paired \
-                 with it of; stop Serving through one of them first";
+    let limit = "this server already serves through 8 relays, as many as it tells the servers paired \
+                 with it of; stop serving through one of them first";
     for width in [80, 48] {
         let mut application = serve_on(vec![logged_in(COMPANY)]);
         let request = serve_through(press(&mut application, KeyCode::Char(' ')), COMPANY, true);
@@ -2739,7 +2739,7 @@ fn a_following_lost_says_so_on_the_row_and_the_login_can_be_shown_again() {
     application
         .handle_event(ApplicationEvent::RelayLoginLost {
             request: follower,
-            error: "the Server stopped answering".to_owned(),
+            error: "the server stopped answering".to_owned(),
         })
         .expect("take the lost following");
     let shown = prose(&application);
@@ -2758,14 +2758,14 @@ fn a_server_holding_no_relay_is_told_it_can_add_one_and_a_adds_it_from_serve() {
     open_serve(&mut application, vec![direct()]);
     let shown = prose(&application);
     assert!(shown.contains(NO_RELAY), "{shown}");
-    assert!(shown.contains("a add Relay"), "{shown}");
+    assert!(shown.contains("a add relay"), "{shown}");
 
     assert_eq!(
         press(&mut application, KeyCode::Char('a')),
         ApplicationTransition::Continue
     );
     let entry = prose(&application);
-    assert!(entry.contains("Add a Relay"), "{entry}");
+    assert!(entry.contains("Add a relay"), "{entry}");
     assert!(entry.contains("Enter add · Esc back"), "{entry}");
 
     // An empty address is refused as it is in /relay.
@@ -2773,18 +2773,18 @@ fn a_server_holding_no_relay_is_told_it_can_add_one_and_a_adds_it_from_serve() {
         press(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue
     );
-    assert!(prose(&application).contains("Type a Relay's address first"));
+    assert!(prose(&application).contains("Type a relay's address first"));
 
     type_terminal_text(&mut application, COMPANY);
     let request = addition(press(&mut application, KeyCode::Enter), COMPANY);
-    assert!(prose(&application).contains("Adding Relay"));
+    assert!(prose(&application).contains("Adding relay"));
 
     let asked = application
         .handle_event(ApplicationEvent::RelayAdded {
             request,
             relay: relay(COMPANY),
         })
-        .expect("take the Relay added");
+        .expect("take the relay added");
     assert!(
         !prose(&application).contains(NO_RELAY),
         "{}",
@@ -2792,7 +2792,7 @@ fn a_server_holding_no_relay_is_told_it_can_add_one_and_a_adds_it_from_serve() {
     );
     relisted(&mut application, asked, 2, vec![relay(COMPANY)]);
     let shown = prose(&application);
-    assert!(shown.contains("Choose Invite addresses"), "{shown}");
+    assert!(shown.contains("Choose invite addresses"), "{shown}");
     assert!(
         shown.contains(&format!("[-] Relay {COMPANY} · login needed")),
         "{shown}"
@@ -2815,7 +2815,7 @@ fn a_relay_added_lands_the_keys_on_it_among_others_and_in_a_listing_that_later_s
             request,
             relay: relay(COMPANY),
         })
-        .expect("take the Relay added");
+        .expect("take the relay added");
     relisted(
         &mut application,
         asked,
@@ -2831,7 +2831,7 @@ fn an_address_refused_from_serve_stays_as_typed_with_why_and_esc_steps_back_to_t
     press(&mut application, KeyCode::Char('a'));
     type_terminal_text(&mut application, HOME);
     let request = addition(press(&mut application, KeyCode::Enter), HOME);
-    let refusal = format!("the Relay at {HOME} is already added");
+    let refusal = format!("the relay at {HOME} is already added");
     application
         .handle_event(ApplicationEvent::RelayAdditionFailed {
             request,
@@ -2840,13 +2840,13 @@ fn an_address_refused_from_serve_stays_as_typed_with_why_and_esc_steps_back_to_t
         .expect("take the refusal");
     let shown = prose(&application);
     assert!(
-        shown.contains(&refusal) && shown.contains(HOME) && shown.contains("Add a Relay"),
+        shown.contains(&refusal) && shown.contains(HOME) && shown.contains("Add a relay"),
         "{shown}"
     );
 
     press(&mut application, KeyCode::Esc);
     let shown = prose(&application);
-    assert!(shown.contains("Choose Invite addresses"), "{shown}");
+    assert!(shown.contains("Choose invite addresses"), "{shown}");
     assert!(
         shown.contains(&format!("[-] Relay {HOME}")),
         "the reader is back where they were: {shown}"
@@ -3151,7 +3151,7 @@ fn reopening_serve_forgets_what_the_frame_before_it_closed_showed() {
     let ApplicationTransition::BeginServing { request, .. } =
         press_with_no_frame(&mut application, KeyCode::Enter)
     else {
-        panic!("/serve prepares Serving");
+        panic!("/serve prepares serving");
     };
     prepared(&mut application, request, Vec::new());
     assert_eq!(
@@ -3172,7 +3172,7 @@ fn a_refusal_of_a_relay_since_gone_gives_way_to_the_next_key() {
     application
         .handle_event(ApplicationEvent::RelayServeThroughFailed {
             request,
-            error: "the Relay is not one this Server holds".to_owned(),
+            error: "the relay is not one this server holds".to_owned(),
         })
         .expect("take the refusal");
     let shown = prose(&application);
@@ -3200,14 +3200,14 @@ fn a_relay_added_whose_listing_failed_gives_way_once_a_picture_does_not_show_it(
             request,
             relay: relay(COMPANY),
         })
-        .expect("take the Relay added")
+        .expect("take the relay added")
     else {
-        panic!("expected the Relays listed afresh");
+        panic!("expected the relays listed afresh");
     };
     application
         .handle_event(ApplicationEvent::RelayListingFailed {
             request,
-            error: "the Server stopped answering".to_owned(),
+            error: "the server stopped answering".to_owned(),
         })
         .expect("take the failed listing");
     press(&mut application, KeyCode::Down);
@@ -3293,17 +3293,17 @@ fn a_login_refused_stays_said_where_the_listing_that_would_show_it_fails() {
         follower,
         refused(pending(), RelayLoginRefusal::NotAdmitted),
     ) else {
-        panic!("expected the Relays listed afresh");
+        panic!("expected the relays listed afresh");
     };
     application
         .handle_event(ApplicationEvent::RelayListingFailed {
             request,
-            error: "the Server stopped answering".to_owned(),
+            error: "the server stopped answering".to_owned(),
         })
         .expect("take the failed listing");
     let shown = prose(&application);
     assert!(
-        shown.contains(NOT_ADMITTED) && shown.contains("the Server stopped answering"),
+        shown.contains(NOT_ADMITTED) && shown.contains("the server stopped answering"),
         "{shown}"
     );
 }
@@ -3324,21 +3324,21 @@ fn a_relay_added_whose_listing_fails_is_said_though_no_row_shows_it() {
             request,
             relay: relay(COMPANY),
         })
-        .expect("take the Relay added")
+        .expect("take the relay added")
     else {
-        panic!("expected the Relays listed afresh");
+        panic!("expected the relays listed afresh");
     };
     application
         .handle_event(ApplicationEvent::RelayListingFailed {
             request,
-            error: "the Server stopped answering".to_owned(),
+            error: "the server stopped answering".to_owned(),
         })
         .expect("take the failed listing");
 
     let told = |application: &Application| {
         let shown = prose(application);
         assert!(shown.contains(&format!("Added {COMPANY}")), "{shown}");
-        assert!(shown.contains("the Server stopped answering"), "{shown}");
+        assert!(shown.contains("the server stopped answering"), "{shown}");
         assert!(!shown.contains(NO_RELAY), "{shown}");
     };
     told(&application);
@@ -3353,7 +3353,7 @@ fn a_relay_added_whose_listing_fails_is_said_though_no_row_shows_it() {
     );
     press(&mut application, KeyCode::Up);
     assert!(
-        !prose(&application).contains("the Server stopped answering"),
+        !prose(&application).contains("the server stopped answering"),
         "with a row to stand on, the next key puts it down: {}",
         prose(&application)
     );
@@ -3370,9 +3370,9 @@ fn a_adds_a_relay_only_from_the_picker() {
     assert_eq!(
         press(&mut application, KeyCode::Char('a')),
         ApplicationTransition::Continue,
-        "while the Invite is being issued"
+        "while the invite is being issued"
     );
-    assert!(!prose(&application).contains("Add a Relay"));
+    assert!(!prose(&application).contains("Add a relay"));
     application
         .handle_event(ApplicationEvent::InviteIssued {
             request,
@@ -3384,10 +3384,10 @@ fn a_adds_a_relay_only_from_the_picker() {
             },
             peers: Vec::new(),
         })
-        .expect("show the Invite");
+        .expect("show the invite");
     press(&mut application, KeyCode::Char('a'));
-    assert!(!prose(&application).contains("Add a Relay"));
-    assert!(prose(&application).contains("Fresh Invite"));
+    assert!(!prose(&application).contains("Add a relay"));
+    assert!(prose(&application).contains("Fresh invite"));
 }
 
 /// Whether a frame `width` by `height` shows the Relay at `address` and, beneath
@@ -3493,14 +3493,14 @@ fn push(application: &mut Application, revision: u64, relays: Vec<Relay>) {
                 relays,
             },
         )))
-        .expect("take the pushed Relays");
+        .expect("take the pushed relays");
 }
 
 /// Types `/relay`, answering the listing it asks for.
 fn open_relays(application: &mut Application) -> RelayRequest {
     type_terminal_text(application, "/relay");
     let ApplicationTransition::ListRelays(request) = press(application, KeyCode::Enter) else {
-        panic!("/relay asks the Client's own Server for its Relays");
+        panic!("/relay asks the client's own server for its relays");
     };
     request
 }
@@ -3515,7 +3515,7 @@ fn list(application: &mut Application, request: RelayRequest, revision: u64, rel
                 relays,
             },
         })
-        .expect("list the Relays");
+        .expect("list the relays");
 }
 
 /// The Serve-through choice `transition` asks for, at the Relay at
@@ -3527,7 +3527,7 @@ fn serve_through(transition: ApplicationTransition, address: &str, on: bool) -> 
             address: asked,
             serve_through,
         } if asked == address && serve_through == on => request,
-        other => panic!("expected Serve through {address} set to {on}, got {other:?}"),
+        other => panic!("expected serve through {address} set to {on}, got {other:?}"),
     }
 }
 
@@ -3540,7 +3540,7 @@ fn chosen(
 ) -> ApplicationTransition {
     application
         .handle_event(ApplicationEvent::RelayServeThroughSet { request, relay })
-        .expect("take the Serve-through choice")
+        .expect("take the serve-through choice")
 }
 
 /// Types `/serve`, and finds the machine's addresses to be `addresses`.
@@ -3554,7 +3554,7 @@ fn begin_serving(application: &mut Application) -> ServeRequest {
     type_terminal_text(application, "/serve");
     let ApplicationTransition::BeginServing { request, .. } = press(application, KeyCode::Enter)
     else {
-        panic!("/serve prepares Serving");
+        panic!("/serve prepares serving");
     };
     request
 }
@@ -3575,7 +3575,7 @@ fn prepared(application: &mut Application, request: ServeRequest, addresses: Vec
 fn issuance(transition: ApplicationTransition) -> (ServeRequest, IssueInviteRequest) {
     match transition {
         ApplicationTransition::IssueInvite { request, issuance } => (request, issuance),
-        other => panic!("expected an Invite issued, got {other:?}"),
+        other => panic!("expected an invite issued, got {other:?}"),
     }
 }
 
@@ -3590,10 +3590,10 @@ fn begin_pairing_with(application: &mut Application, invite: &str) {
     press(application, KeyCode::Enter);
     application
         .handle_event(ApplicationEvent::RemotesListed(Vec::new()))
-        .expect("list the Remotes");
+        .expect("list the remotes");
     application
         .take_terminal_event(InputEvent::Paste(invite.to_owned()))
-        .expect("paste the Invite");
+        .expect("paste the invite");
 }
 
 /// Inspects the Invite pasted, which offers `ways`.
@@ -3651,7 +3651,7 @@ fn redemption(transition: ApplicationTransition) -> (ConnectRequest, RedeemInvit
             request,
             redemption,
         } => (request, redemption),
-        other => panic!("expected the Invite redeemed, got {other:?}"),
+        other => panic!("expected the invite redeemed, got {other:?}"),
     }
 }
 
@@ -3682,7 +3682,7 @@ fn refused_for_login_at(
         .handle_event(ApplicationEvent::InviteRedemptionFailed {
             request,
             error: format!(
-                "this Server holds no Login at the Relay at {relay}; log in there, then try again"
+                "this server holds no login at the relay at {relay}; log in there, then try again"
             ),
             login_needed_at: Some(relay.to_owned()),
         })
@@ -3701,7 +3701,7 @@ fn redeemed(application: &mut Application, request: ConnectRequest) {
                 icon: None,
             },
         })
-        .expect("take the Remote redeemed");
+        .expect("take the remote redeemed");
 }
 
 /// The login `transition` asks to begin, at the Relay at `address`.

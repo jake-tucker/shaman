@@ -82,7 +82,7 @@ fn attached(snapshot: SessionSnapshot, workspace: &std::path::Path) -> Applicati
     let mut application = connected_application(workspace);
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach the Sidekick's Session");
+        .expect("attach the sidekick's session");
     application
 }
 
@@ -111,15 +111,15 @@ fn a_subsession_the_sidekick_began_is_a_row_naming_it_and_what_it_was_asked() {
 
     assert!(
         text.contains("  ↗ Subsession: Flaky login test: Make it pass. It fails one run in ten."),
-        "the row names the Subsession and says, on its one line, what it was first asked: {text}"
+        "the row names the subsession and says, on its one line, what it was first asked: {text}"
     );
     assert!(
-        !text.contains("Tool Call") && !text.contains("begin_session"),
-        "it stands as a row of its own kind, never as a Tool Call: {text}"
+        !text.contains("Tool call") && !text.contains("begin_session"),
+        "it stands as a row of its own kind, never as a tool call: {text}"
     );
     assert!(
         !text.contains("Looking for the auth suite"),
-        "the settled Turn's fold hides the work the Sidekick did: {text}"
+        "the settled turn's fold hides the work the sidekick did: {text}"
     );
 }
 
@@ -140,7 +140,7 @@ fn a_subsession_still_titled_by_its_prompt_says_it_once() {
     assert!(
         text.lines()
             .any(|row| row.trim() == "↗ Subsession: Fix the flaky login test"),
-        "a Title not yet derived is the Prompt itself, so the row says it once: {text}"
+        "a title not yet derived is the prompt itself, so the row says it once: {text}"
     );
 }
 
@@ -164,7 +164,7 @@ fn pressing_a_subsessions_row_opens_the_subsession() {
             Outlook::Local,
             subsession,
         )),
-        "the whole row leads into the Subsession, a Session of its own"
+        "the whole row leads into the subsession, a session of its own"
     );
 }
 
@@ -188,7 +188,7 @@ fn a_subsession_begun_on_a_remote_names_its_remote_and_opens_there() {
 
     assert!(
         text.contains("↗ Subsession on workstation: Fix the flaky login test: Fix the flaky"),
-        "the row names the Remote it was begun on: {text}"
+        "the row names the remote it was begun on: {text}"
     );
     assert!(
         matches!(
@@ -199,7 +199,7 @@ fn a_subsession_begun_on_a_remote_names_its_remote_and_opens_there() {
                     subsession,
                 )
         ),
-        "the whole row leads into it on that Remote, turning the Outlook there"
+        "the whole row leads into it on that remote, turning the outlook there"
     );
 }
 
@@ -222,25 +222,25 @@ fn a_subsession_that_is_gone_is_still_named_but_offers_no_way_in() {
                 session_id: subsession,
             },
         )))
-        .expect("hear the Subsession was deleted");
+        .expect("hear the subsession was deleted");
 
     assert!(
         rendered_application_rows_at(&application, 120, 24)
             .join("\n")
             .contains("↗ Subsession: Fix the flaky login test"),
-        "the row still says what the Sidekick began"
+        "the row still says what the sidekick began"
     );
     assert_eq!(
         press_text(&mut application, "Subsession: Fix"),
         ApplicationTransition::Continue,
-        "but leads nowhere, since there is no Session left to open"
+        "but leads nowhere, since there is no session left to open"
     );
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 SemanticCommandId::SubsessionOpen,
             )))
-            .expect("invoke the command naming no Session"),
+            .expect("invoke the command naming no session"),
         ApplicationTransition::Continue,
     );
 }
@@ -266,17 +266,17 @@ fn a_subsession_that_cannot_be_opened_leaves_the_reader_on_the_sidekick_saying_w
     application
         .handle_event(ApplicationEvent::OriginSessionAttachFailed {
             reference,
-            error: "The Session does not exist on this Suru server.".to_owned(),
+            error: "The session does not exist on this Suru server.".to_owned(),
         })
         .expect("deliver the failed attach");
 
     let text = rendered_application_rows_at(&application, 160, 24).join("\n");
     assert!(
         text.contains("↗ Subsession: Fix the flaky login test"),
-        "the reader is left on the Sidekick's Transcript: {text}"
+        "the reader is left on the sidekick's transcript: {text}"
     );
     assert!(
-        text.contains("Could not open the Subsession: The Session does not exist"),
-        "told why the Subsession did not open: {text}"
+        text.contains("Could not open the subsession: The session does not exist"),
+        "told why the subsession did not open: {text}"
     );
 }

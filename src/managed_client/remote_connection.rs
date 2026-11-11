@@ -30,7 +30,7 @@ pub(super) async fn classify(
         Some(error) if error.code == SessionErrorCode::PairingAuthenticationFailed => {
             Err(RemoteConnectionFailure::Terminal {
                 status: RemoteStatus::Revoked,
-                message: "Remote revoked this Pairing".to_owned(),
+                message: "Remote revoked this pairing".to_owned(),
             })
         }
         Some(error) if error.code == SessionErrorCode::PairingProtocolMismatch => {

@@ -107,11 +107,11 @@ impl MetricsRange {
     /// What the view says of the range where it holds no Usage.
     pub(crate) fn no_usage(self) -> &'static str {
         match self {
-            Self::Today => "No Usage today.",
-            Self::SevenDays => "No Usage in the last 7 days.",
-            Self::ThirtyDays => "No Usage in the last 30 days.",
-            Self::Year => "No Usage in the last 12 months.",
-            Self::AllTime => "No Usage yet.",
+            Self::Today => "No usage today.",
+            Self::SevenDays => "No usage in the last 7 days.",
+            Self::ThirtyDays => "No usage in the last 30 days.",
+            Self::Year => "No usage in the last 12 months.",
+            Self::AllTime => "No usage yet.",
         }
     }
 
@@ -747,7 +747,7 @@ mod tests {
         assert_eq!(
             only_this_month(Some(at("UTC", date(2027, 2, 1).at(0, 0, 0, 0)))),
             vec![date(2026, 10, 1)],
-            "a Turn the clock places later begins no later month"
+            "a turn the clock places later begins no later month"
         );
     }
 

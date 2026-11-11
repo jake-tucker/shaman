@@ -52,12 +52,12 @@ fn settings_prose_copies_while_tabs_and_outside_drags_do_not_select() {
         )))
         .unwrap();
     let buffer = rendered_application_buffer(&application, 100, 32);
-    let start = text_position(&buffer, "Copy Text Selection");
+    let start = text_position(&buffer, "Copy text selection");
     let end = (start.0 + 18, start.1);
     let transition = drag(&mut application, start, end);
     assert_eq!(
         transition,
-        ApplicationTransition::CopyToClipboard("Copy Text Selection".into())
+        ApplicationTransition::CopyToClipboard("Copy text selection".into())
     );
     let selected = rendered_application_buffer(&application, 100, 32);
     assert!(selected[start].modifier.contains(Modifier::REVERSED));
@@ -67,7 +67,7 @@ fn settings_prose_copies_while_tabs_and_outside_drags_do_not_select() {
     assert!(
         rendered_application_rows_at(&application, 100, 32)
             .join("\n")
-            .contains("Copy Text Selection")
+            .contains("Copy text selection")
     );
     let tab = text_position(&buffer, "General");
     assert_eq!(
@@ -96,7 +96,7 @@ fn settings_prose_copies_while_tabs_and_outside_drags_do_not_select() {
     assert!(
         !rendered_application_rows_at(&application, 100, 32)
             .join("\n")
-            .contains("Copy Text Selection")
+            .contains("Copy text selection")
     );
 }
 
@@ -104,12 +104,12 @@ fn settings_prose_copies_while_tabs_and_outside_drags_do_not_select() {
 fn pickers_and_connection_overlays_copy_their_painted_rows() {
     for (command, needle) in [
         (SemanticCommandId::ThemeList, "Type to search"),
-        (SemanticCommandId::ModelList, "Loading Models"),
-        (SemanticCommandId::SessionList, "Loading Sessions"),
-        (SemanticCommandId::WorkspaceList, "Loading Workspaces"),
-        (SemanticCommandId::ServeOpen, "Preparing Serving"),
-        (SemanticCommandId::ConnectOpen, "Loading Remotes"),
-        (SemanticCommandId::RelayOpen, "Loading Relays"),
+        (SemanticCommandId::ModelList, "Loading models"),
+        (SemanticCommandId::SessionList, "Loading sessions"),
+        (SemanticCommandId::WorkspaceList, "Loading workspaces"),
+        (SemanticCommandId::ServeOpen, "Preparing serving"),
+        (SemanticCommandId::ConnectOpen, "Loading remotes"),
+        (SemanticCommandId::RelayOpen, "Loading relays"),
     ] {
         let workspace = workspace_dir();
         let mut application = connected_application(workspace.path());
@@ -163,7 +163,7 @@ fn a_wrapped_fix_in_the_model_picker_copies_as_one_unbroken_line() {
         )))
         .unwrap()
     else {
-        panic!("the picker requests Models")
+        panic!("the picker requests models")
     };
     application
         .handle_event(ApplicationEvent::ModelsListed {
@@ -233,7 +233,7 @@ fn a_wrapped_advisory_in_the_model_details_pane_copies_as_written_without_the_li
         )))
         .unwrap()
     else {
-        panic!("the picker requests Models")
+        panic!("the picker requests models")
     };
     let mut model = model_descriptor(
         "copilot",
@@ -287,7 +287,7 @@ fn composer_and_transcript_drags_stay_on_the_surface_they_started_on() {
     type_terminal_text(&mut application, "draft remains here");
     let buffer = rendered_application_buffer(&application, 100, 32);
     let composer = text_position(&buffer, "draft remains here");
-    let transcript = text_position(&buffer, "Initial Prompt");
+    let transcript = text_position(&buffer, "Initial prompt");
     assert_eq!(
         drag(&mut application, composer, (99, transcript.1)),
         ApplicationTransition::CopyToClipboard("draft remains here".into())
@@ -296,7 +296,7 @@ fn composer_and_transcript_drags_stay_on_the_surface_they_started_on() {
     assert!(!buffer[transcript].modifier.contains(Modifier::REVERSED));
     let copied = drag(&mut application, transcript, (99, composer.1));
     assert!(
-        matches!(copied, ApplicationTransition::CopyToClipboard(ref text) if text.text.contains("Initial Prompt") && !text.text.contains("draft remains here")),
+        matches!(copied, ApplicationTransition::CopyToClipboard(ref text) if text.text.contains("Initial prompt") && !text.text.contains("draft remains here")),
         "{copied:?}"
     );
     assert!(
@@ -320,12 +320,12 @@ fn model_options_copy_multiple_painted_rows_and_manual_copy_clears_the_highlight
         )))
         .unwrap()
     else {
-        panic!("options requests Models")
+        panic!("options requests models")
     };
     let mut model = model_descriptor(
         "codex",
         "sample",
-        "Sample 界🙂 Model",
+        "Sample 界🙂 model",
         true,
         ModelAvailability::Available,
     );
@@ -370,7 +370,7 @@ fn model_options_copy_multiple_painted_rows_and_manual_copy_clears_the_highlight
         .unwrap();
     assert_eq!(
         copied,
-        ApplicationTransition::CopyToClipboard("Sample 界🙂 Model · Codex\n› Fast".into())
+        ApplicationTransition::CopyToClipboard("Sample 界🙂 model · Codex\n› Fast".into())
     );
     assert!(
         !rendered_application_buffer(&application, 100, 32)[first]

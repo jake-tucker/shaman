@@ -421,7 +421,7 @@ mod tests {
         assert_eq!(
             walk(&window, &entries, 6, 1..=5),
             vec![0..6, 0..6, 0..6, 1..7, 2..8],
-            "focus walks to the third-last Row shown before the list moves, then the list moves a Row a step"
+            "focus walks to the third-last row shown before the list moves, then the list moves a row a step"
         );
     }
 
@@ -464,14 +464,14 @@ mod tests {
         assert_eq!(
             walk(&window, &entries, 3, 1..=4),
             vec![0..3, 1..4, 2..5, 3..6],
-            "three Rows keep one either side, so focus rides the middle"
+            "three rows keep one either side, so focus rides the middle"
         );
 
         let window = opened_on(&entries, 4, 0);
         assert_eq!(
             walk(&window, &entries, 4, 1..=4),
             vec![0..4, 0..4, 1..5, 2..6],
-            "four Rows cannot spare two either side, so they keep one"
+            "four rows cannot spare two either side, so they keep one"
         );
         assert_eq!(
             walk(&window, &entries, 4, (1..=3).rev()),
@@ -483,7 +483,7 @@ mod tests {
         assert_eq!(
             walk(&window, &entries, 1, 1..=2),
             vec![1..2, 2..3],
-            "a single Row can spare nothing"
+            "a single row can spare nothing"
         );
     }
 
@@ -496,7 +496,7 @@ mod tests {
         assert_eq!(
             walk(&window, &entries, 10, 1..=4),
             vec![0..5, 0..5, 1..6, 2..7],
-            "two whole entries stay below focus, four Rows of them"
+            "two whole entries stay below focus, four rows of them"
         );
     }
 
@@ -519,7 +519,7 @@ mod tests {
         assert_eq!(
             walk(&window, &entries, 7, [2, 4, 5]),
             vec![0..7, 1..8, 2..9],
-            "two Models stay below focus, with the heading between them in view too"
+            "two models stay below focus, with the heading between them in view too"
         );
         assert_eq!(
             walk(&window, &entries, 7, [4, 2, 1]),
@@ -620,7 +620,7 @@ mod tests {
         assert_eq!(
             window.settle(&rows(12), 6, Some(11)),
             6..12,
-            "and gives way only as far as keeps blank Rows off its foot"
+            "and gives way only as far as keeps blank rows off its foot"
         );
         assert_eq!(window.settle(&rows(4), 6, Some(3)), 0..4);
     }
@@ -670,13 +670,13 @@ mod tests {
         assert_eq!(
             window.settle(&reflowed, 6, Some(3)),
             2..4,
-            "entries wrapped onto more Rows give up the window's head rather than the focus \
-             at its foot, though the window has as many Rows as before"
+            "entries wrapped onto more rows give up the window's head rather than the focus \
+             at its foot, though the window has as many rows as before"
         );
         assert_eq!(
             window.settle(&narrow, 6, Some(3)),
             0..4,
-            "and once they fit again the whole list shows, with no blank Rows at its foot"
+            "and once they fit again the whole list shows, with no blank rows at its foot"
         );
 
         let window = opened_on(&rows(10), 3, 0);
@@ -742,7 +742,7 @@ mod tests {
         assert_eq!(
             window.settle(&entries, 6, Some(17)),
             9..15,
-            "the same Session standing open asks nothing"
+            "the same session standing open asks nothing"
         );
 
         open.follow(&window, Some(&3));
@@ -817,13 +817,13 @@ mod tests {
         assert_eq!(
             furthest_opening(&entries, 6),
             1,
-            "the one-Row head alone spills"
+            "the one-row head alone spills"
         );
         assert_eq!(furthest_opening(&entries, 4), 2, "two entries fit whole");
         assert_eq!(
             furthest_opening(&entries, 3),
             3,
-            "one entry fits, and its neighbour's Row is not cut"
+            "one entry fits, and its neighbour's row is not cut"
         );
         assert_eq!(
             furthest_opening(&entries, 1),

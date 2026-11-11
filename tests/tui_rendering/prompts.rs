@@ -34,7 +34,7 @@ fn new_session_keybinding_defers_creation_until_the_next_prompt() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "discard this draft".to_owned(),
         )))
-        .expect("type a Session draft");
+        .expect("type a session draft");
 
     assert_eq!(
         application
@@ -51,14 +51,14 @@ fn new_session_keybinding_defers_creation_until_the_next_prompt() {
                 KeyCode::Char('n'),
                 KeyModifiers::NONE,
             )))
-            .expect("invoke new Session"),
+            .expect("invoke new session"),
         ApplicationTransition::DetachSession
     );
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             old_snapshot.clone(),
         )))
-        .expect("ignore a queued event from the detached Session");
+        .expect("ignore a queued event from the detached session");
     let landing = rendered_application_rows(&application).join("\n");
     assert!(!landing.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
     assert!(landing.contains("Type a prompt"));
@@ -67,7 +67,7 @@ fn new_session_keybinding_defers_creation_until_the_next_prompt() {
 
     application
         .handle_event(ApplicationEvent::SessionAttached(old_snapshot))
-        .expect("reattach the independently addressable active Session");
+        .expect("reattach the independently addressable active session");
     let reattached = rendered_application_rows(&application).join("\n");
     assert!(reattached.contains("Long-running work"));
     assert!(reattached.contains("Working ("));
@@ -80,17 +80,17 @@ fn new_session_keybinding_defers_creation_until_the_next_prompt() {
         ApplicationTransition::DetachSession
     );
 
-    type_terminal_text(&mut application, "Next Prompt");
+    type_terminal_text(&mut application, "Next prompt");
     let ApplicationTransition::CreateSession(request) = application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("submit the next landing Prompt")
+        .expect("submit the next landing prompt")
     else {
-        panic!("the first Prompt after /new should create a Session");
+        panic!("the first prompt after /new should create a session");
     };
-    assert_eq!(request.prompt.text, "Next Prompt");
+    assert_eq!(request.prompt.text, "Next prompt");
     assert_eq!(request.execution_directory.path, workspace.path());
 }
 
@@ -101,14 +101,14 @@ fn new_session_releases_a_detached_prompt_after_its_admission_succeeds() {
     let (_, _, _) = enter_active_session(&mut application, workspace.path());
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
-            "Continue in the old Session".to_owned(),
+            "Continue in the old session".to_owned(),
         )))
-        .expect("type an in-flight Prompt");
+        .expect("type an in-flight prompt");
     let ApplicationTransition::AdmitPrompt { session, request } = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("begin Prompt admission")
+        .expect("begin prompt admission")
     else {
-        panic!("the old Session Prompt should be admitted");
+        panic!("the old session prompt should be admitted");
     };
     let admitted_prompt_id = request.prompt.id;
 
@@ -125,12 +125,12 @@ fn new_session_releases_a_detached_prompt_after_its_admission_succeeds() {
             session,
             prompt_id: admitted_prompt_id,
         })
-        .expect("acknowledge the detached Prompt admission");
+        .expect("acknowledge the detached prompt admission");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "Start separate work".to_owned(),
         )))
-        .expect("type the next landing Prompt");
+        .expect("type the next landing prompt");
 
     let ApplicationTransition::CreateSession(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
@@ -159,7 +159,7 @@ fn provisional_steer_is_immediate_single_and_reconciles_in_place() {
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit steer")
     else {
-        panic!("a Session steer should request Prompt admission");
+        panic!("a session steer should request prompt admission");
     };
     assert_eq!(admitted_to.origin, suru::protocol::Outlook::Local);
     assert_eq!(admitted_to.session_id, session_id);
@@ -179,7 +179,7 @@ fn provisional_steer_is_immediate_single_and_reconciles_in_place() {
             session: admitted_to,
             prompt_id,
         })
-        .expect("handle Prompt admission acknowledgement");
+        .expect("handle prompt admission acknowledgement");
     assert_eq!(
         rendered_application_rows(&application)
             .join("\n")
@@ -197,7 +197,7 @@ fn provisional_steer_is_immediate_single_and_reconciles_in_place() {
                 &request.prompt.text,
             ),
         )))
-        .expect("apply authoritative Prompt delivery");
+        .expect("apply authoritative prompt delivery");
     let reconciled = rendered_application_rows(&application).join("\n");
     assert_eq!(reconciled.matches("Use the smaller interface").count(), 1);
 }
@@ -217,7 +217,7 @@ fn admitted_active_steer_stays_visible_while_the_composer_accepts_another_prompt
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit active steer")
     else {
-        panic!("active steer should request Prompt admission");
+        panic!("active steer should request prompt admission");
     };
     let prompt_id = request.prompt.id;
     application
@@ -271,7 +271,7 @@ fn queued_prompt_docks_immediately_and_scoped_mode_preserves_the_draft() {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "Run this later".to_owned(),
         )))
-        .expect("type queued Prompt");
+        .expect("type queued prompt");
     assert_eq!(
         command_for_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
@@ -281,9 +281,9 @@ fn queued_prompt_docks_immediately_and_scoped_mode_preserves_the_draft() {
     );
     let ApplicationTransition::AdmitPrompt { request, .. } = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitQueue))
-        .expect("submit queued Prompt")
+        .expect("submit queued prompt")
     else {
-        panic!("Alt+Enter should request queued Prompt admission");
+        panic!("Alt+Enter should request queued prompt admission");
     };
     assert_eq!(request.delivery, PromptDelivery::Queue);
     let prompt_id = request.prompt.id;
@@ -312,7 +312,7 @@ fn queued_prompt_docks_immediately_and_scoped_mode_preserves_the_draft() {
                 }],
             },
         )))
-        .expect("apply authoritative queued Prompt");
+        .expect("apply authoritative queued prompt");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "keep this draft".to_owned(),
@@ -333,7 +333,7 @@ fn queued_prompt_docks_immediately_and_scoped_mode_preserves_the_draft() {
             KeyCode::Char('q'),
             KeyModifiers::NONE,
         )))
-        .expect("open queued-Prompt mode");
+        .expect("open queued-prompt mode");
     let ApplicationTransition::PromotePrompt {
         session: promoted_in,
         prompt_id: promoted,
@@ -342,9 +342,9 @@ fn queued_prompt_docks_immediately_and_scoped_mode_preserves_the_draft() {
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("promote selected queued Prompt")
+        .expect("promote selected queued prompt")
     else {
-        panic!("Enter in queued-Prompt mode should promote the selection");
+        panic!("Enter in queued-prompt mode should promote the selection");
     };
     assert_eq!((promoted_in.session_id, promoted), (session_id, prompt_id));
     application
@@ -370,7 +370,7 @@ fn queued_prompt_docks_immediately_and_scoped_mode_preserves_the_draft() {
             KeyCode::Char('q'),
             KeyModifiers::NONE,
         )))
-        .expect("reopen queued-Prompt mode");
+        .expect("reopen queued-prompt mode");
     let ApplicationTransition::CancelPrompt {
         session: cancelled_in,
         prompt_id: cancelled,
@@ -379,9 +379,9 @@ fn queued_prompt_docks_immediately_and_scoped_mode_preserves_the_draft() {
             KeyCode::Char('d'),
             KeyModifiers::CONTROL,
         )))
-        .expect("cancel selected queued Prompt")
+        .expect("cancel selected queued prompt")
     else {
-        panic!("Ctrl+D in queued-Prompt mode should cancel the selection");
+        panic!("Ctrl+D in queued-prompt mode should cancel the selection");
     };
     assert_eq!(
         (cancelled_in.session_id, cancelled),
@@ -430,7 +430,7 @@ fn escape_confirmation_is_local_and_targets_the_observed_active_turn() {
         )))
         .expect("confirm interruption")
     else {
-        panic!("the second Esc should issue the Session's interruption");
+        panic!("the second Esc should issue the session's interruption");
     };
     assert_eq!(session_id.origin, suru::protocol::Outlook::Local);
     assert_eq!(session_id.session_id, expected_session_id);
@@ -490,14 +490,14 @@ fn failed_admission_restores_stable_prompt_and_saves_intervening_input_to_histor
 
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
-            "Do not lose this Prompt".to_owned(),
+            "Do not lose this prompt".to_owned(),
         )))
         .expect("type steer");
     let ApplicationTransition::AdmitPrompt { session, request } = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit steer")
     else {
-        panic!("a Session steer should request Prompt admission");
+        panic!("a session steer should request prompt admission");
     };
     let prompt_id = request.prompt.id;
     application
@@ -513,7 +513,7 @@ fn failed_admission_restores_stable_prompt_and_saves_intervening_input_to_histor
         })
         .expect("roll back failed admission");
     let restored = rendered_application_rows(&application).join("\n");
-    assert_eq!(restored.matches("Do not lose this Prompt").count(), 1);
+    assert_eq!(restored.matches("Do not lose this prompt").count(), 1);
     assert!(!restored.contains("newer local text"));
     assert!(!restored.contains("Use the smaller interface"));
 
@@ -522,9 +522,9 @@ fn failed_admission_restores_stable_prompt_and_saves_intervening_input_to_histor
         ..
     } = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("retry restored Prompt")
+        .expect("retry restored prompt")
     else {
-        panic!("restored Prompt should be retryable");
+        panic!("restored prompt should be retryable");
     };
     assert_eq!(exact_retry.prompt.id, prompt_id);
     application
@@ -545,11 +545,11 @@ fn failed_admission_restores_stable_prompt_and_saves_intervening_input_to_histor
     );
     application
         .handle_event(ApplicationEvent::Command(CommandId::HistoryNext))
-        .expect("return to restored failed Prompt");
+        .expect("return to restored failed prompt");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Do not lose this Prompt")
+            .contains("Do not lose this prompt")
     );
 }
 
@@ -561,9 +561,9 @@ fn an_admission_result_from_another_origin_cannot_settle_the_pending_prompt() {
     type_terminal_text(&mut application, "Keep this origin");
     let ApplicationTransition::AdmitPrompt { session, request } = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit the local Prompt")
+        .expect("submit the local prompt")
     else {
-        panic!("a Session Prompt should request admission");
+        panic!("a session prompt should request admission");
     };
     let prompt_id = request.prompt.id;
     let other_origin =
@@ -573,7 +573,7 @@ fn an_admission_result_from_another_origin_cannot_settle_the_pending_prompt() {
         .handle_event(ApplicationEvent::PromptAdmissionFailed {
             session: other_origin,
             prompt_id,
-            error: "wrong Server".to_owned(),
+            error: "wrong server".to_owned(),
         })
         .expect("ignore an answer from another origin");
     assert_eq!(
@@ -585,20 +585,20 @@ fn an_admission_result_from_another_origin_cannot_settle_the_pending_prompt() {
     assert!(
         !rendered_application_rows(&application)
             .join("\n")
-            .contains("wrong Server")
+            .contains("wrong server")
     );
 
     application
         .handle_event(ApplicationEvent::PromptAdmissionFailed {
             session,
             prompt_id,
-            error: "local Server unavailable".to_owned(),
+            error: "local server unavailable".to_owned(),
         })
         .expect("accept the answer from the owning origin");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("local Server unavailable")
+            .contains("local server unavailable")
     );
 }
 
@@ -616,7 +616,7 @@ fn authoritative_delivery_after_an_ambiguous_failure_removes_the_restored_retry(
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit steer")
     else {
-        panic!("a Session steer should request Prompt admission");
+        panic!("a session steer should request prompt admission");
     };
     application
         .handle_event(ApplicationEvent::PromptAdmissionFailed {
@@ -624,7 +624,7 @@ fn authoritative_delivery_after_an_ambiguous_failure_removes_the_restored_retry(
             prompt_id: request.prompt.id,
             error: "response connection closed".to_owned(),
         })
-        .expect("restore ambiguously failed Prompt");
+        .expect("restore ambiguously failed prompt");
     assert_eq!(
         rendered_application_rows(&application)
             .join("\n")
@@ -779,7 +779,7 @@ fn enter_compacting_session(application: &mut Application) -> CompactingSession 
     let session = compacting_unseen(application);
     application
         .handle_event(ApplicationEvent::SessionAttached(session.snapshot.clone()))
-        .expect("open the compacting Session");
+        .expect("open the compacting session");
     session
 }
 
@@ -937,7 +937,7 @@ impl CompactingSession {
             .turns
             .iter_mut()
             .find(|turn| turn.id == self.turn_id)
-            .expect("the Compaction's Turn");
+            .expect("the compaction's turn");
         turn.status = status;
         turn.settled_at = Some(SessionTimestamp::now());
         if let Some(Activity::Compaction {
@@ -1012,12 +1012,12 @@ fn send_steer(application: &mut Application, text: &str) -> InitialPrompt {
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             text.to_owned(),
         )))
-        .expect("write a Prompt");
+        .expect("write a prompt");
     let ApplicationTransition::AdmitPrompt { request, .. } = application
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("send it")
     else {
-        panic!("a Prompt written in a Session asks for its admission");
+        panic!("a prompt written in a session asks for its admission");
     };
     request.prompt
 }
@@ -1047,18 +1047,18 @@ fn a_prompt_held_behind_a_failed_compaction_comes_back_to_the_composer_it_was_wr
     let mut observer = Application::new(workspace_dir().path(), Default::default());
     observer
         .handle_event(ApplicationEvent::SessionAttached(session.snapshot.clone()))
-        .expect("a second client watches the Session");
+        .expect("a second client watches the session");
 
     let prompt = send_steer(&mut application, "Now the lexer");
     let held = session.held(&prompt);
     for client in [&mut application, &mut observer] {
         client
             .handle_event(ApplicationEvent::Session(held.clone()))
-            .expect("the Session holds the Prompt");
+            .expect("the session holds the prompt");
         assert_eq!(
             drawn(client, "Now the lexer"),
             1,
-            "every client draws the held Prompt as the Message it will become"
+            "every client draws the held prompt as the message it will become"
         );
     }
 
@@ -1066,10 +1066,10 @@ fn a_prompt_held_behind_a_failed_compaction_comes_back_to_the_composer_it_was_wr
     for client in [&mut application, &mut observer] {
         client
             .handle_event(ApplicationEvent::Session(ended.clone()))
-            .expect("the Compaction fails and the Prompt is withdrawn");
+            .expect("the compaction fails and the prompt is withdrawn");
     }
     let returned =
-        composer_holds(&mut application).expect("the withdrawn Prompt comes back to its writer");
+        composer_holds(&mut application).expect("the withdrawn prompt comes back to its writer");
     assert_eq!(returned.text, "Now the lexer");
     assert_eq!(
         composer_holds(&mut observer),
@@ -1085,7 +1085,7 @@ fn a_prompt_held_behind_an_interrupted_compaction_comes_back_to_the_composer_too
     let prompt = send_steer(&mut application, "Now the lexer");
     application
         .handle_event(ApplicationEvent::Session(session.held(&prompt)))
-        .expect("the Session holds the Prompt");
+        .expect("the session holds the prompt");
 
     for _ in 0..2 {
         application
@@ -1093,23 +1093,23 @@ fn a_prompt_held_behind_an_interrupted_compaction_comes_back_to_the_composer_too
                 KeyCode::Esc,
                 KeyModifiers::NONE,
             )))
-            .expect("interrupt the Compaction");
+            .expect("interrupt the compaction");
     }
     assert_eq!(
         drawn(&application, "Now the lexer"),
         1,
-        "the Prompt stays held while the Compaction is stopped"
+        "the prompt stays held while the compaction is stopped"
     );
     application
         .handle_event(ApplicationEvent::Session(
             session.ended_short(prompt.id, TurnStatus::Interrupted),
         ))
-        .expect("the Compaction stops and the Prompt is withdrawn");
-    let returned = composer_holds(&mut application).expect("the withdrawn Prompt comes back");
+        .expect("the compaction stops and the prompt is withdrawn");
+    let returned = composer_holds(&mut application).expect("the withdrawn prompt comes back");
     assert_eq!(returned.text, "Now the lexer");
     assert_ne!(
         returned.id, prompt.id,
-        "sent again, it is a new Prompt: the one it was stays withdrawn"
+        "sent again, it is a new prompt: the one it was stays withdrawn"
     );
 }
 
@@ -1120,16 +1120,16 @@ fn a_prompt_held_behind_a_compaction_that_completes_begins_the_next_turn_and_sta
     let prompt = send_steer(&mut application, "Now the lexer");
     application
         .handle_event(ApplicationEvent::Session(session.held(&prompt)))
-        .expect("the Session holds the Prompt");
+        .expect("the session holds the prompt");
 
     application
         .handle_event(ApplicationEvent::Session(session.completed(&prompt)))
-        .expect("the Compaction completes and the Prompt begins the next Turn");
+        .expect("the compaction completes and the prompt begins the next turn");
     assert_eq!(drawn(&application, "Now the lexer"), 1);
     assert_eq!(
         composer_holds(&mut application),
         None,
-        "a Prompt that was delivered is not handed back"
+        "a prompt that was delivered is not handed back"
     );
 }
 
@@ -1143,7 +1143,7 @@ fn a_held_prompt_first_seen_withdrawn_after_a_reconnect_still_comes_back() {
             session: SessionReference::new(Outlook::Local, session.session_id()),
             prompt_id: prompt.id,
         })
-        .expect("the Server admits it");
+        .expect("the server admits it");
 
     // The stream dropped before the Session said it held the Prompt, and the
     // snapshot it recovers with shows the Compaction already failed.
@@ -1151,8 +1151,8 @@ fn a_held_prompt_first_seen_withdrawn_after_a_reconnect_still_comes_back() {
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
             session.withdrawn_snapshot(&prompt, TurnStatus::Failed),
         )))
-        .expect("recover the Session");
-    let returned = composer_holds(&mut application).expect("the withdrawn Prompt comes back");
+        .expect("recover the session");
+    let returned = composer_holds(&mut application).expect("the withdrawn prompt comes back");
     assert_eq!(returned.text, "Now the lexer");
     assert_ne!(returned.id, prompt.id);
 }
@@ -1166,20 +1166,20 @@ fn a_held_prompt_whose_admission_was_answered_elsewhere_comes_back_on_return() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::SessionNew,
         )))
-        .expect("leave for the Landing before the Server answers");
+        .expect("leave for the landing before the server answers");
     application
         .handle_event(ApplicationEvent::PromptAdmissionSucceeded {
             session: SessionReference::new(Outlook::Local, session.session_id()),
             prompt_id: prompt.id,
         })
-        .expect("the Server admits it while the reader is away");
+        .expect("the server admits it while the reader is away");
 
     application
         .handle_event(ApplicationEvent::SessionAttached(
             session.withdrawn_snapshot(&prompt, TurnStatus::Failed),
         ))
-        .expect("come back to the Session, its Compaction failed meanwhile");
-    let returned = composer_holds(&mut application).expect("the withdrawn Prompt comes back");
+        .expect("come back to the session, its compaction failed meanwhile");
+    let returned = composer_holds(&mut application).expect("the withdrawn prompt comes back");
     assert_eq!(returned.text, "Now the lexer");
 }
 
@@ -1190,13 +1190,13 @@ fn a_prompt_held_behind_a_compaction_another_client_stopped_comes_back_to_its_wr
     let mut interrupter = Application::new(workspace_dir().path(), Default::default());
     interrupter
         .handle_event(ApplicationEvent::SessionAttached(session.snapshot.clone()))
-        .expect("a second client watches the Session");
+        .expect("a second client watches the session");
     let prompt = send_steer(&mut writer, "Now the lexer");
     let held = session.held(&prompt);
     for client in [&mut writer, &mut interrupter] {
         client
             .handle_event(ApplicationEvent::Session(held.clone()))
-            .expect("the Session holds the Prompt");
+            .expect("the session holds the prompt");
     }
 
     let mut confirmed = ApplicationTransition::Continue;
@@ -1206,7 +1206,7 @@ fn a_prompt_held_behind_a_compaction_another_client_stopped_comes_back_to_its_wr
                 KeyCode::Esc,
                 KeyModifiers::NONE,
             )))
-            .expect("the other client interrupts the Compaction");
+            .expect("the other client interrupts the compaction");
     }
     assert!(
         matches!(confirmed, ApplicationTransition::InterruptSession { .. }),
@@ -1216,15 +1216,15 @@ fn a_prompt_held_behind_a_compaction_another_client_stopped_comes_back_to_its_wr
     for client in [&mut writer, &mut interrupter] {
         client
             .handle_event(ApplicationEvent::Session(ended.clone()))
-            .expect("the Compaction stops and the Prompt is withdrawn");
+            .expect("the compaction stops and the prompt is withdrawn");
     }
     let returned =
-        composer_holds(&mut writer).expect("the withdrawn Prompt comes back to its writer");
+        composer_holds(&mut writer).expect("the withdrawn prompt comes back to its writer");
     assert_eq!(returned.text, "Now the lexer");
     assert_eq!(
         composer_holds(&mut interrupter),
         None,
-        "the interrupt stopped the Compaction; it asked for no Prompt back"
+        "the interrupt stopped the compaction; it asked for no prompt back"
     );
 }
 
@@ -1235,7 +1235,7 @@ fn several_held_prompts_come_back_the_earliest_first_and_the_rest_to_history() {
     let first = send_steer(&mut application, "Now the lexer");
     application
         .handle_event(ApplicationEvent::Session(session.held(&first)))
-        .expect("the Session holds the first Prompt");
+        .expect("the session holds the first prompt");
     let second = send_steer(&mut application, "Then the printer");
     let held_second = session.update(vec![SessionChange::PromptAdded {
         prompt: Prompt {
@@ -1253,7 +1253,7 @@ fn several_held_prompts_come_back_the_earliest_first_and_the_rest_to_history() {
     }]);
     application
         .handle_event(ApplicationEvent::Session(held_second))
-        .expect("the Session holds the second Prompt");
+        .expect("the session holds the second prompt");
     assert_eq!(drawn(&application, "Now the lexer"), 1);
     assert_eq!(drawn(&application, "Then the printer"), 1);
 
@@ -1270,12 +1270,12 @@ fn several_held_prompts_come_back_the_earliest_first_and_the_rest_to_history() {
     );
     application
         .handle_event(ApplicationEvent::Session(ended))
-        .expect("the Compaction fails and both Prompts are withdrawn");
+        .expect("the compaction fails and both prompts are withdrawn");
 
     assert_eq!(
         drawn(&application, "Now the lexer"),
         1,
-        "the earliest stands in the composer, and nowhere in the Transcript"
+        "the earliest stands in the composer, and nowhere in the transcript"
     );
     assert_eq!(
         drawn(&application, "Then the printer"),
@@ -1285,7 +1285,7 @@ fn several_held_prompts_come_back_the_earliest_first_and_the_rest_to_history() {
     application
         .handle_event(ApplicationEvent::Command(CommandId::HistoryPrevious))
         .expect("recall what the composer set aside");
-    let recalled = composer_holds(&mut application).expect("history recalls a Prompt");
+    let recalled = composer_holds(&mut application).expect("history recalls a prompt");
     assert_eq!(recalled.text, "Then the printer");
 }
 
@@ -1296,30 +1296,30 @@ fn a_held_prompt_coming_back_never_overwrites_a_draft_written_meanwhile() {
     let prompt = send_steer(&mut application, "Now the lexer");
     application
         .handle_event(ApplicationEvent::Session(session.held(&prompt)))
-        .expect("the Session holds the Prompt");
+        .expect("the session holds the prompt");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
             "Something else entirely".to_owned(),
         )))
-        .expect("write a draft while the Prompt is held");
+        .expect("write a draft while the prompt is held");
 
     application
         .handle_event(ApplicationEvent::Session(
             session.ended_short(prompt.id, TurnStatus::Failed),
         ))
-        .expect("the Compaction fails and the Prompt is withdrawn");
+        .expect("the compaction fails and the prompt is withdrawn");
     assert_eq!(drawn(&application, "Something else entirely"), 1);
     assert_eq!(
         drawn(&application, "Now the lexer"),
         0,
-        "the draft keeps the composer, and the withdrawn Prompt waits in history"
+        "the draft keeps the composer, and the withdrawn prompt waits in history"
     );
     application
         .handle_event(ApplicationEvent::Command(CommandId::HistoryPrevious))
         .expect("recall what came back");
-    let recalled = composer_holds(&mut application).expect("history recalls the Prompt");
+    let recalled = composer_holds(&mut application).expect("history recalls the prompt");
     assert_eq!(recalled.text, "Now the lexer");
-    assert_ne!(recalled.id, prompt.id, "sent again, it is a new Prompt");
+    assert_ne!(recalled.id, prompt.id, "sent again, it is a new prompt");
 }
 
 #[test]
@@ -1327,7 +1327,7 @@ fn a_prompt_sent_from_an_idle_view_comes_back_however_little_of_the_hold_its_wri
     for status in [TurnStatus::Failed, TurnStatus::Interrupted] {
         for left in [true, false] {
             let described = format!(
-                "the Compaction's Turn {status:?}, the writer {}",
+                "the compaction's turn {status:?}, the writer {}",
                 if left {
                     "having left and come back"
                 } else {
@@ -1339,7 +1339,7 @@ fn a_prompt_sent_from_an_idle_view_comes_back_however_little_of_the_hold_its_wri
             let mut observer = Application::new(workspace_dir().path(), Default::default());
             observer
                 .handle_event(ApplicationEvent::SessionAttached(session.snapshot.clone()))
-                .expect("a second client watches the Compaction");
+                .expect("a second client watches the compaction");
 
             // To the writer the Session is idle, so this is a steer like any
             // other, sent never knowing it lands behind a Compaction.
@@ -1349,14 +1349,14 @@ fn a_prompt_sent_from_an_idle_view_comes_back_however_little_of_the_hold_its_wri
                     .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                         suru::tui::SemanticCommandId::SessionNew,
                     )))
-                    .expect("leave for the Landing");
+                    .expect("leave for the landing");
             }
             writer
                 .handle_event(ApplicationEvent::PromptAdmissionSucceeded {
                     session: SessionReference::new(Outlook::Local, session.session_id()),
                     prompt_id: prompt.id,
                 })
-                .expect("the Server admits it");
+                .expect("the server admits it");
 
             let withdrawn = session.withdrawn_snapshot(&prompt, status);
             writer
@@ -1365,7 +1365,7 @@ fn a_prompt_sent_from_an_idle_view_comes_back_however_little_of_the_hold_its_wri
                 } else {
                     ApplicationEvent::Session(SessionEvent::snapshot(withdrawn.clone()))
                 })
-                .expect("read the Session as it now stands");
+                .expect("read the session as it now stands");
             observer
                 .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(
                     withdrawn.clone(),
@@ -1377,16 +1377,16 @@ fn a_prompt_sent_from_an_idle_view_comes_back_however_little_of_the_hold_its_wri
                 "{described}: a client that did not write it is handed nothing"
             );
             let returned = composer_holds(&mut writer)
-                .unwrap_or_else(|| panic!("{described}: the withdrawn Prompt comes back"));
+                .unwrap_or_else(|| panic!("{described}: the withdrawn prompt comes back"));
             assert_eq!(returned.text, "Now the lexer", "{described}");
             assert_ne!(
                 returned.id, prompt.id,
-                "{described}: sent again, it is a new Prompt"
+                "{described}: sent again, it is a new prompt"
             );
 
             writer
                 .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(withdrawn)))
-                .expect("read the same Session again");
+                .expect("read the same session again");
             assert_eq!(
                 composer_holds(&mut writer),
                 None,
@@ -1416,31 +1416,31 @@ fn a_prompt_sent_from_an_idle_view_never_overwrites_the_draft_its_writer_left() 
                 elsewhere.path(),
             ),
         ))
-        .expect("leave for another Session, which keeps the draft where it was written");
+        .expect("leave for another session, which keeps the draft where it was written");
     writer
         .handle_event(ApplicationEvent::PromptAdmissionSucceeded {
             session: SessionReference::new(Outlook::Local, session.session_id()),
             prompt_id: prompt.id,
         })
-        .expect("the Server admits it while the writer is away");
+        .expect("the server admits it while the writer is away");
 
     writer
         .handle_event(ApplicationEvent::SessionAttached(
             session.withdrawn_snapshot(&prompt, TurnStatus::Failed),
         ))
-        .expect("come back to the Session, its Compaction failed meanwhile");
+        .expect("come back to the session, its compaction failed meanwhile");
     assert_eq!(drawn(&writer, "Something else entirely"), 1);
     assert_eq!(
         drawn(&writer, "Now the lexer"),
         0,
-        "the draft keeps the composer, and the withdrawn Prompt waits in history"
+        "the draft keeps the composer, and the withdrawn prompt waits in history"
     );
     writer
         .handle_event(ApplicationEvent::Command(CommandId::HistoryPrevious))
         .expect("recall what came back");
-    let recalled = composer_holds(&mut writer).expect("history recalls the Prompt");
+    let recalled = composer_holds(&mut writer).expect("history recalls the prompt");
     assert_eq!(recalled.text, "Now the lexer");
-    assert_ne!(recalled.id, prompt.id, "sent again, it is a new Prompt");
+    assert_ne!(recalled.id, prompt.id, "sent again, it is a new prompt");
 }
 
 #[test]
@@ -1478,7 +1478,7 @@ fn a_steer_another_client_withdrew_by_interrupting_is_not_handed_to_its_writer()
                 working_since: Some(SessionTimestamp::now()),
             },
         ]))
-        .expect("the Session admits the Prompt, owed a Turn");
+        .expect("the session admits the prompt, owed a turn");
 
     // Another client interrupts the Session Working only for that Prompt,
     // which withdraws it and owes its text to whoever interrupted (ADR 0024).
@@ -1492,7 +1492,7 @@ fn a_steer_another_client_withdrew_by_interrupting_is_not_handed_to_its_writer()
                 working_since: None,
             },
         ]))
-        .expect("the Session withdraws the Prompt");
+        .expect("the session withdraws the prompt");
     assert_eq!(
         composer_holds(&mut writer),
         None,

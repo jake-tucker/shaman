@@ -299,13 +299,13 @@ impl FoundMachines {
         self.note = Some(match &machine.state {
             MachineState::Serving => return MachineChoice::AsksForItsCode(machine.clone()),
             MachineState::NotServing => format!(
-                "{name} is logged in but not waiting to be reached, which may mean Serving is \
-                 off, it is not Served through this Relay, or the machine is off; run /serve \
-                 there, or `suru serve invite`, with this Relay offered, then press Ctrl+R here \
+                "{name} is logged in but not waiting to be reached, which may mean serving is \
+                 off, it is not served through this relay, or the machine is off; run /serve \
+                 there, or `suru serve invite`, with this relay offered, then press Ctrl+R here \
                  and type its code"
             ),
             MachineState::RemoteAlready(remote) => {
-                format!("Already paired as the Remote {remote}; /connect turns toward it")
+                format!("Already paired as the remote {remote}; /connect turns toward it")
             }
         });
         MachineChoice::Told
@@ -602,7 +602,7 @@ mod tests {
         assert_eq!(
             row.waiting_at,
             [ONE, TWO],
-            "in the order the Server holds them"
+            "in the order the server holds them"
         );
         assert_eq!(row.also_named, Vec::<String>::new());
     }
@@ -711,7 +711,7 @@ mod tests {
         assert_eq!(
             found.selected_fingerprint(),
             None,
-            "the reader began on the Invite, and stays there"
+            "the reader began on the invite, and stays there"
         );
 
         let mut found = self::found(&[ONE, TWO]);
@@ -773,7 +773,7 @@ mod tests {
             asking(1),
             listed(TWO, vec![machine("aaaa0000", "stray", true)]),
         );
-        assert!(!found.any(), "from a Relay this asking did not ask");
+        assert!(!found.any(), "from a relay this asking did not ask");
 
         found.answered(
             asking(1),
@@ -786,7 +786,7 @@ mod tests {
         assert_eq!(
             fingerprints(&found, 0),
             ["aaaa0000"],
-            "a Relay answers an asking once"
+            "a relay answers an asking once"
         );
 
         found.end();
@@ -830,7 +830,7 @@ mod tests {
         assert_eq!(
             found.selected_fingerprint(),
             None,
-            "a machine gone takes focus off it, to the Invite field"
+            "a machine gone takes focus off it, to the invite field"
         );
     }
 

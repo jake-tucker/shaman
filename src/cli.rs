@@ -40,21 +40,21 @@ pub const EXIT_STATUSES: [(u8, &str); 7] = [
     (FAILED, "It could not, saying why on standard error"),
     (
         BAD_COMMAND_LINE,
-        "Its command line cannot be read, an address no Relay could be at among that",
+        "Its command line cannot be read, an address no relay could be at among that",
     ),
     (
         REMOVAL_UNCONFIRMED,
-        "`relay remove` removed the Relay here, but the Relay did not answer, so it may still \
-         hold a Login for this Server until its operator removes it",
+        "`relay remove` removed the relay here, but the relay did not answer, so it may still \
+         hold a login for this server until its operator removes it",
     ),
     (
         LOGIN_REFUSED,
-        "`relay login` was refused: by you at the identity provider, or by the Relay, whose \
+        "`relay login` was refused: by you at the identity provider, or by the relay, whose \
          operator is the one to ask",
     ),
     (
         LOGIN_LAPSED,
-        "`relay login` ended with no one refusing it: it expired or the Relay stopped answering, \
+        "`relay login` ended with no one refusing it: it expired or the relay stopped answering, \
          and trying again may help",
     ),
     (
@@ -65,7 +65,7 @@ pub const EXIT_STATUSES: [(u8, &str); 7] = [
 
 /// What the exit statuses leave out, in their help and in the docs alike.
 pub const EXIT_BY_SIGNAL: &str = "SIGTERM and SIGHUP end a command by the signal, with no status \
-                                  of these, and leave a login under way at the Server as well.";
+                                  of these, and leave a login under way at the server as well.";
 
 /// How the commands exit, as their help says.
 pub fn exit_status_help() -> String {
@@ -145,10 +145,10 @@ impl InviteArguments {
     /// says more than clap's own word on arguments that conflict would.
     fn request(&self) -> std::result::Result<OfferInviteRequest, &'static str> {
         if self.no_addresses && self.no_relays {
-            return Err("--no-addresses and --no-relays together leave an Invite no way to offer");
+            return Err("--no-addresses and --no-relays together leave an invite no way to offer");
         }
         if self.no_relays && !self.relay.is_empty() {
-            return Err("--no-relays offers no Relay, and --relay names one to offer");
+            return Err("--no-relays offers no relay, and --relay names one to offer");
         }
         Ok(OfferInviteRequest {
             addresses: !self.no_addresses,
@@ -214,9 +214,9 @@ pub async fn serve(config: ManagedClientConfig, command: ServeCommand) -> u8 {
 fn serving_change_said(change: ServingChange) -> &'static str {
     match change {
         ServingChange::TurnedOn => {
-            "Serving is now on: this machine can be reached by the Servers paired with it"
+            "Serving is now on: this machine can be reached by the servers paired with it"
         }
-        ServingChange::Recovered => "The Serving listener, which had failed, is listening again",
+        ServingChange::Recovered => "The serving listener, which had failed, is listening again",
         ServingChange::CouldNotStart => {
             "Serving is asked for now (serving.enabled), and could not start"
         }
@@ -234,38 +234,38 @@ fn way_left_out_said(way: &WayLeftOut) -> String {
                 format!("it holds {}", held.join(", "))
             };
             format!(
-                "This Server holds no Relay at {address}: {holds}. `suru relay add {address}` \
+                "This server holds no relay at {address}: {holds}. `suru relay add {address}` \
                  adds it"
             )
         }
         WayLeftOut::NoRelayHeld => {
-            "This Server holds no Relay; `suru relay add <address>` adds one".to_owned()
+            "This server holds no relay; `suru relay add <address>` adds one".to_owned()
         }
         WayLeftOut::RelayLoginNeeded { relay } if pending(relay) => format!(
-            "The Relay at {address} needs a login, and one is under way: `suru relay login \
+            "The relay at {address} needs a login, and one is under way: `suru relay login \
              {address}` shows it",
             address = relay.address
         ),
         WayLeftOut::RelayLoginNeeded { relay } => format!(
-            "The Relay at {address} cannot be offered: {standing}. `suru relay login {address}` \
+            "The relay at {address} cannot be offered: {standing}. `suru relay login {address}` \
              logs in there",
             address = relay.address,
             standing = relay_said::relay_standing(relay)
         ),
         WayLeftOut::RelayNotServedThrough { address } => format!(
-            "This Server does not Serve through the Relay at {address}, so an Invite cannot \
+            "This server does not serve through the relay at {address}, so an invite cannot \
              offer it. `suru relay serve-through {address} on` makes this machine reachable \
              through it"
         ),
-        WayLeftOut::ListenerOff => "The Serving listener is off (serving.listener), so this \
+        WayLeftOut::ListenerOff => "The serving listener is off (serving.listener), so this \
                                     offers none of this machine's addresses"
             .to_owned(),
         WayLeftOut::ListenerNotListening { reason } => format!(
-            "The Serving listener is not listening, so this offers none of this machine's \
+            "The serving listener is not listening, so this offers none of this machine's \
              addresses: {reason}"
         ),
         WayLeftOut::ListenerLoopback { at } => format!(
-            "The Serving listener listens at {at}, which only this machine can reach \
+            "The serving listener listens at {at}, which only this machine can reach \
              (serving.bindAddress), so this offers none of its addresses"
         ),
         WayLeftOut::NoAddress => {
@@ -289,7 +289,7 @@ fn invite_refused(refused: &InviteOfferAnswer, err: &mut dyn Write) -> u8 {
             None
         }
         InviteOfferAnswer::NothingToOffer { serving, why } => {
-            say(err, "Error: An Invite has no way to offer");
+            say(err, "Error: An invite has no way to offer");
             for way in why {
                 say(err, &way_left_out_said(way));
             }
@@ -341,7 +341,7 @@ async fn reach_server(config: ManagedClientConfig, err: &mut dyn Write) -> Optio
                 say(
                     err,
                     &format!(
-                        "Started a Suru server on the `{channel}` Channel (pid {})",
+                        "Started a Suru server on the `{channel}` channel (pid {})",
                         health.identity.pid
                     ),
                 );
@@ -443,7 +443,7 @@ async fn list(
     if listing.relays.is_empty() && !json {
         say(
             err,
-            "This Server holds no Relay; `suru relay add <address>` adds one",
+            "This server holds no relay; `suru relay add <address>` adds one",
         );
         return Ok(SUCCESS);
     }
@@ -471,7 +471,7 @@ async fn list(
 async fn add(client: &ManagedClient, address: &str, err: &mut dyn Write) -> Result<u8> {
     match client.add_relay(address).await {
         Ok(relay) => {
-            say(err, &format!("Added the Relay at {}", relay.address));
+            say(err, &format!("Added the relay at {}", relay.address));
             say(
                 err,
                 &format!(
@@ -547,7 +547,7 @@ async fn log_in(
     show_login(&login, out, err);
     say(
         err,
-        "Waiting for the login to end. Interrupting this leaves it under way at the Server",
+        "Waiting for the login to end. Interrupting this leaves it under way at the server",
     );
     tokio::select! {
         ended = client.follow_relay_login(address) => Ok(match ended {
@@ -555,14 +555,14 @@ async fn log_in(
             Err(error) => {
                 say(err, &format!(
                     "Error: Stopped following the login at {address}: {error:#}. A login ends \
-                     with its Server; `suru relay login {address}` says where it stands"
+                     with its server; `suru relay login {address}` says where it stands"
                 ));
                 FAILED
             }
         }),
         () = interrupt.arrives() => {
             say(err, &format!(
-                "Left the login at {address} under way: it goes on at the Server, where `suru \
+                "Left the login at {address} under way: it goes on at the server, where `suru \
                  relay login {address}` and /relay find it"
             ));
             Ok(INTERRUPTED)
@@ -627,7 +627,7 @@ fn login_not_begun(error: &anyhow::Error, address: &str, err: &mut dyn Write) ->
 
 /// What is said of an address the Server holds no Relay at.
 fn not_held(address: &str) -> String {
-    format!("Error: This Server holds no Relay at {address}; `suru relay add {address}` adds it")
+    format!("Error: This server holds no relay at {address}; `suru relay add {address}` adds it")
 }
 
 /// Says how a followed login ended, answering the status.
@@ -641,7 +641,7 @@ fn login_ended(address: &str, login: &RelayLogin, err: &mut dyn Write) -> u8 {
                 err,
                 &format!(
                     "Logging in opens nothing: `suru relay serve-through {address} on` makes \
-                     this machine reachable through this Relay"
+                     this machine reachable through this relay"
                 ),
             );
         }
@@ -679,7 +679,7 @@ async fn serve_through(
         say(
             err,
             &format!(
-                "It stops waiting there, and its Login stands: `suru relay remove {}` forgets it",
+                "It stops waiting there, and its login stands: `suru relay remove {}` forgets it",
                 relay.address
             ),
         );
@@ -706,14 +706,14 @@ async fn remove(client: &ManagedClient, address: &str, err: &mut dyn Write) -> R
     if !removal.held_login {
         say(
             err,
-            &format!("Removed {}, which held no Login", removal.address),
+            &format!("Removed {}, which held no login", removal.address),
         );
         Ok(SUCCESS)
     } else if removal.acknowledged {
         say(
             err,
             &format!(
-                "Removed {}, and the Relay forgot this Server's Login there",
+                "Removed {}, and the relay forgot this server's login there",
                 removal.address
             ),
         );
@@ -722,8 +722,8 @@ async fn remove(client: &ManagedClient, address: &str, err: &mut dyn Write) -> R
         say(
             err,
             &format!(
-                "Removed {} here; the Relay did not answer, so it may still hold a Login for this \
-                 Server, until its operator removes it",
+                "Removed {} here; the relay did not answer, so it may still hold a login for this \
+                 server, until its operator removes it",
                 removal.address
             ),
         );
@@ -780,7 +780,7 @@ fn print_invite(
         say(
             err,
             &format!(
-                "The Relay at {} is offered but not answering now: {}",
+                "The relay at {} is offered but not answering now: {}",
                 relay.address,
                 relay_said::relay_standing(relay)
             ),
@@ -793,7 +793,7 @@ fn print_invite(
     say(
         err,
         &format!(
-            "It can be redeemed once, within {} minutes, and replaces any Invite issued before it",
+            "It can be redeemed once, within {} minutes, and replaces any invite issued before it",
             offered.expires_in_seconds / 60
         ),
     );
@@ -814,7 +814,7 @@ fn print_invite(
         // issued replaces it.
         say(
             err,
-            &format!("Error: could not print the Invite on standard output: {error}"),
+            &format!("Error: could not print the invite on standard output: {error}"),
         );
         return FAILED;
     }
@@ -883,7 +883,7 @@ mod tests {
             state: RelayState::Unreachable,
             unreachable: Some(RelayUnreachable {
                 behind: None,
-                message: "the Relay stopped answering".to_owned(),
+                message: "the relay stopped answering".to_owned(),
             }),
             account: Some(RelayAccount {
                 provider: "github".to_owned(),
@@ -916,7 +916,7 @@ mod tests {
                         "address": "https://b.example",
                         "state": "unreachable",
                         "account": { "provider": "github", "username": "octocat" },
-                        "unreachable_reason": "the Relay stopped answering",
+                        "unreachable_reason": "the relay stopped answering",
                         "serve_through": true,
                         "login_under_way": false,
                         "pinned_in": "~/.config/suru/suru.jsonc",
@@ -930,9 +930,9 @@ mod tests {
         assert!(!lines.contains("WDJB-MJHT"), "{lines}");
         assert!(lines.contains("Login under way"), "{lines}");
         let lines = listing_lines(&standing, false);
-        assert!(lines.contains("Unreachable · the Relay stopped"), "{lines}");
+        assert!(lines.contains("Unreachable · the relay stopped"), "{lines}");
         assert!(
-            lines.contains("Serves through once Serving is on"),
+            lines.contains("Serves through once serving is on"),
             "{lines}"
         );
         assert!(lines.contains("~/.config/suru/suru.jsonc"), "{lines}");
@@ -997,7 +997,7 @@ mod tests {
             &mut err,
         );
         assert_eq!(status, SUCCESS);
-        assert_eq!(said(&out), "suru-v1-secret\n", "the Invite alone");
+        assert_eq!(said(&out), "suru-v1-secret\n", "the invite alone");
         assert!(said(&err).contains("K7QF-2MXP"), "{}", said(&err));
         assert!(!said(&err).contains("suru-v1-secret"));
 
@@ -1060,7 +1060,7 @@ mod tests {
             &mut err,
         );
         assert_eq!(status, FAILED);
-        assert!(said(&err).contains("could not print the Invite"));
+        assert!(said(&err).contains("could not print the invite"));
         assert!(!said(&err).contains("suru-v1-secret"));
     }
 

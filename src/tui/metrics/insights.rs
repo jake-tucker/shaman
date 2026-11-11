@@ -202,14 +202,14 @@ impl InsightsPanel {
 
     pub(crate) fn title(self) -> &'static str {
         match self {
-            Self::WhenYouWork => "When you work (Turns by hour)",
+            Self::WhenYouWork => "When you work (turns by hour)",
             Self::Turns => "Turns",
             Self::Tools => "Tools used",
             Self::Compactions => "Compactions",
             Self::Cache => "Cache",
             Self::Approvals => "Approvals",
-            Self::Delegation => "Delegation (Cost)",
-            Self::Workspaces => "Workspaces by Cost",
+            Self::Delegation => "Delegation (cost)",
+            Self::Workspaces => "Workspaces by cost",
         }
     }
 

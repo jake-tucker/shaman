@@ -1028,7 +1028,7 @@ mod tests {
 
     #[test]
     fn a_reply_to_a_superseded_request_is_dropped_and_the_current_one_lands() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1048,7 +1048,7 @@ mod tests {
 
     #[test]
     fn each_origin_keeps_its_own_rows_and_reply_sequence() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1064,7 +1064,7 @@ mod tests {
 
         assert!(
             !listing.load(&local, vec![summary("Local", 1)]),
-            "a valid reply for another Origin does not move the Origin on show"
+            "a valid reply for another origin does not move the origin on show"
         );
         assert_eq!(titles(&listing), vec!["Remote"]);
 
@@ -1078,7 +1078,7 @@ mod tests {
 
     #[test]
     fn a_listing_orders_its_sessions_most_recently_updated_first() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1099,7 +1099,7 @@ mod tests {
 
     #[test]
     fn toggling_scope_widens_to_every_workspace_and_asks_again() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1122,13 +1122,13 @@ mod tests {
         assert_eq!(
             narrowed.scope(),
             &SessionListScope::CurrentWorkspace((workspace.path().to_owned()).into()),
-            "narrowing returns to the Workspace the listing was made for"
+            "narrowing returns to the workspace the listing was made for"
         );
     }
 
     #[test]
     fn a_failure_reports_against_the_request_it_answers() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1145,7 +1145,7 @@ mod tests {
 
     #[test]
     fn a_derived_title_and_icon_land_on_the_session_they_name() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1162,7 +1162,7 @@ mod tests {
 
     #[test]
     fn a_settle_lands_on_the_session_it_names_without_moving_the_order() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1187,7 +1187,7 @@ mod tests {
 
     #[test]
     fn a_working_change_lands_on_the_session_it_names_without_moving_the_order() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1211,13 +1211,13 @@ mod tests {
         assert_eq!(
             listing.sessions()[1].working_since(),
             None,
-            "and the Turn settling clears the reading"
+            "and the turn settling clears the reading"
         );
     }
 
     #[test]
     fn a_deleted_session_leaves_the_listing() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1234,7 +1234,7 @@ mod tests {
 
     #[test]
     fn a_catalog_reconciliation_keeps_only_the_sessions_it_names() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1250,7 +1250,7 @@ mod tests {
 
     #[test]
     fn clearing_a_listing_drops_what_it_held_and_what_it_awaited() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1276,7 +1276,7 @@ mod tests {
 
     #[test]
     fn reopening_does_not_reuse_the_request_sequence_from_before_clear() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1295,7 +1295,7 @@ mod tests {
 
     #[test]
     fn an_origin_returning_to_everywhere_does_not_reuse_its_old_request_sequence() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1308,12 +1308,12 @@ mod tests {
 
         assert!(
             !listing.load(&stale, vec![summary("Stale", 1)]),
-            "a reply from before the Origin left Everywhere cannot validate again"
+            "a reply from before the origin left Everywhere cannot validate again"
         );
         listing.load(&current, vec![summary("Current", 2)]);
         assert!(
             !listing.awaits(&current),
-            "the current reply lands even though another Origin is on show"
+            "the current reply lands even though another origin is on show"
         );
         listing.adopt_outlook(Outlook::Remote("studio".to_owned()));
         assert_eq!(titles(&listing), vec!["Current"]);
@@ -1321,7 +1321,7 @@ mod tests {
 
     #[test]
     fn a_failure_of_its_own_stands_beside_the_sessions_already_listed() {
-        let workspace = tempfile::tempdir().expect("create Workspace");
+        let workspace = tempfile::tempdir().expect("create workspace");
         let mut listing = SessionListing::new(
             SessionListSurface::SessionPicker,
             workspace.path().to_owned(),
@@ -1335,7 +1335,7 @@ mod tests {
         assert_eq!(
             titles(&listing),
             vec!["Listed"],
-            "a failure of the reader's own making leaves the Sessions on show"
+            "a failure of the reader's own making leaves the sessions on show"
         );
 
         listing.clear_error();
@@ -1373,7 +1373,7 @@ mod tests {
                 root().join("there"),
                 root().join("here"),
             ],
-            "each Workspace stands once, where its newest Session puts it, and the one \
+            "each workspace stands once, where its newest session puts it, and the one \
              this client works in stands whether or not any work is rooted there yet"
         );
     }
@@ -1444,7 +1444,7 @@ mod tests {
     /// what a listing spanning several Workspaces is made of.
     fn rooted(title: &str, workspace: &Path, updated_at: u64) -> SessionListItem {
         let SessionListItem::Readable(mut listed) = summary(title, updated_at) else {
-            unreachable!("the fixture builds a readable Session");
+            unreachable!("the fixture builds a readable session");
         };
         listed.session.workspace = Workspace::directory(workspace.to_owned());
         SessionListItem::Readable(listed)

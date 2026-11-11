@@ -149,7 +149,7 @@ fn a_pasted_image_is_uploaded_and_labelled_with_numbers_a_draft_never_reuses() {
     let ApplicationTransition::CreateSession(request) =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the Landing's Prompt begins a Session");
+        panic!("the landing's prompt begins a session");
     };
     assert_eq!(request.prompt.text, "[Image 3]  [Image 2] ");
     assert_eq!(
@@ -176,7 +176,7 @@ fn transcript_block(application: &Application, first: &str) -> Vec<String> {
     let start = rows
         .iter()
         .position(|row| row.contains(&format!("┃ {first}")))
-        .unwrap_or_else(|| panic!("the Message is drawn: {rows:#?}"));
+        .unwrap_or_else(|| panic!("the message is drawn: {rows:#?}"));
     rows[start..]
         .iter()
         .take_while(|row| row.trim_start().starts_with('┃'))
@@ -194,7 +194,7 @@ fn a_submitted_prompt_lists_its_attachments_before_and_after_its_session_arrives
     let ApplicationTransition::CreateSession(request) =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("the Landing's Prompt begins a Session");
+        panic!("the landing's prompt begins a session");
     };
 
     // The Provisional Session describes what this client uploaded.
@@ -217,7 +217,7 @@ fn a_submitted_prompt_lists_its_attachments_before_and_after_its_session_arrives
     created.attachments = vec![stored];
     application
         .handle_event(ApplicationEvent::SessionCreated(created))
-        .expect("take the created Session");
+        .expect("take the created session");
     assert_eq!(transcript_block(&application, "What is"), claimed);
 }
 
@@ -230,7 +230,7 @@ fn a_prompt_of_only_a_label_is_not_whitespace() {
     let ApplicationTransition::CreateSession(request) =
         submit(&mut application, CommandId::SubmitSteer)
     else {
-        panic!("a label alone is a Prompt");
+        panic!("a label alone is a prompt");
     };
     assert_eq!(request.prompt.text, "[Image 1] ");
     assert_eq!(
@@ -485,7 +485,7 @@ fn every_failed_paste_says_why_and_leaves_the_draft_as_it_was() {
                 let ApplicationTransition::UploadAttachment { .. } =
                     answer_read(application, paste, ClipboardRead::Image { png: png("x") })
                 else {
-                    panic!("the image is uploaded before the Server refuses it");
+                    panic!("the image is uploaded before the server refuses it");
                 };
                 application
                     .handle_event(ApplicationEvent::AttachmentUploadFailed {
@@ -510,8 +510,8 @@ fn every_failed_paste_says_why_and_leaves_the_draft_as_it_was() {
         let shown = rows
             .iter()
             .find(|row| row.contains(notice))
-            .unwrap_or_else(|| panic!("the Notice says {notice:?}: {rows:#?}"));
-        assert!(shown.contains("see the Log"), "{shown}");
+            .unwrap_or_else(|| panic!("the notice says {notice:?}: {rows:#?}"));
+        assert!(shown.contains("see the log"), "{shown}");
         assert!(rows.iter().any(|row| row.contains("Keep this")));
         assert!(!rows.join("\n").contains("[Image"));
 
@@ -546,8 +546,8 @@ fn a_windows_clipboard_powershell_could_not_read_raises_the_read_failure_notice(
                 "Could not read the clipboard: powershell.exe timed out on the Windows clipboard",
             )
         })
-        .unwrap_or_else(|| panic!("the read failure is a Notice: {rows:#?}"));
-    assert!(shown.contains("see the Log"), "{shown}");
+        .unwrap_or_else(|| panic!("the read failure is a notice: {rows:#?}"));
+    assert!(shown.contains("see the log"), "{shown}");
     assert!(rows.iter().any(|row| row.contains("Keep this")));
     assert!(!rows.join("\n").contains("[Image"));
 }
@@ -576,7 +576,7 @@ fn an_eleventh_image_is_refused_before_it_is_uploaded() {
     );
     let rows = rendered_application_rows(&application).join("\n");
     assert!(
-        rows.contains("A Prompt may carry at most 10 Attachments"),
+        rows.contains("A prompt may carry at most 10 attachments"),
         "{rows}"
     );
     assert!(!rows.contains("[Image 11]"));
@@ -625,7 +625,7 @@ fn a_steer_and_a_queued_prompt_carry_their_bindings() {
         let ApplicationTransition::AdmitPrompt { session, request } =
             submit(&mut application, command)
         else {
-            panic!("a Prompt into a working Session is admitted");
+            panic!("a prompt into a working session is admitted");
         };
         assert_eq!(session.session_id, session_id);
         assert_eq!(request.delivery, delivery);
@@ -672,11 +672,11 @@ fn ctrl_v_outside_the_composer_does_nothing() {
     add_activity(&mut snapshot, activity);
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(snapshot)))
-        .expect("present the Approval");
+        .expect("present the approval");
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Approval · Choose Decision")
+            .contains("Approval · Choose decision")
     );
     assert_eq!(ctrl_v(&mut application), ApplicationTransition::Continue);
     assert_eq!(

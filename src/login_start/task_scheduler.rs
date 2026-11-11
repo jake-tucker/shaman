@@ -28,10 +28,10 @@ const SCHTASKS: &str = "schtasks";
 const COVERS: &str = "\
 What this covers on Windows:
 - A logon by this user.
-- Not a machine that has rebooted and that nobody has logged on to: it stays Unreachable until \
+- Not a machine that has rebooted and that nobody has logged on to: it stays unreachable until \
 someone does. A console window may show for a moment as it starts.
-- A Server whose identity key is in Credential Manager reads it as this user. One that cannot \
-fails Serving where you can see it rather than making a new one.";
+- A server whose identity key is in Credential Manager reads it as this user. One that cannot \
+fails serving where you can see it rather than making a new one.";
 
 /// A Task's name is the machine's rather than the user's, so it names both, the
 /// user's domain included, which keeps one user's Channel from colliding with
@@ -97,7 +97,7 @@ fn task_definition(keep: &KeepCommand, user: &str, working_directory: &str) -> S
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Suru Keeper: starts this Channel's Server at logon, and restarts it if it crashes</Description>
+    <Description>Suru keeper: starts this channel's server at logon, and restarts it if it crashes</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -242,9 +242,9 @@ impl ServiceManager for ScheduledTask {
         );
         match created {
             Ok(outcome) if outcome.success => Ok(self.location()),
-            Ok(outcome) => bail!("could not register a Login start: {}", outcome.said),
+            Ok(outcome) => bail!("could not register a login start: {}", outcome.said),
             Err(error) => bail!(
-                "could not register a Login start: {SCHTASKS} could not be run ({error}). \
+                "could not register a login start: {SCHTASKS} could not be run ({error}). \
                  Nothing was registered."
             ),
         }
@@ -255,7 +255,7 @@ impl ServiceManager for ScheduledTask {
             Queried::Gone => return Ok(Removal::NothingRegistered),
             Queried::NotThere(reason) => return Ok(Removal::NoServiceManager { reason }),
             Queried::Unanswered(reason) => {
-                bail!("could not tell whether a Login start is registered: {reason}")
+                bail!("could not tell whether a login start is registered: {reason}")
             }
             Queried::Found => {}
         }

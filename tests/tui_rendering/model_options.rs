@@ -23,9 +23,9 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelOptions,
         )))
-        .expect("invoke options without a concrete Model")
+        .expect("invoke options without a concrete model")
     else {
-        panic!("options should resolve through the Model catalog");
+        panic!("options should resolve through the model catalog");
     };
     let mut configurable = model_descriptor(
         "codex",
@@ -69,9 +69,9 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
                 }],
             },
         })
-        .expect("resolve the default configurable Model");
+        .expect("resolve the default configurable model");
     let resolved = rendered_application_rows(&application).join("\n");
-    assert!(resolved.contains("Model Options"));
+    assert!(resolved.contains("Model options"));
     assert!(resolved.contains("Default Configurable"));
     assert!(resolved.contains("Reasoning · Medium"));
 
@@ -80,7 +80,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("open default Reasoning choices");
+        .expect("open default reasoning choices");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Down,
@@ -109,7 +109,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
         .expect("submit after cancelling options")
     else {
-        panic!("landing Prompt should create a Session");
+        panic!("landing prompt should create a session");
     };
     assert_eq!(request.agent_selection, None);
 
@@ -120,7 +120,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
         )))
         .expect("invoke unavailable options")
     else {
-        panic!("options should resolve through the Model catalog");
+        panic!("options should resolve through the model catalog");
     };
     unavailable
         .handle_event(ApplicationEvent::ModelsRefreshed {
@@ -132,7 +132,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
                     models: vec![model_descriptor(
                         "codex",
                         "plain",
-                        "Plain Model",
+                        "Plain model",
                         true,
                         ModelAvailability::Available,
                     )],
@@ -140,10 +140,10 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
                 }],
             },
         })
-        .expect("resolve a Model without options");
+        .expect("resolve a model without options");
     let status = rendered_application_rows(&unavailable).join("\n");
-    assert!(!status.contains("Model Options"));
-    assert!(status.contains("Plain Model has no configurable options"));
+    assert!(!status.contains("Model options"));
+    assert!(status.contains("Plain model has no configurable options"));
     assert!(status.contains("/models"));
 
     assert!(matches!(
@@ -151,7 +151,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 suru::tui::SemanticCommandId::ModelList,
             )))
-            .expect("choose the same plain Model through /models"),
+            .expect("choose the same plain model through /models"),
         ApplicationTransition::ListModels(_)
     ));
     assert!(matches!(
@@ -160,20 +160,20 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
                 KeyCode::Enter,
                 KeyModifiers::NONE,
             )))
-            .expect("apply a Model without descriptors immediately"),
+            .expect("apply a model without descriptors immediately"),
         ApplicationTransition::ConfirmLandingAgentSelection(_)
     ));
     assert!(
         !rendered_application_rows(&unavailable)
             .join("\n")
-            .contains("Model Options")
+            .contains("Model options")
     );
-    type_terminal_text(&mut unavailable, "Use plain Model");
+    type_terminal_text(&mut unavailable, "Use plain model");
     let ApplicationTransition::CreateSession(request) = unavailable
         .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-        .expect("submit plain Model selection")
+        .expect("submit plain model selection")
     else {
-        panic!("landing Prompt should create a Session");
+        panic!("landing prompt should create a session");
     };
     assert_eq!(
         request.agent_selection,
@@ -189,7 +189,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelOptions,
         )))
-        .expect("invoke options without any available Model")
+        .expect("invoke options without any available model")
     else {
         panic!("options should request the catalog");
     };
@@ -202,7 +202,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
         })
         .expect("finish empty catalog resolution");
     let status = rendered_application_rows(&missing).join("\n");
-    assert!(status.contains("No concrete Model is available"));
+    assert!(status.contains("No concrete model is available"));
     assert!(status.contains("/models"));
 
     let mut ambiguous = Application::default();
@@ -210,7 +210,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelOptions,
         )))
-        .expect("invoke options without a selected Provider")
+        .expect("invoke options without a selected provider")
     else {
         panic!("options should request the catalog");
     };
@@ -243,10 +243,10 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
                 providers: vec![provider_default("codex"), provider_default("copilot")],
             },
         })
-        .expect("finish ambiguous Provider resolution");
+        .expect("finish ambiguous provider resolution");
     let status = rendered_application_rows(&ambiguous).join("\n");
-    assert!(!status.contains("Model Options"));
-    assert!(status.contains("No concrete Model is available"));
+    assert!(!status.contains("Model options"));
+    assert!(status.contains("No concrete model is available"));
     assert!(status.contains("/models"));
 }
 
@@ -304,7 +304,7 @@ fn stale_catalog_failure_does_not_end_newer_options_resolution() {
         })
         .expect("resolve the newest options request");
     let screen = rendered_application_rows(&application).join("\n");
-    assert!(screen.contains("Model Options"));
+    assert!(screen.contains("Model options"));
     assert!(screen.contains("Current Default"));
     assert!(!screen.contains("stale failure"));
 }
@@ -316,14 +316,14 @@ fn refreshed_descriptors_replace_a_cached_no_options_status() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open Model picker to seed cache")
+        .expect("open model picker to seed cache")
     else {
         panic!("Model picker should request the catalog");
     };
     let plain = model_descriptor(
         "codex",
         "changing",
-        "Changing Model",
+        "Changing model",
         true,
         ModelAvailability::Available,
     );
@@ -339,13 +339,13 @@ fn refreshed_descriptors_replace_a_cached_no_options_status() {
                 }],
             },
         })
-        .expect("seed cached Model without descriptors");
+        .expect("seed cached model without descriptors");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Esc,
             KeyModifiers::NONE,
         )))
-        .expect("close Model picker");
+        .expect("close model picker");
 
     let ApplicationTransition::ListModels(options_request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
@@ -358,7 +358,7 @@ fn refreshed_descriptors_replace_a_cached_no_options_status() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Changing Model has no configurable options")
+            .contains("Changing model has no configurable options")
     );
 
     let mut configurable = plain;
@@ -383,7 +383,7 @@ fn refreshed_descriptors_replace_a_cached_no_options_status() {
         })
         .expect("replace stale no-options descriptor");
     let screen = rendered_application_rows(&application).join("\n");
-    assert!(screen.contains("Model Options"));
+    assert!(screen.contains("Model options"));
     assert!(screen.contains("Fast · Off"));
     assert!(!screen.contains("has no configurable options"));
 }
@@ -413,15 +413,15 @@ fn session_options_preserve_other_dimensions_and_roll_back_one_atomic_update() {
         .handle_event(ApplicationEvent::SessionAttached(
             selected_session_snapshot(session_id, workspace.path(), authoritative.clone()),
         ))
-        .expect("attach selected Session");
+        .expect("attach selected session");
 
     let ApplicationTransition::ListModels(catalog_request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelOptions,
         )))
-        .expect("open authoritative Model Options")
+        .expect("open authoritative model options")
     else {
-        panic!("options should request the Model catalog");
+        panic!("options should request the model catalog");
     };
     let mut model = model_descriptor(
         "codex",
@@ -474,7 +474,7 @@ fn session_options_preserve_other_dimensions_and_roll_back_one_atomic_update() {
                 }],
             },
         })
-        .expect("load current Model Options");
+        .expect("load current model options");
     let reopened = rendered_application_rows(&application).join("\n");
     assert!(reopened.contains("Reasoning · Low"));
     assert!(reopened.contains("Fast · Off"));
@@ -484,7 +484,7 @@ fn session_options_preserve_other_dimensions_and_roll_back_one_atomic_update() {
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("open Reasoning choices");
+        .expect("open reasoning choices");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Down,
@@ -506,7 +506,7 @@ fn session_options_preserve_other_dimensions_and_roll_back_one_atomic_update() {
             KeyCode::Enter,
             KeyModifiers::CONTROL,
         )))
-        .expect("apply one complete Agent Selection")
+        .expect("apply one complete agent selection")
     else {
         panic!("Session options should produce one authoritative update");
     };
@@ -533,7 +533,7 @@ fn session_options_preserve_other_dimensions_and_roll_back_one_atomic_update() {
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::SubmitSteer))
-            .expect("block Prompt while options settle"),
+            .expect("block prompt while options settle"),
         ApplicationTransition::Continue
     );
     assert_eq!(
@@ -541,7 +541,7 @@ fn session_options_preserve_other_dimensions_and_roll_back_one_atomic_update() {
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
                 suru::tui::SemanticCommandId::SessionList,
             )))
-            .expect("block Session navigation while options settle"),
+            .expect("block session navigation while options settle"),
         ApplicationTransition::Continue
     );
 
@@ -594,7 +594,7 @@ fn refreshed_options_keep_invalidated_choice_visible_and_disable_apply() {
         .handle_event(ApplicationEvent::SessionAttached(
             selected_session_snapshot(session_id, workspace.path(), current),
         ))
-        .expect("attach selected Session");
+        .expect("attach selected session");
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelOptions,
@@ -628,7 +628,7 @@ fn refreshed_options_keep_invalidated_choice_visible_and_disable_apply() {
     let mut initial = model_descriptor(
         "codex",
         "changing",
-        "Changing Model",
+        "Changing model",
         true,
         ModelAvailability::Available,
     );
@@ -738,7 +738,7 @@ fn refreshed_options_keep_invalidated_choice_visible_and_disable_apply() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Model Options")
+            .contains("Model options")
     );
 
     application
@@ -746,7 +746,7 @@ fn refreshed_options_keep_invalidated_choice_visible_and_disable_apply() {
             KeyCode::Up,
             KeyModifiers::NONE,
         )))
-        .expect("focus invalid Reasoning");
+        .expect("focus invalid reasoning");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
@@ -854,9 +854,9 @@ fn landing_on_the_tiered_model() -> Application {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open the landing Model picker")
+        .expect("open the landing model picker")
     else {
-        panic!("the Model picker should request the catalog");
+        panic!("the model picker should request the catalog");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed {
@@ -870,13 +870,13 @@ fn landing_on_the_tiered_model() -> Application {
                 }],
             },
         })
-        .expect("load the landing Models");
+        .expect("load the landing models");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("select the tiered Model");
+        .expect("select the tiered model");
     application
 }
 
@@ -967,9 +967,9 @@ fn a_context_tier_left_at_its_default_remains_a_present_selection_summary_field(
             KeyCode::Enter,
             KeyModifiers::CONTROL,
         )))
-        .expect("apply the Provider defaults")
+        .expect("apply the provider defaults")
     else {
-        panic!("landing options should confirm the complete Agent Selection");
+        panic!("landing options should confirm the complete agent selection");
     };
     assert!(confirmed.options.contains(&ModelOptionSelection {
         id: ModelOptionId::new("context_tier"),
@@ -981,7 +981,7 @@ fn a_context_tier_left_at_its_default_remains_a_present_selection_summary_field(
     let summary = rendered_application_rows_at(&application, 140, 16).join("\n");
     assert!(
         summary.contains("copilot · Tiered Fixture · High · Default"),
-        "a selected default tier is still a present Context field: {summary}"
+        "a selected default tier is still a present context field: {summary}"
     );
 }
 
@@ -992,9 +992,9 @@ fn selection_summary_orders_unlabelled_provider_model_and_supported_options() {
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open the landing Model picker")
+        .expect("open the landing model picker")
     else {
-        panic!("the Model picker should request the catalog");
+        panic!("the model picker should request the catalog");
     };
     let mut model = model_descriptor(
         "codex",
@@ -1061,27 +1061,27 @@ fn selection_summary_orders_unlabelled_provider_model_and_supported_options() {
                 }],
             },
         })
-        .expect("load the landing Model");
+        .expect("load the landing model");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("select the landing Model");
+        .expect("select the landing model");
     assert!(matches!(
         application
             .handle_terminal_event(InputEvent::Key(KeyEvent::new(
                 KeyCode::Enter,
                 KeyModifiers::CONTROL,
             )))
-            .expect("apply the complete Agent Selection"),
+            .expect("apply the complete agent selection"),
         ApplicationTransition::ConfirmLandingAgentSelection(_)
     ));
 
     let screen = rendered_application_rows_at(&application, 140, 16).join("\n");
     assert!(
         screen.contains("Codex · GPT-5.6 Luna · High · Long context · On"),
-        "the footer follows Provider, Model, Effort, Context, Speed order: {screen}"
+        "the footer follows provider, model, effort, context, Speed order: {screen}"
     );
     assert!(!screen.contains("Verbosity On"));
     assert!(!screen.contains("Provider Codex"));
@@ -1259,9 +1259,9 @@ fn landing_on_model_with_options(model: suru::protocol::ModelDescriptor) -> Appl
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
             suru::tui::SemanticCommandId::ModelList,
         )))
-        .expect("open the landing Model picker")
+        .expect("open the landing model picker")
     else {
-        panic!("the Model picker should request the catalog");
+        panic!("the model picker should request the catalog");
     };
     application
         .handle_event(ApplicationEvent::ModelsListed {
@@ -1281,13 +1281,13 @@ fn landing_on_model_with_options(model: suru::protocol::ModelDescriptor) -> Appl
                 }],
             },
         })
-        .expect("load the landing Models");
+        .expect("load the landing models");
     application
         .handle_terminal_event(InputEvent::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
         )))
-        .expect("select the routed Model");
+        .expect("select the routed model");
     application
 }
 
@@ -1338,7 +1338,7 @@ fn a_routing_tier_is_chosen_beside_the_model_and_a_disabled_one_says_why_and_can
 fn option_and_choice_descriptions_wrap_beside_the_list_and_copy_as_written() {
     use suru::protocol::{EffectiveSettings, SidebarVisibility, TextSelectionCopy};
 
-    const OPTION_DESCRIPTION: &str = "Choose how the Model balances capability and response time. This explanation is \
+    const OPTION_DESCRIPTION: &str = "Choose how the model balances capability and response time. This explanation is \
          intentionally longer than a single list row so its concluding guidance stays readable.";
     const CHOICE_DESCRIPTION: &str = "Use the most capable configuration for demanding work, with additional processing \
          before responding. This longer explanation keeps its final recommendation visible.";
@@ -1352,7 +1352,7 @@ fn option_and_choice_descriptions_wrap_beside_the_list_and_copy_as_written() {
         let mut model = model_descriptor(
             provider,
             "configurable",
-            "Configurable Model",
+            "Configurable model",
             true,
             ModelAvailability::Available,
         );
@@ -1463,7 +1463,7 @@ fn taking_the_default_routing_tier_stores_none_and_reads_as_the_picker_showed_it
     let ApplicationTransition::ConfirmLandingAgentSelection(confirmed) =
         press(&mut application, KeyCode::Enter, KeyModifiers::CONTROL)
     else {
-        panic!("the Landing confirms its Selection");
+        panic!("the landing confirms its selection");
     };
 
     assert_eq!(confirmed.routing_tier(), None);
@@ -1494,7 +1494,7 @@ fn going_back_to_the_default_routing_tier_stores_none() {
     let ApplicationTransition::ConfirmLandingAgentSelection(confirmed) =
         press(&mut application, KeyCode::Enter, KeyModifiers::CONTROL)
     else {
-        panic!("the Landing confirms its Selection");
+        panic!("the landing confirms its selection");
     };
     assert_eq!(confirmed.options, Vec::new());
 }
@@ -1508,7 +1508,7 @@ fn a_chosen_routing_tier_stands_in_the_selection_summary() {
     let ApplicationTransition::ConfirmLandingAgentSelection(confirmed) =
         press(&mut application, KeyCode::Enter, KeyModifiers::CONTROL)
     else {
-        panic!("the Landing confirms its Selection");
+        panic!("the landing confirms its selection");
     };
 
     assert_eq!(
@@ -1544,7 +1544,7 @@ fn a_selection_naming_a_routing_tier_no_longer_on_offer_reads_as_its_model() {
                 }],
             }),
         ))
-        .expect("take in the catalog as the Setting left it");
+        .expect("take in the catalog as the setting left it");
 
     let summary = rendered_application_rows_at(&application, 140, 16).join("\n");
     assert!(summary.contains("Copilot · Auto"), "{summary}");
@@ -1590,7 +1590,7 @@ fn the_pointer_walks_options_and_their_choices_and_pressing_acts_as_enter_does()
     let ApplicationTransition::ConfirmLandingAgentSelection(confirmed) =
         left_click_at(&mut application, confirm)
     else {
-        panic!("pressing Confirm confirms the staged Agent Selection");
+        panic!("pressing Confirm confirms the staged agent selection");
     };
     assert!(confirmed.options.contains(&ModelOptionSelection {
         id: ModelOptionId::new("context_tier"),

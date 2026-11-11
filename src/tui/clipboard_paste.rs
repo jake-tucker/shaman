@@ -102,7 +102,7 @@ pub(super) fn refuse_binding(attached: usize) -> Option<(PasteFailure, String)> 
 fn too_many() -> (PasteFailure, String) {
     (
         PasteFailure::TooMany,
-        format!("A Prompt may carry at most {MAX_ATTACHMENTS_PER_PROMPT} Attachments"),
+        format!("A prompt may carry at most {MAX_ATTACHMENTS_PER_PROMPT} attachments"),
     )
 }
 

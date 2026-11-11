@@ -457,26 +457,26 @@ pub(super) fn cycle_reasoning_effort(
         .filter(|descriptor| descriptor.role == ModelOptionRole::ReasoningEffort);
     let Some(descriptor) = reasoning.next() else {
         return ReasoningCycle::Unavailable(format!(
-            "{} has no Reasoning Effort option",
+            "{} has no reasoning effort option",
             model.display_name
         ));
     };
     if reasoning.next().is_some() {
         return ReasoningCycle::Unavailable(format!(
-            "{} advertises more than one Reasoning Effort option",
+            "{} advertises more than one reasoning effort option",
             model.display_name
         ));
     }
     let ModelOptionKind::Select { choices, .. } = &descriptor.kind else {
         return ReasoningCycle::Unavailable(format!(
-            "{} has no Reasoning Effort choices",
+            "{} has no reasoning effort choices",
             model.display_name
         ));
     };
     let mut selection = if current.is_some_and(|selection| {
         selection.provider == model.provider && selection.model == model.id
     }) {
-        selection_preserving_current_values(model, current.expect("same Model was checked"))
+        selection_preserving_current_values(model, current.expect("same model was checked"))
     } else {
         model.default_agent_selection()
     };
@@ -493,7 +493,7 @@ pub(super) fn cycle_reasoning_effort(
         .find(|choice| choice.availability == ModelAvailability::Available);
     let Some(next) = next.filter(|next| Some(&next.id) != current_choice.as_ref()) else {
         return ReasoningCycle::Unavailable(format!(
-            "{} has no alternate Reasoning Effort choice",
+            "{} has no alternate reasoning effort choice",
             model.display_name
         ));
     };
@@ -502,7 +502,7 @@ pub(super) fn cycle_reasoning_effort(
         .options
         .iter_mut()
         .find(|option| option.id == descriptor.id)
-        .expect("a complete Agent Selection covers every advertised option");
+        .expect("a complete agent selection covers every advertised option");
     value.value = ModelOptionValue::Select { choice };
     ReasoningCycle::Advanced(selection)
 }
@@ -676,7 +676,7 @@ fn choice_details(
     match (&descriptor.kind, value) {
         (_, ChoiceValue::ProviderDefault) => (
             "Provider default".to_owned(),
-            Some("Follow this Model's current default without pinning a value".to_owned()),
+            Some("Follow this model's current default without pinning a value".to_owned()),
             true,
         ),
         (ModelOptionKind::Select { choices, .. }, ChoiceValue::Select(selected)) => choices

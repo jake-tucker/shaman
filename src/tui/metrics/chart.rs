@@ -139,7 +139,7 @@ impl MetricsMeasure {
         match self {
             Self::Cost => self.stated(figure),
             Self::Tokens => format!("{} tokens", self.stated(figure)),
-            Self::Sessions => counted(figure.value, "Session", "Sessions"),
+            Self::Sessions => counted(figure.value, "session", "sessions"),
         }
     }
 }
@@ -945,7 +945,7 @@ mod tests {
                 AppearanceMode::System,
                 &TerminalFacts::unprobed(truecolor),
             )
-            .expect("resolve the built-in Panda Theme");
+            .expect("resolve the built-in Panda theme");
             let colors = palette(&theme);
             assert_eq!(colors.len(), KEYED_SERIES, "{colors:?}");
             assert!(!colors.contains(&other_color(&theme)));
