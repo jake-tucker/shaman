@@ -1993,14 +1993,14 @@ async fn start(
         timings.checkout_skill_timeout,
         timings.provider_stop_timeout,
         timings.provider_idle_shutdown,
+        crate::provider::ScheduledCompactionTimings {
+            lead: timings.scheduled_compaction_lead,
+            margin: timings.scheduled_compaction_margin,
+            wake_ahead: timings.scheduled_compaction_wake_ahead,
+        },
         timings.clock.clone(),
         broker_access.clone(),
         attachment_store.clone(),
-    )
-    .with_scheduled_compaction(
-        timings.scheduled_compaction_lead,
-        timings.scheduled_compaction_margin,
-        timings.scheduled_compaction_wake_ahead,
     );
     // A Provider may know no prices until its harness has run, which is when
     // its catalog comes; a Lapse Penalty that found none is asked again then.

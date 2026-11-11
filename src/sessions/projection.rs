@@ -353,7 +353,10 @@ impl SessionStoreState {
     /// settling commits nothing, so the Watch table calls it directly. The
     /// Watches live below each Session ride the same revision as its
     /// Monitoring reading, so a reader told the Session is Monitoring is told
-    /// what it is waiting on at once.
+    /// what it is waiting on at once. Whatever it re-derives then re-derives
+    /// what is pending of a scheduled Compaction in the same line
+    /// ([`Self::reconcile_pending_compactions`]), since work in a tree holds
+    /// one back.
     pub(super) fn reconcile_liveness(&mut self, storage: &StorageSink, session_id: SessionId) {
         let ancestry = self.ancestry(session_id);
         for current in &ancestry.sessions {

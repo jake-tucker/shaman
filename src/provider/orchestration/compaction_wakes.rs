@@ -1,7 +1,6 @@
 //! Holding the wake of a scheduled Compaction where no Provider actor runs
-//! (ADR 0073). It judges by the rule
-//! [`ScheduledCompactionRules`](super::ScheduledCompactionRules) builds, as
-//! the actor does.
+//! (ADR 0074). It judges by the rule the Session store holds, as the actor
+//! does.
 //!
 //! A Session's actor holds the wake of its own scheduled Compaction while it
 //! runs, beside its idle-shutdown wait. But no actor runs for a Session whose
@@ -76,7 +75,7 @@ impl ProviderOrchestrator {
     /// forecast at are being found by the time it falls due.
     pub(crate) fn hold_scheduled_compaction_wakes(&self, find_prices: Arc<dyn Fn() + Send + Sync>) {
         self.sessions
-            .arm_stored_scheduled_compactions(self.scheduled_compaction.lead, self.clock.now());
+            .arm_stored_scheduled_compactions(self.clock.now());
         tokio::spawn(hold_wakes(self.clone(), find_prices));
     }
 }
@@ -88,7 +87,6 @@ impl ProviderOrchestrator {
 async fn hold_wakes(orchestrator: ProviderOrchestrator, find_prices: Arc<dyn Fn() + Send + Sync>) {
     let sessions = orchestrator.sessions.clone();
     let clock = orchestrator.clock.clone();
-    let rules = orchestrator.scheduled_compaction_rules();
     let ahead = crate::sessions::millis(orchestrator.scheduled_compaction.wake_ahead);
     let mut armed_changes = sessions.scheduled_compaction_changes();
     let mut actors_stopped = orchestrator.actors_stopped.subscribe();
@@ -127,11 +125,10 @@ async fn hold_wakes(orchestrator: ProviderOrchestrator, find_prices: Arc<dyn Fn(
             if reads.reading {
                 continue;
             }
-            let Some(provider) = sessions.provider(session_id) else {
+            if sessions.provider(session_id).is_none() {
                 sessions.abandon_scheduled_compaction(session_id, stretch.after);
                 continue;
-            };
-            let rule = rules.for_provider(&provider);
+            }
             let running = orchestrator.has_session_actor(session_id);
             if now < stretch.due_at {
                 let ahead_at = SessionTimestamp(stretch.due_at.0.saturating_sub(ahead));
@@ -139,7 +136,7 @@ async fn hold_wakes(orchestrator: ProviderOrchestrator, find_prices: Arc<dyn Fn(
                 // nothing is judged until the moment.
                 if reads.count == 0 && !running && now >= ahead_at {
                     if sessions
-                        .scheduled_compaction_admitted(session_id, stretch.after, &rule, now)
+                        .scheduled_compaction_admitted(session_id, stretch.after, now)
                         .is_ok()
                     {
                         read_in(&orchestrator, &mut read_ins, key, &find_prices, &read_tx);
@@ -157,7 +154,7 @@ async fn hold_wakes(orchestrator: ProviderOrchestrator, find_prices: Arc<dyn Fn(
                 continue;
             }
             if sessions
-                .judge_unread_scheduled_compaction(session_id, stretch.after, &rule, now)
+                .judge_unread_scheduled_compaction(session_id, stretch.after, now)
                 .is_err()
             {
                 continue;

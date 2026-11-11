@@ -46,7 +46,7 @@ pub(crate) use orchestration::{
     BrokeredSubagentRequest, ContextBreakdownError, MOVE_CONTINUATION_GRACE, MoveSettlement,
     PROVIDER_IDLE_SHUTDOWN, PROVIDER_STOP_TIMEOUT, ProviderOrchestrator, ProviderUpdateGate,
     SCHEDULED_COMPACTION_LEAD, SCHEDULED_COMPACTION_MARGIN, SCHEDULED_COMPACTION_WAKE_AHEAD,
-    skill_delivery_failure_message,
+    ScheduledCompactionTimings, skill_delivery_failure_message,
 };
 pub use report::{
     FinalMessage, MoveNote, Report, SettledMessage, SidekickIntervention, SidekickOriginLoss,

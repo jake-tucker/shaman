@@ -36,7 +36,7 @@
 //! judged are the store's to hold ([`ArmedStretches`]) rather than any
 //! actor's, so they outlive the actor that found a stretch: one stopped with
 //! its tree evicted, and the one started for the Session after. They are
-//! held in memory alone. A stretch is only ever judged at or after its
+//! held in memory alone (ADR 0074). A stretch is only ever judged at or after its
 //! moment, and one first found only after that moment is skipped, so a
 //! Server restarted after a stretch was judged finds it past due and skips
 //! it again with nothing stored to say so.
@@ -45,8 +45,15 @@
 //! Cache ([`SessionStoreState::pending_compaction`]): the stretch armed and
 //! unjudged, judged by [`SessionStoreState::judge`] as of its moment, with or
 //! without an actor running. It is kept current by
-//! [`SessionStoreState::reconcile_pending_compactions`], whose doc lists
-//! every event that calls it.
+//! [`SessionStoreState::reconcile_pending_compactions`], whose doc says how
+//! everything the judgement reads reaches it.
+//!
+//! The rule is the one the store was given
+//! ([`SessionStore::judge_scheduled_compactions_by`]), and what the actor owes
+//! of its own work is what it last said
+//! ([`SessionStore::note_actor_owes_work`]): every entry point here reads
+//! both from the store, so the actor, whatever wakes for a Session no actor
+//! runs for, and what is published all judge alike.
 
 use std::{
     collections::{HashMap, hash_map::Entry},
@@ -66,10 +73,14 @@ use crate::protocol::{
 };
 use crate::storage::StorageSink;
 
-use super::{SessionStore, SessionStoreState, compactions::requested_agent, prompt_cache::millis};
+use super::{
+    SessionRecord, SessionStore, SessionStoreState, compactions::requested_agent,
+    prompt_cache::millis,
+};
 
 /// What the judgement of a scheduled Compaction reads beside the Session
-/// itself, each as it stands when the Compaction falls due. Built for a
+/// itself, each as it stands when the judgement is made, whatever moment it
+/// is made as of. Built for a
 /// Session's Provider by whoever holds the Server's Settings and Provider
 /// runtimes, for the actor and for whatever wakes for a Session no actor
 /// runs for alike.
@@ -92,7 +103,7 @@ pub(crate) struct ScheduledCompactionRule {
 
 impl ScheduledCompactionRule {
     /// The clauses of the judgement that need none of the Session's history,
-    /// answered from `summary` as of `now`: the Setting is on, the Provider
+    /// answered from `summary` as of `as_of`: the Setting is on, the Provider
     /// can be asked, and the Session is not Settled where the user keeps
     /// scheduled Compaction to active Sessions. [`SessionStoreState::judge`]
     /// asks them first, and whatever wakes for a Session no actor runs for
@@ -100,7 +111,7 @@ impl ScheduledCompactionRule {
     pub(crate) fn admits(
         &self,
         summary: &SessionSummary,
-        now: SessionTimestamp,
+        as_of: SessionTimestamp,
     ) -> Result<(), ScheduledCompactionSkip> {
         use ScheduledCompactionSkip as Skip;
 
@@ -113,7 +124,7 @@ impl ScheduledCompactionRule {
         if self.settings.sessions == ScheduledCompactionSessions::Active
             && self
                 .auto_settle
-                .settles(&SessionListItem::Readable(Box::new(summary.clone())), now)
+                .settles(&SessionListItem::Readable(Box::new(summary.clone())), as_of)
         {
             return Err(Skip::Settled);
         }
@@ -129,8 +140,13 @@ pub(crate) trait ScheduledCompactionRuleSource: Send + Sync {
     ///
     /// It may be called with the Session store's lock held, so it must not
     /// block, do synchronous I/O, or call into the store: it reads the
-    /// Settings in force and what each Provider runtime declares.
+    /// Settings in force and what each Provider runtime declares, in the
+    /// lock order [`SessionStore`] states.
     fn rule_for(&self, provider: &ProviderId) -> ScheduledCompactionRule;
+
+    /// How long before the lapse every scheduled Compaction falls due, which
+    /// the stretches armed are found by.
+    fn lead(&self) -> Duration;
 }
 
 /// Why a Session's idle stretch passes without a scheduled Compaction, for
@@ -212,16 +228,19 @@ pub(crate) struct IdleStretch {
     pub(crate) due_at: SessionTimestamp,
 }
 
-/// The idle stretch `snapshot` stands in and its Prompt Cache, where the
-/// stretch is owed a scheduled Compaction: the Session is no Subagent's, its
-/// latest Turn has settled, wrote the cache, and was begun for no
-/// Compaction, and the cache lives longer than `lead`, which it falls due
-/// before the lapse. All of it is read from the Session's own row and its
-/// Turns, which a Session whose history waits in storage holds as well.
-fn owed_stretch(
+/// The idle stretch `snapshot` stands in were its Prompt Cache `cache`, and
+/// that cache, where the stretch is owed a scheduled Compaction: the Session
+/// is no Subagent's, its latest Turn has settled, wrote the cache, and was
+/// begun for no Compaction, and the cache lives longer than `lead`, which it
+/// falls due before the lapse. All of it is read from the Session's own row
+/// and its Turns, which a Session whose history waits in storage holds as
+/// well. `cache` is the one the snapshot holds, but for a cache about to
+/// land on it ([`SessionStoreState::pending_compaction_of`]).
+fn owed_stretch<'a>(
     snapshot: &SessionSnapshot,
+    cache: Option<&'a PromptCache>,
     lead: Duration,
-) -> Result<(IdleStretch, &PromptCache), ScheduledCompactionSkip> {
+) -> Result<(IdleStretch, &'a PromptCache), ScheduledCompactionSkip> {
     use ScheduledCompactionSkip as Skip;
 
     if snapshot.session.is_subagent() {
@@ -235,11 +254,7 @@ fn owed_stretch(
     if latest.begun_for_compaction() {
         return Err(Skip::AlreadyAttempted);
     }
-    let cache = snapshot
-        .session
-        .prompt_cache
-        .as_ref()
-        .ok_or(Skip::NoStretch)?;
+    let cache = cache.ok_or(Skip::NoStretch)?;
     if cache.written_in != Some(latest.id) {
         return Err(Skip::WroteNothing);
     }
@@ -412,22 +427,40 @@ impl ArmedStretches {
 }
 
 impl SessionStoreState {
+    /// The rule `session_id`'s scheduled Compaction is judged by now, from
+    /// its Provider, where the store has been told where rules are found and
+    /// the Session names a Provider.
+    fn scheduled_compaction_rule(&self, session_id: SessionId) -> Option<ScheduledCompactionRule> {
+        let provider = &self
+            .sessions
+            .get(&session_id)?
+            .snapshot
+            .session
+            .agent_selection
+            .as_ref()?
+            .provider;
+        Some(self.scheduled_compaction_rules.as_ref()?.rule_for(provider))
+    }
+
     /// Arms the idle stretch `session_id` stands in, where it is owed a
-    /// scheduled Compaction falling due `lead` before its Prompt Cache
-    /// lapses, noting it found as of `now` the first time; answers it where
-    /// it is armed and not yet judged. One armed before that is owed nothing
-    /// now — its stretch ended with none owed after it, or its Session is
-    /// gone — is let go.
+    /// scheduled Compaction, noting it found as of `now` the first time;
+    /// answers it where it is armed and not yet judged. One armed before that
+    /// is owed nothing now — its stretch ended with none owed after it, or
+    /// its Session is gone — is let go. Nothing is armed until the store has
+    /// been told where rules are found, which says the lead.
     fn arm_scheduled_compaction(
         &mut self,
         session_id: SessionId,
-        lead: Duration,
         now: SessionTimestamp,
     ) -> Option<IdleStretch> {
-        let owed = self
-            .sessions
-            .get(&session_id)
-            .map(|record| owed_stretch(&record.snapshot, lead));
+        let lead = self.scheduled_compaction_rules.as_ref()?.lead();
+        let owed = self.sessions.get(&session_id).map(|record| {
+            owed_stretch(
+                &record.snapshot,
+                record.snapshot.session.prompt_cache.as_ref(),
+                lead,
+            )
+        });
         let stretches = &mut self.scheduled_compactions;
         let Some(Ok((stretch, _))) = owed else {
             stretches.forget(session_id);
@@ -439,51 +472,45 @@ impl SessionStoreState {
             .map(|armed| armed.stretch)
     }
 
-    /// Whether the scheduled Compaction of `session_id`'s stretch begun
-    /// `after` that Turn may begin as of `as_of` under `rule`, with
-    /// `actor_owes_work` saying whether the actor that would run it owes the
-    /// Session work of its own. The one judgement: what needs no history
-    /// first, as [`ScheduledCompactionRule::admits`] states it, then all the
-    /// rest, cheapest first.
+    /// Whether the scheduled Compaction of `session_id`'s `stretch`, owed it
+    /// with `cache` as its Prompt Cache, may begin as of `as_of` under
+    /// `rule`. The one judgement: what needs no history first, as
+    /// [`ScheduledCompactionRule::admits`] states it, then all the rest,
+    /// cheapest first. Whether the actor running the Session owes it work of
+    /// its own is what that actor last said ([`SessionStore::note_actor_owes_work`]).
     ///
     /// It has two callers. [`SessionStore::begin_scheduled_compaction`] asks
     /// it at the moment, `as_of` the time that moment came;
-    /// [`Self::pending_compaction`] asks it ahead of the moment, `as_of` the
-    /// moment itself. Only three checks read `as_of` — whether the cache has
-    /// lapsed, whether the margin is left, and whether the Session will have
-    /// settled on its own — and each means the same asked early: the cache is
-    /// warm at its moment with the whole lead left, and a Session left alone
-    /// that long will have settled by then. Every other check reads the
-    /// Session, its tree and the Settings as they stand when asked.
+    /// [`Self::pending_compaction_of`] asks it ahead of the moment, `as_of`
+    /// the moment itself. Only three checks read `as_of` — whether the cache
+    /// has lapsed, whether the margin is left, and whether the Session will
+    /// have settled on its own — and each means the same asked early: the
+    /// cache is warm at its moment with the whole lead left, and a Session
+    /// left alone that long will have settled by then. Every other check
+    /// reads the Session, its tree and the Settings as they stand when asked.
     fn judge(
         &self,
         session_id: SessionId,
-        after: TurnId,
         rule: &ScheduledCompactionRule,
+        stretch: IdleStretch,
+        cache: &PromptCache,
         as_of: SessionTimestamp,
-        actor_owes_work: bool,
     ) -> Result<(), ScheduledCompactionSkip> {
         use ScheduledCompactionSkip as Skip;
 
         self.scheduled_compactions
-            .unjudged(session_id, after)
+            .unjudged(session_id, stretch.after)
             .ok_or(Skip::NotArmed)?;
         let record = self.sessions.get(&session_id).ok_or(Skip::NotHeld)?;
-        let snapshot = &record.snapshot;
-        // Which stretch it is, and whether its moment has come, before
-        // anything that would skip the stretch it was armed for.
-        let (stretch, cache) = owed_stretch(snapshot, rule.lead)?;
-        if stretch.after != after {
-            return Err(Skip::StretchEnded);
-        }
         if as_of < stretch.due_at {
             return Err(Skip::NotDue);
         }
         rule.admits(&record.summary, as_of)?;
-        if actor_owes_work {
+        if self.actors_owing_work.contains(&session_id) {
             return Err(Skip::HoldsWork);
         }
-        if snapshot
+        if record
+            .snapshot
             .selection_changed_since_cache_written()
             // Unknown is taken as changed: skipping costs nothing, and
             // compacting a cold context costs the whole penalty.
@@ -508,14 +535,41 @@ impl SessionStoreState {
         Ok(())
     }
 
+    /// Whether `session_id`'s stretch begun `after` that Turn may begin as of
+    /// `now`, judged at its moment: the stretch it stands in must still be
+    /// that one, and then [`Self::judge`] decides.
+    fn judge_at_the_moment(
+        &self,
+        session_id: SessionId,
+        after: TurnId,
+        now: SessionTimestamp,
+    ) -> Result<(), ScheduledCompactionSkip> {
+        use ScheduledCompactionSkip as Skip;
+
+        let rule = self
+            .scheduled_compaction_rule(session_id)
+            .ok_or(Skip::ProviderCannot)?;
+        let record = self.sessions.get(&session_id).ok_or(Skip::NotHeld)?;
+        let (stretch, cache) = owed_stretch(
+            &record.snapshot,
+            record.snapshot.session.prompt_cache.as_ref(),
+            rule.lead,
+        )?;
+        // Which stretch it is before anything that would skip the stretch it
+        // was armed for.
+        if stretch.after != after {
+            return Err(Skip::StretchEnded);
+        }
+        self.judge(session_id, &rule, stretch, cache, now)
+    }
+
     /// [`ScheduledCompactionRule::admits`] for `session_id`'s stretch begun
-    /// `after` that Turn, where it is armed and not yet judged, whether its
-    /// history is held or not.
+    /// `after` that Turn, as of `now`, where it is armed and not yet judged,
+    /// whether its history is held or not.
     fn admits_unread(
         &self,
         session_id: SessionId,
         after: TurnId,
-        rule: &ScheduledCompactionRule,
         now: SessionTimestamp,
     ) -> Result<(), ScheduledCompactionSkip> {
         use ScheduledCompactionSkip as Skip;
@@ -524,19 +578,19 @@ impl SessionStoreState {
             .unjudged(session_id, after)
             .ok_or(Skip::NotArmed)?;
         let record = self.sessions.get(&session_id).ok_or(Skip::NotHeld)?;
-        rule.admits(&record.summary, now)
+        self.scheduled_compaction_rule(session_id)
+            .ok_or(Skip::ProviderCannot)?
+            .admits(&record.summary, now)
     }
 }
 
 impl SessionStore {
     /// Arms the idle stretch `session_id` stands in, as of `now`, where it is
-    /// owed a scheduled Compaction falling due `lead` before its Prompt Cache
-    /// lapses and has yet to be judged, and answers it. Nothing else is
-    /// judged: what holds when it falls due is read then.
+    /// owed a scheduled Compaction and has yet to be judged, and answers it.
+    /// Nothing else is judged: what holds when it falls due is read then.
     pub(crate) fn arm_scheduled_compaction(
         &self,
         session_id: SessionId,
-        lead: Duration,
         now: SessionTimestamp,
     ) -> Option<IdleStretch> {
         let mut state = self
@@ -544,7 +598,7 @@ impl SessionStore {
             .lock()
             .expect("Session store lock is not poisoned");
         let standing = state.scheduled_compactions.standing(session_id);
-        let armed = state.arm_scheduled_compaction(session_id, lead, now);
+        let armed = state.arm_scheduled_compaction(session_id, now);
         if state.scheduled_compactions.standing(session_id) != standing {
             state.reconcile_pending_compaction(&self.storage, session_id);
         }
@@ -552,20 +606,20 @@ impl SessionStore {
     }
 
     /// Arms, as of `now`, the stretch every Session this store holds stands
-    /// in, its history read or not, where it is owed a scheduled Compaction
-    /// falling due `lead` before its lapse: what a Server just started does,
-    /// so the stretches still ahead of it are woken for and those whose
-    /// moment passed while it was down are skipped. Only each Session's row
-    /// and Turns are read, which the store holds already for every one of
-    /// them; nothing is committed, published or read from storage.
-    pub(crate) fn arm_stored_scheduled_compactions(&self, lead: Duration, now: SessionTimestamp) {
+    /// in, its history read or not, where it is owed a scheduled Compaction:
+    /// what a Server just started does, so the stretches still ahead of it
+    /// are woken for and those whose moment passed while it was down are
+    /// skipped. Only each Session's row and Turns are read, which the store
+    /// holds already for every one of them; nothing is committed, published
+    /// or read from storage.
+    pub(crate) fn arm_stored_scheduled_compactions(&self, now: SessionTimestamp) {
         let mut state = self
             .state
             .lock()
             .expect("Session store lock is not poisoned");
         let held = state.sessions.keys().copied().collect::<Vec<_>>();
         for session_id in &held {
-            state.arm_scheduled_compaction(*session_id, lead, now);
+            state.arm_scheduled_compaction(*session_id, now);
         }
         // Nobody has opened any of them in this process, so a history held
         // already carries what is pending in place, owed no revision.
@@ -598,39 +652,37 @@ impl SessionStore {
     }
 
     /// Whether [`ScheduledCompactionRule::admits`] lets `session_id`'s
-    /// stretch begun `after` that Turn begin as of `now` under `rule`,
-    /// judging nothing: what whatever wakes for a Session no actor runs for
-    /// asks before reading it in ahead of the moment.
+    /// stretch begun `after` that Turn begin as of `now`, judging nothing:
+    /// what whatever wakes for a Session no actor runs for asks before
+    /// reading it in ahead of the moment.
     pub(crate) fn scheduled_compaction_admitted(
         &self,
         session_id: SessionId,
         after: TurnId,
-        rule: &ScheduledCompactionRule,
         now: SessionTimestamp,
     ) -> Result<(), ScheduledCompactionSkip> {
         self.state
             .lock()
             .expect("Session store lock is not poisoned")
-            .admits_unread(session_id, after, rule, now)
+            .admits_unread(session_id, after, now)
     }
 
     /// Judges `session_id`'s stretch begun `after` that Turn, at its moment
-    /// `now`, by what [`ScheduledCompactionRule::admits`] says of it under
-    /// `rule` without its history, and records the judgement where it skips
-    /// the stretch: what whatever wakes for a Session no actor runs for asks
-    /// at the moment, reading the history in only where this lets it begin.
+    /// `now`, by what [`ScheduledCompactionRule::admits`] says of it without
+    /// its history, and records the judgement where it skips the stretch:
+    /// what whatever wakes for a Session no actor runs for asks at the
+    /// moment, reading the history in only where this lets it begin.
     pub(crate) fn judge_unread_scheduled_compaction(
         &self,
         session_id: SessionId,
         after: TurnId,
-        rule: &ScheduledCompactionRule,
         now: SessionTimestamp,
     ) -> Result<(), ScheduledCompactionSkip> {
         let mut state = self
             .state
             .lock()
             .expect("Session store lock is not poisoned");
-        let admitted = state.admits_unread(session_id, after, rule, now);
+        let admitted = state.admits_unread(session_id, after, now);
         if let Err(skip) = admitted
             && skip.judges()
             && state
@@ -661,15 +713,15 @@ impl SessionStore {
 
     /// Begins the Turn of `session_id`'s scheduled Compaction, for the idle
     /// stretch begun `after` that Turn, where it is armed, owed one, and may
-    /// begin as of `now` under `rule`, and answers its identity. It is
-    /// judged and the Turn opened under the one lock, so a Prompt admitted at
-    /// the same instant either came first, and finds nothing owed, or finds
-    /// the Compaction's Turn holding it as a manual one would (ADR 0041).
+    /// begin as of `now`, and answers its identity. It is judged and the
+    /// Turn opened under the one lock, so a Prompt admitted at the same
+    /// instant either came first, and finds nothing owed, or finds the
+    /// Compaction's Turn holding it as a manual one would (ADR 0041).
     /// `released` is the flag the actor asking is released by, which its
     /// tree going unused sets under this same lock: an actor released first
     /// opens no Turn it would never run, and leaves the stretch for whatever
-    /// wakes for the Session next. `actor_owes_work` says the actor itself
-    /// owes the Session work that would begin a Turn of its own.
+    /// wakes for the Session next. What the actor owes of its own work is
+    /// what it last said ([`Self::note_actor_owes_work`]).
     ///
     /// Whatever the judgement, the stretch is judged once and never again,
     /// save where [`ScheduledCompactionSkip::judges`] says otherwise.
@@ -680,9 +732,7 @@ impl SessionStore {
         &self,
         session_id: SessionId,
         after: TurnId,
-        rule: &ScheduledCompactionRule,
         now: SessionTimestamp,
-        actor_owes_work: bool,
         released: &AtomicBool,
     ) -> Result<TurnId, ScheduledCompactionSkip> {
         use ScheduledCompactionSkip as Skip;
@@ -698,9 +748,7 @@ impl SessionStore {
             // deferred Session is gone with it.
             Err(Skip::NotHeld)
         } else {
-            // What is published as pending is judged by the same verdict.
-            state.set_actor_owes_work(session_id, actor_owes_work);
-            state.judge(session_id, after, rule, now, actor_owes_work)
+            state.judge_at_the_moment(session_id, after, now)
         };
         if judged.as_ref().err().is_none_or(|skip| skip.judges())
             && state
@@ -742,48 +790,56 @@ impl SessionStoreState {
     }
 
     /// When `session_id`'s scheduled Compaction falls due, where one is
-    /// pending: its stretch armed and unjudged, and [`Self::judge`], asked as
-    /// of that moment with what the actor running it last said it owes,
-    /// letting it begin. That is what the moment will find if nothing moves
-    /// before it, so what is published and what begins agree: whatever moves
-    /// in between is judged afresh as it does. A Session with no actor
-    /// running is judged so too, for whatever wakes for it judges it alike.
+    /// pending with the Prompt Cache it holds: see [`Self::pending_compaction_of`].
     pub(super) fn pending_compaction(&self, session_id: SessionId) -> Option<SessionTimestamp> {
-        let rules = self.scheduled_compaction_rules.as_ref()?;
+        let cache = self
+            .sessions
+            .get(&session_id)?
+            .snapshot
+            .session
+            .prompt_cache
+            .as_ref()?;
+        self.pending_compaction_of(session_id, cache)
+    }
+
+    /// When `session_id`'s scheduled Compaction falls due were `cache` its
+    /// Prompt Cache, where one is pending: its stretch armed and unjudged,
+    /// and [`Self::judge`], asked as of that moment, letting it begin. That
+    /// is what the moment will find if nothing moves before it, so what is
+    /// published and what begins agree: whatever moves in between is judged
+    /// afresh as it does. A Session with no actor running is judged so too,
+    /// for whatever wakes for it judges it alike.
+    ///
+    /// `cache` is the one the Session holds, or one about to land on it, so
+    /// the revision landing a cache lands what is pending of it at once
+    /// rather than in a revision after it. It replaces the held one only
+    /// where the judgement reads the cache: whether the Agent Selection has
+    /// changed since it was written reads the Turn that wrote it, which a
+    /// cache landing without a Turn leaves as it was.
+    pub(super) fn pending_compaction_of(
+        &self,
+        session_id: SessionId,
+        cache: &PromptCache,
+    ) -> Option<SessionTimestamp> {
+        let rule = self.scheduled_compaction_rule(session_id)?;
         let record = self.sessions.get(&session_id)?;
-        let provider = &record.snapshot.session.agent_selection.as_ref()?.provider;
-        let rule = rules.rule_for(provider);
-        let (stretch, _) = owed_stretch(&record.snapshot, rule.lead).ok()?;
-        self.judge(
-            session_id,
-            stretch.after,
-            &rule,
-            stretch.due_at,
-            self.actors_owing_work.contains(&session_id),
-        )
-        .ok()?;
+        let (stretch, cache) = owed_stretch(&record.snapshot, Some(cache), rule.lead).ok()?;
+        self.judge(session_id, &rule, stretch, cache, stretch.due_at)
+            .ok()?;
         Some(stretch.due_at)
     }
 
-    /// `cache`, with what would be pending were it the Prompt Cache
-    /// `session_id`'s history holds, so a revision carrying a new cache lands
-    /// what is pending of it at once rather than in a revision after it. It
-    /// is judged with `cache` standing in for the one held, which is then put
-    /// back as it was.
-    pub(super) fn with_pending_compaction(
-        &mut self,
-        session_id: SessionId,
-        mut cache: PromptCache,
-    ) -> PromptCache {
-        let Some(record) = self.sessions.get_mut(&session_id) else {
-            return cache;
-        };
-        let held = record.snapshot.session.prompt_cache.replace(cache.clone());
-        cache.compaction_due_at = self.pending_compaction(session_id);
-        if let Some(record) = self.sessions.get_mut(&session_id) {
-            record.snapshot.session.prompt_cache = held;
-        }
-        cache
+    /// Whether anything is armed for `session_id`, or published as pending
+    /// on `record`, which its own history holds: only those are judged
+    /// afresh as things move.
+    fn concerned_with_pending(&self, session_id: SessionId, record: &SessionRecord) -> bool {
+        self.scheduled_compactions.is_unjudged(session_id)
+            || record
+                .snapshot
+                .session
+                .prompt_cache
+                .as_ref()
+                .is_some_and(|cache| cache.compaction_due_at.is_some())
     }
 
     /// Publishes on `session_id`'s Prompt Cache when its scheduled Compaction
@@ -831,21 +887,20 @@ impl SessionStoreState {
     /// Re-derives what is pending of a scheduled Compaction for `session_id`
     /// and every Session up the line that spawned it, wherever one is armed
     /// or published: work in a Session's tree holds its Compaction back as
-    /// its own does. Everything the judgement reads is followed:
+    /// its own does. What the judgement reads reaches it three ways.
     ///
-    /// - [`Self::reconcile_liveness`] calls this for every Session whose
-    ///   Working, Monitoring or Watches it re-derives, and
-    ///   `reconcile_interventions` for every ancestor whose Interventions roll
-    ///   up afresh, so every commit to a Session or below it — a Prompt, a
-    ///   Turn, a changed Agent Selection, a Subagent's work — and every Watch
-    ///   starting, settling or lost is followed by construction.
+    /// By construction: [`Self::reconcile_liveness`] calls this for every
+    /// Session whose Working, Monitoring or Watches it re-derives, and
+    /// `reconcile_interventions` for every ancestor whose Interventions roll
+    /// up afresh, so every commit to a Session or below it — a Prompt, a
+    /// Turn, a changed Agent Selection, a Subagent's work — and every Watch
+    /// starting, settling or lost is followed.
     ///
-    /// The rest move nothing those reconcile, and call
-    /// [`Self::reconcile_pending_compaction`] themselves:
+    /// By a call of its own, from what moves nothing those reconcile:
     ///
     /// - a lapse the Provider reports outside any Turn, and a Lapse Penalty
     ///   forecast afresh as prices are found, each judged against the cache
-    ///   it lands ([`Self::with_pending_compaction`]) in the same revision;
+    ///   it lands ([`Self::pending_compaction_of`]) in the same revision;
     /// - a Session Settled or brought back;
     /// - a wait on Subagents beginning or ending;
     /// - a Settings change, for every stretch armed
@@ -856,6 +911,15 @@ impl SessionStoreState {
     ///   actor released for eviction, which owes nothing any longer;
     /// - a tree read back in, and a Server starting, each judged in place,
     ///   owed no revision, since nobody has read those histories yet.
+    ///
+    /// Through the actor or the Turn that follows, and not otherwise: a
+    /// Report held for the Session's Agent or taken to be delivered, the
+    /// work Sidekicks are owed Reports of, and the Reports a Remote owes a
+    /// Sidekick change what work is held with no commit of their own. A
+    /// Report held wakes the actor, which then owes its delivery and says
+    /// so; the rest move with the Prompts and Turns whose commits follow
+    /// them. Between the two, what is published may stand a moment longer
+    /// than it should, never past the moment, which judges afresh.
     pub(super) fn reconcile_pending_compactions(
         &mut self,
         storage: &StorageSink,
@@ -863,15 +927,7 @@ impl SessionStoreState {
     ) {
         let concerned = self
             .ancestors(session_id)
-            .filter(|(current, record)| {
-                self.scheduled_compactions.is_unjudged(*current)
-                    || record
-                        .snapshot
-                        .session
-                        .prompt_cache
-                        .as_ref()
-                        .is_some_and(|cache| cache.compaction_due_at.is_some())
-            })
+            .filter(|(current, record)| self.concerned_with_pending(*current, record))
             .map(|(current, _)| current)
             .collect::<Vec<_>>();
         for current in concerned {
@@ -965,15 +1021,7 @@ impl SessionStore {
             let concerned = state
                 .sessions
                 .iter()
-                .filter(|(session_id, record)| {
-                    state.scheduled_compactions.is_unjudged(**session_id)
-                        || record
-                            .snapshot
-                            .session
-                            .prompt_cache
-                            .as_ref()
-                            .is_some_and(|cache| cache.compaction_due_at.is_some())
-                })
+                .filter(|(session_id, record)| state.concerned_with_pending(**session_id, record))
                 .map(|(session_id, _)| *session_id)
                 .collect::<Vec<_>>();
             for session_id in concerned {

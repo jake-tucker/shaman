@@ -5,7 +5,7 @@ mod delegations;
 mod prompt_cache;
 mod questionnaires;
 mod scheduled_compaction_rules;
-pub(crate) use scheduled_compaction_rules::{ScheduledCompactionRules, ScheduledCompactionTimings};
+pub(crate) use scheduled_compaction_rules::ScheduledCompactionTimings;
 mod watch_outcomes;
 
 use approvals::{DecisionDeliveries, LiveApprovals};
@@ -568,8 +568,6 @@ struct ProviderSessionContext {
     /// How long the actor's Provider connection waits idle before it is let
     /// go of, where its runtime launches a process for each Session.
     idle_shutdown: Duration,
-    /// What a scheduled Compaction of the owning Session is judged by.
-    scheduled_compaction_rules: ScheduledCompactionRules,
     /// The Server's clock, which the moment a Prompt Cache lapses is counted
     /// on.
     clock: crate::clock::ServerClock,
@@ -1669,6 +1667,7 @@ impl ProviderOrchestrator {
         checkout_skill_timeout: Duration,
         stop_timeout: Duration,
         idle_shutdown: Duration,
+        scheduled_compaction: ScheduledCompactionTimings,
         clock: crate::clock::ServerClock,
         broker: BrokerAccess,
         attachments: AttachmentStore,
@@ -1676,6 +1675,13 @@ impl ProviderOrchestrator {
         assert!(
             !runtimes.is_empty(),
             "Provider orchestration requires at least one hosted runtime"
+        );
+        // A margin at or past the lead leaves no moment it could begin at.
+        debug_assert!(
+            scheduled_compaction.margin < scheduled_compaction.lead,
+            "a scheduled Compaction's margin ({:?}) must be shorter than its lead ({:?})",
+            scheduled_compaction.margin,
+            scheduled_compaction.lead
         );
         let (shutdown_complete, _) = watch::channel(false);
         let (report_notices, held_reports) = mpsc::unbounded_channel();
@@ -1698,11 +1704,7 @@ impl ProviderOrchestrator {
             checkout_skill_timeout,
             stop_timeout,
             idle_shutdown,
-            scheduled_compaction: ScheduledCompactionTimings {
-                lead: SCHEDULED_COMPACTION_LEAD,
-                margin: SCHEDULED_COMPACTION_MARGIN,
-                wake_ahead: SCHEDULED_COMPACTION_WAKE_AHEAD,
-            },
+            scheduled_compaction,
             actors_stopped: Arc::new(watch::channel(0).0),
             clock,
             checkout_guards: Default::default(),
@@ -1771,33 +1773,6 @@ impl ProviderOrchestrator {
             .unwrap()
             .get(&session)
             .copied()
-    }
-
-    /// The same orchestrator, its scheduled Compactions falling due `lead`
-    /// before each Prompt Cache lapses rather than
-    /// [`SCHEDULED_COMPACTION_LEAD`] before, beginning only while `margin` of
-    /// the cache's life is left rather than [`SCHEDULED_COMPACTION_MARGIN`],
-    /// and a Session no actor runs for read in `wake_ahead` before its moment
-    /// rather than [`SCHEDULED_COMPACTION_WAKE_AHEAD`]. Set before any actor
-    /// starts.
-    pub(crate) fn with_scheduled_compaction(
-        mut self,
-        lead: Duration,
-        margin: Duration,
-        wake_ahead: Duration,
-    ) -> Self {
-        // A margin at or past the lead leaves no moment it could begin at.
-        debug_assert!(
-            margin < lead,
-            "a scheduled Compaction's margin ({margin:?}) must be shorter than its lead ({lead:?})"
-        );
-        self.scheduled_compaction = ScheduledCompactionTimings {
-            lead,
-            margin,
-            wake_ahead,
-        };
-        self.install_scheduled_compaction_rules();
-        self
     }
 
     /// Has each Provider actor ask of `settlements` to settle its Session's
@@ -2096,7 +2071,6 @@ impl ProviderOrchestrator {
                 checkout_skill_timeout: self.checkout_skill_timeout,
                 stop_timeout: self.stop_timeout,
                 idle_shutdown: self.idle_shutdown,
-                scheduled_compaction_rules: self.scheduled_compaction_rules(),
                 clock: self.clock.clone(),
                 runtime,
                 sessions,
@@ -2891,6 +2865,9 @@ struct CheckoutActorCleanup {
 }
 impl Drop for CheckoutActorCleanup {
     fn drop(&mut self) {
+        // Whatever it said it owes is its own, released or not: a replacement
+        // waits for it to stop before saying anything.
+        self.sessions.forget_actor_owes_work(self.session_id);
         if self.released.load(Ordering::SeqCst) {
             return;
         }
@@ -2902,10 +2879,8 @@ impl Drop for CheckoutActorCleanup {
             .lock()
             .unwrap()
             .remove(&self.session_id);
-        // However the actor ended, nothing it owed a Continuation over can come,
-        // nor any work of its own begin.
+        // However the actor ended, nothing it owed a Continuation over can come.
         self.sessions.forget_continuation_awaited(self.session_id);
-        self.sessions.forget_actor_owes_work(self.session_id);
     }
 }
 
@@ -2921,7 +2896,6 @@ async fn run_provider_session(
         checkout_skill_timeout,
         stop_timeout,
         idle_shutdown,
-        scheduled_compaction_rules,
         clock,
         runtime,
         sessions,
@@ -3071,11 +3045,9 @@ async fn run_provider_session(
             // 0074): a stretch standing as it starts — one an evicted tree's
             // actor left, or a restarted Server found — is armed as any
             // other, and one judged before is never judged again.
-            let compaction_due = sessions.arm_scheduled_compaction(
-                session_id,
-                scheduled_compaction_rules.lead(),
-                clock.now(),
-            );
+            let compaction_due = updates
+                .apply(|| sessions.arm_scheduled_compaction(session_id, clock.now()))
+                .flatten();
             let compaction_due_at = compaction_due.map_or(SessionTimestamp(0), |due| due.due_at);
             // What the actor itself owes the Session, which would begin a
             // Turn of its own or needs the Provider it has: no idle process
@@ -3087,12 +3059,10 @@ async fn run_provider_session(
                 || !subagents.watch_outcomes.is_empty();
             // The store says what is pending of a scheduled Compaction by the
             // verdict its wake would reach: one that owes work skips it.
-            let _ = updates.apply(|| {
-                sessions.note_actor_owes_work(
-                    session_id,
-                    actor_owes_work || move_holds_turns || move_continuation_owed,
-                )
-            });
+            let owes_work_of_its_own =
+                actor_owes_work || move_holds_turns || move_continuation_owed;
+            let _ =
+                updates.apply(|| sessions.note_actor_owes_work(session_id, owes_work_of_its_own));
             let input = if let Some(connected) = provider.as_mut() {
                 tokio::select! {
                     biased;
@@ -3169,16 +3139,12 @@ async fn run_provider_session(
             let command = match input {
                 ActorInput::Command(command) => command,
                 ActorInput::CompactionDue(stretch) => {
-                    let owes_nothing =
-                        !actor_owes_work && !move_holds_turns && !move_continuation_owed;
-                    let rule = scheduled_compaction_rules.for_provider(&provider_id);
+                    // Judged by what this pass told the store it owes.
                     let Some(begun) = updates.apply(|| {
                         sessions.begin_scheduled_compaction(
                             session_id,
                             stretch.after,
-                            &rule,
                             clock.now(),
-                            !owes_nothing,
                             &released,
                         )
                     }) else {
@@ -7526,7 +7492,6 @@ mod tests {
         ProviderErrand, ProviderError, ProviderFuture, ProviderSession, ProviderSessionConnection,
         ProviderSessionRequest, ProviderTurnInput, SubagentReport, SubagentReportOutcome,
     };
-    use crate::sessions::ScheduledCompactionRule;
     use crate::sessions::StoreOutcome;
     use crate::storage::{StorageRepository, StorageWriter};
 
@@ -8883,6 +8848,11 @@ running 1 test",
             Duration::from_secs(5),
             PROVIDER_STOP_TIMEOUT,
             idle_shutdown,
+            ScheduledCompactionTimings {
+                lead: SCHEDULED_COMPACTION_LEAD,
+                margin: SCHEDULED_COMPACTION_MARGIN,
+                wake_ahead: SCHEDULED_COMPACTION_WAKE_AHEAD,
+            },
             clock,
             BrokerAccess::new(
                 "http://127.0.0.1:1/broker".to_owned(),
@@ -9608,13 +9578,6 @@ running 1 test",
                 })
         })
         .await;
-        let rule = ScheduledCompactionRule {
-            settings: settings.settings.compaction.scheduled,
-            auto_settle: settings.settings.sidebar.auto_settle,
-            lead: SCHEDULED_COMPACTION_LEAD,
-            margin: SCHEDULED_COMPACTION_MARGIN,
-            provider_compacts: true,
-        };
         let due = crate::protocol::SessionTimestamp(
             lapses_at.0 - u64::try_from(SCHEDULED_COMPACTION_LEAD.as_millis()).unwrap(),
         );
@@ -9623,9 +9586,7 @@ running 1 test",
             sessions.begin_scheduled_compaction(
                 session_id,
                 first_turn,
-                &rule,
                 due,
-                false,
                 &AtomicBool::new(true)
             ),
             Err(ScheduledCompactionSkip::Released)

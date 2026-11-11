@@ -3,9 +3,10 @@
 //! [`ScheduledCompactionRules`] builds the [`ScheduledCompactionRule`] a
 //! Session's scheduled Compaction is judged by from its Provider alone: the
 //! Settings in force, whether that Provider is hosted, keeps a Cache
-//! Lifetime, compacts on request and is turned on, and the timings. The
-//! actor and whatever wakes for a Session no actor runs for both build it
-//! here, so neither judges by a rule of its own.
+//! Lifetime, compacts on request and is turned on, and the timings. It is
+//! installed once in the Session store, which every judgement asks — the
+//! actor's, whatever wakes for a Session no actor runs for, and what is
+//! published as pending — so none judges by a rule of its own.
 
 use std::{sync::Arc, time::Duration};
 
@@ -58,11 +59,6 @@ impl ScheduledCompactionRules {
             provider_compacts,
         }
     }
-
-    /// How long before the lapse a scheduled Compaction falls due.
-    pub(crate) fn lead(&self) -> Duration {
-        self.timings.lead
-    }
 }
 
 /// The store asks the same rules, to say what is pending with or without an
@@ -72,12 +68,18 @@ impl ScheduledCompactionRuleSource for ScheduledCompactionRules {
     fn rule_for(&self, provider: &ProviderId) -> ScheduledCompactionRule {
         self.for_provider(provider)
     }
+
+    fn lead(&self) -> Duration {
+        self.timings.lead
+    }
 }
 
 impl ProviderOrchestrator {
-    /// Has the Session store judge what is pending of every scheduled
-    /// Compaction by the rules this orchestrator's are judged by, as its
-    /// timings now stand.
+    /// Has the Session store judge every scheduled Compaction by these
+    /// rules, the one copy of them: the actor, whatever wakes for a Session
+    /// no actor runs for, and what is published as pending all ask the store.
+    /// Its timings are fixed as the orchestrator is built, so tests inject
+    /// theirs there.
     pub(super) fn install_scheduled_compaction_rules(&self) {
         self.sessions
             .judge_scheduled_compactions_by(Arc::new(self.scheduled_compaction_rules()));

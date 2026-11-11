@@ -567,7 +567,7 @@ impl SessionStore {
         // The revision lands the cache with its penalty and what is pending
         // of it, rather than either in a revision after.
         prompt_cache.lapse_penalty = record.forecast_lapse_penalty(&prompt_cache);
-        let prompt_cache = state.with_pending_compaction(session_id, prompt_cache);
+        prompt_cache.compaction_due_at = state.pending_compaction_of(session_id, &prompt_cache);
         state
             .sessions
             .get_mut(&session_id)
@@ -610,8 +610,10 @@ impl SessionStore {
         if let Some(prompt_cache) = record.reforecast_prompt_cache() {
             // A penalty forecast afresh may reach the minimum or fall short
             // of it, which lands in the same revision.
-            let prompt_cache =
-                prompt_cache.map(|cache| state.with_pending_compaction(session_id, cache));
+            let prompt_cache = prompt_cache.map(|cache| PromptCache {
+                compaction_due_at: state.pending_compaction_of(session_id, &cache),
+                ..cache
+            });
             state
                 .sessions
                 .get_mut(&session_id)
