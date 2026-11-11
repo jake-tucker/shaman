@@ -7905,9 +7905,11 @@ fn session_footer_metrics_text(snapshot: &SessionSnapshot, width: u16) -> Option
 const SELECTION_CHANGED: &str = "Prompt cache does not cover this selection";
 
 /// What the line above a Session's composer says, part by part. In the
-/// final stretch before the Prompt Cache lapses, a dim countdown. Once it has
-/// lapsed, in the warning colour, that it lapsed, what the next Prompt costs
-/// beyond what it would have warm — or that it re-reads the whole context,
+/// final stretch before the Prompt Cache lapses, a dim countdown; in the two
+/// minutes before a pending scheduled Compaction falls due, a dim countdown
+/// to that in its place, saying nothing of why. Once the cache has lapsed,
+/// in the warning colour, that it lapsed, what the next Prompt costs beyond
+/// what it would have warm — or that it re-reads the whole context,
 /// where that cannot be priced — and how to shrink it. While it is warm under
 /// a Selection it was not written under, in the warning colour, that it does
 /// not cover it and what the next Prompt costs for that, shaped as the cold
@@ -7936,6 +7938,10 @@ fn composer_top_parts(line: Option<ComposerTopLine>, theme: &Theme) -> Vec<SlotT
             SELECTION_CHANGED.to_owned(),
             cold_prompt_cost(penalty),
         ]),
+        Some(ComposerTopLine::CompactingIn { seconds }) => vec![SlotText::new(
+            format!("Compacting in {}", countdown(seconds)),
+            theme.text.subdued,
+        )],
     }
 }
 

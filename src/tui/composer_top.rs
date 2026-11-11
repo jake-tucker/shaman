@@ -6,14 +6,19 @@
 //!
 //! Each reason for the line is a [`ComposerTopLine`] and a moment it next
 //! changes. Where several hold, the one that stands is decided in one place,
-//! [`ComposerTop::of_prompt_cache`], in the order it lists them; a later
-//! reason — a scheduled Compaction counting down — joins there as another
-//! variant.
+//! [`ComposerTop::of_prompt_cache`], in the order it lists them.
 
 use crate::protocol::{LapsePenalty, PromptCache, SessionSnapshot, SessionTimestamp};
 
 /// The longest final stretch before a lapse that is counted down: a minute.
 const FINAL_STRETCH_MS: u64 = 60_000;
+
+/// How long before a pending scheduled Compaction falls due it is counted
+/// down: two minutes. The window is how the line is shown, so it is the
+/// client's, as the final stretch is; when the Compaction falls due is the
+/// Server's, which publishes the moment and nothing of how far ahead of the
+/// lapse it set it.
+const COMPACTION_COUNTDOWN_MS: u64 = 120_000;
 
 /// The least Lapse Penalty worth a line, in billionths of a USD: five cents.
 /// Below it a cold Session is no surprise worth warning of.
@@ -36,6 +41,10 @@ pub(super) enum ComposerTopLine {
     /// It counts nothing down: it stands until the lapse, when the Session is
     /// cold whatever is selected.
     SelectionChanged { penalty: Option<LapsePenalty> },
+    /// A scheduled Compaction is pending and falls due in `seconds`, counted
+    /// up from what is left as [`Self::LapsesIn`] is. It says nothing of why:
+    /// the user turned it on.
+    CompactingIn { seconds: u64 },
 }
 
 /// The line above a Session's composer at one moment, and the moment it
@@ -43,9 +52,9 @@ pub(super) enum ComposerTopLine {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct ComposerTop {
     pub(super) line: Option<ComposerTopLine>,
-    /// The next moment the line changes of its own accord: the start of the
-    /// final stretch, the next second of a countdown, or the lapse. None
-    /// where nothing will change until something the Server sends does.
+    /// The next moment the line changes of its own accord: the start of a
+    /// countdown, its next second, the moment it counts to, or the lapse.
+    /// None where nothing will change until something the Server sends does.
     pub(super) changes_at: Option<SessionTimestamp>,
 }
 
@@ -84,17 +93,28 @@ impl ComposerTop {
     ///    written under (`selection_changed`), a warning that the next Prompt
     ///    reads the context cold, in place of any countdown, since the lapse
     ///    it would count to changes nothing the next Prompt pays;
-    /// 3. a countdown through its final stretch;
-    /// 4. nothing.
+    /// 3. through the two minutes before a pending scheduled Compaction falls
+    ///    due, a countdown to it, in place of the lapse's: the Compaction
+    ///    leaves no lapse worth counting to. The Server publishes none under
+    ///    a changed selection, which it skips, so 2 and 3 never both hold;
+    /// 4. a countdown through its final stretch;
+    /// 5. nothing.
     ///
     /// A line that warns of a penalty known to fall under the floor is not
-    /// drawn, and nothing takes its place.
+    /// drawn, and nothing takes its place. The countdown to a Compaction is
+    /// held to no floor: it warns of nothing, and the user's own minimum
+    /// chose it.
     ///
-    /// Whether the cache has lapsed is judged against this client's own
-    /// clock, `now`, by the absolute moment its Server published, as every
-    /// Session timestamp is read: a client on another machine is out by
-    /// however far the two clocks disagree, which a lifetime of minutes
-    /// leaves unnoticed.
+    /// From the moment a Compaction falls due it counts nothing: the Session
+    /// is Working in it by then, which draws no line, or it was skipped late,
+    /// and the Server withdraws it, so the line reads as though none were
+    /// pending — never `0:00`, nor counting on past it.
+    ///
+    /// Whether the cache has lapsed, and how long until a Compaction falls
+    /// due, is judged against this client's own clock, `now`, by the absolute
+    /// moments its Server published, as every Session timestamp is read: a
+    /// client on another machine is out by however far the two clocks
+    /// disagree, which a lifetime of minutes leaves unnoticed.
     fn of_prompt_cache(
         cache: &PromptCache,
         selection_changed: bool,
@@ -119,6 +139,31 @@ impl ComposerTop {
                 Self::QUIET
             };
         }
+        if let Some(due_at) = cache.compaction_due_at.filter(|due_at| now < *due_at) {
+            if due_at.0 - now.0 <= COMPACTION_COUNTDOWN_MS {
+                let (seconds, changes_at) = counting_down_to(due_at, now);
+                return Self {
+                    line: Some(ComposerTopLine::CompactingIn { seconds }),
+                    changes_at: Some(changes_at),
+                };
+            }
+            let counts_from = SessionTimestamp(due_at.0 - COMPACTION_COUNTDOWN_MS);
+            let lapse = Self::lapse_countdown(cache, now);
+            return Self {
+                changes_at: Some(
+                    lapse
+                        .changes_at
+                        .map_or(counts_from, |at| at.min(counts_from)),
+                ),
+                ..lapse
+            };
+        }
+        Self::lapse_countdown(cache, now)
+    }
+
+    /// The countdown to a warm Prompt Cache's lapse through its final
+    /// stretch, and nothing before it.
+    fn lapse_countdown(cache: &PromptCache, now: SessionTimestamp) -> Self {
         let left = cache.lapses_at.0 - now.0;
         let stretch = final_stretch_ms(cache);
         if left > stretch {
@@ -127,12 +172,21 @@ impl ComposerTop {
                 changes_at: Some(SessionTimestamp(cache.lapses_at.0 - stretch)),
             };
         }
-        let seconds = left.div_ceil(1_000);
+        let (seconds, changes_at) = counting_down_to(cache.lapses_at, now);
         Self {
             line: Some(ComposerTopLine::LapsesIn { seconds }),
-            changes_at: Some(SessionTimestamp(cache.lapses_at.0 - (seconds - 1) * 1_000)),
+            changes_at: Some(changes_at),
         }
     }
+}
+
+/// The figure a countdown to `moment` reads at `now`, before it, in whole
+/// seconds counted up — so its last moment still reads one second and the
+/// start of a whole minute reads that minute — and when that figure next
+/// changes.
+fn counting_down_to(moment: SessionTimestamp, now: SessionTimestamp) -> (u64, SessionTimestamp) {
+    let seconds = (moment.0 - now.0).div_ceil(1_000);
+    (seconds, SessionTimestamp(moment.0 - (seconds - 1) * 1_000))
 }
 
 /// Whether a line warning of `penalty` is worth drawing: unless the penalty

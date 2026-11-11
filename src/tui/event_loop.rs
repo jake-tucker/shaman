@@ -646,12 +646,12 @@ struct RunLoop {
     /// The wakeup at the next moment the line above the open Session's
     /// composer changes of its own accord, paired with that moment: once when
     /// a countdown comes to stand, once a second while it counts, and once
-    /// when what it counts to arrives; one wakeup before the countdown stands
-    /// and none after it ends. The once-a-second wakeups are bounded by the
-    /// countdown's own length, and nothing wakes for a countdown no frame
-    /// lays out (ADR 0009). Each sync sets the deadline afresh from the wall clock,
-    /// since the sleep is monotonic and does not follow a suspend, so any
-    /// event after a resume puts the wakeup right.
+    /// when what it counts to arrives; one wakeup before each countdown
+    /// stands and none once the last has ended. The once-a-second wakeups
+    /// are bounded by the countdown's own length, and nothing wakes for a
+    /// countdown no frame lays out (ADR 0009). Each sync sets the deadline
+    /// afresh from the wall clock, since the sleep is monotonic and does not
+    /// follow a suspend, so any event after a resume puts the wakeup right.
     composer_top_change: Option<(
         crate::protocol::SessionTimestamp,
         Pin<Box<tokio::time::Sleep>>,
@@ -7805,7 +7805,8 @@ mod ready_event_tests {
     }
 
     /// What the frame draws above the composer of the run loop's Session:
-    /// the countdown's figure, the cold line, or neither.
+    /// the countdown's figure, the countdown to a scheduled Compaction, the
+    /// cold line, or none of them.
     fn composer_top(run: &RunLoop) -> Option<String> {
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 24)).unwrap();
@@ -7822,6 +7823,8 @@ mod ready_event_tests {
             .find_map(|row| {
                 if let Some((_, figure)) = row.split_once("Prompt cache lapses in ") {
                     Some(figure.trim().to_owned())
+                } else if let Some((_, figure)) = row.split_once("Compacting in ") {
+                    Some(format!("compacting {}", figure.trim()))
                 } else {
                     row.contains("Prompt cache lapsed")
                         .then(|| "lapsed".to_owned())
@@ -7881,6 +7884,65 @@ mod ready_event_tests {
         run.application
             .handle_event(ApplicationEvent::Session(SessionEvent::Updated(update)))
             .expect("the update applies");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_pending_compaction_redraws_once_a_second_until_it_falls_due_and_then_the_lapse_does()
+    {
+        let workspace = tempfile::tempdir().expect("create a Workspace");
+        let wall = Arc::new(AtomicU64::new(1_800_000_000_000));
+        // Due two minutes before a lapse three minutes off: its countdown
+        // stands from the start.
+        let mut run = lapsing_run_loop(workspace.path(), wall.clone(), 180_000);
+        let due_at = SessionTimestamp(wall.load(Ordering::SeqCst) + 60_000);
+        let mut cache = run
+            .application
+            .state
+            .session
+            .as_ref()
+            .expect("a Session is open")
+            .snapshot()
+            .session
+            .prompt_cache
+            .clone()
+            .expect("the Session has a Prompt Cache");
+        cache.compaction_due_at = Some(due_at);
+        update(
+            &mut run,
+            SessionChange::PromptCacheChanged {
+                prompt_cache: Some(cache),
+            },
+        );
+        assert_eq!(pass(&mut run).as_deref(), Some("compacting 1:00"));
+
+        for left in (1..60).rev() {
+            assert_eq!(
+                wait_for_the_line(&mut run, &wall).await,
+                Duration::from_secs(1)
+            );
+            assert!(run.needs_redraw);
+            assert_eq!(pass(&mut run), Some(format!("compacting 0:{left:02}")));
+        }
+        assert_eq!(
+            wait_for_the_line(&mut run, &wall).await,
+            Duration::from_secs(1)
+        );
+        assert!(run.needs_redraw, "its moment is drawn with no input");
+        assert_eq!(
+            pass(&mut run),
+            None,
+            "nothing begun, it reads neither 0:00 nor on past it"
+        );
+        assert_eq!(
+            armed_wait(&run),
+            Some(Duration::from_secs(60)),
+            "the next wakeup is the lapse's final stretch"
+        );
+        assert_eq!(
+            wait_for_the_line(&mut run, &wall).await,
+            Duration::from_secs(60)
+        );
+        assert_eq!(pass(&mut run).as_deref(), Some("1:00"));
     }
 
     #[tokio::test(start_paused = true)]

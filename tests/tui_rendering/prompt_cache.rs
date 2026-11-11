@@ -112,16 +112,21 @@ fn wakeup_after_a_frame(application: &Application) -> Option<std::time::Duration
 }
 
 /// The rows the line above the composer stands on, each trimmed: from the
-/// first that speaks of the Prompt Cache to the last above the composer's
-/// border, the first row below that the border draws across the line's
-/// column.
+/// first that speaks of the Prompt Cache, or of a Compaction pending, to the
+/// last above the composer's border, the first row below that the border
+/// draws across the line's column.
 fn composer_top_rows(application: &Application) -> Vec<String> {
     let buffer = drawn(application);
     let rows = buffer_rows(&buffer);
-    let Some(first) = rows.iter().position(|row| row.contains("Prompt cache")) else {
+    let Some((first, opening)) = rows.iter().enumerate().find_map(|(index, row)| {
+        ["Prompt cache", "Compacting in"]
+            .into_iter()
+            .find(|opening| row.contains(opening))
+            .map(|opening| (index, opening))
+    }) else {
         return Vec::new();
     };
-    let (column, _) = text_position(&buffer, "Prompt cache");
+    let (column, _) = text_position(&buffer, opening);
     let border_at = |row: usize| {
         let row = u16::try_from(row).expect("a terminal row");
         [column, column + 1].into_iter().all(|column| {
@@ -387,6 +392,10 @@ fn an_idle_client_wakes_when_the_countdown_comes_to_stand_and_not_after_the_laps
 }
 
 const FIVE_MINUTES: u64 = 300_000;
+
+/// The production lead: a scheduled Compaction falls due two minutes before
+/// the lapse.
+const LEAD: u64 = 120_000;
 
 /// The countdown as the line above the composer reads it.
 fn lapses_in(figure: &str) -> String {
@@ -1206,4 +1215,359 @@ fn where_what_wrote_the_cache_is_unknown_no_warning_is_drawn() {
     unbound.turns[0].agent = None;
     let unbound = open(&workspace, unbound, clock_at(NOW));
     assert_eq!(composer_top_line(&unbound), None, "{}", screen(&unbound));
+}
+
+/// The countdown to a pending scheduled Compaction as the line above the
+/// composer reads it.
+fn compacting_in(figure: &str) -> String {
+    format!("Compacting in {figure}")
+}
+
+/// An idle Session whose Prompt Cache, kept five minutes, lapses at
+/// `lapses_at` and costs $1.65 more once it has, with a scheduled Compaction
+/// published as falling due at `due_at`.
+fn compaction_due(
+    workspace: &WorkspaceDir,
+    lapses_at: SessionTimestamp,
+    due_at: SessionTimestamp,
+) -> SessionSnapshot {
+    let mut snapshot = session_kept_for(workspace, lapses_at, Some(1.65), Some(FIVE_MINUTES));
+    snapshot
+        .session
+        .prompt_cache
+        .as_mut()
+        .expect("the Session has a Prompt Cache")
+        .compaction_due_at = Some(due_at);
+    snapshot
+}
+
+#[test]
+fn a_pending_compaction_counts_down_dim_through_the_two_minutes_before_it_falls_due() {
+    let workspace = workspace_dir();
+    let lapses_at = SessionTimestamp(NOW.0 + FIVE_MINUTES);
+    let due = lapses_at.0 - LEAD;
+    let clock = clock_at(NOW);
+    let application = open(
+        &workspace,
+        compaction_due(&workspace, lapses_at, SessionTimestamp(due)),
+        clock.clone(),
+    );
+
+    assert_eq!(line_at(&application, &clock, NOW.0), None);
+    assert_eq!(
+        line_at(&application, &clock, due - 120_001),
+        None,
+        "nothing a moment before its two minutes: {}",
+        screen(&application)
+    );
+    assert_eq!(
+        line_at(&application, &clock, due - 120_000),
+        Some(compacting_in("2:00"))
+    );
+    let buffer = drawn(&application);
+    let (column, row) = text_position(&buffer, "Compacting in 2:00");
+    assert_eq!(
+        composer_row(&buffer).checked_sub(row),
+        Some(2),
+        "it stands directly above the composer's border:\n{}",
+        buffer_rows(&buffer).join("\n")
+    );
+    assert_eq!(
+        buffer.cell((column, row)).map(|cell| cell.fg),
+        Some(PANDA.muted),
+        "it is dim, not the warning colour"
+    );
+    assert_eq!(
+        line_at(&application, &clock, due - 119_999),
+        Some(compacting_in("2:00"))
+    );
+    assert_eq!(
+        line_at(&application, &clock, due - 119_000),
+        Some(compacting_in("1:59"))
+    );
+    assert_eq!(
+        line_at(&application, &clock, due - 60_000),
+        Some(compacting_in("1:00"))
+    );
+    assert_eq!(
+        line_at(&application, &clock, due - 1_000),
+        Some(compacting_in("0:01"))
+    );
+    assert_eq!(
+        line_at(&application, &clock, due - 1),
+        Some(compacting_in("0:01"))
+    );
+    assert_eq!(
+        line_at(&application, &clock, due),
+        None,
+        "at the moment it counts to it reads neither 0:00 nor on past it: {}",
+        screen(&application)
+    );
+    assert_eq!(line_at(&application, &clock, due + 30_000), None);
+}
+
+/// A Compaction that falls due and is skipped late, so nothing begins and the
+/// Server has yet to withdraw it, leaves the line as it would be with none
+/// pending: the lapse's own countdown, then the cold line.
+#[test]
+fn past_the_moment_with_nothing_begun_the_lapse_counts_down_as_ever() {
+    let workspace = workspace_dir();
+    let lapses_at = SessionTimestamp(NOW.0 + FIVE_MINUTES);
+    let due = lapses_at.0 - LEAD;
+    let clock = clock_at(NOW);
+    let application = open(
+        &workspace,
+        compaction_due(&workspace, lapses_at, SessionTimestamp(due)),
+        clock.clone(),
+    );
+
+    assert_eq!(line_at(&application, &clock, due + 1), None);
+    assert_eq!(
+        line_at(&application, &clock, lapses_at.0 - 60_000),
+        Some(lapses_in("1:00"))
+    );
+    assert_eq!(
+        line_at(&application, &clock, lapses_at.0),
+        Some(PRICED.to_owned())
+    );
+}
+
+/// Where the countdown to a Compaction and the lapse's final stretch would
+/// both stand — a short lead, as tests inject — the Compaction's takes the
+/// place of the lapse's, and the two never stand together.
+#[test]
+fn a_pending_compaction_replaces_the_lapse_countdown_wherever_the_two_would_meet() {
+    let workspace = workspace_dir();
+    let lapses_at = SessionTimestamp(NOW.0 + FIVE_MINUTES);
+    let due = lapses_at.0 - 30_000;
+    let clock = clock_at(NOW);
+    let application = open(
+        &workspace,
+        compaction_due(&workspace, lapses_at, SessionTimestamp(due)),
+        clock.clone(),
+    );
+
+    for (moment, line) in [
+        (lapses_at.0 - 150_000, compacting_in("2:00")),
+        (lapses_at.0 - 60_000, compacting_in("0:30")),
+        (lapses_at.0 - 45_000, compacting_in("0:15")),
+        (due - 1, compacting_in("0:01")),
+        (due, lapses_in("0:30")),
+    ] {
+        assert_eq!(line_at(&application, &clock, moment), Some(line));
+        let screen = screen(&application);
+        assert!(
+            !(screen.contains("Compacting in") && screen.contains("lapses in")),
+            "the two never stand together: {screen}"
+        );
+    }
+}
+
+/// A Session the Server publishes nothing pending for — one whose scheduled
+/// Compaction would be skipped, as below its minimum, Settled under active Sessions alone, or
+/// with the Setting off — counts its lapse down as ever.
+#[test]
+fn a_session_with_nothing_pending_counts_its_lapse_down_as_ever() {
+    let workspace = workspace_dir();
+    let lapses_at = SessionTimestamp(NOW.0 + FIVE_MINUTES);
+    let clock = clock_at(NOW);
+    let application = open(
+        &workspace,
+        session_kept_for(&workspace, lapses_at, Some(1.65), Some(FIVE_MINUTES)),
+        clock.clone(),
+    );
+
+    for moment in [lapses_at.0 - 240_000, lapses_at.0 - LEAD - 1] {
+        assert_eq!(line_at(&application, &clock, moment), None);
+    }
+    assert_eq!(
+        line_at(&application, &clock, lapses_at.0 - 30_000),
+        Some(lapses_in("0:30"))
+    );
+}
+
+#[test]
+fn a_working_session_or_a_subagents_view_draws_no_countdown_to_a_compaction() {
+    let workspace = workspace_dir();
+    let lapses_at = SessionTimestamp(NOW.0 + FIVE_MINUTES);
+    let due = SessionTimestamp(lapses_at.0 - LEAD);
+    let in_its_window = SessionTimestamp(due.0 - 30_000);
+
+    let mut working = compaction_due(&workspace, lapses_at, due);
+    working.session.status = SessionStatus::Active;
+    working.session.working_since = Some(SessionTimestamp(in_its_window.0 - 1_000));
+    let application = open(&workspace, working, clock_at(in_its_window));
+    assert_eq!(
+        composer_top_line(&application),
+        None,
+        "{}",
+        screen(&application)
+    );
+    assert_eq!(wakeup_after_a_frame(&application), None);
+
+    let mut subagent = compaction_due(&workspace, lapses_at, due);
+    subagent.session.parent = Some(SessionId::new());
+    let application = open(&workspace, subagent, clock_at(in_its_window));
+    assert_eq!(
+        composer_top_line(&application),
+        None,
+        "{}",
+        screen(&application)
+    );
+    assert_eq!(wakeup_after_a_frame(&application), None);
+}
+
+/// The Compaction begins at its moment: the update saying the Session is
+/// Working in it takes the line down for the Working Indicator, and the one
+/// withdrawing it leaves nothing pending to come back to.
+#[test]
+fn once_the_compaction_begins_the_line_gives_way_to_the_working_indicator() {
+    let workspace = workspace_dir();
+    let lapses_at = SessionTimestamp(NOW.0 + FIVE_MINUTES);
+    let due = SessionTimestamp(lapses_at.0 - LEAD);
+    let snapshot = compaction_due(&workspace, lapses_at, due);
+    let session_id = snapshot.session.id;
+    let revision = snapshot.revision;
+    let cache = snapshot.session.prompt_cache.clone();
+    let clock = clock_at(SessionTimestamp(due.0 - 1_000));
+    let mut application = open(&workspace, snapshot, clock.clone());
+    assert_eq!(composer_top_line(&application), Some(compacting_in("0:01")));
+
+    clock.store(due.0, Ordering::SeqCst);
+    application
+        .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(revision.0 + 1),
+                changes: vec![
+                    SessionChange::SessionStatusChanged {
+                        status: SessionStatus::Active,
+                    },
+                    SessionChange::SessionWorkingChanged {
+                        working_since: Some(due),
+                    },
+                    SessionChange::PromptCacheChanged {
+                        prompt_cache: cache.map(|cache| PromptCache {
+                            compaction_due_at: None,
+                            ..cache
+                        }),
+                    },
+                ],
+            },
+        )))
+        .expect("the Compaction's Turn begins");
+    assert_eq!(
+        composer_top_line(&application),
+        None,
+        "{}",
+        screen(&application)
+    );
+    assert!(
+        screen(&application).contains("Working"),
+        "the Working Indicator stands: {}",
+        screen(&application)
+    );
+}
+
+/// The countdown to a Compaction wakes an idle client once, when its two
+/// minutes begin, then once a second until the moment it counts to, and
+/// then for the lapse's own final stretch.
+#[test]
+fn a_client_wakes_for_a_pending_compaction_when_its_countdown_begins_then_each_second() {
+    let workspace = workspace_dir();
+    let lapses_at = SessionTimestamp(NOW.0 + FIVE_MINUTES);
+    let due = lapses_at.0 - LEAD;
+    let clock = clock_at(NOW);
+    let application = open(
+        &workspace,
+        compaction_due(&workspace, lapses_at, SessionTimestamp(due)),
+        clock.clone(),
+    );
+    let wakeup_at = |moment: u64| {
+        clock.store(moment, Ordering::SeqCst);
+        wakeup_after_a_frame(&application)
+    };
+
+    assert_eq!(
+        wakeup_at(NOW.0),
+        Some(std::time::Duration::from_secs(60)),
+        "no wakeup before its two minutes begin"
+    );
+    assert_eq!(
+        wakeup_at(due - 120_000),
+        Some(std::time::Duration::from_secs(1))
+    );
+    assert_eq!(
+        wakeup_at(due - 1),
+        Some(std::time::Duration::from_millis(1)),
+        "the last wakeup falls on the moment it counts to"
+    );
+    assert_eq!(
+        wakeup_at(due),
+        Some(std::time::Duration::from_secs(60)),
+        "past it, the lapse's final stretch is what comes next"
+    );
+}
+
+/// The Server publishes no Compaction pending under a changed selection,
+/// which it skips; were one to arrive, the changed selection's warning
+/// stands all the same.
+#[test]
+fn a_changed_selections_warning_stands_over_a_pending_compaction() {
+    let workspace = workspace_dir();
+    let lapses_at = SessionTimestamp(NOW.0 + FIVE_MINUTES);
+    let due = SessionTimestamp(lapses_at.0 - LEAD);
+    let mut snapshot = written_under(
+        &workspace,
+        claude("claude-opus-4-7", "high"),
+        claude("claude-sonnet-4-6", "high"),
+        lapses_at,
+        Some(1.65),
+    );
+    snapshot
+        .session
+        .prompt_cache
+        .as_mut()
+        .expect("the Session has a Prompt Cache")
+        .compaction_due_at = Some(due);
+    let application = open(
+        &workspace,
+        snapshot,
+        clock_at(SessionTimestamp(due.0 - 30_000)),
+    );
+    assert_eq!(
+        composer_top_line(&application),
+        Some(selection_changed(Some("$1.65"))),
+        "{}",
+        screen(&application)
+    );
+}
+
+/// The countdown to a Compaction is held to no floor: the user's own
+/// minimum chose it, and it warns of nothing, so a penalty under five cents
+/// still draws it, where the cold line it would otherwise lead to would not.
+#[test]
+fn a_pending_compaction_counts_down_whatever_the_penalty() {
+    let workspace = workspace_dir();
+    let lapses_at = SessionTimestamp(NOW.0 + FIVE_MINUTES);
+    let due = SessionTimestamp(lapses_at.0 - LEAD);
+    let mut snapshot = session_kept_for(&workspace, lapses_at, Some(0.04), Some(FIVE_MINUTES));
+    snapshot
+        .session
+        .prompt_cache
+        .as_mut()
+        .expect("the Session has a Prompt Cache")
+        .compaction_due_at = Some(due);
+    let clock = clock_at(NOW);
+    let application = open(&workspace, snapshot, clock.clone());
+
+    assert_eq!(
+        line_at(&application, &clock, due.0 - 30_000),
+        Some(compacting_in("0:30"))
+    );
+    assert_eq!(
+        line_at(&application, &clock, lapses_at.0),
+        None,
+        "the cold line under five cents is not drawn"
+    );
 }
