@@ -134,6 +134,12 @@ impl SessionStore {
             .state
             .lock()
             .expect("Session store lock is not poisoned");
+        // Named as every Selection a Turn ran under is, so a Prompt Cache
+        // its call writes is compared with the user's choice like any other.
+        let selection = match &state.effective_selection_names {
+            Some(names) => names(selection),
+            None => selection,
+        };
         let Some(record) = state.sessions.get(&session_id) else {
             return Ok(());
         };
@@ -346,4 +352,107 @@ pub(super) fn requested_agent(snapshot: &SessionSnapshot) -> Option<AgentIdentit
             .clone()
             .unwrap_or_else(|| previous.selection.clone()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::protocol::{
+        AgentId, AgentSelection, CreateSessionRequest, ExecutionDirectory, InitialPrompt, ModelId,
+        PromptId, ProviderId,
+    };
+    use crate::sessions::{DeliveredTurnStatus, ProviderTurnOutcome, SessionStore, StoreOutcome};
+    use crate::storage::{StorageRepository, StorageWriter};
+
+    fn selection(model: &str) -> AgentSelection {
+        AgentSelection {
+            provider: ProviderId::new("controlled"),
+            model: ModelId::new(model),
+            options: Vec::new(),
+        }
+    }
+
+    /// A Compaction's Turn records the Selection its Provider compacted
+    /// under in the form the user's choice of it takes, as every other
+    /// Turn's is, so a Prompt Cache its call writes reads as written under
+    /// the Session's own Selection where the two are one choice.
+    #[tokio::test]
+    async fn a_compaction_turns_selection_is_named_as_every_turns_is() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let repository = StorageRepository::open(data_dir.path()).await.unwrap();
+        let (writer, sink) = StorageWriter::spawn(repository);
+        let store = SessionStore::new(Default::default(), sink, Vec::new(), Default::default());
+        // As the Model Catalog names a Provider's default tier: no tier.
+        store.name_effective_selections_by(Arc::new(|mut selection: AgentSelection| {
+            if selection.model.as_str() == "gpt-fixture-default-tier" {
+                selection.model = ModelId::new("gpt-fixture");
+            }
+            selection
+        }));
+        let StoreOutcome::Created(created) = store
+            .create(CreateSessionRequest {
+                session_id: None,
+                preparation_id: None,
+                agent_selection: Some(selection("gpt-fixture")),
+                execution_directory: ExecutionDirectory {
+                    path: workspace.path().to_owned(),
+                },
+                prompt: InitialPrompt {
+                    id: PromptId::new(),
+                    text: "Read the parser".to_owned(),
+                    skill_invocations: Vec::new(),
+                    attachments: Vec::new(),
+                },
+            })
+            .unwrap()
+        else {
+            panic!("a fresh Prompt creates a Session");
+        };
+        let session_id = created.session.id;
+        let first = store
+            .deliver_prompt(
+                session_id,
+                created.prompts[0].id,
+                Some(AgentId::new("coding")),
+                DeliveredTurnStatus::Active,
+            )
+            .unwrap()
+            .expect("the Prompt was still owed a Turn")
+            .turn_id;
+        store
+            .finish_provider_turn(
+                session_id,
+                first,
+                ProviderTurnOutcome::Completed {
+                    trailing_output: Default::default(),
+                },
+            )
+            .unwrap();
+
+        let compaction = store
+            .begin_requested_compaction(session_id)
+            .expect("an idle Session takes a Compaction");
+        store
+            .compact_under(
+                session_id,
+                compaction,
+                selection("gpt-fixture-default-tier"),
+            )
+            .unwrap();
+        let turn = store
+            .snapshot(session_id)
+            .unwrap()
+            .turns
+            .into_iter()
+            .find(|turn| turn.id == compaction)
+            .expect("the Compaction's Turn");
+        assert_eq!(
+            turn.agent.map(|agent| agent.selection),
+            Some(selection("gpt-fixture")),
+            "named as the user's choice of it, which changes nothing"
+        );
+        writer.shutdown().await.unwrap();
+    }
 }
