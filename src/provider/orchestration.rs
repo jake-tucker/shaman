@@ -9448,6 +9448,114 @@ running 1 test",
         within("the orchestrator stops", fixture.providers.shutdown()).await;
     }
 
+    /// A wait on Subagents holds back what is pending, with no commit of
+    /// the Session's own to say so: a `wait_subagents` call outliving an
+    /// interrupted Turn, say. Ended, it leaves it pending again.
+    #[tokio::test]
+    async fn a_wait_on_subagents_holds_back_what_is_pending_until_it_ends() {
+        let (fixture, _hand, session_id, due_at) = pending_fixture().await;
+        let sessions = &fixture.sessions;
+
+        let wait = sessions
+            .begin_subagent_wait(session_id)
+            .expect("the Session's history is held");
+        assert_eq!(pending_of(sessions, session_id), None, "a wait is open");
+        drop(wait);
+        assert_eq!(
+            pending_of(sessions, session_id),
+            Some(SessionTimestamp(due_at)),
+            "the wait ended"
+        );
+
+        fixture.stop.send_replace(true);
+        within("the orchestrator stops", fixture.providers.shutdown()).await;
+    }
+
+    /// An Intervention open below a Session holds back what is pending in
+    /// it, and once it closes the Session publishes it again — though the
+    /// Subagent's Turn ending with it still open is re-derived in its
+    /// liveness first, before its Interventions roll up.
+    #[tokio::test]
+    async fn an_intervention_below_holds_back_what_is_pending_until_it_closes() {
+        let (fixture, _hand, session_id, due_at) = pending_fixture().await;
+        let sessions = &fixture.sessions;
+        let child = sessions
+            .create_subagent(
+                session_id,
+                crate::storage::StoredSubagentIdentity {
+                    provider: ProviderId::new("hand"),
+                    subagent_id: crate::provider::ProviderSubagentId::new("reader"),
+                },
+                "reader",
+                "read the parser",
+                None,
+            )
+            .expect("spawn a native Subagent");
+        sessions
+            .publish(
+                child.session_id,
+                vec![SessionChange::ActivityAdded {
+                    activity: crate::protocol::Activity::Approval {
+                        id: crate::protocol::ActivityId::new(),
+                        turn_id: child.turn_id,
+                        approval: crate::protocol::Approval {
+                            id: crate::protocol::ApprovalId::new(),
+                            subject: crate::protocol::ApprovalSubject::Command {
+                                command: "cargo test".to_owned(),
+                                cwd: None,
+                                actions: Vec::new(),
+                            },
+                            reason: None,
+                        },
+                        tool_activity_id: None,
+                        detail_truncated: false,
+                        outcome: crate::protocol::ApprovalOutcome::Pending,
+                        decision: None,
+                        follow_up_error: None,
+                        asked_at: None,
+                    },
+                }],
+            )
+            .expect("the Subagent asks for an Approval");
+        assert!(
+            !sessions
+                .snapshot(session_id)
+                .expect("the Session")
+                .subagent_interventions
+                .is_empty(),
+            "the Approval stands below the Session"
+        );
+        assert_eq!(pending_of(sessions, session_id), None, "work stands below");
+
+        sessions
+            .finish_provider_turn(
+                child.session_id,
+                child.turn_id,
+                ProviderTurnOutcome::Completed {
+                    trailing_output: Default::default(),
+                },
+            )
+            .expect("the Subagent's Turn ends");
+        let parent = sessions.snapshot(session_id).expect("the Session");
+        assert!(
+            parent.session.working_since.is_none()
+                && parent
+                    .subagent_interventions
+                    .iter()
+                    .all(|below| below.pending_approvals.is_empty()),
+            "nothing works or waits below: {:?}",
+            parent.subagent_interventions
+        );
+        assert_eq!(
+            pending_of(sessions, session_id),
+            Some(SessionTimestamp(due_at)),
+            "the Intervention closed with the Turn"
+        );
+
+        fixture.stop.send_replace(true);
+        within("the orchestrator stops", fixture.providers.shutdown()).await;
+    }
+
     /// A lapse reported outside any Turn moves what is pending with it, in
     /// the one revision that lands the cache it describes.
     #[tokio::test]
