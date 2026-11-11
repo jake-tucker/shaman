@@ -9100,23 +9100,7 @@ running 1 test",
     async fn a_scheduled_compaction_that_begins_a_turn_restarts_the_idle_wait() {
         let idle = Duration::from_millis(300);
         let (clock, hand) = crate::clock::ServerClock::manual();
-        let mut settings = SettingsSnapshot::default();
-        settings.settings.compaction.scheduled.enabled = true;
-        let mut fixture = hand_fixture_with(
-            true,
-            idle,
-            CacheLifetime::Assumed(Duration::from_secs(10 * 60)),
-            Some(crate::pricing::PromptRates::flat(
-                crate::pricing::CacheRates {
-                    input: 3.0,
-                    cache_read: Some(0.3),
-                    cache_write: Some(3.75),
-                },
-            )),
-            clock.clone(),
-            settings,
-        )
-        .await;
+        let mut fixture = scheduling_hand_fixture(true, idle, clock.clone()).await;
         let created = create_session(&fixture.sessions, fixture.workspace.path(), "First");
         let session_id = created.session.id;
         fixture
@@ -9214,23 +9198,8 @@ running 1 test",
     #[tokio::test]
     async fn a_stretch_no_actor_judges_after_two_read_ins_is_given_up() {
         let (clock, hand) = crate::clock::ServerClock::manual();
-        let mut settings = SettingsSnapshot::default();
-        settings.settings.compaction.scheduled.enabled = true;
-        let mut fixture = hand_fixture_with(
-            false,
-            Duration::from_secs(60),
-            CacheLifetime::Assumed(Duration::from_secs(10 * 60)),
-            Some(crate::pricing::PromptRates::flat(
-                crate::pricing::CacheRates {
-                    input: 3.0,
-                    cache_read: Some(0.3),
-                    cache_write: Some(3.75),
-                },
-            )),
-            clock.clone(),
-            settings,
-        )
-        .await;
+        let mut fixture =
+            scheduling_hand_fixture(false, Duration::from_secs(60), clock.clone()).await;
         let created = create_session(&fixture.sessions, fixture.workspace.path(), "First");
         let session_id = created.session.id;
         fixture
@@ -9319,17 +9288,19 @@ running 1 test",
         within("the orchestrator stops", fixture.providers.shutdown()).await;
     }
 
-    /// A Session idle after a Turn that filled 400,000 tokens of a
-    /// ten-minute cache, on an orchestrator over a manual clock with
-    /// scheduled Compaction on, once its scheduled Compaction is published
-    /// as pending; and when that falls due.
-    async fn pending_fixture() -> (HandFixture, crate::clock::ManualClock, SessionId, u64) {
-        let (clock, hand) = crate::clock::ServerClock::manual();
+    /// [`hand_fixture_with`] with scheduled Compaction on, over a runtime
+    /// keeping a ten-minute Prompt Cache and stating a frontier Model's
+    /// prices, so 400,000 tokens of context forecast a $1.38 Lapse Penalty.
+    async fn scheduling_hand_fixture(
+        per_session_process: bool,
+        idle_shutdown: Duration,
+        clock: crate::clock::ServerClock,
+    ) -> HandFixture {
         let mut settings = SettingsSnapshot::default();
         settings.settings.compaction.scheduled.enabled = true;
-        let mut fixture = hand_fixture_with(
-            false,
-            Duration::from_secs(60),
+        hand_fixture_with(
+            per_session_process,
+            idle_shutdown,
             CacheLifetime::Assumed(Duration::from_secs(10 * 60)),
             Some(crate::pricing::PromptRates::flat(
                 crate::pricing::CacheRates {
@@ -9341,7 +9312,16 @@ running 1 test",
             clock,
             settings,
         )
-        .await;
+        .await
+    }
+
+    /// A Session idle after a Turn that filled 400,000 tokens of a
+    /// ten-minute cache, on an orchestrator over a manual clock with
+    /// scheduled Compaction on, once its scheduled Compaction is published
+    /// as pending; and when that falls due.
+    async fn pending_fixture() -> (HandFixture, crate::clock::ManualClock, SessionId, u64) {
+        let (clock, hand) = crate::clock::ServerClock::manual();
+        let mut fixture = scheduling_hand_fixture(false, Duration::from_secs(60), clock).await;
         let created = create_session(&fixture.sessions, fixture.workspace.path(), "First");
         let session_id = created.session.id;
         fixture
@@ -9614,23 +9594,8 @@ running 1 test",
     #[tokio::test(start_paused = true)]
     async fn the_store_opens_no_scheduled_compaction_for_an_actor_flagged_released() {
         let (clock, _hand) = crate::clock::ServerClock::manual();
-        let mut settings = SettingsSnapshot::default();
-        settings.settings.compaction.scheduled.enabled = true;
-        let mut fixture = hand_fixture_with(
-            false,
-            Duration::from_secs(60),
-            CacheLifetime::Assumed(Duration::from_secs(10 * 60)),
-            Some(crate::pricing::PromptRates::flat(
-                crate::pricing::CacheRates {
-                    input: 3.0,
-                    cache_read: Some(0.3),
-                    cache_write: Some(3.75),
-                },
-            )),
-            clock.clone(),
-            settings.clone(),
-        )
-        .await;
+        let mut fixture =
+            scheduling_hand_fixture(false, Duration::from_secs(60), clock.clone()).await;
         let created = create_session(&fixture.sessions, fixture.workspace.path(), "First");
         let session_id = created.session.id;
         fixture

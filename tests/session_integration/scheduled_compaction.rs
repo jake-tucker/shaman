@@ -16,20 +16,20 @@ use crate::session_integration::{
 use crate::support::PROGRESS_DEADLINE;
 use crate::support::provider::{ControlledProvider, ControlledProviderRuntime};
 use suru::{
-    pricing::CacheRates,
     protocol::{
-        Activity, ActivityStatus, AdmitPromptRequest, CompactionRequest, CompactionTrigger,
-        ContextFill, Cost, InitialPrompt, LapsePenalty, PromptDelivery, PromptId,
-        ScheduledCompactionSessions, SessionSnapshot, SessionTimestamp, SettingMutation,
-        SettleSessionRequest, TurnStatus, Usage,
+        Activity, ActivityStatus, AdmitPromptRequest, CompactionRequest, CompactionTrigger, Cost,
+        InitialPrompt, PromptDelivery, PromptId, ScheduledCompactionSessions, SessionSnapshot,
+        SessionTimestamp, SettingMutation, SettleSessionRequest, TurnStatus, Usage,
     },
     provider::{
-        CacheLifetime, ContextFillReport, ManualCompaction, MeteredCost, ProviderEvent,
-        ProviderSubagentId, ProviderWatchId, ProviderWatchOutcome,
+        CacheLifetime, ManualCompaction, MeteredCost, ProviderEvent, ProviderSubagentId,
+        ProviderWatchId, ProviderWatchOutcome,
     },
     server::{ManualClock, ServerClock, ServerTimings},
 };
 use tokio::time::timeout;
+
+use crate::session_integration::prompt_cache::{RATES, filled, millis, penalty};
 
 mod carried;
 mod pending;
@@ -51,14 +51,6 @@ const WAKE_AHEAD: Duration = Duration::from_secs(20);
 /// production twenty seconds.
 const MARGIN: Duration = Duration::from_secs(5);
 
-/// Writing a million tokens to the cache costs $3.75 and reading them back
-/// $0.30, so 400,000 tokens of context forecast a $1.38 Lapse Penalty.
-const RATES: CacheRates = CacheRates {
-    input: 3.0,
-    cache_read: Some(0.3),
-    cache_write: Some(3.75),
-};
-
 /// The Settings a test starts with: scheduled Compaction on, and nothing
 /// else pinned.
 pub(crate) const ON: &str = r#"{ "compaction": { "scheduled": { "enabled": true } } }"#;
@@ -74,19 +66,6 @@ pub(crate) struct Idle {
     config: tempfile::TempDir,
 }
 
-fn filled(sequence: u64, tokens: u64) -> ProviderEvent {
-    ProviderEvent::ContextFill {
-        report: ContextFillReport {
-            turn_id: None,
-            sequence,
-            fill: ContextFill {
-                occupied_tokens: tokens,
-                capacity_tokens: Some(2_000_000),
-            },
-        },
-    }
-}
-
 /// The Agent answering, which is the output an assumed lifetime counts from:
 /// a Turn's settling alone counts for nothing.
 fn answered() -> [ProviderEvent; 3] {
@@ -97,10 +76,6 @@ fn answered() -> [ProviderEvent; 3] {
         },
         ProviderEvent::AgentMessageCompleted,
     ]
-}
-
-fn penalty(usd: f64) -> Option<LapsePenalty> {
-    LapsePenalty::from_usd(usd)
 }
 
 /// A Session on a Provider assuming a [`LIFETIME`] whose first Turn filled
@@ -276,28 +251,13 @@ impl Idle {
     /// the actor judges a scheduled Compaction that has fallen due ahead of
     /// any request it reads after.
     async fn after_the_actor_has_judged(&mut self) {
-        let client = self.fixture.client.clone();
-        let descriptor = self.fixture.server.descriptor().clone();
-        let session_id = self.fixture.session_id;
-        let asked = tokio::spawn(async move {
-            client
-                .get(format!(
-                    "{}/v1/sessions/{session_id}/context",
-                    descriptor.base_url
-                ))
-                .bearer_auth(&descriptor.token)
-                .send()
-                .await
-                .expect("ask for the Context Breakdown")
-        });
-        timeout(
-            PROGRESS_DEADLINE,
-            self.fixture.provider_session.next_context_breakdown(),
+        after_the_actor_has_judged(
+            &self.fixture.client,
+            self.fixture.server.descriptor(),
+            self.fixture.session_id,
+            &mut self.fixture.provider_session,
         )
-        .await
-        .expect("the actor reads the request")
-        .fail("asked only to know the actor has read what came before");
-        asked.await.expect("the request is answered");
+        .await;
     }
 
     /// Asserts nothing was scheduled: the Provider was asked to compact
@@ -435,9 +395,35 @@ impl Idle {
     }
 }
 
-/// `duration` in the milliseconds every moment here is counted in.
-fn millis(duration: Duration) -> u64 {
-    u64::try_from(duration.as_millis()).unwrap()
+/// Waits until the Provider actor running `provider` for `session_id`, on
+/// the Server `descriptor` describes, has read everything sent it so far,
+/// its own wakes included, by asking it what fills the context: the actor
+/// judges a scheduled Compaction that has fallen due ahead of any request it
+/// reads after.
+pub(crate) async fn after_the_actor_has_judged(
+    client: &reqwest::Client,
+    descriptor: &suru::protocol::RuntimeDescriptor,
+    session_id: suru::protocol::SessionId,
+    provider: &mut crate::support::provider::ControlledProviderSession,
+) {
+    let client = client.clone();
+    let asking = descriptor.clone();
+    let asked = tokio::spawn(async move {
+        client
+            .get(format!(
+                "{}/v1/sessions/{session_id}/context",
+                asking.base_url
+            ))
+            .bearer_auth(&asking.token)
+            .send()
+            .await
+            .expect("ask for the Context Breakdown")
+    });
+    timeout(PROGRESS_DEADLINE, provider.next_context_breakdown())
+        .await
+        .expect("the actor reads the request")
+        .fail("asked only to know the actor has read what came before");
+    asked.await.expect("the request is answered");
 }
 
 /// Moves `clock`, which `hand` moves, on to `at`.

@@ -11,7 +11,10 @@ use suru::{
     server::{ManualClock, ServerClock},
 };
 
-use crate::session_integration::scheduled_compaction::pending;
+use crate::session_integration::{
+    prompt_cache::{RATES, filled},
+    scheduled_compaction::pending,
+};
 
 use super::{
     sidekick::start_sidekick,
@@ -53,15 +56,10 @@ async fn scheduling(state_dir: &Path, channel: &str) -> Scheduling {
             .with_scheduled_compaction_lead(LEAD),
     )
     .await;
-    let rates = suru::pricing::CacheRates {
-        input: 3.0,
-        cache_read: Some(0.3),
-        cache_write: Some(3.75),
-    };
     for runtime in &hosted.runtimes {
         runtime.declare_cache_lifetime(CacheLifetime::Assumed(LIFETIME));
-        runtime.price_cache(default_selection(&claude_models()).model, rates);
-        runtime.price_cache(ModelId::new("gpt-5.5"), rates);
+        runtime.price_cache(default_selection(&claude_models()).model, RATES);
+        runtime.price_cache(ModelId::new("gpt-5.5"), RATES);
     }
     let descriptor = hosted.server.descriptor().clone();
     Scheduling {
@@ -70,19 +68,6 @@ async fn scheduling(state_dir: &Path, channel: &str) -> Scheduling {
         clock,
         hand,
         _config: config,
-    }
-}
-
-fn filled(tokens: u64) -> ProviderEvent {
-    ProviderEvent::ContextFill {
-        report: ContextFillReport {
-            turn_id: None,
-            sequence: 1,
-            fill: ContextFill {
-                occupied_tokens: tokens,
-                capacity_tokens: Some(2_000_000),
-            },
-        },
     }
 }
 
@@ -139,23 +124,13 @@ impl Scheduling {
         session_id: SessionId,
         provider: &mut ControlledProviderSession,
     ) {
-        let descriptor = self.descriptor.clone();
-        let asked = tokio::spawn(async move {
-            crate::support::loopback_client()
-                .get(format!(
-                    "{}/v1/sessions/{session_id}/context",
-                    descriptor.base_url
-                ))
-                .bearer_auth(&descriptor.token)
-                .send()
-                .await
-                .expect("ask for the Context Breakdown")
-        });
-        timeout(PROGRESS_DEADLINE, provider.next_context_breakdown())
-            .await
-            .expect("the actor reads the request")
-            .fail("asked only to know the actor has read what came before");
-        asked.await.expect("the request is answered");
+        crate::session_integration::scheduled_compaction::after_the_actor_has_judged(
+            &crate::support::loopback_client(),
+            &self.descriptor,
+            session_id,
+            provider,
+        )
+        .await;
     }
 }
 
@@ -184,7 +159,7 @@ async fn neither_a_session_with_a_subagent_working_beneath_it_nor_the_subagents_
 
     // The caller's Turn settles while its Subagent works on.
     caller_provider
-        .emit_and_wait_until_observed(filled(400_000))
+        .emit_and_wait_until_observed(filled(1, 400_000))
         .await;
     answered(&caller_provider).await;
     caller_provider
@@ -222,7 +197,7 @@ async fn neither_a_session_with_a_subagent_working_beneath_it_nor_the_subagents_
 
     // The Subagent settles, idle over a context well past the minimum.
     child_provider
-        .emit_and_wait_until_observed(filled(400_000))
+        .emit_and_wait_until_observed(filled(1, 400_000))
         .await;
     answered(&child_provider).await;
     child_provider
@@ -280,7 +255,9 @@ async fn turning_the_provider_off_withdraws_a_pending_compaction_and_on_again_re
         default_selection(&claude_models()),
     )
     .await;
-    provider.emit_and_wait_until_observed(filled(400_000)).await;
+    provider
+        .emit_and_wait_until_observed(filled(1, 400_000))
+        .await;
     answered(&provider).await;
     provider
         .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
@@ -343,7 +320,7 @@ async fn a_subsession_is_compacted_as_a_top_level_session_is() {
     )
     .await;
     subsession_provider
-        .emit_and_wait_until_observed(filled(400_000))
+        .emit_and_wait_until_observed(filled(1, 400_000))
         .await;
     answered(&subsession_provider).await;
     subsession_provider
@@ -399,7 +376,7 @@ async fn held_for_a_sidekick(channel: &str, state_dir: &Path) -> HeldForASidekic
     )
     .await;
     subsession_provider
-        .emit_and_wait_until_observed(filled(400_000))
+        .emit_and_wait_until_observed(filled(1, 400_000))
         .await;
     answered(&subsession_provider).await;
     subsession_provider
@@ -623,7 +600,9 @@ async fn a_session_whose_provider_was_turned_off_is_left_alone() {
         default_selection(&claude_models()),
     )
     .await;
-    provider.emit_and_wait_until_observed(filled(400_000)).await;
+    provider
+        .emit_and_wait_until_observed(filled(1, 400_000))
+        .await;
     answered(&provider).await;
     provider
         .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)

@@ -31,8 +31,10 @@ use suru::{
 use tokio::time::timeout;
 
 /// A Model priced like a frontier one: writing a million tokens to the cache
-/// costs $3.75, reading them back $0.30.
-const RATES: CacheRates = CacheRates {
+/// costs $3.75, reading them back $0.30, so 400,000 tokens of context
+/// forecast a $1.38 Lapse Penalty. Shared with the scheduled Compaction's
+/// suites, as are the helpers beside it.
+pub(crate) const RATES: CacheRates = CacheRates {
     input: 3.0,
     cache_read: Some(0.3),
     cache_write: Some(3.75),
@@ -45,7 +47,8 @@ const CHEAPER: CacheRates = CacheRates {
     cache_write: Some(1.25),
 };
 
-fn filled(sequence: u64, tokens: u64) -> ProviderEvent {
+/// The Provider reporting `tokens` of Context Fill, its `sequence`th report.
+pub(crate) fn filled(sequence: u64, tokens: u64) -> ProviderEvent {
     ProviderEvent::ContextFill {
         report: ContextFillReport {
             turn_id: None,
@@ -68,7 +71,7 @@ fn reported(lapses_at: SessionTimestamp) -> ProviderEvent {
     }
 }
 
-fn penalty(usd: f64) -> Option<LapsePenalty> {
+pub(crate) fn penalty(usd: f64) -> Option<LapsePenalty> {
     LapsePenalty::from_usd(usd)
 }
 
@@ -1442,7 +1445,8 @@ const HOUR_PRICED: CacheWritten = CacheWritten {
     price: suru::protocol::CacheWritePrice::Hour,
 };
 
-fn ms(duration: Duration) -> u64 {
+/// `duration` in the milliseconds every Session moment is counted in.
+pub(crate) fn millis(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap()
 }
 
@@ -1525,8 +1529,8 @@ async fn an_inferred_lifetime_is_the_one_the_latest_request_wrote_counted_from_t
     assert_eq!(
         lapse_and_lifetime(settled_cache(&fixture, 0).await),
         Some((
-            SessionTimestamp(requested.0 + ms(LONG_LIFETIME)),
-            Some(ms(LONG_LIFETIME))
+            SessionTimestamp(requested.0 + millis(LONG_LIFETIME)),
+            Some(millis(LONG_LIFETIME))
         )),
         "the cache lapses the lifetime the request wrote for after the request"
     );
@@ -1547,7 +1551,10 @@ async fn an_inferred_lifetime_is_the_one_the_latest_request_wrote_counted_from_t
     settle(provider).await;
     assert_eq!(
         lapse_and_lifetime(settled_cache(&fixture, 1).await),
-        Some((SessionTimestamp(latest.0 + ms(ASSUMED)), Some(ms(ASSUMED)))),
+        Some((
+            SessionTimestamp(latest.0 + millis(ASSUMED)),
+            Some(millis(ASSUMED))
+        )),
         "the latest request sets the lifetime"
     );
     fixture.server.shutdown().await.unwrap();
@@ -1580,8 +1587,8 @@ async fn a_request_that_wrote_nothing_keeps_the_lifetime_last_observed_and_resta
     assert_eq!(
         lapse_and_lifetime(settled_cache(&fixture, 1).await),
         Some((
-            SessionTimestamp(read_only.0 + ms(LONG_LIFETIME)),
-            Some(ms(LONG_LIFETIME))
+            SessionTimestamp(read_only.0 + millis(LONG_LIFETIME)),
+            Some(millis(LONG_LIFETIME))
         )),
         "a request served from the cache keeps the lifetime last observed"
     );
@@ -1631,8 +1638,8 @@ async fn a_request_that_wrote_nothing_keeps_the_lifetime_last_observed_and_resta
     assert_eq!(
         lapse_and_lifetime(restored.session.prompt_cache),
         Some((
-            SessionTimestamp(after_restart.0 + ms(LONG_LIFETIME)),
-            Some(ms(LONG_LIFETIME))
+            SessionTimestamp(after_restart.0 + millis(LONG_LIFETIME)),
+            Some(millis(LONG_LIFETIME))
         ))
     );
     restarted.shutdown().await.unwrap();
@@ -1651,8 +1658,8 @@ async fn an_inferred_lifetime_with_nothing_observed_is_the_one_assumed() {
     assert_eq!(
         lapse_and_lifetime(settled_cache(&fixture, 0).await),
         Some((
-            SessionTimestamp(requested.0 + ms(ASSUMED)),
-            Some(ms(ASSUMED))
+            SessionTimestamp(requested.0 + millis(ASSUMED)),
+            Some(millis(ASSUMED))
         ))
     );
     fixture.server.shutdown().await.unwrap();
@@ -1754,8 +1761,8 @@ async fn under_an_inferred_lifetime_only_requests_after_a_compaction_describe_th
     assert_eq!(
         lapse_and_lifetime(settled_cache(&fixture, 0).await),
         Some((
-            SessionTimestamp(after.0 + ms(LONG_LIFETIME)),
-            Some(ms(LONG_LIFETIME))
+            SessionTimestamp(after.0 + millis(LONG_LIFETIME)),
+            Some(millis(LONG_LIFETIME))
         ))
     );
 
@@ -1981,8 +1988,8 @@ async fn under_an_inferred_lifetime_an_interrupt_moves_the_moment_only_past_a_re
     assert_eq!(
         lapse_and_lifetime(settled_cache(&fixture, 2).await),
         Some((
-            SessionTimestamp(requested.0 + ms(LONG_LIFETIME)),
-            Some(ms(LONG_LIFETIME))
+            SessionTimestamp(requested.0 + millis(LONG_LIFETIME)),
+            Some(millis(LONG_LIFETIME))
         )),
         "the request it sent used the cache before the interrupt"
     );
