@@ -225,7 +225,10 @@ impl SessionStore {
         // read in, and nothing is owed to a Provider because a deferred
         // Session never has one: none survives a restart, and eviction stops
         // a tree's actors before it lets the tree go.
-        state.adopt_hydrated_postures(&self.storage, &hydrated, &self.settings.borrow().settings);
+        // Cloned out first: adopting a posture commits, and a commit may read
+        // the Settings again (the lock order `SessionStore` states).
+        let settings = self.settings.borrow().settings.clone();
+        state.adopt_hydrated_postures(&self.storage, &hydrated, &settings);
         // No Lapse Penalty is stored, so each history read in has its
         // forecast again.
         state.forecast_restored_lapse_penalties(&hydrated);
