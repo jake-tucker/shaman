@@ -317,12 +317,16 @@ pub(super) fn held_prompt_withdrawal(prompt_id: PromptId, turn_id: TurnId) -> Se
 
 /// Whether the Session owes its reader a Decision or an Answer, its own or a
 /// Subagent's below it — the readings its Standing counts as Needs
-/// Intervention.
+/// Intervention — or one below is answered and still being delivered: a
+/// Compaction begun then would cut under an Answer on its way, as it would
+/// under one still owed.
 fn owes_an_intervention(record: &SessionRecord) -> bool {
     needs_intervention(record)
-        || record.snapshot.subagent_interventions.iter().any(|owed| {
-            !owed.pending_approvals.is_empty() || !owed.pending_questionnaires.is_empty()
-        })
+        || record
+            .snapshot
+            .subagent_interventions
+            .iter()
+            .any(crate::protocol::SubagentInterventions::is_open)
 }
 
 /// Whether the Session is Working at anything, below it included: its own

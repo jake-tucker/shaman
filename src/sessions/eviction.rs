@@ -372,14 +372,11 @@ impl SessionStoreState {
             // Interventions stand open, here or reported from below.
             || !snapshot.pending_approvals.is_empty()
             || !snapshot.submitting_approvals.is_empty()
-            // A Subagent that once had an Intervention keeps an entry here,
-            // which says nothing is owed once its lists are empty.
-            || snapshot.subagent_interventions.iter().any(|below| {
-                !below.pending_questionnaires.is_empty()
-                    || !below.submitting_questionnaires.is_empty()
-                    || !below.pending_approvals.is_empty()
-                    || !below.submitting_approvals.is_empty()
-            })
+            // One answered and still being delivered is work held as surely.
+            || snapshot
+                .subagent_interventions
+                .iter()
+                .any(crate::protocol::SubagentInterventions::is_open)
             // A posture is still being applied to its Provider.
             || session.approval_posture.as_ref().is_some_and(|posture| {
                 posture.application == crate::protocol::ApprovalPostureApplication::Applying

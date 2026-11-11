@@ -5870,6 +5870,18 @@ pub struct SubagentInterventions {
     pub submitting_approvals: Vec<ApprovalId>,
 }
 
+impl SubagentInterventions {
+    /// Whether an Intervention of this Subagent still stands open: one
+    /// awaiting its reader, or one answered and still being delivered. An
+    /// entry stays once a Subagent has had one, with nothing open in it.
+    pub fn is_open(&self) -> bool {
+        !self.pending_questionnaires.is_empty()
+            || !self.submitting_questionnaires.is_empty()
+            || !self.pending_approvals.is_empty()
+            || !self.submitting_approvals.is_empty()
+    }
+}
+
 /// One Watch live somewhere in a Session's subtree, as a reader viewing that
 /// Session is told what it is Monitoring: in the words its Provider gave it,
 /// and since when the Server heard it start. It is never stored, since no

@@ -872,3 +872,70 @@ async fn prices_answered_while_a_tree_stood_evicted_are_taken_for_its_next_read_
     );
     writer.shutdown().await.unwrap();
 }
+
+/// A Subagent that once had an Intervention keeps an entry in its parent's
+/// roll-up, its lists empty, once the Intervention closes; a tree holding
+/// nothing else is evicted for idleness all the same.
+#[tokio::test]
+async fn a_tree_whose_subagents_intervention_has_closed_is_evicted_once_idle() {
+    let data_dir = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let (_repository, writer, store) = store(data_dir.path()).await;
+    let (root_id, root_turn) = working(&store, workspace.path());
+    let child = store
+        .create_subagent(
+            root_id,
+            StoredSubagentIdentity {
+                provider: crate::protocol::ProviderId::new("codex"),
+                subagent_id: ProviderSubagentId::new("explorer"),
+            },
+            "explorer",
+            "run the tests",
+            None,
+        )
+        .unwrap();
+    store
+        .publish(
+            child.session_id,
+            vec![SessionChange::ActivityAdded {
+                activity: crate::protocol::Activity::Approval {
+                    id: crate::protocol::ActivityId::new(),
+                    turn_id: child.turn_id,
+                    approval: crate::protocol::Approval {
+                        id: crate::protocol::ApprovalId::new(),
+                        subject: crate::protocol::ApprovalSubject::Command {
+                            command: "cargo test".to_owned(),
+                            cwd: None,
+                            actions: Vec::new(),
+                        },
+                        reason: None,
+                    },
+                    tool_activity_id: None,
+                    detail_truncated: false,
+                    outcome: crate::protocol::ApprovalOutcome::Pending,
+                    decision: None,
+                    follow_up_error: None,
+                    asked_at: None,
+                },
+            }],
+        )
+        .unwrap();
+    settle(&store, child.session_id, child.turn_id);
+    settle(&store, root_id, root_turn);
+    let parent = snapshot(&store, root_id);
+    assert!(
+        !parent.subagent_interventions.is_empty()
+            && parent
+                .subagent_interventions
+                .iter()
+                .all(|below| !below.is_open()),
+        "the entry stays, with nothing open in it: {:?}",
+        parent.subagent_interventions
+    );
+
+    assert_eq!(
+        store.evict_idle_trees(Duration::ZERO, &NoActors).await,
+        vec![root_id]
+    );
+    writer.shutdown().await.unwrap();
+}
