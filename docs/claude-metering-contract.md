@@ -62,6 +62,8 @@ What this cannot tell apart, and why it does not need to:
 
 **The hour-long write price.** models.dev lists one `cache_write` rate for Anthropic's Models: the five-minute one, 1.25× input. It lists no hour-long rate (checked 2026-11-11). Claude's runtime prices a write for an hour at twice the Model's fresh input rate, the rule Anthropic publishes in its prompt-caching pricing (read 2026-11-11: one-hour writes at 2× base input, five-minute ones at 1.25×). The rule applies only to a Model the table gives a five-minute write rate. An hour-long rate the table comes to list for a Model wins over the rule. Nothing else is derived: the five-minute write and the read are exactly what the table says, and a Model the table does not price stays unpriced.
 
+**The long-context premium is not priced.** Anthropic charges more per token for a prompt past 200,000 tokens on the Models offering a million-token context. The table Suru reads gives one rate per Model, so the Lapse Penalty is forecast at the standard rate whatever the Context Fill: on the largest contexts the forecast runs low, and a scheduled Compaction's minimum is met later than the cost says it should be.
+
 ## Claude Code CLI 2.1.237
 
 Verified against the then-suggested Claude Code CLI **2.1.237** while implementing issue [#324](https://github.com/suru-ai/suru/issues/324). The published `@anthropic-ai/claude-code-linux-x64@2.1.237` binary ran in stream-json input/output mode against a local HTTP fixture serving deterministic Anthropic message streams. These measurements exercise the real CLI's accounting with synthetic API usage; they do not measure billing.
