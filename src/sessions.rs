@@ -126,6 +126,15 @@ use prompts::PromptOwner;
 
 const SESSION_UPDATE_CAPACITY: usize = 256;
 
+/// The Server's Sessions, their histories and everything derived from them,
+/// behind one lock.
+///
+/// Lock order: never call into the store with the Server Settings borrowed.
+/// The store reads the Settings under its own lock — a hydrated history's
+/// posture, the rule a scheduled Compaction is judged by — so a caller
+/// holding a borrow while it waits for the lock, with a Settings write
+/// queued between the two, deadlocks the Server. Clone what is needed out of
+/// the Settings first.
 #[derive(Clone)]
 pub(crate) struct SessionStore {
     state: Arc<Mutex<SessionStoreState>>,

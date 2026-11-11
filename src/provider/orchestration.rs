@@ -5184,8 +5184,7 @@ impl ProviderConnector<'_> {
         // Derive the corresponding unpinned posture immediately so snapshots
         // do not remain empty until a later HTTP mutation happens to reconcile
         // them.
-        // Cloned out first: the store's lock is never taken with the Settings
-        // borrowed, since the store reads the Settings under its lock.
+        // Cloned out first, in the lock order `SessionStore` states.
         let in_force = settings.borrow().settings.clone();
         let posture_update = sessions
             .reconcile_tree_approval_posture(session_id, &in_force)

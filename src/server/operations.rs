@@ -747,8 +747,7 @@ impl SessionOperations {
                 return Err(PromptRefusal::Storage);
             }
         };
-        // Cloned out first: the store's lock is never taken with the Settings
-        // borrowed, since the store reads the Settings under its lock.
+        // Cloned out first, in the lock order `SessionStore` states.
         let settings = self.settings.borrow().settings.clone();
         self.settle_actorless_posture(
             self.sessions
