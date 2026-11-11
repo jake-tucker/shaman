@@ -176,9 +176,7 @@ fn slash_move_with_no_session_open_is_refused_on_the_landing() {
 
 /// Every refusal the Server words (a destination that is no directory, a
 /// Session still Working, a Sidekick's) is said where the reader is, and the
-/// Session stays where it was. The refusal is delivered as the
-/// `SessionOperationFailed` the event loop raises for it, the path every
-/// refused Session operation shares.
+/// Session stays where it was, no longer shown as Moving.
 #[test]
 fn a_refused_move_says_why_and_leaves_the_session_where_it_was() {
     for refusal in [
@@ -196,8 +194,8 @@ fn a_refused_move_says_why_and_leaves_the_session_where_it_was() {
         );
 
         application
-            .handle_event(ApplicationEvent::SessionOperationFailed {
-                asked_from: Some(SessionReference::new(Outlook::Local, session_id)),
+            .handle_event(ApplicationEvent::SessionMoveFailed {
+                session: SessionReference::new(Outlook::Local, session_id),
                 error: refusal.to_owned(),
             })
             .expect("hear the Move refused");
@@ -212,7 +210,49 @@ fn a_refused_move_says_why_and_leaves_the_session_where_it_was() {
             screen.contains("alpha-work") && !screen.contains("beta-work"),
             "the Session is still shown where it works: {screen}"
         );
+        assert!(!screen.contains("Moving session"), "{screen}");
+        assert!(!application.wants_spinner());
     }
+}
+
+/// Making a Worktree and resuming the Agent in it takes the Server a while,
+/// so from the ask until its answer the Working Indicator says the Session is
+/// Moving, and animates. It offers no interrupt: the ask is the Server's now.
+#[test]
+fn a_move_reads_as_moving_until_the_server_answers() {
+    let directories = directories();
+    let mut application = connected_application(&directories.alpha);
+    let (session_id, _) = enter_session(&mut application, &directories.alpha);
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(!screen.contains("Moving session"), "{screen}");
+
+    type_terminal_text(&mut application, "/move ../beta-work");
+    assert_eq!(
+        press_enter(&mut application),
+        move_to(session_id, "../beta-work")
+    );
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(screen.contains("Moving session"), "{screen}");
+    assert!(!screen.contains("to interrupt"), "{screen}");
+    assert!(
+        application.wants_spinner(),
+        "the indicator shimmers while the Move is in flight"
+    );
+
+    let SessionListItem::Readable(summary) =
+        listed_session(session_id, "Moving work", &directories.beta, 1, 2)
+    else {
+        unreachable!("the fixture builds a readable Session");
+    };
+    application
+        .handle_event(ApplicationEvent::SessionMoved {
+            session: SessionReference::new(Outlook::Local, session_id),
+            outcome: MoveOutcome::Moved { session: *summary },
+        })
+        .expect("hear the Move answered");
+    let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
+    assert!(!screen.contains("Moving session"), "{screen}");
+    assert!(!application.wants_spinner());
 }
 
 #[test]
@@ -1965,7 +2005,7 @@ fn escape_interrupts_what_a_pending_move_waits_on_with_nothing_else_running() {
 
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(
-        screen.contains("Waiting to Move (Esc to interrupt)"),
+        screen.contains("Waiting to move (Esc to interrupt)"),
         "{screen}"
     );
 
@@ -1976,7 +2016,7 @@ fn escape_interrupts_what_a_pending_move_waits_on_with_nothing_else_running() {
     );
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
     assert!(
-        screen.contains("Waiting to Move (Esc again to interrupt)"),
+        screen.contains("Waiting to move (Esc again to interrupt)"),
         "{screen}"
     );
     let ApplicationTransition::InterruptSession { session } = press_escape(&mut application) else {
@@ -2000,7 +2040,7 @@ fn escape_interrupts_what_a_pending_move_waits_on_with_nothing_else_running() {
         )))
         .expect("hear the Move settle");
     let screen = rendered_application_rows_at(&application, WIDE, HEIGHT).join("\n");
-    assert!(!screen.contains("Waiting to Move"), "{screen}");
+    assert!(!screen.contains("Waiting to move"), "{screen}");
     assert_eq!(
         press_escape(&mut application),
         ApplicationTransition::Continue

@@ -2566,12 +2566,16 @@ impl RunLoop {
                 self.application
                     .handle_event(ApplicationEvent::SessionOperationFailed { asked_from, error })?;
             }
+            // Heard whichever way the Outlook is turned: the answer is what
+            // ends the Move's being in flight, and is said only beneath the
+            // composer of the Session it was asked of.
             SubmissionResult::SessionMoved { session, outcome } => {
-                if self.application.outlook() != &session.origin {
-                    return Ok(ControlFlow::Continue(()));
-                }
                 self.application
                     .handle_event(ApplicationEvent::SessionMoved { session, outcome })?;
+            }
+            SubmissionResult::SessionMoveFailed { session, error } => {
+                self.application
+                    .handle_event(ApplicationEvent::SessionMoveFailed { session, error })?;
             }
             SubmissionResult::SessionDeletionFailed { session, error } => {
                 if self.application.outlook() != &session.origin {
@@ -4118,6 +4122,12 @@ enum SubmissionResult {
         session: SessionReference,
         outcome: crate::protocol::MoveOutcome,
     },
+    /// The Session's Server refused a Move this Client asked of it, or could
+    /// not be asked.
+    SessionMoveFailed {
+        session: SessionReference,
+        error: String,
+    },
     LandingAgentSelectionConfirmed {
         outlook: Outlook,
         selection: AgentSelection,
@@ -4686,9 +4696,8 @@ impl SessionOperation {
                 request,
             } => match commands.move_session(session_id, &request).await {
                 Ok(outcome) => SubmissionResult::SessionMoved { session, outcome },
-                Err(error) => SubmissionResult::OperationFailed {
+                Err(error) => SubmissionResult::SessionMoveFailed {
                     session,
-                    asked_from: None,
                     error: error.to_string(),
                 },
             },

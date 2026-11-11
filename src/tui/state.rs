@@ -711,6 +711,9 @@ pub struct TuiState {
     /// Workspace to follow once its Server resolves it; taken by
     /// [`Application::take_move_follow`].
     move_follow: Option<ResolveWorkspaceRequest>,
+    /// The Sessions this Client has asked a Move of and not been answered
+    /// about, one entry an ask; see [`Self::is_moving`].
+    moves_in_flight: Vec<SessionReference>,
     /// Whether the open Session has Moved since the Move picker last read it;
     /// taken by [`Application::take_move_picker_read`].
     move_picker_stale: bool,
@@ -1202,6 +1205,7 @@ impl TuiState {
             pending_workspace_resolutions: HashMap::new(),
             chosen_workspace: None,
             move_follow: None,
+            moves_in_flight: Vec::new(),
             move_picker_stale: false,
             identity: None,
             recovering: HashMap::new(),
@@ -3484,6 +3488,26 @@ impl TuiState {
         Ok(true)
     }
 
+    /// Whether this Client has asked `session`'s Server to Move it and not
+    /// heard back. Making a Worktree and resuming the Agent in it can take a
+    /// while, and until the Server answers nothing else on screen says the
+    /// Move was heard.
+    pub(super) fn is_moving(&self, session: &SessionReference) -> bool {
+        self.moves_in_flight.contains(session)
+    }
+
+    /// Takes the Server's answer to one Move asked of `session`, whatever it
+    /// was.
+    fn move_answered(&mut self, session: &SessionReference) {
+        if let Some(index) = self
+            .moves_in_flight
+            .iter()
+            .position(|moving| moving == session)
+        {
+            self.moves_in_flight.swap_remove(index);
+        }
+    }
+
     /// Whether the open Session's Transcript holds the Move `activity_id`
     /// settled.
     fn move_has_settled(&self, activity_id: crate::protocol::ActivityId) -> bool {
@@ -5748,6 +5772,12 @@ pub enum ApplicationEvent {
         session: SessionReference,
         outcome: crate::protocol::MoveOutcome,
     },
+    /// A Session's Server refused a Move this Client asked of it, or could not
+    /// be asked, in words the reader can be shown.
+    SessionMoveFailed {
+        session: SessionReference,
+        error: String,
+    },
     /// Whether a Session's Origin would derive a Title proposal for the
     /// rename dialog opening named.
     TitleProposalOffered {
@@ -7257,6 +7287,7 @@ impl Application {
             // of the Session it was asked of, if that is still the one open.
             ApplicationEvent::SessionMoved { session, outcome } => {
                 use crate::protocol::MoveOutcome;
+                self.state.move_answered(&session);
                 if self.state.session_reference.as_ref() != Some(&session) {
                     return Ok(ApplicationTransition::Continue);
                 }
@@ -7279,6 +7310,15 @@ impl Application {
                 };
                 if acknowledged.is_some() {
                     self.state.submission_error = acknowledged;
+                }
+                Ok(ApplicationTransition::Continue)
+            }
+            // Said beneath the composer of the Session the Move was asked of,
+            // if that is still the one open.
+            ApplicationEvent::SessionMoveFailed { session, error } => {
+                self.state.move_answered(&session);
+                if self.state.session_reference.as_ref() == Some(&session) {
+                    self.state.submission_error = Some(error);
                 }
                 Ok(ApplicationTransition::Continue)
             }
@@ -9515,6 +9555,7 @@ impl Application {
     ) -> ApplicationTransition {
         self.state.close_move_pickers();
         self.state.submission_error = None;
+        self.state.moves_in_flight.push(session.clone());
         ApplicationTransition::MoveSession {
             session,
             request: crate::protocol::MoveSessionRequest { destination },

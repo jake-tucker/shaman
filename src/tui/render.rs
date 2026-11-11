@@ -7343,6 +7343,16 @@ fn render_session(
             interrupt: Some(interrupt),
             watching: watching_subject(&snapshot.watches),
         }
+    } else if state.is_moving(session_reference) {
+        // The Server has the Move and has not answered: a Worktree being made
+        // and the Agent resumed in it take a while, and nothing else on screen
+        // says the Move was heard.
+        SessionTail::Working {
+            state: WorkingIndicatorState::Moving,
+            working_since: None,
+            interrupt: None,
+            watching: None,
+        }
     } else if snapshot.session.pending_move.is_some() {
         // Nothing reads as at work, so this is where the reader learns why the
         // Move has not happened, and that they can stop it waiting.
@@ -7982,7 +7992,8 @@ fn working_indicator_label(state: WorkingIndicatorState) -> &'static str {
         WorkingIndicatorState::Working => "Working",
         WorkingIndicatorState::WaitingForSubagents => "Waiting for subagents",
         WorkingIndicatorState::Monitoring => "Monitoring",
-        WorkingIndicatorState::WaitingToMove => "Waiting to Move",
+        WorkingIndicatorState::WaitingToMove => "Waiting to move",
+        WorkingIndicatorState::Moving => "Moving session",
     }
 }
 

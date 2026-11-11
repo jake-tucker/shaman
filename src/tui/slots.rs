@@ -135,6 +135,10 @@ pub(super) enum WorkingIndicatorState {
     /// Nothing reads as at work, but a pending Move waits on what its Provider
     /// owes the Agent (ADR 0059). Interrupting gives up waiting.
     WaitingToMove,
+    /// This Client asked the Session's Server to Move it and has not heard
+    /// back: a Worktree being made, or the Agent resuming where it now works.
+    /// Nothing is offered to interrupt, since the ask is already the Server's.
+    Moving,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
